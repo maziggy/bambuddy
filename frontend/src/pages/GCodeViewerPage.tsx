@@ -116,8 +116,15 @@ export function GCodeViewerPage() {
     ? t('gcodeViewer.backToArchives', 'Back to Archives')
     : t('gcodeViewer.backToFiles', 'Back to File Manager');
 
+  // The viewer pane is `flex-1 min-h-0`, which only means anything if this
+  // column has a height to divide. `h-full` did not give it one: it resolves
+  // against `<main>`, whose own height comes from `flex-1` under a
+  // `min-h-screen` root -- a minimum, so the height property stays `auto` and
+  // the percentage falls through to content (#2887). Same viewport-minus-header
+  // pattern the File Manager page uses, with `min-h` keeping the toolbar
+  // reachable on short screens where a hard height would clip it.
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col min-h-[calc(100vh-64px)] lg:h-[calc(100vh-64px)]">
       <div className="flex-shrink-0 px-4 py-2 border-b border-bambu-dark-tertiary flex flex-wrap items-center gap-x-4 gap-y-2">
         <button
           type="button"

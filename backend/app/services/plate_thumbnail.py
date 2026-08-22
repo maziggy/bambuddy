@@ -132,7 +132,17 @@ def _render_model_thumbnails(threemf_bytes: bytes) -> tuple[bytes | None, bytes 
     # Local imports so a `import backend.app.services.plate_thumbnail` from
     # an environment without matplotlib/trimesh doesn't fail at import time —
     # the function will simply degrade to no-op via the exception branch.
-    from backend.app.services.stl_thumbnail import _configure_matplotlib_cache
+    #
+    # The light angle is IMPORTED rather than mirrored like the palette above.
+    # "A plate card and a library thumbnail of the same model look alike" is the
+    # whole reason these two renderers share a look, and a second copy of the
+    # angle is exactly how that silently stops being true. A palette can afford a
+    # copy; a number nobody would notice drifting cannot.
+    from backend.app.services.stl_thumbnail import (
+        _configure_matplotlib_cache,
+        _repair_winding,
+        _shade_kwargs,
+    )
 
     _configure_matplotlib_cache()
 
@@ -141,6 +151,7 @@ def _render_model_thumbnails(threemf_bytes: bytes) -> tuple[bytes | None, bytes 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import trimesh
+    from matplotlib.colors import LightSource
     from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
     loaded = trimesh.load(io.BytesIO(threemf_bytes), file_type="3mf", force="mesh")
@@ -157,6 +168,15 @@ def _render_model_thumbnails(threemf_bytes: bytes) -> tuple[bytes | None, bytes 
         except Exception as exc:
             logger.debug("plate_thumbnail: mesh simplification failed, using original: %s", exc)
 
+    # Before the vertices are read, not after: ``scaled`` below is indexed by
+    # ``mesh.faces``, so a repair that ever moves a vertex would leave the two
+    # out of step. Shared with stl_thumbnail rather than copied — the reason
+    # these renderers agree is that they run the same code, not similar code.
+    try:
+        _repair_winding(mesh, trimesh, "plate_thumbnail")
+    except Exception as e:  # best-effort, as the whole module is
+        logger.debug("plate_thumbnail: winding repair skipped (%s)", e)
+
     vertices = mesh.vertices
     bounds_min = vertices.min(axis=0)
     bounds_max = vertices.max(axis=0)
@@ -164,20 +184,36 @@ def _render_model_thumbnails(threemf_bytes: bytes) -> tuple[bytes | None, bytes 
     max_extent = (bounds_max - bounds_min).max()
     scaled = centered / max_extent if max_extent > 0 else centered
 
+    # ndarray, not a list of lists — shading walks this to build normals, and the
+    # list form is ~30x slower to construct. Paid twice per plate: once per size.
     faces = mesh.faces
-    poly3d = [[scaled[v] for v in face] for face in faces]
+    poly3d = scaled[faces]
 
-    large = _render_at_size(poly3d, _PLATE_PNG_SIZE, plt, Poly3DCollection)
-    small = _render_at_size(poly3d, _PLATE_PNG_SMALL_SIZE, plt, Poly3DCollection)
+    # Resolved once and shared: both sizes must be lit identically or the 128px
+    # card and the 512px view disagree. Empty for a mesh matplotlib cannot shade,
+    # which keeps such a plate rendering flat instead of failing — see
+    # ``_shade_kwargs``.
+    shade_kw = _shade_kwargs(poly3d, LightSource)
+
+    large = _render_at_size(poly3d, _PLATE_PNG_SIZE, plt, Poly3DCollection, shade_kw)
+    small = _render_at_size(poly3d, _PLATE_PNG_SMALL_SIZE, plt, Poly3DCollection, shade_kw)
     return large, small
 
 
-def _render_at_size(poly3d, size: int, plt, Poly3DCollection) -> bytes:
+def _render_at_size(poly3d, size: int, plt, Poly3DCollection, shade_kw: dict) -> bytes:
     """Render the prepared poly3d collection to an in-memory PNG."""
+    # Local, like every other import in this module, so importing plate_thumbnail
+    # in an environment without matplotlib still works. stl_thumbnail's own
+    # module level is import-light, so this costs nothing after the first call.
+    from backend.app.services.stl_thumbnail import VIEW_AZIM_DEG, VIEW_ELEV_DEG
+
     fig = plt.figure(figsize=(size / 100, size / 100), dpi=100)
     fig.patch.set_facecolor(_BACKGROUND_COLOR)
     ax = fig.add_subplot(111, projection="3d")
     ax.set_facecolor(_BACKGROUND_COLOR)
+    # ``shade=True`` needs a real ``edgecolors``: matplotlib shades the edge
+    # colours alongside the face colours, and an empty array (``"none"``) makes
+    # it raise on the broadcast. Keep the two in step if either moves.
     ax.add_collection3d(
         Poly3DCollection(
             poly3d,
@@ -185,12 +221,13 @@ def _render_at_size(poly3d, size: int, plt, Poly3DCollection) -> bytes:
             edgecolors=_BAMBU_GREEN,
             linewidths=0.1,
             alpha=0.9,
+            **shade_kw,
         )
     )
     ax.set_xlim(-0.6, 0.6)
     ax.set_ylim(-0.6, 0.6)
     ax.set_zlim(-0.6, 0.6)
-    ax.view_init(elev=25, azim=45)
+    ax.view_init(elev=VIEW_ELEV_DEG, azim=VIEW_AZIM_DEG)
     ax.set_axis_off()
     ax.grid(False)
     plt.subplots_adjust(left=0, right=1, top=1, bottom=0)

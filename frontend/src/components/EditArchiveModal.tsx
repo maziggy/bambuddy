@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Save, Tag, Camera, Trash2, Loader2, Plus, FolderKanban, Hash, Link, Weight } from 'lucide-react';
@@ -7,6 +7,7 @@ import type { Archive } from '../api/client';
 import { Button } from './Button';
 import { PrintLogTable } from './PrintLogTable';
 import { invalidateArchiveAndProjectViews } from '../utils/projectQueries';
+import { assignableProjects } from '../utils/projectTree';
 
 // Keys for failure reasons - translated at render time.
 // Exported so the Print Log per-row classification editor (#1687 part 4)
@@ -97,6 +98,15 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
     queryFn: () => api.getProjects(),
     select: (rows) => [...rows].sort((a, b) => a.name.localeCompare(b.name)),
   });
+
+  // Archived projects drop off the list, except the one this archive is
+  // already filed under. That one has to stay: a select holding a value with
+  // no matching option resets to the first one, so the field would read
+  // "No project" for an archive that is in one (#2888).
+  const projectOptions = useMemo(
+    () => assignableProjects(projects ?? [], archive.project_id),
+    [projects, archive.project_id],
+  );
 
   // Fetch all tags using the dedicated API
   const { data: tagsData } = useQuery({
@@ -317,7 +327,7 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
             >
               <option value="">{t('editArchive.noProject')}</option>
-              {projects?.map((p) => (
+              {projectOptions.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>

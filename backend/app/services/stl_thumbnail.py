@@ -54,6 +54,28 @@ def _configure_matplotlib_cache() -> None:
 BAMBU_GREEN = "#00AE42"
 BACKGROUND_COLOR = "#1a1a1a"
 
+# Direction of the synthetic light used to shade the mesh. Without a light
+# source ``Poly3DCollection`` fills every triangle with the identical colour
+# regardless of its normal, so the render comes out a flat silhouette and one
+# model is indistinguishable from another (issue #2816).
+#
+# The azimuth is NOT free. matplotlib's light direction for (az, alt) is
+# ``[cos(90-az)cos(alt), sin(90-az)cos(alt), sin(alt)]``, and the camera set by
+# ``view_init(elev, azim)`` sits at ``[cos(elev)cos(azim), cos(elev)sin(azim),
+# sin(elev)]``. The dot product of the two must be POSITIVE or the light is
+# behind the model: at 225 it is -0.34, which lights the two hidden faces and
+# gives both visible ones the identical 0.475 — a cube with no contrast down its
+# front edge. At 315 it is +0.30, and the two visible sides come out 0.825 and
+# 0.475. ``test_light_is_on_the_camera_side`` holds that invariant so the pair
+# cannot drift apart again.
+LIGHT_AZIMUTH_DEG = 315
+LIGHT_ALTITUDE_DEG = 45
+
+# The camera the light above is chosen against. Named because the two are a PAIR:
+# move one without the other and the model goes back to being lit from behind.
+VIEW_ELEV_DEG = 25
+VIEW_AZIM_DEG = 45
+
 # Maximum vertices before simplification
 MAX_VERTICES = 100000
 
@@ -64,6 +86,97 @@ MAX_VERTICES = 100000
 # empty mesh anyway. Pre-skipping at the call sites suppresses the warning storm
 # bulk-uploaded ZIPs of small test STLs used to produce.
 MIN_USABLE_STL_BYTES = 200
+
+
+def _repair_winding(mesh, trimesh, label: str) -> None:
+    """Make every face wind the same way, and wind it OUTWARD, before shading.
+
+    matplotlib derives its normals from vertex ORDER, so a triangle wound the
+    wrong way shades as though it faced away and the model comes out patchy —
+    camouflage rather than a surface. Unshaded this never showed, so lighting the
+    render is what makes it matter, and the File Manager takes arbitrary user
+    STLs. ``trimesh.load(force="mesh")`` does not repair winding; this does.
+
+    ``trimesh.repair.fix_winding`` and NOT ``mesh.fix_normals()``: the latter
+    reaches ``body_count`` -> ``scipy.csgraph``, and scipy is not a dependency of
+    this project. fix_winding goes through networkx, which requirements.txt
+    already pins.
+
+    Three steps, because each one leaves something for the next:
+
+    * ``fix_winding`` makes the winding agree but is free to settle on either
+      orientation, and on a half-inverted sphere it picks INWARD — consistent,
+      and consistently lit from inside.
+    * ``fix_inversion`` corrects that off the sign of the volume, but only for a
+      WATERTIGHT mesh. It returns early otherwise, because a volume measured
+      across holes says nothing about which way is out.
+    * Which leaves the common case, since a mesh with broken winding is usually
+      not watertight either. With no usable volume, decide by whether the faces
+      point away from the centroid. Measured on a punctured half-inverted
+      icosphere: the first two steps alone left 0 of 1200 faces oriented like the
+      correctly wound mesh, a mean render delta of 4.56; with this one it is
+      1200 of 1200 and 0.00.
+
+    The centroid test runs only on a mesh whose winding was already broken, and
+    it leaves correct ones alone: closed and punctured spheres, a flat plate, an
+    open tube, a non-convex L and two disjoint boxes all sum positive.
+
+    Gated here rather than at the call sites so the two renderers cannot drift.
+    The check is tens of ms where the repair is seconds on a large mesh, so only
+    meshes that would otherwise render wrong pay for it.
+    """
+    import numpy as np
+
+    if len(mesh.faces) == 0 or mesh.is_winding_consistent:
+        return
+
+    logger.debug("Repairing inconsistent winding before render: %s", label)
+    trimesh.repair.fix_winding(mesh)
+    trimesh.repair.fix_inversion(mesh)
+    if mesh.is_watertight:
+        return
+
+    outward = mesh.triangles.mean(axis=1) - mesh.vertices.mean(axis=0)
+    if float(np.einsum("ij,ij->i", mesh.face_normals, outward).sum()) < 0:
+        logger.debug("Winding settled inward on a non-watertight mesh, inverting: %s", label)
+        mesh.invert()
+
+
+def _shade_kwargs(poly3d, LightSource) -> dict:
+    """``shade=True`` and its light, or nothing when the mesh cannot be shaded.
+
+    matplotlib's ``_shade_colors`` has a fallback for a mesh whose every face
+    normal is degenerate, and that fallback returns the colour argument it was
+    given, unchanged. Passing a colour STRING — which both renderers do — makes
+    it hand back a 0-d ``<U7`` array, and ``to_rgba_array`` then calls ``len()``
+    on it and raises ``TypeError: len() of unsized object``.
+
+    So a file whose facets are all zero-area or collinear rendered fine while the
+    output was flat, and would fail outright once lit. That population is real:
+    stub and truncated STLs, and hand-written 3MFs with an empty ``<triangles/>``.
+    Worse, ``batch_generate_stl_thumbnails`` walks a whole folder with no
+    minimum-size pre-skip, so each one would count as a failure in the UI and put
+    a traceback in the log — the exact noise ``stl_thumbnail``'s demoted logging
+    exists to keep out.
+
+    Deciding here rather than catching the TypeError keeps the flat render as a
+    real outcome instead of an error path, and costs ~6 ms on a 227k-face mesh.
+    Identical to matplotlib's own test: a cross product that is finite and
+    non-zero for at least one face.
+    """
+    import numpy as np
+
+    if len(poly3d) == 0:
+        return {}
+    tri = np.asarray(poly3d, dtype=float)
+    normals = np.cross(tri[:, 0] - tri[:, 1], tri[:, 1] - tri[:, 2])
+    lengths = np.linalg.norm(normals, axis=1)
+    if not bool(np.any(np.isfinite(lengths) & (lengths > 0))):
+        return {}
+    return {
+        "shade": True,
+        "lightsource": LightSource(azdeg=LIGHT_AZIMUTH_DEG, altdeg=LIGHT_ALTITUDE_DEG),
+    }
 
 
 def generate_stl_thumbnail(
@@ -98,6 +211,7 @@ def generate_stl_thumbnail(
         # Use Agg backend for headless rendering
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        from matplotlib.colors import LightSource
         from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
         from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
@@ -130,6 +244,14 @@ def generate_stl_thumbnail(
             except Exception as e:
                 logger.warning("Mesh simplification failed, using original: %s", e)
 
+        # Wind every face the same way, and outward, or the shading turns the
+        # model into camouflage. See ``_repair_winding``; it must run before the
+        # vertices below are read, since a future repair step could move them.
+        try:
+            _repair_winding(mesh, trimesh, str(stl_path))
+        except Exception as e:  # best-effort: a flat render beats no thumbnail
+            logger.debug("Winding repair skipped (%s): %s", e, stl_path)
+
         # Get mesh bounds and center it
         vertices = mesh.vertices
         bounds_min = vertices.min(axis=0)
@@ -153,15 +275,24 @@ def generate_stl_thumbnail(
         ax.set_facecolor(BACKGROUND_COLOR)
 
         # Create polygon collection from mesh faces
+        # Index with the face array rather than building a list of lists. Same
+        # data, and Poly3DCollection accepts it directly — but shading walks this
+        # structure to generate normals, and on an 82k-face mesh the list form
+        # costs ~0.19s against ~0.007s for the ndarray. It speeds up the unshaded
+        # path too.
         faces = mesh.faces
-        poly3d = [[vertices_scaled[vertex] for vertex in face] for face in faces]
+        poly3d = vertices_scaled[faces]
 
+        # ``shade=True`` needs a real ``edgecolors``: matplotlib shades the edge
+        # colours alongside the face colours, and an empty array (``"none"``)
+        # makes it raise on the broadcast. Keep the two in step if either moves.
         collection = Poly3DCollection(
             poly3d,
             facecolors=BAMBU_GREEN,
             edgecolors=BAMBU_GREEN,
             linewidths=0.1,
             alpha=0.9,
+            **_shade_kwargs(poly3d, LightSource),
         )
         ax.add_collection3d(collection)
 
@@ -171,7 +302,7 @@ def generate_stl_thumbnail(
         ax.set_zlim(-0.6, 0.6)
 
         # Set view angle (isometric-ish)
-        ax.view_init(elev=25, azim=45)
+        ax.view_init(elev=VIEW_ELEV_DEG, azim=VIEW_AZIM_DEG)
 
         # Remove axes and grid
         ax.set_axis_off()

@@ -81,6 +81,12 @@ _PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/api/v1/archives/{archive_id}/dl/{token}/{filename}"),
         ("GET", "/api/v1/archives/{archive_id}/source-dl/{token}/{filename}"),
         ("GET", "/api/v1/library/files/{file_id}/dl/{token}/{filename}"),
+        # Printer download target — validates a short-lived, single-use token
+        # bound to the printer ID before streaming its prepared bundle.
+        ("GET", "/api/v1/printers/{printer_id}/files/dl/{token}/{filename}"),
+        # Attached archive media target — validates a token bound to the
+        # archive ID before returning the local timelapse.
+        ("GET", "/api/v1/archives/{archive_id}/media/dl/{token}/{filename}"),
         # Obico cached frame — one-time nonce embedded in <img> tags.
         ("GET", "/api/v1/obico/cached-frame/{nonce}"),
         # MakerWorld thumbnail proxy — fetches external URL; no Bambuddy data exposed.

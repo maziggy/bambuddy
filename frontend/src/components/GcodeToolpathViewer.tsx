@@ -256,6 +256,19 @@ export function GcodeToolpathViewer({
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Take the canvas out of flow before it is ever in the document (#2887).
+    // `setSize` writes the size onto the canvas as inline width/height, and the
+    // canvas lives inside the very element we measure and observe — so on a page
+    // where that element's height comes from its content, each resize grew the
+    // container, which fired the observer, which resized again. three.js leaves
+    // the canvas `display: inline`, so the line box added its descender space
+    // (~33px) every round and the page climbed without limit. Out of flow it
+    // cannot contribute to the container's height at all; `display: block` is
+    // belt and braces for the same descender, and matters if this is ever
+    // rendered somewhere the absolute positioning is overridden.
+    renderer.domElement.style.display = 'block';
+    renderer.domElement.style.position = 'absolute';
+    renderer.domElement.style.inset = '0';
     container.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -437,7 +450,18 @@ export function GcodeToolpathViewer({
 
   return (
     <div className={`relative ${className}`}>
-      <div ref={containerRef} className="w-full h-full" />
+      {/*
+        Absolute, not `w-full h-full` (#2887). The canvas is appended here and
+        this element is what the ResizeObserver watches, so its height must come
+        from the pane above it and never from what it contains. `h-full` is a
+        percentage, which resolves to `auto` unless every ancestor has a definite
+        height — on the full-page route none does, so the height fell through to
+        the content and the canvas ended up sizing the box that sizes the canvas.
+        `inset-0` against the `relative` parent is a definite height whatever the
+        page does, which also keeps this working if a future caller forgets to
+        give the pane a height of its own.
+      */}
+      <div ref={containerRef} className="absolute inset-0" />
 
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center gap-2 bg-bambu-dark/60 text-sm text-bambu-gray">

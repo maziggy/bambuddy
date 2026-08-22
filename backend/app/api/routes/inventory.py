@@ -67,6 +67,7 @@ from backend.app.utils.filament_ids import (
     filament_id_to_setting_id,
     normalize_slicer_filament,
 )
+from backend.app.utils.filament_types import is_material_name, printer_filament_type
 from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
 
 logger = logging.getLogger(__name__)
@@ -114,7 +115,10 @@ async def apply_spool_to_slot_via_mqtt(
 
     state = printer_manager.get_status(printer_id)
 
-    tray_type = spool.material
+    # The slot carries the material type; the product line the material column
+    # may actually hold ("PLA+", "HTPLA") stays in tray_sub_brands below, which
+    # is where Bambu puts it too (issue #2902).
+    tray_type = printer_filament_type(spool.material)
     tray_sub_brands = (
         f"{spool.brand} {spool.material} {spool.subtype}".strip()
         if spool.brand
@@ -125,7 +129,6 @@ async def apply_spool_to_slot_via_mqtt(
     tray_color = spool.rgba or "FFFFFFFF"
 
     _generic_id_values = _GENERIC_ID_VALUES
-    _known_materials = set(MATERIAL_TEMPS.keys()) | set(GENERIC_FILAMENT_IDS.keys())
 
     # slicer_filament → (tray_info_idx, setting_id) resolution is shared with
     # the Spoolman-mode route via this helper (#1713). The helper handles
@@ -149,16 +152,25 @@ async def apply_spool_to_slot_via_mqtt(
             and current_tray_info_idx not in _generic_id_values
             and not current_tray_info_idx.startswith("PFUS")
             and not current_tray_info_idx.startswith("PFCN")
-            and current_tray_info_idx.upper() not in _known_materials
+            # Shares the resolver's reading of what counts as a material
+            # name, product lines included: a slot written by a Bambuddy from
+            # before #2902 can be holding "PLA+" in this field, and reusing
+            # that would carry the bad id forward instead of replacing it.
+            and not is_material_name(current_tray_info_idx)
             and current_tray_type
             and current_tray_type.upper() == tray_type.upper()
         ):
             tray_info_idx = current_tray_info_idx
         elif tray_type:
-            material = tray_type.upper().strip()
+            # The spool's own wording is tried first and the reduced type only
+            # as a further fallback, so a material that already resolves keeps
+            # resolving to the same id: "PETG HF" has its own generic preset
+            # (GFG96) that reducing it to "PETG" would trade away for GFG99.
+            material = (spool.material or "").upper().strip()
             generic = (
                 GENERIC_FILAMENT_IDS.get(material)
                 or GENERIC_FILAMENT_IDS.get(material.split("-")[0].split(" ")[0])
+                or GENERIC_FILAMENT_IDS.get(tray_type.upper())
                 or ""
             )
             if generic:
@@ -172,7 +184,12 @@ async def apply_spool_to_slot_via_mqtt(
     if tray_info_idx and not setting_id:
         setting_id = filament_id_to_setting_id(tray_info_idx)
 
-    temp_min, temp_max = MATERIAL_TEMPS.get((spool.material or "").upper(), (200, 240))
+    # Same order as the generic-id lookup above: the spool's own wording wins,
+    # the reduced type rescues what it does not cover. Without the second
+    # lookup a PLA+ spool took the 200/240 catch-all instead of PLA's 190/230.
+    temp_min, temp_max = (
+        MATERIAL_TEMPS.get((spool.material or "").upper()) or MATERIAL_TEMPS.get(tray_type.upper()) or (200, 240)
+    )
     if spool.nozzle_temp_min is not None:
         temp_min = spool.nozzle_temp_min
     if spool.nozzle_temp_max is not None:

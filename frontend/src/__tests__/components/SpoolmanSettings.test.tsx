@@ -200,7 +200,12 @@ describe('SpoolmanSettings', () => {
       });
     });
 
-    it('shows Connected and Disconnect button when connected', async () => {
+    it('shows Connected and offers nothing to press when connected', async () => {
+      // Spoolman is a stateless HTTP API with no session to close, so there is
+      // nothing for a Disconnect button to disconnect: it dropped this
+      // process's client object, which the next request rebuilt lazily, and the
+      // status flipped back on its own (#2903). Turning the integration off is
+      // the enable toggle's job.
       vi.mocked(api.getSpoolmanStatus).mockResolvedValue({
         enabled: true,
         connected: true,
@@ -211,8 +216,24 @@ describe('SpoolmanSettings', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Connected')).toBeInTheDocument();
-        expect(screen.getByText('Disconnect')).toBeInTheDocument();
       });
+      expect(screen.queryByText('Disconnect')).not.toBeInTheDocument();
+      expect(screen.queryByText('Connect')).not.toBeInTheDocument();
+    });
+
+    it('offers Connect as a retry only while Spoolman is unreachable', async () => {
+      vi.mocked(api.getSpoolmanStatus).mockResolvedValue({
+        enabled: true,
+        connected: false,
+        url: 'http://localhost:7912',
+      });
+
+      render(<SpoolmanSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Connect')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Disconnect')).not.toBeInTheDocument();
     });
 
     it('shows sync section when connected', async () => {

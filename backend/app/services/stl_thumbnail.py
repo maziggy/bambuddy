@@ -88,6 +88,60 @@ MAX_VERTICES = 100000
 MIN_USABLE_STL_BYTES = 200
 
 
+def _repair_winding(mesh, trimesh, label: str) -> None:
+    """Make every face wind the same way, and wind it OUTWARD, before shading.
+
+    matplotlib derives its normals from vertex ORDER, so a triangle wound the
+    wrong way shades as though it faced away and the model comes out patchy —
+    camouflage rather than a surface. Unshaded this never showed, so lighting the
+    render is what makes it matter, and the File Manager takes arbitrary user
+    STLs. ``trimesh.load(force="mesh")`` does not repair winding; this does.
+
+    ``trimesh.repair.fix_winding`` and NOT ``mesh.fix_normals()``: the latter
+    reaches ``body_count`` -> ``scipy.csgraph``, and scipy is not a dependency of
+    this project. fix_winding goes through networkx, which requirements.txt
+    already pins.
+
+    Three steps, because each one leaves something for the next:
+
+    * ``fix_winding`` makes the winding agree but is free to settle on either
+      orientation, and on a half-inverted sphere it picks INWARD — consistent,
+      and consistently lit from inside.
+    * ``fix_inversion`` corrects that off the sign of the volume, but only for a
+      WATERTIGHT mesh. It returns early otherwise, because a volume measured
+      across holes says nothing about which way is out.
+    * Which leaves the common case, since a mesh with broken winding is usually
+      not watertight either. With no usable volume, decide by whether the faces
+      point away from the centroid. Measured on a punctured half-inverted
+      icosphere: the first two steps alone left 0 of 1200 faces oriented like the
+      correctly wound mesh, a mean render delta of 4.56; with this one it is
+      1200 of 1200 and 0.00.
+
+    The centroid test runs only on a mesh whose winding was already broken, and
+    it leaves correct ones alone: closed and punctured spheres, a flat plate, an
+    open tube, a non-convex L and two disjoint boxes all sum positive.
+
+    Gated here rather than at the call sites so the two renderers cannot drift.
+    The check is tens of ms where the repair is seconds on a large mesh, so only
+    meshes that would otherwise render wrong pay for it.
+    """
+    import numpy as np
+
+    if len(mesh.faces) == 0 or mesh.is_winding_consistent:
+        return
+
+    logger.debug("Repairing inconsistent winding before render: %s", label)
+    trimesh.repair.fix_winding(mesh)
+    trimesh.repair.fix_inversion(mesh)
+    if mesh.is_watertight:
+        return
+
+    outward = mesh.triangles.mean(axis=1) - mesh.vertices.mean(axis=0)
+    if float(np.einsum("ij,ij->i", mesh.face_normals, outward).sum()) < 0:
+        logger.debug("Winding settled inward on a non-watertight mesh, inverting: %s", label)
+        mesh.invert()
+
+
 def _shade_kwargs(poly3d, LightSource) -> dict:
     """``shade=True`` and its light, or nothing when the mesh cannot be shaded.
 
@@ -190,32 +244,11 @@ def generate_stl_thumbnail(
             except Exception as e:
                 logger.warning("Mesh simplification failed, using original: %s", e)
 
-        # matplotlib derives its normals from vertex ORDER, so a triangle wound
-        # the wrong way shades as though it faced away and the model comes out
-        # patchy — camouflage rather than a surface. Unshaded this never showed,
-        # so lighting the render is what makes it matter, and the File Manager
-        # takes arbitrary user STLs. ``trimesh.load(force="mesh")`` does not
-        # repair winding; this does.
-        #
-        # ``trimesh.repair.fix_winding`` and NOT ``mesh.fix_normals()``: the
-        # latter reaches ``body_count`` -> ``scipy.csgraph``, and scipy is not a
-        # dependency of this project. fix_winding goes through networkx, which
-        # requirements.txt already pins.
-        #
-        # Gated on the check because it is cheap (tens of ms) while the repair is
-        # seconds on a large mesh — and only meshes that would otherwise render
-        # wrong pay for it.
+        # Wind every face the same way, and outward, or the shading turns the
+        # model into camouflage. See ``_repair_winding``; it must run before the
+        # vertices below are read, since a future repair step could move them.
         try:
-            if not mesh.is_winding_consistent:
-                logger.debug("Repairing inconsistent winding before render: %s", stl_path)
-                trimesh.repair.fix_winding(mesh)
-                # fix_winding alone is NOT enough. It makes the winding agree but
-                # is free to settle on either orientation, and on a half-inverted
-                # sphere it picks inward: consistent, and consistently lit from
-                # the inside. Measured — volume went -519 and every one of 1280
-                # normals came back opposite the correct mesh. fix_inversion
-                # flips on the sign of the volume, which needs no scipy either.
-                trimesh.repair.fix_inversion(mesh)
+            _repair_winding(mesh, trimesh, str(stl_path))
         except Exception as e:  # best-effort: a flat render beats no thumbnail
             logger.debug("Winding repair skipped (%s): %s", e, stl_path)
 

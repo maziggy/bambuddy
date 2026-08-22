@@ -189,7 +189,11 @@ endsolid cube"""
         not _check_trimesh_available(),
         reason="trimesh not installed",
     )
-    def test_backwards_wound_triangles_render_the_same(self):
+    @pytest.mark.parametrize(
+        ("label", "punch_holes"),
+        [("watertight", False), ("open", True)],
+    )
+    def test_backwards_wound_triangles_render_the_same(self, label, punch_holes):
         """Vertex ORDER must not change the picture.
 
         matplotlib takes its normals from winding, so an inverted triangle shades
@@ -201,6 +205,13 @@ endsolid cube"""
         Asserted as "same picture as the correctly wound mesh", because the
         obvious assertion does not work: broken winding produces MORE distinct
         tones, not fewer, so a tone count cannot see it.
+
+        Run BOTH watertight and open, because the two are repaired by different
+        code. ``fix_inversion`` decides which way is out from the sign of the
+        volume and gives up when the mesh is not watertight, which is the common
+        shape of a broken STL — there, ``fix_winding`` settles inward unopposed
+        and the centroid fallback in ``_repair_winding`` is the only thing
+        holding this. Without it the open case renders at a mean delta of 4.56.
         """
         import numpy as np
         import trimesh
@@ -208,10 +219,14 @@ endsolid cube"""
 
         from backend.app.services.stl_thumbnail import generate_stl_thumbnail
 
-        good = trimesh.creation.icosphere(subdivisions=3, radius=5.0)
-        faces = good.faces.copy()
+        sphere = trimesh.creation.icosphere(subdivisions=3, radius=5.0)
+        keep = sphere.faces.copy()[:-80] if punch_holes else sphere.faces.copy()
+        good = trimesh.Trimesh(vertices=sphere.vertices.copy(), faces=keep.copy())
+        assert good.is_watertight is not punch_holes, "fixture has the wrong topology"
+
+        faces = keep.copy()
         faces[::2] = faces[::2][:, ::-1]
-        bad = trimesh.Trimesh(vertices=good.vertices.copy(), faces=faces)
+        bad = trimesh.Trimesh(vertices=sphere.vertices.copy(), faces=faces)
         assert not bad.is_winding_consistent, "fixture is supposed to be broken"
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -230,7 +245,7 @@ endsolid cube"""
         # Repaired they are the same mesh, so this is ~0. Without the repair the
         # inverted half renders dark against the lit half and it is an order of
         # magnitude higher.
-        assert mean_delta < 1.0, f"winding changed the render (mean delta {mean_delta:.2f})"
+        assert mean_delta < 1.0, f"winding changed the {label} render (mean delta {mean_delta:.2f})"
 
     @pytest.mark.skipif(
         not _check_trimesh_available(),

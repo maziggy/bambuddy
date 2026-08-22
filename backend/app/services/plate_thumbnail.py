@@ -140,6 +140,7 @@ def _render_model_thumbnails(threemf_bytes: bytes) -> tuple[bytes | None, bytes 
     # copy; a number nobody would notice drifting cannot.
     from backend.app.services.stl_thumbnail import (
         _configure_matplotlib_cache,
+        _repair_winding,
         _shade_kwargs,
     )
 
@@ -167,26 +168,21 @@ def _render_model_thumbnails(threemf_bytes: bytes) -> tuple[bytes | None, bytes 
         except Exception as exc:
             logger.debug("plate_thumbnail: mesh simplification failed, using original: %s", exc)
 
+    # Before the vertices are read, not after: ``scaled`` below is indexed by
+    # ``mesh.faces``, so a repair that ever moves a vertex would leave the two
+    # out of step. Shared with stl_thumbnail rather than copied — the reason
+    # these renderers agree is that they run the same code, not similar code.
+    try:
+        _repair_winding(mesh, trimesh, "plate_thumbnail")
+    except Exception as e:  # best-effort, as the whole module is
+        logger.debug("plate_thumbnail: winding repair skipped (%s)", e)
+
     vertices = mesh.vertices
     bounds_min = vertices.min(axis=0)
     bounds_max = vertices.max(axis=0)
     centered = vertices - (bounds_min + bounds_max) / 2
     max_extent = (bounds_max - bounds_min).max()
     scaled = centered / max_extent if max_extent > 0 else centered
-
-    # Same reason as stl_thumbnail: matplotlib takes normals from vertex order, so
-    # backwards-wound triangles shade inside-out and the plate reads as camouflage.
-    # Cheap to check, seconds to repair, so only broken meshes pay for it.
-    try:
-        if not mesh.is_winding_consistent:
-            logger.debug("plate_thumbnail: repairing inconsistent winding before render")
-            trimesh.repair.fix_winding(mesh)
-            # ...then fix_inversion, because fix_winding may settle on the INWARD
-            # orientation — consistent, and consistently lit from inside. See
-            # stl_thumbnail for the measurement.
-            trimesh.repair.fix_inversion(mesh)
-    except Exception as e:  # best-effort, as the whole module is
-        logger.debug("plate_thumbnail: winding repair skipped (%s)", e)
 
     # ndarray, not a list of lists — shading walks this to build normals, and the
     # list form is ~30x slower to construct. Paid twice per plate: once per size.

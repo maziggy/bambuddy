@@ -208,6 +208,7 @@ describe('LabelTemplatePickerModal', () => {
         spool_ids: [1, 3],
         template: 'box_62x29',
         monochrome: false,
+        starting_position: 1,
       });
     });
     await waitFor(() => expect(onClose).toHaveBeenCalled());
@@ -234,6 +235,7 @@ describe('LabelTemplatePickerModal', () => {
         spool_ids: [1],
         template: 'ams_holder_75x55',
         monochrome: false,
+        starting_position: 1,
       });
     });
     expect(api.printSpoolLabels).not.toHaveBeenCalled();
@@ -364,6 +366,7 @@ describe('LabelTemplatePickerModal', () => {
         spool_ids: [1, 4, 2, 3],
         template: 'box_62x29',
         monochrome: false,
+        starting_position: 1,
       });
     });
   });
@@ -389,6 +392,7 @@ describe('LabelTemplatePickerModal', () => {
         spool_ids: [1, 2, 3, 4],
         template: 'box_40x30',
         monochrome: false,
+        starting_position: 1,
       });
     });
   });
@@ -413,7 +417,50 @@ describe('LabelTemplatePickerModal', () => {
         spool_ids: [1],
         template: 'box_40x30',
         monochrome: true,
+        starting_position: 1,
       });
     });
+  });
+
+  it('sends the selected starting position for an Avery sheet', async () => {
+    vi.mocked(api.printSpoolLabels).mockResolvedValue(PDF_BLOB);
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1]}
+        spoolmanMode={false}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId('label-starting-position'), { target: { value: '8' } });
+    expect(screen.getByTestId('label-starting-position-status')).toHaveTextContent(/Positions 1 through 7/i);
+    fireEvent.click(screen.getByTestId('print-labels-avery_5160'));
+
+    await waitFor(() => {
+      expect(api.printSpoolLabels).toHaveBeenCalledWith({
+        spool_ids: [1],
+        template: 'avery_5160',
+        monochrome: false,
+        starting_position: 8,
+      });
+    });
+  });
+
+  it('enforces each Avery template capacity before submitting', () => {
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1]}
+        spoolmanMode={false}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId('label-starting-position'), { target: { value: '22' } });
+    expect(screen.getByTestId('print-labels-avery_l7160')).toBeDisabled();
+    expect(screen.getByTestId('print-labels-avery_5160')).toBeEnabled();
   });
 });

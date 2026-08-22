@@ -5,7 +5,8 @@ Two endpoints, one per inventory backend:
 - ``POST /inventory/labels``  — local-DB spools
 - ``POST /spoolman/labels``   — Spoolman-backed spools
 
-Both accept ``{spool_ids: [int], template: str}`` and return a PDF stream.
+Both accept ``{spool_ids: [int], template: str, starting_position: int}`` and
+return a PDF stream.
 The QR code on each label deep-links to ``/inventory?spool=<id>`` so a phone
 scan jumps straight back into Bambuddy at that spool's row.
 """
@@ -18,7 +19,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,7 +29,7 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.spool import Spool
 from backend.app.models.user import User
-from backend.app.services.label_renderer import LabelData, TemplateName, render_labels
+from backend.app.services.label_renderer import LabelData, TemplateName, get_sheet_capacity, render_labels
 from backend.app.services.spoolman import get_spoolman_client
 from backend.app.utils.http import build_content_disposition
 
@@ -63,6 +64,18 @@ class LabelRequest(BaseModel):
     # Black-and-white thermal printers: drop the colour swatch (prints as a
     # muddy grey block) and widen the text column instead (#1870).
     monochrome: bool = False
+    starting_position: int = Field(default=1, ge=1)
+
+    @model_validator(mode="after")
+    def validate_starting_position(self) -> LabelRequest:
+        capacity = get_sheet_capacity(self.template)
+        if capacity is None:
+            if self.starting_position != 1:
+                raise ValueError("starting_position is only supported for sheet label templates")
+            return self
+        if self.starting_position > capacity:
+            raise ValueError(f"starting_position must be between 1 and {capacity} for template {self.template}")
+        return self
 
 
 def _split_extra_colors(raw: str | None) -> list[str] | None:
@@ -173,7 +186,12 @@ async def render_local_inventory_labels(
     deeplink_base = await _resolve_deeplink_base(request, db)
     data_list = [_spool_to_label_data(s, deeplink_base) for s in ordered]
 
-    pdf = render_labels(body.template, data_list, monochrome=body.monochrome)
+    pdf = render_labels(
+        body.template,
+        data_list,
+        monochrome=body.monochrome,
+        starting_position=body.starting_position,
+    )
     filename = f"bambuddy-labels-{body.template}.pdf"
     return _stream_pdf(pdf, filename)
 
@@ -217,6 +235,11 @@ async def render_spoolman_labels(
     deeplink_base = await _resolve_deeplink_base(request, db)
     data_list = [_spoolman_dict_to_label_data(by_id[sid], deeplink_base) for sid in body.spool_ids]
 
-    pdf = render_labels(body.template, data_list, monochrome=body.monochrome)
+    pdf = render_labels(
+        body.template,
+        data_list,
+        monochrome=body.monochrome,
+        starting_position=body.starting_position,
+    )
     filename = f"bambuddy-labels-spoolman-{body.template}.pdf"
     return _stream_pdf(pdf, filename)

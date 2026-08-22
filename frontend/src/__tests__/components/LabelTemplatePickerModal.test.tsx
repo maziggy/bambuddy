@@ -67,6 +67,22 @@ describe('LabelTemplatePickerModal', () => {
     expect(screen.getByText(/Ivory · Polymaker/)).toBeInTheDocument();
   });
 
+  it('keeps the panel from becoming a programmatically scrollable clipping container', () => {
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1, 2, 3, 4]}
+        spoolmanMode={false}
+      />,
+    );
+
+    const panel = screen.getByTestId('label-template-picker-panel');
+    expect(panel).toHaveClass('overflow-clip');
+    expect(panel).not.toHaveClass('overflow-hidden');
+  });
+
   it('shows the live selected count in the header', () => {
     render(
       <LabelTemplatePickerModal

@@ -253,4 +253,215 @@ describe('EditArchiveModal', () => {
       });
     });
   });
+
+  describe('filament grams (#1820)', () => {
+    // A print archived without its 3MF carries no weight at all, and no rescan
+    // can supply one — there is no file to read. Typing it here is the only
+    // route, so the field has to reach the API, and an untouched save must not
+    // overwrite a figure that came from a real slice.
+
+    function patchSpy() {
+      const seen: { body?: Record<string, unknown> } = {};
+      server.use(
+        http.patch('/api/v1/archives/:id', async ({ request }) => {
+          seen.body = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...mockArchive, ...seen.body });
+        }),
+      );
+      return seen;
+    }
+
+    it('sends a figure typed for an archive that has none', async () => {
+      const user = userEvent.setup();
+      const seen = patchSpy();
+
+      render(<EditArchiveModal archive={mockArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      await user.type(screen.getByLabelText(/filament used/i), '46.16');
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => {
+        expect(seen.body?.filament_used_grams).toBe(46.16);
+      });
+    });
+
+    it('leaves the field out of a save that did not touch it', async () => {
+      const user = userEvent.setup();
+      const seen = patchSpy();
+      const weighed = { ...mockArchive, filament_used_grams: 50 };
+
+      render(<EditArchiveModal archive={weighed} onClose={mockOnClose} onSave={mockOnSave} />);
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => {
+        expect(seen.body).toBeDefined();
+      });
+      expect(seen.body).not.toHaveProperty('filament_used_grams');
+    });
+
+    it('accepts a decimal comma, which a number input would have swallowed', async () => {
+      const user = userEvent.setup();
+      const seen = patchSpy();
+
+      render(<EditArchiveModal archive={mockArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      await user.type(screen.getByLabelText(/filament used/i), '46,16');
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => {
+        expect(seen.body?.filament_used_grams).toBe(46.16);
+      });
+    });
+
+    it('refuses characters that could never reach the API as a number', async () => {
+      const user = userEvent.setup();
+
+      render(<EditArchiveModal archive={mockArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      const field = screen.getByLabelText(/filament used/i) as HTMLInputElement;
+      await user.type(field, '4a6-1..2');
+
+      expect(field.value).toBe('461.2');
+    });
+
+    it('clamps to the bound the API enforces, so a save cannot be refused', async () => {
+      const user = userEvent.setup();
+      const seen = patchSpy();
+
+      render(<EditArchiveModal archive={mockArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      await user.type(screen.getByLabelText(/filament used/i), '999999');
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => {
+        expect(seen.body?.filament_used_grams).toBe(100000);
+      });
+    });
+
+    it('does not read a half-typed value as a clear', async () => {
+      // Enter submits without the field ever losing focus, so the blur-time
+      // tidy-up has not run and the state still holds what was typed.
+      const user = userEvent.setup();
+      const seen = patchSpy();
+      const weighed = { ...mockArchive, filament_used_grams: 50 };
+
+      render(<EditArchiveModal archive={weighed} onClose={mockOnClose} onSave={mockOnSave} />);
+      const field = screen.getByLabelText(/filament used/i);
+      await user.clear(field);
+      await user.type(field, '.{Enter}');
+
+      await waitFor(() => {
+        expect(seen.body).toBeDefined();
+      });
+      expect(seen.body).not.toHaveProperty('filament_used_grams');
+    });
+
+    it('refreshes the print log, which the mirrored figure lands in', async () => {
+      const user = userEvent.setup();
+      let runFetches = 0;
+      server.use(
+        http.get('/api/v1/archives/:id/runs', () => {
+          runFetches += 1;
+          return HttpResponse.json({ items: [], total: 0 });
+        }),
+      );
+
+      render(<EditArchiveModal archive={mockArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      await waitFor(() => expect(runFetches).toBe(1));
+
+      await user.type(screen.getByLabelText(/filament used/i), '46.16');
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      // Without the invalidation the table keeps serving its cached rows, so
+      // the run the edit just corrected still shows the old figure.
+      await waitFor(() => expect(runFetches).toBe(2));
+    });
+
+    it('clears the figure when the field is emptied', async () => {
+      const user = userEvent.setup();
+      const seen = patchSpy();
+      const weighed = { ...mockArchive, filament_used_grams: 50 };
+
+      render(<EditArchiveModal archive={weighed} onClose={mockOnClose} onSave={mockOnSave} />);
+      await user.clear(screen.getByLabelText(/filament used/i));
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => {
+        expect(seen.body?.filament_used_grams).toBeNull();
+      });
+    });
+  });
+  describe('project picker (#2888)', () => {
+    // Statuses matter here, so this describe brings its own list rather than
+    // the bare one the rest of the file shares.
+    const withStatuses = (rows: Array<Record<string, unknown>>) =>
+      server.use(http.get('/api/v1/projects/', () => HttpResponse.json(rows)));
+
+    function savedBody() {
+      const seen: { body?: Record<string, unknown> } = {};
+      server.use(
+        http.patch('/api/v1/archives/:id', async ({ request }) => {
+          seen.body = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...mockArchive, ...seen.body });
+        }),
+      );
+      return seen;
+    }
+
+    it('leaves archived projects out of the list', async () => {
+      withStatuses([
+        { id: 1, name: 'Live Work', color: '#00ae42', status: 'active' },
+        { id: 2, name: 'Last Year', color: '#888888', status: 'archived' },
+      ]);
+
+      render(<EditArchiveModal archive={mockArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+
+      await screen.findByRole('option', { name: 'Live Work' });
+      expect(screen.queryByRole('option', { name: 'Last Year' })).not.toBeInTheDocument();
+    });
+
+    it('keeps completed projects, which are still worth filing a reprint under', async () => {
+      withStatuses([
+        { id: 1, name: 'Live Work', color: '#00ae42', status: 'active' },
+        { id: 3, name: 'Shipped', color: '#888888', status: 'completed' },
+      ]);
+
+      render(<EditArchiveModal archive={mockArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+
+      expect(await screen.findByRole('option', { name: 'Shipped' })).toBeInTheDocument();
+    });
+
+    it('still offers the archived project this archive is already in', async () => {
+      // Filtered out, the select holds a value no option matches, and the
+      // browser resets it to the first option -- "No project". The archive
+      // would say it is filed nowhere while sitting in a project.
+      withStatuses([
+        { id: 1, name: 'Live Work', color: '#00ae42', status: 'active' },
+        { id: 2, name: 'Last Year', color: '#888888', status: 'archived' },
+      ]);
+      const filed = { ...mockArchive, project_id: 2 };
+
+      render(<EditArchiveModal archive={filed} onClose={mockOnClose} onSave={mockOnSave} />);
+
+      const option = await screen.findByRole('option', { name: 'Last Year' });
+      expect((option as HTMLOptionElement).selected).toBe(true);
+    });
+
+    it('saves the project it was already in when nothing else is touched', async () => {
+      const user = userEvent.setup();
+      const seen = savedBody();
+      withStatuses([{ id: 2, name: 'Last Year', color: '#888888', status: 'archived' }]);
+
+      render(
+        <EditArchiveModal
+          archive={{ ...mockArchive, project_id: 2 }}
+          onClose={mockOnClose}
+          onSave={mockOnSave}
+        />,
+      );
+      await screen.findByRole('option', { name: 'Last Year' });
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      // The stored id survives the round trip untouched: showing the archived
+      // project is what makes the field honest, and it must not also change
+      // what an untouched save writes.
+      await waitFor(() => expect(seen.body?.project_id).toBe(2));
+    });
+  });
 });

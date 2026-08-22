@@ -53,6 +53,10 @@ class DesignOverride(NamedTuple):
     key: str
     value: Any
     printer_coupled: bool
+    # Set for the handful of keys that *define* the picked process preset —
+    # see :data:`_PRESET_DEFINING`. Offered like printer-coupled ones, never
+    # pre-selected, because the user's preset pick has to win over the file.
+    preset_defining: bool = False
 
 
 # Process keys whose sane value depends on the machine, not on the design intent.
@@ -91,6 +95,29 @@ _PRINTER_COUPLED_SUBSTRINGS: tuple[str, ...] = (
     "_temperature",
     "temperature_",
 )
+
+
+# Process keys whose value *is* the preset the user picked. "0.08mm High
+# Quality" is not a name with a layer height attached — the layer height is
+# what the preset is, and the same holds for the first layer it starts on.
+#
+# Carrying these from the file would quietly undo an explicit pick: choose the
+# 0.08 preset for a MakerWorld file whose designer moved layer height to 0.2
+# and, with every non-printer-coupled key pre-selected, the slice comes out at
+# 0.2 while the dropdown still reads 0.08. The designer's value stays on offer
+# — a re-slice that genuinely wants the design's layer height is one tick away
+# — but nothing here is applied without the user saying so.
+_PRESET_DEFINING: frozenset[str] = frozenset(
+    {
+        "layer_height",
+        "initial_layer_print_height",
+    }
+)
+
+
+def is_preset_defining(key: str) -> bool:
+    """Whether this key is the identity of the picked process preset."""
+    return key in _PRESET_DEFINING
 
 
 def is_printer_coupled(key: str) -> bool:
@@ -159,7 +186,14 @@ def overrides_from_config(config: Any) -> list[DesignOverride]:
             # Listed as changed but absent from the flattened config — nothing
             # to carry. Seen with keys the slicer renamed between versions.
             continue
-        overrides.append(DesignOverride(key=key, value=config[key], printer_coupled=is_printer_coupled(key)))
+        overrides.append(
+            DesignOverride(
+                key=key,
+                value=config[key],
+                printer_coupled=is_printer_coupled(key),
+                preset_defining=is_preset_defining(key),
+            )
+        )
 
     overrides.sort(key=lambda o: o.key)
     return overrides

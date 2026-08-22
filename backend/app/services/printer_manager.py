@@ -398,6 +398,13 @@ class PrinterManager:
         self._clients: dict[int, BambuMQTTClient] = {}
         self._models: dict[int, str | None] = {}  # Cache printer models for feature detection
         self._printer_info: dict[int, PrinterInfo] = {}  # Cache printer name/serial for callbacks
+        # Last AMS / external-spool reading of a printer whose client has been
+        # dropped, so the queue can still tell which machine holds which colour
+        # (#2876). Deliberately outside the client's own state: it answers
+        # "what did this printer last have loaded", not "what is it reporting
+        # now", and the two must not be confused by anything that displays or
+        # merges live status.
+        self._last_trays: dict[int, dict] = {}
         self._on_print_start: Callable[[int, dict], None] | None = None
         self._on_print_complete: Callable[[int, dict], None] | None = None
         self._on_print_running_observed: Callable[[int, dict], None] | None = None
@@ -493,7 +500,14 @@ class PrinterManager:
         """
         printer = self.get_printer(printer_id)
         if not printer:
-            return
+            # No cached info means no client is registered — the printer was
+            # disconnected outright rather than merely powered off. The gate is
+            # still releasable from the API in that state (#2864), and a retained
+            # MQTT topic left saying "awaiting" would outlive the truth, so fall
+            # back to the row rather than dropping the emission.
+            printer = await self._printer_info_from_db(printer_id)
+            if not printer:
+                return
 
         try:
             from backend.app.services.mqtt_relay import mqtt_relay
@@ -515,6 +529,20 @@ class PrinterManager:
                 await notification_service.on_plate_clear_required(printer_id, printer.name, db)
         except Exception as e:
             logger.warning("Failed to send plate-clear notification for printer %d: %s", printer_id, e)
+
+    async def _printer_info_from_db(self, printer_id: int) -> PrinterInfo | None:
+        """Name and serial for a printer with no registered client."""
+        from backend.app.core.database import async_session
+
+        try:
+            async with async_session() as db:
+                row = (
+                    await db.execute(select(Printer.name, Printer.serial_number).where(Printer.id == printer_id))
+                ).first()
+        except Exception as e:
+            logger.warning("Failed to load printer %d info from DB: %s", printer_id, e)
+            return None
+        return PrinterInfo(row[0], row[1]) if row else None
 
     async def _broadcast_status_change(self, printer_id: int) -> None:
         """Emit a ``printer_status`` WebSocket update for this printer (#1128).
@@ -698,6 +726,29 @@ class PrinterManager:
 
             future.add_done_callback(handle_exception)
 
+    def last_known_trays(self, printer_id: int) -> dict:
+        """What this printer last had loaded, for a printer with no live client.
+
+        Only the tray keys, and only as history: a caller that wants to know
+        what a printer is reporting *now* must use :meth:`get_status`. This
+        exists because dropping a client drops its status with it, and the
+        queue reads the loaded filament to decide which offline printer is
+        worth switching on (#2876) — ``_power_on_and_wait`` replaces the client
+        on every attempt, so without this each attempt erased the reading the
+        next one needs.
+        """
+        return self._last_trays.get(printer_id, {})
+
+    def _remember_trays(self, printer_id: int) -> None:
+        """Keep the tray reading of a client that is about to be dropped."""
+        client = self._clients.get(printer_id)
+        if not client:
+            return
+        raw = client.state.raw_data or {}
+        remembered = {key: raw[key] for key in ("ams", "vt_tray") if raw.get(key)}
+        if remembered:
+            self._last_trays[printer_id] = remembered
+
     async def connect_printer(self, printer: Printer) -> bool:
         """Connect to a printer."""
         if printer.id in self._clients:
@@ -789,6 +840,7 @@ class PrinterManager:
     def disconnect_printer(self, printer_id: int, timeout: float = 0):
         """Disconnect from a printer."""
         if printer_id in self._clients:
+            self._remember_trays(printer_id)
             self._clients[printer_id].disconnect(timeout=timeout)
             del self._clients[printer_id]
         self._models.pop(printer_id, None)  # Clean up model cache

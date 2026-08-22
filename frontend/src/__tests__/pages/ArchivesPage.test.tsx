@@ -375,6 +375,46 @@ describe('ArchivesPage', () => {
 
   // #1153 — Sylvain wanted to differentiate VP-uploaded archives (status='archived',
   // never sent to a printer) from those that have been printed at least once.
+  describe('add-to-project submenu (#2888)', () => {
+    // The submenu used to offer active projects only, which left a completed
+    // project unreachable from here while the Edit dialog still offered it.
+    // Both now hide archived projects and nothing else.
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/projects/', () =>
+          HttpResponse.json([
+            { id: 1, name: 'Functional Parts', color: '#00ae42', status: 'active' },
+            { id: 2, name: 'Shipped Last Month', color: '#0088ff', status: 'completed' },
+            { id: 3, name: 'Season 2025', color: '#888888', status: 'archived' },
+          ]),
+        ),
+      );
+    });
+
+    const openSubmenu = async () => {
+      const card = await screen.findByText('Benchy');
+      fireEvent.contextMenu(card);
+      fireEvent.click(await screen.findByText('Add to Project'));
+    };
+
+    it('offers a completed project', async () => {
+      render(<ArchivesPage />);
+      await openSubmenu();
+
+      expect(await screen.findByText('Shipped Last Month')).toBeInTheDocument();
+    });
+
+    it('leaves archived projects out', async () => {
+      render(<ArchivesPage />);
+      await openSubmenu();
+
+      // Anchored on the completed one rather than the active one: the active
+      // project's name is also drawn on an archive card behind the menu.
+      await screen.findByText('Shipped Last Month');
+      expect(screen.queryByText('Season 2025')).not.toBeInTheDocument();
+    });
+  });
+
   describe('Not Printed / Printed collections', () => {
     const mixedStatusArchives = [
       { ...mockArchives[0], id: 100, print_name: 'NeverPrinted', status: 'archived', started_at: null, completed_at: null },

@@ -1027,7 +1027,9 @@ class TestAsyncWrappers:
             local,
             printer_model="X1C",
         )
-        assert result is True
+        # The path, not a flag: the caller logs which candidate served the file
+        # so a stale same-named copy is diagnosable (#1820).
+        assert result == "/cache/try1.bin"
         assert local.read_bytes() == b"first path"
 
     @pytest.mark.asyncio
@@ -1043,7 +1045,7 @@ class TestAsyncWrappers:
             local,
             printer_model="X1C",
         )
-        assert result is True
+        assert result == "/cache/second.bin"
         assert local.read_bytes() == b"second path"
 
     @pytest.mark.asyncio
@@ -1701,19 +1703,29 @@ class TestHandshakeCoolOff:
 
     def test_blocked_printer_is_not_contacted_again(self, plaintext_server):
         self._client(plaintext_server).connect()
-        assert plaintext_server.accepts == 1
+        # Two, not one: the failed handshake, then one cleartext read asking
+        # what the printer actually answered with (#2780). That read is the
+        # whole diagnosis and it happens once per cool-off, so the promise
+        # this test exists for -- contacted a couple of times, not ~110 --
+        # still holds.
+        assert plaintext_server.accepts == 2
 
         for _ in range(5):
             assert self._client(plaintext_server).connect() is False
-        # Still one: the cool-off answered without opening a socket.
-        assert plaintext_server.accepts == 1
+        # Still two: the cool-off answered without opening a socket, and it
+        # gates the probe as well as the handshake.
+        assert plaintext_server.accepts == 2
 
     def test_cooloff_expiry_lets_the_printer_be_retried(self, plaintext_server, monkeypatch):
         monkeypatch.setattr(bambu_ftp, "_HANDSHAKE_COOLOFF_SECONDS", 0.0)
         self._client(plaintext_server).connect()
         assert bambu_ftp.ftps_handshake_blocked("127.0.0.1") is False
         assert self._client(plaintext_server).connect() is False
-        assert plaintext_server.accepts == 2
+        # Two handshakes and a cleartext probe on each. A zero-length cool-off
+        # is what makes the probe repeat -- it is gated on the window being
+        # already open, and here there is never a window. At the real 300s it
+        # runs once, which `test_blocked_printer_is_not_contacted_again` pins.
+        assert plaintext_server.accepts == 4
 
     def test_block_is_per_printer(self, plaintext_server):
         self._client(plaintext_server).connect()

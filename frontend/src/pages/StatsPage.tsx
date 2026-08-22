@@ -1103,7 +1103,18 @@ export function StatsPage() {
   const isRefetching = (isStatsFetching || isArchivesFetching) && !isLoading;
 
   const currency = getCurrencySymbol(settings?.currency || 'USD');
-  const printerMap = new Map(printers?.map((p) => [String(p.id), p.name]) || []);
+  // History outlives the printer that made it: a deleted printer is gone from
+  // `printers`, so its rows fell back to "Printer 1" (#2873). The stats response
+  // carries the name each id was last recorded under; a printer that still
+  // exists overrides it, so a rename shows up straight away.
+  const printerMap = useMemo(
+    () =>
+      new Map<string, string>([
+        ...Object.entries(stats?.printer_names || {}),
+        ...(printers?.map((p) => [String(p.id), p.name] as [string, string]) || []),
+      ]),
+    [stats?.printer_names, printers],
+  );
   const printDates = useMemo(() => archives?.map((a) => a.created_at) || [], [archives]);
 
   if (isLoading) {

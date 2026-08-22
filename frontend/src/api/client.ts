@@ -813,6 +813,9 @@ export interface ArchiveStats {
   total_cost: number;
   prints_by_filament_type: Record<string, number>;
   prints_by_printer: Record<string, number>;
+  // Name each printer id was last recorded under in the print log, so history
+  // belonging to a deleted printer keeps its label.
+  printer_names?: Record<string, string>;
   average_time_accuracy: number | null;
   time_accuracy_by_printer: Record<string, number> | null;
   total_energy_kwh: number;
@@ -4809,6 +4812,7 @@ export const api = {
     status?: string;
     quantity?: number;
     external_url?: string | null;
+    filament_used_grams?: number | null;
   }) =>
     request<Archive>(`/archives/${id}`, {
       method: 'PATCH',
@@ -6246,8 +6250,12 @@ export const api = {
     request<{ status: string }>(`/inventory/locations/${id}`, { method: 'DELETE' }),
   getColorCatalog: () =>
     request<ColorCatalogEntry[]>('/inventory/colors'),
+  /** Flat hex→name map, plus the names collapsing it loses. ``by_material`` is
+   *  keyed ``"<material>|<hex>"`` and only carries entries that differ from the
+   *  flat answer (e.g. ``"pla matte|ffffff" -> "Ivory White"`` where the flat
+   *  map says "Jade White"). #2875. */
   getColorNameMap: () =>
-    request<{ colors: Record<string, string> }>('/inventory/colors/map'),
+    request<{ colors: Record<string, string>; by_material?: Record<string, string> }>('/inventory/colors/map'),
   addColorEntry: (data: {
     manufacturer: string;
     color_name: string;

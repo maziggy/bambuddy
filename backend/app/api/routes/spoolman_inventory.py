@@ -65,6 +65,7 @@ from backend.app.utils.filament_ids import (
     filament_id_to_setting_id,
     normalize_slicer_filament,
 )
+from backend.app.utils.filament_types import printer_filament_type
 
 logger = logging.getLogger(__name__)
 
@@ -1477,15 +1478,20 @@ async def assign_spoolman_slot(
     try:
         mqtt_client = printer_manager.get_client(body.printer_id)
         if mqtt_client:
-            tray_type = mapped.get("material") or ""
+            # Spoolman's material is free text, so it arrives as whatever the
+            # user typed there -- "PLA+", "PolyTerra PLA". The sub-brand keeps
+            # that wording; the slot's type has to be one the printer and the
+            # slicer know (issue #2902).
+            material = mapped.get("material") or ""
+            tray_type = printer_filament_type(material)
             brand = mapped.get("brand") or ""
             subtype = mapped.get("subtype") or ""
             if brand:
-                tray_sub_brands = f"{brand} {tray_type} {subtype}".strip()
+                tray_sub_brands = f"{brand} {material} {subtype}".strip()
             elif subtype:
-                tray_sub_brands = f"{tray_type} {subtype}".strip()
+                tray_sub_brands = f"{material} {subtype}".strip()
             else:
-                tray_sub_brands = tray_type
+                tray_sub_brands = material
 
             tray_color = (mapped.get("rgba") or "808080FF").upper()
             if len(tray_color) == 6:
@@ -1504,19 +1510,23 @@ async def assign_spoolman_slot(
                 current_user=current_user,
                 slicer_filament=mapped.get("slicer_filament"),
                 slicer_filament_name=mapped.get("slicer_filament_name"),
-                material=tray_type,
+                material=material,
             )
             if sub_brand_override:
                 tray_sub_brands = sub_brand_override
 
-            material_upper = tray_type.upper().strip()
+            material_upper = material.upper().strip()
             # Fall back to generic-material id when slicer_filament is empty
             # or the resolver discarded an unresolvable value. Matches the
-            # internal-mode tail in inventory.py:_apply_spool_to_slot_inner.
+            # internal-mode tail in inventory.py:_apply_spool_to_slot_inner,
+            # including the order: the spool's own wording first and the
+            # reduced type only after it, so "PETG HF" keeps its own generic
+            # preset (GFG96) rather than trading it for "PETG"'s GFG99.
             if not tray_info_idx:
                 tray_info_idx = (
                     GENERIC_FILAMENT_IDS.get(material_upper)
                     or GENERIC_FILAMENT_IDS.get(material_upper.split("-")[0].split(" ")[0])
+                    or GENERIC_FILAMENT_IDS.get(tray_type.upper())
                     or ""
                 )
 
@@ -1529,7 +1539,7 @@ async def assign_spoolman_slot(
             if tray_info_idx and not setting_id:
                 setting_id = filament_id_to_setting_id(tray_info_idx)
 
-            temp_defaults = MATERIAL_TEMPS.get(material_upper, (200, 240))
+            temp_defaults = MATERIAL_TEMPS.get(material_upper) or MATERIAL_TEMPS.get(tray_type.upper()) or (200, 240)
             temp_min = mapped.get("nozzle_temp_min") or temp_defaults[0]
             temp_max = temp_defaults[1]
 

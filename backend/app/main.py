@@ -135,6 +135,7 @@ from backend.app.services.spoolman_tracking import (
 )
 from backend.app.services.tasmota import tasmota_service
 from backend.app.utils.ams_drying import is_drying_active, temperature_alarm_suppressed
+from backend.app.utils.filament_types import printer_filament_type
 from backend.app.utils.fts_routing import extruder_for_inlet, slot_extruder as resolve_slot_extruder
 from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.print_jobs import is_internal_printer_job
@@ -2102,11 +2103,22 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             continue
                         # Fingerprint mismatch — but check if tray now matches the
                         # assigned spool (e.g. auto-configure changed the tray).
+                        # Both sides are reduced to the type the slot can carry
+                        # before comparing: the assign path writes that rather
+                        # than the spool's raw material (#2902), so a spool whose
+                        # material is a product line — "PLA+", "HTPLA" — reports
+                        # back as "PLA" and would otherwise fail this check and
+                        # be auto-unlinked from the slot it was just assigned to.
+                        # Reducing the printer's side too keeps slots configured
+                        # by an older Bambuddy, still reporting "PLA+", matching.
                         spool = assignment.spool
                         if spool:
                             spool_color = (spool.rgba or "FFFFFFFF").upper()
-                            spool_type = (spool.material or "").upper()
-                            if _colors_similar(cur_color, spool_color) and cur_type.upper() == spool_type:
+                            spool_type = printer_filament_type(spool.material).upper()
+                            if (
+                                _colors_similar(cur_color, spool_color)
+                                and printer_filament_type(cur_type).upper() == spool_type
+                            ):
                                 logger.info(
                                     "Auto-unlink: spool %d AMS%d-T%d — fingerprint mismatch but tray matches spool, updating fp",
                                     assignment.spool_id,
@@ -2860,32 +2872,71 @@ async def _dispatch_user_print_email(
 def _load_objects_from_archive(archive, printer_id: int, logger) -> None:
     """Extract printable objects from an archive's 3MF file and store in printer state."""
     try:
-        from backend.app.services.archive import extract_printable_objects_from_3mf
+        from backend.app.services.archive import extract_printable_objects_from_archive
 
         client = printer_manager.get_client(printer_id)
         if not client:
             return
 
-        file_path = app_settings.base_dir / archive.file_path
-        if file_path.is_file() and str(file_path).endswith(".3mf"):
-            with open(file_path, "rb") as f:
-                threemf_data = f.read()
-            # Extract with positions for UI overlay, scoped to the plate that
-            # is printing — resolve_plate_id is the same resolver /cover uses,
-            # so the object list can't disagree with the thumbnail it is drawn
-            # over (#2522).
-            printable_objects, bbox_all = extract_printable_objects_from_3mf(
-                threemf_data,
-                plate_number=resolve_plate_id(client.state),
-                include_positions=True,
-            )
-            if printable_objects:
-                client.state.printable_objects = printable_objects
-                client.state.printable_objects_bbox_all = bbox_all
-                client.state.skipped_objects = []
-                logger.info("Loaded %s printable objects for printer %s", len(printable_objects), printer_id)
+        # Extract with positions for UI overlay, scoped to the plate that
+        # is printing — resolve_plate_id is the same resolver /cover uses,
+        # so the object list can't disagree with the thumbnail it is drawn
+        # over (#2522).
+        printable_objects, bbox_all = extract_printable_objects_from_archive(
+            app_settings.base_dir / archive.file_path,
+            plate_number=resolve_plate_id(client.state),
+        )
+        if printable_objects:
+            client.state.printable_objects = printable_objects
+            client.state.printable_objects_bbox_all = bbox_all
+            client.state.skipped_objects = []
+            logger.info("Loaded %s printable objects for printer %s", len(printable_objects), printer_id)
     except Exception as e:
         logger.debug("Failed to extract printable objects from archive: %s", e)
+
+
+async def _restore_printable_objects(printer_id: int, state, db, logger) -> None:
+    """Put the skip-objects list back after a restart mid-print.
+
+    ``PrinterState.printable_objects`` is in-memory only, and the only thing
+    that fills it is ``_load_objects_from_archive`` on the print-start paths —
+    which the #1304 guard suppresses on the first RUNNING push after startup.
+    Everything else this hook restores (the archive, the usage-tracking session,
+    the timelapse baseline) was already handled; the object list was not, so a
+    restart mid-print took skip-objects away for the rest of that print.
+
+    Nothing recovered it either: the printer card gates its Skip button on the
+    object count, and the one endpoint that can rebuild the list is reachable
+    only from the modal that button opens.
+
+    Anchored on ``subtask_id``, which the firmware mints per print, so a
+    leftover ``status="printing"`` row from a completion we never saw cannot
+    hand this print someone else's objects. Without one, nothing is loaded
+    rather than guessed — the reload path on ``GET /print/objects`` covers that
+    case on demand.
+    """
+    client = printer_manager.get_client(printer_id)
+    if client is None or client.state.printable_objects:
+        return
+
+    subtask_id = str(getattr(state, "subtask_id", "") or "").strip()
+    if subtask_id in ("", "0"):
+        return
+
+    from backend.app.models.archive import PrintArchive
+
+    archive = await db.scalar(
+        select(PrintArchive)
+        .where(
+            PrintArchive.printer_id == printer_id,
+            PrintArchive.status == "printing",
+            PrintArchive.subtask_id == subtask_id,
+        )
+        .order_by(PrintArchive.created_at.desc())
+        .limit(1)
+    )
+    if archive is not None:
+        _load_objects_from_archive(archive, printer_id, logger)
 
 
 async def on_print_start(printer_id: int, data: dict):
@@ -3608,9 +3659,14 @@ async def on_print_start(printer_id: int, data: dict):
                     downloaded_filename = storage.probe_filename
                     temp_path = probe_path
                     cache_3mf_download(printer_id, downloaded_filename, probe_path)
+                    # Naming the path, not just the file: a printer that keeps
+                    # uploads around for weeks can serve a same-named copy of an
+                    # earlier slice, and without the directory in the log that
+                    # mismatch is invisible rather than merely rare (#1820).
                     logger.info(
-                        "Found %s over FTPS for printer %s even though the printer reported %s",
+                        "Found %s at %s over FTPS for printer %s even though the printer reported %s",
                         downloaded_filename,
+                        probe_hit,
                         printer_id,
                         storage.reason,
                     )
@@ -3673,6 +3729,7 @@ async def on_print_start(printer_id: int, data: dict):
                             max_retries=ftp_retry_count,
                             retry_delay=ftp_retry_delay,
                             operation_name=f"Download 3MF from {remote_path}",
+                            cooloff_ip=printer.ip_address,
                             non_retry_exceptions=(FileNotOnPrinterError,),
                         )
                     else:
@@ -3752,6 +3809,7 @@ async def on_print_start(printer_id: int, data: dict):
                                     max_retries=ftp_retry_count,
                                     retry_delay=ftp_retry_delay,
                                     operation_name=f"Download 3MF from {remote_full_path}",
+                                    cooloff_ip=printer.ip_address,
                                 )
                             else:
                                 downloaded = await download_file_async(
@@ -3816,6 +3874,7 @@ async def on_print_start(printer_id: int, data: dict):
                                         max_retries=ftp_retry_count,
                                         retry_delay=ftp_retry_delay,
                                         operation_name=f"Re-download 3MF from {remote_path}",
+                                        cooloff_ip=printer.ip_address,
                                         non_retry_exceptions=(FileNotOnPrinterError,),
                                     )
                                 else:
@@ -4793,6 +4852,7 @@ async def on_print_running_observed(printer_id: int, data: dict):
                 logger.info("[RESTART] Restored active Bambuddy print for printer %s", printer_id)
 
             await _restore_usage_tracking_session(printer_id, state, db, logger)
+            await _restore_printable_objects(printer_id, state, db, logger)
 
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
         printer = result.scalar_one_or_none()

@@ -214,6 +214,36 @@ function formatKValue(k: number | null | undefined): string {
   return value.toFixed(3);
 }
 
+// K-profile value shown on the slot card itself (#2532) rather than only inside
+// the hover popup, the way BambuStudio shows it per slot.
+//
+// `k` arrives already gated on the slot being loaded; falsy means the printer
+// never reported a calibration for it. formatKValue() substitutes 0.020 for a
+// missing value, which is captioned inside the hover card but would read as a
+// real measurement on this permanent, uncaptioned line -- so an uncalibrated
+// slot gets no value at all. A ternary rather than `k && <div/>`: a firmware-
+// reported 0 makes that expression evaluate to the number 0, and React renders
+// numbers, putting a bare "0" under the material name.
+//
+// `reserve` holds the row's height open on the slots without a value whenever
+// some other slot on the same card has one, so every fill bar stays on one line.
+function KValueLine({ k, reserve }: { k: number | null | undefined; reserve: boolean }) {
+  const { t } = useTranslation();
+  const className = 'text-[length:var(--pc-t8,8px)] text-bambu-gray tabular-nums leading-none truncate';
+  if (!k) {
+    return reserve ? <div className={className} aria-hidden="true">&nbsp;</div> : null;
+  }
+  // Short label, full localized name on the title: "K Factor" / "K-Faktor" /
+  // "Facteur K" clipped the value itself below ~70px, and the slot grid floor is
+  // 3.5rem. tabular-nums rather than font-mono, which resolved to a different
+  // family per browser and so measured differently in Safari.
+  return (
+    <div className={className} title={t('ams.kFactor')}>
+      {t('ams.kFactorShort')} {formatKValue(k)}
+    </div>
+  );
+}
+
 // Nozzle side indicators (Bambu Lab style - square badge with L/R)
 function NozzleBadge({ side }: { side: 'L' | 'R' }) {
   const { mode } = useTheme();
@@ -2489,6 +2519,13 @@ function PrinterCard({
     }
   }, [status?.ams]);
   const amsData = (status?.ams && status.ams.length > 0) ? status.ams : cachedAmsData.current;
+  // #2532: the K-profile line only exists on slots the printer has actually
+  // calibrated. The AMS units and the external-spool group are flex siblings in
+  // one row, so on a card that shows a value anywhere, the slots without one
+  // reserve the same height -- otherwise their fill bars sit a line above their
+  // neighbours'. A card with no calibrated slot at all is unaffected.
+  const anySlotHasKValue = amsData.some(unit => unit.tray.some(tray => tray.k))
+    || (status?.vt_tray ?? []).some(tray => tray.k);
 
   // Confirm a drying cycle actually started (#2533). Firmware answers
   // ams_filament_drying with result=success even when it then silently declines,
@@ -2615,7 +2652,10 @@ function PrinterCard({
   const lastPrint = lastPrints?.[0];
   const isPrintingOrPaused = status?.state === 'RUNNING' || status?.state === 'PAUSE';
   const needsPlateClear = requirePlateClear && status?.awaiting_plate_clear === true;
-  const showClearPlateButton = status?.connected && needsPlateClear && !isPrintingOrPaused;
+  // Not gated on `connected`: the plate-clear gate is Bambuddy-side state, and with
+  // Auto Power Off the printer is powered down exactly when the operator clears the
+  // plate. Hiding the control there left no way to release the gate (#2864).
+  const showClearPlateButton = needsPlateClear && !isPrintingOrPaused;
   const activePrintName = status?.current_print && isPrintingOrPaused
     ? formatPrintName(status.subtask_name || status.current_print || null, status.gcode_file, t, activePlateLabel)
     : null;
@@ -2628,6 +2668,9 @@ function PrinterCard({
     }
   }, [activePrintName, needsPlateClear, status?.cover_url]);
   const plateStatus = (() => {
+    // Connected-only because the pill's only render site sits inside the live-status
+    // panel. For a powered-down printer the plate-clear button itself carries the
+    // state — see the standalone slot below the status block (#2864).
     if (!requirePlateClear || !status?.connected) return null;
     if (isPrintingOrPaused) {
       return {
@@ -2824,6 +2867,26 @@ function PrinterCard({
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
   });
+
+  // Rendered from two places: inside the live-status block for a connected printer,
+  // and standalone below it for a powered-down one, whose status block isn't rendered
+  // at all (#2864). Shared so the two can't drift apart.
+  const expandedClearPlateButton = (
+    <button
+      type="button"
+      onClick={() => clearPlateMutation.mutate()}
+      disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
+      className="mt-2 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-300 dark:border-yellow-400/40 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs font-medium disabled:opacity-50"
+      title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
+    >
+      {clearPlateMutation.isPending ? (
+        <Loader2 className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] animate-spin" />
+      ) : (
+        <PlateClearedIcon className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
+      )}
+      {t('printers.plateStatus.markCleared')}
+    </button>
+  );
 
   const nozzleTemperatureMutation = useMutation({
     mutationFn: ({ target, nozzle }: { target: number; nozzle: number }) =>
@@ -4232,13 +4295,23 @@ function PrinterCard({
                   const coverUrl = isActivePrint ? status.cover_url : showRetainedPrint ? retainedPrintJob.coverUrl : null;
                   const progress = isActivePrint ? (status.progress || 0) : showRetainedPrint ? 100 : 0;
 
+                  // A running print always has at least one object, so a count of
+                  // zero means "not loaded", not "nothing to skip" — after a
+                  // restart mid-print the list is empty until something rebuilds
+                  // it. Treating that as nothing-to-skip disabled the only
+                  // control that opens the modal, and the modal's own fetch is
+                  // what rebuilds the list, so the print could never get it back.
+                  // Exactly one object is the real nothing-to-skip case.
+                  const objectCount = status.printable_objects_count ?? 0;
+                  const canSkipObjects = isActivePrint && objectCount !== 1 && hasPermission('printers:control');
+
                   return (
                     <div className="p-2 bg-bambu-dark rounded-[10px] relative overflow-hidden">
                       <button
                         onClick={() => setShowSkipObjectsModal(true)}
-                        disabled={!isActivePrint || (status.printable_objects_count ?? 0) < 2 || !hasPermission('printers:control')}
+                        disabled={!canSkipObjects}
                         className={`absolute top-2 right-2 p-1.5 rounded transition-colors z-10 ${
-                          isActivePrint && (status.printable_objects_count ?? 0) >= 2 && hasPermission('printers:control')
+                          canSkipObjects
                             ? 'text-bambu-gray hover:text-white hover:bg-white/10'
                             : 'text-bambu-gray/30 cursor-not-allowed'
                         }`}
@@ -4247,9 +4320,9 @@ function PrinterCard({
                             ? t('printers.permission.noControl')
                             : !isActivePrint
                               ? t('printers.skipObjects.onlyWhilePrinting')
-                              : (status.printable_objects_count ?? 0) >= 2
-                                ? t('printers.skipObjects.tooltip')
-                                : t('printers.skipObjects.requiresMultiple')
+                              : objectCount === 1
+                                ? t('printers.skipObjects.requiresMultiple')
+                                : t('printers.skipObjects.tooltip')
                         }
                       >
                         <SkipObjectsIcon className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
@@ -4692,22 +4765,7 @@ function PrinterCard({
               );
             })()}
 
-            {viewMode === 'expanded' && showClearPlateButton && (
-              <button
-                type="button"
-                onClick={() => clearPlateMutation.mutate()}
-                disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
-                className="mt-2 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-300 dark:border-yellow-400/40 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs font-medium disabled:opacity-50"
-                title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
-              >
-                {clearPlateMutation.isPending ? (
-                  <Loader2 className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] animate-spin" />
-                ) : (
-                  <PlateClearedIcon className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
-                )}
-                {t('printers.plateStatus.markCleared')}
-              </button>
-            )}
+            {viewMode === 'expanded' && showClearPlateButton && expandedClearPlateButton}
 
             {/* Controls */}
             {viewMode === 'expanded' && (() => {
@@ -5386,7 +5444,7 @@ function PrinterCard({
                                   // vendor-less form. Strip the "@<printer>..." suffix that
                                   // BambuStudio appends to user-preset names.
                                   profile: slotPreset?.preset_name || (slotSpoolForFill ? [slotSpoolForFill.brand, slotSpoolForFill.slicer_filament_name?.split('@')[0].trim() || slotSpoolForFill.material].filter(Boolean).join(' ').trim() : null) || inventoryAssignment?.spool?.slicer_filament_name || cloudInfo?.name || tray.tray_sub_brands || tray.tray_type,
-                                  colorName: getColorName(tray.tray_color || ''),
+                                  colorName: getColorName(tray.tray_color || '', tray.tray_sub_brands),
                                   colorHex: tray.tray_color || null,
                                   kFactor: formatKValue(tray.k),
                                   fillLevel: effectiveFill,
@@ -5446,6 +5504,7 @@ function PrinterCard({
                                     <div className="text-[length:var(--pc-t9,9px)] text-white font-bold truncate">
                                       {tray?.tray_type || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
                                     </div>
+                                    <KValueLine k={filamentData ? tray?.k : null} reserve={anySlotHasKValue} />
                                     {/* Fill bar */}
                                     <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                                       {effectiveFill !== null && effectiveFill >= 0 && !isEmpty && tray && (
@@ -5674,7 +5733,7 @@ function PrinterCard({
                         const filamentData = tray?.tray_type ? {
                           vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                           profile: slotPreset?.preset_name || (htSlotSpoolForFill ? [htSlotSpoolForFill.brand, htSlotSpoolForFill.slicer_filament_name?.split('@')[0].trim() || htSlotSpoolForFill.material].filter(Boolean).join(' ').trim() : null) || htInventoryAssignment?.spool?.slicer_filament_name || cloudInfo?.name || tray.tray_sub_brands || tray.tray_type,
-                          colorName: getColorName(tray.tray_color || ''),
+                          colorName: getColorName(tray.tray_color || '', tray.tray_sub_brands),
                           colorHex: tray.tray_color || null,
                           kFactor: formatKValue(tray.k),
                           fillLevel: htEffectiveFill,
@@ -5734,6 +5793,7 @@ function PrinterCard({
                             <div className="text-[length:var(--pc-t9,9px)] text-white font-bold truncate">
                               {tray?.tray_type || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
                             </div>
+                            <KValueLine k={filamentData ? tray?.k : null} reserve={anySlotHasKValue} />
                             {/* Fill bar */}
                             <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                               {htEffectiveFill !== null && htEffectiveFill >= 0 && !isEmpty && (
@@ -6093,7 +6153,7 @@ function PrinterCard({
                               const extFilamentData = {
                                 vendor: (isBambuLabSpool(extTray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                                 profile: extSlotPreset?.preset_name || (extSlotSpoolForFill ? [extSlotSpoolForFill.brand, extSlotSpoolForFill.slicer_filament_name?.split('@')[0].trim() || extSlotSpoolForFill.material].filter(Boolean).join(' ').trim() : null) || extInventoryAssignment?.spool?.slicer_filament_name || extCloudInfo?.name || extTray.tray_sub_brands || extTray.tray_type || 'Unknown',
-                                colorName: getColorName(extTray.tray_color || ''),
+                                colorName: getColorName(extTray.tray_color || '', extTray.tray_sub_brands),
                                 colorHex: extTray.tray_color || null,
                                 kFactor: formatKValue(extTray.k),
                                 fillLevel: extEffectiveFill,
@@ -6119,6 +6179,7 @@ function PrinterCard({
                                   <div className={`text-[length:var(--pc-t9,9px)] font-bold truncate ${isEmpty ? 'text-white/40' : 'text-white'}`}>
                                     {extTray.tray_type || t('ams.slotEmpty')}
                                   </div>
+                                  <KValueLine k={isEmpty ? null : extTray.k} reserve={anySlotHasKValue} />
                                   <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                                     {extEffectiveFill !== null && extEffectiveFill >= 0 && !isEmpty && (
                                       <div
@@ -6283,6 +6344,14 @@ function PrinterCard({
               );
             })()}
           </>
+        )}
+
+        {/* Powered-down printer with a dirty plate: the status block above renders
+            nothing without a live connection, so the plate-clear control gets its own
+            slot here. Auto Power Off makes this the ordinary end-of-print state, and
+            the gate is Bambuddy-side — releasing it never touches the printer (#2864). */}
+        {printer.is_active !== false && !status?.connected && viewMode === 'expanded' && showClearPlateButton && (
+          expandedClearPlateButton
         )}
 
         {/* Bottom block (power row + action bar). Wrapped together so the
@@ -6656,7 +6725,7 @@ function PrinterCard({
                         {/* Delete button */}
                         <button
                           onClick={() => handleDeleteRef(ref.index)}
-                          className="absolute top-1 right-1 p-0.5 bg-red-500/80 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute top-1 right-1 p-0.5 bg-red-500/80 rounded can-hover:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
                           title={t('printers.plateDetection.deleteReference')}
                         >
                           <X className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] text-white" />
@@ -8895,12 +8964,15 @@ export function PrintersPage() {
     // Filter to only applicable printers based on cached state
     const applicableIds = ids.filter(id => {
       const status = queryClient.getQueryData<{ connected: boolean; state: string | null; hms_errors?: HMSError[] }>(['printerStatus', id]);
+      // clearPlate is checked before the connection filter: it only releases a
+      // Bambuddy-side gate, so it applies to a printer Auto Power Off has shut
+      // down — every other action here needs to reach the machine (#2864).
+      if (action === 'clearPlate') return !!(status as { awaiting_plate_clear?: boolean } | undefined)?.awaiting_plate_clear;
       if (!status?.connected) return false;
       switch (action) {
         case 'stop': return status.state === 'RUNNING' || status.state === 'PAUSE';
         case 'pause': return status.state === 'RUNNING';
         case 'resume': return status.state === 'PAUSE';
-        case 'clearPlate': return !!(status as { awaiting_plate_clear?: boolean }).awaiting_plate_clear;
         case 'clearHMS': return status.hms_errors && filterKnownHMSErrors(status.hms_errors).length > 0;
         default: return false;
       }

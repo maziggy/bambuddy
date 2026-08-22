@@ -127,9 +127,11 @@ def clear_ftp_mode_cache():
     """
     BambuFTPClient._mode_cache.clear()
     BambuFTPClient._handshake_blocked_until.clear()
+    BambuFTPClient._handshake_skip_logged.clear()
     yield
     BambuFTPClient._mode_cache.clear()
     BambuFTPClient._handshake_blocked_until.clear()
+    BambuFTPClient._handshake_skip_logged.clear()
 
 
 @pytest.fixture()

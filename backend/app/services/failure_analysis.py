@@ -151,6 +151,25 @@ class FailureAnalysisService:
                 select(Printer.id, Printer.name).where(Printer.id.in_(failures_by_printer_id.keys()))
             )
             printer_names = {row[0]: row[1] for row in printers_result.fetchall()}
+            # A printer deleted with its history kept has no row left to read a
+            # name from, and "Printer 3" tells nobody which machine kept failing
+            # (#2873). Each run recorded the name it printed on, so fall back to
+            # the last one that id was known by.
+            missing = [pid for pid in failures_by_printer_id if pid not in printer_names]
+            if missing:
+                last_named_run = (
+                    select(func.max(PrintLogEntry.id).label("entry_id"))
+                    .where(PrintLogEntry.printer_id.in_(missing), PrintLogEntry.printer_name.isnot(None))
+                    .group_by(PrintLogEntry.printer_id)
+                    .subquery()
+                )
+                historic_result = await self.db.execute(
+                    select(PrintLogEntry.printer_id, PrintLogEntry.printer_name).join(
+                        last_named_run, PrintLogEntry.id == last_named_run.c.entry_id
+                    )
+                )
+                for pid, name in historic_result.fetchall():
+                    printer_names[pid] = name
             failures_by_printer = {
                 printer_names.get(pid, f"Printer {pid}"): count for pid, count in failures_by_printer_id.items()
             }

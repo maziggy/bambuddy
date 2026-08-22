@@ -139,6 +139,14 @@ def swap_plate_suffix(name: str | None, target_plate: int) -> str | None:
     return f"{base}{separator}{target_plate}"
 
 
+# How much of a plate's G-code to scan for header/config values. The header
+# block ends in the first kilobyte; the CONFIG_BLOCK that follows it carries
+# layer_height 14-25KB in (measured across the sliced 3MFs on hand, Bambu
+# Studio and OrcaSlicer alike), so 4KB — what this used to read — could only
+# ever see the header.
+_GCODE_SCAN_BYTES = 64 * 1024
+
+
 class ThreeMFParser:
     """Parser for Bambu Lab 3MF files."""
 
@@ -348,23 +356,64 @@ class ThreeMFParser:
         except Exception:
             pass  # Skip unreadable project settings file
 
+    def _printed_plate_gcode(self, gcode_files: list[str]) -> str:
+        """Return the G-code entry for the plate this archive is about.
+
+        ``plate_number`` is known for a plate-specific export (slice_info sets
+        it) and picking blindly is wrong there: a project sliced with plate 2
+        at 0.08 and plate 1 at 0.2 would otherwise report plate 1's numbers.
+        Falls back to the lowest plate index, then to zip order, so a file
+        whose entries are named some other way still parses as it did before.
+        """
+        if self.plate_number:
+            wanted = f"Metadata/plate_{self.plate_number}.gcode"
+            if wanted in gcode_files:
+                return wanted
+
+        def plate_index(name: str) -> int:
+            match = re.search(r"plate_(\d+)\.gcode$", name)
+            return int(match.group(1)) if match else 10**6
+
+        return min(gcode_files, key=lambda name: (plate_index(name), gcode_files.index(name)))
+
     def _parse_gcode_header(self, zf: zipfile.ZipFile):
-        """Parse G-code file header for total layer count and printer model."""
+        """Parse the printed plate's G-code for what only it can settle.
+
+        The plate's own G-code is the file the printer executes, so where it
+        disagrees with ``project_settings.config`` — the *project's* record,
+        which a multi-plate or per-plate-modified export can leave describing
+        a different plate entirely — the G-code wins.
+        """
         try:
-            # Look for plate_1.gcode or similar
             gcode_files = [f for f in zf.namelist() if f.endswith(".gcode")]
             if not gcode_files:
                 return
 
-            # Read first 4KB of G-code (header contains metadata)
-            gcode_path = gcode_files[0]
+            gcode_path = self._printed_plate_gcode(gcode_files)
+            # 64KB, not 4KB: the header block ends within the first kilobyte,
+            # but the CONFIG_BLOCK that carries layer_height starts right after
+            # it and the keys are alphabetical, so layer_height lands 14-25KB
+            # in on real files. The read is decompress-on-demand, so the cost
+            # of the wider window is a few tens of KB per archived file.
             with zf.open(gcode_path) as f:
-                header = f.read(4096).decode("utf-8", errors="ignore")
+                header = f.read(_GCODE_SCAN_BYTES).decode("utf-8", errors="ignore")
 
             # Look for "; total layer number: XX" pattern
             match = re.search(r";\s*total\s+layer\s+number[:\s]+(\d+)", header, re.IGNORECASE)
             if match:
                 self.metadata["total_layers"] = int(match.group(1))
+
+            # Layer height, overriding project_settings.config when both are
+            # present. The project config records the project's settings and can
+            # describe a plate other than this one; the plate's G-code is what
+            # the printer executes, so it decides. Anchored to the line start so keys ending in
+            # "layer_height" (independent_support_layer_height) can't match.
+            match = re.search(r"^;\s*layer_height\s*=\s*([\d.]+)\s*$", header, re.IGNORECASE | re.MULTILINE)
+            if match:
+                try:
+                    self.metadata["layer_height"] = float(match.group(1))
+                except ValueError:
+                    pass  # Malformed value: keep whatever project_settings gave us
 
             # Total filament usage. The slicer writes the print's totals into
             # the G-code header ("; total filament weight [g] : 126.26"). Only
@@ -601,6 +650,26 @@ class ThreeMFParser:
                 self.metadata["_thumbnail_data"] = zf.read(thumb_path)
                 self.metadata["_thumbnail_ext"] = ".png"
                 break
+
+
+def extract_printable_objects_from_archive(
+    file_path: Path, plate_number: int | None = None
+) -> tuple[dict[int, dict], list | None]:
+    """Objects and plate bbox for an archived print, read off local disk.
+
+    The archive of a running print usually holds the very 3MF the printer is
+    executing, so the object list can be rebuilt without asking the printer for
+    a file we already have -- 15 MB over FTPS from a machine that is mid-print,
+    in the case this was written for. Returns empty when the archive has
+    no readable 3MF, which is the caller's signal to fall back to the printer.
+    """
+    if not file_path.is_file() or not str(file_path).endswith(".3mf"):
+        return {}, None
+    try:
+        data = file_path.read_bytes()
+    except OSError:
+        return {}, None
+    return extract_printable_objects_from_3mf(data, plate_number=plate_number, include_positions=True)
 
 
 def extract_printable_objects_from_3mf(

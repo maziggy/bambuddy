@@ -12,6 +12,7 @@ Auto On setting, powered a printer on the moment they edited it onto a specific
 printer -- and did nothing for the thirteen minutes before that.
 """
 
+import json
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -84,8 +85,47 @@ async def _add_plug(ctx, printer_id, *, auto_on=True, enabled=True, name=None):
         return plug.id
 
 
+async def _add_printer(ctx, printer_id, *, model="X1C"):
+    """One more machine, for the cases that need a farm rather than a pair."""
+    async with ctx.session_maker() as db:
+        db.add(
+            Printer(
+                id=printer_id,
+                name=f"{model}-{printer_id}",
+                serial_number=f"{model}{printer_id:04d}",
+                ip_address=f"10.0.0.{printer_id}",
+                access_code="x",
+                model=model,
+                is_active=True,
+            )
+        )
+        await db.commit()
+
+
+def _tray(tray_type, color, *, idx=""):
+    return {"tray_type": tray_type, "tray_color": color, "tray_info_idx": idx}
+
+
+def _external(tray_type, color, *, idx=""):
+    """A printer whose filament sits on the external spool holder."""
+    return {"vt_tray": [dict(_tray(tray_type, color, idx=idx), id=254)]}
+
+
+def _ams(*trays):
+    return {"ams": [{"id": 0, "tray": list(trays)}]}
+
+
 async def _add_item(
-    ctx, *, printer_id=None, target_model=None, sliced_for="X1C", position=1, scheduled_time=None, manual_start=False
+    ctx,
+    *,
+    printer_id=None,
+    target_model=None,
+    sliced_for="X1C",
+    position=1,
+    scheduled_time=None,
+    manual_start=False,
+    required_filament_types=None,
+    filament_overrides=None,
 ):
     async with ctx.session_maker() as db:
         lib = LibraryFile(
@@ -105,6 +145,10 @@ async def _add_item(
             library_file_id=lib.id,
             scheduled_time=scheduled_time,
             manual_start=manual_start,
+            required_filament_types=(
+                json.dumps(required_filament_types) if required_filament_types is not None else None
+            ),
+            filament_overrides=json.dumps(filament_overrides) if filament_overrides is not None else None,
         )
         db.add(item)
         await db.commit()
@@ -120,6 +164,8 @@ async def _run(
     awaiting_plate_clear=(),
     require_plate_clear=True,
     launched=None,
+    statuses=None,
+    remembered=None,
 ):
     """Run one queue pass with every printer offline unless told otherwise.
 
@@ -139,7 +185,18 @@ async def _run(
                 "backend.app.services.print_scheduler.printer_manager.is_awaiting_plate_clear",
                 MagicMock(side_effect=lambda pid: pid in awaiting_plate_clear),
             ),
-            patch("backend.app.services.print_scheduler.printer_manager.get_status", MagicMock(return_value=None)),
+            patch(
+                "backend.app.services.print_scheduler.printer_manager.get_status",
+                MagicMock(
+                    side_effect=lambda pid: (
+                        SimpleNamespace(raw_data=statuses[pid]) if statuses and pid in statuses else None
+                    )
+                ),
+            ),
+            patch(
+                "backend.app.services.print_scheduler.printer_manager.last_known_trays",
+                MagicMock(side_effect=lambda pid: (remembered or {}).get(pid, {})),
+            ),
             patch(
                 "backend.app.services.print_scheduler.ha_sensor_manager.blocked_printers",
                 AsyncMock(return_value={}),
@@ -422,3 +479,267 @@ class TestFixedPrinterBranchStillWakes:
         power_on = await _run(queue_db, PrintScheduler(), power_on=AsyncMock(return_value=True))
 
         assert _woken_printer_ids(power_on) == [2]
+
+
+class TestFilamentIsCheckedBeforeSwitchingOn:
+    """#2876: the colours are readable while the printers are off.
+
+    The wake step used to know only a printer's model, so a job for a colour
+    loaded on the far end of the farm switched machines on in ID order,
+    evaluated each once it booted, rejected it on colour and left it running.
+    Bambuddy held those colours the whole time -- a printer keeps its last
+    reported trays after the power goes.
+    """
+
+    @pytest.mark.asyncio
+    async def test_only_the_printer_that_can_take_the_job_is_woken(self, queue_db):
+        """The reporter's farm, minus the machines that were busy anyway."""
+        for pid in (3, 4):
+            await _add_printer(queue_db, pid)
+        for pid in (1, 2, 3, 4):
+            await _add_plug(queue_db, pid)
+        await _add_item(
+            queue_db,
+            target_model="X1C",
+            filament_overrides=[{"type": "ASA", "color": "161616FF", "force_color_match": True}],
+        )
+
+        power_on = await _run(
+            queue_db,
+            PrintScheduler(),
+            power_on=AsyncMock(return_value=True),
+            statuses={
+                1: _external("ASA", "4B5320FF"),  # olive
+                2: _external("ASA", "898989FF"),  # grey
+                3: _external("ASA", "FFFFFFFF"),  # white
+                4: _external("ASA", "161616FF"),  # black -- the only one that can print it
+            },
+        )
+
+        assert _woken_printer_ids(power_on) == [4]
+
+    @pytest.mark.asyncio
+    async def test_a_printer_we_have_never_heard_from_is_still_woken(self, queue_db):
+        """No reading is not the same as no filament, and must not exclude.
+
+        Bambuddy holds the trays in memory only. A restart while the farm was
+        switched off leaves it knowing nothing, and concluding from that that
+        no printer can take the job would strand every queue on the planet.
+        """
+        await _add_plug(queue_db, 1)
+        await _add_plug(queue_db, 2)
+        await _add_item(
+            queue_db,
+            target_model="X1C",
+            filament_overrides=[{"type": "PLA", "color": "161616FF", "force_color_match": True}],
+        )
+
+        power_on = await _run(
+            queue_db,
+            PrintScheduler(),
+            power_on=AsyncMock(return_value=True),
+            statuses={1: _external("PLA", "FFFFFFFF")},  # printer 2: nothing known
+        )
+
+        assert _woken_printer_ids(power_on) == [2]
+
+    @pytest.mark.asyncio
+    async def test_an_empty_reading_counts_as_unknown(self, queue_db):
+        """A powered-down AMS printer reports empty, which tells us nothing."""
+        await _add_plug(queue_db, 1)
+        await _add_plug(queue_db, 2)
+        await _add_item(
+            queue_db,
+            target_model="X1C",
+            filament_overrides=[{"type": "PLA", "color": "161616FF", "force_color_match": True}],
+        )
+
+        power_on = await _run(
+            queue_db,
+            PrintScheduler(),
+            power_on=AsyncMock(return_value=True),
+            statuses={1: {"ams": [], "vt_tray": []}, 2: _external("PLA", "FFFFFFFF")},
+        )
+
+        assert _woken_printer_ids(power_on) == [1]
+
+    @pytest.mark.asyncio
+    async def test_ams_trays_are_read_the_same_as_the_external_spool(self, queue_db):
+        await _add_plug(queue_db, 1)
+        await _add_plug(queue_db, 2)
+        await _add_item(
+            queue_db,
+            target_model="X1C",
+            filament_overrides=[{"type": "PLA", "color": "161616FF", "force_color_match": True}],
+        )
+
+        power_on = await _run(
+            queue_db,
+            PrintScheduler(),
+            power_on=AsyncMock(return_value=True),
+            statuses={
+                1: _ams(_tray("PLA", "FFFFFFFF"), _tray("PLA", "F98C36FF")),
+                2: _ams(_tray("PETG", "00FF00FF"), _tray("PLA", "161616FF")),
+            },
+        )
+
+        assert _woken_printer_ids(power_on) == [2]
+
+    @pytest.mark.asyncio
+    async def test_a_missing_filament_type_rules_a_printer_out(self, queue_db):
+        await _add_plug(queue_db, 1)
+        await _add_plug(queue_db, 2)
+        await _add_item(queue_db, target_model="X1C", required_filament_types=["PETG"])
+
+        power_on = await _run(
+            queue_db,
+            PrintScheduler(),
+            power_on=AsyncMock(return_value=True),
+            statuses={1: _external("PLA", "FFFFFFFF"), 2: _external("PETG", "FFFFFFFF")},
+        )
+
+        assert _woken_printer_ids(power_on) == [2]
+
+    @pytest.mark.asyncio
+    async def test_a_preferred_colour_nobody_has_still_wakes_the_first_printer(self, queue_db):
+        """Preference overrides only order the field -- unless nothing matches.
+
+        The matcher skips a printer that has none of the preferred colours, so
+        the wake step passes over one too. With no printer holding any of them
+        the item is simply waiting for a filament change, and switching the
+        farm on will not produce one.
+        """
+        await _add_plug(queue_db, 1)
+        await _add_plug(queue_db, 2)
+        await _add_item(
+            queue_db,
+            target_model="X1C",
+            filament_overrides=[{"type": "PLA", "color": "161616FF"}],
+        )
+
+        power_on = await _run(
+            queue_db,
+            PrintScheduler(),
+            power_on=AsyncMock(return_value=True),
+            statuses={1: _external("PLA", "FFFFFFFF"), 2: _external("PLA", "F98C36FF")},
+        )
+
+        power_on.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_job_with_no_filament_requirement_wakes_as_before(self, queue_db):
+        await _add_plug(queue_db, 1)
+        await _add_plug(queue_db, 2)
+        await _add_item(queue_db, target_model="X1C")
+
+        power_on = await _run(
+            queue_db,
+            PrintScheduler(),
+            power_on=AsyncMock(return_value=True),
+            statuses={1: _external("PLA", "FFFFFFFF"), 2: _external("PLA", "161616FF")},
+        )
+
+        assert _woken_printer_ids(power_on) == [1]
+
+    @pytest.mark.asyncio
+    async def test_the_filament_variant_is_honoured(self, queue_db):
+        """Bambu reports every PLA variant as PLA; only tray_info_idx separates them (#2650)."""
+        await _add_plug(queue_db, 1)
+        await _add_plug(queue_db, 2)
+        await _add_item(
+            queue_db,
+            target_model="X1C",
+            filament_overrides=[
+                {"type": "PLA", "color": "FFFFFFFF", "tray_info_idx": "GFA01", "force_color_match": True}
+            ],
+        )
+
+        power_on = await _run(
+            queue_db,
+            PrintScheduler(),
+            power_on=AsyncMock(return_value=True),
+            statuses={
+                1: _external("PLA", "FFFFFFFF", idx="GFA00"),  # Basic, not Matte
+                2: _external("PLA", "FFFFFFFF", idx="GFA01"),
+            },
+        )
+
+        assert _woken_printer_ids(power_on) == [2]
+
+    @pytest.mark.asyncio
+    async def test_the_waiting_reason_says_filament_not_offline(self, queue_db):
+        """Not switching a printer on must not look like nothing happening.
+
+        Before, a wrong-colour printer was woken and then reported as needing
+        filament. Passing it over instead has to say the same thing, or the
+        job sits on "Offline:" while Bambuddy silently declines to act on it.
+        """
+        await _add_plug(queue_db, 1)
+        await _add_plug(queue_db, 2)
+        item_id = await _add_item(
+            queue_db,
+            target_model="X1C",
+            filament_overrides=[{"type": "PLA", "color": "161616FF", "color_name": "Black", "force_color_match": True}],
+        )
+
+        power_on = await _run(
+            queue_db,
+            PrintScheduler(),
+            power_on=AsyncMock(return_value=True),
+            statuses={1: _external("PLA", "FFFFFFFF"), 2: _external("PLA", "F98C36FF")},
+        )
+
+        power_on.assert_not_awaited()
+        item = await _get_item(queue_db, item_id)
+        assert item.waiting_reason == "No matching material/color. Waiting on PLA (Black)"
+
+    @pytest.mark.asyncio
+    async def test_a_reading_kept_after_the_client_was_dropped_still_counts(self, queue_db):
+        """Waking a printer replaces its client, which drops its status.
+
+        The manager keeps the trays separately for exactly this reason -- a
+        power-on that times out must not leave the next queue check knowing
+        less than this one did.
+        """
+        await _add_plug(queue_db, 1)
+        await _add_plug(queue_db, 2)
+        await _add_item(
+            queue_db,
+            target_model="X1C",
+            filament_overrides=[{"type": "PLA", "color": "161616FF", "force_color_match": True}],
+        )
+
+        power_on = await _run(
+            queue_db,
+            PrintScheduler(),
+            power_on=AsyncMock(return_value=True),
+            remembered={1: _external("PLA", "FFFFFFFF"), 2: _external("PLA", "161616FF")},
+        )
+
+        assert _woken_printer_ids(power_on) == [2]
+
+    @pytest.mark.asyncio
+    async def test_what_the_printer_reported_beats_what_was_remembered(self, queue_db):
+        """The kept reading is a fallback, never an override.
+
+        Printer 1 is back and reporting black; the record from before it was
+        power-cycled says white. Acting on the record would pass over the one
+        printer that can take the job.
+        """
+        await _add_plug(queue_db, 1)
+        await _add_plug(queue_db, 2)
+        await _add_item(
+            queue_db,
+            target_model="X1C",
+            filament_overrides=[{"type": "PLA", "color": "161616FF", "force_color_match": True}],
+        )
+
+        power_on = await _run(
+            queue_db,
+            PrintScheduler(),
+            power_on=AsyncMock(return_value=True),
+            statuses={1: _external("PLA", "161616FF"), 2: _external("PLA", "FFFFFFFF")},
+            remembered={1: _external("PLA", "FFFFFFFF"), 2: _external("PLA", "161616FF")},
+        )
+
+        assert _woken_printer_ids(power_on) == [1]

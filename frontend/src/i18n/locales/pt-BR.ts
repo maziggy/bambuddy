@@ -870,6 +870,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: 'Vídeos da impressão',
+      download: 'Baixar vídeos da impressão',
+      searching: 'Procurando vídeos na impressora…',
+      searchFailed: 'Não foi possível procurar vídeos na impressora.',
+      none: 'Nenhum timelapse ou trecho da câmera IP foi encontrado para esta impressão.',
+      attachedTimelapse: 'Timelapse anexado',
+      printerFiles: 'Arquivos ainda presentes na impressora',
+      downloadSelected: 'Baixar selecionados',
+      printerMissing: 'A impressora não está mais configurada',
+      timelapseUnavailable: 'Não foi possível ler o diretório de timelapses',
+      ipcamUnavailable: 'Não foi possível ler o diretório da câmera IP',
+    },
     title: 'Arquivos de Impressão',
     no3mfBanner: {
       title: 'Algumas impressões recentes não puderam ser arquivadas com miniaturas',
@@ -3093,6 +3106,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: 'Download ZIP iniciado para {{count}} arquivo',
+    zipStarted_other: 'Download ZIP iniciado para {{count}} arquivos',
+    zipPartial: 'Download ZIP iniciado com {{successful}} de {{total}} arquivos; não foi possível obter os demais',
+    downloadFailed: 'Falha no download: {{error}}',
+    unknownError: 'Erro desconhecido',
+    shiftSelectHint: 'Shift+clique para selecionar um intervalo',
+    selectFile: 'Selecionar {{name}}',
+    deselectFile: 'Desmarcar {{name}}',
     title: 'Gerenciador de Arquivos',
     storageUsed: 'Usado:',
     storageFree: 'Livre:',
@@ -3102,6 +3123,7 @@ export default {
     deleteFileConfirm: 'Excluir "{{name}}"? Isso não pode ser desfeito.',
     deleteFilesConfirm: 'Excluir {{count}} arquivos selecionados? Isso não pode ser desfeito.',
     noFiles: 'Nenhum arquivo na impressora',
+    printerUnavailable: 'O serviço de arquivos da impressora está indisponível. Tente novamente quando a impressora estiver acessível.',
     loadingFiles: 'Carregando arquivos...',
     failedToLoad: 'Falha ao carregar arquivos',
     toast: {

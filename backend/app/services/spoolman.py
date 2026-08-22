@@ -106,6 +106,12 @@ class SpoolmanClient:
         # Per-spool locks for atomic read-modify-write in merge_spool_extra.
         # WeakValueDictionary: locks are GC'd once no coroutine holds a reference.
         self._extra_locks: weakref.WeakValueDictionary[int, asyncio.Lock] = weakref.WeakValueDictionary()
+        # Extra-field names this client has already registered with Spoolman.
+        # Bounded by the number of distinct keys Bambuddy writes, so it never
+        # grows with spool count; scoped to the instance so a client pointed at
+        # a different Spoolman starts over.
+        self._ensured_extra_fields: set[str] = set()
+        self._ensure_extra_lock = asyncio.Lock()
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create the HTTP client with connection pooling limits."""
@@ -403,6 +409,7 @@ class SpoolmanClient:
             data["comment"] = comment
         if extra:
             data["extra"] = extra
+            await self._ensure_extra_fields(extra)
 
         logger.debug("Creating spool in Spoolman: %s", data)
         try:
@@ -443,6 +450,7 @@ class SpoolmanClient:
             data["location"] = location
         if extra:
             data["extra"] = extra
+            await self._ensure_extra_fields(extra)
         data["last_used"] = datetime.now(timezone.utc).isoformat()
 
         response = await self._request_spool("PATCH", spool_id, json_body=data, operation="update")
@@ -700,6 +708,7 @@ class SpoolmanClient:
             data["location"] = location
         if extra is not None:
             data["extra"] = extra
+            await self._ensure_extra_fields(extra)
         if clear_spool_weight:
             data["spool_weight"] = None
         elif spool_weight is not None:
@@ -951,6 +960,7 @@ class SpoolmanClient:
             response = await client.get(f"{self.api_url}/field/spool/{name}")
             if response.status_code == 200:
                 logger.debug("Spoolman extra field %r already exists", name)
+                self._ensured_extra_fields.add(name)
                 return True
 
             # Field doesn't exist - create it
@@ -962,6 +972,7 @@ class SpoolmanClient:
             response = await client.post(f"{self.api_url}/field/spool/{name}", json=field_data)
             if response.status_code in (200, 201):
                 logger.info("Created Spoolman extra field %r", name)
+                self._ensured_extra_fields.add(name)
                 return True
 
             logger.warning(
@@ -975,6 +986,43 @@ class SpoolmanClient:
         except Exception as e:
             logger.warning("Failed to ensure Spoolman extra field %r exists: %s", name, e)
             return False
+
+    async def _ensure_extra_fields(self, extra: dict | None) -> None:
+        """Register every extra key an outgoing write declares, once per client.
+
+        Spoolman answers HTTP 400 "Unknown extra field <name>." for any extra
+        key that was not registered first, so registration has to happen before
+        the write, not before the feature. It used to happen before the feature:
+        three hand-maintained lists (the connect route, startup, and two inline
+        blocks in the inventory routes) each named the fields they expected to
+        be written later. Enabling Spoolman from Settings reaches none of them,
+        so the first AMS sync on a fresh Spoolman failed on every slot -- and
+        the Connect button that would have registered them is hidden by then,
+        because saving the settings initialises the client and the status
+        endpoint reads that as "connected" (issue #2903).
+
+        Keying off the payload instead removes the chance to forget: a write
+        that carries a key is a write that registers it. ``bambu_color_name``
+        is the cautionary case -- it never made it into the connect or startup
+        lists, and only works today because two call sites remembered to
+        register it by hand.
+
+        Best-effort by design. ``ensure_extra_field`` logs and returns False
+        rather than raising, and a failure here must not turn a write that
+        might still succeed into one that never happens -- the caller's own
+        error handling stays exactly as it was.
+        """
+        names = [name for name in (extra or {}) if name not in self._ensured_extra_fields]
+        if not names:
+            return
+
+        async with self._ensure_extra_lock:
+            for name in names:
+                # Re-check under the lock: a concurrent write may have just
+                # registered this one, and two syncs racing to POST the same
+                # field is how one of them gets a needless warning logged.
+                if name not in self._ensured_extra_fields:
+                    await self.ensure_extra_field(name)
 
     def parse_ams_tray(self, ams_id: int, tray_data: dict) -> AMSTray | None:
         """Parse raw MQTT tray data into an AMSTray; returns None for empty or invalid trays."""

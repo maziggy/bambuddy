@@ -870,6 +870,19 @@ export default {
 
   // Arşivler sayfası
   archives: {
+    media: {
+      title: 'Baskı videoları',
+      download: 'Baskı videolarını indir',
+      searching: 'Yazıcıda video aranıyor…',
+      searchFailed: 'Yazıcıdaki videolar kontrol edilemedi.',
+      none: 'Bu baskı için hızlandırılmış çekim veya IP kamera parçası bulunamadı.',
+      attachedTimelapse: 'Ekli hızlandırılmış çekim',
+      printerFiles: 'Yazıcıda kalan dosyalar',
+      downloadSelected: 'Seçilenleri indir',
+      printerMissing: 'Yazıcı artık yapılandırılmış değil',
+      timelapseUnavailable: 'Hızlandırılmış çekim dizini okunamadı',
+      ipcamUnavailable: 'IP kamera dizini okunamadı',
+    },
     title: 'Baskı Arşivleri',
     no3mfBanner: {
       title: 'Bazı son baskılar küçük resimlerle birlikte arşivlenemedi',
@@ -3108,6 +3121,14 @@ export default {
 
   // Yazıcı Dosya Yöneticisi modali (yazıcı dahili deposu)
   printerFiles: {
+    zipStarted_one: '{{count}} dosya için ZIP indirmesi başlatıldı',
+    zipStarted_other: '{{count}} dosya için ZIP indirmesi başlatıldı',
+    zipPartial: '{{total}} dosyanın {{successful}} tanesiyle ZIP indirmesi başlatıldı; kalan dosyalar alınamadı',
+    downloadFailed: 'İndirme başarısız: {{error}}',
+    unknownError: 'Bilinmeyen hata',
+    shiftSelectHint: 'Bir aralık seçmek için Shift tuşuyla tıklayın',
+    selectFile: '{{name}} öğesini seç',
+    deselectFile: '{{name}} seçimini kaldır',
     title: 'Dosya Yöneticisi',
     storageUsed: 'Kullanılan:',
     storageFree: 'Boş:',
@@ -3117,6 +3138,7 @@ export default {
     deleteFileConfirm: '"{{name}}" silinsin mi? Bu geri alınamaz.',
     deleteFilesConfirm: 'Seçilen {{count}} dosya silinsin mi? Bu geri alınamaz.',
     noFiles: 'Yazıcıda dosya yok',
+    printerUnavailable: 'Yazıcı dosya hizmeti kullanılamıyor. Yazıcıya erişilebildiğinde tekrar deneyin.',
     loadingFiles: 'Dosyalar yükleniyor...',
     failedToLoad: 'Dosyalar yüklenemedi',
     toast: {

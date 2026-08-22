@@ -74,6 +74,7 @@ import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDuration, parseUTCDate, formatDate } from '../utils/date';
 import { formatFileSize } from '../utils/file';
+import { assignableProjects } from '../utils/projectTree';
 import { isApiSliceableFilename, isSliceableFilename, openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 
 type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
@@ -404,10 +405,14 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading, t }: LinkFolderMo
     if (folder.archive_id) setLinkType('archive');
   });
 
+  // Archived projects are left out, bar the one this folder is already linked
+  // to -- dropping that one would leave the folder looking unlinked while the
+  // link is still there (#2888).
   const { data: projects } = useQuery({
     queryKey: ['projects'],
     queryFn: () => api.getProjects(),
-    select: (rows) => [...rows].sort((a, b) => a.name.localeCompare(b.name)),
+    select: (rows) =>
+      assignableProjects([...rows].sort((a, b) => a.name.localeCompare(b.name)), folder.project_id),
   });
 
   const { data: archives } = useQuery({

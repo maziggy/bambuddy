@@ -875,6 +875,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: 'Print videos',
+      download: 'Download print videos',
+      searching: 'Checking the printer for videos…',
+      searchFailed: 'Could not check the printer for videos.',
+      none: 'No timelapse or IP camera chunks were found for this print.',
+      attachedTimelapse: 'Attached timelapse',
+      printerFiles: 'Files still on the printer',
+      downloadSelected: 'Download selected',
+      printerMissing: 'Printer is no longer configured',
+      timelapseUnavailable: 'The timelapse directory could not be read',
+      ipcamUnavailable: 'The IP camera directory could not be read',
+    },
     title: 'Print Archives',
     no3mfBanner: {
       title: 'Some recent prints couldn\'t be archived with thumbnails',
@@ -3135,6 +3148,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: 'Started ZIP download for {{count}} file',
+    zipStarted_other: 'Started ZIP download for {{count}} files',
+    zipPartial: 'ZIP download started with {{successful}} of {{total}} files; the rest could not be retrieved',
+    downloadFailed: 'Download failed: {{error}}',
+    unknownError: 'Unknown error',
+    shiftSelectHint: 'Shift-click to select a range',
+    selectFile: 'Select {{name}}',
+    deselectFile: 'Deselect {{name}}',
     title: 'File Manager',
     storageUsed: 'Used:',
     storageFree: 'Free:',
@@ -3144,6 +3165,7 @@ export default {
     deleteFileConfirm: 'Delete "{{name}}"? This cannot be undone.',
     deleteFilesConfirm: 'Delete {{count}} selected files? This cannot be undone.',
     noFiles: 'No files on printer',
+    printerUnavailable: 'The printer file service is unavailable. Try again when the printer is reachable.',
     loadingFiles: 'Loading files...',
     failedToLoad: 'Failed to load files',
     toast: {

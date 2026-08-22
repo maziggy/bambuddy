@@ -7,6 +7,7 @@ import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { invalidateArchiveAndProjectViews } from '../utils/projectQueries';
+import { assignableProjects } from '../utils/projectTree';
 
 interface BatchProjectModalProps {
   selectedIds: number[];
@@ -24,8 +25,10 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
     queryFn: () => api.getProjects(),
   });
 
+  // Assigning in bulk, so nothing here has a project to preserve: archived
+  // ones drop off outright (#2888).
   const sortedProjects = useMemo(
-    () => (projects ? [...projects].sort((a, b) => a.name.localeCompare(b.name)) : undefined),
+    () => (projects ? assignableProjects([...projects].sort((a, b) => a.name.localeCompare(b.name))) : undefined),
     [projects],
   );
 

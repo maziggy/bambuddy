@@ -219,6 +219,64 @@ describe('FileManagerModal', () => {
       }
     });
 
+    it('selects the visible range between a click and a shift-click', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/files', () => HttpResponse.json({
+          files: [
+            ...mockFiles.filter(file => file.is_directory),
+            { name: 'alpha.gcode', path: '/alpha.gcode', size: 1, is_directory: false, mtime: null },
+            { name: 'bravo.gcode', path: '/bravo.gcode', size: 2, is_directory: false, mtime: null },
+            { name: 'charlie.gcode', path: '/charlie.gcode', size: 3, is_directory: false, mtime: null },
+            { name: 'delta.gcode', path: '/delta.gcode', size: 4, is_directory: false, mtime: null },
+          ],
+        })),
+      );
+
+      render(
+        <FileManagerModal
+          printerId={1}
+          printerName="X1 Carbon"
+          onClose={mockOnClose}
+        />
+      );
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Select alpha.gcode' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Select charlie.gcode' }), { shiftKey: true });
+
+      expect(await screen.findByText('3 selected')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Deselect alpha.gcode' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Deselect bravo.gcode' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Deselect charlie.gcode' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Select delta.gcode' })).toBeInTheDocument();
+    });
+
+    it('always selects a shift-clicked range even when the target is already selected', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/files', () => HttpResponse.json({
+          files: [
+            { name: 'alpha.gcode', path: '/alpha.gcode', size: 1, is_directory: false, mtime: null },
+            { name: 'bravo.gcode', path: '/bravo.gcode', size: 2, is_directory: false, mtime: null },
+            { name: 'charlie.gcode', path: '/charlie.gcode', size: 3, is_directory: false, mtime: null },
+          ],
+        })),
+      );
+
+      render(
+        <FileManagerModal
+          printerId={1}
+          printerName="X1 Carbon"
+          onClose={mockOnClose}
+        />
+      );
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Select alpha.gcode' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Select charlie.gcode' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Deselect alpha.gcode' }), { shiftKey: true });
+
+      expect(await screen.findByText('3 selected')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Deselect bravo.gcode' })).toBeInTheDocument();
+    });
+
     it('enables download button when files are selected', async () => {
       render(
         <FileManagerModal
@@ -249,6 +307,58 @@ describe('FileManagerModal', () => {
       await waitFor(() => {
         expect(screen.getByText('Select All')).toBeInTheDocument();
       });
+    });
+
+    it('starts a preparation job, uses a native download link, and reports partial results', async () => {
+      let preparation: {
+        paths: string[];
+        sizes: Record<string, number>;
+        filename: string;
+        as_zip: boolean;
+      } | null = null;
+      server.use(
+        http.post('/api/v1/printers/:id/files/download-job', async ({ request }) => {
+          preparation = await request.json() as typeof preparation;
+          return HttpResponse.json({
+            job_id: 'job-id',
+            state: 'ready',
+            token: 'download-token',
+            requested: 2,
+            successful: 1,
+            failed: 1,
+            message: null,
+          });
+        }),
+      );
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+      render(
+        <FileManagerModal
+          printerId={1}
+          printerName="X1 Carbon"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByText('Select All')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('Select All'));
+      fireEvent.click(screen.getByRole('button', { name: /Download \(2\)/i }));
+
+      await waitFor(() => expect(clickSpy).toHaveBeenCalledOnce());
+      expect(preparation).toEqual({
+        paths: ['/benchy.3mf', '/print_job.gcode'],
+        sizes: {
+          '/benchy.3mf': 1048575,
+          '/print_job.gcode': 2048000,
+        },
+        filename: 'X1_Carbon-files.zip',
+        as_zip: true,
+      });
+      expect(document.querySelector('a')).toBeNull();
+      expect(await screen.findByText(
+        'ZIP download started with 1 of 2 files; the rest could not be retrieved',
+      )).toBeInTheDocument();
+      clickSpy.mockRestore();
     });
   });
 
@@ -285,6 +395,59 @@ describe('FileManagerModal', () => {
         expect(screen.getByText('benchy.3mf')).toBeInTheDocument();
         expect(screen.queryByText('print_job.gcode')).not.toBeInTheDocument();
       });
+    });
+
+    it('selects all files from the shared visible-file filter', async () => {
+      render(
+        <FileManagerModal
+          printerId={1}
+          printerName="X1 Carbon"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByText('benchy.3mf')).toBeInTheDocument());
+      fireEvent.change(screen.getByPlaceholderText('Filter files...'), { target: { value: 'benchy' } });
+      fireEvent.click(screen.getByText('Select All'));
+
+      expect(screen.getByText('1 selected')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled();
+    });
+
+    it('keeps the selection when a refresh cannot reach the printer', async () => {
+      render(
+        <FileManagerModal printerId={1} printerName="X1 Carbon" onClose={mockOnClose} />
+      );
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Select benchy.3mf' }));
+      expect(screen.getByText('1 selected')).toBeInTheDocument();
+
+      // An unreachable printer answers with an empty list plus a warning. That
+      // is not the same statement as "those files are gone", and it must not
+      // throw away a selection the user made moments ago.
+      server.use(
+        http.get('/api/v1/printers/:id/files', () =>
+          HttpResponse.json({ files: [], warnings: ['printer_unavailable'] })
+        )
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+      expect(await screen.findByText(
+        'The printer file service is unavailable. Try again when the printer is reachable.',
+      )).toBeInTheDocument();
+      expect(screen.getByText('1 selected')).toBeInTheDocument();
+    });
+
+    it('drops hidden selections when the filter changes', async () => {
+      render(
+        <FileManagerModal printerId={1} printerName="X1 Carbon" onClose={mockOnClose} />
+      );
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Select benchy.3mf' }));
+      expect(screen.getByText('1 selected')).toBeInTheDocument();
+      fireEvent.change(screen.getByPlaceholderText('Filter files...'), { target: { value: 'gcode' } });
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Download' })).toBeDisabled());
     });
   });
 
@@ -386,8 +549,29 @@ describe('FileManagerModal', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText('No files in this directory')).toBeInTheDocument();
+          expect(screen.getByText('No files on printer')).toBeInTheDocument();
       });
+    });
+
+    it('distinguishes an unreachable printer from an empty directory', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/files', () => {
+          return HttpResponse.json({ files: [], warnings: ['printer_unavailable'] });
+        })
+      );
+
+      render(
+        <FileManagerModal
+          printerId={1}
+          printerName="X1 Carbon"
+          onClose={mockOnClose}
+        />
+      );
+
+      expect(await screen.findByText(
+        'The printer file service is unavailable. Try again when the printer is reachable.',
+      )).toBeInTheDocument();
+      expect(screen.queryByText('No files on printer')).not.toBeInTheDocument();
     });
   });
 

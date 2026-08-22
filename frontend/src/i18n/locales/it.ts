@@ -870,6 +870,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: 'Video della stampa',
+      download: 'Scarica i video della stampa',
+      searching: 'Ricerca dei video sulla stampante…',
+      searchFailed: 'Impossibile cercare i video sulla stampante.',
+      none: 'Non sono stati trovati timelapse o segmenti della videocamera IP per questa stampa.',
+      attachedTimelapse: 'Timelapse allegato',
+      printerFiles: 'File ancora presenti sulla stampante',
+      downloadSelected: 'Scarica selezionati',
+      printerMissing: 'La stampante non è più configurata',
+      timelapseUnavailable: 'Impossibile leggere la cartella dei timelapse',
+      ipcamUnavailable: 'Impossibile leggere la cartella della videocamera IP',
+    },
     title: 'Archivi di stampa',
     no3mfBanner: {
       title: 'Alcune stampe recenti non sono state archiviate con la miniatura',
@@ -3093,6 +3106,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: 'Download ZIP avviato per {{count}} file',
+    zipStarted_other: 'Download ZIP avviato per {{count}} file',
+    zipPartial: 'Download ZIP avviato con {{successful}} file su {{total}}; non è stato possibile recuperare gli altri',
+    downloadFailed: 'Download non riuscito: {{error}}',
+    unknownError: 'Errore sconosciuto',
+    shiftSelectHint: 'Maiusc-clic per selezionare un intervallo',
+    selectFile: 'Seleziona {{name}}',
+    deselectFile: 'Deseleziona {{name}}',
     title: 'Gestore file',
     storageUsed: 'Usato:',
     storageFree: 'Libero:',
@@ -3102,6 +3123,7 @@ export default {
     deleteFileConfirm: 'Eliminare "{{name}}"? Questa azione non può essere annullata.',
     deleteFilesConfirm: 'Eliminare {{count}} file selezionati? Questa azione non può essere annullata.',
     noFiles: 'Nessun file sulla stampante',
+    printerUnavailable: 'Il servizio file della stampante non è disponibile. Riprova quando la stampante è raggiungibile.',
     loadingFiles: 'Caricamento file...',
     failedToLoad: 'Caricamento file fallito',
     toast: {

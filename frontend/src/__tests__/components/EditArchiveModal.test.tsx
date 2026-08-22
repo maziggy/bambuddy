@@ -387,4 +387,81 @@ describe('EditArchiveModal', () => {
       });
     });
   });
+  describe('project picker (#2888)', () => {
+    // Statuses matter here, so this describe brings its own list rather than
+    // the bare one the rest of the file shares.
+    const withStatuses = (rows: Array<Record<string, unknown>>) =>
+      server.use(http.get('/api/v1/projects/', () => HttpResponse.json(rows)));
+
+    function savedBody() {
+      const seen: { body?: Record<string, unknown> } = {};
+      server.use(
+        http.patch('/api/v1/archives/:id', async ({ request }) => {
+          seen.body = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...mockArchive, ...seen.body });
+        }),
+      );
+      return seen;
+    }
+
+    it('leaves archived projects out of the list', async () => {
+      withStatuses([
+        { id: 1, name: 'Live Work', color: '#00ae42', status: 'active' },
+        { id: 2, name: 'Last Year', color: '#888888', status: 'archived' },
+      ]);
+
+      render(<EditArchiveModal archive={mockArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+
+      await screen.findByRole('option', { name: 'Live Work' });
+      expect(screen.queryByRole('option', { name: 'Last Year' })).not.toBeInTheDocument();
+    });
+
+    it('keeps completed projects, which are still worth filing a reprint under', async () => {
+      withStatuses([
+        { id: 1, name: 'Live Work', color: '#00ae42', status: 'active' },
+        { id: 3, name: 'Shipped', color: '#888888', status: 'completed' },
+      ]);
+
+      render(<EditArchiveModal archive={mockArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+
+      expect(await screen.findByRole('option', { name: 'Shipped' })).toBeInTheDocument();
+    });
+
+    it('still offers the archived project this archive is already in', async () => {
+      // Filtered out, the select holds a value no option matches, and the
+      // browser resets it to the first option -- "No project". The archive
+      // would say it is filed nowhere while sitting in a project.
+      withStatuses([
+        { id: 1, name: 'Live Work', color: '#00ae42', status: 'active' },
+        { id: 2, name: 'Last Year', color: '#888888', status: 'archived' },
+      ]);
+      const filed = { ...mockArchive, project_id: 2 };
+
+      render(<EditArchiveModal archive={filed} onClose={mockOnClose} onSave={mockOnSave} />);
+
+      const option = await screen.findByRole('option', { name: 'Last Year' });
+      expect((option as HTMLOptionElement).selected).toBe(true);
+    });
+
+    it('saves the project it was already in when nothing else is touched', async () => {
+      const user = userEvent.setup();
+      const seen = savedBody();
+      withStatuses([{ id: 2, name: 'Last Year', color: '#888888', status: 'archived' }]);
+
+      render(
+        <EditArchiveModal
+          archive={{ ...mockArchive, project_id: 2 }}
+          onClose={mockOnClose}
+          onSave={mockOnSave}
+        />,
+      );
+      await screen.findByRole('option', { name: 'Last Year' });
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      // The stored id survives the round trip untouched: showing the archived
+      // project is what makes the field honest, and it must not also change
+      // what an untouched save writes.
+      await waitFor(() => expect(seen.body?.project_id).toBe(2));
+    });
+  });
 });

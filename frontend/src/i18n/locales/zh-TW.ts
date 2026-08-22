@@ -870,6 +870,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: '列印影片',
+      download: '下載列印影片',
+      searching: '正在檢查印表機中的影片…',
+      searchFailed: '無法檢查印表機中的影片。',
+      none: '找不到此列印工作的縮時攝影或 IP 攝影機影片片段。',
+      attachedTimelapse: '已附加的縮時攝影',
+      printerFiles: '仍保留在印表機上的檔案',
+      downloadSelected: '下載所選檔案',
+      printerMissing: '印表機已不在設定中',
+      timelapseUnavailable: '無法讀取縮時攝影目錄',
+      ipcamUnavailable: '無法讀取 IP 攝影機目錄',
+    },
     title: '列印歸檔',
     no3mfBanner: {
       title: '最近的一些列印未能附帶縮圖封存',
@@ -3093,6 +3106,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: '已開始下載 {{count}} 個檔案的 ZIP',
+    zipStarted_other: '已開始下載 {{count}} 個檔案的 ZIP',
+    zipPartial: '已開始下載 ZIP，共 {{total}} 個檔案中成功取得 {{successful}} 個，其餘檔案無法取得',
+    downloadFailed: '下載失敗：{{error}}',
+    unknownError: '未知錯誤',
+    shiftSelectHint: '按住 Shift 點擊以選取範圍',
+    selectFile: '選取 {{name}}',
+    deselectFile: '取消選取 {{name}}',
     title: '檔案管理器',
     storageUsed: '已用：',
     storageFree: '剩餘：',
@@ -3102,6 +3123,7 @@ export default {
     deleteFileConfirm: '刪除"{{name}}"？此操作無法復原。',
     deleteFilesConfirm: '刪除 {{count}} 個選中的檔案？此操作無法復原。',
     noFiles: '印表機上沒有檔案',
+    printerUnavailable: '印表機檔案服務無法使用。請在可連線至印表機時重試。',
     loadingFiles: '載入檔案中...',
     failedToLoad: '載入檔案失敗',
     toast: {

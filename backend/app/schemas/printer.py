@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.app.utils.printer_models import supports_nozzle_flow_type
 
@@ -445,3 +445,27 @@ class DiagnosticRequest(BaseModel):
     ip_address: str
     serial_number: str | None = None
     access_code: str | None = None
+
+
+class PrinterFilesDownloadRequest(BaseModel):
+    """Printer paths selected for a bulk download."""
+
+    paths: list[str] = Field(..., max_length=1000)
+    sizes: dict[str, int] = Field(default_factory=dict, max_length=1000)
+
+    @model_validator(mode="after")
+    def _validate_sizes(self):
+        """Validate optional FTP-reported sizes used for early rejection."""
+
+        if self.sizes and set(self.sizes) != set(self.paths):
+            raise ValueError("A size is required for every selected printer path")
+        if any(size < 0 for size in self.sizes.values()):
+            raise ValueError("Printer file sizes must not be negative")
+        return self
+
+
+class PrinterFilesJobRequest(PrinterFilesDownloadRequest):
+    """Browser preparation request, including native download presentation."""
+
+    filename: str = Field(default="printer-files.zip", min_length=1, max_length=255)
+    as_zip: bool = True

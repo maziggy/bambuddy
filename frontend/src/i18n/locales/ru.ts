@@ -825,6 +825,19 @@ export default {
     dropToQueue: "Перетащите файл в очередь",
   },
   archives: {
+    media: {
+      title: 'Видео печати',
+      download: 'Скачать видео печати',
+      searching: 'Поиск видео на принтере…',
+      searchFailed: 'Не удалось проверить видео на принтере.',
+      none: 'Для этой печати не найдены таймлапсы или фрагменты IP-камеры.',
+      attachedTimelapse: 'Прикреплённый таймлапс',
+      printerFiles: 'Файлы, оставшиеся на принтере',
+      downloadSelected: 'Скачать выбранное',
+      printerMissing: 'Принтер больше не настроен',
+      timelapseUnavailable: 'Не удалось прочитать каталог таймлапсов',
+      ipcamUnavailable: 'Не удалось прочитать каталог IP-камеры',
+    },
     title: "Архив печати",
     no3mfBanner: {
       title: "Некоторые последние задания сохранены без миниатюр",
@@ -2941,6 +2954,14 @@ export default {
     all: "Все",
   },
   printerFiles: {
+    zipStarted_one: 'Начато скачивание ZIP для {{count}} файла',
+    zipStarted_other: 'Начато скачивание ZIP для {{count}} файлов',
+    zipPartial: 'Начато скачивание ZIP с {{successful}} из {{total}} файлов; остальные получить не удалось',
+    downloadFailed: 'Ошибка скачивания: {{error}}',
+    unknownError: 'Неизвестная ошибка',
+    shiftSelectHint: 'Щёлкните с Shift, чтобы выбрать диапазон',
+    selectFile: 'Выбрать {{name}}',
+    deselectFile: 'Снять выбор с {{name}}',
     title: "Файлы принтера",
     storageUsed: "Занято:",
     storageFree: "Свободно:",
@@ -2950,6 +2971,7 @@ export default {
     deleteFileConfirm: "Удалить «{{name}}»? Это действие нельзя отменить.",
     deleteFilesConfirm: "Удалить выбранные файлы ({{count}})? Это действие нельзя отменить.",
     noFiles: "На принтере нет файлов",
+    printerUnavailable: 'Файловая служба принтера недоступна. Повторите попытку, когда принтер будет доступен.',
     loadingFiles: "Загрузка файлов...",
     failedToLoad: "Не удалось загрузить файлы",
     toast: {

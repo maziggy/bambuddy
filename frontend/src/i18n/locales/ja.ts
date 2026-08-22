@@ -869,6 +869,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: '印刷動画',
+      download: '印刷動画をダウンロード',
+      searching: 'プリンター上の動画を確認しています…',
+      searchFailed: 'プリンター上の動画を確認できませんでした。',
+      none: 'この印刷のタイムラプスまたは IP カメラの動画断片は見つかりませんでした。',
+      attachedTimelapse: '添付済みタイムラプス',
+      printerFiles: 'プリンターに残っているファイル',
+      downloadSelected: '選択項目をダウンロード',
+      printerMissing: 'プリンターは設定から削除されています',
+      timelapseUnavailable: 'タイムラプスディレクトリを読み取れませんでした',
+      ipcamUnavailable: 'IP カメラディレクトリを読み取れませんでした',
+    },
     title: '印刷アーカイブ',
     no3mfBanner: {
       title: '最近の一部の印刷でサムネイル付きのアーカイブができませんでした',
@@ -3105,6 +3118,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: '{{count}} 個のファイルの ZIP ダウンロードを開始しました',
+    zipStarted_other: '{{count}} 個のファイルの ZIP ダウンロードを開始しました',
+    zipPartial: '{{total}} 個中 {{successful}} 個のファイルで ZIP ダウンロードを開始しました。残りは取得できませんでした',
+    downloadFailed: 'ダウンロードに失敗しました: {{error}}',
+    unknownError: '不明なエラー',
+    shiftSelectHint: 'Shift キーを押しながらクリックして範囲を選択',
+    selectFile: '{{name}} を選択',
+    deselectFile: '{{name}} の選択を解除',
     title: 'ファイル管理',
     storageUsed: '使用中:',
     storageFree: '空き:',
@@ -3114,6 +3135,7 @@ export default {
     deleteFileConfirm: '"{{name}}" を削除しますか？この操作は取り消せません。',
     deleteFilesConfirm: '選択した{{count}}件のファイルを削除しますか？元に戻せません。',
     noFiles: 'このディレクトリにファイルがありません',
+    printerUnavailable: 'プリンターのファイルサービスを利用できません。プリンターに接続できる状態で再試行してください。',
     loadingFiles: 'ファイルを読み込み中...',
     failedToLoad: 'ファイルの読み込みに失敗しました',
     toast: {

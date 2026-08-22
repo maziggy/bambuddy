@@ -1,19 +1,22 @@
 import asyncio
 import logging
 import re
+import secrets
 import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
 
 from backend.app.core import database
 from backend.app.core.auth import (
     RequireCameraStreamTokenIfAuthEnabled,
     RequireOverlayTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
+    RequirePrinterPermissionIfAuthEnabled,
     is_auth_enabled,
 )
 from backend.app.core.config import settings
@@ -36,6 +39,8 @@ from backend.app.schemas.printer import (
     NozzleRackSlot,
     PrinterCreate,
     PrinterDiagnosticResult,
+    PrinterFilesDownloadRequest,
+    PrinterFilesJobRequest,
     PrinterResponse,
     PrinterResponseWithSecret,
     PrinterStatus,
@@ -51,7 +56,7 @@ from backend.app.services.bambu_ftp import (
     ftps_handshake_blocked,
     get_cached_3mf,
     get_storage_info_async,
-    list_files_async,
+    list_files_result_async,
 )
 from backend.app.services.print_storage import ftp_probe_paths, print_file_reachable_over_ftp
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
@@ -68,9 +73,23 @@ from backend.app.services.printer_manager import (
     supports_drying_while_printing,
     uniform_tray_filament_hint,
 )
+from backend.app.services.printer_media import (
+    MAX_PRINTER_ZIP_PREPARE_SECONDS,
+    PrinterFilesZipInsufficientSpaceError,
+    PrinterFilesZipTooLargeError,
+    build_printer_file,
+    build_printer_files_zip,
+    cancel_printer_files_job,
+    get_printer_files_job,
+    printer_file_path,
+    printer_files_zip_path,
+    remove_printer_files_zip,
+    start_printer_files_job,
+)
 from backend.app.utils.filament_ids import filament_id_to_setting_id
+from backend.app.utils.filament_types import printer_filament_type
 from backend.app.utils.fts_routing import slot_extruder
-from backend.app.utils.http import build_content_disposition
+from backend.app.utils.http import build_content_disposition, download_error_response, safe_download_filename
 from backend.app.utils.printer_models import MAX_CHAMBER_TEMP_C, uses_exhaust_fan_label
 
 logger = logging.getLogger(__name__)
@@ -1552,12 +1571,18 @@ async def _load_printer_or_404(printer_id: int) -> Printer:
 async def list_printer_files(
     printer_id: int,
     path: str = "/",
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_FILES),
 ):
     """List files on the printer at the specified path."""
     printer = await _load_printer_or_404(printer_id)
 
-    files = await list_files_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
+    listing = await list_files_result_async(
+        printer.ip_address,
+        printer.access_code,
+        path,
+        printer_model=printer.model,
+    )
+    files = listing.files
 
     # Add full path to each file
     for f in files:
@@ -1566,6 +1591,7 @@ async def list_printer_files(
     return {
         "path": path,
         "files": files,
+        "warnings": [] if listing.available else ["printer_unavailable"],
     }
 
 
@@ -1573,14 +1599,27 @@ async def list_printer_files(
 async def download_printer_file(
     printer_id: int,
     path: str,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_FILES),
 ):
     """Download a file from the printer."""
     printer = await _load_printer_or_404(printer_id)
 
-    data = await download_file_bytes_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
-    if data is None:
+    try:
+        async with asyncio.timeout(MAX_PRINTER_ZIP_PREPARE_SECONDS):
+            result = await build_printer_file(
+                printer,
+                path,
+                None,
+                bundle_key=f"single-{secrets.token_urlsafe(18)}",
+            )
+    except PrinterFilesZipTooLargeError as exc:
+        raise HTTPException(413, str(exc)) from exc
+    except PrinterFilesZipInsufficientSpaceError as exc:
+        raise HTTPException(507, str(exc)) from exc
+    except FileNotFoundError:
         raise HTTPException(404, f"File not found: {path}")
+    except TimeoutError as exc:
+        raise HTTPException(504, "Printer download exceeded the 30-minute limit") from exc
 
     # Determine content type based on extension
     filename = path.split("/")[-1]
@@ -1599,10 +1638,12 @@ async def download_printer_file(
     }
     content_type = content_types.get(ext, "application/octet-stream")
 
-    return Response(
-        content=data,
+    return FileResponse(
+        path=result.path,
+        filename=filename,
         media_type=content_type,
         headers={"Content-Disposition": build_content_disposition(filename)},
+        background=BackgroundTask(remove_printer_files_zip, result.path),
     )
 
 
@@ -1610,7 +1651,7 @@ async def download_printer_file(
 async def get_printer_file_gcode(
     printer_id: int,
     path: str,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_FILES),
 ):
     """Get gcode for a file stored on a printer (for preview)."""
     import io
@@ -1644,7 +1685,7 @@ async def get_printer_file_gcode(
 async def get_printer_file_plates(
     printer_id: int,
     path: str = Query(..., description="Full path to the 3MF file on the printer"),
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_FILES),
 ):
     """Get available plates from a multi-plate 3MF file stored on a printer."""
     import io
@@ -1884,7 +1925,7 @@ async def get_printer_file_plate_thumbnail(
     printer_id: int,
     plate_index: int,
     path: str = Query(..., description="Full path to the 3MF file on the printer"),
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_FILES),
 ):
     """Get a plate thumbnail image from a printer-stored 3MF file."""
     import io
@@ -1910,43 +1951,133 @@ async def get_printer_file_plate_thumbnail(
 @router.post("/{printer_id}/files/download-zip")
 async def download_printer_files_as_zip(
     printer_id: int,
-    request: dict,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+    request: PrinterFilesDownloadRequest,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_FILES),
 ):
-    """Download multiple files from the printer as a ZIP archive."""
-    import io
+    """Download multiple files using a disk-backed ZIP.
 
-    paths = request.get("paths", [])
-    if not paths:
+    Kept backward-compatible for API clients: relative paths are rooted,
+    duplicate paths receive collision-safe names, and an all-failed request
+    returns an empty ZIP as the historical endpoint did. The browser uses the
+    asynchronous preparation endpoints below.
+    """
+    if not request.paths:
         raise HTTPException(400, "No files specified")
-
     printer = await _load_printer_or_404(printer_id)
-
-    # Create ZIP in memory
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for path in paths:
-            try:
-                data = await download_file_bytes_async(
-                    printer.ip_address, printer.access_code, path, printer_model=printer.model
-                )
-                if data:
-                    filename = path.split("/")[-1]
-                    zf.writestr(filename, data)
-            except Exception as e:
-                logging.warning("Failed to add %s to ZIP: %s", path, e)
-                continue
-
-    zip_buffer.seek(0)
-    zip_data = zip_buffer.read()
-
-    if len(zip_data) == 0:
-        raise HTTPException(404, "No files could be downloaded")
-
-    return Response(
-        content=zip_data,
+    normalized_paths = [path if path.startswith("/") else f"/{path}" for path in request.paths]
+    normalized_sizes = {path if path.startswith("/") else f"/{path}": size for path, size in request.sizes.items()}
+    try:
+        async with asyncio.timeout(MAX_PRINTER_ZIP_PREPARE_SECONDS):
+            result = await build_printer_files_zip(
+                printer,
+                normalized_paths,
+                normalized_sizes,
+                preserve_paths=False,
+                allow_empty=True,
+            )
+    except PrinterFilesZipTooLargeError as exc:
+        raise HTTPException(413, str(exc)) from exc
+    except PrinterFilesZipInsufficientSpaceError as exc:
+        raise HTTPException(507, str(exc)) from exc
+    except TimeoutError as exc:
+        raise HTTPException(504, "Printer ZIP preparation exceeded the 30-minute limit") from exc
+    return FileResponse(
+        path=result.path,
+        filename="printer-files.zip",
         media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="printer-files.zip"'},
+        headers={
+            "X-Bambuddy-Files-Requested": str(result.requested),
+            "X-Bambuddy-Files-Downloaded": str(result.successful),
+            "X-Bambuddy-Files-Failed": str(len(result.failed_paths)),
+        },
+        background=BackgroundTask(remove_printer_files_zip, result.path),
+    )
+
+
+@router.post("/{printer_id}/files/download-job")
+async def create_printer_files_download_job(
+    printer_id: int,
+    request: PrinterFilesJobRequest,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+):
+    """Start a cancellable disk-backed preparation without holding the request."""
+
+    if not request.paths:
+        raise HTTPException(400, "No files specified")
+    if len(set(request.paths)) != len(request.paths):
+        raise HTTPException(400, "Selected printer paths must be unique")
+    if not request.as_zip and len(request.paths) != 1:
+        raise HTTPException(400, "Native downloads require exactly one file")
+    printer = await _load_printer_or_404(printer_id)
+    try:
+        status = await start_printer_files_job(
+            printer,
+            request.paths,
+            request.sizes,
+            request.filename,
+            as_zip=request.as_zip,
+        )
+    except PrinterFilesZipTooLargeError as exc:
+        raise HTTPException(413, str(exc)) from exc
+    except PrinterFilesZipInsufficientSpaceError as exc:
+        raise HTTPException(507, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return status.__dict__
+
+
+@router.get("/{printer_id}/files/download-jobs/{job_id}")
+async def get_printer_files_download_job(
+    printer_id: int,
+    job_id: str,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+):
+    status = await get_printer_files_job(job_id, printer_id)
+    if status is None:
+        raise HTTPException(404, "Printer download job not found")
+    return status.__dict__
+
+
+@router.delete("/{printer_id}/files/download-jobs/{job_id}")
+async def cancel_printer_files_download_job(
+    printer_id: int,
+    job_id: str,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+):
+    if not await cancel_printer_files_job(job_id, printer_id):
+        raise HTTPException(404, "Printer download job not found")
+    return {"status": "cancelled"}
+
+
+@router.get("/{printer_id}/files/dl/{token}/{filename}")
+async def download_prepared_printer_files(
+    printer_id: int,
+    token: str,
+    filename: str,
+):
+    """Consume a resource-bound token and stream a prepared file natively."""
+
+    from backend.app.core.auth import verify_slicer_download_token
+
+    if not await verify_slicer_download_token(token, "printer-files", printer_id):
+        return download_error_response(403, "This download link has already been used or has expired.")
+    zip_path = printer_files_zip_path(printer_id, token)
+    raw_path = printer_file_path(printer_id, token)
+    if zip_path is not None and await asyncio.to_thread(zip_path.is_file):
+        prepared_path = zip_path
+        media_type = "application/zip"
+    elif raw_path is not None and await asyncio.to_thread(raw_path.is_file):
+        prepared_path = raw_path
+        media_type = "application/octet-stream"
+    else:
+        return download_error_response(404, "The prepared download is no longer on the server.")
+    safe_filename = safe_download_filename(filename, fallback="printer-download")
+    return FileResponse(
+        path=prepared_path,
+        filename=safe_filename,
+        media_type=media_type,
+        headers={"Content-Disposition": build_content_disposition(safe_filename)},
+        background=BackgroundTask(remove_printer_files_zip, prepared_path),
     )
 
 
@@ -1954,7 +2085,7 @@ async def download_printer_files_as_zip(
 async def delete_printer_file(
     printer_id: int,
     path: str,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_FILES),
 ):
     """Delete a file from the printer."""
     printer = await _load_printer_or_404(printer_id)
@@ -2557,6 +2688,17 @@ async def configure_ams_slot(
         f"[configure_ams_slot] setting_id={setting_id!r}, kprofile_filament_id={kprofile_filament_id!r}, kprofile_setting_id={kprofile_setting_id!r}"
     )
 
+    # The modal derives tray_type from a preset name or a spool's material, so
+    # it can be a product line rather than a type ("PLA+", "PolyTerra PLA").
+    # A slot carrying one of those satisfies nothing that asks for PLA, so the
+    # slot gets the type and tray_sub_brands -- untouched here -- keeps the
+    # name (issue #2902). The requested wording is kept for the id lookup
+    # below, which knows some product lines the type table does not.
+    requested_tray_type = tray_type
+    tray_type = printer_filament_type(tray_type)
+    if tray_type != requested_tray_type:
+        logger.info("[configure_ams_slot] tray_type %r → %r", requested_tray_type, tray_type)
+
     # Get MQTT client for this printer
     client = printer_manager.get_client(printer_id)
     if not client:
@@ -2631,10 +2773,15 @@ async def configure_ams_slot(
             )
             effective_tray_info_idx = current_tray_info_idx
         elif tray_type:
-            material = tray_type.upper().strip()
+            # Requested wording first, reduced type only as a further fallback,
+            # so a material that already resolves keeps resolving to the same
+            # id: "PETG HF" has its own generic preset (GFG96) that reducing it
+            # to "PETG" would trade away for GFG99.
+            material = requested_tray_type.upper().strip()
             generic = (
                 _GENERIC_FILAMENT_IDS.get(material)
                 or _GENERIC_FILAMENT_IDS.get(material.split("-")[0].split(" ")[0])
+                or _GENERIC_FILAMENT_IDS.get(tray_type.upper())
                 or ""
             )
             if generic:

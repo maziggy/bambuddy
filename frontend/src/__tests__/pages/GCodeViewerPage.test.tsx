@@ -90,6 +90,18 @@ describe('GCodeViewerPage', () => {
     expect(screen.getByText(/No file was given/i)).toBeInTheDocument();
   });
 
+  it('gives the viewer pane a height to fill (#2887)', () => {
+    // The viewer is `flex-1 min-h-0`, which divides nothing unless this column
+    // has a definite height. `h-full` did not provide one -- it resolves against
+    // `<main>`, whose height comes from `flex-1` under a `min-h-screen` root, so
+    // the percentage fell through to content and the canvas grew the page it was
+    // measured against, without limit.
+    visit('?archive=82');
+    const column = screen.getByTestId('toolpath-viewer').parentElement as HTMLElement;
+    expect(column.className).not.toContain('h-full');
+    expect(column.className).toContain('h-[calc(100vh-64px)]');
+  });
+
   it('offers a way back to where the file came from', () => {
     visit('?archive=82');
     expect(screen.getByRole('button', { name: /Back to Print Archives/i })).toBeInTheDocument();

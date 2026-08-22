@@ -1177,8 +1177,12 @@ export function ProjectsPage() {
     }
   };
 
-  // Count projects by status for filter badges
-  const projectCounts = projects?.reduce((acc, p) => {
+  // Count projects by status for filter badges. Counted from the unfiltered
+  // list, not the one on screen: `projects` holds only the selected status, so
+  // every other tab counted zero and lost its badge entirely -- a fleet of
+  // thirty finished projects showed "Completed" bare while Active read 5
+  // (#2888).
+  const projectCounts = allProjects?.reduce((acc, p) => {
     acc[p.status] = (acc[p.status] || 0) + 1;
     acc.all = (acc.all || 0) + 1;
     return acc;

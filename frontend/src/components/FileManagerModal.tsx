@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -290,6 +290,8 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
   const [sortBy, setSortBy] = useState<SortOption>('name-asc');
   const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number } | null>(null);
   const [viewerFile, setViewerFile] = useState<{ path: string; name: string } | null>(null);
+  const selectionAnchorRef = useRef<string | null>(null);
+  const downloadAbortRef = useRef<AbortController | null>(null);
 
   // Close on Escape key
   useEffect(() => {
@@ -317,6 +319,52 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
     staleTime: 30000, // Cache for 30 seconds
   });
 
+  const visibleFiles = useMemo(() => [...(data?.files ?? [])]
+    .filter((file) => !searchQuery || file.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    .sort((a, b) => {
+      if (a.is_directory && !b.is_directory) return -1;
+      if (!a.is_directory && b.is_directory) return 1;
+
+      switch (sortBy) {
+        case 'name-asc':
+          return a.name.localeCompare(b.name);
+        case 'name-desc':
+          return b.name.localeCompare(a.name);
+        case 'size-asc':
+          return a.size - b.size;
+        case 'size-desc':
+          return b.size - a.size;
+        case 'date-asc': {
+          const aTime = a.mtime ? parseUTCDate(a.mtime)?.getTime() ?? 0 : 0;
+          const bTime = b.mtime ? parseUTCDate(b.mtime)?.getTime() ?? 0 : 0;
+          return aTime - bTime;
+        }
+        case 'date-desc': {
+          const aTime = a.mtime ? parseUTCDate(a.mtime)?.getTime() ?? 0 : 0;
+          const bTime = b.mtime ? parseUTCDate(b.mtime)?.getTime() ?? 0 : 0;
+          return bTime - aTime;
+        }
+        default:
+          return a.name.localeCompare(b.name);
+      }
+    }), [data?.files, searchQuery, sortBy]);
+
+  // Drop selections the user can no longer see -- but only when the listing is
+  // real. An unreachable printer answers with an empty file list and a warning,
+  // and treating that as "those files are gone" would throw away a selection
+  // the user made moments ago because one poll happened to fail.
+  const listingIsReal = !!data && !data.warnings?.includes('printer_unavailable');
+  useEffect(() => {
+    if (!listingIsReal) return;
+    const visiblePaths = new Set(visibleFiles.filter(file => !file.is_directory).map(file => file.path));
+    setSelectedFiles(current => new Set([...current].filter(path => visiblePaths.has(path))));
+    if (selectionAnchorRef.current && !visiblePaths.has(selectionAnchorRef.current)) {
+      selectionAnchorRef.current = null;
+    }
+  }, [visibleFiles, listingIsReal]);
+
+  useEffect(() => () => downloadAbortRef.current?.abort(), []);
+
   const deleteMutation = useMutation({
     mutationFn: async (paths: string[]) => {
       // Delete files one by one
@@ -328,6 +376,7 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
       showToast(t('printerFiles.toast.filesDeleted', { count: filesToDelete.length }));
       queryClient.invalidateQueries({ queryKey: ['printerFiles', printerId] });
       setSelectedFiles(new Set());
+      selectionAnchorRef.current = null;
       setFilesToDelete([]);
     },
     onError: (error: Error) => {
@@ -338,6 +387,7 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
   const navigateToFolder = (path: string) => {
     setCurrentPath(path);
     setSelectedFiles(new Set());
+    selectionAnchorRef.current = null;
   };
 
   const navigateUp = () => {
@@ -346,13 +396,30 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
     parts.pop();
     setCurrentPath(parts.length ? '/' + parts.join('/') : '/');
     setSelectedFiles(new Set());
+    selectionAnchorRef.current = null;
   };
 
   const toggleFileSelection = (path: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const selectablePaths = visibleFiles.filter(file => !file.is_directory).map(file => file.path);
+    const anchorIndex = selectionAnchorRef.current
+      ? selectablePaths.indexOf(selectionAnchorRef.current)
+      : -1;
+    const targetIndex = selectablePaths.indexOf(path);
+    const extendsRange = e.shiftKey && anchorIndex !== -1 && targetIndex !== -1;
+
+    // Moved out of the state updater deliberately: React may run an updater
+    // more than once, and a ref assignment is not the kind of thing that
+    // survives being replayed by accident.
+    if (!extendsRange) selectionAnchorRef.current = path;
+
     setSelectedFiles(prev => {
       const next = new Set(prev);
-      if (next.has(path)) {
+      if (extendsRange) {
+        const start = Math.min(anchorIndex, targetIndex);
+        const end = Math.max(anchorIndex, targetIndex);
+        selectablePaths.slice(start, end + 1).forEach(rangePath => next.add(rangePath));
+      } else if (next.has(path)) {
         next.delete(path);
       } else {
         next.add(path);
@@ -362,55 +429,66 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
   };
 
   const selectAllFiles = () => {
-    if (!data?.files) return;
-    const filePaths = data.files
-      .filter(f => !f.is_directory && (!searchQuery || f.name.toLowerCase().includes(searchQuery.toLowerCase())))
-      .map(f => f.path);
+    const filePaths = visibleFiles.filter(file => !file.is_directory).map(file => file.path);
     setSelectedFiles(new Set(filePaths));
+    selectionAnchorRef.current = null;
   };
 
   const deselectAllFiles = () => {
     setSelectedFiles(new Set());
+    selectionAnchorRef.current = null;
   };
 
   const handleDownload = async () => {
     if (selectedFiles.size === 0) return;
 
-    const paths = Array.from(selectedFiles);
+    const paths = visibleFiles.filter(file => !file.is_directory && selectedFiles.has(file.path)).map(file => file.path);
+    if (paths.length === 0) return;
+    const controller = new AbortController();
+    downloadAbortRef.current = controller;
 
-    if (paths.length === 1) {
-      // Single file - direct download with auth
-      api.downloadPrinterFile(printerId, paths[0]).catch((err) => {
-        console.error('Printer file download failed:', err);
-      });
-      setSelectedFiles(new Set());
-      return;
-    }
-
-    // Multiple files - download as ZIP
     setDownloadProgress({ current: 0, total: paths.length });
     try {
-      const blob = await api.downloadPrinterFilesAsZip(printerId, paths);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${printerName.replace(/[^a-zA-Z0-9]/g, '_')}-files.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      showToast(`Downloaded ${paths.length} files as ZIP`);
+      const sizes = Object.fromEntries(paths.map(path => [
+        path,
+        data?.files.find(file => file.path === path)?.size ?? 0,
+      ]));
+      const result = await api.downloadPrinterFilesAsZip(
+        printerId,
+        paths,
+        sizes,
+        paths.length === 1
+          ? data?.files.find(file => file.path === paths[0])?.name ?? 'printer-file'
+          : `${printerName.replace(/[^a-zA-Z0-9]/g, '_')}-files.zip`,
+        paths.length > 1,
+        controller.signal,
+        (completed, total) => setDownloadProgress({ current: completed, total }),
+      );
+      if (result.failed > 0) {
+        showToast(t('printerFiles.zipPartial', {
+          successful: result.successful,
+          total: result.requested,
+        }), 'warning');
+      } else {
+        showToast(t('printerFiles.zipStarted', { count: result.successful }));
+      }
       setSelectedFiles(new Set());
+      selectionAnchorRef.current = null;
     } catch (error) {
-      showToast(`Download failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      showToast(t('printerFiles.downloadFailed', {
+        error: error instanceof Error ? error.message : t('printerFiles.unknownError'),
+      }), 'error');
     } finally {
+      if (downloadAbortRef.current === controller) downloadAbortRef.current = null;
       setDownloadProgress(null);
     }
   };
 
   const handleDelete = () => {
     if (selectedFiles.size === 0) return;
-    setFilesToDelete(Array.from(selectedFiles));
+    setFilesToDelete(
+      visibleFiles.filter(file => !file.is_directory && selectedFiles.has(file.path)).map(file => file.path),
+    );
   };
 
   // Quick navigation buttons for common directories
@@ -515,6 +593,8 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
             size="sm"
             onClick={() => refetch()}
             disabled={isLoading}
+            aria-label={t('common.refresh')}
+            title={t('common.refresh')}
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
@@ -540,47 +620,17 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-8 h-8 text-bambu-green animate-spin" />
               </div>
+            ) : data?.warnings?.includes('printer_unavailable') ? (
+              <div className="text-center py-12 text-amber-600 dark:text-amber-400">
+                {t('printerFiles.printerUnavailable')}
+              </div>
             ) : !data?.files?.length ? (
               <div className="text-center py-12 text-bambu-gray">
-                No files in this directory
+                {t('printerFiles.noFiles')}
               </div>
             ) : (
               <div className="space-y-1">
-                {/* Filter and sort: directories first, then files with selected sort */}
-                {[...data.files]
-                  .filter((file) =>
-                    !searchQuery || file.name.toLowerCase().includes(searchQuery.toLowerCase())
-                  )
-                  .sort((a, b) => {
-                    // Directories always first
-                    if (a.is_directory && !b.is_directory) return -1;
-                    if (!a.is_directory && b.is_directory) return 1;
-
-                    // Apply selected sort within same type
-                    switch (sortBy) {
-                      case 'name-asc':
-                        return a.name.localeCompare(b.name);
-                      case 'name-desc':
-                        return b.name.localeCompare(a.name);
-                      case 'size-asc':
-                        return a.size - b.size;
-                      case 'size-desc':
-                        return b.size - a.size;
-                      case 'date-asc': {
-                        const aTime = a.mtime ? parseUTCDate(a.mtime)?.getTime() ?? 0 : 0;
-                        const bTime = b.mtime ? parseUTCDate(b.mtime)?.getTime() ?? 0 : 0;
-                        return aTime - bTime;
-                      }
-                      case 'date-desc': {
-                        const aTime = a.mtime ? parseUTCDate(a.mtime)?.getTime() ?? 0 : 0;
-                        const bTime = b.mtime ? parseUTCDate(b.mtime)?.getTime() ?? 0 : 0;
-                        return bTime - aTime;
-                      }
-                      default:
-                        return a.name.localeCompare(b.name);
-                    }
-                  })
-                  .map((file) => {
+                {visibleFiles.map((file) => {
                     const FileIcon = getFileIcon(file.name, file.is_directory);
                     const isSelected = selectedFiles.has(file.path);
 
@@ -592,9 +642,11 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
                             ? 'bg-bambu-green/20 border border-bambu-green/50'
                             : 'hover:bg-bambu-dark-tertiary'
                         }`}
-                        onClick={() => {
+                        onClick={(event) => {
                           if (file.is_directory) {
                             navigateToFolder(file.path);
+                          } else {
+                            toggleFileSelection(file.path, event);
                           }
                         }}
                       >
@@ -603,6 +655,10 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
                           <button
                             onClick={(e) => toggleFileSelection(file.path, e)}
                             className="flex-shrink-0 text-bambu-gray hover:text-white"
+                            aria-label={t(isSelected ? 'printerFiles.deselectFile' : 'printerFiles.selectFile', {
+                              name: file.name,
+                            })}
+                            title={t('printerFiles.shiftSelectHint')}
                           >
                             {isSelected ? (
                               <CheckSquare className="w-5 h-5 text-bambu-green" />

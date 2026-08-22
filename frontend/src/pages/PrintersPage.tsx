@@ -6515,7 +6515,7 @@ function PrinterCard({
                   variant="secondary"
                   size="sm"
                   onClick={() => setShowFileManager(true)}
-                  disabled={!isConnected || !hasPermission('printers:files')}
+                  disabled={!hasPermission('printers:files')}
                   title={!hasPermission('printers:files') ? t('printers.permission.noFiles') : t('printers.browseFiles')}
                   className={footerIconButtonClass}
                 >

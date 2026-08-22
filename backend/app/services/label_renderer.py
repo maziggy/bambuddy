@@ -154,24 +154,28 @@ def _qr_png_bytes(payload: str, *, box_size: int = 4, border: int = 2) -> bytes:
 def _draw_swatch(c: rl_canvas.Canvas, x: float, y: float, w: float, h: float, data: LabelData) -> None:
     """Draw the colour swatch. Multi-colour spools use vertical stripes
     (matching the FilamentSwatch convention in the frontend)."""
-    primary = _color_from_hex(data.rgba)
-    extras = [_color_from_hex(h) for h in (data.extra_colors or []) if h]
-    colors = [primary, *extras]
+    c.saveState()
+    try:
+        primary = _color_from_hex(data.rgba)
+        extras = [_color_from_hex(h) for h in (data.extra_colors or []) if h]
+        colors = [primary, *extras]
 
-    if not colors:
-        c.setFillColor(HexColor(0x808080))
-        c.rect(x, y, w, h, stroke=0, fill=1)
-        return
+        if not colors:
+            c.setFillColor(HexColor(0x808080))
+            c.rect(x, y, w, h, stroke=0, fill=1)
+            return
 
-    stripe_w = w / len(colors)
-    for i, col in enumerate(colors):
-        c.setFillColor(col)
-        c.rect(x + i * stripe_w, y, stripe_w, h, stroke=0, fill=1)
+        stripe_w = w / len(colors)
+        for i, col in enumerate(colors):
+            c.setFillColor(col)
+            c.rect(x + i * stripe_w, y, stripe_w, h, stroke=0, fill=1)
 
-    # Thin black border so light-colour swatches stay visible on white labels.
-    c.setStrokeColor(black)
-    c.setLineWidth(0.3)
-    c.rect(x, y, w, h, stroke=1, fill=0)
+        # Thin black border so light-colour swatches stay visible on white labels.
+        c.setStrokeColor(black)
+        c.setLineWidth(0.3)
+        c.rect(x, y, w, h, stroke=1, fill=0)
+    finally:
+        c.restoreState()
 
 
 def _roomy_qr_size(inner_w: float, inner_h: float) -> float:

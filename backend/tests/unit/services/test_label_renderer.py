@@ -207,6 +207,17 @@ def _render_uncompressed(template, data, monochrome=False):
     return buf.getvalue()
 
 
+def test_transparent_swatch_does_not_apply_its_alpha_to_qr():
+    pdf = _render_uncompressed(
+        "box_62x29",
+        [_sample(rgba="FF000000", deeplink_url="https://example.test/inventory?spool=1")],
+    )
+
+    alpha_start = pdf.index(b"/gRLs0 gs")
+    qr_draw = pdf.index(b" Do", alpha_start)
+    assert b"Q" in pdf[alpha_start:qr_draw]
+
+
 def test_ams_template_actually_renders_text():
     """Regression: the first cut of the AMS-holder layout produced labels with
     only swatch + QR and no text at all because the side-by-side layout left

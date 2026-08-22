@@ -306,6 +306,37 @@ describe('ArchivesPage', () => {
       // Archives with multi-plate support will show navigation on hover
       // The plates API is called lazily when hovering
     });
+
+    it('names the plate in the card title when it is not the first one', async () => {
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([{ ...mockArchives[1], plate_id: 3 }])
+        )
+      );
+
+      render(<ArchivesPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Bracket v2 \u2014 Plate 3')).toBeInTheDocument();
+      });
+    });
+
+    it('leaves the title alone for a print on plate 1', async () => {
+      // The queue records a plate for single-plate files too, so an ungated
+      // label reads "Plate 1" on ordinary prints (#2796).
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([{ ...mockArchives[0], plate_id: 1 }])
+        )
+      );
+
+      render(<ArchivesPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/Plate 1/)).not.toBeInTheDocument();
+    });
   });
 
   describe('timelapse management', () => {

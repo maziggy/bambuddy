@@ -1087,7 +1087,15 @@ function ArchiveCard({
         <div className="flex items-center justify-between gap-2 mb-1">
           <h3 className="min-w-0 font-medium text-white truncate">
             {archive.print_name || archive.filename}
-            {archive.plate_id != null && ` — ${t('printers.plateNumber', { number: archive.plate_id })}`}
+            {/* Only a plate past the first says anything. The queue records a
+                plate for single-plate files too -- the print dialog auto-selects
+                the only plate there is -- so an ungated label reads "Plate 1" on
+                ordinary prints, and eats room from the truncated name (#2796).
+                The plate carousel is the one place a multi-plate archive printed
+                from plate 1 still identifies itself; it already gates on
+                is_multi_plate, which this title cannot read without waiting for
+                the hover-lazy plates request. */}
+            {archive.plate_id != null && archive.plate_id > 1 && ` — ${t('printers.plateNumber', { number: archive.plate_id })}`}
           </h3>
           <Button
             variant="ghost"

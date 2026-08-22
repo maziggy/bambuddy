@@ -344,6 +344,11 @@ class FirmwareUpdateService:
                     progress_callback=on_upload_progress,
                     socket_timeout=ftp_timeout,
                     printer_model=model,
+                    # Someone pressed "update firmware" and is watching a
+                    # progress bar. Bounded and user-initiated, like a print
+                    # dispatch, so it does not spend its retries on a cool-off
+                    # meant for the background sweeps (#2898).
+                    respect_handshake_cooloff=False,
                     max_retries=ftp_retry_count,
                     retry_delay=ftp_retry_delay,
                     operation_name=f"Upload firmware to printer {printer_id}",
@@ -357,6 +362,7 @@ class FirmwareUpdateService:
                     progress_callback=on_upload_progress,
                     socket_timeout=ftp_timeout,
                     printer_model=model,
+                    respect_handshake_cooloff=False,
                 )
 
             if not success:

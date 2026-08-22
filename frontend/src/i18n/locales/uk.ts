@@ -874,6 +874,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: 'Відео друку',
+      download: 'Завантажити відео друку',
+      searching: 'Пошук відео на принтері…',
+      searchFailed: 'Не вдалося перевірити відео на принтері.',
+      none: 'Для цього друку не знайдено таймлапсів або фрагментів IP-камери.',
+      attachedTimelapse: 'Прикріплений таймлапс',
+      printerFiles: 'Файли, що залишилися на принтері',
+      downloadSelected: 'Завантажити вибране',
+      printerMissing: 'Принтер більше не налаштовано',
+      timelapseUnavailable: 'Не вдалося прочитати каталог таймлапсів',
+      ipcamUnavailable: 'Не вдалося прочитати каталог IP-камери',
+    },
     title: "Архіви друку",
     no3mfBanner: {
       title: "Деякі нещодавні роздруківки не вдалося заархівувати з мініатюрами",
@@ -3133,6 +3146,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: 'Розпочато завантаження ZIP для {{count}} файлу',
+    zipStarted_other: 'Розпочато завантаження ZIP для {{count}} файлів',
+    zipPartial: 'Розпочато завантаження ZIP із {{successful}} з {{total}} файлів; решту отримати не вдалося',
+    downloadFailed: 'Помилка завантаження: {{error}}',
+    unknownError: 'Невідома помилка',
+    shiftSelectHint: 'Клацніть із Shift, щоб вибрати діапазон',
+    selectFile: 'Вибрати {{name}}',
+    deselectFile: 'Зняти вибір із {{name}}',
     title: "Менеджер файлів",
     storageUsed: "Використовується:",
     storageFree: "Вільно:",
@@ -3142,6 +3163,7 @@ export default {
     deleteFileConfirm: "Видалити \"{{name}}\"? Це неможливо скасувати.",
     deleteFilesConfirm: "Видалити вибрані файли {{count}}? Це неможливо скасувати.",
     noFiles: "Немає файлів на принтері",
+    printerUnavailable: 'Файлова служба принтера недоступна. Повторіть спробу, коли принтер буде доступний.',
     loadingFiles: "Завантаження файлів...",
     failedToLoad: "Не вдалося завантажити файли",
     toast: {

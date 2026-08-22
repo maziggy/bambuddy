@@ -870,6 +870,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: 'Vídeos de la impresión',
+      download: 'Descargar vídeos de la impresión',
+      searching: 'Buscando vídeos en la impresora…',
+      searchFailed: 'No se pudieron buscar vídeos en la impresora.',
+      none: 'No se encontraron vídeos timelapse ni fragmentos de cámara IP para esta impresión.',
+      attachedTimelapse: 'Timelapse adjunto',
+      printerFiles: 'Archivos que aún están en la impresora',
+      downloadSelected: 'Descargar seleccionados',
+      printerMissing: 'La impresora ya no está configurada',
+      timelapseUnavailable: 'No se pudo leer el directorio de timelapses',
+      ipcamUnavailable: 'No se pudo leer el directorio de la cámara IP',
+    },
     title: 'Archivos de impresión',
     no3mfBanner: {
       title: 'Algunas impresiones recientes no se pudieron archivar con miniaturas',
@@ -3107,6 +3120,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: 'Se inició la descarga ZIP de {{count}} archivo',
+    zipStarted_other: 'Se inició la descarga ZIP de {{count}} archivos',
+    zipPartial: 'La descarga ZIP comenzó con {{successful}} de {{total}} archivos; no se pudieron recuperar los demás',
+    downloadFailed: 'Error de descarga: {{error}}',
+    unknownError: 'Error desconocido',
+    shiftSelectHint: 'Mayús-clic para seleccionar un intervalo',
+    selectFile: 'Seleccionar {{name}}',
+    deselectFile: 'Deseleccionar {{name}}',
     title: 'Gestor de archivos',
     storageUsed: 'Usado:',
     storageFree: 'Libre:',
@@ -3116,6 +3137,7 @@ export default {
     deleteFileConfirm: '¿Eliminar "{{name}}"? Esto no se puede deshacer.',
     deleteFilesConfirm: '¿Eliminar {{count}} archivos seleccionados? Esto no se puede deshacer.',
     noFiles: 'No hay archivos en la impresora',
+    printerUnavailable: 'El servicio de archivos de la impresora no está disponible. Inténtelo de nuevo cuando la impresora esté accesible.',
     loadingFiles: 'Cargando archivos...',
     failedToLoad: 'Error al cargar los archivos',
     toast: {

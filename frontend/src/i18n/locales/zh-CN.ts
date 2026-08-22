@@ -870,6 +870,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: '打印视频',
+      download: '下载打印视频',
+      searching: '正在检查打印机中的视频…',
+      searchFailed: '无法检查打印机中的视频。',
+      none: '未找到此打印任务的延时摄影或 IP 摄像头视频片段。',
+      attachedTimelapse: '已附加的延时摄影',
+      printerFiles: '仍保存在打印机上的文件',
+      downloadSelected: '下载所选文件',
+      printerMissing: '打印机已不在配置中',
+      timelapseUnavailable: '无法读取延时摄影目录',
+      ipcamUnavailable: '无法读取 IP 摄像头目录',
+    },
     title: '打印归档',
     no3mfBanner: {
       title: '最近的一些打印未能附带缩略图归档',
@@ -3093,6 +3106,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: '已开始下载 {{count}} 个文件的 ZIP',
+    zipStarted_other: '已开始下载 {{count}} 个文件的 ZIP',
+    zipPartial: '已开始下载 ZIP，共 {{total}} 个文件中成功获取 {{successful}} 个，其余文件无法获取',
+    downloadFailed: '下载失败：{{error}}',
+    unknownError: '未知错误',
+    shiftSelectHint: '按住 Shift 单击以选择范围',
+    selectFile: '选择 {{name}}',
+    deselectFile: '取消选择 {{name}}',
     title: '文件管理器',
     storageUsed: '已用：',
     storageFree: '剩余：',
@@ -3102,6 +3123,7 @@ export default {
     deleteFileConfirm: '删除"{{name}}"？此操作无法撤销。',
     deleteFilesConfirm: '删除 {{count}} 个选中的文件？此操作无法撤销。',
     noFiles: '打印机上没有文件',
+    printerUnavailable: '打印机文件服务不可用。请在打印机可访问时重试。',
     loadingFiles: '加载文件中...',
     failedToLoad: '加载文件失败',
     toast: {

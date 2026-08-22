@@ -4,7 +4,7 @@ from urllib.parse import unquote
 
 import pytest
 
-from backend.app.utils.http import build_content_disposition
+from backend.app.utils.http import build_content_disposition, safe_download_filename
 
 
 @pytest.mark.parametrize(
@@ -69,3 +69,19 @@ def test_disposition_param_is_respected() -> None:
 def test_quotes_and_backslashes_stripped_from_ascii_fallback() -> None:
     header = build_content_disposition('a"b\\c.pdf')
     assert 'filename="abc.pdf"' in header
+
+
+def test_safe_download_filename_bounds_unicode_and_preserves_normal_suffixes() -> None:
+    filename = f"{'界' * 300}.gcode.3mf"
+    result = safe_download_filename(filename)
+
+    assert len(result) == 200
+    assert result.endswith(".gcode.3mf")
+
+
+def test_safe_download_filename_drops_path_control_chars_and_pathological_suffix() -> None:
+    result = safe_download_filename(f"../folder/bad\x00name.{'x' * 300}")
+
+    assert "/" not in result
+    assert "\x00" not in result
+    assert len(result) == 200

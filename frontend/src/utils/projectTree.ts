@@ -28,3 +28,26 @@ export function eligibleParents(
   }
   return projects.filter((p) => !blocked.has(p.id));
 }
+
+/**
+ * Projects a picker should offer when filing something away (#2888).
+ *
+ * An archived project is one its owner has explicitly put out of the way, so
+ * leaving it in a picker only lengthens a list they then have to search --
+ * the reporter had five active projects behind thirty-odd finished ones.
+ * Completed projects stay: filing a reprint against a finished project is
+ * ordinary, and "completed" says the work is done, not that it should be
+ * hidden.
+ *
+ * `keepId` names one project that survives whatever its status -- the one the
+ * thing being edited already belongs to. Without it a controlled `<select>`
+ * holds a value no option matches, and the browser resets it to the first
+ * option, which here is "No project": an archive filed in an archived project
+ * would state, in as many words, that it is filed nowhere.
+ */
+export function assignableProjects(
+  projects: ProjectListItem[],
+  keepId?: number | null,
+): ProjectListItem[] {
+  return projects.filter((p) => p.status !== 'archived' || p.id === keepId);
+}

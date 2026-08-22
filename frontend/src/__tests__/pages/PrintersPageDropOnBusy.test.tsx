@@ -58,9 +58,12 @@ function renderWith(statusOver: Record<string, unknown>) {
     http.get('/api/v1/printers/', () => HttpResponse.json([mockPrinter])),
     http.get('/api/v1/printers/:id/status', () => HttpResponse.json(makeStatus(statusOver))),
     http.get('/api/v1/queue/', () => HttpResponse.json([])),
-    http.post('/api/v1/library/files', async ({ request }) => {
-      const form = await request.formData();
-      uploads.push((form.get('file') as File).name);
+    http.post('/api/v1/library/files', () => {
+      // Parsing multipart bodies in MSW depends on the Node.js FormData
+      // implementation and is unrelated to this regression. Recording the
+      // matched request proves the page attempted the upload without making
+      // the test sensitive to that runtime detail.
+      uploads.push('request');
       return HttpResponse.json({ id: 7, filename: 'part.gcode', metadata: {} });
     }),
   );

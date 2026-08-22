@@ -42,14 +42,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.user import User
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
-    MATERIAL_TEMPS,
     filament_id_to_setting_id,
     normalize_slicer_filament,
 )
+from backend.app.utils.filament_types import is_material_name
 
 logger = logging.getLogger(__name__)
-
-_KNOWN_MATERIALS = set(MATERIAL_TEMPS.keys()) | set(GENERIC_FILAMENT_IDS.keys())
 
 
 async def resolve_slicer_filament(
@@ -153,6 +151,12 @@ async def resolve_slicer_filament(
                     tray_info_idx = lp_filament_id
                     setting_id = filament_id_to_setting_id(lp_filament_id)
                 else:
+                    # Deliberately not widened to cover product-line materials
+                    # ("PLA+", "HTPLA") the way the callers' own fallbacks were
+                    # (#2902). Returning an id here rather than "" would skip
+                    # the caller's whole no-id block, and with it the slot-reuse
+                    # branch that keeps a printer's calibrated preset -- so the
+                    # widening belongs there, after reuse has had its turn.
                     mat = (material or lp.filament_type or "").upper().strip()
                     tray_info_idx = (
                         GENERIC_FILAMENT_IDS.get(mat) or GENERIC_FILAMENT_IDS.get(mat.split("-")[0].split(" ")[0]) or ""
@@ -181,7 +185,9 @@ async def resolve_slicer_filament(
     # material fallback can rescue the slot:
     #   1. Literal material names ("PLA", "PETG-CF") that pass through
     #      normalize_slicer_filament unchanged when the spool's slicer_filament
-    #      is free-text rather than a real preset ID.
+    #      is free-text rather than a real preset ID. Product lines ("PLA+",
+    #      "HTPLA") count as material names too -- see is_material_name, which
+    #      is shared with the slot-reuse check that must agree with this.
     #   2. PFUS-prefix cloud setting_ids — valid as setting_id but rejected
     #      by the slicer as tray_info_idx (the printer's calibration table
     #      indexes by filament_id, and a PFUS isn't one). This normally gets
@@ -195,9 +201,7 @@ async def resolve_slicer_filament(
     # Valid tray_info_idx values: "GF" + letter + digits (Bambu official) or
     # "P" followed by hex (user/local presets, NOT "PFUS" or "PFCN").
     if tray_info_idx and (
-        tray_info_idx.upper() in _KNOWN_MATERIALS
-        or tray_info_idx.startswith("PFUS")
-        or tray_info_idx.startswith("PFCN")
+        is_material_name(tray_info_idx) or tray_info_idx.startswith("PFUS") or tray_info_idx.startswith("PFCN")
     ):
         tray_info_idx = ""
         # Preserve setting_id when it's still a valid slicer reference

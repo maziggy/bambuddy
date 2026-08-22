@@ -870,6 +870,19 @@ export default {
 
   // Archives page
   archives: {
+    media: {
+      title: 'Vidéos d’impression',
+      download: 'Télécharger les vidéos d’impression',
+      searching: 'Recherche de vidéos sur l’imprimante…',
+      searchFailed: 'Impossible de rechercher les vidéos sur l’imprimante.',
+      none: 'Aucun timelapse ni segment de caméra IP n’a été trouvé pour cette impression.',
+      attachedTimelapse: 'Timelapse joint',
+      printerFiles: 'Fichiers encore présents sur l’imprimante',
+      downloadSelected: 'Télécharger la sélection',
+      printerMissing: 'L’imprimante n’est plus configurée',
+      timelapseUnavailable: 'Impossible de lire le dossier des timelapses',
+      ipcamUnavailable: 'Impossible de lire le dossier de la caméra IP',
+    },
     title: 'Archives d\'impression',
     no3mfBanner: {
       title: 'Certaines impressions récentes n\'ont pas pu être archivées avec leur miniature',
@@ -3094,6 +3107,14 @@ export default {
 
   // Printer File Manager modal (printer internal storage)
   printerFiles: {
+    zipStarted_one: 'Téléchargement ZIP de {{count}} fichier démarré',
+    zipStarted_other: 'Téléchargement ZIP de {{count}} fichiers démarré',
+    zipPartial: 'Le téléchargement ZIP a démarré avec {{successful}} fichiers sur {{total}} ; les autres n’ont pas pu être récupérés',
+    downloadFailed: 'Échec du téléchargement : {{error}}',
+    unknownError: 'Erreur inconnue',
+    shiftSelectHint: 'Maj-clic pour sélectionner une plage',
+    selectFile: 'Sélectionner {{name}}',
+    deselectFile: 'Désélectionner {{name}}',
     title: 'Gestionnaire de fichiers',
     storageUsed: 'Utilisé :',
     storageFree: 'Libre :',
@@ -3103,6 +3124,7 @@ export default {
     deleteFileConfirm: 'Supprimer "{{name}}" ?',
     deleteFilesConfirm: 'Supprimer les {{count}} fichiers sélectionnés ?',
     noFiles: 'Aucun fichier sur l\'imprimante',
+    printerUnavailable: 'Le service de fichiers de l\'imprimante est indisponible. Réessayez lorsque l\'imprimante est accessible.',
     loadingFiles: 'Chargement...',
     failedToLoad: 'Échec chargement fichiers',
     toast: {

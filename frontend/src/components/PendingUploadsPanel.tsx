@@ -9,6 +9,7 @@ import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { ConfirmModal } from './ConfirmModal';
 import { formatFileSize } from '../utils/file';
+import { assignableProjects } from '../utils/projectTree';
 
 function formatTimeAgo(dateStr: string): string {
   const date = new Date(dateStr);
@@ -183,11 +184,12 @@ export function PendingUploadsPanel() {
     refetchInterval: 10000, // Refresh every 10 seconds
   });
 
-  // Fetch projects for dropdown
+  // Fetch projects for dropdown. Nothing pending is filed anywhere yet, so
+  // there is no current project to hold on to -- archived ones just go (#2888).
   const { data: projects } = useQuery({
     queryKey: ['projects'],
     queryFn: () => api.getProjects(),
-    select: (rows) => [...rows].sort((a, b) => a.name.localeCompare(b.name)),
+    select: (rows) => assignableProjects([...rows].sort((a, b) => a.name.localeCompare(b.name))),
   });
 
   // Archive mutation

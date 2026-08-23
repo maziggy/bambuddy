@@ -1030,6 +1030,7 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
         {selectedSpool && (
           <p className="text-zinc-400 text-sm">
             {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
+            {selectedSpool.subtype ? ` ${selectedSpool.subtype}` : ''}
             {selectedSpool.color_name ? ` - ${selectedSpool.color_name}` : ''}
           </p>
         )}

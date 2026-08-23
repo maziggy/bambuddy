@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
+from backend.app.schemas.spool import normalize_effect_type
 from backend.app.utils.tag_normalization import (
     normalize_tag_uid as _normalize_tag_uid,
     normalize_tray_uuid as _normalize_tray_uuid,
@@ -99,6 +100,8 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     # PLA Basic happens to come first in catalog insertion order. See #1227.
     rgba = tray_color if tray_color else None
     color_name = None
+    extra_colors = None
+    effect_type = None
 
     # Transparent filament (#1545): the AMS reports alpha=00 for clear spools.
     # Skip the catalog lookup — the catalog only stores RGB so 000000 would
@@ -124,6 +127,13 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
         entry = cat_result.scalar_one_or_none()
         if entry:
             color_name = entry.color_name
+            # The same row the spool form's colour picker reads. It hands
+            # `extra_colors` and `effect_type` to the new spool when a user
+            # picks a colour by hand (ColorSection.selectColor), and this path
+            # was taking the name alone -- so a roll added by hand rendered
+            # its gradient and a roll the AMS identified for you did not.
+            extra_colors = entry.extra_colors
+            effect_type = entry.effect_type
 
     # If tray_id_name is a human-readable name (no "-" code), fall back to it.
     if not color_name and tray_id_name and "-" not in tray_id_name:
@@ -135,6 +145,28 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
         rgba,
         color_name,
     )
+
+    # Fall back to the subtype for the swatch's rendering hint. `effect_type`
+    # is a visual variant kept independent of `subtype` so a user can override
+    # how a roll is drawn without touching Bambu's categorical label -- but
+    # nothing had ever set it here, and the shipped colour catalogue carries no
+    # effect on any of its 600-odd rows, so in practice it was always NULL and
+    # every wood, silk, sparkle and gradient roll drew as a flat disc. The
+    # subtype is the answer where the catalogue has none: it is derived above
+    # from what the printer reports, and the two vocabularies already line up
+    # ("Wood", "Silk", "Dual Color" are values of both). A subtype that names
+    # no effect -- Basic, Tough, CF -- leaves it NULL, which is the honest
+    # answer rather than a guessed overlay.
+    # "Silk+" is the same finish as "Silk" with a plus on the product name, so
+    # the trailing sign is dropped on a second attempt rather than costing the
+    # roll its overlay.
+    if effect_type is None and subtype:
+        for candidate in (subtype, subtype.rstrip("+")):
+            try:
+                effect_type = normalize_effect_type(candidate)
+            except ValueError:
+                continue
+            break
 
     # Look up core weight from spool catalog
     core_weight = 250  # Default for Bambu Lab plastic spools
@@ -173,6 +205,8 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
         subtype=subtype,
         color_name=color_name,
         rgba=rgba,
+        extra_colors=extra_colors,
+        effect_type=effect_type,
         brand="Bambu Lab",
         label_weight=label_weight,
         core_weight=core_weight,

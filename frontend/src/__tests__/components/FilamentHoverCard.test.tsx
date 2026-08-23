@@ -205,6 +205,7 @@ describe('FilamentHoverCard', () => {
             assignedSpool: {
               id: 1,
               material: 'PLA',
+              subtype: null,
               brand: 'Devil Design',
               color_name: 'Black',
             },
@@ -280,6 +281,7 @@ describe('FilamentHoverCard', () => {
     const inventorySpool = {
       id: 42,
       material: 'PLA',
+      subtype: null,
       brand: 'eSun',
       color_name: 'Black',
     };
@@ -420,7 +422,7 @@ describe('FilamentHoverCard', () => {
         <FilamentHoverCard
           data={baseFilamentData}
           inventory={{
-            assignedSpool: { id: 7, material: 'PLA', brand: 'eSun', color_name: 'Black' },
+            assignedSpool: { id: 7, material: 'PLA', subtype: null, brand: 'eSun', color_name: 'Black' },
             onUnassignSpool,
           }}
         >
@@ -607,7 +609,7 @@ describe('FilamentHoverCard colour name (#2875)', () => {
         data={{ ...whiteMatte, colorName: 'Jade White' }}
         inventory={{
           isAssigned: true,
-          assignedSpool: { id: 17, material: 'PLA', brand: 'Bambu Lab', color_name: 'Matte Ivory White' },
+          assignedSpool: { id: 17, material: 'PLA', subtype: null, brand: 'Bambu Lab', color_name: 'Matte Ivory White' },
         }}
       >
         <div>trigger</div>
@@ -626,7 +628,7 @@ describe('FilamentHoverCard colour name (#2875)', () => {
         data={whiteMatte}
         inventory={{
           isAssigned: true,
-          assignedSpool: { id: 17, material: 'PLA', brand: 'Bambu Lab', color_name: 'A06-D0' },
+          assignedSpool: { id: 17, material: 'PLA', subtype: null, brand: 'Bambu Lab', color_name: 'A06-D0' },
         }}
       >
         <div>trigger</div>
@@ -646,7 +648,7 @@ describe('FilamentHoverCard colour name (#2875)', () => {
         data={whiteMatte}
         inventory={{
           isAssigned: true,
-          assignedSpool: { id: 17, material: 'PLA', brand: 'Bambu Lab', color_name: colorName },
+          assignedSpool: { id: 17, material: 'PLA', subtype: null, brand: 'Bambu Lab', color_name: colorName },
         }}
       >
         <div>trigger</div>
@@ -664,7 +666,7 @@ describe('FilamentHoverCard colour name (#2875)', () => {
         data={whiteMatte}
         inventory={{
           isAssigned: true,
-          assignedSpool: { id: 17, material: 'PLA', brand: 'Bambu Lab', color_name: null },
+          assignedSpool: { id: 17, material: 'PLA', subtype: null, brand: 'Bambu Lab', color_name: null },
         }}
       >
         <div>trigger</div>
@@ -672,5 +674,60 @@ describe('FilamentHoverCard colour name (#2875)', () => {
     );
 
     await waitFor(() => expect(screen.getByText('Ivory White')).toBeInTheDocument());
+  });
+});
+
+// A spool's subtype is part of its name. Dropping it made a wood-filled roll
+// read as plain PLA on the slot card, which is the display-side version of
+// the mistake #2902 fixed on the backend -- and the printer, the inventory
+// page and Studio all named it correctly at the same time, so the card was
+// the only thing saying otherwise.
+describe('FilamentHoverCard assigned spool name', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    __resetColorCatalogForTests();
+  });
+
+  function showAssigned(assignedSpool: {
+    id: number;
+    material: string;
+    subtype: string | null;
+    brand: string | null;
+    color_name: string | null;
+  }) {
+    renderWithHover(
+      <FilamentHoverCard data={baseFilamentData} inventory={{ isAssigned: true, assignedSpool }}>
+        <div>trigger</div>
+      </FilamentHoverCard>
+    );
+    vi.advanceTimersByTime(100);
+  }
+
+  it('names a filled filament by its subtype, not by its base material', async () => {
+    showAssigned({
+      id: 77,
+      material: 'PLA',
+      subtype: 'Wood',
+      brand: 'Bambu Lab',
+      color_name: 'Classic Birch',
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText('Bambu Lab PLA Wood - Classic Birch')).toBeInTheDocument()
+    );
+  });
+
+  it('omits the subtype entirely for a spool that has none', async () => {
+    showAssigned({
+      id: 78,
+      material: 'PLA',
+      subtype: null,
+      brand: 'Bambu Lab',
+      color_name: 'Jade White',
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText('Bambu Lab PLA - Jade White')).toBeInTheDocument()
+    );
   });
 });

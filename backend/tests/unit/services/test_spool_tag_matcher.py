@@ -111,6 +111,109 @@ async def test_create_spool_from_tray_relationships_loaded(db_session):
     assert spool.assignments == []
 
 
+# -- create_spool_from_tray: swatch rendering ------------------------------
+#
+# `effect_type` and `extra_colors` drive how a roll is drawn in the inventory
+# and on the slot card. Nothing set either here, and the shipped colour
+# catalogue carries an effect on none of its rows, so every auto-created wood,
+# silk, sparkle and gradient roll came out as a flat disc.
+
+
+@pytest.mark.asyncio
+async def test_create_spool_from_tray_takes_effect_from_subtype(db_session):
+    """A wood-filled roll is drawn as wood, not as a flat disc.
+
+    The catalogue row that names the colour has no effect of its own -- none
+    of the shipped rows do -- so the subtype the printer reported is what the
+    swatch has to be read from.
+    """
+    db_session.add(
+        ColorCatalogEntry(
+            manufacturer="Bambu Lab",
+            color_name="Classic Birch",
+            hex_color="#918669",
+            material="PLA Wood",
+            is_default=True,
+        )
+    )
+    await db_session.flush()
+
+    spool = await create_spool_from_tray(
+        db_session,
+        {**SAMPLE_TRAY, "tray_sub_brands": "PLA Wood", "tray_color": "918669FF", "tray_id_name": "A16-G0"},
+    )
+
+    assert spool.subtype == "Wood"
+    assert spool.color_name == "Classic Birch"
+    assert spool.effect_type == "wood"
+
+
+@pytest.mark.asyncio
+async def test_create_spool_from_tray_prefers_the_catalogue_row_over_the_subtype(db_session):
+    """A catalogue row that does carry rendering columns is what gets used.
+
+    This is the same row the spool form's colour picker reads, and it hands
+    both columns to a spool a user adds by hand; taking only the name here is
+    what made an RFID roll render differently from a hand-added one.
+    """
+    db_session.add(
+        ColorCatalogEntry(
+            manufacturer="Bambu Lab",
+            color_name="Dawn Radiance",
+            hex_color="#FF0000",
+            material="PLA Basic",
+            extra_colors="00ff00,0000ff",
+            effect_type="marble",
+            is_default=True,
+        )
+    )
+    await db_session.flush()
+
+    spool = await create_spool_from_tray(
+        db_session,
+        {**SAMPLE_TRAY, "tray_color": "FF0000FF"},
+    )
+
+    # Subtype "Basic" names no effect, so the catalogue is the only source.
+    assert spool.subtype == "Basic"
+    assert spool.effect_type == "marble"
+    assert spool.extra_colors == "00ff00,0000ff"
+
+
+@pytest.mark.asyncio
+async def test_create_spool_from_tray_leaves_a_plain_subtype_alone(db_session):
+    """Basic, Tough, CF and the rest name no effect and must not invent one."""
+    spool = await create_spool_from_tray(db_session, SAMPLE_TRAY)
+
+    assert spool.subtype == "Basic"
+    assert spool.effect_type is None
+    assert spool.extra_colors is None
+
+
+@pytest.mark.asyncio
+async def test_create_spool_from_tray_reads_silk_plus_as_silk(db_session):
+    """Silk+ is the Silk finish with a plus on the product name."""
+    spool = await create_spool_from_tray(
+        db_session,
+        {**SAMPLE_TRAY, "tray_sub_brands": "PLA Silk+"},
+    )
+
+    assert spool.subtype == "Silk+"
+    assert spool.effect_type == "silk"
+
+
+@pytest.mark.asyncio
+async def test_create_spool_from_tray_reads_a_gradient_roll_as_a_gradient(db_session):
+    """The M*/T* upgrade already rewrites the subtype; the effect follows it."""
+    spool = await create_spool_from_tray(
+        db_session,
+        {**SAMPLE_TRAY, "tray_id_name": "A00-M0"},
+    )
+
+    assert spool.subtype == "Gradient"
+    assert spool.effect_type == "gradient"
+
+
 # -- get_spool_by_tag -------------------------------------------------------
 
 

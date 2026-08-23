@@ -33,7 +33,10 @@ interface SpoolmanConfig {
 interface InventoryConfig {
   onAssignSpool?: () => void;
   onUnassignSpool?: () => void;
-  assignedSpool?: { id: number; material: string; brand: string | null; color_name: string | null; remainingWeightGrams?: number | null } | null;
+  // `subtype` is part of the spool's name, not decoration: "PLA" and "PLA Wood"
+  // are different filaments, and a card that prints only the material tells the
+  // user their wood-filled roll is plain PLA (the display-side half of #2902).
+  assignedSpool?: { id: number; material: string; subtype: string | null; brand: string | null; color_name: string | null; remainingWeightGrams?: number | null } | null;
   isAssigned?: boolean;
 }
 
@@ -401,6 +404,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                         <p className="text-xs text-white truncate">
                           {inventory.assignedSpool.brand ? `${inventory.assignedSpool.brand} ` : ''}
                           {inventory.assignedSpool.material}
+                          {inventory.assignedSpool.subtype ? ` ${inventory.assignedSpool.subtype}` : ''}
                           {inventory.assignedSpool.color_name ? ` - ${inventory.assignedSpool.color_name}` : ''}
                         </p>
                         <span className="text-[10px] font-mono text-bambu-gray shrink-0">#{inventory.assignedSpool.id}</span>

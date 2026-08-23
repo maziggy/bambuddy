@@ -756,6 +756,7 @@ export function SpoolBuddyAmsPage() {
                       )}
                       <span className="text-sm text-white">
                         {assignment.spool.brand ? `${assignment.spool.brand} ` : ''}{assignment.spool.material}
+                        {assignment.spool.subtype ? ` ${assignment.spool.subtype}` : ''}
                         {assignment.spool.color_name ? ` - ${assignment.spool.color_name}` : ''}
                       </span>
                       <span className="text-[10px] font-mono text-zinc-500 shrink-0 ml-auto">#{assignment.spool.id}</span>
@@ -789,6 +790,7 @@ export function SpoolBuddyAmsPage() {
                       )}
                       <span className="text-sm text-white">
                         {spoolmanAssignedSpool.brand ? `${spoolmanAssignedSpool.brand} ` : ''}{spoolmanAssignedSpool.material}
+                        {spoolmanAssignedSpool.subtype ? ` ${spoolmanAssignedSpool.subtype}` : ''}
                         {spoolmanAssignedSpool.color_name ? ` - ${spoolmanAssignedSpool.color_name}` : ''}
                       </span>
                     </div>

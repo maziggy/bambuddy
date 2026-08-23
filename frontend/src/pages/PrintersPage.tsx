@@ -5573,6 +5573,7 @@ function PrinterCard({
                                               assignedSpool: spoolmanSpool ? {
                                                 id: spoolmanSpool.id,
                                                 material: spoolmanSpool.material,
+                                                subtype: spoolmanSpool.subtype,
                                                 brand: spoolmanSpool.brand ?? null,
                                                 color_name: spoolmanSpool.color_name ?? null,
                                                 remainingWeightGrams: spoolmanSpool.label_weight
@@ -5600,6 +5601,7 @@ function PrinterCard({
                                             assignedSpool: assignment?.spool ? {
                                               id: assignment.spool.id,
                                               material: assignment.spool.material,
+                                              subtype: assignment.spool.subtype,
                                               brand: assignment.spool.brand,
                                               color_name: assignment.spool.color_name,
                                               remainingWeightGrams: Math.max(0, Math.round(assignment.spool.label_weight - assignment.spool.weight_used)),
@@ -5961,6 +5963,7 @@ function PrinterCard({
                                           assignedSpool: spoolmanSpool ? {
                                             id: spoolmanSpool.id,
                                             material: spoolmanSpool.material,
+                                            subtype: spoolmanSpool.subtype,
                                             brand: spoolmanSpool.brand ?? null,
                                             color_name: spoolmanSpool.color_name ?? null,
                                             remainingWeightGrams: spoolmanSpool.label_weight
@@ -5988,6 +5991,7 @@ function PrinterCard({
                                         assignedSpool: assignment?.spool ? {
                                           id: assignment.spool.id,
                                           material: assignment.spool.material,
+                                          subtype: assignment.spool.subtype,
                                           brand: assignment.spool.brand,
                                           color_name: assignment.spool.color_name,
                                           remainingWeightGrams: Math.max(0, Math.round(assignment.spool.label_weight - assignment.spool.weight_used)),
@@ -6234,6 +6238,7 @@ function PrinterCard({
                                             assignedSpool: spoolmanSpool ? {
                                               id: spoolmanSpool.id,
                                               material: spoolmanSpool.material,
+                                              subtype: spoolmanSpool.subtype,
                                               brand: spoolmanSpool.brand ?? null,
                                               color_name: spoolmanSpool.color_name ?? null,
                                               remainingWeightGrams: spoolmanSpool.label_weight
@@ -6261,6 +6266,7 @@ function PrinterCard({
                                           assignedSpool: assignment?.spool ? {
                                             id: assignment.spool.id,
                                             material: assignment.spool.material,
+                                            subtype: assignment.spool.subtype,
                                             brand: assignment.spool.brand,
                                             color_name: assignment.spool.color_name,
                                             remainingWeightGrams: Math.max(0, Math.round(assignment.spool.label_weight - assignment.spool.weight_used)),

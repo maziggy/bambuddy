@@ -970,13 +970,13 @@ class TestColorHexAlphaHandling:
         assert mock_create.call_args.kwargs["color_hex"] == "00000000"
 
     @pytest.mark.asyncio
-    async def test_translucent_tray_still_matches_an_existing_six_char_filament(self, client):
+    async def test_opaque_tray_still_matches_an_existing_six_char_filament(self, client):
         """The upgrade hazard neither the report nor the original patch mentioned.
 
         Every filament already in a user's Spoolman is stored six characters. If
         the match compared full strings, an 8-char tray colour would stop matching
         them and the next AMS sync would mint a duplicate filament for every spool
-        on the instance. The comparison stays on the RGB prefix.
+        on the instance. An opaque tray keys to six characters and still matches.
         """
         existing = {"id": 6, "name": "Black", "material": "PLA", "color_hex": "000000", "vendor_id": 2}
         with (
@@ -985,11 +985,71 @@ class TestColorHexAlphaHandling:
             patch.object(client, "get_external_filaments", AsyncMock()) as mock_external,
             patch.object(client, "create_filament", AsyncMock()) as mock_create,
         ):
-            result = await client._find_or_create_filament(self._tray("00000080"))
+            result = await client._find_or_create_filament(self._tray("000000FF"))
 
         assert result is existing
         mock_external.assert_not_called()
         mock_create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_clear_tray_does_not_attach_to_the_black_filament(self, client):
+        """A translucent tray keys to eight characters, so it does not match the
+        opaque filament of the same RGB and gets its own record instead."""
+        black = {"id": 6, "name": "Black", "material": "PLA", "color_hex": "000000", "vendor_id": 2}
+        with (
+            patch.object(client, "ensure_bambu_vendor", AsyncMock(return_value=2)),
+            patch.object(client, "get_filaments", AsyncMock(return_value=[black])),
+            patch.object(client, "get_external_filaments", AsyncMock(return_value=[])),
+            patch.object(client, "create_filament", AsyncMock(return_value={"id": 99})) as mock_create,
+        ):
+            await client._find_or_create_filament(self._tray("00000000"))
+
+        assert mock_create.call_args.kwargs["color_hex"] == "00000000"
+
+    @pytest.mark.asyncio
+    async def test_black_tray_does_not_attach_to_a_clear_filament(self, client):
+        """The inverse direction, which only became possible once 8-char values
+        were storable at all: without the alpha in the key, an opaque black roll
+        would match the clear filament, then render as the transparency
+        checkerboard and be named Clear. Whichever roll synced first would decide
+        and the other would be mislabelled.
+        """
+        clear = {"id": 6, "name": "Clear", "material": "PLA", "color_hex": "00000000", "vendor_id": 2}
+        with (
+            patch.object(client, "ensure_bambu_vendor", AsyncMock(return_value=2)),
+            patch.object(client, "get_filaments", AsyncMock(return_value=[clear])),
+            patch.object(client, "get_external_filaments", AsyncMock(return_value=[])),
+            patch.object(client, "create_filament", AsyncMock(return_value={"id": 99})) as mock_create,
+        ):
+            await client._find_or_create_filament(self._tray("000000FF"))
+
+        assert mock_create.call_args.kwargs["color_hex"] == "000000"
+
+    @pytest.mark.asyncio
+    async def test_clear_tray_does_not_take_a_same_rgb_external_entry(self, client):
+        """The reported path on a fresh Spoolman with the external library
+        reachable. Candidates are built with the same key, so SpoolmanDB's opaque
+        "PLA Basic Black" is no longer a candidate for a clear tray and the
+        filament is created from the tray data with its alpha intact.
+        """
+        external = [
+            {
+                "id": "bambulab_pla_black_1000_175_n",
+                "manufacturer": "Bambu Lab",
+                "name": "PLA Basic Black",
+                "material": "PLA",
+                "color_hex": "000000",
+            },
+        ]
+        with (
+            patch.object(client, "ensure_bambu_vendor", AsyncMock(return_value=2)),
+            patch.object(client, "get_filaments", AsyncMock(return_value=[])),
+            patch.object(client, "get_external_filaments", AsyncMock(return_value=external)),
+            patch.object(client, "create_filament", AsyncMock(return_value={"id": 99})) as mock_create,
+        ):
+            await client._find_or_create_filament(self._tray("00000000"))
+
+        assert mock_create.call_args.kwargs["color_hex"] == "00000000"
 
     @pytest.mark.asyncio
     async def test_find_or_create_filament_matches_on_prefix_and_creates_with_alpha(self, client):

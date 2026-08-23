@@ -17,9 +17,11 @@ def spoolman_color_hex(rgba: str | None) -> str | None:
     people's Spoolman for no benefit. Keeping the opaque case at six characters
     leaves existing data byte-identical.
 
-    Returns ``None`` for a missing value and passes anything shorter than six
-    characters through unchanged, so a malformed value is reported rather than
-    silently reshaped.
+    Returns ``None`` for a missing value. A value shorter than six characters is
+    passed through unchanged so a malformed colour is not reshaped into something
+    that looks valid; a value between six and eight is truncated to six, which is
+    what the pre-#2912 behaviour did and what the six-character path still means.
+    Neither is reachable through ``_validate_rgba``, which admits only 6 or 8.
     """
     if not rgba:
         return None
@@ -32,17 +34,27 @@ def spoolman_color_hex(rgba: str | None) -> str | None:
 
 
 def color_match_key(color_hex: str | None) -> str:
-    """Return the RGB prefix two colours are compared on.
+    """Return the key two colours are compared on: **the shape they would be stored as**.
 
-    Comparisons must stay on the prefix even though writes can now carry alpha.
-    Every filament already in a user's Spoolman is stored six characters, so
-    comparing full strings would stop matching the moment a value grew to eight
-    and the next AMS sync would mint a duplicate filament for every spool on the
-    instance (#2912).
+    Deliberately the same rule as :func:`spoolman_color_hex`, so two colours match
+    exactly when storing them would produce the same value. That settles both
+    directions of the alpha question at once (#2912):
+
+    ==============  ============  ==================================================
+    value           key           consequence
+    ==============  ============  ==================================================
+    ``000000``      ``000000``    existing six-character data
+    ``000000FF``    ``000000``    still matches it — the upgrade guard, without which
+                                  the next AMS sync mints a duplicate filament for
+                                  every spool on the instance
+    ``00000000``    ``00000000``  a clear spool gets its own filament and is never
+                                  conflated with the black one, in either direction
+    ==============  ============  ==================================================
+
+    Returns ``""`` rather than ``None`` for a missing value so callers can compare
+    without guarding, which is the only reason this is not simply an alias.
     """
-    if not color_hex:
-        return ""
-    return color_hex.strip().removeprefix("#").upper()[:6]
+    return spoolman_color_hex(color_hex) or ""
 
 
 def colors_similar(hex_a: str, hex_b: str, threshold: int = 50) -> bool:

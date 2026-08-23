@@ -87,16 +87,28 @@ class TestSpoolmanColorHex:
 
 
 class TestColorMatchKey:
-    """#2912 — comparisons stay on the RGB prefix even when writes carry alpha."""
+    """#2912 — two colours match exactly when storing them would give the same value."""
 
-    def test_eight_character_value_matches_its_six_character_twin(self):
+    def test_opaque_value_matches_its_six_character_twin(self):
         """The upgrade hazard: a user's existing filaments are all stored six
-        characters. If an 8-char value stopped matching them, the next AMS sync
-        would mint a duplicate filament for every spool on the instance."""
-        assert color_match_key("FF000080") == color_match_key("FF0000")
+        characters. If an opaque 8-char value stopped matching them, the next AMS
+        sync would mint a duplicate filament for every spool on the instance."""
+        assert color_match_key("FF0000FF") == color_match_key("FF0000")
+
+    def test_translucent_value_does_not_match_its_opaque_twin(self):
+        """Both directions. A clear roll must not attach to the black filament,
+        and — the case that only exists once 8-char values are storable — a black
+        roll must not attach to a clear one and inherit its swatch and name."""
+        assert color_match_key("00000000") != color_match_key("000000")
+        assert color_match_key("00000000") != color_match_key("000000FF")
 
     def test_differs_when_the_rgb_differs(self):
         assert color_match_key("FF0000FF") != color_match_key("00FF00FF")
+
+    def test_is_the_stored_shape(self):
+        """Stated as an invariant because three separate comparisons rely on it."""
+        for value in ("FF0000", "FF0000FF", "FF000080", "00000000"):
+            assert color_match_key(value) == spoolman_color_hex(value)
 
     def test_normalises_case_and_hash_prefix(self):
         assert color_match_key("#ff0000") == "FF0000"

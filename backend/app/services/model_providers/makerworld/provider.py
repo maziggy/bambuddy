@@ -27,6 +27,7 @@ from backend.app.services.model_providers.makerworld.auth import (
     get_stored_token,
     mark_cloud_token_invalid,
 )
+from backend.app.services.model_providers.makerworld.http import MAKERWORLD_CDN_HOSTS
 from backend.app.services.model_providers.makerworld.service import MakerWorldService
 
 if TYPE_CHECKING:
@@ -85,6 +86,9 @@ class MakerWorldProvider(ModelProvider):
             auth_token=token,
             user=identity,
             on_auth_failure=lambda: mark_cloud_token_invalid(user_id),
+            # The thumbnail proxy's SSRF allowlist is the provider's declared
+            # seam — the service must not hardcode its own copy.
+            thumbnail_hosts=self.thumbnail_hosts(),
         )
 
     def parse_url(self, url: str) -> ProviderResourceRef:
@@ -94,7 +98,7 @@ class MakerWorldProvider(ModelProvider):
         return mw_url.canonical_url(ref)
 
     def thumbnail_hosts(self) -> tuple[str, ...]:
-        return mw_url.MAKERWORLD_CDN_HOSTS
+        return MAKERWORLD_CDN_HOSTS
 
 
 makerworld_provider = MakerWorldProvider()

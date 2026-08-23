@@ -30,7 +30,6 @@ from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
 from backend.app.api.routes.library import save_3mf_bytes_to_library
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
-from backend.app.core.permissions import Permission
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.user import User
 from backend.app.schemas.makerworld import (
@@ -78,12 +77,15 @@ def _provider_for_source(source_type: str) -> ModelProvider:
     """Return the registered model provider with this ``source_type``.
 
     Import identifies a resource by numeric id, not by URL, so there is
-    nothing to route on except the source type the caller names.
+    nothing to route on except the source type the caller names. The detail
+    is built here rather than via ``str(KeyError)`` — KeyError's ``__str__``
+    is the *repr* of its argument and would ship the quotes to the client.
     """
     try:
         return registry.get(source_type)
     except KeyError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        msg = f"No model provider registered for source_type {source_type!r}"
+        raise HTTPException(status_code=400, detail=msg) from exc
 
 
 async def _build_service(
@@ -133,7 +135,7 @@ def _map_service_error(exc: ProviderError) -> HTTPException:
         return HTTPException(status_code=404, detail=str(exc))
     if isinstance(exc, ProviderUnavailableError):
         return HTTPException(status_code=502, detail=str(exc))
-    return HTTPException(status_code=500, detail=f"MakerWorld error: {exc}")
+    return HTTPException(status_code=500, detail=f"Model provider error: {exc}")
 
 
 @router.get("/thumbnail")
@@ -158,7 +160,7 @@ async def proxy_thumbnail(
     URLs are content-addressable (filename contains a hash), so the
     aggressive ``immutable`` cache-control is safe.
     """
-    service = MakerWorldService()
+    service = MakerWorldService(thumbnail_hosts=makerworld_provider.thumbnail_hosts())
     try:
         payload, content_type = await service.fetch_thumbnail(url)
     except ProviderError as exc:
@@ -178,7 +180,7 @@ async def proxy_thumbnail(
 @router.get("/status", response_model=MakerWorldStatus)
 async def get_status(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.MAKERWORLD_VIEW),
+    current_user: User | None = RequirePermissionIfAuthEnabled(makerworld_provider.view_permission),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
 ):
     """Report whether the caller can import 3MFs (needs a Bambu Cloud token).
@@ -208,7 +210,7 @@ async def get_status(
 async def resolve_url(
     body: MakerWorldResolveRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.MAKERWORLD_VIEW),
+    current_user: User | None = RequirePermissionIfAuthEnabled(makerworld_provider.view_permission),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
 ):
     """Resolve a MakerWorld URL to full model metadata + plate list.
@@ -260,7 +262,7 @@ async def resolve_url(
 async def import_instance(
     body: MakerWorldImportRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.MAKERWORLD_IMPORT),
+    current_user: User | None = RequirePermissionIfAuthEnabled(makerworld_provider.import_permission),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
 ):
     """Download a specific MakerWorld instance (plate configuration) and save
@@ -282,20 +284,21 @@ async def import_instance(
             )
         effective_folder_id: int | None = body.folder_id
     else:
-        # Default destination: a dedicated top-level "MakerWorld" folder. Keeps
-        # imports out of the library root so power users can still organise
-        # manually in subfolders, and auto-creates the folder on the first
-        # import so users don't have to set it up themselves.
+        # Default destination: the provider's dedicated top-level folder
+        # (``default_folder_name``). Keeps imports out of the library root so
+        # power users can still organise manually in subfolders, and
+        # auto-creates the folder on the first import so users don't have to
+        # set it up themselves.
         mw_folder_q = await db.execute(
             select(LibraryFolder).where(
-                LibraryFolder.name == "MakerWorld",
+                LibraryFolder.name == makerworld_provider.default_folder_name,
                 LibraryFolder.parent_id.is_(None),
                 LibraryFolder.is_external.is_(False),
             )
         )
         mw_folder = mw_folder_q.scalar_one_or_none()
         if mw_folder is None:
-            mw_folder = LibraryFolder(name="MakerWorld", parent_id=None)
+            mw_folder = LibraryFolder(name=makerworld_provider.default_folder_name, parent_id=None)
             db.add(mw_folder)
             await db.flush()
         effective_folder_id = mw_folder.id
@@ -393,7 +396,7 @@ async def import_instance(
 async def recent_imports(
     limit: int = 10,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.MAKERWORLD_VIEW),
+    current_user: User | None = RequirePermissionIfAuthEnabled(makerworld_provider.view_permission),
 ):
     """Last N MakerWorld imports, newest first.
 

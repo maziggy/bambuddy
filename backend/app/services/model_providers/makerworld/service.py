@@ -56,10 +56,10 @@ from backend.app.services.model_providers.makerworld.http import (
     _MAX_THUMBNAIL_BYTES,
     _REFUSED_THUMBNAIL_MIMES,
     MAKERWORLD_API_BASE,
+    MAKERWORLD_CDN_HOSTS,
     _download_s3_urllib,
     _extract_upstream_error,
 )
-from backend.app.services.model_providers.makerworld.url import MAKERWORLD_CDN_HOSTS
 
 logger = logging.getLogger(__name__)
 
@@ -106,12 +106,19 @@ class MakerWorldService(ProviderService):
         auth_token: str | None = None,
         user: Any | None = None,
         on_auth_failure: Callable[[], Awaitable[None]] | None = None,
+        thumbnail_hosts: tuple[str, ...] = MAKERWORLD_CDN_HOSTS,
     ):
         # Fired when Bambu rejects the stored token (401). MakerWorld runs on the
         # same Bambu Cloud bearer as everything else, so a rejection here means
         # the credential is dead app-wide — see ``build_authenticated_cloud``.
         self._on_auth_failure = on_auth_failure
         self._auth_failure_reported = False
+        # SSRF allowlist for the thumbnail proxy. Defaults to MakerWorld's CDN
+        # hosts; ``MakerWorldProvider.build_service`` passes
+        # ``ModelProvider.thumbnail_hosts()`` so the guard is driven by the
+        # provider descriptor rather than enforced by coincidence (interface
+        # contract on ``ProviderService.fetch_thumbnail``).
+        self._thumbnail_hosts = tuple(thumbnail_hosts)
         if client is not None:
             self._client = client
             self._owns_client = False
@@ -210,7 +217,7 @@ class MakerWorldService(ProviderService):
 
         return ProviderResolvedModel(ref=ref, design=design, instances=instances)
 
-    async def get_download(self, ref: ProviderResourceRef, instance_id: int | None = None) -> ProviderDownloadInfo:
+    async def get_download(self, ref: ProviderResourceRef) -> ProviderDownloadInfo:
         """Resolve the signed 3MF download for a specific MakerWorld profile.
 
         Handles the provider-specific dance: the iot-service endpoint needs
@@ -529,7 +536,7 @@ class MakerWorldService(ProviderService):
             raise MakerWorldUrlError(f"Invalid thumbnail URL: {exc}") from exc
 
         host = (parsed.hostname or "").lower()
-        if host not in MAKERWORLD_CDN_HOSTS:
+        if host not in self._thumbnail_hosts:
             raise MakerWorldUrlError(f"Refusing to fetch thumbnail from non-MakerWorld host: {host!r}")
 
         # ``follow_redirects=False``: the host allowlist above is only

@@ -17,26 +17,12 @@ import pytest
 from backend.app.api.routes.makerworld import _canonical_url
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.services.model_providers.base import (
-    ModelProvider,
     ProviderDownload,
     ProviderDownloadInfo,
     ProviderResolvedModel,
     ProviderResourceRef,
 )
-
-
-class _MockProvider:
-    """Mock provider for testing _canonical_url without real MakerWorld logic."""
-
-    source_type = "makerworld"
-
-    def canonical_url(self, ref: ProviderResourceRef) -> str:
-        if ref.sub_id:
-            return f"https://makerworld.com/models/{ref.external_id}#profileId-{ref.sub_id}"
-        return f"https://makerworld.com/models/{ref.external_id}"
-
-
-_MOCK_PROVIDER = _MockProvider()
+from backend.app.services.model_providers.makerworld import makerworld_provider
 
 
 def _download_info(
@@ -68,16 +54,17 @@ def _fake_service(**stubs):
 
 class TestCanonicalUrl:
     """Unit test the dedupe-key builder directly — regressions break dedupe
-    silently so it's worth pinning the exact shape."""
+    silently so it's worth pinning the exact shape. Asserts against the real
+    provider: a mock would just pin a copy of the logic under test."""
 
     def test_without_profile_id(self):
-        assert _canonical_url(_MOCK_PROVIDER, 1400373) == "https://makerworld.com/models/1400373"
+        assert _canonical_url(makerworld_provider, 1400373) == "https://makerworld.com/models/1400373"
 
     def test_without_profile_id_when_none(self):
-        assert _canonical_url(_MOCK_PROVIDER, 1400373, None) == "https://makerworld.com/models/1400373"
+        assert _canonical_url(makerworld_provider, 1400373, None) == "https://makerworld.com/models/1400373"
 
     def test_with_profile_id(self):
-        assert _canonical_url(_MOCK_PROVIDER, 1400373, 298919107) == (
+        assert _canonical_url(makerworld_provider, 1400373, 298919107) == (
             "https://makerworld.com/models/1400373#profileId-298919107"
         )
 

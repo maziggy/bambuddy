@@ -49,6 +49,21 @@ from backend.app.services.bambu_cloud import (
     BambuCloudService,
     invalidate_validation_cache,
 )
+
+# Credential read/write lives in the services layer so feature packages can
+# consume it without importing the route layer; these names are re-exported
+# for the many routes (and tests) that import them from here.
+from backend.app.services.bambu_cloud_credentials import (  # noqa: F401
+    CLOUD_EMAIL_KEY,
+    CLOUD_REGION_KEY,
+    CLOUD_TOKEN_INVALID_KEY,
+    CLOUD_TOKEN_KEY,
+    _clear_cloud_token_invalid,
+    _normalise_region,
+    get_stored_token,
+    is_cloud_token_invalid,
+    mark_cloud_token_invalid,
+)
 from backend.app.utils.filament_ids import filament_id_to_setting_id
 
 logger = logging.getLogger(__name__)
@@ -163,22 +178,6 @@ async def resolve_api_key_cloud_owner(
 
 
 router = APIRouter(prefix="/cloud", tags=["cloud"], dependencies=[Depends(_cloud_api_key_gate)])
-
-
-# Credential read/write lives in the services layer so feature packages can
-# consume it without importing the route layer; these names are re-exported
-# for the many routes (and tests) that import them from here.
-from backend.app.services.bambu_cloud_credentials import (  # noqa: E402,F401
-    CLOUD_EMAIL_KEY,
-    CLOUD_REGION_KEY,
-    CLOUD_TOKEN_INVALID_KEY,
-    CLOUD_TOKEN_KEY,
-    _clear_cloud_token_invalid,
-    _normalise_region,
-    get_stored_token,
-    is_cloud_token_invalid,
-    mark_cloud_token_invalid,
-)
 
 
 async def store_token(db: AsyncSession, token: str, email: str, region: str, user: User | None = None) -> None:

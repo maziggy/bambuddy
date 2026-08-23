@@ -107,14 +107,14 @@ class ProviderResolvedModel:
 
     ``design`` and ``instances`` are provider-specific dicts passed through
     verbatim — the frontend reads fields a provider may add over time, so we
-    don't re-shape them here. ``already_imported_library_ids`` is filled in
-    by the route layer (it owns the library query).
+    don't re-shape them here. Which library rows already hold this resource
+    is the route layer's concern (it owns the library query) and stays out of
+    the resolved payload.
     """
 
     ref: ProviderResourceRef
     design: dict[str, Any]
     instances: list[dict[str, Any]] = field(default_factory=list)
-    already_imported_library_ids: list[int] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -261,11 +261,12 @@ class ProviderService(ABC):
         """Fetch metadata + the importable file/plate list for a resource."""
 
     @abstractmethod
-    async def get_download(self, ref: ProviderResourceRef, instance_id: int | None = None) -> ProviderDownloadInfo:
+    async def get_download(self, ref: ProviderResourceRef) -> ProviderDownloadInfo:
         """Resolve the concrete download for a resource/file.
 
         May need provider-specific lookups (e.g. MakerWorld's alphanumeric
-        ``modelId``) and may enrich ``ref`` with the resolved ``sub_id``.
+        ``modelId``) and must enrich ``ref.sub_id`` with the actually-resolved
+        file/plate so the route can build the canonical dedupe key.
         Raises ``ProviderAuthError`` when the provider requires credentials
         and the caller has none.
         """

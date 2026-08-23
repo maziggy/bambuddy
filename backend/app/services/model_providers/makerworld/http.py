@@ -32,6 +32,12 @@ MAKERWORLD_API_BASE = "https://api.bambulab.com/v1/design-service"
 # matches any regional S3 endpoint.
 _ALLOWED_DOWNLOAD_SUFFIXES = (".amazonaws.com",)
 
+# The SSRF allowlist for MakerWorld CDN traffic — both the thumbnail proxy
+# (exact host match, surfaced through ``MakerWorldProvider.thumbnail_hosts``)
+# and the 3MF download path. Lives here with the other transport guards so
+# the whole allowlist is in one place.
+MAKERWORLD_CDN_HOSTS = ("makerworld.bblmw.com", "public-cdn.bblmw.com")
+
 # Client identity sent to MakerWorld / api.bambulab.com. We identify honestly
 # as Bambuddy with a source URL so Bambu can distinguish our traffic from
 # impersonators — the opposite of what the OrcaSlicer fork was called out for

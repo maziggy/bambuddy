@@ -14,7 +14,6 @@ from backend.app.services.model_providers.base import ProviderResourceRef
 from backend.app.services.model_providers.makerworld.errors import MakerWorldUrlError
 
 MAKERWORLD_HOST = "makerworld.com"  # Used only for URL parsing (input validation)
-MAKERWORLD_CDN_HOSTS = ("makerworld.bblmw.com", "public-cdn.bblmw.com")
 
 _MODEL_ID_RE = re.compile(r"/models/(\d+)")
 _PROFILE_ID_RE = re.compile(r"#profileId[-=](\d+)")

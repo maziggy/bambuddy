@@ -118,6 +118,22 @@ class TestBuildService:
         await svc.close()
 
     @pytest.mark.asyncio
+    async def test_build_service_passes_declared_thumbnail_hosts(self):
+        """The SSRF seam contract: ``fetch_thumbnail``'s allowlist must come
+        from ``ModelProvider.thumbnail_hosts()`` via build_service — not from
+        a hardcoded copy inside the service (review round 2, item 1)."""
+        db = AsyncMock()
+        with patch(
+            "backend.app.services.model_providers.makerworld.provider.get_stored_token",
+            AsyncMock(return_value=(None, None, "global")),
+        ):
+            svc = await makerworld_provider.build_service(db=db, user=None)
+
+        assert svc._thumbnail_hosts == makerworld_provider.thumbnail_hosts()
+        assert len(svc._thumbnail_hosts) > 0
+        await svc.close()
+
+    @pytest.mark.asyncio
     async def test_api_key_owner_is_the_fallback_identity(self):
         """API-keyed callers carry identity on the key (#1777) — build_service
         must use the key's owner when ``user`` is None."""

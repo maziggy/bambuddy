@@ -4427,6 +4427,203 @@ async def run_migrations(conn):
         conn, "ALTER TABLE notification_providers ADD COLUMN on_ams_drying_suspended BOOLEAN DEFAULT TRUE"
     )
 
+    # Migration: repair the tare of spools the RFID auto-add gave the wrong
+    # Bambu spool row (#2909). Runs last so the spool catalogue it reads is
+    # whatever this database actually holds.
+    await _migrate_repair_rfid_core_weight(conn)
+
+    # Migration: drop the AMS slot markers an older Bambuddy wrote into
+    # Spoolman and the location sync then imported as storage locations.
+    await _migrate_drop_ams_slot_locations(conn)
+
+
+async def _migrate_drop_ams_slot_locations(conn) -> None:
+    """Remove imported AMS slot markers from the storage-location catalogue.
+
+    Bambuddy used to record which slot a spool was loaded into by writing
+    "<printer> - AMS A1" into Spoolman's ``location`` field. That writer went
+    away when Storage Location became something the user picks (#1114), but the
+    strings stayed on people's Spoolman spools, and
+    ``sync_locations_from_spoolman`` imported every distinct one -- so a printer
+    slot turned up in the Storage Location dropdown as somewhere to put a spool
+    away. Worse, they could not be cleared by hand: the delete route refuses a
+    location that has spools, and in Spoolman mode it counts them by matching
+    that same string, so every marker still on a loaded spool answered 409.
+
+    The import now skips them (``is_ams_slot_location``); this clears the ones
+    already in the catalogue. A row is only deleted when no spool in this
+    database points at it -- neither by ``location_id`` nor by a legacy
+    free-text ``storage_location`` -- so an internal-mode user who has
+    deliberately filed spools under such a name keeps it, dropdown entry and
+    all.
+
+    Spools in Spoolman are not consulted and not touched: their ``location``
+    strings are the user's data on the user's server, and one that still reads
+    "H2D-1 - AMS A1" in the inventory list is telling the truth about what
+    Spoolman holds. It simply stops being offered as a destination, which is
+    the whole point -- those are exactly the markers this cleans up.
+    """
+    from sqlalchemy import text
+
+    from backend.app.services.location_service import is_ams_slot_location, location_name_key
+
+    flag = "_cleanup_ams_slot_locations_done"
+
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+
+        rows = (await conn.execute(text("SELECT id, name FROM locations"))).fetchall()
+        removed = []
+        for row in rows:
+            if not is_ams_slot_location(row.name):
+                continue
+            in_use = (
+                await conn.execute(
+                    text(
+                        "SELECT COUNT(*) FROM spool WHERE location_id = :id "
+                        "OR LOWER(TRIM(COALESCE(storage_location, ''))) = :key"
+                    ),
+                    {"id": row.id, "key": location_name_key(row.name)},
+                )
+            ).scalar_one()
+            if in_use:
+                continue
+            await conn.execute(text("DELETE FROM locations WHERE id = :id"), {"id": row.id})
+            removed.append(row.name)
+
+        if removed:
+            logger.info(
+                "Removed %d AMS slot marker(s) from the storage-location catalogue: %s",
+                len(removed),
+                ", ".join(sorted(removed)),
+            )
+
+        await conn.execute(
+            text('INSERT INTO settings ("key", value) VALUES (:k, :v)'),
+            {"k": flag, "v": "true"},
+        )
+
+
+async def _migrate_repair_rfid_core_weight(conn) -> None:
+    """Correct the tare of RFID-added spools that took the wrong catalogue row (#2909).
+
+    A Bambu roll arrives on the 250 g Low Temp spool, but the lookup that gave
+    an auto-added spool its ``core_weight`` asked for the first row whose name
+    starts "Bambu Lab" and took whatever came back. There are three, and which
+    one is first is up to the database: SQLite returns insertion order in
+    practice, Postgres promises nothing once the table has seen an update. So
+    the same roll could be recorded with a 216 g High Temp tare on one install
+    and correctly on another, and the reporting instance here got 216.
+
+    The tare is not cosmetic. A spool weighed on SpoolBuddy has its remaining
+    filament worked out as ``scale reading - core_weight``, so a 34 g low tare
+    credits the roll with 34 g of filament that is not there and writes a
+    ``weight_used`` 34 g short. That error is a constant: every later print
+    adds to ``weight_used`` on top of it, so adding the difference back is an
+    exact repair however much has been printed since. Only rows that have
+    actually been weighed carry it -- a spool that was never on the scale has
+    a ``weight_used`` derived from the AMS remaining percentage, which the tare
+    never touched.
+
+    Which rows: ``data_origin = 'rfid_auto'`` narrows it to spools this code
+    path created, and a ``core_weight`` matching one of the *other* Bambu
+    catalogue rows is the signature of the broken lookup. Reading the weights
+    out of the catalogue rather than hardcoding 216 and 253 keeps it correct on
+    an install whose catalogue has been edited.
+
+    One case cannot be told apart and is stated rather than hidden: a user who
+    moved an RFID roll onto a genuine High Temp spool and set its tare to 216
+    by hand looks identical to a row the lookup got wrong, and is normalised
+    with them. Keying on ``core_weight_catalog_id IS NULL`` instead would not
+    have rescued them -- the spool form's weight picker auto-selects the only
+    catalogue row matching the weight and writes its id on the next save, so
+    that column says only whether the form was ever opened.
+
+    Gated to run exactly once via a settings flag, so a user who deliberately
+    sets one of these tares afterwards keeps it.
+    """
+    from sqlalchemy import bindparam, text
+
+    flag = "_backfill_2909_rfid_core_weight_done"
+
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+
+        # The row that names the spool an RFID roll actually arrives on. Its
+        # absence is not an error -- a catalogue the user has pruned still gets
+        # the documented default.
+        correct = (
+            await conn.execute(
+                text("SELECT id, weight FROM spool_catalog WHERE UPPER(name) = :name ORDER BY id LIMIT 1"),
+                {"name": "BAMBU LAB - PLASTIC LOW TEMP"},
+            )
+        ).fetchone()
+        correct_id = correct[0] if correct else None
+        correct_weight = correct[1] if correct else 250
+
+        bambu_weights = {
+            row[0]
+            for row in (
+                await conn.execute(
+                    text("SELECT weight FROM spool_catalog WHERE UPPER(name) LIKE :prefix"),
+                    {"prefix": "BAMBU LAB%"},
+                )
+            ).fetchall()
+        }
+        wrong_weights = sorted(bambu_weights - {correct_weight})
+
+        repaired = 0
+        reweighed = 0
+        if wrong_weights:
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT id, core_weight, label_weight, weight_used, last_weighed_at FROM spool "
+                        "WHERE data_origin = 'rfid_auto' AND core_weight IN :wrong"
+                    ).bindparams(bindparam("wrong", expanding=True)),
+                    {"wrong": wrong_weights},
+                )
+            ).fetchall()
+
+            for row in rows:
+                delta = correct_weight - row.core_weight
+                weight_used = row.weight_used or 0.0
+                if row.last_weighed_at is not None:
+                    weight_used = min(max(0.0, weight_used + delta), float(row.label_weight or 0))
+                    reweighed += 1
+                await conn.execute(
+                    text(
+                        "UPDATE spool SET core_weight = :cw, core_weight_catalog_id = :cid, "
+                        "weight_used = :wu WHERE id = :id"
+                    ),
+                    {"cw": correct_weight, "cid": correct_id, "wu": weight_used, "id": row.id},
+                )
+                repaired += 1
+
+        if repaired:
+            logger.info(
+                "[#2909] Corrected the spool tare on %d RFID-added spool(s) to %d g; "
+                "%d of them had been weighed and had their used weight adjusted with it",
+                repaired,
+                correct_weight,
+                reweighed,
+            )
+
+        # Marked done even when nothing matched, so the one-shot never reopens
+        # a tare the user has since set for themselves.
+        await conn.execute(
+            text('INSERT INTO settings ("key", value) VALUES (:k, :v)'),
+            {"k": flag, "v": "true"},
+        )
+
 
 async def _migrate_backfill_variant_groups(conn) -> None:
     """Build variant groups from the slice provenance already on disk (#671 / #2570).

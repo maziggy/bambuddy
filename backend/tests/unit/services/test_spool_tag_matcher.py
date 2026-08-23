@@ -1330,6 +1330,44 @@ async def test_core_weight_falls_back_to_default_when_row_is_missing(db_session)
 
 
 @pytest.mark.asyncio
+async def test_core_weight_is_deterministic_when_the_name_is_duplicated(db_session):
+    """The catalogue is user-editable and nothing stops two rows sharing a name.
+
+    Without order_by(id).limit(1) this is not merely non-deterministic:
+    scalar_one_or_none() raises MultipleResultsFound, so an AMS read would fail
+    outright rather than pick badly. The lowest id wins, which is the same
+    deterministic tiebreak the colour catalogue lookup above already uses.
+    """
+    await _seed_bambu_spool_catalog(db_session)
+    first = (
+        await db_session.execute(
+            select(SpoolCatalogEntry).where(SpoolCatalogEntry.name == "Bambu Lab - Plastic Low Temp")
+        )
+    ).scalar_one()
+    db_session.add(SpoolCatalogEntry(name="Bambu Lab - Plastic Low Temp", weight=999, is_default=False))
+    await db_session.flush()
+
+    spool = await create_spool_from_tray(db_session, SAMPLE_TRAY)
+
+    assert spool.core_weight == 250
+    assert spool.core_weight_catalog_id == first.id
+
+
+@pytest.mark.asyncio
+async def test_core_weight_matches_the_row_name_case_insensitively(db_session):
+    """Matching mirrors the colour catalogue lookup above, which compares through
+    func.upper(). A user who has retyped the row's name in different case still
+    gets their row rather than silently dropping to the fallback constant.
+    """
+    db_session.add(SpoolCatalogEntry(name="bambu lab - plastic low temp", weight=248, is_default=False))
+    await db_session.flush()
+
+    spool = await create_spool_from_tray(db_session, SAMPLE_TRAY)
+
+    assert spool.core_weight == 248
+
+
+@pytest.mark.asyncio
 async def test_core_weight_falls_back_on_empty_catalog(db_session):
     """No catalog at all (fresh install before seeding) still produces a usable
     spool rather than raising.

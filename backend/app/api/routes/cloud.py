@@ -51,9 +51,10 @@ from backend.app.services.bambu_cloud import (
 )
 
 # Credential read/write lives in the services layer so feature packages can
-# consume it without importing the route layer; these names are re-exported
-# for the many routes (and tests) that import them from here.
-from backend.app.services.bambu_cloud_credentials import (  # noqa: F401
+# consume it without importing the route layer. Imported here for this
+# module's own use; consumers should import from bambu_cloud_credentials
+# directly rather than through this route module.
+from backend.app.services.bambu_cloud_credentials import (
     CLOUD_EMAIL_KEY,
     CLOUD_REGION_KEY,
     CLOUD_TOKEN_INVALID_KEY,

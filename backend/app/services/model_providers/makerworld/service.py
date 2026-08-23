@@ -39,7 +39,6 @@ from backend.app.services.model_providers.base import (
     ProviderService,
     ProviderStatus,
 )
-from backend.app.services.model_providers.makerworld import url as mw_url
 from backend.app.services.model_providers.makerworld.auth import is_cloud_token_invalid
 from backend.app.services.model_providers.makerworld.errors import (
     MakerWorldAuthError,
@@ -366,13 +365,6 @@ class MakerWorldService(ProviderService):
                 f"MakerWorld returned unexpected JSON shape for {path}: {type(data).__name__}"
             )
         return data
-
-    @staticmethod
-    def parse_url(url: str) -> ProviderResourceRef:
-        """Alias of :func:`model_providers.makerworld.url.parse_url` kept for
-        callers/tests that reach for the service; the interface entry point is
-        ``MakerWorldProvider.parse_url``."""
-        return mw_url.parse_url(url)
 
     async def get_design(self, model_id: int) -> dict[str, Any]:
         """Fetch full model metadata. Works anonymously.

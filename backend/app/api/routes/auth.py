@@ -346,10 +346,8 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
             # (#2530). Only migrate when there is exactly one obvious owner:
             # handing another admin's session a Bambu credential is not a
             # guess worth making.
-            from backend.app.api.routes.cloud import (
-                get_stored_token,
-                migrate_global_cloud_token_to_user,
-            )
+            from backend.app.api.routes.cloud import migrate_global_cloud_token_to_user
+            from backend.app.services.bambu_cloud_credentials import get_stored_token
 
             if admin_created:
                 cloud_owner = admin_user

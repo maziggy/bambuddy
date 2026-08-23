@@ -85,8 +85,8 @@ class TestStatus:
         used to be a bare alias for ``has_cloud_token``, so the import button
         stayed live against a dead credential and the user only found out via a
         401 toast."""
-        from backend.app.api.routes.cloud import CLOUD_TOKEN_INVALID_KEY, CLOUD_TOKEN_KEY
         from backend.app.models.settings import Settings
+        from backend.app.services.bambu_cloud_credentials import CLOUD_TOKEN_INVALID_KEY, CLOUD_TOKEN_KEY
 
         db_session.add(Settings(key=CLOUD_TOKEN_KEY, value="dead-token"))
         db_session.add(Settings(key=CLOUD_TOKEN_INVALID_KEY, value="2026-07-14T07:00:00+00:00"))

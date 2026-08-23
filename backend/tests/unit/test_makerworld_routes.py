@@ -69,6 +69,70 @@ class TestCanonicalUrl:
         )
 
 
+class TestThumbnail:
+    """GET /makerworld/thumbnail — the anonymous CDN image proxy."""
+
+    def _patch_service(self, svc):
+        return patch("backend.app.api.routes.makerworld.MakerWorldService", return_value=svc)
+
+    @pytest.mark.asyncio
+    async def test_proxies_image_with_immutable_cache(self, async_client):
+        from unittest.mock import MagicMock
+
+        svc = MagicMock()
+        svc.fetch_thumbnail = AsyncMock(return_value=(b"png-bytes", "image/png"))
+        svc.close = AsyncMock()
+
+        with self._patch_service(svc):
+            resp = await async_client.get(
+                "/api/v1/makerworld/thumbnail",
+                params={"url": "https://makerworld.bblmw.com/img/x.png"},
+            )
+        assert resp.status_code == 200, resp.text
+        assert resp.content == b"png-bytes"
+        assert resp.headers["content-type"] == "image/png"
+        assert "immutable" in resp.headers["cache-control"]
+        # The SSRF allowlist is the provider's declared seam, not a local
+        # copy inside the route (review round 2).
+        assert svc.fetch_thumbnail.await_args.args[0] == "https://makerworld.bblmw.com/img/x.png"
+        svc.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_allowlist_comes_from_the_provider_descriptor(self, async_client):
+        from unittest.mock import MagicMock
+
+        svc = MagicMock()
+        svc.fetch_thumbnail = AsyncMock(return_value=(b"x", "image/png"))
+        svc.close = AsyncMock()
+
+        with self._patch_service(svc) as cls:
+            await async_client.get(
+                "/api/v1/makerworld/thumbnail",
+                params={"url": "https://makerworld.bblmw.com/img/x.png"},
+            )
+        assert cls.call_args.kwargs["thumbnail_hosts"] == makerworld_provider.thumbnail_hosts()
+
+    @pytest.mark.asyncio
+    async def test_non_cdn_host_is_a_clean_400(self, async_client):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.model_providers.makerworld.errors import MakerWorldUrlError
+
+        svc = MagicMock()
+        svc.fetch_thumbnail = AsyncMock(
+            side_effect=MakerWorldUrlError("Refusing to fetch thumbnail from non-MakerWorld host: 'evil.example'")
+        )
+        svc.close = AsyncMock()
+
+        with self._patch_service(svc):
+            resp = await async_client.get(
+                "/api/v1/makerworld/thumbnail",
+                params={"url": "https://evil.example/x.png"},
+            )
+        assert resp.status_code == 400
+        svc.close.assert_awaited_once()
+
+
 class TestStatus:
     @pytest.mark.asyncio
     async def test_status_reports_no_token_by_default(self, async_client, db_session):

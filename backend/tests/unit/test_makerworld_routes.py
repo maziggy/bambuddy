@@ -14,7 +14,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from backend.app.api.routes.makerworld import _canonical_url
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.services.model_providers.base import (
     ProviderDownload,
@@ -50,23 +49,6 @@ def _fake_service(**stubs):
         else:
             setattr(svc, name, AsyncMock(return_value=value))
     return svc
-
-
-class TestCanonicalUrl:
-    """Unit test the dedupe-key builder directly — regressions break dedupe
-    silently so it's worth pinning the exact shape. Asserts against the real
-    provider: a mock would just pin a copy of the logic under test."""
-
-    def test_without_profile_id(self):
-        assert _canonical_url(makerworld_provider, 1400373) == "https://makerworld.com/models/1400373"
-
-    def test_without_profile_id_when_none(self):
-        assert _canonical_url(makerworld_provider, 1400373, None) == "https://makerworld.com/models/1400373"
-
-    def test_with_profile_id(self):
-        assert _canonical_url(makerworld_provider, 1400373, 298919107) == (
-            "https://makerworld.com/models/1400373#profileId-298919107"
-        )
 
 
 class TestThumbnail:
@@ -207,8 +189,10 @@ class TestResolve:
 
     @pytest.mark.asyncio
     async def test_flags_already_imported_library_ids(self, async_client, db_session):
-        # Seed a matching LibraryFile so resolve() reports it back
-        existing = LibraryFile(
+        """Both dedupe shapes must be found through the provider's
+        ``source_url_filter``: the whole-model canonical URL *and* any
+        plate-level ``#profileId-`` row."""
+        model_row = LibraryFile(
             filename="prev.3mf",
             file_path="library/files/prev.3mf",
             file_type="3mf",
@@ -216,9 +200,18 @@ class TestResolve:
             source_type="makerworld",
             source_url="https://makerworld.com/models/1400373",
         )
-        db_session.add(existing)
+        plate_row = LibraryFile(
+            filename="prev-plate.3mf",
+            file_path="library/files/prev-plate.3mf",
+            file_type="3mf",
+            file_size=100,
+            source_type="makerworld",
+            source_url="https://makerworld.com/models/1400373#profileId-298919107",
+        )
+        db_session.add_all([model_row, plate_row])
         await db_session.commit()
-        await db_session.refresh(existing)
+        await db_session.refresh(model_row)
+        await db_session.refresh(plate_row)
 
         svc = _fake_service(
             resolve=ProviderResolvedModel(
@@ -234,7 +227,7 @@ class TestResolve:
                 json={"url": "https://makerworld.com/en/models/1400373"},
             )
         assert resp.status_code == 200, resp.text
-        assert resp.json()["already_imported_library_ids"] == [existing.id]
+        assert sorted(resp.json()["already_imported_library_ids"]) == sorted([model_row.id, plate_row.id])
 
 
 class TestImport:

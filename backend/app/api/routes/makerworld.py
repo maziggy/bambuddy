@@ -9,10 +9,12 @@ Search/browse endpoints are intentionally NOT exposed: the public-facing
 ``design/search`` endpoint returns empty results from server-originated
 requests (see memory/makerworld-integration.md for the investigation).
 
-The route layer uses the :class:`ModelProviderRegistry` to select the
-appropriate provider based on the pasted URL, so adding a new model host only
-requires registering a new :class:`ModelProvider` — these route handlers
-remain unchanged.
+These are still the *MakerWorld* routes: they consult the shared seams where
+one exists — URL routing via :class:`ModelProviderRegistry`, permissions and
+folder naming from the provider descriptor, already-imported matching via
+:meth:`ModelProvider.source_url_filter` — but request/response shapes remain
+MakerWorld-specific. The fully shared import API that makes new hosts work
+with zero route changes arrives with #2793.
 """
 
 from __future__ import annotations
@@ -101,24 +103,6 @@ async def _build_service(
     place every provider resolves them, so the routes never re-implement it.
     """
     return await provider.build_service(db=db, user=current_user, api_key_owner=api_key_cloud_owner)
-
-
-def _canonical_url(
-    provider: ModelProvider,
-    model_id: int,
-    profile_id: int | None = None,
-) -> str:
-    """Build the stable ``source_url`` key used for dedupe.
-
-    The provider's own :meth:`ModelProvider.canonical_url` is used to generate
-    the dedupe key, so each provider controls its own key shape.
-    """
-    ref = ProviderResourceRef(
-        source_type=provider.source_type,
-        external_id=str(model_id),
-        sub_id=str(profile_id) if profile_id else None,
-    )
-    return provider.canonical_url(ref)
 
 
 def _map_service_error(exc: ProviderError) -> HTTPException:
@@ -236,14 +220,13 @@ async def resolve_url(
     finally:
         await service.close()
 
-    # Find every library row whose source_url is either the model-level
-    # canonical URL (legacy whole-model imports) or any plate-level URL
-    # (``...#profileId-{n}``) under this model. The frontend surfaces this
+    # Find every library row whose source_url belongs to this resource —
+    # the provider's :meth:`source_url_filter` owns what "belongs" means
+    # (whole-model key, per-plate keys, ...). The frontend surfaces the ids
     # to mark imported plates in the instance picker.
-    model_prefix = _canonical_url(provider, model_id)
     existing_q = await db.execute(
         select(LibraryFile.id).where(
-            (LibraryFile.source_url == model_prefix) | (LibraryFile.source_url.like(f"{model_prefix}#profileId-%")),
+            provider.source_url_filter(LibraryFile.source_url, str(model_id)),
             LibraryFile.deleted_at.is_(None),
         )
     )
@@ -327,7 +310,7 @@ async def import_instance(
         resolved_profile_id = int(info.ref.sub_id) if info.ref.sub_id else None
 
         # Canonical URL includes profile_id so each plate gets its own library
-        # entry (see ``_canonical_url`` docstring).
+        # entry (see ``ModelProvider.canonical_url``).
         source_url = provider.canonical_url(info.ref)
 
         # Dedupe check upfront so we don't burn bandwidth re-downloading.

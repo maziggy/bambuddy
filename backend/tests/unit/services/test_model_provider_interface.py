@@ -13,6 +13,7 @@ import pytest
 
 from backend.app.core.permissions import Permission
 from backend.app.services.model_providers import makerworld_provider
+from backend.app.services.model_providers.base import ModelProvider
 from backend.app.services.model_providers.makerworld.service import MakerWorldService
 
 
@@ -59,6 +60,45 @@ class TestMakerWorldProviderDescriptor:
     def test_canonical_plate_less_shape(self):
         ref = makerworld_provider.parse_url("https://makerworld.com/models/999")
         assert makerworld_provider.canonical_url(ref) == "https://makerworld.com/models/999"
+
+    def test_source_url_filter_matches_model_and_any_plate(self):
+        """The already-imported predicate must cover the whole-model key and
+        every per-plate key — MakerWorld's canonical shape appends
+        ``#profileId-{n}`` (review round 3: shape knowledge belongs to the
+        provider, not the route)."""
+        from sqlalchemy import String, column as sa_column
+
+        expr = makerworld_provider.source_url_filter(sa_column("source_url", String), "1400373")
+        sql = str(expr.compile(compile_kwargs={"literal_binds": True}))
+        assert "source_url = 'https://makerworld.com/models/1400373'" in sql
+        assert "LIKE 'https://makerworld.com/models/1400373#profileId-%'" in sql
+
+    def test_default_source_url_filter_is_exact_match_only(self):
+        """A provider without plate-shaped keys inherits the default: exact
+        match on its whole-model canonical URL, nothing else."""
+        from sqlalchemy import String, column as sa_column
+
+        expr = _WholeModelProvider().source_url_filter(sa_column("source_url", String), "42")
+        sql = str(expr.compile(compile_kwargs={"literal_binds": True}))
+        assert sql == "source_url = 'https://example.com/models/42'"
+        assert "LIKE" not in sql
+
+
+class _WholeModelProvider(ModelProvider):
+    """Minimal concrete provider that keys dedupe at whole-model granularity
+    only — exercises the inherited default ``source_url_filter``."""
+
+    source_type = "wholemodel"
+    display_name = "WholeModel"
+
+    async def build_service(self, *, db, user, api_key_owner=None, client=None):
+        raise NotImplementedError
+
+    def parse_url(self, url):
+        raise NotImplementedError
+
+    def canonical_url(self, ref):
+        return f"https://example.com/models/{ref.external_id}"
 
 
 class TestBuildService:

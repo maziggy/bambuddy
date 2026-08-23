@@ -97,6 +97,15 @@ class MakerWorldProvider(ModelProvider):
     def canonical_url(self, ref: ProviderResourceRef) -> str:
         return mw_url.canonical_url(ref)
 
+    def source_url_filter(self, column, external_id: str):
+        """Whole-model key plus every per-plate key — MakerWorld's canonical
+        shape appends ``#profileId-{n}`` for plate-level dedupe (see
+        ``url.canonical_url``), so the already-imported detection must match
+        both. The ``#profileId-`` fragment lives here with the descriptor
+        because it is part of this provider's URL contract."""
+        prefix = mw_url.canonical_url(ProviderResourceRef(source_type=self.source_type, external_id=external_id))
+        return (column == prefix) | (column.like(f"{prefix}#profileId-%"))
+
     def thumbnail_hosts(self) -> tuple[str, ...]:
         return MAKERWORLD_CDN_HOSTS
 

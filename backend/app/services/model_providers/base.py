@@ -79,6 +79,11 @@ class ProviderResourceRef:
     ``external_id`` is the provider-native model identifier (MakerWorld's
     integer design id as a string); ``sub_id`` is an optional secondary key
     such as MakerWorld's ``profileId`` for a specific plate.
+
+    Both ids must be **numeric strings** today: the shared route layer casts
+    them with ``int()`` when shaping API responses. Providers whose native
+    ids are not numeric need route-layer changes first — keep this contract
+    in mind when implementing one.
     """
 
     source_type: str
@@ -212,6 +217,18 @@ class ModelProvider(ABC):
         All URL variants of the same resource must collapse to this string;
         different resources (e.g. different plates of one model) must differ.
         """
+
+    def source_url_filter(self, column: Any, external_id: str) -> Any:
+        """SQL predicate over ``LibraryFile.source_url`` selecting every row
+        that belongs to this resource — the whole-model canonical URL plus,
+        when the provider keys dedupe per sub-resource (plate/profile), every
+        such variant. Drives the resolve flow's already-imported detection.
+
+        The default matches the model-level canonical URL only; providers with
+        recognisable per-plate URL shapes override this (see MakerWorld).
+        """
+        prefix = self.canonical_url(ProviderResourceRef(source_type=self.source_type, external_id=external_id))
+        return column == prefix
 
     def supports_url(self, url: str) -> bool:
         """Whether ``url`` points at this provider (host-suffix match).

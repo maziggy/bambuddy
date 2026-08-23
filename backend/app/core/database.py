@@ -4427,6 +4427,91 @@ async def run_migrations(conn):
         conn, "ALTER TABLE notification_providers ADD COLUMN on_ams_drying_suspended BOOLEAN DEFAULT TRUE"
     )
 
+    # Migration: repair the core weight of RFID-created spools that took the
+    # arbitrary "first Bambu Lab row" from the spool catalogue (#2909).
+    await _migrate_repair_rfid_core_weight(conn)
+
+
+async def _migrate_repair_rfid_core_weight(conn) -> None:
+    """Give RFID-created spools the tare of the spool they actually arrived on (#2909).
+
+    ``create_spool_from_tray`` looked the core weight up with a ``Bambu Lab%``
+    prefix query and took the first row back, with no matching step and no
+    ``ORDER BY``. On SQLite that is ``Bambu Lab - Plastic High Temp`` — 216 g
+    against the 250 g the spool actually weighs. The forward fix selects the row
+    by name; spools created before it keep the wrong value, and it is not
+    cosmetic: ``core_weight`` is the tare in SpoolBuddy's weigh flow, so every
+    scale weighing of one of these spools charges 34 g of filament that is not
+    there.
+
+    Keyed on the value, not on ``core_weight_catalog_id IS NULL``. The catalogue
+    picker in the spool form displays the first row matching the weight and
+    auto-selects it when exactly one does, and ``DEFAULT_SPOOL_CATALOG`` has
+    exactly one 216 g row — so opening a spool's form and saving any unrelated
+    field writes the High Temp id, laundering the arbitrary pick into what reads
+    as a deliberate user selection. A NULL guard would therefore skip precisely
+    the spools that have been through the form, which are the ones most likely to
+    have been weighed. It would also overwrite a user who typed a corrected weight
+    matching no catalogue row, because that same effect clears their id to NULL.
+
+    The weight comes from the catalogue row rather than a constant, so an install
+    that has corrected ``Bambu Lab - Plastic Low Temp`` to its own measurement
+    gets that value; ``core_weight_catalog_id`` is set to the row that supplied
+    it. With no such row the spools are left alone — there is nothing to say what
+    the right value is, and 216 is at least a number the user can see and edit.
+
+    One-shot via a settings flag. Without it a user who deliberately sets an
+    ``rfid_auto`` spool to 216 g would have it silently reverted on the next
+    restart.
+    """
+    from sqlalchemy import text
+
+    flag = "_backfill_2909_rfid_core_weight_done"
+
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+
+        row = (
+            await conn.execute(
+                text("SELECT id, weight FROM spool_catalog WHERE UPPER(name) = :name ORDER BY id LIMIT 1"),
+                {"name": "BAMBU LAB - PLASTIC LOW TEMP"},
+            )
+        ).fetchone()
+
+        if row is not None:
+            result = await conn.execute(
+                text(
+                    "UPDATE spool SET core_weight = :w, core_weight_catalog_id = :cid "
+                    "WHERE data_origin = 'rfid_auto' AND core_weight = 216"
+                ),
+                {"w": row.weight, "cid": row.id},
+            )
+            if result.rowcount:
+                logger.info(
+                    "[#2909] Repaired core weight on %d RFID-created spool(s): 216 g -> %d g "
+                    "(Bambu Lab - Plastic Low Temp). SpoolBuddy weighings of these spools were "
+                    "reading %d g of filament that was not there.",
+                    result.rowcount,
+                    row.weight,
+                    216 - row.weight if row.weight < 216 else row.weight - 216,
+                )
+        else:
+            logger.info(
+                "[#2909] Skipping RFID core-weight repair: no 'Bambu Lab - Plastic Low Temp' "
+                "row in the spool catalogue to take a weight from."
+            )
+
+        # Marked done even when nothing matched, so this never re-runs and cannot
+        # revert a 216 g value a user sets on purpose later.
+        await conn.execute(
+            text('INSERT INTO settings ("key", value) VALUES (:k, :v)'),
+            {"k": flag, "v": "true"},
+        )
+
 
 async def _migrate_backfill_variant_groups(conn) -> None:
     """Build variant groups from the slice provenance already on disk (#671 / #2570).

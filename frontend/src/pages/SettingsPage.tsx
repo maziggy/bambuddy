@@ -1040,6 +1040,7 @@ export function SettingsPage() {
       baseline.ams_humidity_fair !== localSettings.ams_humidity_fair ||
       baseline.ams_temp_good !== localSettings.ams_temp_good ||
       baseline.ams_temp_fair !== localSettings.ams_temp_fair ||
+      (baseline.ams_temp_alarm ?? null) !== (localSettings.ams_temp_alarm ?? null) ||
       baseline.ams_history_retention_days !== localSettings.ams_history_retention_days ||
       baseline.disable_filament_warnings !== localSettings.disable_filament_warnings ||
       baseline.prefer_lowest_filament !== localSettings.prefer_lowest_filament ||
@@ -1151,6 +1152,7 @@ export function SettingsPage() {
         ams_humidity_fair: localSettings.ams_humidity_fair,
         ams_temp_good: localSettings.ams_temp_good,
         ams_temp_fair: localSettings.ams_temp_fair,
+        ams_temp_alarm: localSettings.ams_temp_alarm ?? null,
         ams_history_retention_days: localSettings.ams_history_retention_days,
         disable_filament_warnings: localSettings.disable_filament_warnings,
         prefer_lowest_filament: localSettings.prefer_lowest_filament,
@@ -5825,8 +5827,33 @@ export function SettingsPage() {
                       </div>
                     </div>
                   </div>
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">
+                      {t('settings.tempAlarmThreshold')} &gt;
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        max="120"
+                        value={localSettings.ams_temp_alarm ?? ''}
+                        placeholder={String(localSettings.ams_temp_fair ?? 35)}
+                        onChange={(e) => {
+                          const raw = e.target.value.trim();
+                          const parsed = parseFloat(raw);
+                          updateSetting('ams_temp_alarm', raw === '' || Number.isNaN(parsed) ? null : parsed);
+                        }}
+                        className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                      />
+                      <span className="text-bambu-gray">°C</span>
+                    </div>
+                  </div>
                   <p className="text-xs text-bambu-gray">
                     {t('settings.aboveFairHot')}
+                  </p>
+                  <p className="text-xs text-amber-700/80 dark:text-amber-400/70">
+                    {t('settings.tempAlarmSeparateFromBand')}
                   </p>
                 </div>
 

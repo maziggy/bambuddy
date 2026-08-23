@@ -1275,6 +1275,9 @@ export interface AppSettings {
   ams_humidity_fair: number;  // <= this is orange, > is red
   ams_temp_good: number;      // <= this is green/blue
   ams_temp_fair: number;      // <= this is orange, > is red
+  // Separate from the display band (#2905). null = unset, which the backend
+  // resolves to ams_temp_fair so existing installs are unaffected.
+  ams_temp_alarm: number | null;
   ams_history_retention_days: number;  // days to keep AMS sensor history
   // Queue auto-drying settings
   queue_drying_enabled: boolean;  // Auto-dry AMS between queued prints

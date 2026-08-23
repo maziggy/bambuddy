@@ -2230,6 +2230,8 @@ export default {
     temperature: 'Temperatura',
     goodBlue: 'Buono (blu)',
     aboveFairHot: 'Sopra soglia discreta mostra rosso (caldo)',
+    tempAlarmThreshold: 'Allarme sopra',
+    tempAlarmSeparateFromBand: 'Solo la soglia di allarme invia notifiche: Buono e Discreto colorano solo la visualizzazione. Lascia vuoto per allarmare alla soglia discreta, come prima.',
     historyRetention: 'Conservazione cronologia',
     keepSensorHistory: 'Mantieni cronologia sensori per',
     historyRetentionDescription: 'I dati più vecchi saranno eliminati automaticamente',

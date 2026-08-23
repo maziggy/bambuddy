@@ -2273,6 +2273,8 @@ export default {
     temperature: '温度',
     goodBlue: '良好（青）≤',
     aboveFairHot: '普通のしきい値以上は赤（高温）で表示',
+    tempAlarmThreshold: 'アラームのしきい値',
+    tempAlarmSeparateFromBand: '通知を出すのはアラームのしきい値だけです。良好・普通は表示の色分けのみに使われます。空欄にすると、これまでどおり普通のしきい値で発報します。',
     historyRetention: '履歴の保持',
     keepSensorHistory: 'センサー履歴の保持期間',
     historyRetentionDescription: '古い湿度と温度データは自動的に削除されます',

@@ -2230,6 +2230,8 @@ export default {
     temperature: 'Température',
     goodBlue: 'Bon (bleu)',
     aboveFairHot: 'Au-dessus = rouge (chaud)',
+    tempAlarmThreshold: 'Alerte au-dessus de',
+    tempAlarmSeparateFromBand: 'Seul le seuil d\'alerte envoie des notifications — Bon et Correct ne font que colorer l\'affichage. Laissez vide pour alerter au seuil correct, comme avant.',
     historyRetention: 'Rétention d\'historique',
     keepSensorHistory: 'Garder l\'historique pendant',
     historyRetentionDescription: 'Les anciennes données seront supprimées.',

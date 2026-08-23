@@ -2278,6 +2278,8 @@ export default {
     temperature: 'Sıcaklık',
     goodBlue: 'İyi (mavi)',
     aboveFairHot: 'Orta eşiğin üstü kırmızı olarak gösterilir (sıcak)',
+    tempAlarmThreshold: 'Alarm eşiği',
+    tempAlarmSeparateFromBand: 'Bildirimleri yalnızca alarm eşiği gönderir — İyi ve Orta yalnızca göstergeyi renklendirir. Eskisi gibi orta eşikte alarm vermek için boş bırakın.',
     historyRetention: 'Geçmiş Saklama',
     keepSensorHistory: 'Sensör geçmişini sakla',
     historyRetentionDescription: 'Daha eski nem ve sıcaklık verileri otomatik olarak silinecek',

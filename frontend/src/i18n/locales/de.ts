@@ -2274,6 +2274,8 @@ export default {
     temperature: 'Temperatur',
     goodBlue: 'Gut (blau)',
     aboveFairHot: 'Über dem mittleren Schwellenwert wird rot angezeigt (heiß)',
+    tempAlarmThreshold: 'Alarm über',
+    tempAlarmSeparateFromBand: 'Nur der Alarm-Schwellenwert löst Benachrichtigungen aus — Gut und Mittel färben nur die Anzeige. Leer lassen, um wie bisher beim mittleren Schwellenwert zu alarmieren.',
     historyRetention: 'Verlaufsaufbewahrung',
     keepSensorHistory: 'Sensorverlauf behalten für',
     historyRetentionDescription: 'Ältere Feuchtigkeits- und Temperaturdaten werden automatisch gelöscht',

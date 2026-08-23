@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import math
 import os
 import posixpath
 import secrets
@@ -7122,6 +7123,36 @@ _ams_cleanup_counter = 0  # Track recordings to trigger periodic cleanup
 _ams_alarm_cooldown: dict[str, datetime] = {}
 AMS_ALARM_COOLDOWN_MINUTES = 60  # Don't send same alarm more than once per hour
 
+
+def _resolve_temp_alarm_threshold(fair_threshold: float, raw_alarm_value: str | None) -> float:
+    """Temperature at which the AMS alarm fires, falling back to the display band.
+
+    ``ams_temp_fair`` decides when the AMS card turns amber. It used to decide
+    when a notification was sent as well, which is why a room above it made the
+    alarm fire once an hour for as long as the weather lasted -- and the only way
+    to stop that was to raise the display band and lose the colour that says the
+    unit is warm (#2905).
+
+    Unset resolves to the fair threshold, so an install that never sets one is
+    unchanged. Settings storage stringifies ``None`` to the literal ``"None"``,
+    so that arrives here as a string and is handled by the same branch as any
+    other unparseable value -- there is no separate sentinel to keep in sync.
+
+    A non-positive value is refused rather than honoured: zero would alarm
+    permanently, and it is far more likely to be a cleared field than a
+    deliberate choice.
+    """
+    if raw_alarm_value is None:
+        return fair_threshold
+    try:
+        value = float(raw_alarm_value)
+    except (TypeError, ValueError):
+        return fair_threshold
+    if not math.isfinite(value) or value <= 0:
+        return fair_threshold
+    return value
+
+
 # Per-AMS "drying was live at" latch that suppresses the high-temperature alarm
 # through a cycle and the cool-down after it (#1802). Stored in the settings
 # table rather than alongside _ams_alarm_cooldown above, because a restart
@@ -7251,7 +7282,7 @@ async def record_ams_history():
 
                 # Get alarm thresholds from settings
                 humidity_threshold = 60.0  # Default: fair threshold
-                temp_threshold = 35.0  # Default: fair threshold
+                temp_fair_threshold = 35.0  # Display band default (ams_temp_fair)
                 result = await db.execute(select(Settings).where(Settings.key == "ams_humidity_fair"))
                 setting = result.scalar_one_or_none()
                 if setting:
@@ -7263,9 +7294,27 @@ async def record_ams_history():
                 setting = result.scalar_one_or_none()
                 if setting:
                     try:
-                        temp_threshold = float(setting.value)
+                        temp_fair_threshold = float(setting.value)
                     except (ValueError, TypeError):
                         pass  # Keep default threshold if stored value is invalid
+
+                # The alarm gets its own threshold, seeded from the resolved fair
+                # value so an install that has never set one behaves exactly as
+                # it did before (#2905). ams_temp_fair decides when the card turns
+                # amber; 35 C is a reasonable place to change a colour and not a
+                # reasonable place to page someone. A room above it makes the
+                # alarm fire once an hour for as long as the weather lasts, and
+                # the only way to stop it was to raise the display band and lose
+                # the colour that says the unit is warm.
+                #
+                # An unset value is stored as the literal "None", which the except
+                # below swallows the same way it swallows garbage -- so the
+                # fallback costs nothing and needs no sentinel of its own.
+                result = await db.execute(select(Settings).where(Settings.key == "ams_temp_alarm"))
+                setting = result.scalar_one_or_none()
+                temp_alarm_threshold = _resolve_temp_alarm_threshold(
+                    temp_fair_threshold, setting.value if setting else None
+                )
 
                 # Per-filament humidity threshold overrides (#1605) — resolved
                 # per-AMS below from the loaded tray types. Reuses the same
@@ -7421,10 +7470,16 @@ async def record_ams_history():
                         # returns to normal. Humidity is deliberately left alone:
                         # it falls during drying, which is the whole point.
                         latch_key = f"{printer.id}:{ams_id}"
+                        # The latch releases at `threshold`, so it takes the alarm
+                        # number too. Handing it the display band would strand the
+                        # latch on any unit that settles back above it -- a room
+                        # where the AMS rests at 37.7 C never returns under a 35 C
+                        # band, so the latch could only expire on the grace cap
+                        # rather than releasing when the unit had actually cooled.
                         suppress_temp_alarm, new_latch = temperature_alarm_suppressed(
                             drying_active=is_drying_active(ams_data),
                             temperature=temperature,
-                            threshold=temp_threshold,
+                            threshold=temp_alarm_threshold,
                             latched_at=drying_latch.get(latch_key),
                             now=datetime.now(timezone.utc),
                             grace_minutes=AMS_DRYING_GRACE_MINUTES,
@@ -7435,7 +7490,7 @@ async def record_ams_history():
                             drying_latch[latch_key] = new_latch
 
                         # Check temperature alarm (only if above threshold)
-                        if temperature is not None and temperature > temp_threshold and not suppress_temp_alarm:
+                        if temperature is not None and temperature > temp_alarm_threshold and not suppress_temp_alarm:
                             cooldown_key = f"{printer.id}:{ams_id}:temperature"
                             last_alarm = _ams_alarm_cooldown.get(cooldown_key)
                             now = datetime.now(timezone.utc)
@@ -7445,17 +7500,21 @@ async def record_ams_history():
                             ):
                                 _ams_alarm_cooldown[cooldown_key] = now
                                 logger.info(
-                                    f"Sending temperature alarm for {printer.name} {ams_label}: {temperature}°C > {temp_threshold}°C"
+                                    f"Sending temperature alarm for {printer.name} {ams_label}: "
+                                    f"{temperature}°C > {temp_alarm_threshold}°C"
                                 )
                                 try:
                                     # Call different notification method based on AMS type
                                     if is_ams_ht:
+                                        # The reported threshold has to be the one
+                                        # that fired, or the message says "> 35 °C"
+                                        # while firing at 45.
                                         await notification_service.on_ams_ht_temperature_high(
-                                            printer.id, printer.name, ams_label, temperature, temp_threshold, db
+                                            printer.id, printer.name, ams_label, temperature, temp_alarm_threshold, db
                                         )
                                     else:
                                         await notification_service.on_ams_temperature_high(
-                                            printer.id, printer.name, ams_label, temperature, temp_threshold, db
+                                            printer.id, printer.name, ams_label, temperature, temp_alarm_threshold, db
                                         )
                                 except Exception as e:
                                     logger.warning("Failed to send temperature alarm: %s", e)

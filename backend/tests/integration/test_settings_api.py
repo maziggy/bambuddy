@@ -41,6 +41,55 @@ class TestSettingsAPI:
         assert isinstance(result["auto_archive"], bool)
         assert isinstance(result["currency"], str)
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unset_temp_alarm_reads_back_as_null(self, async_client: AsyncClient, db_session):
+        """#2905: ams_temp_alarm is nullable, and settings storage stringifies
+        None to the literal "None".
+
+        Putting it in the plain float-cast list would make float("None") raise
+        inside the response builder and take the whole settings response with it
+        — every unrelated setting on the page included.
+        """
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="ams_temp_alarm", value="None"))
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/settings/")
+
+        assert response.status_code == 200
+        assert response.json()["ams_temp_alarm"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_set_temp_alarm_reads_back_as_a_float(self, async_client: AsyncClient, db_session):
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="ams_temp_alarm", value="45"))
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/settings/")
+
+        assert response.status_code == 200
+        assert response.json()["ams_temp_alarm"] == 45.0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_malformed_temp_alarm_does_not_break_the_response(self, async_client: AsyncClient, db_session):
+        """A hand-edited or half-written value must degrade to "unset" rather
+        than making the settings page unreachable."""
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="ams_temp_alarm", value="warm"))
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/settings/")
+
+        assert response.status_code == 200
+        assert response.json()["ams_temp_alarm"] is None
+        assert "currency" in response.json(), "the rest of the page still renders"
+
     # ========================================================================
     # Update settings
     # ========================================================================

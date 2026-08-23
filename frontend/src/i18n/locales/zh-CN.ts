@@ -2275,6 +2275,8 @@ export default {
     temperature: '温度',
     goodBlue: '良好（蓝色）',
     aboveFairHot: '超过一般阈值显示为红色（热）',
+    tempAlarmThreshold: '告警阈值',
+    tempAlarmSeparateFromBand: '只有告警阈值会发送通知，良好和一般仅用于显示配色。留空则与此前一致，在一般阈值触发告警。',
     historyRetention: '历史保留',
     keepSensorHistory: '保留传感器历史',
     historyRetentionDescription: '较旧的湿度和温度数据将被自动删除',

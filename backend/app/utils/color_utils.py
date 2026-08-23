@@ -2,6 +2,48 @@
 
 import math
 
+# Alpha byte that means "fully opaque". Bambu's firmware reports every opaque
+# spool as RRGGBBFF, so this is the overwhelmingly common value.
+_OPAQUE_ALPHA = "FF"
+
+
+def spoolman_color_hex(rgba: str | None) -> str | None:
+    """Normalise an RRGGBB(AA) value to what Spoolman's ``color_hex`` should hold.
+
+    Eight characters only when the spool is genuinely translucent. Bambuddy used
+    to truncate to six unconditionally, which turned a clear spool's ``00000000``
+    into opaque black (#2912); passing everything through instead would rewrite
+    the ``color_hex`` of every opaque spool on its next touch, churning records in
+    people's Spoolman for no benefit. Keeping the opaque case at six characters
+    leaves existing data byte-identical.
+
+    Returns ``None`` for a missing value and passes anything shorter than six
+    characters through unchanged, so a malformed value is reported rather than
+    silently reshaped.
+    """
+    if not rgba:
+        return None
+    clean = rgba.strip().removeprefix("#").upper()
+    if len(clean) < 6:
+        return clean or None
+    if len(clean) >= 8 and clean[6:8] != _OPAQUE_ALPHA:
+        return clean[:8]
+    return clean[:6]
+
+
+def color_match_key(color_hex: str | None) -> str:
+    """Return the RGB prefix two colours are compared on.
+
+    Comparisons must stay on the prefix even though writes can now carry alpha.
+    Every filament already in a user's Spoolman is stored six characters, so
+    comparing full strings would stop matching the moment a value grew to eight
+    and the next AMS sync would mint a duplicate filament for every spool on the
+    instance (#2912).
+    """
+    if not color_hex:
+        return ""
+    return color_hex.strip().removeprefix("#").upper()[:6]
+
 
 def colors_similar(hex_a: str, hex_b: str, threshold: int = 50) -> bool:
     """Compare two RRGGBB(AA) hex colors with tolerance for RFID/firmware variations.

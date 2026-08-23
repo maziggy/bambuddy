@@ -9,6 +9,8 @@ from typing import Literal
 
 import httpx
 
+from backend.app.utils.color_utils import color_match_key, spoolman_color_hex
+
 logger = logging.getLogger(__name__)
 
 BAMBU_RFID_TAG_LENGTH = 32
@@ -356,9 +358,10 @@ class SpoolmanClient:
         if material:
             data["material"] = material
         if color_hex:
-            # Strip alpha channel if present (RRGGBBAA -> RRGGBB)
-            color_hex = color_hex[:6] if len(color_hex) >= 6 else color_hex
-            data["color_hex"] = color_hex
+            # Every create funnels through here, so this is where the stored shape
+            # is decided: six characters for an opaque spool, eight only when the
+            # alpha byte says the filament is translucent. See #2912.
+            data["color_hex"] = spoolman_color_hex(color_hex) or color_hex
         if color_name:
             data["color_name"] = color_name
         if weight:
@@ -757,7 +760,10 @@ class SpoolmanClient:
     ) -> int:
         """Return the filament ID matching material/name/brand/color, creating it if absent."""
         name = f"{material} {subtype}".strip() if subtype else material
-        color = color_hex[:6].upper() if len(color_hex) >= 6 else color_hex.upper()
+        # `color` is the match key and stays on the RGB prefix; `stored_color` is
+        # what a new filament is created with and may carry alpha (#2912).
+        color = color_match_key(color_hex)
+        stored_color = spoolman_color_hex(color_hex) or color_hex.upper()
 
         vendor_id: int | None = None
         if brand:
@@ -772,7 +778,7 @@ class SpoolmanClient:
         filaments = await self.get_filaments()
         for f in filaments:
             f_material = (f.get("material") or "").upper()
-            f_color = (f.get("color_hex") or "").upper()[:6]
+            f_color = color_match_key(f.get("color_hex"))
             f_vendor = f.get("vendor") or {}
             f_vendor_name = (f_vendor.get("name") or "").strip().lower()
 
@@ -814,7 +820,7 @@ class SpoolmanClient:
             name=name,
             vendor_id=vendor_id,
             material=material,
-            color_hex=color,
+            color_hex=stored_color,
             weight=float(label_weight),
         )
         filament_id = filament.get("id")
@@ -1199,7 +1205,7 @@ class SpoolmanClient:
                         material=tray.tray_type,
                         subtype="",
                         brand=brand,
-                        color_hex=tray.tray_color[:6],
+                        color_hex=tray.tray_color,
                         label_weight=tray.tray_weight,
                     )
                 except (SpoolmanNotFoundError, SpoolmanUnavailableError, SpoolmanClientError):
@@ -1249,9 +1255,10 @@ class SpoolmanClient:
     async def _find_or_create_filament(self, tray: AMSTray) -> dict | None:
         """Return a Bambu Lab filament matching the tray's material/color, creating it if absent."""
         bambu_vendor_id = await self.ensure_bambu_vendor()
-        color_hex = tray.tray_color[:6]  # Strip alpha channel
+        # Stored value may carry alpha; the match key never does (#2912).
+        color_hex = spoolman_color_hex(tray.tray_color) or tray.tray_color
         material_upper = tray.tray_type.upper()
-        color_upper = color_hex.upper()
+        color_upper = color_match_key(tray.tray_color)
 
         # Search internal filaments - only match Bambu Lab vendor
         filaments = await self.get_filaments()
@@ -1260,8 +1267,7 @@ class SpoolmanClient:
             if fil_vendor_id != bambu_vendor_id:
                 continue
             fil_material = filament.get("material") or ""
-            fil_color = filament.get("color_hex") or ""
-            if fil_material.upper() == material_upper and fil_color.upper() == color_upper:
+            if fil_material.upper() == material_upper and color_match_key(filament.get("color_hex")) == color_upper:
                 return filament
 
         # Search external filaments (SpoolmanDB) — restrict to Bambu Lab only.
@@ -1277,8 +1283,7 @@ class SpoolmanClient:
             if manufacturer != "bambu lab" and not ext_id.startswith("bambulab_"):
                 continue
             fil_material = filament.get("material") or ""
-            fil_color = filament.get("color_hex") or ""
-            if fil_material.upper() == material_upper and fil_color.upper() == color_upper:
+            if fil_material.upper() == material_upper and color_match_key(filament.get("color_hex")) == color_upper:
                 bambu_candidates.append(filament)
 
         if bambu_candidates:
@@ -1307,7 +1312,7 @@ class SpoolmanClient:
             name=external.get("name", tray.tray_sub_brands),
             vendor_id=vendor_id,
             material=external.get("material", tray.tray_type),
-            color_hex=external.get("color_hex", tray.tray_color[:6]),
+            color_hex=external.get("color_hex", spoolman_color_hex(tray.tray_color) or tray.tray_color),
             weight=external.get("weight", tray.tray_weight),
             density=external.get("density"),
         )

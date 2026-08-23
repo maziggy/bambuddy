@@ -153,6 +153,40 @@ def _extract_extra_str(extra: dict, key: str) -> str:
     return decoded if isinstance(decoded, str) else ""
 
 
+# Spool.extra key holding the consumed-counter baseline: the value Spoolman's
+# used_weight had when the user last pressed "Reset usage to 0". Displayed
+# consumed is used_weight minus this, which is what internal mode has always
+# done with its own weight_used_baseline column (#1644). See #2906.
+BAMBU_WEIGHT_USED_BASELINE_KEY = "bambu_weight_used_baseline"
+
+
+def _extract_extra_float(extra: dict, key: str) -> float | None:
+    """Extract a JSON-encoded number from a Spoolman extra dict.
+
+    Same storage convention as :func:`_extract_extra_str` — Spoolman keeps
+    extra values as JSON text, so 250.0 is stored as ``"250.0"``. Returns
+    ``None`` for missing keys, non-finite values, or anything that does not
+    decode to a number, so the caller can tell "no baseline recorded" from
+    "a baseline of zero".
+    """
+    raw = extra.get(key)
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        value = float(raw)
+    elif isinstance(raw, str):
+        try:
+            decoded = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            return None
+        if not isinstance(decoded, (int, float)) or isinstance(decoded, bool):
+            return None
+        value = float(decoded)
+    else:
+        return None
+    return value if math.isfinite(value) else None
+
+
 def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     """Convert a raw Spoolman spool dict to the InventorySpool-compatible format.
 
@@ -213,14 +247,27 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     # When remaining_weight is unset (legacy spools, or filament linked but
     # never primed), fall back to the old behaviour: weight_used =
     # used_weight, baseline = 0.
+    #
+    # A "Reset usage to 0" records the then-current used_weight under
+    # BAMBU_WEIGHT_USED_BASELINE_KEY in spool.extra and touches nothing else,
+    # so displayed consumed is used_weight minus that. It is folded into the
+    # baseline here because the frontend's arithmetic is fixed: it always shows
+    # `weight_used - weight_used_baseline`. The reset used to PATCH Spoolman's
+    # used_weight to 0 instead, and Spoolman recomputes remaining from initial
+    # minus used, so the spool jumped back to full (#2906).
+    stored_baseline = _extract_extra_float(extra, BAMBU_WEIGHT_USED_BASELINE_KEY) or 0.0
     remaining_raw = spool.get("remaining_weight")
     if remaining_raw is not None:
         remaining_weight: float = _safe_float(remaining_raw, 0.0)
         used_weight: float = max(0.0, float(label_weight) - remaining_weight)
-        weight_used_baseline: float = max(0.0, used_weight - real_used_weight)
+        weight_used_baseline: float = max(0.0, used_weight - real_used_weight + stored_baseline)
     else:
         used_weight = real_used_weight
-        weight_used_baseline = 0.0
+        weight_used_baseline = max(0.0, stored_baseline)
+    # Never let the displayed counter read negative: a baseline larger than
+    # what the spool has consumed means used_weight moved backwards in Spoolman
+    # after the reset, which is the user's edit and not ours to reinterpret.
+    weight_used_baseline = min(weight_used_baseline, used_weight)
 
     # Archived state – Spoolman uses a boolean ``archived`` field
     archived: bool = spool.get("archived", False)

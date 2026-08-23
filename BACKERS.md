@@ -49,7 +49,6 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@NoahTingey](https://github.com/NoahTingey)
 - [@sentinel-center](https://github.com/sentinel-center)
 - [@brianehlert](https://github.com/brianehlert)
-- [@siiruup](https://github.com/siiruup)
 - [@agntcoopersea](https://github.com/agntcoopersea)
 - [@PJMCL1618033](https://github.com/PJMCL1618033
 - [@mgf99](https://github.com/mgf99)

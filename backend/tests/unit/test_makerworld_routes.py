@@ -299,6 +299,23 @@ class TestImport:
         svc.download.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_unknown_source_type_creates_no_folder_side_effect(self, async_client, db_session):
+        """Provider resolution must precede destination handling — a rejected
+        request must not leave an auto-created default folder behind."""
+        from sqlalchemy import select
+
+        svc = _fake_service(get_download=_download_info())
+
+        with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
+            await async_client.post(
+                "/api/v1/makerworld/import",
+                json={"model_id": 1400373, "source_type": "bogus"},
+            )
+
+        result = await db_session.execute(select(LibraryFolder))
+        assert result.scalars().all() == []
+
+    @pytest.mark.asyncio
     async def test_autocreates_makerworld_folder_when_folder_id_none(self, async_client, db_session):
         """Default destination — a top-level "MakerWorld" folder — is created
         on first import so users don't have to set it up."""

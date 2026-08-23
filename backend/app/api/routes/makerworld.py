@@ -272,6 +272,10 @@ async def import_instance(
     was imported before (any plate), that existing LibraryFile is returned and
     no new download happens.
     """
+    # Resolve the provider first: an unknown ``source_type`` must 400 before
+    # the default-destination folder gets auto-created as a side effect.
+    provider = _provider_for_source(body.source_type)
+
     if body.folder_id is not None:
         folder_q = await db.execute(select(LibraryFolder).where(LibraryFolder.id == body.folder_id))
         target_folder = folder_q.scalar_one_or_none()
@@ -303,9 +307,6 @@ async def import_instance(
             await db.flush()
         effective_folder_id = mw_folder.id
 
-    # Import identifies a model by numeric id, not by URL — the request names
-    # the provider via ``source_type`` (default: MakerWorld).
-    provider = _provider_for_source(body.source_type)
     service = await _build_service(db, provider, current_user, api_key_cloud_owner)
 
     # YASTL#51's iot-service endpoint needs the *alphanumeric* modelId

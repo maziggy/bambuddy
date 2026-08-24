@@ -1120,6 +1120,29 @@ def default_plate_gcode_name(names: list[str]) -> str | None:
     return gcodes[0]
 
 
+def default_plate_number(names: list[str]) -> int | None:
+    """The plate index to dispatch when the caller didn't ask for one.
+
+    Composes :func:`default_plate_gcode_name` with the numeric index its
+    chosen member encodes, so a caller that needs the integer ``plate_id`` a
+    print command takes gets the same "lowest plate, not first zip member"
+    answer the plate viewer already relies on.
+
+    None when the archive holds no G-code at all, or its default member
+    doesn't follow the ``plate_N`` naming convention ``default_plate_gcode_name``
+    falls back to a bare first member for — callers dispatching a real print
+    command should fall back to plate 1 themselves in that case rather than
+    treat None as a plate number.
+
+    A single-plate export cut out of a larger project keeps its ORIGINAL
+    plate number, so a caller that instead hardcodes a plate-1 fallback sends
+    a print command for a plate the archive may not contain. A real printer
+    accepts that command, can't find the G-code, and wedges (#2947).
+    """
+    selected = default_plate_gcode_name(names)
+    return _plate_number_of(selected) if selected is not None else None
+
+
 # The header block sits at the very top of the plate G-code. Read only that
 # much: a sliced plate is routinely tens of megabytes and `ZipFile.read()`
 # would inflate all of it to reach ~40 lines.

@@ -5,6 +5,7 @@ import json
 import logging
 import time
 import uuid
+import zipfile
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -68,6 +69,7 @@ from backend.app.utils.printer_models import (
     normalize_printer_model,
 )
 from backend.app.utils.threemf_tools import (
+    default_plate_number,
     extract_rack_plan_from_3mf,
     extract_slot_extruders_from_3mf,
 )
@@ -710,6 +712,39 @@ def _unmatched_filament_message(required: list[dict], loaded: list[dict]) -> str
         f"the printer has {have} and no AMS. Load the required filament on the "
         f"external spool holder, or send this job to a printer that has it."
     )
+
+
+def _effective_plate_id(explicit_plate_id: int | None, file_path: Path) -> int:
+    """The plate to dispatch, resolved once in ``_start_print`` and reused at
+    every call site below it: G-code injection, rack-plan lookup,
+    slot-extruder lookup, and the actual print command.
+
+    An explicit ``plate_id`` on the queue item always wins. Falling back to a
+    bare ``1`` instead of reading the archive assumes a single-plate file's
+    one G-code is numbered 1, which only holds for a plate exported on its
+    own — one cut out of a larger project keeps its ORIGINAL plate number, so
+    a printer asked to print "plate 1" of a file whose only G-code is
+    ``plate_2.gcode`` accepts the command, can't find the file, throws an HMS
+    error, and sits wedged in IDLE until power-cycled (#2947).
+
+    The four call sites agreed on a fallback only by accident before this:
+    with G-code injection on, ``inject_gcode_into_3mf`` already falls back to
+    the archive's own default plate internally whenever the plate id it's
+    handed isn't in the file, so it could silently inject into a different
+    plate than the one the print command itself asked for.
+
+    Falls back to 1 when the archive can't be read, holds no G-code member at
+    all, or its default member doesn't follow the ``plate_N`` naming
+    convention (a slicer that doesn't use it has no number to dispatch).
+    """
+    if explicit_plate_id is not None:
+        return explicit_plate_id
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            resolved = default_plate_number(zf.namelist())
+    except (OSError, zipfile.BadZipFile):
+        resolved = None
+    return resolved if resolved is not None else 1
 
 
 class PrintScheduler:
@@ -6053,6 +6088,10 @@ class PrintScheduler:
             logger.info("Queue item %s: dispatch abandoned — cancelled during preheat", item.id)
             return
 
+        # See `_effective_plate_id` for why this is resolved once here rather
+        # than each of the four sites below repeating `item.plate_id or 1`.
+        effective_plate_id = _effective_plate_id(item.plate_id, file_path)
+
         # G-code injection for auto-print systems (#422)
         injected_path = None
         # #2547: tracked separately from `injected_path`, which is also set when
@@ -6071,7 +6110,7 @@ class PrintScheduler:
                         from backend.app.utils.threemf_tools import inject_gcode_into_3mf
 
                         injected_path = inject_gcode_into_3mf(
-                            file_path, item.plate_id or 1, start_gc or None, end_gc or None
+                            file_path, effective_plate_id, start_gc or None, end_gc or None
                         )
                         if injected_path:
                             file_path = injected_path
@@ -6419,7 +6458,7 @@ class PrintScheduler:
         # rack as it stands right now, after the upload, not at queue time.
         resolved_nozzle_mapping = None
         if not item.nozzle_mapping and file_path is not None and is_nozzle_rack_model(printer.model):
-            rack_plan = extract_rack_plan_from_3mf(file_path, plate_id=item.plate_id or 1)
+            rack_plan = extract_rack_plan_from_3mf(file_path, plate_id=effective_plate_id)
             if rack_plan is not None:
                 try:
                     stored_choice = json.loads(item.nozzle_rack_choice) if item.nozzle_rack_choice else {}
@@ -6518,7 +6557,7 @@ class PrintScheduler:
             and file_path is not None
             and is_nozzle_rack_model(printer.model)
         ):
-            slot_extruders = extract_slot_extruders_from_3mf(file_path, plate_id=item.plate_id or 1)
+            slot_extruders = extract_slot_extruders_from_3mf(file_path, plate_id=effective_plate_id)
             if slot_extruders:
                 nozzle_slot_extruders = json.dumps(slot_extruders)
 
@@ -6531,7 +6570,7 @@ class PrintScheduler:
         started = printer_manager.start_print(
             item.printer_id,
             remote_filename,
-            plate_id=item.plate_id or 1,
+            plate_id=effective_plate_id,
             ams_mapping=ams_mapping,
             bed_levelling=item.bed_levelling,
             flow_cali=item.flow_cali,

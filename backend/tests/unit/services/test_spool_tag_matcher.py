@@ -1382,9 +1382,14 @@ async def test_core_weight_matches_low_temp_row_not_first_bambu_row(db_session):
 
 @pytest.mark.asyncio
 async def test_core_weight_records_the_catalog_row_it_used(db_session):
-    """core_weight_catalog_id exists to record which catalog row supplied the
-    weight, and drives the spool form's catalog dropdown. The RFID path never set
-    it, so the dropdown rendered empty while the spool carried a catalog weight.
+    """core_weight_catalog_id records which catalog row supplied the weight.
+
+    The RFID path never set it, and the spool form does not leave that blank: it
+    auto-selects whenever exactly one catalog row matches the weight, and shows
+    the first matching row's name otherwise. So an arbitrary tare was displayed
+    as a named row and written back as that row's id on the next save of any
+    field -- a wrong number laundered into what reads like a deliberate pick.
+    Naming the row here is what stops the form having to infer it.
     """
     await _seed_bambu_spool_catalog(db_session)
 

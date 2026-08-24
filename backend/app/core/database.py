@@ -4548,6 +4548,15 @@ async def _migrate_repair_rfid_core_weight(conn) -> None:
     """
     from sqlalchemy import bindparam, text
 
+    # The same two values the creating path uses, imported rather than repeated:
+    # a repair that looked for a different row than the code writes would leave
+    # the tare it was built to correct in place. Imported inside the function to
+    # keep this module free of a service-layer dependency at import time.
+    from backend.app.services.spool_tag_matcher import (
+        BAMBU_PLASTIC_SPOOL_CATALOG_NAME,
+        BAMBU_PLASTIC_SPOOL_CORE_WEIGHT,
+    )
+
     flag = "_backfill_2909_rfid_core_weight_done"
 
     async with conn.begin_nested():
@@ -4563,11 +4572,11 @@ async def _migrate_repair_rfid_core_weight(conn) -> None:
         correct = (
             await conn.execute(
                 text("SELECT id, weight FROM spool_catalog WHERE UPPER(name) = :name ORDER BY id LIMIT 1"),
-                {"name": "BAMBU LAB - PLASTIC LOW TEMP"},
+                {"name": BAMBU_PLASTIC_SPOOL_CATALOG_NAME.upper()},
             )
         ).fetchone()
         correct_id = correct[0] if correct else None
-        correct_weight = correct[1] if correct else 250
+        correct_weight = correct[1] if correct else BAMBU_PLASTIC_SPOOL_CORE_WEIGHT
 
         bambu_weights = {
             row[0]

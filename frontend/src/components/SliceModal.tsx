@@ -491,18 +491,24 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     if (!canUseEmbedded) setUseEmbedded(false);
   }, [canUseEmbedded]);
 
-  // Pre-tick the printer-independent design settings once the source's list
-  // arrives. Machine-coupled keys stay off until the user opts in explicitly,
-  // and so do the ones that define the picked preset (layer height, first
-  // layer height): pre-ticking those let a file's 0.2 quietly slice over an
-  // explicitly picked 0.08 preset while the dropdown still read 0.08.
+  // The per-key ticks follow "Use the file's built-in settings" (#2942).
+  // Off, nothing comes out of the file unless the user asks for it by name;
+  // on, the file drives the whole slice, so every setting it changed shows
+  // ticked — a readout of what the toggle means rather than a control, since
+  // the embedded path sends no design_overrides at all.
+  //
+  // They used to arrive pre-ticked whatever that toggle said, which is what
+  // #2942 reported: a slice with it deliberately unticked still took sixteen
+  // values from the file, several of them on rows the slicer had greyed out,
+  // where the tick could not be cleared. One checkbox now answers the
+  // question the whole dialog asks — where do this slice's settings come
+  // from — and the per-key ticks refine that answer instead of contradicting
+  // it. Reaching them in bulk is the panel's own "use the designer's
+  // settings", which still leaves the machine-coupled and preset-defining
+  // keys for an explicit per-key choice.
   useEffect(() => {
-    setDesignKeys(
-      new Set(
-        designOverrides.filter((o) => !o.printer_coupled && !o.preset_defining).map((o) => o.key),
-      ),
-    );
-  }, [designOverrides]);
+    setDesignKeys(useEmbedded ? new Set(designOverrides.map((o) => o.key)) : new Set());
+  }, [designOverrides, useEmbedded]);
 
   // Printer pre-pick: defaults to the printer the 3MF was prepared for when
   // that preset is available, else the first listed printer. Runs once when
@@ -607,7 +613,13 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
       // Carried design settings are patched onto the resolved process JSON,
       // which the embedded-settings path never sends — so they are mutually
       // exclusive by construction (#2622).
-      ...(!useEmbedded && designKeys.size > 0 ? { design_overrides: [...designKeys] } : {}),
+      //
+      // Sent whenever the file offered any, an empty list included: the
+      // backend reads a missing list as a client that predates the per-key
+      // ticks and keeps carrying the file's support settings unconditionally
+      // (#1881), where an empty one says the user was shown them and took
+      // none (#2942).
+      ...(!useEmbedded && designOverrides.length > 0 ? { design_overrides: [...designKeys] } : {}),
       // The user's own edits from the settings panel. Like design_overrides
       // these patch the resolved process JSON, so the embedded-settings path
       // (which sends no process JSON at all) cannot carry them.

@@ -512,6 +512,7 @@ async def get_printer_status(
             actions=e.actions,
             job_id=e.job_id,
             full_code=e.full_code,
+            description=e.description,
         )
         for e in (state.hms_errors or [])
     ]

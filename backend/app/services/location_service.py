@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass
 
@@ -17,6 +18,24 @@ from backend.app.models.spool import Spool
 logger = logging.getLogger(__name__)
 
 DUPLICATE_LOCATION_NAME = "A location with this name already exists"
+
+# AMS residency markers, not storage locations. Bambuddy used to write the slot
+# a spool was loaded into -- "<printer> - AMS A1", the shape
+# `SpoolmanClient.convert_ams_slot_to_location` still produces -- straight into
+# Spoolman's `location` field. That writer went away when Storage Location
+# became a place the user chooses (#1114), but the strings survive on people's
+# Spoolman spools, and importing them offers a printer slot as somewhere to put
+# a spool away. A slot is where a spool is loaded, not where it is stored, and
+# Bambuddy tracks that separately through slot assignments.
+_AMS_SLOT_LOCATION_RE = re.compile(
+    r"^(?:.+\s-\s)?(?:AMS[- ]HT [A-Z]\d+|AMS [A-Z]\d+|External Spool)$",
+    re.IGNORECASE,
+)
+
+
+def is_ams_slot_location(name: str) -> bool:
+    """True when a location string names a printer slot rather than a storage place."""
+    return bool(_AMS_SLOT_LOCATION_RE.match(name.strip()))
 
 
 def normalize_location_name(name: str) -> str:
@@ -280,6 +299,9 @@ async def sync_locations_from_spoolman(db: AsyncSession, client) -> bool:
     for raw in names:
         name = (raw or "").strip()
         if not name:
+            continue
+        if is_ams_slot_location(name):
+            logger.debug("Skipping AMS slot marker %r from the Spoolman location import", name)
             continue
         key = location_name_key(name)
         if key not in by_key:

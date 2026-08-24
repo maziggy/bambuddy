@@ -4432,6 +4432,81 @@ async def run_migrations(conn):
     # whatever this database actually holds.
     await _migrate_repair_rfid_core_weight(conn)
 
+    # Migration: drop the AMS slot markers an older Bambuddy wrote into
+    # Spoolman and the location sync then imported as storage locations.
+    await _migrate_drop_ams_slot_locations(conn)
+
+
+async def _migrate_drop_ams_slot_locations(conn) -> None:
+    """Remove imported AMS slot markers from the storage-location catalogue.
+
+    Bambuddy used to record which slot a spool was loaded into by writing
+    "<printer> - AMS A1" into Spoolman's ``location`` field. That writer went
+    away when Storage Location became something the user picks (#1114), but the
+    strings stayed on people's Spoolman spools, and
+    ``sync_locations_from_spoolman`` imported every distinct one -- so a printer
+    slot turned up in the Storage Location dropdown as somewhere to put a spool
+    away. Worse, they could not be cleared by hand: the delete route refuses a
+    location that has spools, and in Spoolman mode it counts them by matching
+    that same string, so every marker still on a loaded spool answered 409.
+
+    The import now skips them (``is_ams_slot_location``); this clears the ones
+    already in the catalogue. A row is only deleted when no spool in this
+    database points at it -- neither by ``location_id`` nor by a legacy
+    free-text ``storage_location`` -- so an internal-mode user who has
+    deliberately filed spools under such a name keeps it, dropdown entry and
+    all.
+
+    Spools in Spoolman are not consulted and not touched: their ``location``
+    strings are the user's data on the user's server, and one that still reads
+    "H2D-1 - AMS A1" in the inventory list is telling the truth about what
+    Spoolman holds. It simply stops being offered as a destination, which is
+    the whole point -- those are exactly the markers this cleans up.
+    """
+    from sqlalchemy import text
+
+    from backend.app.services.location_service import is_ams_slot_location, location_name_key
+
+    flag = "_cleanup_ams_slot_locations_done"
+
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+
+        rows = (await conn.execute(text("SELECT id, name FROM locations"))).fetchall()
+        removed = []
+        for row in rows:
+            if not is_ams_slot_location(row.name):
+                continue
+            in_use = (
+                await conn.execute(
+                    text(
+                        "SELECT COUNT(*) FROM spool WHERE location_id = :id "
+                        "OR LOWER(TRIM(COALESCE(storage_location, ''))) = :key"
+                    ),
+                    {"id": row.id, "key": location_name_key(row.name)},
+                )
+            ).scalar_one()
+            if in_use:
+                continue
+            await conn.execute(text("DELETE FROM locations WHERE id = :id"), {"id": row.id})
+            removed.append(row.name)
+
+        if removed:
+            logger.info(
+                "Removed %d AMS slot marker(s) from the storage-location catalogue: %s",
+                len(removed),
+                ", ".join(sorted(removed)),
+            )
+
+        await conn.execute(
+            text('INSERT INTO settings ("key", value) VALUES (:k, :v)'),
+            {"k": flag, "v": "true"},
+        )
+
 
 async def _migrate_repair_rfid_core_weight(conn) -> None:
     """Correct the tare of RFID-added spools that took the wrong catalogue row (#2909).
@@ -4473,6 +4548,15 @@ async def _migrate_repair_rfid_core_weight(conn) -> None:
     """
     from sqlalchemy import bindparam, text
 
+    # The same two values the creating path uses, imported rather than repeated:
+    # a repair that looked for a different row than the code writes would leave
+    # the tare it was built to correct in place. Imported inside the function to
+    # keep this module free of a service-layer dependency at import time.
+    from backend.app.services.spool_tag_matcher import (
+        BAMBU_PLASTIC_SPOOL_CATALOG_NAME,
+        BAMBU_PLASTIC_SPOOL_CORE_WEIGHT,
+    )
+
     flag = "_backfill_2909_rfid_core_weight_done"
 
     async with conn.begin_nested():
@@ -4488,11 +4572,11 @@ async def _migrate_repair_rfid_core_weight(conn) -> None:
         correct = (
             await conn.execute(
                 text("SELECT id, weight FROM spool_catalog WHERE UPPER(name) = :name ORDER BY id LIMIT 1"),
-                {"name": "BAMBU LAB - PLASTIC LOW TEMP"},
+                {"name": BAMBU_PLASTIC_SPOOL_CATALOG_NAME.upper()},
             )
         ).fetchone()
         correct_id = correct[0] if correct else None
-        correct_weight = correct[1] if correct else 250
+        correct_weight = correct[1] if correct else BAMBU_PLASTIC_SPOOL_CORE_WEIGHT
 
         bambu_weights = {
             row[0]

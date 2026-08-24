@@ -9,6 +9,7 @@ from backend.app.services.location_service import (
     assign_location_name,
     enrich_spool_dicts_with_location_id,
     get_location_by_name,
+    is_ams_slot_location,
     location_name_key,
     prepare_internal_spool_payload,
     rename_location,
@@ -217,3 +218,74 @@ async def test_sync_locations_from_spoolman_handles_dict_payload(db_session: Asy
 
     cabinet = await get_location_by_name(db_session, "Cabinet 3")
     assert cabinet is not None
+
+
+class TestIsAmsSlotLocation:
+    """A printer slot is where a spool is loaded, not where it is stored."""
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "H2D-1 - AMS A1",
+            "X1C-2 - AMS C3",
+            "P1S - AMS-HT A1",
+            "H2D-1 - AMS HT B1",
+            "AMS A1",
+            "AMS-HT A1",
+            "External Spool",
+            "H2D-1 - External Spool",
+            "h2d-1 - ams a1",
+            "  H2D-1 - AMS A1  ",
+        ],
+    )
+    def test_slot_markers_are_recognised(self, name):
+        assert is_ams_slot_location(name) is True
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "Drybox 1",
+            "Shelf A",
+            "AMS Drybox",
+            "Spare AMS trays",
+            "Locker - Top",
+            "AMS A1 spares",
+            "dadadad",
+        ],
+    )
+    def test_real_storage_locations_are_kept(self, name):
+        """The filter has to be narrow: anything it swallows is a place the user
+        can no longer file a spool under."""
+        assert is_ams_slot_location(name) is False
+
+
+@pytest.mark.asyncio
+async def test_sync_locations_from_spoolman_skips_ams_slot_markers(db_session: AsyncSession):
+    """Bambuddy used to write the loaded slot into Spoolman's `location` field.
+    Importing those back offered a printer slot as a storage location, and in
+    Spoolman mode they could not even be deleted -- the delete route counts
+    spools by that same string and answered 409."""
+
+    class FakeClient:
+        async def get_distinct_locations(self):
+            return ["H2D-1 - AMS A1", "X1C-2 - AMS A1", "H2D-1 - External Spool", "Drybox 1"]
+
+    changed = await sync_locations_from_spoolman(db_session, FakeClient())
+    assert changed is True
+    await db_session.commit()
+
+    assert await get_location_by_name(db_session, "Drybox 1") is not None
+    for marker in ("H2D-1 - AMS A1", "X1C-2 - AMS A1", "H2D-1 - External Spool"):
+        assert await get_location_by_name(db_session, marker) is None
+
+
+@pytest.mark.asyncio
+async def test_sync_locations_from_spoolman_reports_no_change_when_only_markers(db_session: AsyncSession):
+    """`changed` drives the caller's commit — claiming a change for rows that
+    were all filtered out would open a write transaction on every poll."""
+
+    class FakeClient:
+        async def get_distinct_locations(self):
+            return ["H2D-1 - AMS A1", "H2D-1 - AMS A2"]
+
+    assert await sync_locations_from_spoolman(db_session, FakeClient()) is False

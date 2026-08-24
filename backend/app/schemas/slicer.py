@@ -90,7 +90,11 @@ class SliceRequest(BaseModel):
             "preset (#2622) — the designer's own wall count, infill, first-layer "
             "height and so on, which ``--load-settings`` would otherwise discard. "
             "Only keys the source actually lists as changed are applied; anything "
-            "else is ignored. ``None``/empty means a plain profile slice."
+            "else is ignored. An empty list is not the same answer as ``None``: "
+            "it says the caller was shown the file's settings and chose none of "
+            "them, which also holds back the support carry-over (#1881) for the "
+            "support keys the file offered, while ``None`` — a caller that "
+            "predates the per-key choice — leaves that carry-over unconditional."
         ),
     )
     process_overrides: dict[str, Any] | None = Field(

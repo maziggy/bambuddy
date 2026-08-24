@@ -320,6 +320,112 @@ describe("SlicerSettingsPanel — the source file's own settings", () => {
   });
 });
 
+describe('SlicerSettingsPanel — what the slicer\'s rules are read against (#2942)', () => {
+  /** The designer's own support configuration, as a real file records it. */
+  const supportSource: DesignOverride[] = [
+    { key: 'support_type', value: 'normal(auto)', printer_coupled: false, preset_defining: false },
+    { key: 'enable_support', value: '1', printer_coupled: false, preset_defining: false },
+  ];
+
+  it("honours the picked preset's value, not the compiled-in default", async () => {
+    // The reporter's case: a process preset with supports on, nothing typed
+    // into the panel. The rules used to be evaluated against the typed values
+    // alone, which fell back to the schema's `enable_support: false` and
+    // greyed out the whole Support page while the slice ran supports.
+    const user = userEvent.setup();
+    await renderPanel({}, { presetValues: { enable_support: '1' } });
+    const type = await showOption(user, 'Type', 'support_type');
+    expect(type).toBeEnabled();
+  });
+
+  it('still greys the page out when the preset really has supports off', async () => {
+    const user = userEvent.setup();
+    await renderPanel({}, { presetValues: { enable_support: '0' } });
+    const type = await showOption(user, 'Type', 'support_type');
+    expect(type).toBeDisabled();
+  });
+
+  it("counts a switched-on source setting as one of the slice's values", async () => {
+    // Supports come from the file rather than the preset here. The rows they
+    // gate are as live as if the preset had asked for them.
+    const user = userEvent.setup();
+    await renderPanel(
+      {},
+      { sourceOverrides: supportSource, initialSelected: ['enable_support'] },
+    );
+    const type = await showOption(user, 'Type', 'support_type');
+    expect(type).toBeEnabled();
+  });
+
+  it('leaves the file\'s tick operable on a row the slicer has greyed out', async () => {
+    // The two answer different questions -- "is this option in play" versus
+    // "where does its value come from" -- and folding them together is what
+    // left a ticked source setting applied to the slice with nothing on
+    // screen able to clear it.
+    const user = userEvent.setup();
+    await renderPanel({}, { sourceOverrides: supportSource, initialSelected: ['support_type'] });
+    const type = await showOption(user, 'Type', 'support_type');
+    expect(type).toBeDisabled();
+
+    const tick = screen.getByRole('checkbox', { name: /Use the source file's value for Type/ });
+    expect(tick).toBeEnabled();
+    expect(tick).toBeChecked();
+    await user.click(tick);
+    expect(tick).not.toBeChecked();
+  });
+});
+
+describe('SlicerSettingsPanel — taking the file\'s settings in bulk (#2942)', () => {
+  const mixed: DesignOverride[] = [
+    { key: 'wall_loops', value: '5', printer_coupled: false, preset_defining: false },
+    { key: 'outer_wall_speed', value: '200', printer_coupled: true, preset_defining: false },
+    { key: 'layer_height', value: '0.2', printer_coupled: false, preset_defining: true },
+  ];
+
+  it('says how many the file changed', async () => {
+    await renderPanel({}, { sourceOverrides: mixed });
+    expect(screen.getByText(/The designer changed 3 process settings/)).toBeInTheDocument();
+  });
+
+  it('says nothing for a file that changed nothing', async () => {
+    await renderPanel({});
+    expect(screen.queryByText(/The designer changed/)).toBeNull();
+  });
+
+  it('ticks the ones that carry across printers, and only those', async () => {
+    const user = userEvent.setup();
+    await renderPanel({}, { sourceOverrides: mixed });
+    await user.click(screen.getByRole('button', { name: /Use the designer's settings/ }));
+
+    await showOption(user, 'Wall loops', 'wall_loops');
+    expect(
+      screen.getByRole('checkbox', { name: /Use the source file's value for Wall loops/ }),
+    ).toBeChecked();
+    // Tuned for the designer's machine, and the one that *is* the picked
+    // preset: both stay a per-key decision.
+    await showOption(user, 'Outer wall', 'outer_wall_speed');
+    expect(
+      screen.getByRole('checkbox', { name: /Use the source file's value for Outer wall/ }),
+    ).not.toBeChecked();
+    await showOption(user, 'Layer height', 'layer_height');
+    expect(
+      screen.getByRole('checkbox', { name: /Use the source file's value for Layer height/ }),
+    ).not.toBeChecked();
+  });
+
+  it('clears every one of them, machine-coupled included', async () => {
+    const user = userEvent.setup();
+    await renderPanel({}, { sourceOverrides: mixed, initialSelected: ['wall_loops', 'outer_wall_speed'] });
+    await user.click(screen.getByRole('button', { name: /Clear 2/ }));
+    expect(screen.queryByRole('button', { name: /Clear/ })).toBeNull();
+
+    await showOption(user, 'Wall loops', 'wall_loops');
+    expect(
+      screen.getByRole('checkbox', { name: /Use the source file's value for Wall loops/ }),
+    ).not.toBeChecked();
+  });
+});
+
 describe('SlicerSettingsPanel — filament-slot options', () => {
   const filamentChoices: FilamentChoice[] = [
     { index: 1, label: 'Bambu PLA Basic', color: '#FF0000' },

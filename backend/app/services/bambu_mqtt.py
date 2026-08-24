@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
 
 from backend.app.services.hms_actions import HMSAction, get_actions_for_error_code
+from backend.app.services.hms_errors import describe_fault
 from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES
 
 logger = logging.getLogger(__name__)
@@ -625,7 +626,13 @@ class HMSError:
     attr: int  # Attribute value for constructing wiki URL
     module: int
     severity: int  # 1=fatal, 2=serious, 3=common, 4=info
-    message: str = ""
+    # The bundled catalogue's sentence for this fault, resolved once here so
+    # every surface that reports it — the status response, the WebSocket
+    # broadcast, the completion payload, notifications — says the same thing.
+    # None when the catalogue does not cover the code; `describe_fault` documents
+    # the lookup and why the lossy `hms[]` collapse is kept as it was.
+    # Replaces a `message` field that was never set or read anywhere.
+    description: str | None = None
     # User-facing remediation actions from the bundled HMS catalog (e.g. "RESUME_PRINTING",
     # "CHECK_ASSISTANT"). Defaults to an empty list rather than None so the field always
     # satisfies HMSErrorResponse.actions: list[str] — a future code path that builds an
@@ -4576,6 +4583,7 @@ class BambuMQTTClient:
                                 actions=actions,
                                 job_id=self.state.subtask_id,
                                 full_code=full_code,
+                                description=describe_fault(full_code),
                             )
                         )
             self._apply_mqtt_verify_state(verify_failed)
@@ -4651,6 +4659,7 @@ class BambuMQTTClient:
                                     # print_error is already 32-bit — `f"{print_error:08X}"`
                                     # is the firmware's matching key with no truncation.
                                     full_code=f"{print_error:08X}",
+                                    description=describe_fault(f"{print_error:08X}"),
                                 )
                             )
 
@@ -5228,7 +5237,16 @@ class BambuMQTTClient:
             # Include HMS errors for failure reason detection
             hms_errors_data = (
                 [
-                    {"code": e.code, "attr": e.attr, "module": e.module, "severity": e.severity}
+                    {
+                        "code": e.code,
+                        "attr": e.attr,
+                        "module": e.module,
+                        "severity": e.severity,
+                        # Carried so the queue's failure reason quotes the same
+                        # sentence the status response and the broadcast do,
+                        # rather than resolving the code a fourth time (#2926).
+                        "description": e.description,
+                    }
                     for e in self.state.hms_errors
                 ]
                 if self.state.hms_errors

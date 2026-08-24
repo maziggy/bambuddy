@@ -1267,11 +1267,13 @@ def _maybe_start_layer_timelapse(printer, printer_id: int, archive_id: int) -> b
 def _format_hms_error_summary(hms_errors: list[dict]) -> str | None:
     """Build a human-readable failure reason from MQTT hms_errors for PrintQueueItem.error_message.
 
-    Each entry has keys: code ('0x4038'), attr (32-bit int), module, severity.
-    The short code used for the hms_errors.py lookup table is 'MMMM_EEEE' — module
-    from attr bits 16-31, error from the numeric part of code. Falls back to the raw
-    short code when no description is on file. Returns None for an empty list so
-    callers can leave error_message unset.
+    Each entry has keys: code ('0x4038'), attr (32-bit int), module, severity, and
+    — since #2926 — the description the parser already resolved, which is preferred
+    when present so the queue's failure reason reads the same as the status
+    response. The short code still produces the bracketed label, and still
+    resolves the sentence for a caller whose entries predate the field. Falls back
+    to the bare short code when no description is on file. Returns None for an
+    empty list so callers can leave error_message unset.
     """
     if not hms_errors:
         return None
@@ -1280,13 +1282,15 @@ def _format_hms_error_summary(hms_errors: list[dict]) -> str | None:
     parts: list[str] = []
     for err in hms_errors:
         try:
-            code_str = str(err.get("code", "")).replace("0x", "")
-            error_num = int(code_str, 16) if code_str else 0
-            module_num = (int(err.get("attr", 0)) >> 16) & 0xFFFF
-            short_code = f"{module_num:04X}_{error_num:04X}"
+            # `_hms_short_code` rather than a local derivation: this one used to
+            # format the error without masking it to 16 bits, so an `hms[]` entry
+            # whose code carries an alert-level group produced a five-digit label
+            # like "0500_3000A" — not a code the user can look up, and never a
+            # catalogue key, so the sentence was lost with it.
+            short_code = _hms_short_code(err.get("attr", 0), err.get("code", 0))
         except (TypeError, ValueError):
             continue
-        description = get_error_description(short_code)
+        description = err.get("description") or get_error_description(short_code)
         parts.append(f"[{short_code}] {description}" if description else f"[{short_code}]")
     return "; ".join(parts) if parts else None
 
@@ -1729,8 +1733,6 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                     0x12: "Chamber",
                 }
 
-                from backend.app.services.hms_errors import get_error_description
-
                 # Capture camera snapshot once for all error notifications (no DB held).
                 error_image_data = await _capture_snapshot_for_notification(
                     printer_id, printer, logging.getLogger(__name__)
@@ -1749,7 +1751,9 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
 
                         # Only notify for errors with known descriptions — printers
                         # send many undocumented/phantom codes that aren't real errors.
-                        description = get_error_description(short_code)
+                        # Resolved at parse time (#2926); short_code is still needed
+                        # for the suppression set below.
+                        description = error.description
                         if not description or short_code in _HMS_NOTIFICATION_SUPPRESS:
                             continue
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
+  disambiguateColorNames,
   colorFamily,
   colorSortKey,
   hexToColorName,
@@ -281,5 +282,64 @@ describe('colorFamily / hexToColorName agreement', () => {
     for (const hex of ['FF0000FF', '875718FF', '5F6367FF', 'FFFFFFFF', '00000000', 'zzz']) {
       expect(hexToColorName(hex)).toBe(colorFamily(hex) ?? 'Unknown');
     }
+  });
+});
+
+describe('disambiguateColorNames', () => {
+  // #2941: a slicer profile asked for a near-pure blue while the AMS slot held
+  // Bambu's navy Blue. Both resolve to the name "Blue", so the mismatch warning
+  // sat between two identical labels and read as a contradiction.
+  const SLICER_BLUE = '#0028FF';
+  const BAMBU_BLUE = '#0A2989';
+
+  it('qualifies both sides with hex when the names collide', () => {
+    expect(
+      disambiguateColorNames({ name: 'Blue', hex: SLICER_BLUE }, { name: 'Blue', hex: BAMBU_BLUE }),
+    ).toEqual(['Blue (#0028FF)', 'Blue (#0A2989)']);
+  });
+
+  it('treats names as colliding regardless of case', () => {
+    expect(disambiguateColorNames({ name: 'blue', hex: SLICER_BLUE }, { name: 'Blue', hex: BAMBU_BLUE })).toEqual([
+      'blue (#0028FF)',
+      'Blue (#0A2989)',
+    ]);
+  });
+
+  it('leaves distinct names alone', () => {
+    // Once the words separate them the hex is noise, not information.
+    expect(disambiguateColorNames({ name: 'Blue', hex: SLICER_BLUE }, { name: 'Navy', hex: BAMBU_BLUE })).toEqual([
+      'Blue',
+      'Navy',
+    ]);
+  });
+
+  it('falls back to the hex for a side with no name', () => {
+    expect(disambiguateColorNames({ hex: SLICER_BLUE }, { name: 'Blue', hex: BAMBU_BLUE })).toEqual([
+      '#0028FF',
+      'Blue',
+    ]);
+  });
+
+  it('keeps the bare names when neither side has a usable hex', () => {
+    // Better a repeated name than "Blue ()" twice.
+    expect(disambiguateColorNames({ name: 'Blue', hex: 'nonsense' }, { name: 'Blue' })).toEqual(['Blue', 'Blue']);
+  });
+
+  it('qualifies only the side that has a hex', () => {
+    expect(disambiguateColorNames({ name: 'Blue', hex: SLICER_BLUE }, { name: 'Blue' })).toEqual([
+      'Blue (#0028FF)',
+      'Blue',
+    ]);
+  });
+
+  it('normalizes hex form, so an 8-char rgba and a bare hex read alike', () => {
+    expect(disambiguateColorNames({ name: 'Blue', hex: '0028ffff' }, { name: 'Blue', hex: '#0a2989' })).toEqual([
+      'Blue (#0028FF)',
+      'Blue (#0A2989)',
+    ]);
+  });
+
+  it('returns empty labels when there is nothing to name', () => {
+    expect(disambiguateColorNames({}, {})).toEqual(['', '']);
   });
 });

@@ -390,6 +390,12 @@ export interface HMSError {
   // this back as HmsActionBody.print_error so we don't truncate the 64-bit
   // identifier into the silent-rejection short code (#1830).
   full_code?: string;
+  // The backend's resolved catalogue sentence for this fault (#2926). English
+  // only, and null when the catalogue does not cover the code. Resolved with the
+  // same lookup order this file's consumers use (full_code, then the G1_G4
+  // collapse), so it agrees with what HMSErrorModal renders — the modal still
+  // resolves its own text, and this is here for parity with the API.
+  description?: string | null;
 }
 
 export interface HMSActionBody {

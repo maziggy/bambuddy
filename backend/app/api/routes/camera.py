@@ -1529,6 +1529,7 @@ async def check_plate_empty(
         use_external=use_external,
         roi=roi,
         external_camera_snapshot_url=printer.external_camera_snapshot_url if printer.external_camera_enabled else None,
+        backend_override=printer.bedcheck_backend_override,
     )
 
     # Get reference count for the response

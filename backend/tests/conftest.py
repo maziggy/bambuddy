@@ -314,6 +314,12 @@ async def async_client(test_engine, db_session) -> AsyncGenerator[AsyncClient, N
         # Obico endpoints load settings through the service's module-level binding;
         # without this patch they'd read whatever DB the cwd resolves to (#1546).
         patch("backend.app.services.obico_detection.async_session", test_async_session),
+        # AI bed-check's _load_ai_settings() has the same module-level
+        # `from backend.app.core.database import async_session` binding as
+        # obico_detection.py above (plate_detection.py's get_bedcheck_backend()
+        # is different -- it uses a local import inside the function body and
+        # needs no entry here), so it needs the identical dedicated patch.
+        patch("backend.app.services.bedcheck_ai.async_session", test_async_session),
         patch("backend.app.main.init_printer_connections", mock_init_printer_connections),
     ):
         # Seed default groups for tests that need them

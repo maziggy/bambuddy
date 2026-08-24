@@ -692,6 +692,39 @@ describe('SettingsPage', () => {
       });
     });
 
+    it('can switch to Build Plate Check tab and finds the AI backend card there', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Date Format')).toBeInTheDocument();
+      });
+
+      // The AI backend card lives on its own dedicated tab, not under
+      // Failure Detection.
+      await user.click(screen.getByText('Build Plate Check'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Build Plate Check — AI Backend')).toBeInTheDocument();
+      });
+    });
+
+    it('does not render the AI backend card under Failure Detection', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Date Format')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Failure Detection'));
+
+      await waitFor(() => {
+        // Failure Detection content renders...
+        expect(screen.queryByText('Build Plate Check — AI Backend')).not.toBeInTheDocument();
+      });
+    });
+
     it('can switch to Smart Plugs tab', async () => {
       const user = userEvent.setup();
       render(<SettingsPage />);

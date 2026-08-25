@@ -381,7 +381,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                 {trayInfo.color && (
                   <span
                     className="w-4 h-4 rounded-full border border-black/20"
-                    style={{ backgroundColor: `#${trayInfo.color}` }}
+                    style={getSwatchStyle(trayInfo.color)}
                   />
                 )}
                 <span className="text-white font-medium">{trayInfo.type || t('ams.emptySlot')}</span>

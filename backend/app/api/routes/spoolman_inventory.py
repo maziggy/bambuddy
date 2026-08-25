@@ -503,7 +503,10 @@ async def _resolve_filament_id(data: SpoolmanInventoryCreate, client: SpoolmanCl
         return data.spoolman_filament_id
     # Validator guarantees material is non-None when spoolman_filament_id is None
     assert data.material is not None  # noqa: S101
-    color_hex = spoolman_color_hex(data.rgba or "808080FF")
+    # `or "808080"` on the result rather than on the input: spoolman_color_hex
+    # returns None only for a missing value, so this is the same neutral grey the
+    # old inline default produced, without handing an Optional to a str parameter.
+    color_hex = spoolman_color_hex(data.rgba) or "808080"
     async with _translate_spoolman_errors():
         return await client.find_or_create_filament(
             material=data.material,

@@ -8,6 +8,7 @@ import { matchesPrinterModelSuffix, presetCompatibility, buildCompatibilityIndex
 import { toFilamentId } from './spool-form/utils';
 import { Button } from './Button';
 import { getAmsLabel } from '../utils/amsHelpers';
+import { getSwatchStyle } from '../utils/colors';
 import { useCancellableTimeout } from '../hooks/useCancellableTimeout';
 
 interface SlotInfo {
@@ -1179,7 +1180,10 @@ export function ConfigureAmsSlotModal({
   const canSave = selectedPresetId && !configureMutation.isPending;
 
   // Get display color (custom or slot default)
-  const displayColor = colorHex || slotInfo.trayColor?.slice(0, 6) || 'FFFFFF';
+  // Not sliced to six: a clear tray reports RRGGBB00, and cutting the alpha off
+  // here previewed it as solid black. `colorHex` is the edited form value and is
+  // always six characters, so only the tray fallback ever carries an alpha (#2912).
+  const displayColor = colorHex || slotInfo.trayColor || 'FFFFFF';
 
   return (
     <div className={`fixed inset-0 z-50 flex ${fullScreen ? '' : 'items-center justify-center'}`}>
@@ -1208,7 +1212,7 @@ export function ConfigureAmsSlotModal({
                 {slotInfo.trayColor && (
                   <span
                     className="w-4 h-4 rounded-full border border-black/20"
-                    style={{ backgroundColor: `#${slotInfo.trayColor.slice(0, 6)}` }}
+                    style={getSwatchStyle(slotInfo.trayColor)}
                   />
                 )}
                 <span className="text-white/70">
@@ -1249,7 +1253,7 @@ export function ConfigureAmsSlotModal({
                 {slotInfo.trayColor && (
                   <span
                     className="w-4 h-4 rounded-full border border-black/20"
-                    style={{ backgroundColor: `#${slotInfo.trayColor.slice(0, 6)}` }}
+                    style={getSwatchStyle(slotInfo.trayColor)}
                   />
                 )}
                 <span className="text-white font-medium">
@@ -1468,7 +1472,7 @@ export function ConfigureAmsSlotModal({
                   <div className="flex gap-2 items-center">
                     <div
                       className="w-10 h-10 rounded-lg border-2 border-white/20 flex-shrink-0"
-                      style={{ backgroundColor: `#${displayColor}` }}
+                      style={getSwatchStyle(displayColor)}
                     />
                     <input
                       type="text"
@@ -1717,7 +1721,7 @@ export function ConfigureAmsSlotModal({
                 <div className="flex gap-2 items-center">
                   <div
                     className="w-10 h-10 rounded-lg border-2 border-white/20 flex-shrink-0"
-                    style={{ backgroundColor: `#${displayColor}` }}
+                    style={getSwatchStyle(displayColor)}
                   />
                   <input
                     type="text"

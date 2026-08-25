@@ -7,9 +7,26 @@ matched by the old broad heuristic (`module == 0x0C → Layer shift`).
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 
-from backend.app.main import derive_failure_reason
+from backend.app.main import _HMS_FAILURE_REASONS, derive_failure_reason
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+_EN_TS = REPO_ROOT / "frontend" / "src" / "i18n" / "locales" / "en.ts"
+
+# Dockerfile.test copies backend/, pyproject.toml and the requirements files and
+# nothing else, so en.ts does not exist inside the test image and the one test
+# below that reads it has nothing to check. A source checkout always has it and
+# keeps the guard live on every test_backend.sh run. frontend/package.json is
+# present in every checkout and never in the image, which is what the launcher
+# config tests use to tell the two apart.
+_needs_the_frontend_tree = pytest.mark.skipif(
+    not (REPO_ROOT / "frontend" / "package.json").is_file(),
+    reason="en.ts isn't shipped in the Docker test image; the guard runs in native runs",
+)
 
 # ---------------------------------------------------------------------------
 # Status-based reasons (no HMS lookup needed)
@@ -117,18 +134,69 @@ def test_ai_spaghetti_detection_is_classified() -> None:
     assert derive_failure_reason("failed", hms) == "Spaghetti / Detached"
 
 
-def test_ai_detection_label_is_the_editors_own_vocabulary() -> None:
-    """The label has to be the archive editor's existing option, character for
-    character.
+def test_the_ai_monitors_other_code_is_classified_too() -> None:
+    """0C00_8042 is the same event reported from the motion-controller module.
+
+    hms_errors.py documents it as "The AI print monitor has detected a spaghetti
+    defect", so it is a full short code with a published meaning rather than the
+    module-0x0C guessing the map header rules out.
+    """
+    hms = [{"code": "0x8042", "attr": 0x0C00_0000, "module": 0x0C, "severity": 2}]
+    assert derive_failure_reason("failed", hms) == "Spaghetti / Detached"
+
+
+@pytest.mark.parametrize(
+    ("short_code", "attr", "code"),
+    [
+        # "Possible spaghetti failure was detected." — a warning about a print
+        # that is still running, not a print that stopped.
+        ("0C00_C004", 0x0C00_0000, "0xC004"),
+        # AI monitoring, but a filament pile-up in the waste chute.
+        ("0300_800A", 0x0300_0000, "0x800A"),
+    ],
+)
+def test_the_ai_monitors_warnings_are_left_unclassified(short_code: str, attr: int, code: str) -> None:
+    """Being AI monitoring is not the criterion — halting the print is.
+
+    Both of these are in hms_errors.py and both would be easy to sweep in with
+    the two that are mapped. Neither means the print failed, and a wrong reason
+    on an archive is worse than none, so they stay out and this says so.
+    """
+    assert short_code not in _HMS_FAILURE_REASONS
+    hms = [{"code": code, "attr": attr, "module": attr >> 24, "severity": 2}]
+    assert derive_failure_reason("failed", hms) is None
+
+
+def _labels_the_archive_editor_offers() -> set[str]:
+    """Every value in the `editArchive.failureReasons` block of en.ts."""
+    source = _EN_TS.read_text(encoding="utf-8")
+    block = re.search(r"failureReasons:\s*\{(.*?)\}", source, re.S)
+    assert block is not None, f"no failureReasons block in {_EN_TS}"
+    return set(re.findall(r"^\s*\w+:\s*'([^']*)'", block.group(1), re.M))
+
+
+@_needs_the_frontend_tree
+def test_every_derived_reason_is_an_option_the_editor_offers() -> None:
+    """The coupling this whole design rests on, checked against the file itself.
 
     EditArchiveModal stores a camelCase key and reverse-looks-up any older
-    translated label against the current locale to pre-select the dropdown. A
-    fresh phrase here ("Spaghetti detected", say) matches no key, so the reason
-    shows on the archive but the editor opens with nothing selected. This pins
-    the string to `editArchive.failureReasons.spaghettiDetached` in en.ts.
+    translated label against the current locale to pre-select the dropdown
+    (EditArchiveModal.tsx:69). A phrase here that no key resolves to shows on the
+    archive and leaves the editor opening with nothing selected.
+
+    Asserting one Python literal against another cannot see that: en.ts is the
+    other end of the coupling, so the check has to read it. This covers "Layer
+    shift" and "Filament runout" at the same time, and it is what fails if
+    somebody renames an option on the frontend.
     """
-    hms = [{"code": "0x8003", "attr": 0x0300_0000, "module": 0x03, "severity": 2}]
-    assert derive_failure_reason("failed", hms) == "Spaghetti / Detached"
+    offered = _labels_the_archive_editor_offers()
+    assert offered, "the failureReasons block parsed as empty; the regex has gone stale"
+
+    unresolvable = sorted(set(_HMS_FAILURE_REASONS.values()) - offered)
+    assert not unresolvable, (
+        f"derived reasons the archive editor cannot resolve: {unresolvable}. "
+        f"Use one of {sorted(offered)}, or add the option to en.ts and FAILURE_REASON_KEYS."
+    )
 
 
 def test_ai_detection_and_its_runout_neighbour_are_distinct() -> None:

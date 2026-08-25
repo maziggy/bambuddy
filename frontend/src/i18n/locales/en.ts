@@ -5,6 +5,7 @@ export default {
     archives: 'Archives',
     queue: 'Print Queue',
     stats: 'Statistics',
+    printerLocations: 'Printer Locations',
     profiles: 'Profiles',
     maintenance: 'Maintenance',
     projects: 'Projects',

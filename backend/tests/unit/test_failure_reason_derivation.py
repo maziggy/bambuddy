@@ -97,3 +97,45 @@ def test_int_code_field_accepted() -> None:
     """The MQTT parser sometimes leaves `code` as an int rather than a hex string."""
     hms = [{"code": 0x4057, "attr": 0x0300_0000, "module": 0x03, "severity": 1}]
     assert derive_failure_reason("failed", hms) == "Layer shift"
+
+
+# ---------------------------------------------------------------------------
+# AI print monitoring (issue #2946)
+# ---------------------------------------------------------------------------
+
+
+def test_ai_spaghetti_detection_is_classified() -> None:
+    """0300_8003 is what the onboard AI raises when it halts a print for spaghetti.
+
+    Taken from the archive that reported this: the printer sent
+    ``attr=50364419, code='0x8003'``, which is 0x0300_8003, and the archive was
+    written with failure_reason=None because the map had no row for it. The text
+    for the code was already in the tree twice — hms_errors.py and
+    HMSErrorModal.tsx — so this was a missing key, not a missing meaning.
+    """
+    hms = [{"code": "0x8003", "attr": 50364419, "module": 0x03, "severity": 2}]
+    assert derive_failure_reason("failed", hms) == "Spaghetti / Detached"
+
+
+def test_ai_detection_label_is_the_editors_own_vocabulary() -> None:
+    """The label has to be the archive editor's existing option, character for
+    character.
+
+    EditArchiveModal stores a camelCase key and reverse-looks-up any older
+    translated label against the current locale to pre-select the dropdown. A
+    fresh phrase here ("Spaghetti detected", say) matches no key, so the reason
+    shows on the archive but the editor opens with nothing selected. This pins
+    the string to `editArchive.failureReasons.spaghettiDetached` in en.ts.
+    """
+    hms = [{"code": "0x8003", "attr": 0x0300_0000, "module": 0x03, "severity": 2}]
+    assert derive_failure_reason("failed", hms) == "Spaghetti / Detached"
+
+
+def test_ai_detection_and_its_runout_neighbour_are_distinct() -> None:
+    """0300_8003 and 0300_8004 are one hex digit apart and arrive by the same
+    path. The runout side was already mapped; this keeps them from drifting into
+    each other."""
+    ai = [{"code": "0x8003", "attr": 0x0300_0000, "module": 0x03, "severity": 2}]
+    runout = [{"code": "0x8004", "attr": 0x0300_0000, "module": 0x03, "severity": 2}]
+    assert derive_failure_reason("failed", ai) == "Spaghetti / Detached"
+    assert derive_failure_reason("failed", runout) == "Filament runout"

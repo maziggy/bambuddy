@@ -528,6 +528,12 @@ _HMS_FAILURE_REASONS: dict[str, str] = {
     "0701_8007": "Clogged nozzle",
     "0701_8013": "Clogged nozzle",
     "0702_8003": "Clogged nozzle",
+    # AI print monitoring — spaghetti / the model coming off the plate.
+    # The label is the one the archive editor already offers for this failure
+    # mode (`spaghettiDetached` in FAILURE_REASON_KEYS), not a new phrase, so a
+    # derived reason reverse-resolves to that option instead of leaving the
+    # dropdown blank.
+    "0300_8003": "Spaghetti / Detached",
 }
 
 

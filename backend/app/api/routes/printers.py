@@ -512,6 +512,7 @@ async def get_printer_status(
             actions=e.actions,
             job_id=e.job_id,
             full_code=e.full_code,
+            description=e.description,
         )
         for e in (state.hms_errors or [])
     ]
@@ -1442,6 +1443,17 @@ async def _produce_cover_image(
         if not using_cached:
             temp_path.unlink()
         raise HTTPException(500, f"Downloaded file is empty for '{subtask_name}'")
+
+    # Offer the file to the archive flow before extracting the thumbnail. When
+    # the print started inside the printer's FTPS cool-off, the archive flow
+    # gave up without a single connection and this endpoint holds the very file
+    # it wanted — which used to be read for a thumbnail and then deleted at
+    # print completion, leaving a permanently empty archive (#2957). Covers the
+    # cached branch as well as a fresh download: whoever fetched it, the running
+    # print's archive should have it. A no-op unless that archive is a fallback.
+    from backend.app.main import try_recover_fallback_archive
+
+    await try_recover_fallback_archive(printer_id, temp_filename, temp_path)
 
     try:
         # Extract thumbnail from 3MF (which is a ZIP file)

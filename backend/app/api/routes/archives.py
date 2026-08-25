@@ -39,7 +39,11 @@ from backend.app.services.archive import ArchiveService
 from backend.app.services.bambu_ftp import ftps_handshake_blocked, list_files_result_async
 from backend.app.services.design_settings import overrides_from_config
 from backend.app.services.filament_requirements import annotate_rack_groups
-from backend.app.services.print_storage import REASON_INTERNAL_STORAGE, REASON_NO_EXTERNAL_STORAGE
+from backend.app.services.print_storage import (
+    REASON_INTERNAL_HISTORY,
+    REASON_INTERNAL_STORAGE,
+    REASON_NO_EXTERNAL_STORAGE,
+)
 from backend.app.services.printer_media import VIDEO_SUFFIXES, match_ipcam_chunks
 from backend.app.utils.archive_paths import archive_photos_dir, find_archive_photo
 from backend.app.utils.http import build_content_disposition, download_error_response, safe_download_filename
@@ -575,7 +579,13 @@ async def no_3mf_warning(
     # Most specific first. Archives predating this field carry no reason at
     # all, so an install with one H2C and three older printers still gets the
     # H2C explanation rather than the generic one.
-    for candidate in (REASON_INTERNAL_STORAGE, REASON_NO_EXTERNAL_STORAGE):
+    #
+    # REASON_INTERNAL_HISTORY comes last on purpose, even though it is the
+    # narrowest: it is the one cause with no remedy at all -- the file was
+    # already on the printer, in an area port 990 does not serve. The two ahead
+    # of it each end in something the operator can do, so when an install has
+    # both, the actionable explanation is the one worth the banner (#1820).
+    for candidate in (REASON_INTERNAL_STORAGE, REASON_NO_EXTERNAL_STORAGE, REASON_INTERNAL_HISTORY):
         if candidate in reasons:
             return {"has_fallback": True, "reason": candidate}
     return {"has_fallback": True, "reason": None}

@@ -185,4 +185,24 @@ describe('SpoolmanFilamentPicker', () => {
     // PLA Basic has color_name 'Red' — should be filtered out
     expect(screen.queryByText(/PLA Basic/)).toBeNull();
   });
+
+  it('paints a clear filament as the checkerboard, not an invisible swatch', () => {
+    // Storing the alpha is what puts 00000000 into this list in the first place,
+    // and the hand-rolled `#${hex}` background this swatch used to build renders
+    // that as nothing at all — a fully transparent circle (#2912).
+    const clear: SpoolmanFilamentEntry[] = [
+      { ...FILAMENTS[0], id: 4, name: 'PLA Basic Clear', color_hex: '00000000', color_name: 'Clear' },
+    ];
+    render(
+      <SpoolmanFilamentPicker
+        filaments={clear}
+        isLoading={false}
+        selectedId={4}
+        onSelect={vi.fn()}
+      />
+    );
+    const swatch = screen.getByLabelText('inventory.spoolmanFilamentColorSwatch');
+    expect(swatch.style.backgroundImage).toContain('repeating-conic-gradient');
+    expect(swatch.style.backgroundColor).toBe('');
+  });
 });

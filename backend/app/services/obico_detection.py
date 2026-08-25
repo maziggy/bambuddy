@@ -96,8 +96,14 @@ class ObicoDetectionService:
         self._states: dict[int, PrintState] = {}
         # printer_id -> task_name active when state was created (used to detect new prints)
         self._state_keys: dict[int, str] = {}
-        # printer_id -> last classification ("safe"/"warning"/"failure")
+        # printer_id -> last classification ("safe"/"warning"/"failure").
+        # Only written after an inference actually came back, so a missing entry
+        # means "we have no verdict", which is not the same as "safe" (#2952).
         self._last_class: dict[int, str] = {}
+        # printer_id -> why the most recent poll produced no verdict, or absent
+        # when the last poll succeeded. Per-printer rather than global so a card
+        # can say what went wrong for *that* printer.
+        self._errors: dict[int, str] = {}
         # printer_id -> whether an action has already been fired for the current print
         self._action_fired: dict[int, bool] = {}
         # Global detection event log (most-recent-first)
@@ -191,6 +197,8 @@ class ObicoDetectionService:
                 self._states.pop(printer_id, None)
                 self._state_keys.pop(printer_id, None)
                 self._action_fired.pop(printer_id, None)
+                self._last_class.pop(printer_id, None)
+                self._errors.pop(printer_id, None)
                 continue
 
             await self._check_printer(printer_id, status, settings)
@@ -261,6 +269,17 @@ class ObicoDetectionService:
             timeout=SNAPSHOT_CAPTURE_TIMEOUT,
         )
 
+    def _no_verdict(self, printer_id: int, reason: str) -> None:
+        """Record that this poll produced no verdict for ``printer_id``.
+
+        Kept separate from the classification so the status surface can say
+        "not checking" instead of inheriting the previous verdict — or, worse,
+        the default "safe" a printer used to get before its first inference.
+        """
+        self._errors[printer_id] = reason
+        self._last_error = reason
+        logger.warning(reason)
+
     async def _check_printer(self, printer_id: int, status, settings: dict):
         task_name = getattr(status, "task_name", None) or getattr(status, "subtask_name", "") or ""
         key = f"{task_name}"
@@ -275,17 +294,16 @@ class ObicoDetectionService:
         # keyframe wait.
         frame = await self._capture_frame(printer_id)
         if not frame:
-            self._last_error = f"Failed to capture snapshot for printer {printer_id}"
-            logger.warning(self._last_error)
+            self._no_verdict(printer_id, f"Failed to capture snapshot for printer {printer_id}")
             return
 
         external_url = settings.get("external_url") or ""
         if not external_url:
-            self._last_error = (
+            self._no_verdict(
+                printer_id,
                 "external_url setting is empty — Obico's ML API needs a reachable URL to fetch the snapshot from. "
-                "Set Settings → General → External URL."
+                "Set Settings → General → External URL.",
             )
-            logger.warning(self._last_error)
             return
 
         nonce = await stash_frame(frame)
@@ -304,19 +322,23 @@ class ObicoDetectionService:
                     # Say so plainly: the health endpoint is ungated, so "Test
                     # Connection" passes against exactly this configuration and
                     # a raw 401 gives the user nothing to act on (#2733).
-                    self._last_error = (
+                    #
+                    # Obico's auth decorator runs before the handler, so a call
+                    # rejected here leaves no trace in the ML API's own log —
+                    # which is how #2952 came to be reported as "the loop never
+                    # calls the ML API" while it was calling it every 10s.
+                    self._no_verdict(
+                        printer_id,
                         "Obico ML API rejected the token (401). Set Settings → Failure Detection → "
                         "ML API Token to the ML_API_TOKEN the server runs with, or clear ML_API_TOKEN "
-                        "on the server."
+                        "on the server.",
                     )
-                    logger.warning("%s (printer %s)", self._last_error, printer_id)
                     return
                 resp.raise_for_status()
                 payload = resp.json()
         except Exception as e:
             detail = str(e) or type(e).__name__
-            self._last_error = f"ML API call failed for printer {printer_id}: {detail}"
-            logger.warning(self._last_error)
+            self._no_verdict(printer_id, f"ML API call failed for printer {printer_id}: {detail}")
             return
 
         detections = payload.get("detections", []) if isinstance(payload, dict) else []
@@ -328,6 +350,7 @@ class ObicoDetectionService:
         # A successful capture + ML call clears any transient error from previous
         # polls (typical case: cold-start RTSP timeout on first frame after startup,
         # followed by healthy polls that otherwise leave the banner stuck in the UI).
+        self._errors.pop(printer_id, None)
         self._last_error = None
 
         # Log every non-safe sample — safe samples would flood history
@@ -371,15 +394,39 @@ class ObicoDetectionService:
 
         Only printers with a running, monitored print have a state entry, so
         consumers get "show nothing" for idle printers for free.
+
+        Four classes, and the two non-verdict ones matter as much as the rest:
+
+        ``error``    the most recent poll produced no verdict. ``error`` carries
+                     the reason — a rejected token, an unreachable ML API, a
+                     camera that would not yield a frame, an unset External URL.
+        ``unknown``  monitored, but no inference has come back yet. The state
+                     entry is created when the print is first seen, which is
+                     before the first capture, so this is the honest answer for
+                     that window.
+        ``safe`` / ``warning`` / ``failure``
+                     an actual verdict from an actual inference.
+
+        This used to default to ``safe`` whenever no verdict had been recorded,
+        so a printer whose detection had never once succeeded rendered exactly
+        like a healthy one: a green badge reading "Safe" at score 0.000. That is
+        the worst possible failure mode for a safety feature — it asserts the
+        print is being watched precisely when it is not (#2952).
         """
-        return {
-            pid: {
-                "class": self._last_class.get(pid, "safe"),
+        result = {}
+        for pid, state in self._states.items():
+            error = self._errors.get(pid)
+            if error:
+                verdict = "error"
+            else:
+                verdict = self._last_class.get(pid) or "unknown"
+            result[pid] = {
+                "class": verdict,
                 "frame_count": state.frame_count,
                 "score": round(state.ewm_mean, 4),
+                "error": error,
             }
-            for pid, state in self._states.items()
-        }
+        return result
 
     def get_status(self, sensitivity: str = "medium") -> dict:
         # Report the thresholds for the configured sensitivity, not a hardcoded

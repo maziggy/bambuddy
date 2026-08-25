@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { ChevronDown, Loader2, Package } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { SpoolmanFilamentEntry } from '../../api/client';
+import { getSwatchStyle } from '../../utils/colors';
 
 interface SpoolmanFilamentPickerProps {
   filaments: SpoolmanFilamentEntry[];
@@ -65,9 +66,6 @@ export function SpoolmanFilamentPicker({
     setSearch('');
   };
 
-  const colorStyle = (hex: string | null): string =>
-    hex ? `#${hex.replace('#', '')}` : '#808080';
-
   return (
     <div ref={containerRef} className="relative">
       <label className="block text-sm font-medium text-bambu-gray mb-1">
@@ -86,7 +84,7 @@ export function SpoolmanFilamentPicker({
           <>
             <span
               className="w-4 h-4 rounded-full shrink-0 border border-white/20"
-              style={{ backgroundColor: colorStyle(selected.color_hex) }}
+              style={getSwatchStyle(selected.color_hex)}
               aria-label={t('inventory.spoolmanFilamentColorSwatch')}
             />
             <span className="text-white text-sm truncate flex-1">
@@ -143,7 +141,7 @@ export function SpoolmanFilamentPicker({
                   >
                     <span
                       className="w-4 h-4 rounded-full shrink-0 border border-white/20"
-                      style={{ backgroundColor: colorStyle(f.color_hex) }}
+                      style={getSwatchStyle(f.color_hex)}
                       aria-label={t('inventory.spoolmanFilamentColorSwatch')}
                     />
                     <span className="flex-1 min-w-0">

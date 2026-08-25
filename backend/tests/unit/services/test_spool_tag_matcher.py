@@ -1,11 +1,12 @@
 """Tests for spool_tag_matcher service — RFID auto-assign and relationship loading."""
 
 import pytest
-from sqlalchemy import inspect
+from sqlalchemy import inspect, select
 
 from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
+from backend.app.models.spool_catalog import SpoolCatalogEntry
 from backend.app.services.spool_tag_matcher import (
     auto_assign_spool,
     create_spool_from_tray,
@@ -1342,6 +1343,147 @@ async def test_find_matching_untagged_gradient_no_match_basic(db_session):
     }
     found = await find_matching_untagged_spool(db_session, tray)
     assert found is None
+
+
+# -- core weight catalog lookup (#2909) --------------------------------------
+
+
+async def _seed_bambu_spool_catalog(db_session):
+    """Seed the three Bambu Lab rows in DEFAULT_SPOOL_CATALOG order.
+
+    High Temp is inserted first on purpose: that is the row the old prefix query
+    returned, so any test that expects 250 here would have failed before the fix.
+    """
+    for name, weight in (
+        ("Bambu Lab - Plastic High Temp", 216),
+        ("Bambu Lab - Plastic Low Temp", 250),
+        ("Bambu Lab - Plastic White", 253),
+    ):
+        db_session.add(SpoolCatalogEntry(name=name, weight=weight, is_default=True))
+    await db_session.flush()
+
+
+@pytest.mark.asyncio
+async def test_core_weight_matches_low_temp_row_not_first_bambu_row(db_session):
+    """Regression for #2909 — the lookup must select 'Bambu Lab - Plastic Low Temp'
+    by name, not take whichever 'Bambu Lab%' row the database returns first.
+
+    Before the fix this asserted 216 (High Temp), because the query had neither a
+    matching step nor an ORDER BY. core_weight is the tare in SpoolBuddy's weigh
+    flow, so the 34 g error propagated into every scale weighing of an RFID-created
+    spool.
+    """
+    await _seed_bambu_spool_catalog(db_session)
+
+    spool = await create_spool_from_tray(db_session, SAMPLE_TRAY)
+
+    assert spool.core_weight == 250
+
+
+@pytest.mark.asyncio
+async def test_core_weight_records_the_catalog_row_it_used(db_session):
+    """core_weight_catalog_id records which catalog row supplied the weight.
+
+    The RFID path never set it, and the spool form does not leave that blank: it
+    auto-selects whenever exactly one catalog row matches the weight, and shows
+    the first matching row's name otherwise. So an arbitrary tare was displayed
+    as a named row and written back as that row's id on the next save of any
+    field -- a wrong number laundered into what reads like a deliberate pick.
+    Naming the row here is what stops the form having to infer it.
+    """
+    await _seed_bambu_spool_catalog(db_session)
+
+    spool = await create_spool_from_tray(db_session, SAMPLE_TRAY)
+
+    low_temp = (
+        await db_session.execute(
+            select(SpoolCatalogEntry).where(SpoolCatalogEntry.name == "Bambu Lab - Plastic Low Temp")
+        )
+    ).scalar_one()
+    assert spool.core_weight_catalog_id == low_temp.id
+
+
+@pytest.mark.asyncio
+async def test_core_weight_honours_a_user_edited_catalog_row(db_session):
+    """The catalog is user-editable, and someone who has weighed their own empty
+    spool should get their number rather than the shipped default.
+    """
+    await _seed_bambu_spool_catalog(db_session)
+    row = (
+        await db_session.execute(
+            select(SpoolCatalogEntry).where(SpoolCatalogEntry.name == "Bambu Lab - Plastic Low Temp")
+        )
+    ).scalar_one()
+    row.weight = 244
+    await db_session.flush()
+
+    spool = await create_spool_from_tray(db_session, SAMPLE_TRAY)
+
+    assert spool.core_weight == 244
+    assert spool.core_weight_catalog_id == row.id
+
+
+@pytest.mark.asyncio
+async def test_core_weight_falls_back_to_default_when_row_is_missing(db_session):
+    """A renamed or deleted row must fall back to the 250 g constant, not to some
+    other Bambu Lab row — falling back to a row is how the arbitrary pick started.
+    """
+    db_session.add(SpoolCatalogEntry(name="Bambu Lab - Plastic High Temp", weight=216, is_default=True))
+    await db_session.flush()
+
+    spool = await create_spool_from_tray(db_session, SAMPLE_TRAY)
+
+    assert spool.core_weight == 250
+    assert spool.core_weight_catalog_id is None
+
+
+@pytest.mark.asyncio
+async def test_core_weight_is_deterministic_when_the_name_is_duplicated(db_session):
+    """The catalogue is user-editable and nothing stops two rows sharing a name.
+
+    Without order_by(id).limit(1) this is not merely non-deterministic:
+    scalar_one_or_none() raises MultipleResultsFound, so an AMS read would fail
+    outright rather than pick badly. The lowest id wins, which is the same
+    deterministic tiebreak the colour catalogue lookup above already uses.
+    """
+    await _seed_bambu_spool_catalog(db_session)
+    first = (
+        await db_session.execute(
+            select(SpoolCatalogEntry).where(SpoolCatalogEntry.name == "Bambu Lab - Plastic Low Temp")
+        )
+    ).scalar_one()
+    db_session.add(SpoolCatalogEntry(name="Bambu Lab - Plastic Low Temp", weight=999, is_default=False))
+    await db_session.flush()
+
+    spool = await create_spool_from_tray(db_session, SAMPLE_TRAY)
+
+    assert spool.core_weight == 250
+    assert spool.core_weight_catalog_id == first.id
+
+
+@pytest.mark.asyncio
+async def test_core_weight_matches_the_row_name_case_insensitively(db_session):
+    """Matching mirrors the colour catalogue lookup above, which compares through
+    func.upper(). A user who has retyped the row's name in different case still
+    gets their row rather than silently dropping to the fallback constant.
+    """
+    db_session.add(SpoolCatalogEntry(name="bambu lab - plastic low temp", weight=248, is_default=False))
+    await db_session.flush()
+
+    spool = await create_spool_from_tray(db_session, SAMPLE_TRAY)
+
+    assert spool.core_weight == 248
+
+
+@pytest.mark.asyncio
+async def test_core_weight_falls_back_on_empty_catalog(db_session):
+    """No catalog at all (fresh install before seeding) still produces a usable
+    spool rather than raising.
+    """
+    spool = await create_spool_from_tray(db_session, SAMPLE_TRAY)
+
+    assert spool.core_weight == 250
+    assert spool.core_weight_catalog_id is None
 
 
 # -- auto_assign_spool: live cali_idx fallback (P9-3) -------------------------

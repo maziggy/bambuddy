@@ -56,6 +56,53 @@ class TestCrud:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_rejects_an_entity_id_longer_than_the_column(self, async_client: AsyncClient, printer_factory):
+        """Same column-width bound as the location sibling: the pattern alone
+        is unbounded, and an oversized id would be a 500 on PostgreSQL."""
+        printer = await printer_factory()
+
+        response = await async_client.post(
+            "/api/v1/ha-sensors/",
+            json={**DOOR, "printer_id": printer.id, "entity_id": "binary_sensor." + "a" * 400},
+        )
+
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_row_that_predates_the_bound_is_still_readable(
+        self, async_client: AsyncClient, db_session, printer_factory
+    ):
+        """The bound guards writes; it must not turn old rows into a 500.
+
+        This feature shipped long before entity_id was bounded, and SQLite
+        never enforced the column's 255, so an install that took a long id
+        through the API has that row today. Inheriting the bound on the
+        response model would fail response validation and take the whole list
+        down for one row -- the same 500 the bound was added to prevent, moved
+        to the read path.
+        """
+        from sqlalchemy import text
+
+        printer = await printer_factory()
+        created = await async_client.post("/api/v1/ha-sensors/", json={**DOOR, "printer_id": printer.id})
+        # Same domain as the row's kind: the response model still derives the
+        # expected kind from the id, so only the length and pattern are relaxed.
+        legacy_id = "binary_sensor." + "a" * 400
+
+        await db_session.execute(
+            text("UPDATE printer_ha_sensors SET entity_id = :e WHERE id = :i"),
+            {"e": legacy_id, "i": created.json()["id"]},
+        )
+        await db_session.commit()
+
+        response = await async_client.get(f"/api/v1/ha-sensors/?printer_id={printer.id}")
+
+        assert response.status_code == 200
+        assert response.json()[0]["entity_id"] == legacy_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_rejects_a_switch(self, async_client: AsyncClient, printer_factory):
         """Switches are smart plugs; this table is read-only sensors."""
         printer = await printer_factory()

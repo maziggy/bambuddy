@@ -390,6 +390,12 @@ export interface HMSError {
   // this back as HmsActionBody.print_error so we don't truncate the 64-bit
   // identifier into the silent-rejection short code (#1830).
   full_code?: string;
+  // The backend's resolved catalogue sentence for this fault (#2926). English
+  // only, and null when the catalogue does not cover the code. Resolved with the
+  // same lookup order this file's consumers use (full_code, then the G1_G4
+  // collapse), so it agrees with what HMSErrorModal renders — the modal still
+  // resolves its own text, and this is here for parity with the API.
+  description?: string | null;
 }
 
 export interface HMSActionBody {
@@ -1432,6 +1438,12 @@ export interface AppSettings {
   obico_enabled_printers: string;
   // Inventory forecasting global lead time
   forecast_global_lead_time_days: number;
+  location_sensor_poll_interval: number;
+  // JSON map of sensor category → {alertAbove, alertBelow, notifyOnAlert},
+  // seeding new storage-location sensor bindings. Empty = built-in defaults.
+  // Server-backed so two admins seed the same alert rules and a restore
+  // brings them back; see utils/locationSensorDefaults.ts.
+  location_sensor_alert_defaults: string;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -2344,6 +2356,62 @@ export interface PrinterHASensorCreate {
 
 export type PrinterHASensorUpdate = Partial<Omit<PrinterHASensorCreate, 'printer_id'>>;
 
+export interface LocationHASensor {
+  id: number;
+  location_id: number;
+  name: string;
+  entity_id: string;
+  kind: 'binary' | 'numeric';
+  device_class: string | null;
+  unit: string | null;
+  alert_state: 'on' | 'off' | null;
+  alert_above: number | null;
+  alert_below: number | null;
+  notify_on_alert: boolean;
+  show_on_card: boolean;
+  sort_order: number;
+  last_state: string | null;
+  last_changed: string | null;
+  last_checked: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LocationHASensorReading {
+  id: number;
+  name: string;
+  entity_id: string;
+  kind: 'binary' | 'numeric';
+  device_class: string | null;
+  unit: string | null;
+  state: string | null;
+  value: number | null;
+  alerting: boolean;
+  reachable: boolean;
+  alert_state: string | null;
+  alert_above: number | null;
+  alert_below: number | null;
+  last_changed: string | null;
+  show_on_card: boolean;
+}
+
+export interface LocationHASensorCreate {
+  location_id: number;
+  name: string;
+  entity_id: string;
+  kind: 'binary' | 'numeric';
+  device_class?: string | null;
+  unit?: string | null;
+  alert_state?: 'on' | 'off' | null;
+  alert_above?: number | null;
+  alert_below?: number | null;
+  notify_on_alert?: boolean;
+  show_on_card?: boolean;
+  sort_order?: number;
+}
+
+export type LocationHASensorUpdate = Partial<Omit<LocationHASensorCreate, 'location_id'>>;
+
 // An entity offered by the binding picker.
 export interface HADisplayEntity {
   entity_id: string;
@@ -2825,6 +2893,7 @@ export interface NotificationProvider {
   // Bed cooled
   on_bed_cooled: boolean;
   on_ha_sensor_alert: boolean;
+  on_location_ha_sensor_alert: boolean;
   // First layer complete
   on_first_layer_complete: boolean;
   // Inventory stock alerts
@@ -2888,6 +2957,7 @@ export interface NotificationProviderCreate {
   // Bed cooled
   on_bed_cooled?: boolean;
   on_ha_sensor_alert?: boolean;
+  on_location_ha_sensor_alert?: boolean;
   // First layer complete
   on_first_layer_complete?: boolean;
   // Inventory stock alerts
@@ -2944,6 +3014,7 @@ export interface NotificationProviderUpdate {
   // Bed cooled
   on_bed_cooled?: boolean;
   on_ha_sensor_alert?: boolean;
+  on_location_ha_sensor_alert?: boolean;
   // First layer complete
   on_first_layer_complete?: boolean;
   // Inventory stock alerts
@@ -4849,7 +4920,10 @@ export const api = {
   },
   rebuildSearchIndex: () => request<{ message: string }>('/archives/search/rebuild-index', { method: 'POST' }),
   getNo3MFWarning: () =>
-    request<{ has_fallback: boolean; reason: 'internal_storage' | 'no_external_storage' | null }>(
+    request<{
+      has_fallback: boolean;
+      reason: 'internal_storage' | 'no_external_storage' | 'internal_history' | null;
+    }>(
       '/archives/no-3mf-warning',
     ),
   updateArchive: (id: number, data: {
@@ -5727,6 +5801,23 @@ export const api = {
     request<PrinterHASensor>(`/ha-sensors/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteHASensor: (id: number) =>
     request<{ message: string }>(`/ha-sensors/${id}`, { method: 'DELETE' }),
+
+  getLocationHASensors: (locationId?: number) =>
+    request<LocationHASensor[]>(`/location-ha-sensors/${locationId ? `?location_id=${locationId}` : ''}`),
+  getLocationHASensorReadings: (locationId: number, showOnCard = true) =>
+    request<LocationHASensorReading[]>(
+      `/location-ha-sensors/by-location/${locationId}/readings?show_on_card=${showOnCard}`
+    ),
+  getBindableLocationHAEntities: (search?: string) => {
+    const params = search ? `?search=${encodeURIComponent(search)}` : '';
+    return request<HADisplayEntity[]>(`/location-ha-sensors/entities${params}`);
+  },
+  createLocationHASensor: (data: LocationHASensorCreate) =>
+    request<LocationHASensor>('/location-ha-sensors/', { method: 'POST', body: JSON.stringify(data) }),
+  updateLocationHASensor: (id: number, data: LocationHASensorUpdate) =>
+    request<LocationHASensor>(`/location-ha-sensors/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteLocationHASensor: (id: number) =>
+    request<{ message: string }>(`/location-ha-sensors/${id}`, { method: 'DELETE' }),
 
   // REST smart plug
   testRESTConnection: (url: string, method: string = 'GET', headers?: string | null) =>

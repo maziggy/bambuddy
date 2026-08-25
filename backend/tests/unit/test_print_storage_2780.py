@@ -14,6 +14,7 @@ So the tests below spend most of their weight on the second failure mode.
 import pytest
 
 from backend.app.services.print_storage import (
+    REASON_INTERNAL_HISTORY,
     REASON_INTERNAL_STORAGE,
     REASON_NO_EXTERNAL_STORAGE,
     external_storage_present,
@@ -140,7 +141,11 @@ class TestFileScheme:
         )
         verdict = print_file_reachable_over_ftp(state)
         assert verdict.reachable is False
-        assert verdict.reason == REASON_INTERNAL_STORAGE
+        # Its own reason, not the dispatch one: nothing was sent for this print,
+        # so the advice attached to REASON_INTERNAL_STORAGE -- pick External in
+        # the slicer's Send dialog -- describes a step that never happened
+        # (#1820).
+        assert verdict.reason == REASON_INTERNAL_HISTORY
 
     @pytest.mark.parametrize("url", [12345, [], {}, object()])
     def test_a_non_string_url_declines_too(self, url):
@@ -219,6 +224,7 @@ class TestReasonIsAlwaysPresentWhenUnreachable:
         [
             FakeState(current_project_url="brtc://emmc/x.3mf"),
             FakeState(sdcard=False, sdcard_reported=True),
+            FakeState(current_project_url="file:///userdata/model/history/x.3mf"),
         ],
     )
     def test_unreachable_carries_a_reason(self, state):
@@ -295,6 +301,60 @@ class TestTheGateUsesThePerPrintUrlOnly:
         source = inspect.getsource(print_storage.print_file_reachable_over_ftp)
         assert "current_project_url" in source
         assert "last_project_url" not in source.split('"""')[-1]
+
+
+class TestTheTwoInternalReasonsAreToldApart:
+    """Same verdict, different advice (#1820).
+
+    Both URLs mean "port 990 cannot serve this", and until the report topic was
+    read there was only ever one of them to see. A screen-started print names
+    the other, and giving it the dispatch reason puts a banner in front of the
+    operator telling them to pick External in a Send dialog they never opened.
+    """
+
+    def test_a_dispatch_that_chose_internal_storage(self):
+        verdict = print_file_reachable_over_ftp(
+            FakeState(current_project_url="brtc://emmc/Benchy.gcode.3mf", sdcard=True, sdcard_reported=True)
+        )
+
+        assert verdict.reason == REASON_INTERNAL_STORAGE
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            # Both forms measured on the H2S in #1820: the printer's own file
+            # library, reached from its screen and from Handy.
+            "file:///userdata/model/history/JOB_A.gcode.3mf",
+            "file:///userdata/model/history/Halterung Kuehlschrank V2.gcode.3mf",
+        ],
+    )
+    def test_a_print_of_a_file_that_was_already_there(self, url):
+        verdict = print_file_reachable_over_ftp(FakeState(current_project_url=url, sdcard=True, sdcard_reported=True))
+
+        assert verdict.reason == REASON_INTERNAL_HISTORY
+
+    def test_both_still_earn_a_probe(self):
+        """The reason split changes what the banner says, not what is tried.
+        An H2S keeps a copy of screen-started jobs under /cache for a while, and
+        that copy is what archived #1820's reporter's print 231."""
+        for url in ("brtc://emmc/Cube.gcode.3mf", "file:///userdata/model/history/Cube.gcode.3mf"):
+            verdict = print_file_reachable_over_ftp(
+                FakeState(current_project_url=url, sdcard=True, sdcard_reported=True)
+            )
+
+            assert verdict.probe_filename == "Cube.gcode.3mf"
+
+    def test_the_sticky_reading_splits_them_too(self):
+        """The diagnostic reads the same helper, so a divergence here would
+        surface as one wording in the banner and another in Settings."""
+        state = FakeState(
+            current_project_url=None,
+            last_project_url="file:///userdata/model/history/Cube.gcode.3mf",
+            sdcard=True,
+            sdcard_reported=True,
+        )
+
+        assert last_print_storage_verdict(state).reason == REASON_INTERNAL_HISTORY
 
 
 class TestTimelapseUsesTheNarrowerRule:

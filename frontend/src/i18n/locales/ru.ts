@@ -278,6 +278,7 @@ export default {
     cardSize: {
       small: "Маленькие карточки",
       medium: "Средние карточки",
+      smedium: "4 в ряд карточки",
       large: "Большие карточки",
       extraLarge: "Очень большие карточки",
     },
@@ -331,7 +332,7 @@ export default {
       actions: "Действия",
     },
     readyToPrint: "Готов к печати",
-    external: "Внешняя подача",
+    external: "Внешняя катушка",
     extL: "Внешняя, левое",
     extR: "Внешняя, правое",
     deleteArchives: "Удалить архивы печати",

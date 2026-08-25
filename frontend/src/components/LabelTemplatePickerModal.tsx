@@ -76,6 +76,8 @@ const SHEET_CAPACITIES: Partial<Record<SpoolLabelTemplate, number>> = {
   avery_5160: 30,
 };
 
+const MAX_SHEET_CAPACITY = Math.max(...Object.values(SHEET_CAPACITIES));
+
 function openBlobInNewTab(blob: Blob): void {
   const url = window.URL.createObjectURL(blob);
   // Do NOT pass `noopener,noreferrer`: per the WindowFeatures spec, `noopener`
@@ -245,7 +247,9 @@ export function LabelTemplatePickerModal({
   const noSelection = selectedCount === 0;
   const startingPosition = Number(startingPositionInput);
   const startingPositionIsValid =
-    Number.isInteger(startingPosition) && startingPosition >= 1 && startingPosition <= 30;
+    Number.isInteger(startingPosition) &&
+    startingPosition >= 1 &&
+    startingPosition <= MAX_SHEET_CAPACITY;
 
   function toggleOne(id: number) {
     setSelectedIds((prev) => {
@@ -537,7 +541,7 @@ export function LabelTemplatePickerModal({
               data-testid="label-starting-position"
               type="number"
               min={1}
-              max={30}
+              max={MAX_SHEET_CAPACITY}
               step={1}
               value={startingPositionInput}
               onChange={(event) => setStartingPositionInput(event.target.value)}
@@ -556,13 +560,17 @@ export function LabelTemplatePickerModal({
                 className={startingPositionIsValid ? '' : 'text-red-400'}
               >
                 {!startingPositionIsValid
-                  ? t('inventory.labels.startingPositionInvalid', 'Enter a whole number from 1 to 30.')
+                  ? t(
+                      'inventory.labels.startingPositionInvalid',
+                      'Enter a whole number from 1 to {{capacity}}.',
+                      { capacity: MAX_SHEET_CAPACITY },
+                    )
                   : startingPosition === 1
                     ? t('inventory.labels.startingPositionFirst', 'Printing starts at position 1.')
                     : t(
                         'inventory.labels.startingPositionSkipped',
-                        'Positions 1 through {{count}} will be left blank on the first sheet.',
-                        { count: startingPosition - 1 },
+                        'Positions 1 through {{lastPosition}} will be left blank on the first sheet.',
+                        { lastPosition: startingPosition - 1 },
                       )}
               </div>
             </div>
@@ -580,7 +588,13 @@ export function LabelTemplatePickerModal({
               sheetCapacity !== undefined &&
               (!startingPositionIsValid || startingPosition > sheetCapacity);
             const label = t(`inventory.labels.templates.${opt.i18nKey}.label`, opt.fallbackLabel);
-            const hint = t(`inventory.labels.templates.${opt.i18nKey}.hint`, opt.fallbackHint);
+            const hint = startingPositionExceedsSheet
+              ? t(
+                  'inventory.labels.startingPositionRangeError',
+                  'Starting position must be between 1 and {{capacity}} for this sheet.',
+                  { capacity: sheetCapacity },
+                )
+              : t(`inventory.labels.templates.${opt.i18nKey}.hint`, opt.fallbackHint);
             return (
               <button
                 key={opt.value}

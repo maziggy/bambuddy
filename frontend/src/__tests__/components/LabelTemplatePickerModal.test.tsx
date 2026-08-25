@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { render } from '../utils';
 import { LabelTemplatePickerModal } from '../../components/LabelTemplatePickerModal';
 import { api } from '../../api/client';
@@ -464,7 +464,7 @@ describe('LabelTemplatePickerModal', () => {
     });
   });
 
-  it('enforces each Avery template capacity before submitting', () => {
+  it('renders a single skipped position without treating the value as a pluralization key', () => {
     render(
       <LabelTemplatePickerModal
         isOpen={true}
@@ -475,8 +475,27 @@ describe('LabelTemplatePickerModal', () => {
       />,
     );
 
-    fireEvent.change(screen.getByTestId('label-starting-position'), { target: { value: '22' } });
-    expect(screen.getByTestId('print-labels-avery_l7160')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('label-starting-position'), { target: { value: '2' } });
+    expect(screen.getByTestId('label-starting-position-status')).toHaveTextContent(
+      'Positions 1 through 1 will be left blank on the first sheet.',
+    );
+  });
+
+  it('explains each Avery template capacity when disabling it', () => {
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1]}
+        spoolmanMode={false}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId('label-starting-position'), { target: { value: '25' } });
+    const l7160Button = screen.getByTestId('print-labels-avery_l7160');
+    expect(l7160Button).toBeDisabled();
+    expect(within(l7160Button).getByText(/between 1 and 21/)).toBeInTheDocument();
     expect(screen.getByTestId('print-labels-avery_5160')).toBeEnabled();
   });
 });

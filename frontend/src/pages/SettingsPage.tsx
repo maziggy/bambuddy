@@ -6119,15 +6119,23 @@ export function SettingsPage() {
                       </div>
                     </div>
                   </div>
+                  <p className="text-xs text-bambu-gray">
+                    {t('settings.aboveFairHot')}
+                  </p>
+                  {/* Below the band's own help text, so that line still reads as
+                      describing Fair rather than this field. The comparison lives
+                      in the label string here, not appended as a symbol like the
+                      two above -- most locales word it as "Alarm above", which
+                      would read doubled next to a `>`. */}
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">
-                      {t('settings.tempAlarmThreshold')} &gt;
+                      {t('settings.tempAlarmThreshold')}
                     </label>
                     <div className="flex items-center gap-2">
                       <input
                         type="number"
                         step="0.5"
-                        min="0"
+                        min="0.5"
                         max="120"
                         value={localSettings.ams_temp_alarm ?? ''}
                         placeholder={String(localSettings.ams_temp_fair ?? 35)}
@@ -6141,9 +6149,17 @@ export function SettingsPage() {
                       <span className="text-bambu-gray">°C</span>
                     </div>
                   </div>
-                  <p className="text-xs text-bambu-gray">
-                    {t('settings.aboveFairHot')}
-                  </p>
+                  {/* Warn rather than clamp, for the same reason the humidity
+                      floor above does: clamping a controlled input mid-keystroke
+                      makes "0.5" untypeable, because the "0" would blank the
+                      field before the ".5" arrives. The backend refuses a
+                      non-positive threshold and falls back to Fair, so say so
+                      instead of pretending min= stopped it (#2905). */}
+                  {(localSettings.ams_temp_alarm ?? 1) <= 0 && (
+                    <p className="text-xs text-red-600 dark:text-red-400">
+                      {t('settings.tempAlarmMustBePositive')}
+                    </p>
+                  )}
                   <p className="text-xs text-amber-700/80 dark:text-amber-400/70">
                     {t('settings.tempAlarmSeparateFromBand')}
                   </p>

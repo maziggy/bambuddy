@@ -2164,6 +2164,7 @@ export default {
     aboveFairHot: '보통 임계값 초과 시 빨간색 (뜨거움)으로 표시',
     tempAlarmThreshold: '알림 기준값',
     tempAlarmSeparateFromBand: '알림을 보내는 것은 알림 기준값뿐입니다. 좋음과 보통은 표시 색상에만 사용됩니다. 비워 두면 기존과 같이 보통 기준값에서 알립니다.',
+    tempAlarmMustBePositive: '0 이하의 기준값은 무시되며, 보통 기준값으로 알립니다.',
     historyRetention: '기록 보존',
     keepSensorHistory: '센서 기록 보존 기간',
     historyRetentionDescription: '오래된 습도 및 온도 데이터가 자동으로 삭제됩니다',

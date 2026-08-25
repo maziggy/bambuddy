@@ -2287,6 +2287,7 @@ export default {
     aboveFairHot: 'Por encima del umbral aceptable se muestra en rojo (caliente)',
     tempAlarmThreshold: 'Alarma por encima de',
     tempAlarmSeparateFromBand: 'Solo el umbral de alarma envía notificaciones: Bueno y Aceptable únicamente colorean la pantalla. Déjalo vacío para alarmar en el umbral aceptable, como antes.',
+    tempAlarmMustBePositive: 'Un umbral de 0 o inferior se ignora: la alarma usa el umbral aceptable.',
     historyRetention: 'Retención del historial',
     keepSensorHistory: 'Conservar el historial del sensor durante',
     historyRetentionDescription: 'Los datos de humedad y temperatura más antiguos se eliminarán automáticamente',

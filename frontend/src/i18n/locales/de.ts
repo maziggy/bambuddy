@@ -2284,6 +2284,7 @@ export default {
     aboveFairHot: 'Über dem mittleren Schwellenwert wird rot angezeigt (heiß)',
     tempAlarmThreshold: 'Alarm über',
     tempAlarmSeparateFromBand: 'Nur der Alarm-Schwellenwert löst Benachrichtigungen aus — Gut und Mittel färben nur die Anzeige. Leer lassen, um wie bisher beim mittleren Schwellenwert zu alarmieren.',
+    tempAlarmMustBePositive: 'Ein Schwellenwert von 0 oder weniger wird ignoriert — der Alarm nutzt dann den mittleren Schwellenwert.',
     historyRetention: 'Verlaufsaufbewahrung',
     keepSensorHistory: 'Sensorverlauf behalten für',
     historyRetentionDescription: 'Ältere Feuchtigkeits- und Temperaturdaten werden automatisch gelöscht',

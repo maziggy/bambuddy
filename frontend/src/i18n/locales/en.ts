@@ -2304,6 +2304,7 @@ export default {
     aboveFairHot: 'Above fair threshold shows as red (hot)',
     tempAlarmThreshold: 'Alarm above',
     tempAlarmSeparateFromBand: 'Only the alarm threshold sends notifications — Good and Fair colour the display. Leave it empty to alarm at the fair threshold, as before.',
+    tempAlarmMustBePositive: 'A threshold of 0 or less is ignored — the alarm falls back to the fair threshold.',
     historyRetention: 'History Retention',
     keepSensorHistory: 'Keep sensor history for',
     historyRetentionDescription: 'Older humidity and temperature data will be automatically deleted',

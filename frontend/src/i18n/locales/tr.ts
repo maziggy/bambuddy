@@ -2288,6 +2288,7 @@ export default {
     aboveFairHot: 'Orta eşiğin üstü kırmızı olarak gösterilir (sıcak)',
     tempAlarmThreshold: 'Alarm eşiği',
     tempAlarmSeparateFromBand: 'Bildirimleri yalnızca alarm eşiği gönderir — İyi ve Orta yalnızca göstergeyi renklendirir. Eskisi gibi orta eşikte alarm vermek için boş bırakın.',
+    tempAlarmMustBePositive: 'Sıfır veya daha küçük bir eşik yok sayılır — alarm orta eşiği kullanır.',
     historyRetention: 'Geçmiş Saklama',
     keepSensorHistory: 'Sensör geçmişini sakla',
     historyRetentionDescription: 'Daha eski nem ve sıcaklık verileri otomatik olarak silinecek',

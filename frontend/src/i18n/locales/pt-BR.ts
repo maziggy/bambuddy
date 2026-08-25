@@ -2240,6 +2240,7 @@ export default {
     aboveFairHot: 'Acima do limiar razoável mostra como vermelho (quente)',
     tempAlarmThreshold: 'Alarme acima de',
     tempAlarmSeparateFromBand: 'Apenas o limiar de alarme envia notificações — Bom e Razoável apenas colorem a exibição. Deixe vazio para alarmar no limiar razoável, como antes.',
+    tempAlarmMustBePositive: 'Um limiar de 0 ou menos é ignorado — o alarme usa o limiar razoável.',
     historyRetention: 'Retenção de Histórico',
     keepSensorHistory: 'Manter histórico do sensor por',
     historyRetentionDescription: 'Dados antigos de umidade e temperatura serão automaticamente excluídos',

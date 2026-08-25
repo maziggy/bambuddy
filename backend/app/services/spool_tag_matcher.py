@@ -20,6 +20,13 @@ logger = logging.getLogger(__name__)
 ZERO_TAG_UID = "0000000000000000"
 ZERO_TRAY_UUID = "00000000000000000000000000000000"
 
+# Spool catalog row describing the reusable plastic spool Bambu Lab ships filament
+# on, and the weight to assume when that row is absent. DEFAULT_SPOOL_CATALOG holds
+# three "Bambu Lab%" rows (High Temp 216, Low Temp 250, White 253); this is the one
+# that matches the spool an RFID roll actually arrives on.
+BAMBU_PLASTIC_SPOOL_CATALOG_NAME = "Bambu Lab - Plastic Low Temp"
+BAMBU_PLASTIC_SPOOL_CORE_WEIGHT = 250
+
 
 def is_valid_tag(tag_uid: str, tray_uuid: str) -> bool:
     """Check if a tag/UUID pair contains a non-zero, non-empty value."""
@@ -168,13 +175,30 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
                 continue
             break
 
-    # Look up core weight from spool catalog
-    core_weight = 250  # Default for Bambu Lab plastic spools
-    cat_result = await db.execute(select(SpoolCatalogEntry).where(SpoolCatalogEntry.name.ilike("Bambu Lab%")).limit(10))
-    for entry in cat_result.scalars().all():
-        # Pick the best match (prefer exact, fallback to first Bambu Lab entry)
-        core_weight = entry.weight
-        break
+    # Look up core weight from the spool catalog by exact name. The previous
+    # "Bambu Lab%" prefix query had no matching step and no ORDER BY, so it took
+    # whichever of the three Bambu Lab rows the database returned first — High Temp
+    # (216 g) on SQLite, undefined on Postgres once the table has seen updates.
+    # core_weight is the tare in SpoolBuddy's weigh flow, so a wrong value here
+    # silently biases every scale weighing of an RFID-created spool. See #2909.
+    #
+    # Falling back to the constant rather than to another catalog row keeps a
+    # missing or renamed entry from reintroducing the arbitrary pick, and matching
+    # by name means a user who has corrected that row to their own measurement gets
+    # their value.
+    core_weight = BAMBU_PLASTIC_SPOOL_CORE_WEIGHT
+    core_weight_catalog_id = None
+    cat_query = (
+        select(SpoolCatalogEntry)
+        .where(func.upper(SpoolCatalogEntry.name) == BAMBU_PLASTIC_SPOOL_CATALOG_NAME.upper())
+        .order_by(SpoolCatalogEntry.id)
+        .limit(1)
+    )
+    cat_result = await db.execute(cat_query)
+    catalog_entry = cat_result.scalar_one_or_none()
+    if catalog_entry:
+        core_weight = catalog_entry.weight
+        core_weight_catalog_id = catalog_entry.id
 
     # Resolve slicer filament name from builtin table
     slicer_filament_name = None
@@ -210,6 +234,7 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
         brand="Bambu Lab",
         label_weight=label_weight,
         core_weight=core_weight,
+        core_weight_catalog_id=core_weight_catalog_id,
         weight_used=weight_used,
         slicer_filament=tray_info_idx or None,
         slicer_filament_name=slicer_filament_name,

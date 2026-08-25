@@ -589,6 +589,32 @@ def printer_factory(db_session):
 
 
 @pytest.fixture
+def location_factory(db_session):
+    _counter = [0]
+
+    async def _create_location(**kwargs):
+        from backend.app.models.location import Location
+
+        _counter[0] += 1
+        counter = _counter[0]
+
+        name = kwargs.pop("name", f"Test Location {counter}")
+        defaults = {
+            "name": name,
+            "name_key": name.strip().lower(),
+        }
+        defaults.update(kwargs)
+
+        location = Location(**defaults)
+        db_session.add(location)
+        await db_session.commit()
+        await db_session.refresh(location)
+        return location
+
+    return _create_location
+
+
+@pytest.fixture
 def notification_provider_factory(db_session):
     """Factory to create test notification providers."""
 

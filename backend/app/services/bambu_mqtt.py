@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
 
 from backend.app.services.hms_actions import HMSAction, get_actions_for_error_code
+from backend.app.services.hms_errors import describe_fault
 from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES
 
 logger = logging.getLogger(__name__)
@@ -625,7 +626,13 @@ class HMSError:
     attr: int  # Attribute value for constructing wiki URL
     module: int
     severity: int  # 1=fatal, 2=serious, 3=common, 4=info
-    message: str = ""
+    # The bundled catalogue's sentence for this fault, resolved once here so
+    # every surface that reports it — the status response, the WebSocket
+    # broadcast, the completion payload, notifications — says the same thing.
+    # None when the catalogue does not cover the code; `describe_fault` documents
+    # the lookup and why the lossy `hms[]` collapse is kept as it was.
+    # Replaces a `message` field that was never set or read anywhere.
+    description: str | None = None
     # User-facing remediation actions from the bundled HMS catalog (e.g. "RESUME_PRINTING",
     # "CHECK_ASSISTANT"). Defaults to an empty list rather than None so the field always
     # satisfies HMSErrorResponse.actions: list[str] — a future code path that builds an
@@ -1881,6 +1888,65 @@ class BambuMQTTClient:
                     json.dumps(print_data),
                 )
 
+    def _capture_report_project_file(self, print_data: dict) -> None:
+        """Read a print's destination off a ``project_file`` *response* (#1820).
+
+        ``_handle_request_message`` only ever sees the request topic, so a print
+        started from the printer's own touchscreen -- which publishes nothing --
+        left ``current_project_url`` at None, and the storage verdict fell
+        through to the ``sdcard`` fallback for the one case it was written for.
+        On an H2S that flag is True (its "card" is the internal eMMC), so the
+        verdict came back reachable and the ~110-connection sweep ran in full.
+
+        The printer does announce it: an unsolicited ``project_file`` response
+        on the report topic, ~2 s before ``gcode_state`` reaches PREPARE,
+        carrying ``file:///userdata/model/history/<name>.gcode.3mf``.
+
+        This also covers an install nobody had in view: some brokers refuse the
+        request-topic subscription, and on those no print of any kind has ever
+        populated the field.
+
+        Both kinds of ``project_file`` on this topic are read -- the printer's
+        echo of a dispatch and a screen start -- because both name the
+        destination in ``url``, which is the only thing the verdict wants. What
+        this must NOT do is reuse ``_handle_request_message``'s "External
+        project_file payload" diagnostic: our own dispatch is echoed on *both*
+        topics, the request-topic echo arrives first and clears
+        ``_own_project_file_key``, so by the time this frame lands the key is
+        already None and every Bambuddy-started print would log itself as
+        someone else's.
+        """
+        # Same shape as _handle_request_message: the frame is whatever the
+        # printer put on the wire, and this is the first thing to touch it.
+        if not isinstance(print_data, dict) or print_data.get("command") != "project_file":
+            return
+        # A refused dispatch names a file that was never written. Acting on it
+        # would pin an archive on a destination nothing ever went to.
+        if print_data.get("result") != "SUCCESS":
+            return
+        url = print_data.get("url")
+        if not isinstance(url, str) or not url:
+            return
+        if self.state.current_project_url != url:
+            logger.info(
+                "[%s] Print destination from the report topic: %s",
+                self.serial_number,
+                url,
+            )
+        self.state.current_project_url = url
+        self.state.last_project_url = url
+        # On a screen start this frame is the only place the mapping appears --
+        # no slicer ever sent one. Fill a gap only: when the request topic
+        # already captured this print's mapping that copy is the slicer's own,
+        # and the echo can arrive without the field at all.
+        if self._captured_ams_mapping is None and isinstance(print_data.get("ams_mapping"), list):
+            self._captured_ams_mapping = print_data["ams_mapping"]
+            logger.info(
+                "[%s] Captured ams_mapping from print response: %s",
+                self.serial_number,
+                self._captured_ams_mapping,
+            )
+
     @staticmethod
     def _project_file_key(print_data: dict) -> str:
         """Identity of a project_file dispatch, for telling ours from a slicer's.
@@ -1991,6 +2057,11 @@ class BambuMQTTClient:
 
         if "print" in payload:
             print_data = payload["print"]
+
+            # Before anything reads the state: this is where a touchscreen-
+            # started print announces where its file lives, and the print-start
+            # handler asks ~2 s later (#1820).
+            self._capture_report_project_file(print_data)
 
             # Check if xcam is nested inside print data
             if "xcam" in print_data:
@@ -4576,6 +4647,7 @@ class BambuMQTTClient:
                                 actions=actions,
                                 job_id=self.state.subtask_id,
                                 full_code=full_code,
+                                description=describe_fault(full_code),
                             )
                         )
             self._apply_mqtt_verify_state(verify_failed)
@@ -4651,6 +4723,7 @@ class BambuMQTTClient:
                                     # print_error is already 32-bit — `f"{print_error:08X}"`
                                     # is the firmware's matching key with no truncation.
                                     full_code=f"{print_error:08X}",
+                                    description=describe_fault(f"{print_error:08X}"),
                                 )
                             )
 
@@ -5228,7 +5301,16 @@ class BambuMQTTClient:
             # Include HMS errors for failure reason detection
             hms_errors_data = (
                 [
-                    {"code": e.code, "attr": e.attr, "module": e.module, "severity": e.severity}
+                    {
+                        "code": e.code,
+                        "attr": e.attr,
+                        "module": e.module,
+                        "severity": e.severity,
+                        # Carried so the queue's failure reason quotes the same
+                        # sentence the status response and the broadcast do,
+                        # rather than resolving the code a fourth time (#2926).
+                        "description": e.description,
+                    }
                     for e in self.state.hms_errors
                 ]
                 if self.state.hms_errors

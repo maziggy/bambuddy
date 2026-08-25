@@ -170,6 +170,15 @@ class HMSErrorResponse(BaseModel):
     # truncated short_code that historically caused silent command rejection
     # (#1830, H2D wrong-plate verification).
     full_code: str = ""
+    # The bundled catalogue's sentence for this fault, so a client does not have
+    # to carry its own copy of the same table to tell a user why a print halted
+    # (#2926). English only and not localized — the catalogue ships one language.
+    # None when the catalogue does not cover the code, which is common for
+    # `hms[]`-array faults: those resolve through a lossy collapse of their
+    # 16-char identifier and many land on no key at all (#2728). A client should
+    # treat null as "no text available", never as "no fault" — `full_code` is
+    # what identifies the fault, and it is always present.
+    description: str | None = None
 
 
 class AMSTray(BaseModel):

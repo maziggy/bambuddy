@@ -1869,6 +1869,44 @@ class NotificationService:
             variables=variables,
         )
 
+    async def on_location_ha_sensor_alert(
+        self,
+        location_name: str,
+        sensor_name: str,
+        state: str,
+        db: AsyncSession,
+    ):
+        """A Home Assistant sensor bound to a storage location entered its alert state (#2824).
+
+        Sent immediately rather than folded into a digest, for the same reason
+        as on_ha_sensor_alert above: this is the "drybox went stale" case, only
+        worth acting on while the humidity/temperature is still climbing.
+        """
+        # Own column, not on_ha_sensor_alert (#2824): that one can be scoped to
+        # a single printer via provider.printer_id, and a location alert has no
+        # printer to scope by, so sharing it would leak drybox alerts to a
+        # provider narrowed to one printer's sensors.
+        providers = await self._get_providers_for_event(db, "on_location_ha_sensor_alert", None)
+        if not providers:
+            return
+
+        variables = {
+            "location": location_name,
+            "sensor": sensor_name,
+            "state": state,
+        }
+
+        title, message = await self._build_message_from_template(db, "location_ha_sensor_alert", variables)
+        await self._send_to_providers(
+            providers,
+            title,
+            message,
+            db,
+            "location_ha_sensor_alert",
+            force_immediate=True,
+            variables=variables,
+        )
+
     async def on_first_layer_complete(
         self,
         printer_id: int,

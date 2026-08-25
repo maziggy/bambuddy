@@ -157,6 +157,7 @@ import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 import { MQTTDebugModal } from '../components/MQTTDebugModal';
 import { HMSErrorModal, filterKnownHMSErrors } from '../components/HMSErrorModal';
 import { AiDetectionModal } from '../components/AiDetectionModal';
+import { aiDetectionClass, type AiDetection } from '../utils/aiDetection';
 import { PrinterQueueWidget } from '../components/PrinterQueueWidget';
 import { PrinterHASensorRow } from '../components/PrinterHASensorRow';
 import { AMSHistoryModal } from '../components/AMSHistoryModal';
@@ -2154,7 +2155,7 @@ function PrinterCard({
   chamberTempPresets?: readonly [number, number, number];
   fanSpeedPresets?: readonly [number, number, number];
   aiDetectionEnabled?: boolean;
-  aiDetection?: { class: string; frame_count: number; score: number };
+  aiDetection?: AiDetection;
   aiLastError?: string | null;
 }) {
   const { t } = useTranslation();
@@ -3991,9 +3992,7 @@ function PrinterCard({
                   is enabled for this printer, like the other health badges. Gray
                   "Idle" outside a monitored print, class-colored during one. */}
               {aiDetectionEnabled && (() => {
-                const cls = aiDetection
-                  ? (aiDetection.class === 'failure' || aiDetection.class === 'warning' ? aiDetection.class : 'safe')
-                  : 'idle';
+                const cls = aiDetectionClass(aiDetection);
                 const colorClass =
                   cls === 'failure'
                     ? 'bg-status-error/20 text-status-error'
@@ -4001,21 +4000,33 @@ function PrinterCard({
                       ? 'bg-status-warning/20 text-status-warning'
                       : cls === 'safe'
                         ? 'bg-status-ok/20 text-status-ok'
-                        : 'bg-bambu-dark-tertiary text-bambu-gray';
-                return (
-                  <button
-                    onClick={() => setShowAiModal(true)}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer hover:opacity-80 transition-opacity ${colorClass}`}
-                    title={
-                      aiDetection
+                        : cls === 'error'
+                          ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                          : 'bg-bambu-dark-tertiary text-bambu-gray';
+                // 'error' and 'unknown' have no score to quote — saying
+                // "Safe (0.000)" for a print nothing is looking at is the
+                // whole of #2952.
+                const title =
+                  cls === 'error'
+                    ? t('printers.aiDetection.tooltipError', {
+                        reason: aiDetection?.error ?? t('printers.aiDetection.error'),
+                      })
+                    : cls === 'unknown'
+                      ? t('printers.aiDetection.tooltipUnknown')
+                      : aiDetection
                         ? t('printers.aiDetection.tooltip', {
                             status: t(`printers.aiDetection.${cls}`),
                             score: aiDetection.score.toFixed(3),
                           })
-                        : t('printers.aiDetection.tooltipIdle')
-                    }
+                        : t('printers.aiDetection.tooltipIdle');
+                const Icon = cls === 'error' ? EyeOff : ScanEye;
+                return (
+                  <button
+                    onClick={() => setShowAiModal(true)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer hover:opacity-80 transition-opacity ${colorClass}`}
+                    title={title}
                   >
-                    <ScanEye className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
+                    <Icon className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
                     {t(`printers.aiDetection.${cls}`)}
                   </button>
                 );

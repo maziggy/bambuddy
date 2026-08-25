@@ -8,6 +8,7 @@ import { matchesPrinterModelSuffix, presetCompatibility, buildCompatibilityIndex
 import { toFilamentId } from './spool-form/utils';
 import { Button } from './Button';
 import { getAmsLabel } from '../utils/amsHelpers';
+import { getSwatchStyle } from '../utils/colors';
 import { useCancellableTimeout } from '../hooks/useCancellableTimeout';
 
 interface SlotInfo {
@@ -333,6 +334,16 @@ export function ConfigureAmsSlotModal({
   const { t } = useTranslation();
   const [selectedPresetId, setSelectedPresetId] = useState<string>('');
   const [selectedKProfile, setSelectedKProfile] = useState<KProfile | null>(null);
+  // The same value, readable at mutation-execute time rather than at
+  // closure-capture time. useMutation hands its options to the observer from an
+  // *effect*, so a click that lands between a commit and that effect flushing
+  // runs the previous render's mutationFn — one that closed over the profile as
+  // it was before the K-profile query resolved. The picker showed the right
+  // profile and the printer was sent cali_idx -1, binding the default 0.020
+  // instead of the calibrated K. Written during render on purpose: an effect
+  // here would inherit the very flush ordering this exists to escape.
+  const selectedKProfileRef = useRef<KProfile | null>(null);
+  selectedKProfileRef.current = selectedKProfile;
   const [colorHex, setColorHex] = useState<string>(''); // Just the 6-char hex, no alpha
   const [colorInput, setColorInput] = useState<string>(''); // User's text input (name or hex)
   const [searchQuery, setSearchQuery] = useState('');
@@ -477,7 +488,7 @@ export function ConfigureAmsSlotModal({
       const parsed = parsePresetName(presetName);
 
       // Get cali_idx from selected K profile's slot_id (-1 = use default 0.020)
-      const caliIdx = selectedKProfile?.slot_id ?? -1;
+      const caliIdx = selectedKProfileRef.current?.slot_id ?? -1;
 
       // Use custom color if set, otherwise use current slot color or default
       const color = colorHex || slotInfo.trayColor?.slice(0, 6) || 'FFFFFF';
@@ -593,7 +604,9 @@ export function ConfigureAmsSlotModal({
       }
 
       // Parse K value from selected profile
-      const kValue = selectedKProfile?.k_value ? parseFloat(selectedKProfile.k_value) : 0;
+      const kValue = selectedKProfileRef.current?.k_value
+        ? parseFloat(selectedKProfileRef.current.k_value)
+        : 0;
 
       // Determine tray_type: prefer parsed material from preset name (handles "Support for"
       // patterns correctly) over stored filament_type which may have been parsed with old logic.
@@ -615,8 +628,8 @@ export function ConfigureAmsSlotModal({
         nozzle_diameter: nozzleDiameter,
         setting_id: settingId, // Full setting ID for slicer compatibility (empty for local)
         // Pass K profile's filament_id and setting_id for proper linking
-        kprofile_filament_id: selectedKProfile?.filament_id,
-        kprofile_setting_id: selectedKProfile?.setting_id || undefined,
+        kprofile_filament_id: selectedKProfileRef.current?.filament_id,
+        kprofile_setting_id: selectedKProfileRef.current?.setting_id || undefined,
         // Also pass the K value directly for extrusion_cali_set command
         k_value: kValue,
       });
@@ -1167,7 +1180,10 @@ export function ConfigureAmsSlotModal({
   const canSave = selectedPresetId && !configureMutation.isPending;
 
   // Get display color (custom or slot default)
-  const displayColor = colorHex || slotInfo.trayColor?.slice(0, 6) || 'FFFFFF';
+  // Not sliced to six: a clear tray reports RRGGBB00, and cutting the alpha off
+  // here previewed it as solid black. `colorHex` is the edited form value and is
+  // always six characters, so only the tray fallback ever carries an alpha (#2912).
+  const displayColor = colorHex || slotInfo.trayColor || 'FFFFFF';
 
   return (
     <div className={`fixed inset-0 z-50 flex ${fullScreen ? '' : 'items-center justify-center'}`}>
@@ -1196,7 +1212,7 @@ export function ConfigureAmsSlotModal({
                 {slotInfo.trayColor && (
                   <span
                     className="w-4 h-4 rounded-full border border-black/20"
-                    style={{ backgroundColor: `#${slotInfo.trayColor.slice(0, 6)}` }}
+                    style={getSwatchStyle(slotInfo.trayColor)}
                   />
                 )}
                 <span className="text-white/70">
@@ -1237,7 +1253,7 @@ export function ConfigureAmsSlotModal({
                 {slotInfo.trayColor && (
                   <span
                     className="w-4 h-4 rounded-full border border-black/20"
-                    style={{ backgroundColor: `#${slotInfo.trayColor.slice(0, 6)}` }}
+                    style={getSwatchStyle(slotInfo.trayColor)}
                   />
                 )}
                 <span className="text-white font-medium">
@@ -1456,7 +1472,7 @@ export function ConfigureAmsSlotModal({
                   <div className="flex gap-2 items-center">
                     <div
                       className="w-10 h-10 rounded-lg border-2 border-white/20 flex-shrink-0"
-                      style={{ backgroundColor: `#${displayColor}` }}
+                      style={getSwatchStyle(displayColor)}
                     />
                     <input
                       type="text"
@@ -1705,7 +1721,7 @@ export function ConfigureAmsSlotModal({
                 <div className="flex gap-2 items-center">
                   <div
                     className="w-10 h-10 rounded-lg border-2 border-white/20 flex-shrink-0"
-                    style={{ backgroundColor: `#${displayColor}` }}
+                    style={getSwatchStyle(displayColor)}
                   />
                   <input
                     type="text"

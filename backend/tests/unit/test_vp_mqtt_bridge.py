@@ -1863,6 +1863,166 @@ class TestBindAddressAutoResolve:
             assert _resolve_host_interface_for_target("203.0.113.1") is None
 
 
+# ---------------------------------------------------------------------------
+# VIRTUAL_PRINTER_ADVERTISE_ADDRESS override (#2930)
+# ---------------------------------------------------------------------------
+
+
+class TestAdvertiseAddressOverride:
+    """#2930: behind NAT — Docker bridge networking being the case that
+    prompted it — no local interface carries the address a slicer uses to
+    reach Bambuddy, so both the bind address and the auto-resolved host
+    interface put a container-private IP into `net.info[].ip` and the
+    slicer's FTP upload goes nowhere. The env override supplies that address
+    directly. It is opt-in precisely so that every install which does not
+    set it keeps the behaviour it has today.
+    """
+
+    ENV = "VIRTUAL_PRINTER_ADVERTISE_ADDRESS"
+    HOST_IP = "192.168.1.50"
+    CONTAINER_IP = "172.24.0.2"
+
+    @staticmethod
+    def _bound_bridge(bind_address: str) -> MQTTBridge:
+        """A bridge with its target client already attached, so
+        `_refresh_ip_encoding` reaches IP resolution instead of returning
+        early on an unbound client."""
+        bridge = _make_bridge(_make_server(bind_address=bind_address))
+        bridge._target_client = _make_paho_client()
+        return bridge
+
+    @pytest.mark.asyncio
+    async def test_override_wins_over_an_explicit_bind_address(self, monkeypatch):
+        """The bind address is the container IP; the slicer has to be told the
+        host IP or its FTP connection has nowhere to land."""
+        monkeypatch.setenv(self.ENV, self.HOST_IP)
+        bridge = _make_bridge(_make_server(bind_address=self.CONTAINER_IP))
+        await bridge.start()
+        try:
+            payload = json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "net": {"info": [{"ip": _ip_to_uint32_le(H2D_IP), "mask": 0xFFFFFF}]},
+                    }
+                }
+            ).encode()
+            bridge._on_printer_raw(f"device/{H2D_SERIAL}/report", payload)
+            await asyncio.sleep(0.01)
+
+            assert bridge._vp_ip_uint32_le == _ip_to_uint32_le(self.HOST_IP)
+            encoded = bridge.get_latest_print_state()["net"]["info"][0]["ip"]
+            assert encoded == _ip_to_uint32_le(self.HOST_IP)
+            # Decoded independently of the helper that produced it: asserting
+            # both sides with `_ip_to_uint32_le` would agree even if the byte
+            # order were wrong, and the slicer reads this field as LE.
+            assert socket.inet_ntoa(encoded.to_bytes(4, "little")) == self.HOST_IP
+        finally:
+            await bridge.stop()
+
+    @pytest.mark.asyncio
+    async def test_override_wins_over_auto_resolve(self, monkeypatch):
+        """A VP left on the default 0.0.0.0 bind would otherwise auto-resolve a
+        host interface — inside a bridge-network container that resolves to the
+        container's own address, or to nothing at all."""
+        monkeypatch.setenv(self.ENV, self.HOST_IP)
+        bridge = self._bound_bridge("0.0.0.0")  # nosec B104
+        with patch(
+            "backend.app.services.virtual_printer.mqtt_bridge._resolve_host_interface_for_target",
+            return_value=self.CONTAINER_IP,
+        ):
+            bridge._refresh_ip_encoding()
+        assert bridge._vp_ip_uint32_le == _ip_to_uint32_le(self.HOST_IP)
+
+    def test_unset_leaves_the_bind_address_untouched(self, monkeypatch):
+        """The whole point of making this opt-in: with nothing set, resolution
+        is byte-for-byte what it was before the override existed."""
+        monkeypatch.delenv(self.ENV, raising=False)
+        bridge = self._bound_bridge(VP_IP)
+        bridge._refresh_ip_encoding()
+        assert bridge._vp_ip_uint32_le == _ip_to_uint32_le(VP_IP)
+
+    def test_invalid_override_falls_back_instead_of_disarming(self, caplog, monkeypatch):
+        """A typo must not un-arm the rewrite. Unarmed means the *real printer
+        IP* reaches the slicer (#1429) — strictly worse than the wrong VP IP,
+        so an unusable override degrades to the bind address."""
+        monkeypatch.setenv(self.ENV, "192.168.1")
+        with caplog.at_level(logging.WARNING, logger="backend.app.services.virtual_printer.mqtt_bridge"):
+            bridge = self._bound_bridge(VP_IP)
+        bridge._refresh_ip_encoding()
+        assert bridge._vp_ip_uint32_le == _ip_to_uint32_le(VP_IP)
+        warnings = [r for r in caplog.records if self.ENV in r.getMessage()]
+        assert len(warnings) == 1, "operator gets exactly one line naming the bad value"
+        assert "192.168.1" in warnings[0].getMessage()
+
+    def test_hostname_override_falls_back(self, monkeypatch):
+        """`net.info[].ip` is a uint32 — a hostname cannot round-trip through
+        it, and resolving one here would pick an address the operator did not
+        choose. Fall back rather than guess."""
+        monkeypatch.setenv(self.ENV, "bambuddy.local")
+        bridge = self._bound_bridge(VP_IP)
+        bridge._refresh_ip_encoding()
+        assert bridge._vp_ip_uint32_le == _ip_to_uint32_le(VP_IP)
+
+    def test_whitespace_only_override_is_ignored(self, monkeypatch):
+        """`VIRTUAL_PRINTER_ADVERTISE_ADDRESS=` in a compose file is how people
+        leave a variable listed but unused — not a configuration error."""
+        monkeypatch.setenv(self.ENV, "   ")
+        bridge = self._bound_bridge(VP_IP)
+        bridge._refresh_ip_encoding()
+        assert bridge._vp_ip_uint32_le == _ip_to_uint32_le(VP_IP)
+
+    def test_surrounding_whitespace_is_tolerated(self, monkeypatch):
+        """Copy-pasted compose values carry stray spaces; that should not cost
+        the user a warning and a silent fall back to the wrong address."""
+        monkeypatch.setenv(self.ENV, f"  {self.HOST_IP}  ")
+        bridge = self._bound_bridge(self.CONTAINER_IP)
+        bridge._refresh_ip_encoding()
+        assert bridge._vp_ip_uint32_le == _ip_to_uint32_le(self.HOST_IP)
+
+    def test_wildcard_override_falls_through_to_auto_resolve(self, monkeypatch):
+        """0.0.0.0 is a bind address, never a destination — treat it as unset
+        rather than encoding it and sending the slicer to 0.0.0.0."""
+        monkeypatch.setenv(self.ENV, "0.0.0.0")
+        bridge = self._bound_bridge("0.0.0.0")  # nosec B104
+        with patch(
+            "backend.app.services.virtual_printer.mqtt_bridge._resolve_host_interface_for_target",
+            return_value=VP_IP,
+        ):
+            bridge._refresh_ip_encoding()
+        assert bridge._vp_ip_uint32_le == _ip_to_uint32_le(VP_IP)
+
+    def test_armed_log_names_the_override_as_the_source(self, caplog, monkeypatch):
+        """An operator reading the log has to be able to tell where the
+        advertised IP came from, otherwise a stale variable is invisible."""
+        monkeypatch.setenv(self.ENV, self.HOST_IP)
+        bridge = self._bound_bridge(self.CONTAINER_IP)
+        with caplog.at_level(logging.INFO, logger="backend.app.services.virtual_printer.mqtt_bridge"):
+            bridge._refresh_ip_encoding()
+        armed = [r for r in caplog.records if "IP encoding armed" in r.getMessage()]
+        assert len(armed) == 1
+        assert self.ENV in armed[0].getMessage()
+        assert self.HOST_IP in armed[0].getMessage()
+
+    def test_not_armed_message_points_at_the_override(self, caplog, monkeypatch):
+        """The bridge-network install that has NOT set the variable is exactly
+        the one that cannot auto-resolve — the diagnostic has to name the
+        remedy, or the operator sees only that nothing works."""
+        monkeypatch.delenv(self.ENV, raising=False)
+        bridge = self._bound_bridge("0.0.0.0")  # nosec B104
+        with (
+            patch(
+                "backend.app.services.virtual_printer.mqtt_bridge._resolve_host_interface_for_target",
+                return_value=None,
+            ),
+            caplog.at_level(logging.INFO, logger="backend.app.services.virtual_printer.mqtt_bridge"),
+        ):
+            bridge._refresh_ip_encoding()
+        not_armed = [r for r in caplog.records if "NOT armed" in r.getMessage()]
+        assert len(not_armed) == 1
+        assert self.ENV in not_armed[0].getMessage()
+
+
 class TestNotArmedDiagnosticLogging:
     """#1429 follow-up: every silent early-return in `_refresh_ip_encoding`
     now emits one INFO line explaining WHY the rewrite couldn't arm. Throttled

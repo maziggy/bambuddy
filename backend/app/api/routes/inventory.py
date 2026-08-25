@@ -67,6 +67,7 @@ from backend.app.utils.filament_ids import (
     normalize_slicer_filament,
 )
 from backend.app.utils.filament_types import is_material_name, nozzle_temp_range, printer_filament_type
+from backend.app.utils.natural_sort import natural_sort_key
 from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
 
 logger = logging.getLogger(__name__)
@@ -626,8 +627,10 @@ async def list_locations(
 ):
     """List all storage locations with spool counts."""
     settings = await _load_settings_map(db)
-    result = await db.execute(select(Location).order_by(Location.name))
-    locations = list(result.scalars().all())
+    result = await db.execute(select(Location))
+    # Sorted in Python, not SQL: "Drybox 2" belongs before "Drybox 10", and
+    # ORDER BY name gives the opposite (plain lexicographic) order.
+    locations = sorted(result.scalars().all(), key=lambda loc: natural_sort_key(loc.name))
     counts = await _spool_counts_for_locations(db, locations, settings)
     return [_location_to_response(loc, counts.get(loc.id, 0)) for loc in locations]
 

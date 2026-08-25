@@ -11,10 +11,14 @@ import { inventoryLocationsQueryKey, invalidateInventoryLocations } from '../uti
 interface LocationsModalProps {
   open: boolean;
   onClose: () => void;
+  // Optional even with startCreating: a caller that just wants the inline
+  // "create a location" dialog without picking one afterward can omit it.
+  // The save always closes the modal regardless of whether this is set.
   onPickLocation?: (locationId: number) => void;
+  startCreating?: boolean;
 }
 
-export function LocationsModal({ open, onClose, onPickLocation }: LocationsModalProps) {
+export function LocationsModal({ open, onClose, onPickLocation, startCreating }: LocationsModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -30,10 +34,23 @@ export function LocationsModal({ open, onClose, onPickLocation }: LocationsModal
     enabled: open,
   });
 
+  const { data: locationSensors = [] } = useQuery({
+    queryKey: ['locationHaSensors'],
+    queryFn: () => api.getLocationHASensors(),
+    enabled: open,
+  });
+
+  const sensorCountByLocation = locationSensors.reduce<Record<number, number>>((acc, sensor) => {
+    acc[sensor.location_id] = (acc[sensor.location_id] ?? 0) + 1;
+    return acc;
+  }, {});
+
   const invalidate = () => {
     invalidateInventoryLocations(queryClient);
     queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
     queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
+    queryClient.invalidateQueries({ queryKey: ['locationHaSensors'] });
+    queryClient.invalidateQueries({ queryKey: ['locationHaSensorReadings'] });
   };
 
   const saveMutation = useMutation({
@@ -45,12 +62,24 @@ export function LocationsModal({ open, onClose, onPickLocation }: LocationsModal
       }
       return api.createLocation({ name: trimmed });
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
       showToast(t(editing ? 'locations.updated' : 'locations.created'), 'success');
+      invalidate();
+      // startCreating mode has no location-list view to fall back to (see the
+      // render branch below and closeEditor's own unconditional onClose), so
+      // a save here must always close — with or without onPickLocation, which
+      // is optional by design for a caller that only wants location
+      // management, not a picker. Gating this on onPickLocation being set
+      // used to leave editorOpen false with open still true: nothing left to
+      // render, but the caller never told to close.
+      if (!editing && startCreating) {
+        onPickLocation?.(saved.id);
+        onClose();
+        return;
+      }
       setEditorOpen(false);
       setEditing(null);
       setName('');
-      invalidate();
     },
     onError: (err: Error) => {
       showToast(err.message || t('locations.saveFailed'), 'error');
@@ -75,6 +104,14 @@ export function LocationsModal({ open, onClose, onPickLocation }: LocationsModal
     setEditorOpen(true);
   };
 
+  useEffect(() => {
+    if (open && startCreating) {
+      setEditing(null);
+      setName('');
+      setEditorOpen(true);
+    }
+  }, [open, startCreating]);
+
   const openEdit = (location: StorageLocation) => {
     setEditing(location);
     setName(location.name);
@@ -83,10 +120,14 @@ export function LocationsModal({ open, onClose, onPickLocation }: LocationsModal
 
   const closeEditor = useCallback(() => {
     if (saveMutation.isPending) return;
+    if (startCreating) {
+      onClose();
+      return;
+    }
     setEditorOpen(false);
     setEditing(null);
     setName('');
-  }, [saveMutation.isPending]);
+  }, [saveMutation.isPending, startCreating, onClose]);
 
   // Esc closes the inner editor first; if it's closed, Esc closes the outer
   // modal — but only when neither save nor delete is mid-flight, so a stray
@@ -116,6 +157,52 @@ export function LocationsModal({ open, onClose, onPickLocation }: LocationsModal
 
   const modalTitleId = 'locations-modal-title';
   const editorTitleId = 'location-editor-title';
+
+  const editorForm = (
+    <form onSubmit={handleSave}>
+      <label className="block text-sm font-medium text-bambu-gray mb-1" htmlFor="location-name">
+        {t('locations.name')}
+      </label>
+      <input
+        id="location-name"
+        type="text"
+        maxLength={255}
+        className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green mb-4"
+        placeholder={t('locations.createPlaceholder')}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        autoFocus
+      />
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="secondary" onClick={closeEditor}>
+          {t('common.cancel')}
+        </Button>
+        <Button type="submit" disabled={saveMutation.isPending || !name.trim()}>
+          {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+          {t('common.save')}
+        </Button>
+      </div>
+    </form>
+  );
+
+  if (startCreating) {
+    return editorOpen ? (
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="absolute inset-0 bg-black/60" onClick={closeEditor} />
+        <div
+          className="relative w-full max-w-md mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl p-6 shadow-2xl"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={editorTitleId}
+        >
+          <h3 id={editorTitleId} className="text-lg font-semibold text-white mb-4">
+            {t('locations.add')}
+          </h3>
+          {editorForm}
+        </div>
+      </div>
+    ) : null;
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -165,11 +252,12 @@ export function LocationsModal({ open, onClose, onPickLocation }: LocationsModal
           ) : locations.length === 0 ? (
             <div className="py-16 text-center text-bambu-gray">{t('locations.empty')}</div>
           ) : (
-            <table className="w-full text-sm">
+            <table className="w-full text-sm table-fixed">
               <thead>
                 <tr className="border-b border-bambu-dark-tertiary text-left text-bambu-gray">
                   <th className="px-4 py-3 font-medium">{t('locations.name')}</th>
-                  <th className="px-4 py-3 font-medium text-right">{t('locations.spools')}</th>
+                  <th className="px-2 py-3 font-medium text-right w-24">{t('locations.sensors')}</th>
+                  <th className="pl-[28px] pr-4 py-3 font-medium text-right w-28">{t('locations.spools')}</th>
                   <th className="px-4 py-3 font-medium text-right w-32">{t('common.actions')}</th>
                 </tr>
               </thead>
@@ -185,8 +273,9 @@ export function LocationsModal({ open, onClose, onPickLocation }: LocationsModal
                       }
                     }}
                   >
-                    <td className="px-4 py-3 text-white font-medium">{loc.name}</td>
-                    <td className="px-4 py-3 text-right text-bambu-gray">{loc.spool_count}</td>
+                    <td className="px-4 py-3 text-white font-medium truncate">{loc.name}</td>
+                    <td className="px-2 py-3 text-right text-bambu-gray">{sensorCountByLocation[loc.id] ?? 0}</td>
+                    <td className="pl-[28px] pr-4 py-3 text-right text-bambu-gray">{loc.spool_count}</td>
                     <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
                         <button
@@ -230,30 +319,7 @@ export function LocationsModal({ open, onClose, onPickLocation }: LocationsModal
             <h3 id={editorTitleId} className="text-lg font-semibold text-white mb-4">
               {editing ? t('locations.edit') : t('locations.add')}
             </h3>
-            <form onSubmit={handleSave}>
-              <label className="block text-sm font-medium text-bambu-gray mb-1" htmlFor="location-name">
-                {t('locations.name')}
-              </label>
-              <input
-                id="location-name"
-                type="text"
-                maxLength={255}
-                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green mb-4"
-                placeholder={t('locations.createPlaceholder')}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                autoFocus
-              />
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="secondary" onClick={closeEditor}>
-                  {t('common.cancel')}
-                </Button>
-                <Button type="submit" disabled={saveMutation.isPending || !name.trim()}>
-                  {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {t('common.save')}
-                </Button>
-              </div>
-            </form>
+            {editorForm}
           </div>
         </div>
       )}
@@ -261,7 +327,11 @@ export function LocationsModal({ open, onClose, onPickLocation }: LocationsModal
       {deleteTarget && (
         <ConfirmModal
           title={t('locations.confirmDelete', { name: deleteTarget.name })}
-          message={t('locations.confirmDeleteMessage')}
+          message={
+            sensorCountByLocation[deleteTarget.id]
+              ? t('locations.confirmDeleteMessageWithSensors')
+              : t('locations.confirmDeleteMessage')
+          }
           confirmText={t('common.delete')}
           variant="danger"
           isLoading={deleteMutation.isPending}

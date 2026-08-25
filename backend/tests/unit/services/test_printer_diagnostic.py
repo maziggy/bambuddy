@@ -519,6 +519,42 @@ class TestExternalStorageCheck:
         paths = env.find_remote_file.await_args.args[2]
         assert paths[:2] == ["/Benchy.gcode.3mf", "/cache/Benchy.gcode.3mf"]
 
+    async def test_a_print_of_a_file_already_on_the_printer_gets_its_own_reason(self):
+        """Same verdict, different advice (#1820).
+
+        A print started from the printer's screen reaches this branch too, now
+        that the report topic is read. The internal-storage wording tells the
+        operator to use Send with External selected -- a dialog nobody opened,
+        for a print where nothing was sent at all.
+        """
+        state = _state(
+            store_to_sdcard=True,
+            sdcard=True,
+            sdcard_reported=True,
+            last_project_url="file:///userdata/model/history/JOB_A.gcode.3mf",
+        )
+        with _Env(state=state) as env:
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="H2S"))
+        check = next(c for c in result.checks if c.id == "external_storage")
+        assert check.status == "warn"
+        assert check.params == {"reason": "internal_history"}
+        # Still asked first: an H2S keeps recently used jobs under /cache.
+        paths = env.find_remote_file.await_args.args[2]
+        assert paths[:2] == ["/JOB_A.gcode.3mf", "/cache/JOB_A.gcode.3mf"]
+
+    async def test_a_screen_started_print_whose_file_is_there_still_passes(self):
+        """The probe outranks the reason for this URL exactly as for the other
+        one -- that copy under /cache is what archives the print in full."""
+        state = _state(
+            store_to_sdcard=True,
+            sdcard=True,
+            sdcard_reported=True,
+            last_project_url="file:///userdata/model/history/JOB_A.gcode.3mf",
+        )
+        with _Env(state=state, file_found="/cache/JOB_A.gcode.3mf"):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="H2S"))
+        assert _statuses(result)["external_storage"] == "pass"
+
     async def test_the_internal_storage_warning_yields_to_the_file_being_there(self):
         """#2856. The URL says where the printer *put* the file, not whether
         port 990 can serve it: an H2D with a card in reports `brtc://emmc` and

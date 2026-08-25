@@ -100,6 +100,25 @@ describe('LinkSpoolModal', () => {
       });
     });
 
+    it('paints a clear spool as the checkerboard, not an invisible swatch', async () => {
+      // Same swatch bug as the filament picker: this row built its background as
+      // `#${filament_color_hex}`, so a clear spool — which only reaches the list
+      // with its alpha intact because of #2912 — rendered as an empty circle.
+      vi.mocked(api.getUnlinkedSpools).mockResolvedValue([
+        { ...mockSpools[0], id: 3, filament_name: 'Bambu PLA Clear', filament_color_hex: '00000000' },
+      ]);
+
+      render(<LinkSpoolModal {...defaultProps} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Bambu PLA Clear/)).toBeInTheDocument();
+      });
+
+      const swatch = document.querySelector('span.rounded-full') as HTMLElement;
+      expect(swatch.style.backgroundImage).toContain('repeating-conic-gradient');
+      expect(swatch.style.backgroundColor).toBe('');
+    });
+
     it('displays unlinked spools from Spoolman', async () => {
       render(<LinkSpoolModal {...defaultProps} />);
 

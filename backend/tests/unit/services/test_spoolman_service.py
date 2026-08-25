@@ -1052,9 +1052,10 @@ class TestColorHexAlphaHandling:
         assert mock_create.call_args.kwargs["color_hex"] == "00000000"
 
     @pytest.mark.asyncio
-    async def test_find_or_create_filament_matches_on_prefix_and_creates_with_alpha(self, client):
-        """The user-driven path has the same split: the match key drops alpha, the
-        value handed to create_filament keeps it."""
+    async def test_find_or_create_filament_creates_a_clear_filament_with_its_alpha(self, client):
+        """The user-driven path, with nothing to match. There is no split to pin
+        here: the key and the created value are the same string, and for a clear
+        spool that string is eight characters."""
         with (
             patch.object(client, "find_or_create_vendor", AsyncMock(return_value=3)),
             patch.object(client, "get_filaments", AsyncMock(return_value=[])),
@@ -1069,3 +1070,38 @@ class TestColorHexAlphaHandling:
             )
 
         assert mock_create.call_args.kwargs["color_hex"] == "00000000"
+
+    @pytest.mark.asyncio
+    async def test_find_or_create_filament_matches_an_existing_six_char_filament(self, client):
+        """The upgrade guard on the *other* match loop.
+
+        `test_opaque_tray_still_matches_an_existing_six_char_filament` pins it for
+        the AMS path. The public `find_or_create_filament` has its own loop, and
+        the non-BL RFID auto-create (spoolman.py, `_sync_tray_to_spoolman`) now
+        hands it `tray.tray_color` whole where it used to hand over
+        `tray.tray_color[:6]`. If the opaque fold ever came off this key, every
+        non-Bambu RFID spool on an instance would mint a duplicate filament on the
+        next sync and nothing would go red.
+        """
+        existing = {
+            "id": 7,
+            "name": "PLA Basic",
+            "material": "PLA",
+            "color_hex": "FF0000",
+            "vendor": {"id": 3, "name": "Bambu Lab"},
+        }
+        with (
+            patch.object(client, "find_or_create_vendor", AsyncMock(return_value=3)),
+            patch.object(client, "get_filaments", AsyncMock(return_value=[existing])),
+            patch.object(client, "create_filament", AsyncMock()) as mock_create,
+        ):
+            result = await client.find_or_create_filament(
+                material="PLA",
+                subtype="Basic",
+                brand="Bambu Lab",
+                color_hex="FF0000FF",
+                label_weight=1000,
+            )
+
+        assert result == 7
+        mock_create.assert_not_called()

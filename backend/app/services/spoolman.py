@@ -760,10 +760,12 @@ class SpoolmanClient:
     ) -> int:
         """Return the filament ID matching material/name/brand/color, creating it if absent."""
         name = f"{material} {subtype}".strip() if subtype else material
-        # `color` is the match key and stays on the RGB prefix; `stored_color` is
-        # what a new filament is created with and may carry alpha (#2912).
+        # One value in both roles. `color_match_key` returns the shape the colour
+        # would be stored as, so the key the loop below compares on and the value
+        # a new filament is created with are the same string by construction: an
+        # opaque spool keys and stores as six characters, a translucent one as
+        # eight, and neither can be conflated with the other (#2912).
         color = color_match_key(color_hex)
-        stored_color = spoolman_color_hex(color_hex) or color_hex.upper()
 
         vendor_id: int | None = None
         if brand:
@@ -820,7 +822,7 @@ class SpoolmanClient:
             name=name,
             vendor_id=vendor_id,
             material=material,
-            color_hex=stored_color,
+            color_hex=color,
             weight=float(label_weight),
         )
         filament_id = filament.get("id")
@@ -1255,10 +1257,12 @@ class SpoolmanClient:
     async def _find_or_create_filament(self, tray: AMSTray) -> dict | None:
         """Return a Bambu Lab filament matching the tray's material/color, creating it if absent."""
         bambu_vendor_id = await self.ensure_bambu_vendor()
-        # Stored value may carry alpha; the match key never does (#2912).
-        color_hex = spoolman_color_hex(tray.tray_color) or tray.tray_color
         material_upper = tray.tray_type.upper()
-        color_upper = color_match_key(tray.tray_color)
+        # Same single value as the user-driven path: the match key is the stored
+        # shape. That is what lets an opaque tray still find the six-character
+        # filaments every existing instance is full of, while a clear tray keys
+        # to eight and gets its own record (#2912).
+        color = color_match_key(tray.tray_color)
 
         # Search internal filaments - only match Bambu Lab vendor
         filaments = await self.get_filaments()
@@ -1267,7 +1271,7 @@ class SpoolmanClient:
             if fil_vendor_id != bambu_vendor_id:
                 continue
             fil_material = filament.get("material") or ""
-            if fil_material.upper() == material_upper and color_match_key(filament.get("color_hex")) == color_upper:
+            if fil_material.upper() == material_upper and color_match_key(filament.get("color_hex")) == color:
                 return filament
 
         # Search external filaments (SpoolmanDB) — restrict to Bambu Lab only.
@@ -1283,7 +1287,7 @@ class SpoolmanClient:
             if manufacturer != "bambu lab" and not ext_id.startswith("bambulab_"):
                 continue
             fil_material = filament.get("material") or ""
-            if fil_material.upper() == material_upper and color_match_key(filament.get("color_hex")) == color_upper:
+            if fil_material.upper() == material_upper and color_match_key(filament.get("color_hex")) == color:
                 bambu_candidates.append(filament)
 
         if bambu_candidates:
@@ -1301,7 +1305,7 @@ class SpoolmanClient:
             name=tray.tray_sub_brands or tray.tray_type,
             vendor_id=bambu_vendor_id,
             material=tray.tray_type,
-            color_hex=color_hex,
+            color_hex=color,
             weight=tray.tray_weight,
         )
 
@@ -1312,7 +1316,11 @@ class SpoolmanClient:
             name=external.get("name", tray.tray_sub_brands),
             vendor_id=vendor_id,
             material=external.get("material", tray.tray_type),
-            color_hex=external.get("color_hex", spoolman_color_hex(tray.tray_color) or tray.tray_color),
+            # `or`, not a two-argument get: an entry that carries the key with an
+            # explicit null would hand None to create_filament rather than reach
+            # the tray fallback. Only a candidate when the tray colour is empty
+            # too, so this is a correctness tidy, not a fix for a live path.
+            color_hex=external.get("color_hex") or color_match_key(tray.tray_color),
             weight=external.get("weight", tray.tray_weight),
             density=external.get("density"),
         )

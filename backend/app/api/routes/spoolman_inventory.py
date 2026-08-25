@@ -709,10 +709,10 @@ async def update_spool(
     else:
         color_name = cur_filament.get("color_name") or None
     cur_color = (cur_filament.get("color_hex") or "808080").upper().removeprefix("#")
-    # color_hex may now be eight characters for a translucent filament, so only
-    # append the opaque alpha when it is not already carrying one (#2912).
-    cur_rgba = cur_color if len(cur_color) >= 8 else cur_color + "FF"
-    rgba = data.rgba if data.rgba is not None else cur_rgba
+    # Handed over as stored. The opaque alpha this used to append was folded
+    # straight back off by `spoolman_color_hex` below, so the two paths landed on
+    # the same string and the append only obscured which shape was in hand (#2912).
+    rgba = data.rgba if data.rgba is not None else cur_color
     label_weight = data.label_weight if data.label_weight is not None else int(cur_filament.get("weight") or 1000)
     # Default weight_used from the synthetic mapping (label - remaining) so an
     # edit that doesn't touch the weight field preserves Spoolman's real

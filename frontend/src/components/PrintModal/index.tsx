@@ -854,6 +854,15 @@ export function PrintModal({
     if (selectedPrinters.length > 1) {
       return multiPrinterMapping.getFinalMapping(printerId);
     }
+    // The single-printer path says the same thing, explicitly. `amsMapping`
+    // folds in `manualMappings`, so it is this printer's mapping only while this
+    // printer is the one those overrides were authored against. In practice the
+    // effect above clears them whenever the selection changes, but that leaves
+    // the rule enforced in one place and merely implied in the other — a thin
+    // thing to rest on the next time that effect is edited.
+    if (sharedMappingPrinterId !== null && sharedMappingPrinterId !== printerId) {
+      return multiPrinterMapping.getFinalMapping(printerId);
+    }
     return amsMapping;
   };
 

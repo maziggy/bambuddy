@@ -4,6 +4,7 @@ export default {
     archives: "Архив",
     queue: "Очередь печати",
     stats: "Статистика",
+    printerLocations: "Группы принтеров",
     profiles: "Профили",
     maintenance: "Обслуживание",
     projects: "Проекты",

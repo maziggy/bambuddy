@@ -303,6 +303,7 @@ async def init_db():
         library,
         local_preset,
         location,
+        location_ha_sensor,
         long_lived_token,
         maintenance,
         notification,
@@ -594,16 +595,64 @@ async def _migrate_encrypt_legacy_secrets() -> None:
         )
 
 
+# PostgreSQL SQLSTATE codes meaning "this DDL statement has already been applied".
+# We classify on these rather than on the error text because the server renders
+# messages in its own ``lc_messages`` locale: a Russian-locale server answers a
+# duplicate ADD COLUMN with "уже существует", which no English substring check can
+# recognise. That made Bambuddy unstartable on every non-English PostgreSQL server,
+# fresh or existing — create_all() runs before run_migrations(), so on a new database
+# essentially every ADD COLUMN below is expected to come back as a duplicate (#2949).
+_PG_ALREADY_APPLIED = frozenset(
+    {
+        "42701",  # duplicate_column — ALTER TABLE ADD COLUMN
+        "42P07",  # duplicate_table — CREATE TABLE, CREATE INDEX
+        "42710",  # duplicate_object — ADD CONSTRAINT, CREATE TRIGGER
+        "23505",  # unique_violation — duplicate key
+    }
+)
+
+# undefined_column. Idempotency only for RENAME COLUMN (the rename already ran);
+# on any other statement a missing column means a broken schema, not a re-run.
+_PG_UNDEFINED_COLUMN = "42703"
+
+
+def _sqlstate(exc) -> str | None:
+    """Return the PostgreSQL SQLSTATE behind a SQLAlchemy error, or None.
+
+    None on SQLite, whose DBAPI exceptions carry no such code — and which never
+    localises its messages, so the text match below stays correct there.
+    """
+    orig = getattr(exc, "orig", None)
+    for attr in ("sqlstate", "pgcode"):
+        code = getattr(orig, attr, None)
+        if code:
+            return str(code)
+    return None
+
+
+def _is_already_applied(exc, sql: str) -> bool:
+    """Return True if a failed DDL statement had simply already been applied."""
+    is_rename = "rename column" in sql.lower()
+
+    state = _sqlstate(exc)
+    if state is not None:
+        return state in _PG_ALREADY_APPLIED or (state == _PG_UNDEFINED_COLUMN and is_rename)
+
+    msg = str(exc).lower()
+    if any(k in msg for k in ("already exists", "duplicate key", "duplicate column name", "no such column")):
+        return True
+    return is_rename and "column" in msg and "does not exist" in msg
+
+
 async def _safe_execute(conn, sql):
     """Execute a DDL migration statement, silently ignoring idempotency errors.
 
-    'already exists', 'duplicate column name' (SQLite ADD COLUMN), 'no such column'
-    (SQLite RENAME COLUMN), 'duplicate key', and the compound
-    'column … does not exist' (PostgreSQL RENAME COLUMN idempotency) are swallowed
-    so that re-running DDL migrations is safe.  The compound check additionally
-    requires the SQL to be a RENAME COLUMN statement so that "does not exist" errors
-    from ADD COLUMN or CREATE INDEX (which would indicate schema corruption, not
-    idempotency) are never silently swallowed.
+    Statements that had already been applied are swallowed so that re-running DDL
+    migrations is safe — see :func:`_is_already_applied` for how that is decided
+    (SQLSTATE on PostgreSQL, message text on SQLite). Idempotency for a missing
+    column is narrowed to RENAME COLUMN, so a missing column on ADD COLUMN or
+    CREATE INDEX — which would indicate schema corruption, not a re-run — is never
+    silently swallowed.
     Any other error is logged and re-raised — callers must not assume silent
     recovery, as a failure will abort the migration sequence and prevent
     application startup.
@@ -621,14 +670,7 @@ async def _safe_execute(conn, sql):
         async with conn.begin_nested():
             await conn.execute(text(sql))
     except (OperationalError, ProgrammingError) as exc:
-        msg = str(exc).lower()
-        # Only swallow "column … does not exist" for RENAME COLUMN — not for ADD COLUMN
-        # or CREATE INDEX where it would indicate schema corruption, not idempotency.
-        column_not_exists = "rename column" in sql.lower() and "column" in msg and "does not exist" in msg
-        if (
-            not any(k in msg for k in ("already exists", "duplicate key", "duplicate column name", "no such column"))
-            and not column_not_exists
-        ):
+        if not _is_already_applied(exc, sql):
             logger.error("Migration statement failed: %s | SQL: %.200s", exc, sql)
             raise
 
@@ -1303,8 +1345,8 @@ async def run_migrations(conn):
 
     # Migration: Add source_archive_id column to pipeline_runs (#1425 PR B follow-up).
     # Allows a pipeline run to source from an archive's source 3MF in addition
-    # to a library file. Idempotent — _safe_execute swallows the "already exists"
-    # case on both SQLite and Postgres.
+    # to a library file. Idempotent — _safe_execute swallows an already-applied
+    # statement on both SQLite and Postgres.
     await _safe_execute(
         conn,
         "ALTER TABLE pipeline_runs ADD COLUMN source_archive_id INTEGER REFERENCES print_archives(id) ON DELETE SET NULL",
@@ -2065,7 +2107,7 @@ async def run_migrations(conn):
     # timestamp; the type differs by dialect (SQLite DATETIME vs Postgres
     # TIMESTAMP) so an existing-DB upgrade doesn't hit "type datetime does not
     # exist" on Postgres. On a fresh DB create_all() already built the column, so
-    # the ALTER is swallowed as "already exists".
+    # the ALTER is swallowed as already applied.
     #
     # Placed AFTER the print_queue_new2 table-recreate above: that recreate
     # (SQLite-only, and only on ancient DBs whose archive_id is still NOT NULL)
@@ -3259,17 +3301,17 @@ async def run_migrations(conn):
     # SQLite does not support ALTER TABLE ADD CONSTRAINT — handled by __table_args__ at creation.
     # Runs AFTER the backfill so Fall B rows don't fail constraint validation.
     if not is_sqlite():
+        add_constraint = (
+            "ALTER TABLE oidc_providers ADD CONSTRAINT ck_auto_link_requires_verified_email_claim "
+            "CHECK (auto_link_existing_accounts = FALSE OR email_claim != 'email' OR require_email_verified = TRUE)"
+        )
         try:
             async with conn.begin_nested():
-                await conn.execute(
-                    text(
-                        "ALTER TABLE oidc_providers ADD CONSTRAINT ck_auto_link_requires_verified_email_claim "
-                        "CHECK (auto_link_existing_accounts = FALSE OR email_claim != 'email' OR require_email_verified = TRUE)"
-                    )
-                )
+                await conn.execute(text(add_constraint))
         except (OperationalError, ProgrammingError) as exc:
-            msg = str(exc).lower()
-            if "already exists" not in msg:
+            # Classified by SQLSTATE, not by message text: a non-English server
+            # reports the constraint as already present in its own language (#2949).
+            if not _is_already_applied(exc, add_constraint):
                 logger.error(
                     "Security constraint migration FAILED — auto_link safety constraint may not be enforced: %s",
                     exc,
@@ -3897,6 +3939,34 @@ async def run_migrations(conn):
             conn, "ALTER TABLE notification_providers ADD COLUMN on_stock_break_alert BOOLEAN DEFAULT false"
         )
 
+    # Backfill the two flags above. The DEFAULT on those ALTERs only reaches
+    # existing rows when the ALTER is the statement that adds the column -- and
+    # on an install whose notification_providers table was (re)created from
+    # Base.metadata, create_all() had already added them by the time migrations
+    # ran, so _safe_execute swallowed the ALTER as a duplicate column and every
+    # pre-existing row kept NULL. Harmless while nothing read the flags; a 500
+    # on the whole provider list once #2827 declared them on the response
+    # schema, because pydantic will not accept None for a bool.
+    #
+    # false matches both the intent of the DEFAULT above and the behaviour the
+    # rows already have: _get_providers_for_event filters on `.is_(True)`, so a
+    # NULL flag never sent anything. Idempotent -- the WHERE matches nothing on
+    # the second run.
+    async with conn.begin_nested():
+        stock_backfill = await conn.execute(
+            text(
+                "UPDATE notification_providers SET on_stock_reorder_alert = :off WHERE on_stock_reorder_alert IS NULL"
+            ),
+            {"off": False},
+        )
+        stock_backfill_break = await conn.execute(
+            text("UPDATE notification_providers SET on_stock_break_alert = :off WHERE on_stock_break_alert IS NULL"),
+            {"off": False},
+        )
+    repaired = (stock_backfill.rowcount or 0) + (stock_backfill_break.rowcount or 0)
+    if repaired:
+        logger.info("Backfilled %s NULL inventory stock alert flag(s) on notification_providers", repaired)
+
     # Migration: Heal orphan auth-related rows left behind by user-delete
     # on SQLite. user_oidc_links, user_totp, user_otp_codes (introduced in
     # PR #933) and long_lived_tokens (PR #1108) all declare ON DELETE
@@ -4336,7 +4406,7 @@ async def run_migrations(conn):
     # ordering was arbitrary. Nullable; the timestamp type differs by dialect
     # (SQLite DATETIME vs Postgres TIMESTAMP) so an existing-DB upgrade doesn't hit
     # "type datetime does not exist" on Postgres. On a fresh DB create_all() already
-    # built the column, so the ALTER is swallowed as "already exists".
+    # built the column, so the ALTER is swallowed as already applied.
     if is_sqlite():
         await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN fs_modified_at DATETIME")
         await _safe_execute(conn, "ALTER TABLE library_folders ADD COLUMN fs_modified_at DATETIME")
@@ -4427,6 +4497,30 @@ async def run_migrations(conn):
         conn, "ALTER TABLE notification_providers ADD COLUMN on_ams_drying_suspended BOOLEAN DEFAULT TRUE"
     )
 
+    # Migration: storage location sensor alerts (#2824), own column rather than
+    # reusing on_ha_sensor_alert. That column can be scoped to one printer
+    # (printer_id), and a location alert has no printer to scope by — sharing
+    # the column meant a provider narrowed to one printer's sensors silently
+    # also received every drybox alert, with no toggle to separate the two.
+    await _safe_execute(
+        conn, "ALTER TABLE notification_providers ADD COLUMN on_location_ha_sensor_alert BOOLEAN DEFAULT FALSE"
+    )
+
+    # Migration: rename the ha_sensor_alert template (#2824). "Home Assistant
+    # Sensor Alert" was fine as a name while it was the only such template;
+    # next to the new "Storage Location Sensor Alert" it no longer says which
+    # one is the printer's. See _migrate_rename_user_print_template_names for
+    # why this is a plain UPDATE guarded on the old name rather than a
+    # DEFAULT_TEMPLATES re-seed.
+    await _migrate_rename_ha_sensor_alert_template(conn)
+
+    # Migration: back the one-binding-per-(location, entity) rule with a unique
+    # index (#2824). The API's duplicate check is read-then-insert, so two
+    # concurrent creates could both pass it; the index turns the loser into an
+    # IntegrityError the route maps back to the same 400. create_all() adds it
+    # on fresh installs only — this covers databases whose table predates it.
+    await _migrate_location_ha_sensor_unique_binding(conn)
+
     # Migration: repair the tare of spools the RFID auto-add gave the wrong
     # Bambu spool row (#2909). Runs last so the spool catalogue it reads is
     # whatever this database actually holds.
@@ -4435,6 +4529,48 @@ async def run_migrations(conn):
     # Migration: drop the AMS slot markers an older Bambuddy wrote into
     # Spoolman and the location sync then imported as storage locations.
     await _migrate_drop_ams_slot_locations(conn)
+
+
+async def _migrate_rename_ha_sensor_alert_template(conn) -> None:
+    """Rename the ha_sensor_alert template to "Printer Sensor Alert" (#2824).
+
+    Renames only if ``name`` is still the old default — an admin who renamed
+    the template themselves keeps their custom name.
+    """
+    from sqlalchemy import text
+
+    await conn.execute(
+        text("UPDATE notification_templates SET name = :new WHERE event_type = :et AND name = :old"),
+        {"new": "Printer Sensor Alert", "et": "ha_sensor_alert", "old": "Home Assistant Sensor Alert"},
+    )
+
+
+async def _migrate_location_ha_sensor_unique_binding(conn) -> None:
+    """Unique index on location_ha_sensors (location_id, entity_id) (#2824).
+
+    Same name and shape as the Index in the model, so fresh installs (which
+    get it from create_all) and upgraded ones end up identical.
+
+    Rows that already violate it — duplicates slipped in through the pre-index
+    race — are collapsed to the oldest row first, because CREATE UNIQUE INDEX
+    refuses to build over duplicates and _safe_execute would re-raise that,
+    aborting startup. The oldest row wins: it is the one the card and the
+    poller cache were already keyed on.
+    """
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                "DELETE FROM location_ha_sensors WHERE id NOT IN ("
+                "SELECT MIN(id) FROM location_ha_sensors GROUP BY location_id, entity_id)"
+            )
+        )
+    await _safe_execute(
+        conn,
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_location_ha_sensors_location_entity "
+        "ON location_ha_sensors (location_id, entity_id)",
+    )
 
 
 async def _migrate_drop_ams_slot_locations(conn) -> None:

@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import type { HADisplayEntity, Printer, PrinterHASensor } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
+import { HA_SENSOR_BINARY_LABELS } from '../utils/haSensorDisplay';
 
 /**
  * Bind a Home Assistant entity to a printer, or edit an existing binding
@@ -21,25 +22,6 @@ interface Props {
   printers: Printer[];
   onClose: () => void;
 }
-
-// The alert wording follows the device class, so a door offers "Open" rather
-// than "On". Shared with PrinterHASensorRow's rendering of the same classes.
-const ALERT_LABEL_KEYS: Record<string, { on: string; off: string }> = {
-  door: { on: 'open', off: 'closed' },
-  garage_door: { on: 'open', off: 'closed' },
-  window: { on: 'open', off: 'closed' },
-  opening: { on: 'open', off: 'closed' },
-  lock: { on: 'unlocked', off: 'locked' },
-  motion: { on: 'detected', off: 'clear' },
-  occupancy: { on: 'detected', off: 'clear' },
-  presence: { on: 'detected', off: 'clear' },
-  smoke: { on: 'detected', off: 'clear' },
-  gas: { on: 'detected', off: 'clear' },
-  moisture: { on: 'wet', off: 'dry' },
-  problem: { on: 'problem', off: 'ok' },
-  safety: { on: 'problem', off: 'ok' },
-  running: { on: 'running', off: 'stopped' },
-};
 
 export function HASensorModal({ sensor, printers, onClose }: Props) {
   const { t } = useTranslation();
@@ -172,7 +154,7 @@ export function HASensorModal({ sensor, printers, onClose }: Props) {
     saveMutation.mutate();
   };
 
-  const alertLabels = ALERT_LABEL_KEYS[deviceClass ?? ''];
+  const alertLabels = HA_SENSOR_BINARY_LABELS[deviceClass ?? ''];
   const stateLabel = (which: 'on' | 'off') => {
     const key = alertLabels?.[which] ?? which;
     return t(`haSensors.states.${key}`, { defaultValue: key });

@@ -17,7 +17,7 @@ can skip empty units while still alarming on loaded ones in the same printer.
 
 from datetime import datetime, timedelta, timezone
 
-from backend.app.main import _ams_has_filament
+from backend.app.main import _ams_has_filament, _resolve_temp_alarm_threshold
 from backend.app.utils.ams_drying import is_drying_active, temperature_alarm_suppressed
 
 
@@ -267,6 +267,111 @@ class TestTemperatureAlarmSuppressed:
             latched_at=latched,
             now=self.NOW,
             grace_minutes=self.GRACE,
+        )
+        assert suppress is False
+        assert latch is None
+
+
+class TestTempAlarmThresholdResolution:
+    """The alarm gets its own threshold, falling back to the display band (#2905).
+
+    ``ams_temp_fair`` decides when the AMS card turns amber and used to decide
+    when a notification was sent as well. 35 C is a reasonable place to change a
+    colour and not a reasonable place to page someone: a room above it made the
+    alarm fire once an hour for as long as the weather lasted, and the only way
+    to stop it was to raise the display band and lose the colour that says the
+    unit is warm.
+    """
+
+    def test_unset_falls_back_to_the_fair_threshold(self):
+        """Every install that has never set one keeps behaving exactly as it does
+        now — that is what makes this safe to ship without a migration."""
+        assert _resolve_temp_alarm_threshold(35.0, None) == 35.0
+
+    def test_the_literal_none_string_falls_back_too(self):
+        """Settings storage stringifies None, so "not set" arrives as a string.
+        Handled by the same branch as any other unparseable value rather than by
+        a sentinel that has to be kept in sync."""
+        assert _resolve_temp_alarm_threshold(35.0, "None") == 35.0
+
+    def test_a_set_value_wins(self):
+        assert _resolve_temp_alarm_threshold(35.0, "45") == 45.0
+        assert _resolve_temp_alarm_threshold(35.0, "45.5") == 45.5
+
+    def test_it_tracks_an_edited_fair_threshold_while_unset(self):
+        """Seeded from the resolved fair value, not from a hardcoded 35."""
+        assert _resolve_temp_alarm_threshold(40.0, None) == 40.0
+
+    def test_a_value_below_the_display_band_is_honoured(self):
+        """Nothing requires the alarm to sit above the amber band. Someone who
+        wants to be told before the card even changes colour may say so."""
+        assert _resolve_temp_alarm_threshold(35.0, "30") == 30.0
+
+    def test_garbage_falls_back_rather_than_raising(self):
+        assert _resolve_temp_alarm_threshold(35.0, "") == 35.0
+        assert _resolve_temp_alarm_threshold(35.0, "warm") == 35.0
+
+    def test_zero_and_negative_are_refused(self):
+        """Zero would alarm permanently, and is far more likely to be a cleared
+        field than a deliberate choice."""
+        assert _resolve_temp_alarm_threshold(35.0, "0") == 35.0
+        assert _resolve_temp_alarm_threshold(35.0, "-5") == 35.0
+
+    def test_nan_and_infinity_are_refused(self):
+        assert _resolve_temp_alarm_threshold(35.0, "nan") == 35.0
+        assert _resolve_temp_alarm_threshold(35.0, "inf") == 35.0
+
+
+class TestLatchReleasesAtTheAlarmThreshold:
+    """The latch's release check takes the alarm threshold, not the display band.
+
+    ``temperature_alarm_suppressed`` releases once the unit reads at or below
+    ``threshold``. Handing it the display band strands the latch on any unit that
+    settles back above it — which is not hypothetical: the AMS this was reported
+    from rests at 37.7 C in a warm room and never returns under a 35 C band, so
+    the latch could only ever expire on the grace cap.
+    """
+
+    def test_a_unit_resting_above_the_display_band_releases_on_the_alarm_threshold(self):
+        """37.7 C after a cycle, alarm threshold 45: released promptly."""
+        latched = datetime.now(timezone.utc) - timedelta(minutes=5)
+        suppress, latch = temperature_alarm_suppressed(
+            drying_active=False,
+            temperature=37.7,
+            threshold=45.0,
+            latched_at=latched,
+            now=datetime.now(timezone.utc),
+            grace_minutes=120,
+        )
+        assert suppress is False
+        assert latch is None
+
+    def test_the_same_reading_stays_latched_against_the_display_band(self):
+        """The behaviour before this change, kept as the contrast: 37.7 C never
+        drops under 35, so the latch survives and can only expire on the cap."""
+        latched = datetime.now(timezone.utc) - timedelta(minutes=5)
+        suppress, latch = temperature_alarm_suppressed(
+            drying_active=False,
+            temperature=37.7,
+            threshold=35.0,
+            latched_at=latched,
+            now=datetime.now(timezone.utc),
+            grace_minutes=120,
+        )
+        assert suppress is True
+        assert latch == latched
+
+    def test_a_genuinely_hot_unit_still_alarms_after_the_cap(self):
+        """Releasing on the cap is not a new alert — a unit that stays that hot
+        would have been alarming with no drying involved."""
+        latched = datetime.now(timezone.utc) - timedelta(minutes=121)
+        suppress, latch = temperature_alarm_suppressed(
+            drying_active=False,
+            temperature=70.0,
+            threshold=45.0,
+            latched_at=latched,
+            now=datetime.now(timezone.utc),
+            grace_minutes=120,
         )
         assert suppress is False
         assert latch is None

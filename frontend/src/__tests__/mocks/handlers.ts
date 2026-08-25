@@ -262,6 +262,7 @@ export const handlers = [
       ams_humidity_fair: 60,
       ams_temp_good: 30,
       ams_temp_fair: 35,
+      ams_temp_alarm: null,
     });
   }),
 

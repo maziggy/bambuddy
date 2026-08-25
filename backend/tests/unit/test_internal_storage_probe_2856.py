@@ -407,6 +407,23 @@ class TestPrintStart:
         assert _fallback(added).extra_data["no_3mf_reason"] == "internal_storage"
 
     @pytest.mark.asyncio
+    async def test_a_cool_off_on_an_emmc_job_schedules_no_retry(self):
+        """#2957 added a retry for a cool-off give-up, because that one clears
+        in minutes with the file still on the printer. This is not that: the
+        file is on internal eMMC and will not appear at any FTPS path however
+        long we wait, so the retry must not be scheduled here."""
+        from backend.app.main import _fallback_3mf_retry_tasks
+
+        added = []
+        before = dict(_fallback_3mf_retry_tasks)
+
+        with patch("backend.app.main._schedule_fallback_3mf_retry") as schedule:
+            await _run_print_start("brtc://emmc/test.gcode.3mf", probe_hit=None, added=added, handshake_blocked=True)
+
+        schedule.assert_not_called()
+        assert _fallback_3mf_retry_tasks == before
+
+    @pytest.mark.asyncio
     async def test_a_gcode_job_is_not_probed_for(self):
         """Nothing names a 3MF, so there is no name to ask about and the skip
         stays exactly as cheap as #2780 made it."""

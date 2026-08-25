@@ -334,13 +334,20 @@ export function spoolColorString(rgba: string | null | undefined): string {
   return `#${clean.substring(0, 6)}`;
 }
 
+// The transparency checkerboard, shared by every swatch that has to show a
+// translucent colour. One definition so the fully-transparent and partly-
+// transparent branches below cannot drift apart.
+const CHECKERBOARD = 'repeating-conic-gradient(#979797 0% 25%, #f5f5f5 0% 50%)';
+
 /**
  * Build an inline-style object for a simple filament swatch (a div / button
  * background) given a spool's rgba. Opaque colours return a plain
  * `backgroundColor`; transparent (alpha=00) returns a small checkerboard
  * pattern so the user can see the swatch instead of an invisible element
- * (#1545). Null / unparseable input falls back to the neutral `#808080` used
- * elsewhere in the codebase.
+ * (#1545); anything in between returns the colour at its real alpha layered
+ * over that checkerboard, so a half-translucent spool reads as neither opaque
+ * nor blank (#2912). Null / unparseable input falls back to the neutral
+ * `#808080` used elsewhere in the codebase.
  *
  * Use this anywhere a quick swatch was previously painted via
  * `style={{ backgroundColor: '#' + rgba.slice(0, 6) }}` — alpha-stripping
@@ -358,11 +365,28 @@ export function getSwatchStyle(rgba: string | null | undefined): {
   if (!rgba) return { backgroundColor: '#808080' };
   const clean = rgba.replace(/^#/, '');
   if (clean.length < 6) return { backgroundColor: '#808080' };
-  if (clean.length >= 8 && clean.substring(6, 8).toLowerCase() === '00') {
-    return {
-      backgroundImage: 'repeating-conic-gradient(#979797 0% 25%, #f5f5f5 0% 50%)',
-      backgroundSize: '8px 8px',
-    };
+  if (clean.length >= 8) {
+    const alpha = clean.substring(6, 8).toLowerCase();
+    if (alpha === '00') {
+      return {
+        backgroundImage: CHECKERBOARD,
+        backgroundSize: '8px 8px',
+      };
+    }
+    if (alpha !== 'ff') {
+      // Partly translucent: paint the colour at its real alpha *over* the
+      // checkerboard, so the swatch shows both the tint and that it is
+      // see-through. Dropping to the RGB prefix here would render a 10%-alpha
+      // spool identically to an opaque one, and painting it alone would leave
+      // it near-invisible against the panel behind it. Two background layers
+      // rather than backgroundColor: a background colour paints *under* the
+      // image, which would put the checkerboard on top of the tint (#2912).
+      const translucent = `#${clean.substring(0, 8)}`;
+      return {
+        backgroundImage: `linear-gradient(${translucent}, ${translucent}), ${CHECKERBOARD}`,
+        backgroundSize: '100% 100%, 8px 8px',
+      };
+    }
   }
   return { backgroundColor: `#${clean.substring(0, 6)}` };
 }

@@ -279,3 +279,65 @@ class TestNotificationEdge:
         await self._apply(manager, sensor, {sensor.entity_id: {"state": "on"}}, notify)
 
         assert notify.on_ha_sensor_alert.await_count == 1
+
+
+class TestLastStatePersistence:
+    """What goes into last_state must fit its String(64) column.
+
+    A numeric entity can start reporting free text — an enum, an error string
+    from a template sensor — longer than the column. SQLite stores it anyway,
+    but PostgreSQL rejects the row, and _apply commits the whole pass at once:
+    one such entity would sink every printer sensor's update on every tick,
+    which also freezes what the print interlock is looking at.
+
+    The same rule as the storage-location poller, through the same helper.
+    """
+
+    async def _apply(self, manager, sensor, state):
+        db = AsyncMock()
+        with patch("backend.app.services.notification_service.notification_service", AsyncMock()):
+            await manager._apply(db, [sensor], {sensor.entity_id: {"state": state}})
+
+    @pytest.mark.asyncio
+    async def test_a_long_text_state_is_cut_to_the_column_width(self):
+        manager = HASensorManager()
+        sensor = _numeric(last_changed=None, last_checked=None)
+        long_state = "x" * 500
+
+        await self._apply(manager, sensor, long_state)
+
+        assert sensor.last_state == "x" * 64
+        # The cache keeps the full state — only what is persisted is cut.
+        assert manager.get_reading(sensor.id).state == long_state
+
+    @pytest.mark.asyncio
+    async def test_an_unchanged_long_state_is_not_a_change_on_every_poll(self):
+        manager = HASensorManager()
+        sensor = _numeric(last_changed=None, last_checked=None)
+        long_state = "x" * 500
+
+        await self._apply(manager, sensor, long_state)
+        first_changed = sensor.last_changed
+        await self._apply(manager, sensor, long_state)
+
+        # Comparing the stored (cut) value against the raw state would read as
+        # a difference on every poll and churn last_changed forever.
+        assert sensor.last_changed == first_changed
+
+    @pytest.mark.asyncio
+    async def test_refresh_one_cuts_it_too(self):
+        """The single-sensor path a create or an edit takes, not just the loop."""
+        manager = HASensorManager()
+        sensor = _numeric(last_changed=None, last_checked=None)
+        db = AsyncMock()
+
+        with (
+            patch.object(manager, "_configure", AsyncMock(return_value=True)),
+            patch(
+                "backend.app.services.ha_sensor_manager.homeassistant_service.fetch_states",
+                AsyncMock(return_value={sensor.entity_id: {"state": "y" * 300}}),
+            ),
+        ):
+            await manager.refresh_one(db, sensor)
+
+        assert sensor.last_state == "y" * 64

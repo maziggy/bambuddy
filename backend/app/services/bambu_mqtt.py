@@ -1888,6 +1888,65 @@ class BambuMQTTClient:
                     json.dumps(print_data),
                 )
 
+    def _capture_report_project_file(self, print_data: dict) -> None:
+        """Read a print's destination off a ``project_file`` *response* (#1820).
+
+        ``_handle_request_message`` only ever sees the request topic, so a print
+        started from the printer's own touchscreen -- which publishes nothing --
+        left ``current_project_url`` at None, and the storage verdict fell
+        through to the ``sdcard`` fallback for the one case it was written for.
+        On an H2S that flag is True (its "card" is the internal eMMC), so the
+        verdict came back reachable and the ~110-connection sweep ran in full.
+
+        The printer does announce it: an unsolicited ``project_file`` response
+        on the report topic, ~2 s before ``gcode_state`` reaches PREPARE,
+        carrying ``file:///userdata/model/history/<name>.gcode.3mf``.
+
+        This also covers an install nobody had in view: some brokers refuse the
+        request-topic subscription, and on those no print of any kind has ever
+        populated the field.
+
+        Both kinds of ``project_file`` on this topic are read -- the printer's
+        echo of a dispatch and a screen start -- because both name the
+        destination in ``url``, which is the only thing the verdict wants. What
+        this must NOT do is reuse ``_handle_request_message``'s "External
+        project_file payload" diagnostic: our own dispatch is echoed on *both*
+        topics, the request-topic echo arrives first and clears
+        ``_own_project_file_key``, so by the time this frame lands the key is
+        already None and every Bambuddy-started print would log itself as
+        someone else's.
+        """
+        # Same shape as _handle_request_message: the frame is whatever the
+        # printer put on the wire, and this is the first thing to touch it.
+        if not isinstance(print_data, dict) or print_data.get("command") != "project_file":
+            return
+        # A refused dispatch names a file that was never written. Acting on it
+        # would pin an archive on a destination nothing ever went to.
+        if print_data.get("result") != "SUCCESS":
+            return
+        url = print_data.get("url")
+        if not isinstance(url, str) or not url:
+            return
+        if self.state.current_project_url != url:
+            logger.info(
+                "[%s] Print destination from the report topic: %s",
+                self.serial_number,
+                url,
+            )
+        self.state.current_project_url = url
+        self.state.last_project_url = url
+        # On a screen start this frame is the only place the mapping appears --
+        # no slicer ever sent one. Fill a gap only: when the request topic
+        # already captured this print's mapping that copy is the slicer's own,
+        # and the echo can arrive without the field at all.
+        if self._captured_ams_mapping is None and isinstance(print_data.get("ams_mapping"), list):
+            self._captured_ams_mapping = print_data["ams_mapping"]
+            logger.info(
+                "[%s] Captured ams_mapping from print response: %s",
+                self.serial_number,
+                self._captured_ams_mapping,
+            )
+
     @staticmethod
     def _project_file_key(print_data: dict) -> str:
         """Identity of a project_file dispatch, for telling ours from a slicer's.
@@ -1998,6 +2057,11 @@ class BambuMQTTClient:
 
         if "print" in payload:
             print_data = payload["print"]
+
+            # Before anything reads the state: this is where a touchscreen-
+            # started print announces where its file lives, and the print-start
+            # handler asks ~2 s later (#1820).
+            self._capture_report_project_file(print_data)
 
             # Check if xcam is nested inside print data
             if "xcam" in print_data:

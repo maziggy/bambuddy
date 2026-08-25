@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import type { UnlinkedSpool } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
+import { getSwatchStyle } from '../utils/colors';
 
 interface LinkSpoolModalProps {
   isOpen: boolean;
@@ -126,7 +127,7 @@ export function LinkSpoolModal({ isOpen, onClose, tagUid, trayUuid, printerId, a
               >
                 <span
                   className="w-6 h-6 rounded-full border border-black/20 flex-shrink-0"
-                  style={{ backgroundColor: spool.filament_color_hex ? `#${spool.filament_color_hex}` : '#808080' }}
+                  style={getSwatchStyle(spool.filament_color_hex)}
                 />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-white font-medium truncate">

@@ -66,6 +66,24 @@ _INTERNAL_FILE_PREFIXES = ("/userdata/",)
 REASON_INTERNAL_STORAGE = "internal_storage"
 REASON_NO_EXTERNAL_STORAGE = "no_external_storage"
 
+# Same verdict as REASON_INTERNAL_STORAGE, different cause -- and the cause is
+# the whole of the advice. `brtc://emmc/<name>` is a *dispatch* that chose
+# internal storage: a slicer sent the file and the printer filed it where port
+# 990 cannot serve it, which the operator can change by sending it elsewhere.
+# `file:///userdata/...` is a print of a file that was already on the printer --
+# a touchscreen re-print, a Handy start, a Studio send-to-storage printed later
+# -- so there was no dispatch to aim anywhere, and telling that operator to pick
+# "External" in Send describes a step they never took (#1820).
+REASON_INTERNAL_HISTORY = "internal_history"
+
+# Not a storage verdict — the file's location was never in question. The
+# printer's FTPS service was inside its post-failed-handshake cool-off when the
+# print started, so the sweep was skipped without a single connection. Stamped
+# on the fallback archive by the print-start handler rather than returned by
+# `_verdict`, and unlike the two above it is temporary: it is the one reason a
+# retry is worth scheduling (#2957).
+REASON_FTPS_COOLOFF = "ftps_cooloff"
+
 # Where a sliced file has ever been found over FTPS, in the order the sweep in
 # `main.py` tries them -- root first, which is where A1/P1-series uploads land
 # (#972), then `/cache`, which is where the H2D keeps its copy of an eMMC job
@@ -222,6 +240,18 @@ def last_print_storage_verdict(state: object | None) -> StorageVerdict:
     return _verdict(getattr(state, "last_project_url", None), state)
 
 
+def _internal_reason(project_url: str | None) -> str:
+    """Which flavour of "internal" *project_url* names.
+
+    Only ever reached on a negative verdict, so the URL is one of the two
+    shapes :func:`url_is_external_storage` answers False for.
+    """
+    if not isinstance(project_url, str):
+        return REASON_INTERNAL_STORAGE
+    scheme = project_url.partition("://")[0].lower()
+    return REASON_INTERNAL_HISTORY if scheme == _LOCAL_FILE_SCHEME else REASON_INTERNAL_STORAGE
+
+
 def _verdict(project_url: str | None, state: object | None) -> StorageVerdict:
     if state is None:
         return _REACHABLE
@@ -237,7 +267,7 @@ def _verdict(project_url: str | None, state: object | None) -> StorageVerdict:
         # the printer already said.
         return StorageVerdict(
             reachable=False,
-            reason=REASON_INTERNAL_STORAGE,
+            reason=_internal_reason(project_url),
             probe_filename=probe_filename_from_url(project_url) if external_storage_present(state) else None,
         )
     if external is True:

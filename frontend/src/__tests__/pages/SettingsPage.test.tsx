@@ -27,6 +27,7 @@ const mockSettings = {
   ams_humidity_fair: 60,
   ams_temp_good: 30,
   ams_temp_fair: 35,
+  ams_temp_alarm: null,
   time_format: 'system',
   date_format: 'system',
   mqtt_enabled: false,
@@ -770,6 +771,94 @@ describe('SettingsPage', () => {
       await openFilamentTab(60);
 
       expect(screen.queryByText(/Auto-drying cannot reach this value/)).not.toBeInTheDocument();
+    });
+
+    // #2905: the alarm threshold is a separate value from the Fair display
+    // band, and unset means "use Fair" rather than "never alarm". Everything
+    // below turns on telling those two apart.
+    const openFilamentTabWith = async (overrides: Record<string, unknown>) => {
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json({ ...mockSettings, ...overrides }))
+      );
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+      await waitFor(() => {
+        expect(screen.getAllByText('Filament').length).toBeGreaterThan(0);
+      });
+      await user.click(screen.getAllByText('Filament')[0]);
+      await waitFor(() => {
+        expect(screen.getByText('AMS Display Thresholds')).toBeInTheDocument();
+      });
+    };
+
+    const alarmInput = () =>
+      within(screen.getByText('Alarm above').parentElement!).getByRole('spinbutton');
+
+    it('shows the fair threshold as the placeholder while the alarm threshold is unset', async () => {
+      // The fallback has to be visible in the field itself. Blank with no hint
+      // reads as "no alarm", which is the opposite of what unset does.
+      await openFilamentTabWith({ ams_temp_fair: 38, ams_temp_alarm: null });
+
+      const input = alarmInput();
+      expect(input).toHaveValue(null);
+      expect(input).toHaveAttribute('placeholder', '38');
+    });
+
+    it('sends the typed alarm threshold on save', async () => {
+      let saved: Record<string, unknown> | null = null;
+      server.use(
+        http.put('/api/v1/settings/', async ({ request }) => {
+          saved = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...mockSettings, ...saved });
+        })
+      );
+      await openFilamentTabWith({ ams_temp_alarm: null });
+      // The page suppresses auto-save for 100ms after the settings load.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      await userEvent.type(alarmInput(), '45');
+
+      // Assert on the value rather than merely on a save having happened: two
+      // keystrokes can straddle the 500ms debounce on a slow runner, and the
+      // first save would then carry 4. Waiting for 45 rides that out.
+      await waitFor(() => {
+        expect(saved?.ams_temp_alarm).toBe(45);
+      }, { timeout: 3000 });
+    });
+
+    it('sends null when the alarm threshold is cleared', async () => {
+      // The one path the backend tests cannot reach on their own: clearing has
+      // to send an explicit null, not omit the key, or the old threshold stays.
+      let saved: Record<string, unknown> | null = null;
+      server.use(
+        http.put('/api/v1/settings/', async ({ request }) => {
+          saved = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...mockSettings, ...saved });
+        })
+      );
+      await openFilamentTabWith({ ams_temp_alarm: 45 });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      await userEvent.clear(alarmInput());
+
+      await waitFor(() => {
+        expect(saved).not.toBeNull();
+        expect(saved!.ams_temp_alarm).toBeNull();
+      }, { timeout: 3000 });
+    });
+
+    it('warns that a non-positive alarm threshold is ignored', async () => {
+      // The backend refuses <= 0 and falls back to Fair. Saying so beats a min=
+      // attribute the browser only enforces on submit.
+      await openFilamentTabWith({ ams_temp_alarm: 0 });
+
+      expect(await screen.findByText(/A threshold of 0 or less is ignored/)).toBeInTheDocument();
+    });
+
+    it('stays quiet for an alarm threshold the backend will honour', async () => {
+      await openFilamentTabWith({ ams_temp_alarm: 45 });
+
+      expect(screen.queryByText(/A threshold of 0 or less is ignored/)).not.toBeInTheDocument();
     });
   });
 
@@ -1527,6 +1616,231 @@ describe('SettingsPage', () => {
         expect(window.location.search).toContain('sub=pipelines');
       });
     });
+  });
+});
+
+/**
+ * Location sensor cards on Settings -> Sensors read the live readings
+ * endpoint (reachable-aware) rather than the sensor row's last_state, so an
+ * entity Home Assistant has stopped reporting shows "Unavailable" instead of
+ * silently keeping its last colorized value on screen forever.
+ */
+describe('SettingsPage — location sensor reachability', () => {
+  beforeEach(() => {
+    window.history.replaceState({}, '', '/');
+  });
+
+  const locationSensor = {
+    id: 1,
+    location_id: 7,
+    name: 'Drybox 1 Temperature',
+    entity_id: 'sensor.drybox_1_temperature',
+    kind: 'numeric',
+    device_class: 'temperature',
+    unit: '°C',
+    alert_state: null,
+    alert_above: 30,
+    alert_below: 20,
+    notify_on_alert: false,
+    show_on_card: true,
+    sort_order: 0,
+    last_state: '65.0',
+    last_changed: null,
+    last_checked: null,
+    created_at: '',
+    updated_at: '',
+  };
+
+  it('shows "Unavailable" for an unreachable sensor instead of its stale last value', async () => {
+    server.use(
+      http.get('/api/v1/location-ha-sensors/', () => HttpResponse.json([locationSensor])),
+      http.get('/api/v1/location-ha-sensors/by-location/7/readings', () =>
+        HttpResponse.json([
+          {
+            id: 1,
+            name: 'Drybox 1 Temperature',
+            entity_id: 'sensor.drybox_1_temperature',
+            kind: 'numeric',
+            device_class: 'temperature',
+            unit: '°C',
+            state: null,
+            value: null,
+            alerting: false,
+            reachable: false,
+            alert_state: null,
+            alert_above: 30,
+            alert_below: 20,
+            last_changed: null,
+          },
+        ])
+      ),
+      http.get('/api/v1/inventory/locations', () =>
+        HttpResponse.json([{ id: 7, name: 'Drybox 1', identifier: null, spool_count: 0, created_at: '', updated_at: '' }])
+      )
+    );
+
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    await user.click(await screen.findByText('Sensors'));
+    await screen.findByText('sensor.drybox_1_temperature');
+
+    expect(await screen.findByText('Unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('65.00 °C')).not.toBeInTheDocument();
+  });
+
+  it('shows the live value, not last_state, when the sensor is reachable', async () => {
+    server.use(
+      http.get('/api/v1/location-ha-sensors/', () => HttpResponse.json([locationSensor])),
+      http.get('/api/v1/location-ha-sensors/by-location/7/readings', () =>
+        HttpResponse.json([
+          {
+            id: 1,
+            name: 'Drybox 1 Temperature',
+            entity_id: 'sensor.drybox_1_temperature',
+            kind: 'numeric',
+            device_class: 'temperature',
+            unit: '°C',
+            state: '24.5',
+            value: 24.5,
+            alerting: false,
+            reachable: true,
+            alert_state: null,
+            alert_above: 30,
+            alert_below: 20,
+            last_changed: null,
+          },
+        ])
+      ),
+      http.get('/api/v1/inventory/locations', () =>
+        HttpResponse.json([{ id: 7, name: 'Drybox 1', identifier: null, spool_count: 0, created_at: '', updated_at: '' }])
+      )
+    );
+
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    await user.click(await screen.findByText('Sensors'));
+    await screen.findByText('sensor.drybox_1_temperature');
+
+    expect(await screen.findByText('24.50 °C')).toBeInTheDocument();
+    expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
+  });
+
+  it('shows the entity id in the overview row, with the display name as its hover title', async () => {
+    server.use(
+      http.get('/api/v1/location-ha-sensors/', () => HttpResponse.json([locationSensor])),
+      http.get('/api/v1/location-ha-sensors/by-location/7/readings', () => HttpResponse.json([])),
+      http.get('/api/v1/inventory/locations', () =>
+        HttpResponse.json([{ id: 7, name: 'Drybox 1', identifier: null, spool_count: 0, created_at: '', updated_at: '' }])
+      )
+    );
+
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    await user.click(await screen.findByText('Sensors'));
+
+    const entityIdText = await screen.findByText('sensor.drybox_1_temperature');
+    expect(entityIdText).toHaveAttribute('title', 'Drybox 1 Temperature');
+    expect(screen.queryByText('Drybox 1 Temperature')).not.toBeInTheDocument();
+  });
+
+  it('refreshes the sensor list even when a bulk delete partially fails', async () => {
+    let sensors = [
+      { ...locationSensor, id: 1, name: 'Drybox 1 Temperature' },
+      {
+        ...locationSensor,
+        id: 2,
+        name: 'Drybox 1 Humidity',
+        entity_id: 'sensor.drybox_1_humidity',
+        device_class: 'humidity',
+        unit: '%',
+      },
+    ];
+
+    server.use(
+      http.get('/api/v1/location-ha-sensors/', () => HttpResponse.json(sensors)),
+      http.get('/api/v1/location-ha-sensors/by-location/7/readings', () => HttpResponse.json([])),
+      http.get('/api/v1/inventory/locations', () =>
+        HttpResponse.json([{ id: 7, name: 'Drybox 1', identifier: null, spool_count: 0, created_at: '', updated_at: '' }])
+      ),
+      // The first delete succeeds and actually removes the row; the second
+      // fails, simulating a partial failure partway through the sequential
+      // delete loop.
+      http.delete('/api/v1/location-ha-sensors/1', () => {
+        sensors = sensors.filter((s) => s.id !== 1);
+        return HttpResponse.json({ message: 'Sensor removed' });
+      }),
+      http.delete('/api/v1/location-ha-sensors/2', () => new HttpResponse(null, { status: 500 }))
+    );
+
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    await user.click(await screen.findByText('Sensors'));
+    await screen.findByText('sensor.drybox_1_temperature');
+    await screen.findByText('sensor.drybox_1_humidity');
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(await screen.findByRole('button', { name: 'Confirm' }));
+
+    // The sensor that actually got deleted on the backend must not linger on
+    // screen just because the batch as a whole reported an error.
+    await waitFor(() => expect(screen.queryByText('sensor.drybox_1_temperature')).not.toBeInTheDocument());
+    expect(screen.getByText('sensor.drybox_1_humidity')).toBeInTheDocument();
+  });
+
+  it('orders location cards by location, not by the order their sensors were created', async () => {
+    // Sensor for location 8 ("Drybox 10") appears in the array before the
+    // sensor for location 7 ("Drybox 2") — a naive Map-insertion-order
+    // render would put "Drybox 10" first. Card order must follow the
+    // (naturally sorted) locations list instead.
+    const sensors = [
+      {
+        id: 1,
+        location_id: 8,
+        name: 'Drybox 10 Temperature',
+        entity_id: 'sensor.drybox_10_temperature',
+        device_class: 'temperature',
+        unit: '°C',
+      },
+      {
+        id: 2,
+        location_id: 7,
+        name: 'Drybox 2 Temperature',
+        entity_id: 'sensor.drybox_2_temperature',
+        device_class: 'temperature',
+        unit: '°C',
+      },
+    ];
+
+    server.use(
+      http.get('/api/v1/location-ha-sensors/', () => HttpResponse.json(sensors)),
+      http.get('/api/v1/location-ha-sensors/by-location/7/readings', () => HttpResponse.json([])),
+      http.get('/api/v1/location-ha-sensors/by-location/8/readings', () => HttpResponse.json([])),
+      http.get('/api/v1/inventory/locations', () =>
+        HttpResponse.json([
+          { id: 7, name: 'Drybox 2', identifier: null, spool_count: 0, created_at: '', updated_at: '' },
+          { id: 8, name: 'Drybox 10', identifier: null, spool_count: 0, created_at: '', updated_at: '' },
+        ])
+      )
+    );
+
+    const user = userEvent.setup();
+    const { container } = render(<SettingsPage />);
+
+    await user.click(await screen.findByText('Sensors'));
+    await screen.findByText('sensor.drybox_10_temperature');
+
+    const cardTitles = Array.from(container.querySelectorAll('.text-white.font-medium.truncate')).map(
+      (el) => el.textContent
+    );
+    const drybox2Index = cardTitles.indexOf('Drybox 2');
+    const drybox10Index = cardTitles.indexOf('Drybox 10');
+    expect(drybox2Index).toBeGreaterThanOrEqual(0);
+    expect(drybox10Index).toBeGreaterThanOrEqual(0);
+    expect(drybox2Index).toBeLessThan(drybox10Index);
   });
 });
 

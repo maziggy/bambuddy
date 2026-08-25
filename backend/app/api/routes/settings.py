@@ -213,6 +213,16 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
         ]:
             settings_dict[setting.key] = float(setting.value)
         elif setting.key in [
+            # Nullable floats. Settings storage stringifies None to the literal
+            # "None", so these cannot go in the list above -- float("None")
+            # raises and would take the whole settings response with it (#2905).
+            "ams_temp_alarm",
+        ]:
+            try:
+                settings_dict[setting.key] = float(setting.value)
+            except (TypeError, ValueError):
+                settings_dict[setting.key] = None
+        elif setting.key in [
             "ams_humidity_good",
             "ams_humidity_fair",
             "ams_history_retention_days",
@@ -224,6 +234,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "stagger_group_size",
             "stagger_interval_minutes",
             "forecast_global_lead_time_days",
+            "location_sensor_poll_interval",
             "finance_budget_reset_day",
             "session_max_hours",
             "pipeline_max_copies",
@@ -446,6 +457,11 @@ _UI_PREFERENCE_FIELDS: tuple[str, ...] = (
     "ams_humidity_fair",
     "ams_temp_good",
     "ams_temp_fair",
+    # ams_temp_alarm is deliberately NOT here. This endpoint is unauthenticated
+    # and exists so the UI can colour readings without SETTINGS_READ; the good /
+    # fair bands are what the printer card colours by. The alarm threshold
+    # changes no rendering anywhere -- only SettingsPage reads it, and that is
+    # behind the settings permissions already (#2905).
     "bed_cooled_threshold",
     # Temperature / fan-speed presets for the printer-card popovers. Numbers
     # only; no PII / credentials.

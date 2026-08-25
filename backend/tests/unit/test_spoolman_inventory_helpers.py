@@ -192,9 +192,37 @@ class TestMapSpoolmanSpool:
         result = _map_spoolman_spool(spool)
         assert result["rgba"] == "808080FF"
 
-    def test_eight_char_color_hex_falls_back(self):
-        # Only 6-char hex is valid from Spoolman; 8-char (RGBA) should fall back
-        spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "color_hex": "FF0000FF"}}
+    def test_eight_char_color_hex_is_read_back_with_its_alpha(self):
+        """#2912: 8-char color_hex is a value the write side stores on purpose for a
+        translucent spool, so the read must return it rather than grey it out.
+
+        This test previously asserted the opposite, on the premise that only 6-char
+        hex was valid from Spoolman. Spoolman stores whatever it is given, and
+        Bambuddy's own rgba fields advertise RRGGBBAA — the read was what turned a
+        clear spool into neutral grey.
+        """
+        spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "color_hex": "FF000080"}}
+        result = _map_spoolman_spool(spool)
+        assert result["rgba"] == "FF000080"
+
+    def test_fully_transparent_color_hex_survives_the_read(self):
+        """The reported case: a clear spool stored as 00000000 must not come back
+        as opaque black."""
+        spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "color_hex": "00000000"}}
+        result = _map_spoolman_spool(spool)
+        assert result["rgba"] == "00000000"
+
+    def test_six_char_color_hex_still_gains_the_opaque_alpha(self):
+        """Existing data is 6-char and must keep round-tripping unchanged — the
+        opaque byte is appended, not doubled onto an alpha that is already there."""
+        spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "color_hex": "FF0000"}}
+        result = _map_spoolman_spool(spool)
+        assert result["rgba"] == "FF0000FF"
+
+    def test_seven_char_color_hex_falls_back(self):
+        """Only 6 or 8 are valid lengths; a 7-char value is malformed and still
+        greys out rather than being padded into something plausible."""
+        spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "color_hex": "FF0000F"}}
         result = _map_spoolman_spool(spool)
         assert result["rgba"] == "808080FF"
 

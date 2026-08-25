@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
+  disambiguateColorNames,
+  getSwatchStyle,
   colorFamily,
   colorSortKey,
   hexToColorName,
@@ -281,5 +283,109 @@ describe('colorFamily / hexToColorName agreement', () => {
     for (const hex of ['FF0000FF', '875718FF', '5F6367FF', 'FFFFFFFF', '00000000', 'zzz']) {
       expect(hexToColorName(hex)).toBe(colorFamily(hex) ?? 'Unknown');
     }
+  });
+});
+
+describe('disambiguateColorNames', () => {
+  // #2941: a slicer profile asked for a near-pure blue while the AMS slot held
+  // Bambu's navy Blue. Both resolve to the name "Blue", so the mismatch warning
+  // sat between two identical labels and read as a contradiction.
+  const SLICER_BLUE = '#0028FF';
+  const BAMBU_BLUE = '#0A2989';
+
+  it('qualifies both sides with hex when the names collide', () => {
+    expect(
+      disambiguateColorNames({ name: 'Blue', hex: SLICER_BLUE }, { name: 'Blue', hex: BAMBU_BLUE }),
+    ).toEqual(['Blue (#0028FF)', 'Blue (#0A2989)']);
+  });
+
+  it('treats names as colliding regardless of case', () => {
+    expect(disambiguateColorNames({ name: 'blue', hex: SLICER_BLUE }, { name: 'Blue', hex: BAMBU_BLUE })).toEqual([
+      'blue (#0028FF)',
+      'Blue (#0A2989)',
+    ]);
+  });
+
+  it('leaves distinct names alone', () => {
+    // Once the words separate them the hex is noise, not information.
+    expect(disambiguateColorNames({ name: 'Blue', hex: SLICER_BLUE }, { name: 'Navy', hex: BAMBU_BLUE })).toEqual([
+      'Blue',
+      'Navy',
+    ]);
+  });
+
+  it('falls back to the hex for a side with no name', () => {
+    expect(disambiguateColorNames({ hex: SLICER_BLUE }, { name: 'Blue', hex: BAMBU_BLUE })).toEqual([
+      '#0028FF',
+      'Blue',
+    ]);
+  });
+
+  it('keeps the bare names when neither side has a usable hex', () => {
+    // Better a repeated name than "Blue ()" twice.
+    expect(disambiguateColorNames({ name: 'Blue', hex: 'nonsense' }, { name: 'Blue' })).toEqual(['Blue', 'Blue']);
+  });
+
+  it('qualifies only the side that has a hex', () => {
+    expect(disambiguateColorNames({ name: 'Blue', hex: SLICER_BLUE }, { name: 'Blue' })).toEqual([
+      'Blue (#0028FF)',
+      'Blue',
+    ]);
+  });
+
+  it('normalizes hex form, so an 8-char rgba and a bare hex read alike', () => {
+    expect(disambiguateColorNames({ name: 'Blue', hex: '0028ffff' }, { name: 'Blue', hex: '#0a2989' })).toEqual([
+      'Blue (#0028FF)',
+      'Blue (#0A2989)',
+    ]);
+  });
+
+  it('returns empty labels when there is nothing to name', () => {
+    expect(disambiguateColorNames({}, {})).toEqual(['', '']);
+  });
+});
+
+
+describe('getSwatchStyle (#1545, #2912)', () => {
+  const CHECKERBOARD = 'repeating-conic-gradient(#979797 0% 25%, #f5f5f5 0% 50%)';
+
+  it('falls back to neutral grey for missing or unparseable input', () => {
+    expect(getSwatchStyle(null)).toEqual({ backgroundColor: '#808080' });
+    expect(getSwatchStyle(undefined)).toEqual({ backgroundColor: '#808080' });
+    expect(getSwatchStyle('')).toEqual({ backgroundColor: '#808080' });
+    expect(getSwatchStyle('ABC')).toEqual({ backgroundColor: '#808080' });
+  });
+
+  it('paints an opaque colour flat, with or without the FF byte', () => {
+    expect(getSwatchStyle('FF0000')).toEqual({ backgroundColor: '#FF0000' });
+    expect(getSwatchStyle('FF0000FF')).toEqual({ backgroundColor: '#FF0000' });
+    expect(getSwatchStyle('#FF0000FF')).toEqual({ backgroundColor: '#FF0000' });
+  });
+
+  it('shows the checkerboard alone for a fully transparent colour', () => {
+    expect(getSwatchStyle('00000000')).toEqual({
+      backgroundImage: CHECKERBOARD,
+      backgroundSize: '8px 8px',
+    });
+  });
+
+  it('layers a partly translucent colour over the checkerboard (#2912)', () => {
+    // Regression: this used to fall through to the RGB prefix, so a 50%-alpha
+    // spool rendered identically to an opaque one. Spoolman mode can now store
+    // any non-FF alpha, so the in-between case is reachable in normal use.
+    const style = getSwatchStyle('FF000080');
+    expect(style.backgroundColor).toBeUndefined();
+    expect(style.backgroundImage).toBe(
+      `linear-gradient(#FF000080, #FF000080), ${CHECKERBOARD}`,
+    );
+    expect(style.backgroundSize).toBe('100% 100%, 8px 8px');
+  });
+
+  it('treats the alpha byte case-insensitively', () => {
+    expect(getSwatchStyle('ff0000ff')).toEqual({ backgroundColor: '#ff0000' });
+    expect(getSwatchStyle('ff000000')).toEqual({
+      backgroundImage: CHECKERBOARD,
+      backgroundSize: '8px 8px',
+    });
   });
 });

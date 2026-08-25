@@ -173,3 +173,121 @@ describe('PrintersPage AI detection badge (#1546)', () => {
     expect(screen.queryByText('Idle')).not.toBeInTheDocument();
   });
 });
+
+describe('PrintersPage AI detection badge — no verdict is not Safe (#2952)', () => {
+  beforeEach(() => {
+    localStorage.removeItem('printerCardSize');
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json(mockPrinters)),
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json(mockPrinterStatus)),
+      http.get('/api/v1/settings/ui-preferences', () =>
+        HttpResponse.json({
+          ams_humidity_good: 40,
+          ams_humidity_fair: 60,
+          ams_temp_good: 30,
+          ams_temp_fair: 35,
+        })
+      ),
+      http.get('/api/v1/queue/', () => HttpResponse.json([]))
+    );
+  });
+
+  const withPerPrinter = (entry: Record<string, unknown>) =>
+    server.use(
+      http.get('/api/v1/obico/printer-status', () =>
+        HttpResponse.json({
+          enabled: true,
+          monitored_printers: [1],
+          per_printer: { '1': entry },
+          last_error: null,
+        })
+      )
+    );
+
+  it('a printer whose detection is failing reads "Not checking", never Safe', async () => {
+    // The reporter's case: the loop is calling the ML API every 10s and being
+    // turned away with a 401. This used to render as a green "Safe" pill at
+    // score 0.000, indistinguishable from a healthy print.
+    withPerPrinter({
+      class: 'error',
+      frame_count: 0,
+      score: 0,
+      error: 'Obico ML API rejected the token (401).',
+    });
+
+    render(<PrintersPage />);
+
+    const badge = await screen.findByText('Not checking');
+    expect(badge.closest('button')).toHaveAttribute(
+      'title',
+      'AI Failure Detection is not checking this print: Obico ML API rejected the token (401). - click for details'
+    );
+    expect(screen.queryByText('Safe')).not.toBeInTheDocument();
+  });
+
+  it('does not quote a score the model never produced', async () => {
+    withPerPrinter({ class: 'error', frame_count: 0, score: 0, error: 'Failed to capture snapshot' });
+
+    render(<PrintersPage />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByText('Not checking'));
+
+    expect(await screen.findByText('AI Failure Detection - X1 Carbon')).toBeInTheDocument();
+    expect(screen.getByText('Failed to capture snapshot')).toBeInTheDocument();
+    // "Score 0.000" next to "Not checking" reads as a measurement rather than
+    // the absence of one, so neither figure is shown.
+    expect(screen.queryByText('0.000')).not.toBeInTheDocument();
+    expect(screen.queryByText('Frames analyzed')).not.toBeInTheDocument();
+  });
+
+  it('the window before the first result reads "Starting", never Safe', async () => {
+    withPerPrinter({ class: 'unknown', frame_count: 0, score: 0, error: null });
+
+    render(<PrintersPage />);
+
+    expect(await screen.findByText('Starting')).toBeInTheDocument();
+    expect(screen.queryByText('Safe')).not.toBeInTheDocument();
+  });
+
+  it('an unrecognised class falls back to Starting, not Safe', async () => {
+    // A newer backend class must never be silently absorbed into a green badge.
+    withPerPrinter({ class: 'something-new', frame_count: 5, score: 0.1, error: null });
+
+    render(<PrintersPage />);
+
+    expect(await screen.findByText('Starting')).toBeInTheDocument();
+    expect(screen.queryByText('Safe')).not.toBeInTheDocument();
+  });
+
+  it('still shows Safe when an inference actually said so', async () => {
+    withPerPrinter({ class: 'safe', frame_count: 216, score: 0, error: null });
+
+    render(<PrintersPage />);
+
+    const badge = await screen.findByText('Safe');
+    expect(badge.closest('button')).toHaveAttribute(
+      'title',
+      'AI Failure Detection: Safe (score 0.000) - click for details'
+    );
+  });
+
+  it("prefers this printer's own reason over the service-wide last error", async () => {
+    server.use(
+      http.get('/api/v1/obico/printer-status', () =>
+        HttpResponse.json({
+          enabled: true,
+          monitored_printers: [1],
+          per_printer: { '1': { class: 'error', frame_count: 0, score: 0, error: 'This printer: camera timed out' } },
+          last_error: 'Some other printer: token rejected',
+        })
+      )
+    );
+
+    render(<PrintersPage />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByText('Not checking'));
+
+    expect(await screen.findByText('This printer: camera timed out')).toBeInTheDocument();
+    expect(screen.queryByText('Some other printer: token rejected')).not.toBeInTheDocument();
+  });
+});

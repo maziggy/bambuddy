@@ -17,6 +17,10 @@ vi.mock('../../api/client', () => ({
     getCloudSettingDetail: vi.fn(),
     saveSlotPreset: vi.fn(),
     getSettings: vi.fn().mockResolvedValue({}),
+    // Queried by the modal for the @BBL short-code matcher. Omitted, it is
+    // undefined here, so the query runs with no queryFn and rejects -- a
+    // stray render at an unpredictable moment in every one of these tests.
+    getSlicerPrinterModels: vi.fn().mockResolvedValue({}),
     updateSettings: vi.fn().mockResolvedValue({}),
     getLocalPresets: vi.fn(),
     getBuiltinFilaments: vi.fn(),
@@ -90,6 +94,23 @@ describe('ConfigureAmsSlotModal', () => {
   it('renders nothing visible when closed', () => {
     render(<ConfigureAmsSlotModal {...defaultProps} isOpen={false} />);
     expect(screen.queryByText('Configure AMS Slot')).not.toBeInTheDocument();
+  });
+
+  it('renders a clear tray as the transparency checkerboard rather than solid black (#2912)', () => {
+    render(
+      <ConfigureAmsSlotModal
+        {...defaultProps}
+        slotInfo={{ ...defaultProps.slotInfo, trayType: 'PETG', trayColor: '00000000' }}
+      />,
+    );
+
+    const styled = Array.from(document.querySelectorAll<HTMLElement>('[style]'));
+    expect(
+      styled.some((el) => el.style.backgroundImage.includes('repeating-conic-gradient')),
+    ).toBe(true);
+    // The regression this pins: the alpha byte was sliced off before painting,
+    // so a clear tray rendered as opaque black — the reported symptom, in the UI.
+    expect(styled.some((el) => el.style.backgroundColor === 'rgb(0, 0, 0)')).toBe(false);
   });
 
   it('renders modal when open', async () => {

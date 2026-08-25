@@ -8,6 +8,10 @@
  * storage that FTPS does not serve at all. #2780's reporter followed that
  * advice, and #1170's before them.
  *
+ * A third cause joined them in #1820: a print started from the printer's own
+ * screen, where no slicer was involved at all and both of the wordings above
+ * describe a step the operator never took.
+ *
  * So these assert the wording actually shown, not just that a banner rendered.
  */
 
@@ -62,6 +66,22 @@ describe('ArchivesPage no-3MF banner', () => {
     expect(screen.getByText('Why this happens')).toBeInTheDocument();
   });
 
+  it('does not blame a slicer that was never involved', async () => {
+    // #1820: a print started from the printer's own screen sends nothing, so
+    // both the generic wording ("turn the setting on") and the internal-storage
+    // wording ("use Send with External") describe a step that never happened.
+    mockWarning({ has_fallback: true, reason: 'internal_history' });
+
+    render(<ArchivesPage />);
+
+    expect(
+      await screen.findByText(/started from a file already on the printer/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('See install step 4')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Store sent files on external storage/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Why this happens')).toBeInTheDocument();
+  });
+
   it('names the empty slot, and offers no link because there is nothing to read', async () => {
     mockWarning({ has_fallback: true, reason: 'no_external_storage' });
 
@@ -87,7 +107,7 @@ describe('ArchivesPage no-3MF banner', () => {
     // The variant suffix is built by string concatenation, so a typo in one
     // locale key surfaces as a raw "archives.no3mfBanner.titleX" on screen
     // instead of failing anything.
-    for (const reason of [null, 'internal_storage', 'no_external_storage']) {
+    for (const reason of [null, 'internal_storage', 'no_external_storage', 'internal_history']) {
       localStorage.clear();
       mockWarning({ has_fallback: true, reason });
 

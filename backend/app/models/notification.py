@@ -89,6 +89,13 @@ class NotificationProvider(Base):
     # Event triggers - Home Assistant sensors bound to a printer (#1148)
     on_ha_sensor_alert = Column(Boolean, default=False)  # Bound HA sensor entered its alert state
 
+    # Event triggers - Home Assistant sensors bound to a storage location (#2824)
+    # Its own column rather than reusing on_ha_sensor_alert above: that one can
+    # be scoped to a single printer, and a location alert has no printer to
+    # scope by, so sharing it would leak drybox alerts to a provider narrowed
+    # to one printer's sensors.
+    on_location_ha_sensor_alert = Column(Boolean, default=False)
+
     # Event triggers - Build plate detection
     on_plate_not_empty = Column(Boolean, default=True)  # Objects detected on plate before print
     # Off by default: fires after every print, alongside the print-complete alert (#2525)

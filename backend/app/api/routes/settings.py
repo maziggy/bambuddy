@@ -224,6 +224,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "stagger_group_size",
             "stagger_interval_minutes",
             "forecast_global_lead_time_days",
+            "location_sensor_poll_interval",
             "finance_budget_reset_day",
             "session_max_hours",
             "pipeline_max_copies",

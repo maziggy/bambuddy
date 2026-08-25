@@ -17,6 +17,10 @@ vi.mock('../../api/client', () => ({
     getCloudSettingDetail: vi.fn(),
     saveSlotPreset: vi.fn(),
     getSettings: vi.fn().mockResolvedValue({}),
+    // Queried by the modal for the @BBL short-code matcher. Omitted, it is
+    // undefined here, so the query runs with no queryFn and rejects -- a
+    // stray render at an unpredictable moment in every one of these tests.
+    getSlicerPrinterModels: vi.fn().mockResolvedValue({}),
     updateSettings: vi.fn().mockResolvedValue({}),
     getLocalPresets: vi.fn(),
     getBuiltinFilaments: vi.fn(),

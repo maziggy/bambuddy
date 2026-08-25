@@ -79,10 +79,12 @@ class TestObicoPrinterStatus:
     def clear_detection_state(self):
         obico_detection_service._states.clear()
         obico_detection_service._last_class.clear()
+        obico_detection_service._errors.clear()
         obico_detection_service._last_error = None
         yield
         obico_detection_service._states.clear()
         obico_detection_service._last_class.clear()
+        obico_detection_service._errors.clear()
         obico_detection_service._last_error = None
 
     @pytest.mark.asyncio
@@ -142,3 +144,67 @@ class TestObicoPrinterStatus:
         data = response.json()
         for key in ("ml_url", "action", "history", "poll_interval", "external_url_configured"):
             assert key not in data
+
+
+class TestObicoPrinterStatusNoVerdict:
+    """A printer whose detection is not working must not read as monitored (#2952)."""
+
+    @pytest.fixture(autouse=True)
+    def clear_detection_state(self):
+        obico_detection_service._states.clear()
+        obico_detection_service._last_class.clear()
+        obico_detection_service._errors.clear()
+        obico_detection_service._last_error = None
+        yield
+        obico_detection_service._states.clear()
+        obico_detection_service._last_class.clear()
+        obico_detection_service._errors.clear()
+        obico_detection_service._last_error = None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_error_class_and_reason_reach_the_card(self, async_client: AsyncClient):
+        obico_detection_service._states[1] = PrintState()
+        obico_detection_service._errors[1] = "Obico ML API rejected the token (401)."
+
+        response = await async_client.get("/api/v1/obico/printer-status")
+        entry = response.json()["per_printer"]["1"]
+        assert entry["class"] == "error"
+        assert entry["error"] == "Obico ML API rejected the token (401)."
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_monitored_but_no_result_yet_is_unknown_not_safe(self, async_client: AsyncClient):
+        obico_detection_service._states[1] = PrintState()
+
+        response = await async_client.get("/api/v1/obico/printer-status")
+        entry = response.json()["per_printer"]["1"]
+        assert entry["class"] == "unknown"
+        assert entry["error"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reason_is_withheld_without_settings_read_but_the_class_is_not(self):
+        """The reason can name the ML API base or the External URL, so it stays
+        behind settings:read. Whether the print is being watched is not
+        configuration, so a printers:read user still gets the class."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from backend.app.api.routes.obico import get_printer_status
+
+        obico_detection_service._states[1] = PrintState()
+        obico_detection_service._errors[1] = "ML API call failed: http://192.168.8.9:3333 refused"
+
+        user = MagicMock()
+        user.has_permission.return_value = False
+
+        # The route calls _load_settings for the enabled/monitored fields; the
+        # redaction under test is independent of them.
+        loaded = {"enabled": True, "enabled_printers": None}
+        with patch.object(obico_detection_service, "_load_settings", new=AsyncMock(return_value=loaded)):
+            data = await get_printer_status(user=user)
+        entry = data["per_printer"][1]
+        assert entry["class"] == "error"
+        assert entry["error"] is None
+        assert data["last_error"] is None
+        assert "192.168.8.9" not in str(data)

@@ -9,7 +9,11 @@ from pydantic import BaseModel, Field, model_validator
 class PrinterHASensorBase(BaseModel):
     printer_id: int
     name: str = Field(..., min_length=1, max_length=100)
-    entity_id: str = Field(..., pattern=r"^(binary_sensor|sensor)\.[a-z0-9_]+$")
+    # max_length matches the column (String(255)). The pattern's [a-z0-9_]+ is
+    # unbounded, so a direct API caller could send a longer id: SQLite stores
+    # it, PostgreSQL raises DataError, and it would surface as a 500 rather
+    # than a 422. Same bound as the location sibling.
+    entity_id: str = Field(..., max_length=255, pattern=r"^(binary_sensor|sensor)\.[a-z0-9_]+$")
     kind: Literal["binary", "numeric"] = "binary"
     device_class: str | None = Field(default=None, max_length=32)
     unit: str | None = Field(default=None, max_length=16)
@@ -59,7 +63,8 @@ class PrinterHASensorUpdate(BaseModel):
     the per-kind rules above need fields this payload may not carry."""
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
-    entity_id: str | None = Field(default=None, pattern=r"^(binary_sensor|sensor)\.[a-z0-9_]+$")
+    # Same column-width bound as the base schema; PATCH reaches the same row.
+    entity_id: str | None = Field(default=None, max_length=255, pattern=r"^(binary_sensor|sensor)\.[a-z0-9_]+$")
     kind: Literal["binary", "numeric"] | None = None
     device_class: str | None = Field(default=None, max_length=32)
     unit: str | None = Field(default=None, max_length=16)
@@ -73,6 +78,14 @@ class PrinterHASensorUpdate(BaseModel):
 
 
 class PrinterHASensorResponse(PrinterHASensorBase):
+    # Reads stay tolerant of what writes now reject: this feature shipped
+    # before entity_id was bounded, and SQLite never enforced the column's 255,
+    # so a row longer than that can genuinely exist. Inheriting the bound would
+    # turn it into a 500 on the list route — the same failure the bound was
+    # added to prevent, moved from the write path to the read path. The pattern
+    # is dropped with it, for the same generation of rows. Writes are unchanged.
+    entity_id: str
+
     id: int
     last_state: str | None = None
     last_changed: datetime | None = None

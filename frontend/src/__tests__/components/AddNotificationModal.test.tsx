@@ -458,6 +458,58 @@ describe('AddNotificationModal — AI Failure Detection toggle (#1794)', () => {
   });
 });
 
+describe('AddNotificationModal — Storage Location Sensor Alert toggle (#2824)', () => {
+  it('renders its own toggle, separate from the printer Sensor Alert toggle', async () => {
+    render(<AddNotificationModal provider={buildProvider()} onClose={() => undefined} />);
+
+    expect(await screen.findByText('Printer Sensor Alert')).toBeInTheDocument();
+    expect(await screen.findByText('Storage Location Sensor Alert')).toBeInTheDocument();
+  });
+
+  it('persists on_location_ha_sensor_alert on save (and does NOT touch on_ha_sensor_alert)', async () => {
+    // The regression this guards: the two events used to share one column,
+    // so a provider scoped to a single printer's sensor alerts would also
+    // start receiving storage-location alerts the moment either toggle went on.
+    let captured: Record<string, unknown> | null = null;
+    server.use(
+      http.patch('*/api/v1/notifications/1', async ({ request }) => {
+        captured = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ id: 1 });
+      }),
+    );
+
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<AddNotificationModal provider={buildProvider()} onClose={onClose} />);
+
+    const label = await screen.findByText('Storage Location Sensor Alert');
+    const row = label.closest('div.flex')!;
+    const toggle = within(row).getByRole('switch');
+    await user.click(toggle);
+
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+
+    expect(captured).not.toBeNull();
+    expect(captured!.on_location_ha_sensor_alert).toBe(true);
+    expect(captured!.on_ha_sensor_alert).toBe(false);
+  });
+
+  it('appears in ntfy priority section when enabled', async () => {
+    render(
+      <AddNotificationModal
+        provider={buildProvider({ provider_type: 'ntfy', on_location_ha_sensor_alert: true })}
+        onClose={() => undefined}
+      />,
+    );
+
+    const priorityHeader = await screen.findByText(/ntfy priority/i);
+    const priorityRoot = priorityHeader.closest('div')!;
+
+    expect(within(priorityRoot).getByText('Storage Location Sensor Alert')).toBeInTheDocument();
+  });
+});
+
 describe('AddNotificationModal — Home Assistant custom data (#1441)', () => {
   const haProvider = () =>
     buildProvider({

@@ -49,6 +49,21 @@ async def test_locations_crud_and_spool_link(async_client: AsyncClient, db_sessi
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+async def test_list_locations_sorts_naturally_not_lexicographically(async_client: AsyncClient):
+    # Created out of order and with a name-shape ("Drybox N") that a plain
+    # ORDER BY name would sort as "Drybox 1", "Drybox 10", "Drybox 2".
+    for name in ["Drybox 10", "Drybox 2", "Drybox 1", "Shelf A"]:
+        resp = await async_client.post("/api/v1/inventory/locations", json={"name": name})
+        assert resp.status_code == 201, resp.text
+
+    list_resp = await async_client.get("/api/v1/inventory/locations")
+    assert list_resp.status_code == 200
+    names = [loc["name"] for loc in list_resp.json()]
+    assert names == ["Drybox 1", "Drybox 2", "Drybox 10", "Shelf A"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
 async def test_rename_location_updates_spool_count(async_client: AsyncClient):
     create_resp = await async_client.post("/api/v1/inventory/locations", json={"name": "Old Name"})
     loc = create_resp.json()

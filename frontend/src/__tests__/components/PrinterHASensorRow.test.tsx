@@ -98,6 +98,31 @@ describe('PrinterHASensorRow', () => {
     expect(await screen.findByText('41.2 °C')).toBeInTheDocument();
   });
 
+  it('shows the Battery icon for a battery-class reading, not the generic Gauge', async () => {
+    // The printer icon map never had its own "battery" entry — merging it
+    // with the location-sensor map added one, deliberately, for both
+    // consumers. This pins that the printer row picks it up rather than
+    // silently keeping the old Gauge fallback.
+    getReadings.mockResolvedValue([
+      reading({
+        kind: 'numeric',
+        device_class: 'battery',
+        entity_id: 'sensor.enclosure_sensor_battery',
+        name: 'Enclosure Sensor Battery',
+        unit: '%',
+        state: '87',
+        value: 87,
+      }),
+    ]);
+
+    render(<PrinterHASensorRow printerId={4} />);
+
+    const value = await screen.findByText('87 %');
+    const row = value.closest('div.flex')!;
+    expect(row.querySelector('.lucide-battery')).toBeInTheDocument();
+    expect(row.querySelector('.lucide-gauge')).not.toBeInTheDocument();
+  });
+
   it('reports an unreachable sensor as unavailable rather than as a state', async () => {
     // The pill must not read "Closed" for a door contact that dropped off the
     // network — that is the one wrong answer with real consequences.

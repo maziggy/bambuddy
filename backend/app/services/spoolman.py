@@ -9,6 +9,8 @@ from typing import Literal
 
 import httpx
 
+from backend.app.utils.color_utils import color_match_key, spoolman_color_hex
+
 logger = logging.getLogger(__name__)
 
 BAMBU_RFID_TAG_LENGTH = 32
@@ -356,9 +358,10 @@ class SpoolmanClient:
         if material:
             data["material"] = material
         if color_hex:
-            # Strip alpha channel if present (RRGGBBAA -> RRGGBB)
-            color_hex = color_hex[:6] if len(color_hex) >= 6 else color_hex
-            data["color_hex"] = color_hex
+            # Every create funnels through here, so this is where the stored shape
+            # is decided: six characters for an opaque spool, eight only when the
+            # alpha byte says the filament is translucent. See #2912.
+            data["color_hex"] = spoolman_color_hex(color_hex) or color_hex
         if color_name:
             data["color_name"] = color_name
         if weight:
@@ -757,7 +760,12 @@ class SpoolmanClient:
     ) -> int:
         """Return the filament ID matching material/name/brand/color, creating it if absent."""
         name = f"{material} {subtype}".strip() if subtype else material
-        color = color_hex[:6].upper() if len(color_hex) >= 6 else color_hex.upper()
+        # One value in both roles. `color_match_key` returns the shape the colour
+        # would be stored as, so the key the loop below compares on and the value
+        # a new filament is created with are the same string by construction: an
+        # opaque spool keys and stores as six characters, a translucent one as
+        # eight, and neither can be conflated with the other (#2912).
+        color = color_match_key(color_hex)
 
         vendor_id: int | None = None
         if brand:
@@ -772,7 +780,7 @@ class SpoolmanClient:
         filaments = await self.get_filaments()
         for f in filaments:
             f_material = (f.get("material") or "").upper()
-            f_color = (f.get("color_hex") or "").upper()[:6]
+            f_color = color_match_key(f.get("color_hex"))
             f_vendor = f.get("vendor") or {}
             f_vendor_name = (f_vendor.get("name") or "").strip().lower()
 
@@ -1199,7 +1207,7 @@ class SpoolmanClient:
                         material=tray.tray_type,
                         subtype="",
                         brand=brand,
-                        color_hex=tray.tray_color[:6],
+                        color_hex=tray.tray_color,
                         label_weight=tray.tray_weight,
                     )
                 except (SpoolmanNotFoundError, SpoolmanUnavailableError, SpoolmanClientError):
@@ -1249,9 +1257,12 @@ class SpoolmanClient:
     async def _find_or_create_filament(self, tray: AMSTray) -> dict | None:
         """Return a Bambu Lab filament matching the tray's material/color, creating it if absent."""
         bambu_vendor_id = await self.ensure_bambu_vendor()
-        color_hex = tray.tray_color[:6]  # Strip alpha channel
         material_upper = tray.tray_type.upper()
-        color_upper = color_hex.upper()
+        # Same single value as the user-driven path: the match key is the stored
+        # shape. That is what lets an opaque tray still find the six-character
+        # filaments every existing instance is full of, while a clear tray keys
+        # to eight and gets its own record (#2912).
+        color = color_match_key(tray.tray_color)
 
         # Search internal filaments - only match Bambu Lab vendor
         filaments = await self.get_filaments()
@@ -1260,8 +1271,7 @@ class SpoolmanClient:
             if fil_vendor_id != bambu_vendor_id:
                 continue
             fil_material = filament.get("material") or ""
-            fil_color = filament.get("color_hex") or ""
-            if fil_material.upper() == material_upper and fil_color.upper() == color_upper:
+            if fil_material.upper() == material_upper and color_match_key(filament.get("color_hex")) == color:
                 return filament
 
         # Search external filaments (SpoolmanDB) — restrict to Bambu Lab only.
@@ -1277,8 +1287,7 @@ class SpoolmanClient:
             if manufacturer != "bambu lab" and not ext_id.startswith("bambulab_"):
                 continue
             fil_material = filament.get("material") or ""
-            fil_color = filament.get("color_hex") or ""
-            if fil_material.upper() == material_upper and fil_color.upper() == color_upper:
+            if fil_material.upper() == material_upper and color_match_key(filament.get("color_hex")) == color:
                 bambu_candidates.append(filament)
 
         if bambu_candidates:
@@ -1296,7 +1305,7 @@ class SpoolmanClient:
             name=tray.tray_sub_brands or tray.tray_type,
             vendor_id=bambu_vendor_id,
             material=tray.tray_type,
-            color_hex=color_hex,
+            color_hex=color,
             weight=tray.tray_weight,
         )
 
@@ -1307,7 +1316,11 @@ class SpoolmanClient:
             name=external.get("name", tray.tray_sub_brands),
             vendor_id=vendor_id,
             material=external.get("material", tray.tray_type),
-            color_hex=external.get("color_hex", tray.tray_color[:6]),
+            # `or`, not a two-argument get: an entry that carries the key with an
+            # explicit null would hand None to create_filament rather than reach
+            # the tray fallback. Only a candidate when the tray colour is empty
+            # too, so this is a correctness tidy, not a fix for a live path.
+            color_hex=external.get("color_hex") or color_match_key(tray.tray_color),
             weight=external.get("weight", tray.tray_weight),
             density=external.get("density"),
         )

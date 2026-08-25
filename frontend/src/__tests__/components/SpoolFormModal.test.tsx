@@ -703,6 +703,18 @@ vi.mock('../../components/spool-form/SpoolmanFilamentPicker', () => ({
         })}>
           Select Filament
         </button>
+        <button data-testid="picker-select-clear-btn" onClick={() => onSelect({
+          id: 8,
+          name: 'PLA Basic Clear',
+          material: 'PLA',
+          color_hex: '00000000',
+          color_name: 'Clear',
+          weight: 1000,
+          spool_weight: 196,
+          vendor: { id: 1, name: 'Bambu Lab' },
+        })}>
+          Select Clear Filament
+        </button>
       </div>
     );
   },
@@ -763,6 +775,66 @@ describe('SpoolFormModal — SpoolmanFilamentPicker integration (T2)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('picker-selected-id').textContent).toBe('7');
     });
+  });
+
+  it('prefills a translucent filament with its own alpha, not 808080FF (#2912)', async () => {
+    // The guard here required exactly 6 hex chars and then appended FF. That was
+    // unreachable while Bambuddy never wrote 8 characters; once a clear filament
+    // is storable, picking it out of the Spoolman catalogue prefilled the form
+    // with neutral grey — the frontend twin of the read-side regex.
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={true}
+        spoolsQueryKey={['spoolman-spools']}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-select-clear-btn')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('picker-select-clear-btn'));
+
+    const saveButton = screen.getByRole('button', { name: /save|add spool/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.createSpoolmanInventorySpool).toHaveBeenCalledTimes(1);
+    });
+
+    const payload = vi.mocked(api.createSpoolmanInventorySpool).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.rgba).toBe('00000000');
+  });
+
+  it('still appends the opaque alpha to a 6-char catalogue colour', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+        spoolmanMode={true}
+        spoolsQueryKey={['spoolman-spools']}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('picker-select-btn')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('picker-select-btn'));
+
+    const saveButton = screen.getByRole('button', { name: /save|add spool/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.createSpoolmanInventorySpool).toHaveBeenCalledTimes(1);
+    });
+
+    const payload = vi.mocked(api.createSpoolmanInventorySpool).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.rgba).toBe('FF0000FF');
   });
 
   it('includes spoolman_filament_id in the submit payload when a filament is pre-selected', async () => {

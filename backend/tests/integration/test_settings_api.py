@@ -41,6 +41,92 @@ class TestSettingsAPI:
         assert isinstance(result["auto_archive"], bool)
         assert isinstance(result["currency"], str)
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unset_temp_alarm_reads_back_as_null(self, async_client: AsyncClient, db_session):
+        """#2905: ams_temp_alarm is nullable, and settings storage stringifies
+        None to the literal "None".
+
+        Putting it in the plain float-cast list would make float("None") raise
+        inside the response builder and take the whole settings response with it
+        — every unrelated setting on the page included.
+        """
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="ams_temp_alarm", value="None"))
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/settings/")
+
+        assert response.status_code == 200
+        assert response.json()["ams_temp_alarm"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_set_temp_alarm_reads_back_as_a_float(self, async_client: AsyncClient, db_session):
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="ams_temp_alarm", value="45"))
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/settings/")
+
+        assert response.status_code == 200
+        assert response.json()["ams_temp_alarm"] == 45.0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_malformed_temp_alarm_does_not_break_the_response(self, async_client: AsyncClient, db_session):
+        """A hand-edited or half-written value must degrade to "unset" rather
+        than making the settings page unreachable."""
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="ams_temp_alarm", value="warm"))
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/settings/")
+
+        assert response.status_code == 200
+        assert response.json()["ams_temp_alarm"] is None
+        assert "currency" in response.json(), "the rest of the page still renders"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_temp_alarm_survives_a_set_then_clear_round_trip(self, async_client: AsyncClient):
+        """The path the settings page actually takes, end to end (#2905).
+
+        The tests above seed rows directly, which pins the read but not the
+        convention the whole design rests on: clearing the field sends an
+        explicit ``null``, ``update_settings`` stores that as the literal
+        string ``"None"``, and the response builder has to turn it back into
+        ``None``. A regression anywhere along that chain would leave a cleared
+        threshold reading back as the old number, and no test above would fail.
+        """
+        from sqlalchemy import select
+
+        # Imported here, not at module scope: the async_client fixture patches
+        # core.database.async_session onto the test engine, so a name bound at
+        # import time would point at the real app database and find nothing.
+        from backend.app.core.database import async_session
+        from backend.app.models.settings import Settings
+
+        response = await async_client.put("/api/v1/settings/", json={"ams_temp_alarm": 45})
+        assert response.status_code == 200
+        assert response.json()["ams_temp_alarm"] == 45.0
+        assert (await async_client.get("/api/v1/settings/")).json()["ams_temp_alarm"] == 45.0
+
+        response = await async_client.put("/api/v1/settings/", json={"ams_temp_alarm": None})
+        assert response.status_code == 200
+        assert response.json()["ams_temp_alarm"] is None
+        assert (await async_client.get("/api/v1/settings/")).json()["ams_temp_alarm"] is None
+
+        # Pin the stored form too — the fallback in _resolve_temp_alarm_threshold
+        # is written against this exact string, so a storage change that silently
+        # switched to "" or NULL would break the alarm rather than this test.
+        async with async_session() as db:
+            row = (await db.execute(select(Settings).where(Settings.key == "ams_temp_alarm"))).scalar_one()
+        assert row.value == "None"
+
     # ========================================================================
     # Update settings
     # ========================================================================

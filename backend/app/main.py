@@ -43,6 +43,7 @@ from backend.app.api.routes import (
     library_variants,
     local_backup,
     local_presets,
+    location_ha_sensors,
     maintenance,
     makerworld,
     metrics,
@@ -95,6 +96,7 @@ from backend.app.services.bambu_ftp import (
     ftps_handshake_blocked,
     get_cached_3mf,
     get_ftp_retry_settings,
+    normalize_3mf_name,
     with_ftp_retry,
 )
 from backend.app.services.bambu_mqtt import PrinterState
@@ -104,6 +106,7 @@ from backend.app.services.ha_sensor_manager import ha_sensor_manager
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.library_trash import library_trash_service
 from backend.app.services.local_backup import local_backup_service
+from backend.app.services.location_ha_sensor_manager import location_ha_sensor_manager
 from backend.app.services.mqtt_relay import mqtt_relay
 from backend.app.services.mqtt_smart_plug import mqtt_smart_plug_service
 from backend.app.services.notification_service import notification_service
@@ -111,6 +114,7 @@ from backend.app.services.obico_detection import obico_detection_service
 from backend.app.services.print_cost_estimate import plate_scoped_run_estimate as _plate_scoped_run_estimate
 from backend.app.services.print_scheduler import scheduler as print_scheduler
 from backend.app.services.print_storage import (
+    REASON_FTPS_COOLOFF,
     external_storage_present,
     ftp_probe_paths,
     print_file_reachable_over_ftp,
@@ -1267,11 +1271,13 @@ def _maybe_start_layer_timelapse(printer, printer_id: int, archive_id: int) -> b
 def _format_hms_error_summary(hms_errors: list[dict]) -> str | None:
     """Build a human-readable failure reason from MQTT hms_errors for PrintQueueItem.error_message.
 
-    Each entry has keys: code ('0x4038'), attr (32-bit int), module, severity.
-    The short code used for the hms_errors.py lookup table is 'MMMM_EEEE' — module
-    from attr bits 16-31, error from the numeric part of code. Falls back to the raw
-    short code when no description is on file. Returns None for an empty list so
-    callers can leave error_message unset.
+    Each entry has keys: code ('0x4038'), attr (32-bit int), module, severity, and
+    — since #2926 — the description the parser already resolved, which is preferred
+    when present so the queue's failure reason reads the same as the status
+    response. The short code still produces the bracketed label, and still
+    resolves the sentence for a caller whose entries predate the field. Falls back
+    to the bare short code when no description is on file. Returns None for an
+    empty list so callers can leave error_message unset.
     """
     if not hms_errors:
         return None
@@ -1280,13 +1286,15 @@ def _format_hms_error_summary(hms_errors: list[dict]) -> str | None:
     parts: list[str] = []
     for err in hms_errors:
         try:
-            code_str = str(err.get("code", "")).replace("0x", "")
-            error_num = int(code_str, 16) if code_str else 0
-            module_num = (int(err.get("attr", 0)) >> 16) & 0xFFFF
-            short_code = f"{module_num:04X}_{error_num:04X}"
+            # `_hms_short_code` rather than a local derivation: this one used to
+            # format the error without masking it to 16 bits, so an `hms[]` entry
+            # whose code carries an alert-level group produced a five-digit label
+            # like "0500_3000A" — not a code the user can look up, and never a
+            # catalogue key, so the sentence was lost with it.
+            short_code = _hms_short_code(err.get("attr", 0), err.get("code", 0))
         except (TypeError, ValueError):
             continue
-        description = get_error_description(short_code)
+        description = err.get("description") or get_error_description(short_code)
         parts.append(f"[{short_code}] {description}" if description else f"[{short_code}]")
     return "; ".join(parts) if parts else None
 
@@ -1729,8 +1737,6 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                     0x12: "Chamber",
                 }
 
-                from backend.app.services.hms_errors import get_error_description
-
                 # Capture camera snapshot once for all error notifications (no DB held).
                 error_image_data = await _capture_snapshot_for_notification(
                     printer_id, printer, logging.getLogger(__name__)
@@ -1749,7 +1755,9 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
 
                         # Only notify for errors with known descriptions — printers
                         # send many undocumented/phantom codes that aren't real errors.
-                        description = get_error_description(short_code)
+                        # Resolved at parse time (#2926); short_code is still needed
+                        # for the suppression set below.
+                        description = error.description
                         if not description or short_code in _HMS_NOTIFICATION_SUPPRESS:
                             continue
 
@@ -2971,6 +2979,244 @@ async def _restore_printable_objects(printer_id: int, state, db, logger) -> None
         _load_objects_from_archive(archive, printer_id, logger)
 
 
+# Retry ladder for a fallback archive created while the printer's FTPS cool-off
+# was running (#2957). The cool-off is 300s, so the first attempt is placed just
+# past it; the second covers a handshake that failed again on the way back and
+# armed a fresh one. Module-level so tests can shrink them.
+_FALLBACK_3MF_RETRY_DELAYS_SECONDS: tuple[float, ...] = (310.0, 620.0)
+
+# printer_id -> the in-flight retry task, so print completion can cancel it.
+_fallback_3mf_retry_tasks: dict[int, asyncio.Task] = {}
+
+# printer_id -> lock serialising recovery attempts for that printer. Three callers
+# can reach one archive at once: the cover endpoint (whose single-flight coalesces
+# by view, so two views race), the cool-off retry task, and print completion.
+# Without this they each read file_path == "" and each run a full copy, so the row
+# ends up pointing at one timestamped directory while the others sit orphaned.
+#
+# Keyed by printer rather than archive because a printer runs one print at a time,
+# which makes the two equally strong here — and it bounds the dict by printer
+# count instead of needing a cleanup pass. Popping a per-archive entry cannot be
+# done safely: `Lock.locked()` reads False between release and the queued waiter
+# resuming, so "no waiters" is not a question this API can answer.
+_fallback_recovery_locks: dict[int, asyncio.Lock] = {}
+
+
+async def _recover_fallback_archive(archive_id: int, source_3mf: Path, printer_id: int) -> bool:
+    """Fill in a no-3MF archive from a 3MF that turned up later.
+
+    Returns True when the row was upgraded. Safe to call speculatively: it
+    verifies the archive still exists, is still a fallback, and that the file
+    is a readable 3MF before touching anything.
+
+    Serialised per printer — see ``_fallback_recovery_locks``.
+    """
+    lock = _fallback_recovery_locks.setdefault(printer_id, asyncio.Lock())
+    async with lock:
+        return await _recover_fallback_archive_locked(archive_id, source_3mf, printer_id)
+
+
+async def _recover_fallback_archive_locked(archive_id: int, source_3mf: Path, printer_id: int) -> bool:
+    """The body of :func:`_recover_fallback_archive`, under its per-printer lock."""
+    import zipfile
+
+    from backend.app.models.archive import PrintArchive
+    from backend.app.services.archive import ArchiveService
+
+    logger = logging.getLogger(__name__)
+
+    if not source_3mf.exists() or source_3mf.stat().st_size == 0:
+        return False
+    if not await asyncio.to_thread(zipfile.is_zipfile, source_3mf):
+        # A truncated or half-written download is worse than no download: it
+        # would replace an honest empty archive with wrong metadata.
+        logger.warning("[RECOVER] %s is not a readable 3MF; leaving archive %s as-is", source_3mf, archive_id)
+        return False
+
+    async with async_session() as db:
+        archive = (await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))).scalar_one_or_none()
+        if archive is None or archive.deleted_at is not None:
+            return False
+        if archive.file_path:
+            # Already recovered, or never was a fallback. Either way there is a
+            # real 3MF attached and overwriting it is not this function's job.
+            return False
+
+        print_data = (archive.extra_data or {}).get("_print_data") or {}
+        service = ArchiveService(db)
+        recovered = await service.archive_print(
+            printer_id=printer_id,
+            source_file=source_3mf,
+            print_data={**print_data, "status": archive.status or "printing"},
+            subtask_id=archive.subtask_id,
+            update_archive_id=archive.id,
+        )
+        if recovered is None:
+            return False
+
+        logger.info(
+            "[RECOVER] Archive %s filled in from %s (%s bytes) — it started as a no-3MF fallback",
+            archive_id,
+            source_3mf,
+            recovered.file_size,
+        )
+        # `archive_updated`, not `archive_created` — the row was already on the
+        # Archives page as an empty card and is now filled in, not new.
+        await ws_manager.send_archive_updated(
+            {
+                "id": recovered.id,
+                "printer_id": recovered.printer_id,
+                "filename": recovered.filename,
+                "print_name": recovered.print_name,
+                "status": recovered.status,
+            }
+        )
+        return True
+
+
+async def try_recover_fallback_archive(printer_id: int, name: str, path: Path) -> bool:
+    """Offer a freshly-downloaded 3MF to this printer's running fallback archive.
+
+    Called from the paths that pull a 3MF for a print that is already under way
+    — chiefly the cover endpoint, which downloads the very file the archive flow
+    could not get and, before #2957, used it for a thumbnail and nothing else.
+    The bytes are already local, so this costs a parse and a row update.
+
+    No-op when the running print has a real archive, which is the common case.
+    """
+    from backend.app.models.archive import PrintArchive
+
+    logger = logging.getLogger(__name__)
+
+    # `_active_prints` is keyed on the raw names seen at print start — the
+    # dispatch filename, the subtask name, and the subtask name plus ".3mf".
+    # Callers here arrive with whichever variant their own path produced, so
+    # match on the same normalization the download cache uses rather than on an
+    # exact string; that is what makes "Desktop_Goose.gcode.3mf" from the cover
+    # endpoint find an archive registered under "Desktop_Goose".
+    wanted = normalize_3mf_name(name)
+    archive_id = None
+    for (key_printer_id, key_name), value in list(_active_prints.items()):
+        if key_printer_id == printer_id and normalize_3mf_name(key_name) == wanted:
+            archive_id = value
+            break
+    if archive_id is None:
+        return False
+
+    async with async_session() as db:
+        archive = (await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))).scalar_one_or_none()
+        # Cheap pre-check so the common case (a normal archive) does no work.
+        if archive is None or archive.file_path or archive.deleted_at is not None:
+            return False
+
+    try:
+        return await _recover_fallback_archive(archive_id, path, printer_id)
+    except Exception as e:
+        # Recovery is opportunistic. A failure here must never take down the
+        # caller, which is usually just trying to render a thumbnail.
+        logger.warning("[RECOVER] Could not fill in archive %s from %s: %s", archive_id, path, e)
+        return False
+
+
+def _schedule_fallback_3mf_retry(printer_id: int, archive_id: int, filenames: list[str]) -> None:
+    """Re-attempt the 3MF download after the printer's FTPS cool-off clears."""
+
+    logger = logging.getLogger(__name__)
+
+    async def _retry() -> None:
+        from backend.app.models.archive import PrintArchive
+        from backend.app.models.printer import Printer
+
+        for delay in _FALLBACK_3MF_RETRY_DELAYS_SECONDS:
+            await asyncio.sleep(delay)
+
+            async with async_session() as db:
+                archive = (
+                    await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+                ).scalar_one_or_none()
+                if archive is None or archive.deleted_at is not None or archive.file_path:
+                    return
+                printer = (await db.execute(select(Printer).where(Printer.id == printer_id))).scalar_one_or_none()
+                if printer is None:
+                    return
+                # Read the fields while the session is open rather than touching
+                # a detached instance minutes later, mid-download.
+                printer_ip = printer.ip_address
+                printer_code = printer.access_code
+                printer_model = printer.model
+
+            # Someone else may have fetched it in the meantime — the cover
+            # endpoint routinely does, and its copy is the same bytes.
+            for name in filenames:
+                cached = get_cached_3mf(printer_id, name)
+                if cached and await _recover_fallback_archive(archive_id, cached, printer_id):
+                    return
+
+            if ftps_handshake_blocked(printer_ip):
+                logger.info(
+                    "[RECOVER] Printer %s is still in its FTPS cool-off; archive %s retry deferred",
+                    printer_id,
+                    archive_id,
+                )
+                continue
+
+            _, _, _, ftp_timeout = await get_ftp_retry_settings()
+            for candidate in filenames:
+                # Bare name only. These come from the print-start flow, which
+                # already strips the path, but the local temp write must not
+                # depend on that holding for every future caller — a name that
+                # is absolute or contains ".." would otherwise escape the data
+                # volume via the `/` operator.
+                name = Path(candidate).name
+                if not name or name in (".", ".."):
+                    continue
+                if not name.endswith(".3mf"):
+                    name = f"{name}.3mf"
+                temp_path = app_settings.archive_dir / "temp" / name
+                temp_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    hit = await download_file_try_paths_async(
+                        printer_ip,
+                        printer_code,
+                        ftp_probe_paths(name),
+                        temp_path,
+                        socket_timeout=ftp_timeout,
+                        printer_model=printer_model,
+                    )
+                except Exception as e:
+                    logger.debug("[RECOVER] Retry download of %s failed: %s", name, e)
+                    continue
+                if not hit:
+                    continue
+                cache_3mf_download(printer_id, name, temp_path)
+                if await _recover_fallback_archive(archive_id, temp_path, printer_id):
+                    return
+
+            logger.info("[RECOVER] Archive %s still has no 3MF after a retry", archive_id)
+
+    async def _guarded() -> None:
+        try:
+            await _retry()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning("[RECOVER] Retry task for archive %s failed: %s", archive_id, e)
+        finally:
+            if _fallback_3mf_retry_tasks.get(printer_id) is asyncio.current_task():
+                _fallback_3mf_retry_tasks.pop(printer_id, None)
+
+    existing = _fallback_3mf_retry_tasks.pop(printer_id, None)
+    if existing and not existing.done():
+        existing.cancel()
+    task = asyncio.create_task(_guarded())
+    _fallback_3mf_retry_tasks[printer_id] = task
+    logger.info(
+        "[RECOVER] Archive %s has no 3MF because printer %s was in its FTPS cool-off; will retry",
+        archive_id,
+        printer_id,
+    )
+
+
 async def on_print_start(printer_id: int, data: dict):
     """Handle print start - archive the 3MF file immediately."""
     logger = logging.getLogger(__name__)
@@ -3655,6 +3901,12 @@ async def on_print_start(printer_id: int, data: dict):
         # succeed. Skip it and say why (#2780).
         storage = print_file_reachable_over_ftp(printer_manager.get_status(printer_id))
 
+        # Set when a lookup is abandoned because the printer's FTPS cool-off is
+        # running rather than because the file is somewhere unreachable. The
+        # distinction is the whole of #2957: one is permanent, the other clears
+        # in minutes with the file still sitting on the printer.
+        blocked_by_ftps_cooloff = False
+
         # Get FTP retry settings
         ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
 
@@ -3667,6 +3919,12 @@ async def on_print_start(printer_id: int, data: dict):
         # comes back empty does the verdict's reason stand.
         if not storage.reachable and not downloaded_filename and storage.probe_filename:
             if ftps_handshake_blocked(printer.ip_address):
+                # Deliberately NOT recorded as a cool-off give-up. This branch
+                # only runs on an unreachable verdict, and that verdict is the
+                # honest, permanent reason the archive is empty — the probe was
+                # a long shot on top of it. Blaming the cool-off here would
+                # schedule a retry for a file sitting on internal eMMC, which is
+                # the sweep #2780 removed (#2957).
                 logger.debug(
                     "Not probing for %s on printer %s: its file service is not answering over TLS",
                     storage.probe_filename,
@@ -3741,6 +3999,13 @@ async def on_print_start(printer_id: int, data: dict):
                     # handshake, so it has no path we could reach — walking the
                     # remaining candidates only re-runs the same failure
                     # (#2780). Fall through to the no-3MF archive now.
+                    #
+                    # Remember *why*, though. This is the one give-up that is
+                    # temporary: the cool-off clears in minutes and the file was
+                    # on the printer the whole time. The fallback archive is
+                    # stamped with it so a retry can be scheduled, and so the
+                    # Archives banner stops blaming storage (#2957).
+                    blocked_by_ftps_cooloff = True
                     logger.warning(
                         "Giving up on the 3MF for printer %s: its file service is not answering over TLS",
                         printer_id,
@@ -4022,7 +4287,11 @@ async def on_print_start(printer_id: int, data: dict):
                         # Why the card is empty, when we know. The banner reads
                         # this to stop telling H2/P2 owners to switch on a
                         # setting that is already on and would not help (#2780).
-                        "no_3mf_reason": storage.reason,
+                        # A cool-off outranks the storage verdict: the sweep was
+                        # skipped at the transport, so the verdict never got to
+                        # be tested, and reporting it would blame the SD card
+                        # for a TLS handshake (#2957).
+                        "no_3mf_reason": REASON_FTPS_COOLOFF if blocked_by_ftps_cooloff else storage.reason,
                         "original_subtask": subtask_name,
                         "_print_data": data,
                     },
@@ -4082,6 +4351,23 @@ async def on_print_start(printer_id: int, data: dict):
                     )
                 except Exception as e:
                     logger.debug("[SPOOLMAN] Could not store tracking for fallback archive: %s", e)
+
+                # A cool-off give-up is temporary and the file is on the
+                # printer — come back for it once the handshake block clears
+                # (#2957). Deliberately not scheduled for a storage verdict:
+                # a file on internal eMMC will not appear at any FTPS path
+                # however long we wait, and retrying it is exactly the sweep
+                # #2780 removed.
+                if blocked_by_ftps_cooloff and possible_names:
+                    # `possible_names`, not the raw MQTT strings: it is the exact
+                    # list this flow just tried, already stripped of any path
+                    # (`filename` arrives as "/data/Metadata/plate_1.gcode" on
+                    # some firmware) and deduped.
+                    _schedule_fallback_3mf_retry(
+                        printer_id=printer_id,
+                        archive_id=fallback_archive.id,
+                        filenames=list(possible_names),
+                    )
 
                 # Send notification without archive data (file not found)
                 if not notification_sent:
@@ -5572,6 +5858,29 @@ async def _completion_belongs_to_queue_item(db, item, data: dict) -> bool:
     return False
 
 
+async def _recover_fallback_from_cache_before_eviction(printer_id: int, data: dict) -> None:
+    """Spend the 3MF download cache on a still-empty fallback archive.
+
+    ``on_print_complete`` drops the cache as its first act, which deletes the
+    file. If the cover endpoint (or anything else) pulled the 3MF while the
+    print ran and the archive never got one, this is the last moment those bytes
+    exist (#2957).
+    """
+    logger = logging.getLogger(__name__)
+    names = [
+        n
+        for n in (data.get("filename"), data.get("subtask_name"), (data.get("raw_data") or {}).get("subtask_name"))
+        if n
+    ]
+    for name in names:
+        try:
+            cached = get_cached_3mf(printer_id, name)
+            if cached and await try_recover_fallback_archive(printer_id, name, cached):
+                return
+        except Exception as e:
+            logger.debug("[RECOVER] Pre-eviction recovery for %s failed: %s", name, e)
+
+
 async def on_print_complete(printer_id: int, data: dict):
     """Handle print completion - update the archive status."""
     import time
@@ -5589,6 +5898,18 @@ async def on_print_complete(printer_id: int, data: dict):
     # task so the later notification path can await it and avoid a duplicate;
     # if that immediate attempt failed, the regular completion path retries.
     kill_switch_notification_task = _kill_switch_notification_tasks.pop(printer_id, None)
+
+    # Last chance before the bytes go: if this print's archive is still an empty
+    # fallback and something downloaded the 3MF while it ran, fill the archive in
+    # now. The cover endpoint's copy lives in exactly this cache, and clearing it
+    # below deletes the file (#2957).
+    await _recover_fallback_from_cache_before_eviction(printer_id, data)
+
+    # A pending cool-off retry has nothing left to recover for — the cache is
+    # about to be dropped and the print is over.
+    retry_task = _fallback_3mf_retry_tasks.pop(printer_id, None)
+    if retry_task and not retry_task.done():
+        retry_task.cancel()
 
     # Drop the 3MF download cache for this printer (#972). The print is over,
     # nothing else legitimately needs the bytes; keeping them would only risk
@@ -8492,6 +8813,7 @@ async def lifespan(app: FastAPI):
 
     # Start the Home Assistant sensor poller (#1148)
     ha_sensor_manager.start()
+    location_ha_sensor_manager.start()
 
     # Resume any pending auto-offs that were interrupted by restart
     await smart_plug_manager.resume_pending_auto_offs()
@@ -8576,6 +8898,7 @@ async def lifespan(app: FastAPI):
     print_scheduler.stop()
     smart_plug_manager.stop_scheduler()
     ha_sensor_manager.stop()
+    location_ha_sensor_manager.stop()
     notification_service.stop_digest_scheduler()
     github_backup_service.stop_scheduler()
     local_backup_service.stop_scheduler()
@@ -9066,6 +9389,7 @@ app.include_router(orca_cloud.router, prefix=app_settings.api_prefix)
 app.include_router(local_presets.router, prefix=app_settings.api_prefix)
 app.include_router(smart_plugs.router, prefix=app_settings.api_prefix)
 app.include_router(ha_sensors.router, prefix=app_settings.api_prefix)
+app.include_router(location_ha_sensors.router, prefix=app_settings.api_prefix)
 app.include_router(print_log.router, prefix=app_settings.api_prefix)
 app.include_router(print_queue.router, prefix=app_settings.api_prefix)
 app.include_router(scheduled_dryings.router, prefix=app_settings.api_prefix)

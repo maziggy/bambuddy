@@ -1218,6 +1218,7 @@ class ArchiveService:
         library_file_id: int | None = None,
         slicer_ams_mapping: list[int] | None = None,
         slicer_ams_mapping_printer_id: int | None = None,
+        update_archive_id: int | None = None,
     ) -> PrintArchive | None:
         """Archive a 3MF file with metadata.
 
@@ -1255,6 +1256,17 @@ class ArchiveService:
                 reused later on any printer, including the same one (there'd be no way to
                 tell). A model-based VP with no fixed target printer has no valid value to
                 pass here and must leave both params unset.
+            update_archive_id: Fill in an existing archive row instead of adding one.
+                Used to upgrade a no-3MF fallback archive once the file finally arrives
+                (#2957). Everything above the row itself — the copy, the parse, the
+                thumbnail, the cost — is exactly what a fresh archive does; only the
+                destination differs. The row must keep its id: the energy-start reading,
+                the timelapse session, ``_active_prints``, the start notification and any
+                queue link were all written against it while the print was running, and a
+                second row would orphan every one of them. Fields the fallback path
+                already established from MQTT (``started_at``, ``subtask_id``,
+                ``created_by_id``, ``project_id``) are left alone; the 3MF has nothing
+                better to say about them.
         """
         # Verify printer exists if specified
         if printer_id is not None:
@@ -1394,6 +1406,71 @@ class ArchiveService:
         if printable_objects and isinstance(printable_objects, dict):
             quantity = len(printable_objects)
             logger.debug("Auto-detected %s parts from 3MF printable objects", quantity)
+
+        # Recovery of an existing fallback row: assign the freshly-parsed values
+        # onto it rather than adding a second archive for the same print (#2957).
+        if update_archive_id is not None:
+            existing = await self.db.get(PrintArchive, update_archive_id)
+            if existing is None:
+                logger.warning("archive_print: archive %s to update no longer exists", update_archive_id)
+                return None
+            # `metadata` is freshly parsed from the 3MF, so assigning it drops
+            # the row's `no_3mf_available` / `no_3mf_reason` markers as a side
+            # effect — which is correct, the archive is no longer a fallback,
+            # and it is what stops the Archives banner counting it.
+            # `_print_data` is diagnostic history rather than something the 3MF
+            # knows about: keep the row's copy for a caller that passed no
+            # print_data of its own.
+            merged = dict(metadata)
+            preserved = (existing.extra_data or {}).get("_print_data")
+            if preserved is not None and "_print_data" not in merged:
+                merged["_print_data"] = preserved
+            # A record that this row started life without a 3MF, which the
+            # dropped markers no longer say.
+            merged["recovered_no_3mf"] = True
+            existing.filename = original_filename or source_file.name
+            existing.file_path = str(dest_file.relative_to(settings.base_dir))
+            existing.file_size = dest_file.stat().st_size
+            existing.content_hash = content_hash
+            existing.thumbnail_path = thumbnail_path
+            existing.print_name = (
+                clean_display_name(display_stem)
+                if prefer_filename_for_name
+                else (clean_display_name(metadata.get("print_name")) or clean_display_name(display_stem))
+            )
+            # Only overwrite what the 3MF actually knows. A fallback archive
+            # recovered mid-print has a real print_time_seconds from MQTT and a
+            # filament type/colour from the AMS; a 3MF that omits a field must
+            # not blank them back out.
+            for field in (
+                "print_time_seconds",
+                "filament_used_grams",
+                "filament_type",
+                "filament_color",
+                "layer_height",
+                "total_layers",
+                "nozzle_diameter",
+                "bed_temperature",
+                "bed_type",
+                "nozzle_temperature",
+                "sliced_for_model",
+                "makerworld_url",
+                "designer",
+            ):
+                value = metadata.get(field)
+                if value is not None:
+                    setattr(existing, field, value)
+            if cost is not None:
+                existing.cost = cost
+            existing.quantity = quantity
+            existing.extra_data = merged
+            if plate_id is not None:
+                existing.plate_id = plate_id
+            if library_file_id is not None:
+                existing.library_file_id = library_file_id
+            await self.db.commit()
+            await self.db.refresh(existing)
+            return existing
 
         # Create archive record
         archive = PrintArchive(

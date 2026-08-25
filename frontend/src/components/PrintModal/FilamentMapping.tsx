@@ -5,7 +5,7 @@ import { Circle, Check, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Palett
 import { api } from '../../api/client';
 import { useFilamentMapping } from '../../hooks/useFilamentMapping';
 import { getGlobalTrayId, effectivePreferLowest, FTS_INLET_SIDE } from '../../utils/amsHelpers';
-import { getColorName } from '../../utils/colors';
+import { disambiguateColorNames, getColorName } from '../../utils/colors';
 import { useFilamentLabels } from './useFilamentLabels';
 import { autoAssignRackPositions, rackOptionsForGroup } from '../../utils/nozzleRack';
 import type { FilamentMappingProps, RackGroupInfo } from './types';
@@ -324,11 +324,11 @@ export function FilamentMapping({
         <Circle className="w-4 h-4" fill={statusColor} stroke="none" />
         <span>{plateLabel ? `${t('printModal.filamentMapping')} — ${plateLabel}` : t('printModal.filamentMapping')}</span>
         {hasTypeMismatch ? (
-          <span className="text-xs text-orange-700 dark:text-orange-400">(Type not found)</span>
+          <span className="text-xs text-orange-700 dark:text-orange-400">({t('printModal.statusTypeNotFound')})</span>
         ) : hasColorMismatch ? (
-          <span className="text-xs text-yellow-700 dark:text-yellow-400">(Color mismatch)</span>
+          <span className="text-xs text-yellow-700 dark:text-yellow-400">({t('printModal.statusColorMismatch')})</span>
         ) : (
-          <span className="text-xs text-bambu-green">(Ready)</span>
+          <span className="text-xs text-bambu-green">({t('printModal.statusReady')})</span>
         )}
         {isExpanded ? (
           <ChevronUp className="w-4 h-4 ml-auto" />
@@ -385,6 +385,14 @@ export function FilamentMapping({
             // array shape; defensive fallback covers the empty-reqs render
             // path that shouldn't reach here anyway.
             const { resolvedName, colorLabel } = filamentLabels[idx] ?? { resolvedName: item.type, colorLabel: getColorName(item.color) };
+            // Both sides of a colour mismatch routinely resolve to the same
+            // name -- a slicer's pure blue and a spool's navy are both "Blue" --
+            // which made the warning look like it was contradicting itself
+            // (#2941). Qualify them with their hex when the names collide.
+            const [requiredColorLabel, loadedColorLabel] = disambiguateColorNames(
+              { name: colorLabel, hex: item.color },
+              { name: item.loaded?.colorName, hex: item.loaded?.color },
+            );
             return (
             <div key={idx} className="space-y-1">
               <div
@@ -402,7 +410,7 @@ export function FilamentMapping({
                 }}
               >
                 {/* Required color */}
-                <span title={`Required: ${resolvedName} - ${colorLabel}`}>
+                <span title={t('printModal.requiredTooltip', { name: resolvedName, color: requiredColorLabel })}>
                   <Circle className="w-3 h-3" fill={item.color} stroke={item.color} />
                 </span>
                 {/* Required type + grams + nozzle badge. Only the name
@@ -463,10 +471,10 @@ export function FilamentMapping({
                       ? 'border-yellow-500 dark:border-yellow-400/50 text-yellow-700 dark:text-yellow-400'
                       : 'border-orange-500 dark:border-orange-400/50 text-orange-700 dark:text-orange-400'
                   } ${item.isManual ? 'ring-1 ring-blue-400/50' : ''}`}
-                  title={item.isManual ? 'Manually selected' : 'Auto-matched'}
+                  title={item.isManual ? t('printModal.manuallySelected') : t('printModal.autoMatched')}
                 >
                   <option value="" className="bg-bambu-dark text-bambu-gray">
-                    -- Select slot --
+                    -- {t('printModal.selectSlot')} --
                   </option>
                   {/*
                     #1722: every loaded slot is offered for every filament row,
@@ -509,11 +517,20 @@ export function FilamentMapping({
                 {item.status === 'match' ? (
                   <Check className="w-3 h-3 text-bambu-green" />
                 ) : item.status === 'type_only' ? (
-                  <span title="Same type, different color">
+                  <span
+                    title={
+                      requiredColorLabel && loadedColorLabel
+                        ? t('printModal.sameTypeDifferentColorDetail', {
+                            required: requiredColorLabel,
+                            loaded: loadedColorLabel,
+                          })
+                        : t('printModal.sameTypeDifferentColor')
+                    }
+                  >
                     <AlertTriangle className="w-3 h-3 text-yellow-600 dark:text-yellow-400" />
                   </span>
                 ) : (
-                  <span title="Filament type not loaded">
+                  <span title={t('printModal.filamentTypeNotLoaded')}>
                     <AlertTriangle className="w-3 h-3 text-orange-600 dark:text-orange-400" />
                   </span>
                 )}
@@ -553,7 +570,9 @@ export function FilamentMapping({
             </p>
           )}
           {hasTypeMismatch && (
-            <p className="text-xs text-orange-700 dark:text-orange-400 mt-2">Required filament type not found in printer.</p>
+            <p className="text-xs text-orange-700 dark:text-orange-400 mt-2">
+              {t('printModal.requiredTypeNotInPrinter')}
+            </p>
           )}
         </div>
       )}

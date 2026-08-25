@@ -91,7 +91,10 @@ def assert_safe_spoolman_url(url: str) -> None:
     assert_safe_lan_service_url(url, label="Spoolman URL")
 
 
-_COLOR_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}$")
+# Six characters, or eight when the filament carries an alpha byte. The write
+# side stores eight only for genuinely translucent spools (#2912); rejecting
+# them here turned every clear spool into neutral grey on read.
+_COLOR_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?$")
 _TAG_HEX_RE = re.compile(r"^[0-9A-F]+$")
 
 
@@ -197,10 +200,12 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     else:
         subtype = filament_name or None
 
-    # Colour: validate as 6-char hex; fall back to neutral grey for invalid values
+    # Colour: validate as 6- or 8-char hex; fall back to neutral grey for invalid
+    # values. An 8-char value already carries its alpha, so appending the opaque
+    # byte would push it to ten and lose the translucency it was stored to keep.
     raw_color = (filament.get("color_hex") or "").upper().removeprefix("#")
     color_hex: str = raw_color if _COLOR_HEX_RE.match(raw_color) else "808080"
-    rgba: str = color_hex + "FF"
+    rgba: str = color_hex if len(color_hex) == 8 else color_hex + "FF"
 
     label_weight: int = _safe_int(filament.get("weight"), 1000)
     real_used_weight: float = _safe_float(spool.get("used_weight"), 0.0)

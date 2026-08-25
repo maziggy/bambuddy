@@ -5,6 +5,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
 
+# Width of the last_state column. The poller truncates what it persists to
+# this, because a numeric entity can start reporting free text (an enum, an
+# error string) longer than the column -- SQLite stores it anyway, but
+# PostgreSQL rejects the row and takes the whole poll batch's commit with it.
+# Its sibling in models/location_ha_sensor.py says the same for that table.
+LAST_STATE_MAX_LENGTH = 64
+
 
 class PrinterHASensor(Base):
     """A read-only Home Assistant entity bound to a printer (#1148, #448).
@@ -59,7 +66,7 @@ class PrinterHASensor(Base):
 
     # Last poll result. Persisted so a restart doesn't blank the card until the
     # first poll lands, and so notifications only fire on a real transition.
-    last_state: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_state: Mapped[str | None] = mapped_column(String(LAST_STATE_MAX_LENGTH), nullable=True)
     last_changed: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_checked: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

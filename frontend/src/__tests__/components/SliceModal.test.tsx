@@ -376,7 +376,7 @@ describe('SliceModal', () => {
     return found;
   }
 
-  it("carries the design's printer-independent settings by default (#2622)", async () => {
+  it('carries nothing out of the file until it is asked to (#2942)', async () => {
     mockApi.sliceLibraryFile.mockResolvedValue({
       job_id: 42,
       status: 'pending',
@@ -389,8 +389,9 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    // Two of three pre-selected: the speed key is machine-coupled and is
-    // offered but never pre-ticked.
+    // Nothing pre-ticked: "Use the file's built-in settings" is off, so the
+    // slice runs on the picked preset and the file's own values wait to be
+    // asked for by name.
     await waitFor(() => expect(screen.getByRole('button', { name: /^Slice$/ })).toBeEnabled());
 
     const user = userEvent.setup();
@@ -398,7 +399,10 @@ describe('SliceModal', () => {
 
     await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
     const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as { design_overrides?: string[] };
-    expect([...(payload.design_overrides ?? [])].sort()).toEqual(['sparse_infill_density', 'wall_loops']);
+    // Empty, not absent: the backend reads the difference. A list that is
+    // there and empty says the user was shown the file's settings and took
+    // none of them, which also stands the support carry-over down (#1881).
+    expect(payload.design_overrides).toEqual([]);
   });
 
   // The file's layer height is the one deviation that must not ride along: it
@@ -412,7 +416,7 @@ describe('SliceModal', () => {
     ],
   };
 
-  it("leaves the file's layer height off by default so the picked preset wins", async () => {
+  it("leaves the file's layer height off even in bulk, so the picked preset wins", async () => {
     mockApi.sliceLibraryFile.mockResolvedValue({
       job_id: 42,
       status: 'pending',
@@ -427,11 +431,14 @@ describe('SliceModal', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: /^Slice$/ })).toBeEnabled());
 
-    const user = userEvent.setup();
+    const user = await openDesignSection();
+    await user.click(screen.getByRole('button', { name: /Use the designer's settings/ }));
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
 
     await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
     const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as { design_overrides?: string[] };
+    // The bulk action takes the keys that carry across printers. Layer height
+    // *is* the preset that was picked, so it stays a per-key decision.
     expect(payload.design_overrides).toEqual(['wall_loops']);
   });
 
@@ -460,7 +467,7 @@ describe('SliceModal', () => {
 
     await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
     const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as { design_overrides?: string[] };
-    expect([...(payload.design_overrides ?? [])].sort()).toEqual(['layer_height', 'wall_loops']);
+    expect(payload.design_overrides).toEqual(['layer_height']);
   });
 
   it('lists every changed setting with its value and flags the machine-coupled ones (#2622)', async () => {
@@ -473,10 +480,14 @@ describe('SliceModal', () => {
 
     const user = await openDesignSection();
 
-    // Carried keys show the designer's value in the option's own control.
+    // Offered but not taken: the row is flagged and the control still shows
+    // the baseline, until the tick says the file's value should win.
     await user.type(screen.getByPlaceholderText('Search settings'), 'wall loops');
+    await waitFor(() => expect(sourceCheckbox('Wall loops')).toBeInTheDocument());
+    expect(sourceCheckbox('Wall loops').checked).toBe(false);
+    expect(screen.getByLabelText(/^Wall loops/)).not.toHaveValue(5);
+    await user.click(sourceCheckbox('Wall loops'));
     await waitFor(() => expect(screen.getByLabelText(/^Wall loops/)).toHaveValue(5));
-    expect(sourceCheckbox('Wall loops').checked).toBe(true);
 
     await user.clear(screen.getByPlaceholderText('Search settings'));
     await user.type(screen.getByPlaceholderText('Search settings'), 'outer wall speed');
@@ -485,7 +496,7 @@ describe('SliceModal', () => {
     expect(sourceCheckbox('Outer wall').checked).toBe(false);
   });
 
-  it('lets the user opt a machine-coupled setting in and a safe one out (#2622)', async () => {
+  it('lets the user opt a machine-coupled setting in on its own (#2622)', async () => {
     mockApi.sliceLibraryFile.mockResolvedValue({
       job_id: 42,
       status: 'pending',
@@ -504,19 +515,123 @@ describe('SliceModal', () => {
     await waitFor(() => expect(sourceCheckbox('Outer wall')).toBeInTheDocument());
     await user.click(sourceCheckbox('Outer wall'));
 
-    await user.clear(screen.getByPlaceholderText('Search settings'));
-    await user.type(screen.getByPlaceholderText('Search settings'), 'wall loops');
-    await waitFor(() => expect(sourceCheckbox('Wall loops')).toBeInTheDocument());
-    await user.click(sourceCheckbox('Wall loops'));
-
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
 
     await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
     const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as { design_overrides?: string[] };
-    expect([...(payload.design_overrides ?? [])].sort()).toEqual(['outer_wall_speed', 'sparse_infill_density']);
+    // Only the key that was asked for -- the two printer-independent ones are
+    // still on offer and still untouched.
+    expect(payload.design_overrides).toEqual(['outer_wall_speed']);
   });
 
-  it('omits design_overrides entirely when the user unticks everything (#2622)', async () => {
+  it('omits design_overrides entirely for a file that offered nothing (#2942)', async () => {
+    // The other half of the distinction the backend reads: no list at all
+    // means there was nothing to decide, which leaves #1881's support
+    // carry-over unconditional for sources -- an OrcaSlicer export, say --
+    // that record no deviations to tick in the first place.
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+    mockApi.getLibraryFilePlates.mockResolvedValue({ ...designedFor, design_overrides: [] });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Slice$/ })).toBeEnabled());
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
+    expect(mockApi.sliceLibraryFile.mock.calls[0][1]).not.toHaveProperty('design_overrides');
+  });
+
+  // #2942: the per-key ticks answer the same question the toggle above them
+  // does -- where do this slice's settings come from -- so one governs the
+  // other. They used to be pre-ticked whatever it said, which is how a slice
+  // with the toggle deliberately off still took sixteen values from the file.
+  const designedForThisPrinter = {
+    ...designedFor,
+    embedded_printer: 'Bambu Lab X1 Carbon 0.4 nozzle',
+    embedded_process: '0.20mm Standard',
+    // Seam position sits on the panel's opening page at the simple tier, so
+    // its tick can be read without driving a panel the toggle has disabled.
+    design_overrides: [
+      ...designedFor.design_overrides,
+      { key: 'seam_position', value: 'rear', printer_coupled: false, preset_defining: false },
+    ],
+  };
+
+  it('shows every setting as coming from the file while the built-in toggle is on (#2942)', async () => {
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+    mockApi.getLibraryFilePlates.mockResolvedValue(designedForThisPrinter);
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose: vi.fn(),
+    });
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByLabelText(/Use the file's built-in settings/));
+    await user.click(await screen.findByRole('button', { name: /Process settings/ }));
+    await screen.findByPlaceholderText('Search settings');
+
+    // A readout, not a control: on this path the file drives the whole slice,
+    // so a tick that said otherwise would be describing the wrong run. The
+    // panel is inactive throughout -- nothing here is sent.
+    await waitFor(() => expect(sourceCheckbox('Seam position').checked).toBe(true));
+    expect(sourceCheckbox('Seam position').disabled).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+    await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
+    const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as {
+      design_overrides?: string[];
+      use_embedded_settings?: boolean;
+    };
+    expect(payload.use_embedded_settings).toBe(true);
+    expect(payload).not.toHaveProperty('design_overrides');
+  });
+
+  it('clears them again when the built-in toggle goes back off (#2942)', async () => {
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+    mockApi.getLibraryFilePlates.mockResolvedValue(designedForThisPrinter);
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose: vi.fn(),
+    });
+
+    const user = userEvent.setup();
+    const toggle = await screen.findByLabelText(/Use the file's built-in settings/);
+    await user.click(toggle);
+    await user.click(toggle);
+
+    await openDesignSection();
+    await user.type(screen.getByPlaceholderText('Search settings'), 'wall loops');
+    await waitFor(() => expect(sourceCheckbox('Wall loops').checked).toBe(false));
+
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+    await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
+    const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as {
+      design_overrides?: string[];
+      use_embedded_settings?: boolean;
+    };
+    expect(payload.design_overrides).toEqual([]);
+    expect(payload).not.toHaveProperty('use_embedded_settings');
+  });
+
+  it("takes the designer's settings in bulk, without the machine-coupled ones (#2942)", async () => {
     mockApi.sliceLibraryFile.mockResolvedValue({
       job_id: 42,
       status: 'pending',
@@ -530,17 +645,18 @@ describe('SliceModal', () => {
     });
 
     const user = await openDesignSection();
-    for (const key of ['Wall loops', 'Sparse infill density']) {
-      await user.clear(screen.getByPlaceholderText('Search settings'));
-      await user.type(screen.getByPlaceholderText('Search settings'), key.toLowerCase());
-      await waitFor(() => expect(sourceCheckbox(key)).toBeInTheDocument());
-      if (sourceCheckbox(key).checked) await user.click(sourceCheckbox(key));
-    }
+    // Without this the file's settings would be reachable only by hunting for
+    // chips across six pages of 348 options.
+    expect(screen.getByText(/The designer changed 3 process settings/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Use the designer's settings/ }));
 
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
-
     await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
-    expect(mockApi.sliceLibraryFile.mock.calls[0][1]).not.toHaveProperty('design_overrides');
+    const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as { design_overrides?: string[] };
+    expect([...(payload.design_overrides ?? [])].sort()).toEqual([
+      'sparse_infill_density',
+      'wall_loops',
+    ]);
   });
 
   it('hides the section for a file that changes nothing (#2622)', async () => {

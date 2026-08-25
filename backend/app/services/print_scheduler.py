@@ -425,6 +425,16 @@ def _mapping_is_all_unresolved(mapping: list | None) -> bool:
     return all(t is None or (isinstance(t, int) and t < 0) for t in mapping)
 
 
+def _is_tray_id(value: object) -> bool:
+    """True when ``value`` can be read as a global tray ID.
+
+    ``bool`` is a subclass of ``int``, so a hand-written API payload carrying
+    ``true`` would otherwise be read as tray 1 and judged — or dispatched —
+    against whatever happens to be loaded there.
+    """
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _mqtt_commands_rejected(status) -> bool:
     """True when the printer is currently reporting that it refused a command.
 
@@ -1503,7 +1513,9 @@ class PrintScheduler:
                         # selection already filters on filament type, so this is a
                         # backstop for an AMS that changed between assignment and
                         # dispatch, and for a type loaded on the wrong nozzle.
-                        if await self._block_on_unmatched_filament(db, item):
+                        # The assignment made above is released with the hold —
+                        # this item asked for a model, not this printer.
+                        if await self._block_on_unmatched_filament(db, item, release_assignment=True):
                             continue
 
                         _claim_library_row(item)
@@ -2453,9 +2465,11 @@ class PrintScheduler:
 
         When recompute cannot resolve it either (no compatible tray loaded), the
         bogus [-1] is cleared to None so it is not later mistaken for an explicit
-        external selection; the print command then keeps use_ams=True and the
-        firmware surfaces a clear AMS-mapping error instead of silently printing
-        to the empty external feed.
+        external selection. On a printer that reported loaded trays,
+        ``_block_on_unmatched_filament`` holds the item rather than let it go out
+        mapping-less; where it cannot judge, the print command keeps use_ams=True
+        and the firmware surfaces a clear AMS-mapping error instead of silently
+        printing to the empty external feed.
 
         Returns an actionable message when that firmware error is the only
         possible outcome — the matcher ran, matched nothing, and the printer has
@@ -2577,7 +2591,7 @@ class PrintScheduler:
         # 3MF, which is worth doing because the parse below is neither cached
         # nor free.
         for index, tray in enumerate(stored_mapping):
-            if not isinstance(tray, int) or tray < 0:
+            if not _is_tray_id(tray) or tray < 0:
                 continue
             if tray in by_tray:
                 continue
@@ -2606,7 +2620,7 @@ class PrintScheduler:
                 return f"slot {slot_id} is not covered by the mapping"
 
             tray = stored_mapping[slot_id - 1]
-            if not isinstance(tray, int) or tray < 0:
+            if not _is_tray_id(tray) or tray < 0:
                 continue
 
             loaded_tray = by_tray.get(tray)
@@ -2632,12 +2646,14 @@ class PrintScheduler:
         A print dispatched with no mapping goes out as ``use_ams: true`` with no
         ``ams_mapping`` and no ``ams_mapping2``, which the firmware rejects with
         0700_8012 "Failed to get AMS mapping table" — after Bambuddy has already
-        uploaded several megabytes and burned its dispatch retries. With an AMS
-        attached that error is worth reaching: the user can load the right spool
-        and press Resume, so this returns None and today's behaviour stands. With
-        no AMS there is nothing to resume into — the external spool holder is the
-        whole inventory — so the useful answer is to say which filament is
-        missing and stop.
+        uploaded several megabytes and burned its dispatch retries. This method
+        speaks only for the AMS-less case: there is nothing to resume into — the
+        external spool holder is the whole inventory — so the useful answer is to
+        say which filament is missing and stop. With an AMS attached it returns
+        None: where live status reported loaded trays,
+        ``_block_on_unmatched_filament`` holds the item instead, and where it
+        reported none the print goes out and the firmware error is the answer —
+        the user can load the right spool and press Resume.
 
         Fail-safe by construction, mirroring the nozzle-diameter guard (#1899):
         every branch that lacks the evidence to be sure returns None.
@@ -5563,6 +5579,7 @@ class PrintScheduler:
         self,
         db: AsyncSession,
         item: PrintQueueItem,
+        release_assignment: bool = False,
     ) -> bool:
         """Promote to manual_start when a slot the plate prints has no tray (#2799).
 
@@ -5581,20 +5598,39 @@ class PrintScheduler:
         filament on the other nozzle's AMS has it "loaded" but unusable, and a
         type-only scan would wave that through.
 
-        A mapping cleared to ``None`` is deliberately not treated as unmatched:
-        that is the #2589 / #2771 path, which has its own handling.
+        A mapping that resolved *nothing* is the same finding arriving as an
+        absence. ``_ensure_ams_mapping`` clears a rejected mapping its recompute
+        could not replace, and dispatch then goes out as ``use_ams`` with no
+        table at all — several megabytes uploaded for an 0700_8012 rejection.
+        That is held too, but only once live status positively reports loaded
+        trays: #2589's mapping is bogus precisely because the AMS was not known
+        yet, and its empty loaded list is that ignorance rather than a miss.
+
+        ``release_assignment`` is for the model-based path, which commits its
+        printer choice before the gates run. Holding an "any P2S" job would
+        otherwise pin it to the one P2S that could not run it.
 
         Returns True when this dispatch attempt was blocked.
         """
-        if item.skip_filament_check or not item.printer_id or not item.ams_mapping:
+        if item.skip_filament_check or not item.printer_id:
             return False
 
-        try:
-            mapping = json.loads(item.ams_mapping)
-        except (json.JSONDecodeError, TypeError):
-            return False
-        if not isinstance(mapping, list):
-            return False
+        if item.ams_mapping:
+            try:
+                mapping = json.loads(item.ams_mapping)
+            except (json.JSONDecodeError, TypeError):
+                return False
+            if not isinstance(mapping, list):
+                return False
+        else:
+            # Nothing resolved, or nothing survived revalidation. Only a printer
+            # that reported loaded trays makes that a finding — see the
+            # docstring on why an empty list is not one.
+            status = printer_manager.get_status(item.printer_id)
+            if status is None or not self._build_loaded_filaments(status):
+                return False
+            # Every required slot reads unresolved against an empty mapping.
+            mapping = []
 
         required = await self._get_filament_requirements(db, item)
         if not required:
@@ -5607,7 +5643,7 @@ class PrintScheduler:
             if slot_id <= 0:
                 continue
             tray = mapping[slot_id - 1] if slot_id <= len(mapping) else None
-            if tray is None or (isinstance(tray, int) and tray < 0):
+            if not _is_tray_id(tray) or tray < 0:
                 unmatched.append(req)
         if not unmatched:
             # No cleanup needed here: a lifted hold's stale reason is nulled by
@@ -5616,17 +5652,28 @@ class PrintScheduler:
             return False
 
         wanted = ", ".join(_describe_filament(r, "nozzle_id") for r in unmatched)
+        held_by = item.printer_id
         item.manual_start = True
         # Human-readable: this renders on the queue row.
         item.waiting_reason = f"Needs {wanted}"
+        if release_assignment:
+            # "Any P2S" means any, so the job returns to the pool rather than
+            # waiting on the printer that could not take it. The mapping goes
+            # with the assignment: its tray IDs were resolved against the
+            # printer being released and mean nothing on the next one (#2799),
+            # and keeping them would hold the job again even on a printer that
+            # has the filament, since an unresolved slot is deliberately not a
+            # conflict worth recomputing over.
+            item.printer_id = None
+            item.ams_mapping = None
         await db.commit()
 
         job_name = await self._get_job_name(db, item)
-        printer = await self._get_printer(db, item.printer_id)
+        printer = await self._get_printer(db, held_by)
         logger.info(
             "Queue item %s blocked — printer %s has nothing loaded for %s; promoted to manual_start",
             item.id,
-            item.printer_id,
+            held_by,
             wanted,
         )
         try:

@@ -189,6 +189,27 @@ class TestStoredMappingConflict:
             conflict = await scheduler._stored_mapping_conflict(AsyncMock(), 8, _item(), SHARED_MAPPING)
         assert conflict is None
 
+    @pytest.mark.asyncio
+    async def test_a_mapping_that_is_not_a_list_is_not_a_conflict(self):
+        """A corrupted row is not evidence about the printer, and the guard that
+        keeps it from being indexed was the one thing here without a test."""
+        scheduler = _scheduler(P2S_5_TRAYS)
+        with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+            pm.get_status.return_value = MagicMock()
+            conflict = await scheduler._stored_mapping_conflict(AsyncMock(), 8, _item(), {"1": 2})
+        assert conflict is None
+
+    @pytest.mark.asyncio
+    async def test_a_boolean_is_not_read_as_tray_one(self):
+        """`true` is an int in Python, so it would otherwise be judged against
+        whatever tray 1 holds — here ASA, i.e. a conflict reported for a slot
+        nothing is actually known about."""
+        scheduler = _scheduler(P2S_5_TRAYS)
+        with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+            pm.get_status.return_value = MagicMock()
+            conflict = await scheduler._stored_mapping_conflict(AsyncMock(), 8, _item(), [True, -1, 2])
+        assert conflict is None
+
 
 class TestEnsureAmsMappingRevalidates:
     """``_ensure_ams_mapping`` acts on the conflict verdict."""
@@ -306,15 +327,122 @@ class TestBlockOnUnmatchedFilament:
         assert blocked is False
 
     @pytest.mark.asyncio
-    async def test_cleared_mapping_is_left_to_the_2589_path(self):
-        """A mapping cleared to None is the unresolvable path, which has its own
-        handling — this gate must not also fail it."""
+    async def test_a_mapping_that_resolved_nothing_at_all_holds(self):
+        """The complete miss used to fall out of this gate and into the ugly path.
+
+        `_ensure_ams_mapping` clears a rejected mapping the recompute could not
+        replace, and bailing on `not item.ams_mapping` then dispatched the item
+        with no mapping at all: several megabytes uploaded, 0700_8012 from the
+        firmware, retries burned. Live status reporting loaded trays while the
+        matcher resolved none of them is a positive finding, so it holds.
+        """
+        scheduler = _scheduler(P2S_5_TRAYS)
+        scheduler._get_job_name = AsyncMock(return_value="body1")
+        scheduler._get_printer = AsyncMock(return_value=MagicMock(model="P2S"))
+        item = _item(ams_mapping=None)
+
+        with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+            pm.get_status.return_value = MagicMock()
+            blocked = await scheduler._block_on_unmatched_filament(AsyncMock(), item)
+
+        assert blocked is True
+        assert item.manual_start is True
+        assert item.waiting_reason.startswith("Needs ")
+
+    @pytest.mark.asyncio
+    async def test_a_cleared_mapping_on_a_printer_with_no_trays_reported_dispatches(self):
+        """#2589 is the same shape and must stay untouched: there the mapping is
+        bogus because the AMS was not known yet, and an empty loaded list is
+        exactly that ignorance. Holding on it would hold on absence of
+        evidence."""
+        scheduler = _scheduler([])
+        item = _item(ams_mapping=None)
+
+        with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+            pm.get_status.return_value = MagicMock()
+            blocked = await scheduler._block_on_unmatched_filament(AsyncMock(), item)
+
+        assert blocked is False
+        assert item.manual_start is False
+
+    @pytest.mark.asyncio
+    async def test_a_cleared_mapping_with_no_status_dispatches(self):
         scheduler = _scheduler(P2S_5_TRAYS)
         item = _item(ams_mapping=None)
 
-        blocked = await scheduler._block_on_unmatched_filament(AsyncMock(), item)
+        with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+            pm.get_status.return_value = None
+            blocked = await scheduler._block_on_unmatched_filament(AsyncMock(), item)
 
         assert blocked is False
+        assert item.manual_start is False
+
+    @pytest.mark.asyncio
+    async def test_a_boolean_tray_id_holds_rather_than_reading_as_tray_one(self):
+        """`true` is an int in Python. A hand-written payload carrying it would
+        otherwise be read as tray 1 and dispatched as whatever sits there."""
+        scheduler = _scheduler(P2S_5_TRAYS)
+        scheduler._get_job_name = AsyncMock(return_value="body1")
+        scheduler._get_printer = AsyncMock(return_value=MagicMock(model="P2S"))
+        item = _item(ams_mapping=json.dumps([True, -1, 2]))
+
+        blocked = await scheduler._block_on_unmatched_filament(AsyncMock(), item)
+
+        assert blocked is True
+        assert "#76D9F4" in item.waiting_reason
+
+
+class TestHoldOnTheModelBasedPath:
+    """A held "any P2S" job must not stay pinned to the P2S that held it.
+
+    The model-based path commits `item.printer_id` before the gates run, so a
+    hold would otherwise leave an unpinned job pinned to the one printer that
+    could not run it, and the next press of the start button retries the same
+    dead end. The printer-assigned path keeps its printer: that one was the
+    user's choice, not the scheduler's.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_model_based_hold_releases_the_printer_and_its_mapping(self):
+        scheduler = _scheduler(P2S_5_TRAYS)
+        scheduler._get_job_name = AsyncMock(return_value="body1")
+        scheduler._get_printer = AsyncMock(return_value=MagicMock(model="P2S"))
+        item = _item(ams_mapping=json.dumps([0, -1, -1]))
+
+        blocked = await scheduler._block_on_unmatched_filament(AsyncMock(), item, release_assignment=True)
+
+        assert blocked is True
+        assert item.printer_id is None
+        # The mapping goes with the assignment: its tray IDs were resolved
+        # against the printer just released, so leaving it would hold the job
+        # again on the next printer even when that one has the filament.
+        assert item.ams_mapping is None
+        assert item.waiting_reason.startswith("Needs ")
+
+    @pytest.mark.asyncio
+    async def test_the_notification_still_names_the_printer_that_held_it(self):
+        scheduler = _scheduler(P2S_5_TRAYS)
+        scheduler._get_job_name = AsyncMock(return_value="body1")
+        scheduler._get_printer = AsyncMock(return_value=MagicMock(model="P2S"))
+        item = _item(ams_mapping=json.dumps([0, -1, -1]))
+
+        await scheduler._block_on_unmatched_filament(AsyncMock(), item, release_assignment=True)
+
+        # Looked up before the release, or it would be looked up as None.
+        assert scheduler._get_printer.await_args.args[1] == 8
+
+    @pytest.mark.asyncio
+    async def test_a_printer_assigned_hold_keeps_both(self):
+        scheduler = _scheduler(P2S_5_TRAYS)
+        scheduler._get_job_name = AsyncMock(return_value="body1")
+        scheduler._get_printer = AsyncMock(return_value=MagicMock(model="P2S"))
+        item = _item(ams_mapping=json.dumps([0, -1, -1]))
+
+        blocked = await scheduler._block_on_unmatched_filament(AsyncMock(), item)
+
+        assert blocked is True
+        assert item.printer_id == 8
+        assert json.loads(item.ams_mapping) == [0, -1, -1]
 
     @pytest.mark.asyncio
     async def test_unreadable_requirements_dispatches(self):

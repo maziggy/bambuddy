@@ -19,6 +19,7 @@ import { CamWallPage } from './pages/CamWallPage';
 import { StreamOverlayPage } from './pages/StreamOverlayPage';
 import { ExternalLinkPage } from './pages/ExternalLinkPage';
 import { GroupEditPage } from './pages/GroupEditPage';
+import { PrinterLocationsPage } from './pages/PrinterLocationsPage';
 import InventoryPage from './pages/InventoryPage';
 import { MakerworldPage } from './pages/MakerworldPage';
 import { SystemInfoPage } from './pages/SystemInfoPage';
@@ -223,6 +224,7 @@ function App() {
                   <Route path="settings" element={<PermissionRoute permission="settings:read"><SettingsPage /></PermissionRoute>} />
                   <Route path="groups/new" element={<PermissionRoute permission="groups:create"><GroupEditPage /></PermissionRoute>} />
                   <Route path="groups/:id/edit" element={<PermissionRoute permission="groups:update"><GroupEditPage /></PermissionRoute>} />
+                  <Route path="printer-locations" element={<PrinterLocationsPage />} />
                   <Route path="users" element={<Navigate to="/settings?tab=users" replace />} />
                   <Route path="groups" element={<Navigate to="/settings?tab=users" replace />} />
                   <Route path="system" element={<SystemInfoPage />} />

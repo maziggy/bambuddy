@@ -97,7 +97,7 @@ Beta builds with the latest fixes are pushed regularly to the same beta version 
 docker pull maziggy/bambuddy:0.2.2b1
 ```
 
-Use [Watchtower](https://containrrr.dev/watchtower/) to automatically update when new daily builds are pushed.
+Use [Watchtower](https://watchtower.nickfedor.com) (image `nickfedor/watchtower`) to automatically update when new daily builds are pushed.
 
 > **Note:** Beta builds use version tags like `0.2.2b1` — they are never tagged as `latest`. Your stable installation won't auto-update to a beta unless you explicitly pull a beta tag.
 

@@ -139,6 +139,14 @@ def swap_plate_suffix(name: str | None, target_plate: int) -> str | None:
     return f"{base}{separator}{target_plate}"
 
 
+# How much of a plate's G-code to scan for header/config values. The header
+# block ends in the first kilobyte; the CONFIG_BLOCK that follows it carries
+# layer_height 14-25KB in (measured across the sliced 3MFs on hand, Bambu
+# Studio and OrcaSlicer alike), so 4KB — what this used to read — could only
+# ever see the header.
+_GCODE_SCAN_BYTES = 64 * 1024
+
+
 class ThreeMFParser:
     """Parser for Bambu Lab 3MF files."""
 
@@ -348,23 +356,64 @@ class ThreeMFParser:
         except Exception:
             pass  # Skip unreadable project settings file
 
+    def _printed_plate_gcode(self, gcode_files: list[str]) -> str:
+        """Return the G-code entry for the plate this archive is about.
+
+        ``plate_number`` is known for a plate-specific export (slice_info sets
+        it) and picking blindly is wrong there: a project sliced with plate 2
+        at 0.08 and plate 1 at 0.2 would otherwise report plate 1's numbers.
+        Falls back to the lowest plate index, then to zip order, so a file
+        whose entries are named some other way still parses as it did before.
+        """
+        if self.plate_number:
+            wanted = f"Metadata/plate_{self.plate_number}.gcode"
+            if wanted in gcode_files:
+                return wanted
+
+        def plate_index(name: str) -> int:
+            match = re.search(r"plate_(\d+)\.gcode$", name)
+            return int(match.group(1)) if match else 10**6
+
+        return min(gcode_files, key=lambda name: (plate_index(name), gcode_files.index(name)))
+
     def _parse_gcode_header(self, zf: zipfile.ZipFile):
-        """Parse G-code file header for total layer count and printer model."""
+        """Parse the printed plate's G-code for what only it can settle.
+
+        The plate's own G-code is the file the printer executes, so where it
+        disagrees with ``project_settings.config`` — the *project's* record,
+        which a multi-plate or per-plate-modified export can leave describing
+        a different plate entirely — the G-code wins.
+        """
         try:
-            # Look for plate_1.gcode or similar
             gcode_files = [f for f in zf.namelist() if f.endswith(".gcode")]
             if not gcode_files:
                 return
 
-            # Read first 4KB of G-code (header contains metadata)
-            gcode_path = gcode_files[0]
+            gcode_path = self._printed_plate_gcode(gcode_files)
+            # 64KB, not 4KB: the header block ends within the first kilobyte,
+            # but the CONFIG_BLOCK that carries layer_height starts right after
+            # it and the keys are alphabetical, so layer_height lands 14-25KB
+            # in on real files. The read is decompress-on-demand, so the cost
+            # of the wider window is a few tens of KB per archived file.
             with zf.open(gcode_path) as f:
-                header = f.read(4096).decode("utf-8", errors="ignore")
+                header = f.read(_GCODE_SCAN_BYTES).decode("utf-8", errors="ignore")
 
             # Look for "; total layer number: XX" pattern
             match = re.search(r";\s*total\s+layer\s+number[:\s]+(\d+)", header, re.IGNORECASE)
             if match:
                 self.metadata["total_layers"] = int(match.group(1))
+
+            # Layer height, overriding project_settings.config when both are
+            # present. The project config records the project's settings and can
+            # describe a plate other than this one; the plate's G-code is what
+            # the printer executes, so it decides. Anchored to the line start so keys ending in
+            # "layer_height" (independent_support_layer_height) can't match.
+            match = re.search(r"^;\s*layer_height\s*=\s*([\d.]+)\s*$", header, re.IGNORECASE | re.MULTILINE)
+            if match:
+                try:
+                    self.metadata["layer_height"] = float(match.group(1))
+                except ValueError:
+                    pass  # Malformed value: keep whatever project_settings gave us
 
             # Total filament usage. The slicer writes the print's totals into
             # the G-code header ("; total filament weight [g] : 126.26"). Only
@@ -601,6 +650,26 @@ class ThreeMFParser:
                 self.metadata["_thumbnail_data"] = zf.read(thumb_path)
                 self.metadata["_thumbnail_ext"] = ".png"
                 break
+
+
+def extract_printable_objects_from_archive(
+    file_path: Path, plate_number: int | None = None
+) -> tuple[dict[int, dict], list | None]:
+    """Objects and plate bbox for an archived print, read off local disk.
+
+    The archive of a running print usually holds the very 3MF the printer is
+    executing, so the object list can be rebuilt without asking the printer for
+    a file we already have -- 15 MB over FTPS from a machine that is mid-print,
+    in the case this was written for. Returns empty when the archive has
+    no readable 3MF, which is the caller's signal to fall back to the printer.
+    """
+    if not file_path.is_file() or not str(file_path).endswith(".3mf"):
+        return {}, None
+    try:
+        data = file_path.read_bytes()
+    except OSError:
+        return {}, None
+    return extract_printable_objects_from_3mf(data, plate_number=plate_number, include_positions=True)
 
 
 def extract_printable_objects_from_3mf(
@@ -1149,6 +1218,7 @@ class ArchiveService:
         library_file_id: int | None = None,
         slicer_ams_mapping: list[int] | None = None,
         slicer_ams_mapping_printer_id: int | None = None,
+        update_archive_id: int | None = None,
     ) -> PrintArchive | None:
         """Archive a 3MF file with metadata.
 
@@ -1186,6 +1256,17 @@ class ArchiveService:
                 reused later on any printer, including the same one (there'd be no way to
                 tell). A model-based VP with no fixed target printer has no valid value to
                 pass here and must leave both params unset.
+            update_archive_id: Fill in an existing archive row instead of adding one.
+                Used to upgrade a no-3MF fallback archive once the file finally arrives
+                (#2957). Everything above the row itself — the copy, the parse, the
+                thumbnail, the cost — is exactly what a fresh archive does; only the
+                destination differs. The row must keep its id: the energy-start reading,
+                the timelapse session, ``_active_prints``, the start notification and any
+                queue link were all written against it while the print was running, and a
+                second row would orphan every one of them. Fields the fallback path
+                already established from MQTT (``started_at``, ``subtask_id``,
+                ``created_by_id``, ``project_id``) are left alone; the 3MF has nothing
+                better to say about them.
         """
         # Verify printer exists if specified
         if printer_id is not None:
@@ -1325,6 +1406,71 @@ class ArchiveService:
         if printable_objects and isinstance(printable_objects, dict):
             quantity = len(printable_objects)
             logger.debug("Auto-detected %s parts from 3MF printable objects", quantity)
+
+        # Recovery of an existing fallback row: assign the freshly-parsed values
+        # onto it rather than adding a second archive for the same print (#2957).
+        if update_archive_id is not None:
+            existing = await self.db.get(PrintArchive, update_archive_id)
+            if existing is None:
+                logger.warning("archive_print: archive %s to update no longer exists", update_archive_id)
+                return None
+            # `metadata` is freshly parsed from the 3MF, so assigning it drops
+            # the row's `no_3mf_available` / `no_3mf_reason` markers as a side
+            # effect — which is correct, the archive is no longer a fallback,
+            # and it is what stops the Archives banner counting it.
+            # `_print_data` is diagnostic history rather than something the 3MF
+            # knows about: keep the row's copy for a caller that passed no
+            # print_data of its own.
+            merged = dict(metadata)
+            preserved = (existing.extra_data or {}).get("_print_data")
+            if preserved is not None and "_print_data" not in merged:
+                merged["_print_data"] = preserved
+            # A record that this row started life without a 3MF, which the
+            # dropped markers no longer say.
+            merged["recovered_no_3mf"] = True
+            existing.filename = original_filename or source_file.name
+            existing.file_path = str(dest_file.relative_to(settings.base_dir))
+            existing.file_size = dest_file.stat().st_size
+            existing.content_hash = content_hash
+            existing.thumbnail_path = thumbnail_path
+            existing.print_name = (
+                clean_display_name(display_stem)
+                if prefer_filename_for_name
+                else (clean_display_name(metadata.get("print_name")) or clean_display_name(display_stem))
+            )
+            # Only overwrite what the 3MF actually knows. A fallback archive
+            # recovered mid-print has a real print_time_seconds from MQTT and a
+            # filament type/colour from the AMS; a 3MF that omits a field must
+            # not blank them back out.
+            for field in (
+                "print_time_seconds",
+                "filament_used_grams",
+                "filament_type",
+                "filament_color",
+                "layer_height",
+                "total_layers",
+                "nozzle_diameter",
+                "bed_temperature",
+                "bed_type",
+                "nozzle_temperature",
+                "sliced_for_model",
+                "makerworld_url",
+                "designer",
+            ):
+                value = metadata.get(field)
+                if value is not None:
+                    setattr(existing, field, value)
+            if cost is not None:
+                existing.cost = cost
+            existing.quantity = quantity
+            existing.extra_data = merged
+            if plate_id is not None:
+                existing.plate_id = plate_id
+            if library_file_id is not None:
+                existing.library_file_id = library_file_id
+            await self.db.commit()
+            await self.db.refresh(existing)
+            return existing
 
         # Create archive record
         archive = PrintArchive(

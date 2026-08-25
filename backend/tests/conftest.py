@@ -167,6 +167,33 @@ def reset_auth_enabled_cache():
     invalidate_auth_enabled_cache()
 
 
+@pytest.fixture(autouse=True)
+def disconnect_printers_registered_during_a_test():
+    """Give every test an empty ``printer_manager`` singleton.
+
+    ``POST /api/v1/printers`` really calls ``connect_printer``, so a test that
+    creates a printer through the API parks a live client in the singleton --
+    and the singleton outlives the per-test in-memory database. The next test
+    on the same xdist worker gets a fresh database whose first printer is handed
+    the same primary key, and reads that leftover client as its own live status.
+    ``test_scheduled_drying_routes`` saw exactly that: an "online" printer with
+    no firmware version, so scheduling a dry came back 400 instead of 200.
+
+    Snapshotting the ids at test entry was insufficient: a client leaked by a
+    previous module became part of that snapshot and therefore survived every
+    later cleanup on the same xdist worker. Clear both before and after each
+    test. ``disconnect_printer`` also clears model/printer-info caches and stops
+    any paho thread owned by the leaked client.
+    """
+    from backend.app.services.printer_manager import printer_manager
+
+    for printer_id in list(printer_manager._clients):
+        printer_manager.disconnect_printer(printer_id)
+    yield
+    for printer_id in list(printer_manager._clients):
+        printer_manager.disconnect_printer(printer_id)
+
+
 @pytest.fixture(scope="session")
 def event_loop():
     """Create an instance of the default event loop for each test session."""

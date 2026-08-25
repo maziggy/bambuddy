@@ -467,6 +467,56 @@ describe('ProjectsPage', () => {
       expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ tags: null }));
     });
   });
+  describe('status tab badges (#2888)', () => {
+    // Every tab is counted from the whole fleet, not from the page below it.
+    const fleet = [
+      { ...mockProjects[0], id: 1, status: 'active' },
+      { ...mockProjects[1], id: 2, status: 'completed' },
+      { ...mockProjects[1], id: 3, name: 'Last Year', status: 'archived' },
+      { ...mockProjects[1], id: 4, name: 'Year Before', status: 'archived' },
+    ];
+
+    beforeEach(() => {
+      // Stands in for the API's own status filter, so `projects` really does
+      // hold one status at a time the way it does in the app.
+      server.use(
+        http.get('/api/v1/projects/', ({ request }) => {
+          const status = new URL(request.url).searchParams.get('status');
+          return HttpResponse.json(status ? fleet.filter((p) => p.status === status) : fleet);
+        }),
+      );
+    });
+
+    const badgeFor = (label: string) =>
+      screen.getByRole('button', { name: new RegExp(`^${label}`) }).querySelector('span:last-child');
+
+    it('counts the tabs the filter is hiding', async () => {
+      // The page opens on Active, so before this every other tab counted zero
+      // and dropped its badge -- the reporter's fleet of thirty finished
+      // projects showed Completed bare next to "Active 5".
+      render(<ProjectsPage />);
+
+      await waitFor(() => expect(badgeFor('Active')).toHaveTextContent('1'));
+      expect(badgeFor('Completed')).toHaveTextContent('1');
+      expect(badgeFor('Archived')).toHaveTextContent('2');
+      expect(badgeFor('All')).toHaveTextContent('4');
+    });
+
+    it('keeps the same counts after switching tabs', async () => {
+      const user = userEvent.setup();
+      render(<ProjectsPage />);
+      await waitFor(() => expect(badgeFor('Archived')).toHaveTextContent('2'));
+
+      await user.click(screen.getByRole('button', { name: /^Archived/ }));
+
+      // Only the page below changes; the badges describe the fleet either way.
+      await waitFor(() => expect(screen.getByText('Last Year')).toBeInTheDocument());
+      expect(badgeFor('Active')).toHaveTextContent('1');
+      expect(badgeFor('Completed')).toHaveTextContent('1');
+      expect(badgeFor('All')).toHaveTextContent('4');
+    });
+  });
+
   describe('nesting projects under a master project (#1264)', () => {
     const listItem = (over: Record<string, unknown>) => ({
       id: 1,

@@ -3,11 +3,15 @@
 Tests the full request/response cycle for /api/v1/archives/ endpoints.
 """
 
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
+
+from backend.app.core.config import settings
+from backend.app.services.bambu_ftp import FileListResult
 
 
 class TestArchivesAPI:
@@ -217,11 +221,493 @@ class TestArchivesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_archive_response_exposes_selected_plate(
+        self, async_client: AsyncClient, archive_factory, printer_factory
+    ):
+        """Both archive endpoints must report the stored plate (#2796).
+
+        archive_to_response builds its response dict field by field and left
+        plate_id out. ArchiveResponse.plate_id defaults to None, so every
+        archive came back as plate_id: null and nothing raised an error.
+
+        List and detail share the helper, so both are checked here. The archive
+        without a plate guards a fix that substitutes a fallback plate.
+        """
+        printer = await printer_factory()
+        with_plate = await archive_factory(printer.id, print_name="Plate 22 of a multi-plate 3MF", plate_id=22)
+        without_plate = await archive_factory(printer.id, print_name="Single-plate print")
+
+        listed = await async_client.get("/api/v1/archives/")
+        assert listed.status_code == 200
+        rows = {a["id"]: a for a in listed.json()}
+        assert rows[with_plate.id]["plate_id"] == 22
+        assert rows[without_plate.id]["plate_id"] is None
+
+        detail = await async_client.get(f"/api/v1/archives/{with_plate.id}")
+        assert detail.status_code == 200
+        assert detail.json()["plate_id"] == 22
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_get_archive_not_found(self, async_client: AsyncClient):
         """Verify 404 for non-existent archive."""
         response = await async_client.get("/api/v1/archives/9999")
 
         assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_archive_printer_media_matches_timelapse_and_ipcam_chunks(
+        self,
+        async_client: AsyncClient,
+        archive_factory,
+        printer_factory,
+        db_session,
+    ):
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            started_at=datetime(2026, 8, 12, 10, 0),
+            completed_at=datetime(2026, 8, 12, 11, 0),
+            timelapse_path=None,
+        )
+
+        list_timeouts = []
+
+        async def fake_list(_ip, _code, path, **kwargs):
+            list_timeouts.append(kwargs.get("timeout"))
+            if path == "/timelapse":
+                return FileListResult(
+                    files=[
+                        {
+                            "name": "video_2026-08-12_18-00-00.mp4",
+                            "path": "/timelapse/video_2026-08-12_18-00-00.mp4",
+                            "size": 123,
+                            "mtime": datetime(2026, 8, 12, 11, 1),
+                            "is_directory": False,
+                        }
+                    ],
+                    available=True,
+                )
+            if path == "/ipcam":
+                return FileListResult(
+                    files=[
+                        {
+                            "name": "ipcam-record.1.mp4",
+                            "path": "/ipcam/ipcam-record.1.mp4",
+                            "size": 250_000_000,
+                            "mtime": datetime(2026, 8, 12, 10, 5),
+                            "is_directory": False,
+                        },
+                        {
+                            "name": "ipcam-record.after.mp4",
+                            "path": "/ipcam/ipcam-record.after.mp4",
+                            "size": 250_000_000,
+                            "mtime": datetime(2026, 8, 12, 11, 30),
+                            "is_directory": False,
+                        },
+                    ],
+                    available=True,
+                )
+            return FileListResult(files=[], available=False)
+
+        with (
+            patch("backend.app.api.routes.archives.list_files_result_async", new=AsyncMock(side_effect=fake_list)),
+            patch("backend.app.api.routes.archives.ftps_handshake_blocked", return_value=False),
+        ):
+            response = await async_client.get(f"/api/v1/archives/{archive.id}/printer-media")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["local_timelapse"] is None
+        assert [(file["kind"], file["name"]) for file in data["remote_files"]] == [
+            ("timelapse", "video_2026-08-12_18-00-00.mp4"),
+            ("ipcam", "ipcam-record.1.mp4"),
+        ]
+        assert list_timeouts == [8.0, 8.0]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_printer_media_skips_ftp_during_handshake_cooloff(
+        self,
+        async_client: AsyncClient,
+        archive_factory,
+        printer_factory,
+    ):
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            started_at=datetime(2026, 8, 12, 10, 0),
+            completed_at=datetime(2026, 8, 12, 11, 0),
+            timelapse_path=None,
+        )
+        list_files = AsyncMock()
+
+        with (
+            patch("backend.app.api.routes.archives.ftps_handshake_blocked", return_value=True),
+            patch("backend.app.api.routes.archives.list_files_result_async", new=list_files),
+        ):
+            response = await async_client.get(f"/api/v1/archives/{archive.id}/printer-media")
+
+        assert response.status_code == 200
+        assert response.json()["remote_files"] == []
+        assert response.json()["warnings"] == ["timelapse_unavailable", "ipcam_unavailable"]
+        list_files.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_printer_media_checks_alternate_timelapse_directories_after_empty_listing(
+        self,
+        async_client: AsyncClient,
+        archive_factory,
+        printer_factory,
+    ):
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            started_at=datetime(2026, 8, 12, 10, 0),
+            completed_at=datetime(2026, 8, 12, 11, 0),
+            timelapse_path=None,
+        )
+        paths: list[str] = []
+
+        async def fake_list(_ip, _code, path, **_kwargs):
+            paths.append(path)
+            if path == "/timelapse/video":
+                return FileListResult(
+                    files=[
+                        {
+                            "name": "video_2026-08-12_11-01-00.mp4",
+                            "path": "/timelapse/video/video_2026-08-12_11-01-00.mp4",
+                            "size": 321,
+                            "mtime": datetime(2026, 8, 12, 11, 1),
+                            "is_directory": False,
+                        }
+                    ],
+                    available=True,
+                )
+            return FileListResult(files=[], available=True)
+
+        with (
+            patch("backend.app.api.routes.archives.list_files_result_async", new=AsyncMock(side_effect=fake_list)),
+            patch("backend.app.api.routes.archives.ftps_handshake_blocked", return_value=False),
+        ):
+            response = await async_client.get(f"/api/v1/archives/{archive.id}/printer-media")
+
+        assert response.status_code == 200
+        assert response.json()["remote_files"][0]["path"].startswith("/timelapse/video/")
+        assert paths == ["/timelapse", "/timelapse/video", "/ipcam"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_printer_media_releases_db_session_before_ftp(
+        self,
+        async_client: AsyncClient,
+        archive_factory,
+        printer_factory,
+        monkeypatch,
+    ):
+        from backend.app.api.routes import archives as archives_routes
+
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            started_at=datetime(2026, 8, 12, 10, 0),
+            timelapse_path=None,
+        )
+        real_factory = archives_routes.database.async_session
+        session_closed = False
+
+        class TrackingSession:
+            async def __aenter__(self):
+                self.context = real_factory()
+                return await self.context.__aenter__()
+
+            async def __aexit__(self, *args):
+                nonlocal session_closed
+                result = await self.context.__aexit__(*args)
+                session_closed = True
+                return result
+
+        async def fake_list(*_args, **_kwargs):
+            assert session_closed
+            return FileListResult(files=[], available=True)
+
+        monkeypatch.setattr(archives_routes.database, "async_session", TrackingSession)
+        with (
+            patch("backend.app.api.routes.archives.list_files_result_async", new=AsyncMock(side_effect=fake_list)),
+            patch("backend.app.api.routes.archives.ftps_handshake_blocked", return_value=False),
+        ):
+            response = await async_client.get(f"/api/v1/archives/{archive.id}/printer-media")
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_printer_media_baseline_excludes_old_timestamp_match(
+        self,
+        async_client: AsyncClient,
+        archive_factory,
+        printer_factory,
+    ):
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            started_at=datetime(2026, 8, 12, 10, 0),
+            completed_at=datetime(2026, 8, 12, 11, 0),
+            timelapse_path=None,
+            timelapse_baseline=["old.mp4"],
+        )
+
+        async def fake_list(_ip, _code, path, **_kwargs):
+            if path == "/timelapse":
+                return FileListResult(
+                    files=[
+                        {
+                            "name": "old.mp4",
+                            "path": "/timelapse/old.mp4",
+                            "size": 10,
+                            "mtime": datetime(2026, 8, 12, 11, 0),
+                            "is_directory": False,
+                        },
+                        {
+                            "name": "new.mp4",
+                            "path": "/timelapse/new.mp4",
+                            "size": 20,
+                            "mtime": datetime(2020, 1, 1),
+                            "is_directory": False,
+                        },
+                    ],
+                    available=True,
+                )
+            return FileListResult(files=[], available=True)
+
+        with (
+            patch("backend.app.api.routes.archives.list_files_result_async", new=AsyncMock(side_effect=fake_list)),
+            patch("backend.app.api.routes.archives.ftps_handshake_blocked", return_value=False),
+        ):
+            response = await async_client.get(f"/api/v1/archives/{archive.id}/printer-media")
+
+        assert response.status_code == 200
+        timelapses = [item for item in response.json()["remote_files"] if item["kind"] == "timelapse"]
+        assert [item["name"] for item in timelapses] == ["new.mp4"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_printer_media_requires_printer_files_permission(
+        self,
+        async_client: AsyncClient,
+        archive_factory,
+        printer_factory,
+        tmp_path,
+        monkeypatch,
+    ):
+        printer = await printer_factory()
+        monkeypatch.setattr(settings, "base_dir", tmp_path)
+        timelapse = tmp_path / "timelapses" / "attached.mp4"
+        timelapse.parent.mkdir()
+        timelapse.write_bytes(b"attached video")
+        archive = await archive_factory(
+            printer.id,
+            started_at=datetime(2026, 8, 12, 10, 0),
+            timelapse_path="timelapses/attached.mp4",
+        )
+        setup = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "mediaadmin",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        assert setup.status_code == 200, setup.text
+        admin_login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "mediaadmin", "password": "AdminPass1!"},
+        )
+        admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+        group = await async_client.post(
+            "/api/v1/groups/",
+            headers=admin_headers,
+            json={"name": "archive-only-media", "permissions": ["archives:read_all"]},
+        )
+        assert group.status_code == 201, group.text
+        user = await async_client.post(
+            "/api/v1/users/",
+            headers=admin_headers,
+            json={
+                "username": "archiveonlymedia",
+                "password": "ArchivePass1!",
+                "group_ids": [group.json()["id"]],
+            },
+        )
+        assert user.status_code == 201, user.text
+        login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "archiveonlymedia", "password": "ArchivePass1!"},
+        )
+
+        list_files = AsyncMock()
+        with patch("backend.app.api.routes.archives.list_files_result_async", new=list_files):
+            response = await async_client.get(
+                f"/api/v1/archives/{archive.id}/printer-media",
+                headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["local_timelapse"] == {"name": "attached.mp4", "size": 14}
+        assert response.json()["remote_files"] == []
+        assert response.json()["warnings"] == ["printer_files_forbidden"]
+        list_files.assert_not_awaited()
+
+        token_response = await async_client.post(
+            f"/api/v1/archives/{archive.id}/media-download-token",
+            headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+        )
+        assert token_response.status_code == 200
+        download = await async_client.get(
+            f"/api/v1/archives/{archive.id}/media/dl/{token_response.json()['token']}/attached.mp4"
+        )
+        assert download.status_code == 200
+        assert download.content == b"attached video"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_media_token_is_archive_bound_single_use(
+        self,
+        async_client: AsyncClient,
+        archive_factory,
+        printer_factory,
+        tmp_path,
+        monkeypatch,
+    ):
+        printer = await printer_factory()
+        monkeypatch.setattr(settings, "base_dir", tmp_path)
+        media = tmp_path / "timelapses" / "bound.mp4"
+        media.parent.mkdir()
+        media.write_bytes(b"bound media")
+        archive_a = await archive_factory(printer.id, timelapse_path="timelapses/bound.mp4")
+        archive_b = await archive_factory(printer.id, timelapse_path="timelapses/bound.mp4")
+
+        minted = await async_client.post(f"/api/v1/archives/{archive_a.id}/media-download-token")
+        assert minted.status_code == 200
+        token = minted.json()["token"]
+        wrong = await async_client.get(f"/api/v1/archives/{archive_b.id}/media/dl/{token}/bound.mp4")
+        assert wrong.status_code == 403
+        correct = await async_client.get(f"/api/v1/archives/{archive_a.id}/media/dl/{token}/bound.mp4")
+        assert correct.status_code == 200
+        replay = await async_client.get(f"/api/v1/archives/{archive_a.id}/media/dl/{token}/bound.mp4")
+        assert replay.status_code == 403
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_printer_media_enforces_api_key_printer_scope(
+        self,
+        async_client: AsyncClient,
+        archive_factory,
+        printer_factory,
+        db_session,
+    ):
+        from backend.app.core.auth import generate_api_key
+        from backend.app.models.api_key import APIKey
+
+        printer_a = await printer_factory(name="Media Scope A", serial_number="MEDIASCOPEA00001")
+        printer_b = await printer_factory(name="Media Scope B", serial_number="MEDIASCOPEB00001")
+        archive = await archive_factory(
+            printer_b.id,
+            started_at=datetime(2026, 8, 12, 10, 0),
+            timelapse_path=None,
+        )
+        setup = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "mediascopeadmin",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        assert setup.status_code == 200, setup.text
+        full_key, key_hash, key_prefix = generate_api_key()
+        db_session.add(
+            APIKey(
+                name="media-printer-scope",
+                key_hash=key_hash,
+                key_prefix=key_prefix,
+                can_read_status=True,
+                can_control_printer=True,
+                printer_ids=[printer_a.id],
+                enabled=True,
+            )
+        )
+        await db_session.commit()
+
+        listing = AsyncMock()
+        with patch("backend.app.api.routes.archives.list_files_result_async", new=listing):
+            response = await async_client.get(
+                f"/api/v1/archives/{archive.id}/printer-media",
+                headers={"X-API-Key": full_key},
+            )
+
+        assert response.status_code == 403
+        listing.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_camera_only_user_cannot_mint_archive_media_token(
+        self,
+        async_client: AsyncClient,
+        archive_factory,
+        printer_factory,
+        tmp_path,
+        monkeypatch,
+    ):
+        printer = await printer_factory()
+        monkeypatch.setattr(settings, "base_dir", tmp_path)
+        media = tmp_path / "timelapses" / "private.mp4"
+        media.parent.mkdir()
+        media.write_bytes(b"private")
+        archive = await archive_factory(printer.id, timelapse_path="timelapses/private.mp4")
+        setup = await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "cameraadmin",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        assert setup.status_code == 200, setup.text
+        admin_login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "cameraadmin", "password": "AdminPass1!"},
+        )
+        admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+        group = await async_client.post(
+            "/api/v1/groups/",
+            headers=admin_headers,
+            json={"name": "camera-only-media", "permissions": ["camera:view"]},
+        )
+        assert group.status_code == 201, group.text
+        user = await async_client.post(
+            "/api/v1/users/",
+            headers=admin_headers,
+            json={
+                "username": "cameraonlymedia",
+                "password": "CameraPass1!",
+                "group_ids": [group.json()["id"]],
+            },
+        )
+        assert user.status_code == 201, user.text
+        login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "cameraonlymedia", "password": "CameraPass1!"},
+        )
+
+        response = await async_client.post(
+            f"/api/v1/archives/{archive.id}/media-download-token",
+            headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+        )
+
+        assert response.status_code == 403
 
     # ========================================================================
     # Update endpoints
@@ -286,6 +772,135 @@ class TestArchivesAPI:
 
         assert response.status_code == 200
         assert response.json()["external_url"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_filament_grams_can_be_set_by_hand(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1820: a print that archived without its 3MF has no filament figure
+        and no way to recover one — rescan needs a file this archive does not
+        have. The edit is the only route, so it has to reach the log entry too:
+        the Projects roll-up and the Prometheus counter sum PrintLogEntry, not
+        the archive.
+        """
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, print_name="JOB_C")
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}",
+            json={"filament_used_grams": 46.16},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["filament_used_grams"] == 46.16
+
+        mirrored = (
+            await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        ).scalar_one()
+        assert mirrored.filament_used_grams == 46.16
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_clearing_the_figure_takes_the_mirrored_copy_with_it(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Undo has to be as complete as the correction: a run that only holds
+        the figure because this archive gave it one must not keep it after the
+        archive's is cleared, or the totals stay wrong with nothing on the card
+        to explain them."""
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, filament_used_grams=None)
+        entry = (
+            await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        ).scalar_one()
+        assert entry.filament_used_grams is None
+
+        await async_client.patch(f"/api/v1/archives/{archive.id}", json={"filament_used_grams": 46.16})
+        await db_session.refresh(entry)
+        assert entry.filament_used_grams == 46.16
+
+        response = await async_client.patch(f"/api/v1/archives/{archive.id}", json={"filament_used_grams": None})
+
+        assert response.status_code == 200, response.text
+        await db_session.refresh(entry)
+        assert entry.filament_used_grams is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_measured_run_keeps_its_own_filament_figure(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """A run whose grams came from the tracked spool delta measured itself.
+        The archive's number is an estimate, so an edit of the estimate must not
+        overwrite the measurement — the mirror only fills in a run that has no
+        figure, or one that was copied from this archive in the first place.
+        """
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, filament_used_grams=50.0)
+        entry = (
+            await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        ).scalar_one()
+        entry.filament_used_grams = 48.2  # what the spool actually lost
+        await db_session.commit()
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}",
+            json={"filament_used_grams": 61.0},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["filament_used_grams"] == 61.0
+
+        await db_session.refresh(entry)
+        assert entry.filament_used_grams == 48.2
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_filament_grams_refuses_a_negative_figure(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """It feeds the filament totals, so a value that would subtract from
+        them is rejected rather than stored."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id)
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}",
+            json={"filament_used_grams": -5},
+        )
+
+        assert response.status_code == 422, response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_edit_that_leaves_filament_grams_alone_does_not_clear_it(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """The field is optional on the schema, so an ordinary save of some
+        other field must not read as "set grams to null"."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, filament_used_grams=12.5)
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}",
+            json={"notes": "left the grams alone"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["filament_used_grams"] == 12.5
 
     @pytest.mark.asyncio
     @pytest.mark.integration

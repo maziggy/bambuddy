@@ -10,6 +10,18 @@ name: Windows Installer
 # program. Daily prereleases are deliberately left unsigned so they don't burn
 # the OSS signing quota; use the `sign` dispatch input to exercise the signing
 # path by hand.
+#
+# The work is split across two jobs on purpose. Signing requests against the
+# Foundation *production* certificate require a human to approve them in the
+# SignPath UI, so the submit step can sit waiting for up to an hour. Keeping
+# the compile in its own job means that wait doesn't hold the build hostage:
+# the unsigned artifact is already uploaded and addressable by id, so a missed
+# approval window is recovered by re-running `publish` alone rather than
+# rebuilding the installer from scratch.
+#
+# Note that `publish` runs for unsigned builds too -- it is the single place
+# that produces the release-facing artifact, so the daily-prerelease path and
+# the signed-tag path share one set of alias/upload/attach steps.
 
 on:
   push:
@@ -28,9 +40,9 @@ on:
 # that step and could run with read-only, but a single workflow-level
 # block keeps the surface auditable in one place.
 # actions: read lets the SignPath connector download the uploaded artifact
-# through the API. Declaring a permissions block at all drops every scope we
-# don't name to `none`, so the signing step fails to fetch the artifact
-# without it.
+# through the API (and lets download-artifact do the same in `publish`). Declaring
+# a permissions block at all drops every scope we don't name to `none`, so the
+# signing step fails to fetch the artifact without it.
 permissions:
   contents: write
   actions: read
@@ -40,16 +52,34 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
 
-    env:
-      # Sign real release tags but not `-daily.` prereleases, and let a manual
-      # run opt in. GitHub's `||` returns the *last* operand when everything is
-      # falsy (an empty string here, not `false`), so every use site compares
-      # against the string 'true' rather than treating this as a boolean.
-      SIGN: ${{ (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-daily.')) || inputs.sign }}
+    outputs:
+      # The artifact id is how SignPath addresses the thing to sign; see the
+      # upload step below for why that indirection exists.
+      artifact-id: ${{ steps.upload_unsigned.outputs.artifact-id }}
+      sign: ${{ steps.decide.outputs.sign }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Sign real release tags but not `-daily.` prereleases, and let a manual
+      # run opt in. GitHub's `||` returns the *last* operand when everything is
+      # falsy (an empty string here, not `false`), so this normalises the answer
+      # to the literal strings 'true'/'false' once, in one place, and every use
+      # site compares against 'true' rather than treating it as a boolean.
+      # Echoing the decision makes "why wasn't my tag signed?" answerable from
+      # the run log alone.
+      - name: Decide whether this build gets signed
+        id: decide
+        shell: bash
+        run: |
+          if [ "${{ (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-daily.')) || inputs.sign }}" = "true" ]; then
+            echo "sign=true" >> "$GITHUB_OUTPUT"
+            echo "signing ENABLED for $GITHUB_REF"
+          else
+            echo "sign=false" >> "$GITHUB_OUTPUT"
+            echo "signing SKIPPED for $GITHUB_REF"
+          fi
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -89,11 +119,36 @@ jobs:
           path: installers/windows/build/output/*.exe
           if-no-files-found: error
 
+  publish:
+    needs: build
+    runs-on: windows-latest
+    # Sized to sit outside the signing wait below: an hour for a human to
+    # approve the request in the SignPath UI, plus headroom for the download,
+    # verification and upload either side of it.
+    timeout-minutes: 70
+
+    env:
+      SIGN: ${{ needs.build.outputs.sign }}
+
+    steps:
+      # Rehydrate the compiled installer into the same path the build job used,
+      # so every step below is identical whether or not signing ran. No checkout
+      # is needed here -- nothing in this job reads the repository.
+      - name: Download unsigned installer
+        uses: actions/download-artifact@v7
+        with:
+          name: bambuddy-windows-installer-unsigned
+          path: installers/windows/build/output
+
       # The artifact arrives at SignPath as a .zip (that is simply what
       # upload-artifact produces), so the artifact configuration on the SignPath
       # side describes a <zip-file> wrapping the <pe-file>. With skip-decompress
       # left at its default the signed archive is extracted again here, so
       # `signed/` ends up holding the bare .exe.
+      #
+      # The wait timeout is explicit because the action defaults to 600s, which
+      # is fine for the auto-approved test policy but far too short once a human
+      # has to approve each production request by hand.
       - name: Sign installer (SignPath)
         if: env.SIGN == 'true'
         uses: signpath/github-action-submit-signing-request@v2
@@ -104,8 +159,9 @@ jobs:
           organization-id: '4d7e5b59-d0fb-4a6b-b385-b861e18c6386'
           project-slug: 'bambuddy'
           signing-policy-slug: 'test-signing'
-          github-artifact-id: ${{ steps.upload_unsigned.outputs.artifact-id }}
+          github-artifact-id: ${{ needs.build.outputs.artifact-id }}
           wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: '3600'
           output-artifact-directory: installers/windows/build/signed
 
       # Replace the unsigned binary in-place so every downstream step (alias,
@@ -157,6 +213,12 @@ jobs:
       # anyway (`latest` skips prereleases), so the alias adds no value there.
       #
       # Runs after signing so the alias is a copy of the *signed* binary.
+      #
+      # This and the two steps after it carry no `always()`/`failure()`, so
+      # GitHub ANDs an implicit `success()` into each. A failed or timed-out
+      # signing therefore skips the alias, the artifact upload and the release
+      # attachment -- an unsigned .exe cannot reach a release. Preserve that
+      # property through any future edit.
       - name: Create unversioned alias (non-daily tags only)
         if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-daily.')
         shell: pwsh

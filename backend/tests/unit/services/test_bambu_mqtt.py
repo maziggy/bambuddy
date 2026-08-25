@@ -5452,6 +5452,37 @@ class TestHMSFullCode:
         assert len(mqtt_client.state.hms_errors) == 1
         assert mqtt_client.state.hms_errors[0].full_code == "05008051"
 
+    def test_print_error_path_carries_the_catalogue_description(self, mqtt_client):
+        """The sentence is resolved once, at parse time, so every surface that
+        reports the fault quotes the same text (#2926)."""
+        mqtt_client._update_state({"print_error": 0x03008004})
+        assert len(mqtt_client.state.hms_errors) == 1
+        assert mqtt_client.state.hms_errors[0].description == "Filament ran out. Please load new filament."
+
+    def test_print_error_path_leaves_description_none_for_an_uncatalogued_code(self, mqtt_client):
+        """An undocumented code gets no invented text — the field is the
+        catalogue's answer, not a placeholder."""
+        mqtt_client._update_state({"print_error": 0x03009999})
+        assert len(mqtt_client.state.hms_errors) == 1
+        assert mqtt_client.state.hms_errors[0].description is None
+
+    def test_hms_array_path_resolves_via_the_short_key(self, mqtt_client):
+        """`hms[]` faults resolve through the G1_G4 collapse — the same lookup
+        the notification path and the frontend modal have always used. 0500_4038
+        is the nozzle-size mismatch behind #1111 and it arrives in this shape."""
+        mqtt_client._update_state({"hms": [{"attr": 0x05000000, "code": 0x00004038}]})
+        assert len(mqtt_client.state.hms_errors) == 1
+        assert "nozzle diameter" in (mqtt_client.state.hms_errors[0].description or "")
+
+    def test_hms_array_leaves_description_none_when_uncatalogued(self, mqtt_client):
+        """A real P2S fault (#2728) whose collapse is "0500_000A" — not a
+        catalogue key, since none has an error group below 0x4000. The fault is
+        still reported; only the text is absent."""
+        mqtt_client._update_state({"hms": [{"attr": 0x05000200, "code": 0x0003000A}]})
+        assert len(mqtt_client.state.hms_errors) == 1
+        assert mqtt_client.state.hms_errors[0].full_code == "050002000003000A"
+        assert mqtt_client.state.hms_errors[0].description is None
+
     def test_hms_array_catalog_lookup_tries_16_char_first(self, mqtt_client, monkeypatch):
         """When the catalog has both an 8-char and a 16-char entry for the
         same fault family, the 16-char (specific variant) wins. The 8-char

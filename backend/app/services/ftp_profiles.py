@@ -45,12 +45,27 @@ class FTPProfile:
     # the printer). Capping to TLS 1.2 makes session resumption
     # synchronous and the upload completes normally.
     #
-    # Note this cap only bites on models that *offer* 1.3 in the first
-    # place. Probed directly on :990, an X1C and an H2D both refuse
-    # TLS 1.0, 1.1 and 1.3 with a handshake_failure alert and complete
-    # only on 1.2 — so for those models the cap is a no-op and the
-    # negotiated version was never 1.3. The P2S evidently does offer
-    # 1.3, which is why it alone surfaced the session-reuse bug.
+    # This cap only bites on models that *offer* 1.3 in the first place,
+    # and on the evidence so far none of them do. Probed directly on
+    # :990, an X1C and an H2D refuse TLS 1.0, 1.1 and 1.3 and complete
+    # only on 1.2; @grolmus then probed a 9-printer farm (#2780,
+    # 2026-08-21) and got the same result on six P2S units, two X1C and
+    # an H2D — tls1_3 refused, tls1_2 ok, every one. This comment used
+    # to claim "the P2S evidently does offer 1.3"; six say otherwise.
+    #
+    # A cap is also not needed to reach a 1.2-only peer. Measured
+    # against a local TLS-1.2-only server with the same context this
+    # module builds: an uncapped client negotiates 1.2 and connects.
+    # A client forced to 1.3 gets TLSV1_ALERT_PROTOCOL_VERSION — never
+    # WRONG_VERSION_NUMBER, which comes from bytes that are not a TLS
+    # record at all. See
+    # ``tests/unit/services/test_cleartext_probe_2780.py``, which pins
+    # both measurements so this comment stays falsifiable.
+    #
+    # So the entries below are kept as tuning slots and as a record of
+    # what each reporter saw, not because the mechanism is understood.
+    # Two of the three explain a symptom this cap cannot affect; see
+    # their own comments.
     # (P1S untested; no claim made either way.)
     #
     # **Defaults to False** — only applied to printer models where a
@@ -72,35 +87,53 @@ DEFAULT_PROFILE = FTPProfile()
 # AFTER alias normalisation, so internal SSDP codes ("N7") resolve via
 # ``_MODEL_ALIASES`` below.
 _PROFILES: dict[str, FTPProfile] = {
-    # P2S firmware 01.02.00.00 trips the vsFTPd + TLS 1.3 session-reuse
-    # bug on the FTPS data channel (#1401, reporter @iitazz). Cap to
-    # TLS 1.2 so session resumption is synchronous and the upload
-    # completes.
+    # P2S firmware 01.02.00.00 (#1401, reporter @iitazz). Symptom is a
+    # 426 truncation part-way through a transfer, on the data channel —
+    # a different failure from the handshake ones below, and the only
+    # one here whose mechanism a TLS-1.3 session-ticket problem could
+    # actually explain. The reporter confirmed the fix.
+    #
+    # Unresolved: @grolmus's six P2S units refuse TLS 1.3 outright
+    # (#2780), so on their firmware the negotiated version was already
+    # 1.2 and this cap changes nothing. Either the firmware moved
+    # between the two reports, or #1401 was fixed by something else in
+    # the same change. Kept because a reporter confirmed it and no one
+    # has hardware to re-test it on.
     "P2S": FTPProfile(
         cap_tls_v1_2=True,
     ),
     # X2D firmware 01.01.00.00 fails the implicit-FTPS handshake on
-    # port 990 with ``[SSL: WRONG_VERSION_NUMBER]`` against Python
-    # 3.13's default TLS-1.3 ClientHello (#1638, reporter @vasmarfas).
-    # Without the 3MF download the print falls through to the no-3MF
-    # fallback archive path and the card lands almost empty (no
-    # filament total, no layers, no MakerWorld link). Cap to TLS 1.2
-    # by analogy with P2S; if the symptom turns out to be a different
-    # FTPS variant on the X2D (explicit AUTH TLS, different port) the
-    # entry stays useful as a per-model tuning slot for the follow-up.
+    # port 990 with ``[SSL: WRONG_VERSION_NUMBER]`` (#1638, reporter
+    # @vasmarfas). Without the 3MF download the print falls through to
+    # the no-3MF fallback archive path and the card lands almost empty
+    # (no filament total, no layers, no MakerWorld link).
+    #
+    # RE-TEST WANTED. This was capped on the reading that the error came
+    # from "Python 3.13's default TLS-1.3 ClientHello". That reading is
+    # now measured wrong: WRONG_VERSION_NUMBER is what a *non-TLS*
+    # answer produces, a version mismatch reports itself differently,
+    # and an uncapped client reaches a 1.2-only peer unaided (#2780).
+    # So this cap cannot be what changed the outcome, and the X2D is
+    # most likely answering :990 with something that is not TLS — the
+    # cleartext probe in ``bambu_ftp`` will now say what. Left in place
+    # rather than removed: nobody here has an X2D, and the entry costs
+    # nothing on a printer that does not offer 1.3 anyway.
     "X2D": FTPProfile(
         cap_tls_v1_2=True,
     ),
-    # H2C firmware 01.02.00.00 (#2582, reporter @gyrene2083) — same H2
-    # generation and same firmware line as P2S, and with no profile it
-    # ran on the Python-default TLS 1.3. Reported symptom is exactly the
-    # one the X2D comment describes: the sliced 3MF intermittently fails
-    # to come off the printer over FTPS, so the print drops to the no-3MF
-    # fallback archive with no slice data — which is why the Print Log
-    # shows no filament and nothing is deducted. Cap to TLS 1.2 by analogy
-    # with P2S (intermittent "sometimes works" points at the session-reuse
-    # variant, not X2D's deterministic handshake failure); if a debug
-    # capture shows a different FTPS variant the entry stays the tuning slot.
+    # H2C firmware 01.02.00.00 (#2582, reporter @gyrene2083). The sliced
+    # 3MF intermittently fails to come off the printer over FTPS, so the
+    # print drops to the no-3MF fallback archive with no slice data —
+    # which is why the Print Log shows no filament and nothing is
+    # deducted.
+    #
+    # RE-TEST WANTED, same reasoning as the X2D above. Capped "by
+    # analogy with P2S" on the belief that the profile-less path "ran on
+    # the Python-default TLS 1.3"; measurement says a 1.2-only peer
+    # negotiates 1.2 without a cap, so there was no 1.3 to fall back
+    # from (#2780). "Intermittent" now points somewhere better: it is
+    # the signature of the transient non-TLS refusal @grolmus sees on
+    # his P2S units, which is the same H2 firmware line.
     "H2C": FTPProfile(
         cap_tls_v1_2=True,
     ),

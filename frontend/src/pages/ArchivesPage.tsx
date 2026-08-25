@@ -33,6 +33,7 @@ import {
   AlertCircle,
   Copy,
   Film,
+  FileVideo,
   ScanSearch,
   QrCode,
   Camera,
@@ -69,7 +70,7 @@ import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDu
 import { getCurrencySymbol } from '../utils/currency';
 import { getBedTypeInfo } from '../utils/bedType';
 import { invalidateArchiveAndProjectViews } from '../utils/projectQueries';
-import { useIsMobile } from '../hooks/useIsMobile';
+import { assignableProjects } from '../utils/projectTree';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import type { Archive, PrintLogEntry, ProjectListItem } from '../api/client';
 import { Card, CardContent } from '../components/Card';
@@ -89,6 +90,7 @@ import { QRCodeModal } from '../components/QRCodeModal';
 import { PhotoGalleryModal } from '../components/PhotoGalleryModal';
 import { ProjectPageModal } from '../components/ProjectPageModal';
 import { TimelapseViewer } from '../components/TimelapseViewer';
+import { ArchiveMediaDownloadModal } from '../components/ArchiveMediaDownloadModal';
 import { CompareArchivesModal } from '../components/CompareArchivesModal';
 import { PendingUploadsPanel } from '../components/PendingUploadsPanel';
 import { TagManagementModal } from '../components/TagManagementModal';
@@ -311,7 +313,6 @@ function ArchiveCard({
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission, canModify } = useAuth();
-  const isMobile = useIsMobile();
   const navigate = useNavigate();
   // Name of the printer this archive's saved slicer AMS mapping was resolved
   // against, or undefined when there is none. Undefined also when the printer
@@ -343,6 +344,7 @@ function ArchiveCard({
   const [showEdit, setShowEdit] = useState(false);
   const [showPrintLog, setShowPrintLog] = useState(false);
   const [showTimelapse, setShowTimelapse] = useState(false);
+  const [showPrinterMedia, setShowPrinterMedia] = useState(false);
   const [showTimelapseSelect, setShowTimelapseSelect] = useState(false);
   const [availableTimelapses, setAvailableTimelapses] = useState<Array<{ name: string; path: string; size: number; mtime: string | null }>>([]);
   const [showQRCode, setShowQRCode] = useState(false);
@@ -619,6 +621,17 @@ function ArchiveCard({
       disabled: !archive.timelapse_path,
     },
     {
+      label: t('archives.media.download'),
+      icon: <FileVideo className="w-4 h-4" />,
+      onClick: () => setShowPrinterMedia(true),
+      disabled: !archive.timelapse_path && (
+        !hasPermission('printers:files') || !archive.printer_id || !archive.started_at
+      ),
+      title: !archive.timelapse_path && !hasPermission('printers:files')
+        ? t('printers.permission.noFiles')
+        : undefined,
+    },
+    {
       label: t('archives.menu.scanForTimelapse'),
       icon: <ScanSearch className="w-4 h-4" />,
       onClick: () => timelapseScanMutation.mutate(),
@@ -769,7 +782,7 @@ function ArchiveCard({
       onClick: () => {},
       disabled: !canModify('archives', 'update', archive.created_by_id),
       title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
-      submenuSearchPlaceholder: (projects?.filter(p => p.status === 'active').length ?? 0) > 5
+      submenuSearchPlaceholder: assignableProjects(projects ?? [], archive.project_id).length > 5
         ? t('archives.menu.searchProjects')
         : undefined,
       submenu: (() => {
@@ -794,10 +807,14 @@ function ArchiveCard({
             disabled: true,
           });
         } else {
-          const activeProjects = projects
-            .filter(p => p.status === 'active')
+          // Archived projects are put away on purpose and are left out;
+          // completed ones stay, since a reprint filed against a finished
+          // project is ordinary (#2888). The archive's own project is kept
+          // whatever its status -- it is disabled below, and dropping it
+          // would leave the menu unable to say where the archive already is.
+          const assignable = assignableProjects(projects, archive.project_id)
             .sort((a, b) => a.name.localeCompare(b.name));
-          if (activeProjects.length === 0) {
+          if (assignable.length === 0) {
             items.push({
               label: t('archives.menu.noProjectsAvailable'),
               icon: <FolderKanban className="w-4 h-4 opacity-50" />,
@@ -805,7 +822,7 @@ function ArchiveCard({
               disabled: true,
             });
           } else {
-            activeProjects.forEach(p => {
+            assignable.forEach(p => {
               items.push({
                 label: p.name,
                 icon: <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: p.color || '#888' }} />,
@@ -883,9 +900,7 @@ function ArchiveCard({
           <>
             {/* Left arrow */}
             <button
-              className={`absolute left-1 top-1/2 -translate-y-1/2 p-1 rounded-full bg-black/60 hover:bg-black/80 transition-all ${
-                isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-              }`}
+              className="absolute left-1 top-1/2 -translate-y-1/2 p-1 rounded-full bg-black/60 hover:bg-black/80 transition-all can-hover:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
               onClick={(e) => {
                 e.stopPropagation();
                 setCurrentPlateIndex((prev) => {
@@ -899,9 +914,7 @@ function ArchiveCard({
             </button>
             {/* Right arrow */}
             <button
-              className={`absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-full bg-black/60 hover:bg-black/80 transition-all ${
-                isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-              }`}
+              className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-full bg-black/60 hover:bg-black/80 transition-all can-hover:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
               onClick={(e) => {
                 e.stopPropagation();
                 setCurrentPlateIndex((prev) => {
@@ -915,9 +928,7 @@ function ArchiveCard({
             </button>
             {/* Dots indicator */}
             <div
-              className={`absolute bottom-1 left-1/2 -translate-x-1/2 flex gap-1 px-2 py-1 rounded-full bg-black/50 transition-all ${
-                isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-              }`}
+              className="absolute bottom-1 left-1/2 -translate-x-1/2 flex gap-1 px-2 py-1 rounded-full bg-black/50 transition-all can-hover:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
             >
               {plates.map((plate, idx) => (
                 <button
@@ -935,11 +946,9 @@ function ArchiveCard({
             </div>
           </>
         )}
-        {/* Context menu button - visible on mobile, shows on hover for desktop */}
+        {/* Context menu button - hover-revealed with a mouse, always there without one (#2865) */}
         <button
-          className={`absolute top-2 left-2 p-1.5 rounded bg-black/50 hover:bg-black/70 transition-all ${
-            isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-          } ${selectionMode ? 'left-10' : ''}`}
+          className={`absolute top-2 left-2 p-1.5 rounded bg-black/50 hover:bg-black/70 transition-all can-hover:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 ${selectionMode ? 'left-10' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
             const rect = e.currentTarget.getBoundingClientRect();
@@ -1092,7 +1101,15 @@ function ArchiveCard({
         <div className="flex items-center justify-between gap-2 mb-1">
           <h3 className="min-w-0 font-medium text-white truncate">
             {archive.print_name || archive.filename}
-            {archive.plate_id != null && ` — ${t('printers.plateNumber', { number: archive.plate_id })}`}
+            {/* Only a plate past the first says anything. The queue records a
+                plate for single-plate files too -- the print dialog auto-selects
+                the only plate there is -- so an ungated label reads "Plate 1" on
+                ordinary prints, and eats room from the truncated name (#2796).
+                The plate carousel is the one place a multi-plate archive printed
+                from plate 1 still identifies itself; it already gates on
+                is_multi_plate, which this title cannot read without waiting for
+                the hover-lazy plates request. */}
+            {archive.plate_id != null && archive.plate_id > 1 && ` — ${t('printers.plateNumber', { number: archive.plate_id })}`}
           </h3>
           <Button
             variant="ghost"
@@ -1566,6 +1583,16 @@ function ArchiveCard({
         />
       )}
 
+      {/* Print Media Download Modal */}
+      {showPrinterMedia && (
+        <ArchiveMediaDownloadModal
+          archiveId={archive.id}
+          archiveName={archive.print_name || archive.filename}
+          printerName={printerName}
+          onClose={() => setShowPrinterMedia(false)}
+        />
+      )}
+
       {/* Timelapse Viewer Modal */}
       {showTimelapse && archive.timelapse_path && (
         <TimelapseViewer
@@ -1767,6 +1794,7 @@ function ArchiveListRow({
   const [showSliceModal, setShowSliceModal] = useState(false);
   const [showRunPipeline, setShowRunPipeline] = useState(false);
   const [showTimelapse, setShowTimelapse] = useState(false);
+  const [showPrinterMedia, setShowPrinterMedia] = useState(false);
   const [showTimelapseSelect, setShowTimelapseSelect] = useState(false);
   const [availableTimelapses, setAvailableTimelapses] = useState<Array<{ name: string; path: string; size: number; mtime: string | null }>>([]);
   const [showQRCode, setShowQRCode] = useState(false);
@@ -2166,7 +2194,7 @@ function ArchiveListRow({
       label: t('archives.menu.addToProject'),
       icon: <FolderKanban className="w-4 h-4" />,
       onClick: () => {},
-      submenuSearchPlaceholder: (projects?.filter(p => p.status === 'active').length ?? 0) > 5
+      submenuSearchPlaceholder: assignableProjects(projects ?? [], archive.project_id).length > 5
         ? t('archives.menu.searchProjects')
         : undefined,
       submenu: (() => {
@@ -2186,10 +2214,14 @@ function ArchiveListRow({
             disabled: true,
           });
         } else {
-          const activeProjects = projects
-            .filter(p => p.status === 'active')
+          // Archived projects are put away on purpose and are left out;
+          // completed ones stay, since a reprint filed against a finished
+          // project is ordinary (#2888). The archive's own project is kept
+          // whatever its status -- it is disabled below, and dropping it
+          // would leave the menu unable to say where the archive already is.
+          const assignable = assignableProjects(projects, archive.project_id)
             .sort((a, b) => a.name.localeCompare(b.name));
-          if (activeProjects.length === 0) {
+          if (assignable.length === 0) {
             items.push({
               label: t('archives.menu.noProjectsAvailable'),
               icon: <FolderKanban className="w-4 h-4 opacity-50" />,
@@ -2197,7 +2229,7 @@ function ArchiveListRow({
               disabled: true,
             });
           } else {
-            activeProjects.forEach(p => {
+            assignable.forEach(p => {
               items.push({
                 label: p.name,
                 icon: <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: p.color || '#888' }} />,
@@ -2388,6 +2420,19 @@ function ArchiveListRow({
               <Globe className="w-4 h-4" />
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowPrinterMedia(true)}
+            disabled={!archive.timelapse_path && (
+              !hasPermission('printers:files') || !archive.printer_id || !archive.started_at
+            )}
+            title={!archive.timelapse_path && !hasPermission('printers:files')
+              ? t('printers.permission.noFiles')
+              : t('archives.media.download')}
+          >
+            <Film className="w-4 h-4" />
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -2591,6 +2636,16 @@ function ArchiveListRow({
           y={contextMenu.y}
           items={contextMenuItems}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {/* Print Media Download Modal */}
+      {showPrinterMedia && (
+        <ArchiveMediaDownloadModal
+          archiveId={archive.id}
+          archiveName={archive.print_name || archive.filename}
+          printerName={printerName}
+          onClose={() => setShowPrinterMedia(false)}
         />
       )}
 

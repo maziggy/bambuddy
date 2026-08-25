@@ -135,6 +135,23 @@ class TestInjectPlateThumbnails:
         assert 480 <= large_w <= 540 and 480 <= large_h <= 540
         assert 100 <= small_w <= 140 and 100 <= small_h <= 140
 
+    def test_injected_thumbnail_is_shaded_not_flat(self, distinct_surface_tones):
+        """Injected plate renders must be lit, same as library thumbnails (#2816).
+
+        The archive card and the File Manager tile show the same model through
+        two different renderers; if only one of them is lit they disagree.
+        """
+        from backend.app.services.plate_thumbnail import inject_plate_thumbnails_if_missing
+
+        fixture = _build_sliced_3mf(plate_ids=[1], with_thumbnails=set())
+        result = inject_plate_thumbnails_if_missing(fixture)
+
+        with zipfile.ZipFile(io.BytesIO(result), "r") as zf:
+            large = zf.read("Metadata/plate_1.png")
+
+        # _build_sliced_3mf embeds a cube: three faces visible, three tones.
+        assert distinct_surface_tones(large) >= 3
+
     def test_injects_for_every_missing_plate_in_multi_plate_3mf(self):
         """Three plates, plate_2 already has a thumbnail; only plates 1 + 3 get rendered."""
         from backend.app.services.plate_thumbnail import inject_plate_thumbnails_if_missing

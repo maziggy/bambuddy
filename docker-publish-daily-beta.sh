@@ -15,7 +15,8 @@
 # Builds and pushes a multi-arch Docker image tagged as 'daily'. Each push overwrites the
 # previous 'daily' image. A GitHub prerelease is created with a date-stamped tag for history.
 #
-# Users can stay up to date by pulling the 'daily' tag or using Watchtower:
+# Users can stay up to date by pulling the 'daily' tag or using Watchtower
+# (https://watchtower.nickfedor.com, image 'nickfedor/watchtower'):
 #   docker pull ghcr.io/maziggy/bambuddy:daily
 #
 # Prerequisites:
@@ -340,7 +341,7 @@ docker pull maziggy/bambuddy:daily"
 > ${PULL_COMMANDS}
 > \`\`\`
 >
-> **Tip:** Use [Watchtower](https://containrrr.dev/watchtower/) to automatically update when new daily builds are pushed.
+> **Tip:** Use [Watchtower](https://watchtower.nickfedor.com) (image \`nickfedor/watchtower\`) to automatically update when new daily builds are pushed.
 
 ---
 

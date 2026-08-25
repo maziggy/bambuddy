@@ -500,20 +500,41 @@ async def test_normalize_filament_type_strips_at_space():
 
 
 @pytest.mark.asyncio
-async def test_get_preheat_filament_targets_defaults_when_missing(scheduler):
-    """Empty / null setting → bundled defaults are used. _get_preheat_filament_targets
-    upper-cases the keys, so the bundled `default` becomes `DEFAULT` on the
-    returned dict — keep both spellings synced."""
+@pytest.mark.parametrize("stored", [None, "", "not json at all", "[1, 2, 3]"])
+async def test_get_preheat_filament_targets_defaults_when_missing(scheduler, stored):
+    """Empty / null / malformed setting → bundled defaults are used.
+
+    Every path out of this function must honour the one contract its docstring
+    states: keys upper-cased, and DEFAULT present so the resolution loop can
+    index it unconditionally. The fallback paths used to hand the bundled
+    constant back as declared, with its lowercase `default`, so an install that
+    had never opened the setting returned a dict the loop could not read its
+    fallback out of. It happened to produce the right number only because that
+    default is 0 -- this test is what stops the constant changing and taking
+    every unconfigured install's chamber preheat down with it.
+    """
     db = AsyncMock()
-    with patch.object(scheduler, "_get_setting", AsyncMock(return_value=None)):
+    with patch.object(scheduler, "_get_setting", AsyncMock(return_value=stored)):
         targets = await scheduler._get_preheat_filament_targets(db)
-    # The bundled defaults dict is kept as-is on the "no setting" path, so
-    # `default` (lowercase) is what callers see for that fallback.
     assert targets["PLA"] == 0
     assert targets["ABS"] == 45
     assert targets["PA-CF"] == 55
-    # Either casing must resolve to the fallback 0.
-    assert targets.get("default", targets.get("DEFAULT")) == 0
+    assert "DEFAULT" in targets, "the resolution loop looks the fallback up by this exact key"
+    assert targets["DEFAULT"] == PrintScheduler.DEFAULT_PREHEAT_FILAMENT_TARGETS["default"]
+    assert all(key == key.upper() for key in targets), targets
+
+
+@pytest.mark.asyncio
+async def test_a_configured_map_reaches_the_loop_under_the_same_contract(scheduler):
+    """The editor writes the keys it displays, lowercase `default` included, so
+    the parsed path has always upper-cased. Both paths agree now."""
+    db = AsyncMock()
+    stored = '{"PLA": 0, "abs": 60, "default": 15}'
+    with patch.object(scheduler, "_get_setting", AsyncMock(return_value=stored)):
+        targets = await scheduler._get_preheat_filament_targets(db)
+    assert targets["ABS"] == 60
+    assert targets["DEFAULT"] == 15
+    assert all(key == key.upper() for key in targets), targets
 
 
 # ----------------------------------------------------------------------------
@@ -618,3 +639,32 @@ async def test_x1c_no_airduct_flap_never_fires_set_airduct(scheduler, item, arch
         await scheduler._preheat_and_soak(db, item, _make_printer("X1C"), archive)
 
     client.set_airduct_mode.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_filled_variant_preheats_like_its_base_material(monkeypatch):
+    """#2902 widened the type an AMS slot carries, so a slot that used to say
+    "ASA" can now say "ASA-GF". The chamber map has no ASA-GF row, and an
+    unknown type preheats to nothing -- so an ASA-GF print would have gone out
+    with a cold chamber. The specific type is still tried first, so the rows
+    that do exist for a variant (PETG-CF, PA-CF) are not traded down."""
+    from backend.app.services.print_scheduler import PrintScheduler
+
+    s = PrintScheduler()
+    targets = PrintScheduler.DEFAULT_PREHEAT_FILAMENT_TARGETS
+
+    def target_for(tray_type: str) -> int:
+        normalised = s._normalize_filament_type(tray_type)
+        value = targets.get(normalised)
+        if value is None:
+            value = targets.get(normalised.split("-")[0], targets.get("DEFAULT", 0))
+        return value
+
+    assert target_for("ASA-GF") == targets["ASA"]
+    assert target_for("ASA-AERO") == targets["ASA"]
+    assert target_for("ABS-GF") == targets["ABS"]
+    # Variants listed in their own right keep their own row.
+    assert target_for("PETG-CF") == 40
+    assert target_for("PA-CF") == 55
+    # And a plain type is untouched.
+    assert target_for("PLA") == 0

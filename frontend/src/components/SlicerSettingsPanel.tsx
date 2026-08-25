@@ -158,14 +158,54 @@ export default function SlicerSettingsPanel({
     };
   }, []);
 
+  // What this slice will actually run with, in the same precedence order the
+  // rows display: the picked preset underneath, the designer's value for each
+  // key that is switched on, and anything typed here on top.
+  const effectiveValues = useMemo(() => {
+    const merged: Record<string, SettingValue> = { ...(presetValues ?? {}) };
+    for (const o of sourceOverrides) {
+      if (sourceSelected?.has(o.key)) merged[o.key] = o.value as SettingValue;
+    }
+    // An emptied field is not a value — leaving it in would read as "" and
+    // send the config reader to the schema default, past the preset.
+    for (const [key, value] of Object.entries(values)) {
+      if (value !== undefined && value !== '') merged[key] = value;
+    }
+    return merged;
+  }, [presetValues, sourceOverrides, sourceSelected, values]);
+
+  // The slicer's own `enable_if` rules, evaluated against that rather than
+  // against `values` alone (#2942). `values` holds only what the user typed
+  // here, and the config reader falls back to the *schema* default for
+  // everything else — so a preset with supports on read as
+  // `enable_support: false` and greyed out the whole Support page, including
+  // rows whose "from file" tick was on and whose value the slice used. A
+  // greyed row used to grey its tick too, which left a setting that came from
+  // the file, that the slice applied, and that nothing on screen could
+  // switch off.
   const off = useMemo(
-    () => (data ? disabledKeys(values, data.schema, data.toggles) : new Set<string>()),
-    [data, values],
+    () => (data ? disabledKeys(effectiveValues, data.schema, data.toggles) : new Set<string>()),
+    [data, effectiveValues],
   );
 
   const sourceByKey = useMemo(
     () => new Map(sourceOverrides.map((o) => [o.key, o])),
     [sourceOverrides],
+  );
+
+  // The subset a bulk "use the designer's settings" may switch on: everything
+  // the file changed except the values tuned for the designer's own machine
+  // and the two that *are* the picked preset. Those two classes stay a
+  // per-key decision, which is the classification #2622 made and this does
+  // not widen.
+  const carryableSource = useMemo(
+    () => sourceOverrides.filter((o) => !o.printer_coupled && !o.preset_defining),
+    [sourceOverrides],
+  );
+
+  const selectedSourceCount = useMemo(
+    () => sourceOverrides.filter((o) => sourceSelected?.has(o.key)).length,
+    [sourceOverrides, sourceSelected],
   );
 
   // Source overrides for keys the vendored schema doesn't cover. They still
@@ -317,6 +357,46 @@ export default function SlicerSettingsPanel({
         </p>
       )}
 
+      {/* What the file brings, and the only bulk way to take it. Nothing here
+          is pre-ticked any more (#2942), so without this line the designer's
+          settings would be reachable only by hunting for green chips across
+          six pages of 348 options. "Use them" ticks the keys that carry
+          across printers; the machine-tuned ones and the two that define the
+          picked preset stay off, as they always have. */}
+      {sourceOverrides.length > 0 && onToggleSource && (
+        <div className="flex flex-wrap items-center gap-2 rounded border border-bambu-dark-tertiary px-2 py-1.5 text-[0.7rem] text-bambu-gray">
+          <span className="min-w-0 flex-1">
+            {t(
+              'slicerSettings.fromFileSummary',
+              'The designer changed {{count}} process settings in this file. Only the ones you tick are used.',
+              { count: sourceOverrides.length },
+            )}
+          </span>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => carryableSource.forEach((o) => onToggleSource(o.key, true))}
+            title={t(
+              'slicerSettings.fromFileUseAllHint',
+              "Ticks the settings that carry across printers. The ones tuned for the designer's own printer, and the ones that define the preset you picked, stay off.",
+            )}
+            className="shrink-0 rounded border border-bambu-dark-tertiary px-1.5 py-0.5 hover:text-white disabled:opacity-40"
+          >
+            {t('slicerSettings.fromFileUseAll', "Use the designer's settings")}
+          </button>
+          {selectedSourceCount > 0 && (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => sourceOverrides.forEach((o) => onToggleSource(o.key, false))}
+              className="shrink-0 rounded border border-bambu-dark-tertiary px-1.5 py-0.5 hover:text-white disabled:opacity-40"
+            >
+              {t('slicerSettings.fromFileClear', 'Clear {{count}}', { count: selectedSourceCount })}
+            </button>
+          )}
+        </div>
+      )}
+
       {!query.trim() && (
         <div className="flex flex-wrap gap-1">
           {visiblePages.map((p) => (
@@ -358,6 +438,7 @@ export default function SlicerSettingsPanel({
                       onChange={(v) => setValue(key, v)}
                       disabled={disabled || off.has(key)}
                       disabledBySlicer={off.has(key)}
+                      formDisabled={disabled}
                       source={sourceByKey.get(key)}
                       sourceOn={sourceSelected?.has(key) ?? false}
                       onToggleSource={onToggleSource}
@@ -392,9 +473,11 @@ export default function SlicerSettingsPanel({
                     <span className="font-mono text-bambu-gray">{o.key}</span>
                     <span className="ml-1.5 text-white">{formatSourceValue(o.value)}</span>
                   </span>
-                  {o.printer_coupled && (
+                  {(o.printer_coupled || o.preset_defining) && (
                     <span className="shrink-0 rounded bg-amber-100 px-1 py-0.5 text-[10px] text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">
-                      {t('slicerSettings.fromFilePrinterCoupled', "designer's printer")}
+                      {o.printer_coupled
+                        ? t('slicerSettings.fromFilePrinterCoupled', "designer's printer")
+                        : t('slicerSettings.fromFileOverridesPreset', 'overrides preset')}
                     </span>
                   )}
                 </label>
@@ -415,6 +498,16 @@ interface RowProps {
   disabled: boolean;
   /** Greyed because the slicer's own rules turn it off, not because the form is busy. */
   disabledBySlicer: boolean;
+  /**
+   * The panel-wide disabled state, without the slicer's per-option rules.
+   *
+   * Gates the "from file" tick, which answers a different question from the
+   * control beside it: not "is this option in play" but "where does its value
+   * come from". An option the slicer has switched off can still be one the
+   * user wants the file's value for once it comes back into play, and folding
+   * the two together is what made a ticked source setting unclearable (#2942).
+   */
+  formDisabled: boolean;
   /** Set when the source file's designer moved this option off the stock preset. */
   source?: DesignOverride;
   sourceOn?: boolean;
@@ -432,6 +525,7 @@ function OptionRow({
   onChange,
   disabled,
   disabledBySlicer,
+  formDisabled,
   source,
   sourceOn = false,
   onToggleSource,
@@ -470,19 +564,27 @@ function OptionRow({
         {source && (
           <span
             className={`shrink-0 rounded px-1 py-0.5 text-[10px] ${
-              source.printer_coupled
+              source.printer_coupled || source.preset_defining
                 ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
                 : 'bg-bambu-green/15 text-bambu-green'
             }`}
             title={
               source.printer_coupled
                 ? t('slicerSettings.fromFilePrinterCoupledHint', "Tuned for the printer this file was designed for -- may be wrong or out of range on yours.")
-                : t('slicerSettings.fromFileHint', "The designer changed this in the source file. Its value is {{value}}.", { value: formatSourceValue(source.value) })
+                : source.preset_defining
+                  ? t(
+                      'slicerSettings.fromFileOverridesPresetHint',
+                      'The file sets this to {{value}} where the preset you picked uses {{preset}}. Tick it only if the file should win.',
+                      { value: formatSourceValue(source.value), preset: baselineForDisplay(option, presetValue) },
+                    )
+                  : t('slicerSettings.fromFileHint', "The designer changed this in the source file. Its value is {{value}}.", { value: formatSourceValue(source.value) })
             }
           >
             {source.printer_coupled
               ? t('slicerSettings.fromFilePrinterCoupled', "designer's printer")
-              : t('slicerSettings.fromFile', 'from file')}
+              : source.preset_defining
+                ? t('slicerSettings.fromFileOverridesPreset', 'overrides preset')
+                : t('slicerSettings.fromFile', 'from file')}
           </span>
         )}
       </label>
@@ -499,7 +601,7 @@ function OptionRow({
             <input
               type="checkbox"
               checked={sourceOn}
-              disabled={disabled}
+              disabled={formDisabled}
               onChange={(e) => onToggleSource(optionKey, e.target.checked)}
               aria-label={t('slicerSettings.useFromFile', "Use the source file's value for {{option}}", {
                 option: option.label || optionKey,

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
+  disambiguateColorNames,
   colorFamily,
   colorSortKey,
   hexToColorName,
@@ -88,6 +89,69 @@ describe('getColorName', () => {
     setColorCatalog({ '000000': 'Inky Night' });
     expect(getColorName('00000000')).toBe('Clear');
     expect(getColorName('000000FF')).toBe('Inky Night');
+  });
+});
+
+describe('getColorName with a material (#2875)', () => {
+  beforeEach(() => {
+    __resetColorCatalogForTests();
+    // What the backend ships for a real Bambu catalog: the flat map can only
+    // keep one name for #FFFFFF, and the qualified map carries the rest.
+    setColorCatalog(
+      { ffffff: 'Jade White', '000000': 'Black' },
+      { 'pla matte|ffffff': 'Ivory White', 'pla matte|000000': 'Charcoal' },
+    );
+  });
+
+  it('returns the material-specific name when the caller knows the material', () => {
+    expect(getColorName('FFFFFFFF', 'PLA Matte')).toBe('Ivory White');
+    expect(getColorName('000000FF', 'PLA Matte')).toBe('Charcoal');
+  });
+
+  it('still returns the flat name for a material with no entry of its own', () => {
+    expect(getColorName('FFFFFFFF', 'PLA Basic')).toBe('Jade White');
+    expect(getColorName('FFFFFFFF', 'Some Third Party Filament')).toBe('Jade White');
+  });
+
+  it('ignores case and padding in the material, as tray_sub_brands is not normalized', () => {
+    expect(getColorName('FFFFFFFF', '  pla MATTE ')).toBe('Ivory White');
+  });
+
+  it('falls back to the flat name when no material is passed', () => {
+    expect(getColorName('FFFFFFFF')).toBe('Jade White');
+    expect(getColorName('FFFFFFFF', null)).toBe('Jade White');
+    expect(getColorName('FFFFFFFF', '')).toBe('Jade White');
+  });
+
+  it('keeps Clear ahead of any catalog lookup for a transparent spool', () => {
+    expect(getColorName('FFFFFF00', 'PLA Matte')).toBe('Clear');
+  });
+
+  it('falls back to HSL when neither map knows the hex', () => {
+    expect(getColorName('5F6367', 'PLA Matte')).toBe('Dark Gray');
+  });
+
+  it('survives a catalog with no qualified map at all', () => {
+    __resetColorCatalogForTests();
+    setColorCatalog({ ffffff: 'Jade White' });
+    expect(getColorName('FFFFFFFF', 'PLA Matte')).toBe('Jade White');
+  });
+
+  it('reads the hex from the last separator, so a material may contain one', () => {
+    // Material is free text -- users edit the colour catalog.
+    __resetColorCatalogForTests();
+    setColorCatalog({ ffffff: 'Jade White' }, { 'pla|matte|ffffff': 'Ivory White' });
+    expect(getColorName('FFFFFFFF', 'PLA|Matte')).toBe('Ivory White');
+  });
+
+  it('ignores malformed qualified keys instead of poisoning the map', () => {
+    __resetColorCatalogForTests();
+    setColorCatalog(
+      { ffffff: 'Jade White' },
+      { 'pla matte|nothex': 'Nope', '|ffffff': 'Nope', 'pla matte': 'Nope', 'pla matte|ffffff': 'Ivory White' },
+    );
+    expect(getColorName('FFFFFFFF', 'PLA Matte')).toBe('Ivory White');
+    expect(getColorName('FFFFFFFF')).toBe('Jade White');
   });
 });
 
@@ -218,5 +282,64 @@ describe('colorFamily / hexToColorName agreement', () => {
     for (const hex of ['FF0000FF', '875718FF', '5F6367FF', 'FFFFFFFF', '00000000', 'zzz']) {
       expect(hexToColorName(hex)).toBe(colorFamily(hex) ?? 'Unknown');
     }
+  });
+});
+
+describe('disambiguateColorNames', () => {
+  // #2941: a slicer profile asked for a near-pure blue while the AMS slot held
+  // Bambu's navy Blue. Both resolve to the name "Blue", so the mismatch warning
+  // sat between two identical labels and read as a contradiction.
+  const SLICER_BLUE = '#0028FF';
+  const BAMBU_BLUE = '#0A2989';
+
+  it('qualifies both sides with hex when the names collide', () => {
+    expect(
+      disambiguateColorNames({ name: 'Blue', hex: SLICER_BLUE }, { name: 'Blue', hex: BAMBU_BLUE }),
+    ).toEqual(['Blue (#0028FF)', 'Blue (#0A2989)']);
+  });
+
+  it('treats names as colliding regardless of case', () => {
+    expect(disambiguateColorNames({ name: 'blue', hex: SLICER_BLUE }, { name: 'Blue', hex: BAMBU_BLUE })).toEqual([
+      'blue (#0028FF)',
+      'Blue (#0A2989)',
+    ]);
+  });
+
+  it('leaves distinct names alone', () => {
+    // Once the words separate them the hex is noise, not information.
+    expect(disambiguateColorNames({ name: 'Blue', hex: SLICER_BLUE }, { name: 'Navy', hex: BAMBU_BLUE })).toEqual([
+      'Blue',
+      'Navy',
+    ]);
+  });
+
+  it('falls back to the hex for a side with no name', () => {
+    expect(disambiguateColorNames({ hex: SLICER_BLUE }, { name: 'Blue', hex: BAMBU_BLUE })).toEqual([
+      '#0028FF',
+      'Blue',
+    ]);
+  });
+
+  it('keeps the bare names when neither side has a usable hex', () => {
+    // Better a repeated name than "Blue ()" twice.
+    expect(disambiguateColorNames({ name: 'Blue', hex: 'nonsense' }, { name: 'Blue' })).toEqual(['Blue', 'Blue']);
+  });
+
+  it('qualifies only the side that has a hex', () => {
+    expect(disambiguateColorNames({ name: 'Blue', hex: SLICER_BLUE }, { name: 'Blue' })).toEqual([
+      'Blue (#0028FF)',
+      'Blue',
+    ]);
+  });
+
+  it('normalizes hex form, so an 8-char rgba and a bare hex read alike', () => {
+    expect(disambiguateColorNames({ name: 'Blue', hex: '0028ffff' }, { name: 'Blue', hex: '#0a2989' })).toEqual([
+      'Blue (#0028FF)',
+      'Blue (#0A2989)',
+    ]);
+  });
+
+  it('returns empty labels when there is nothing to name', () => {
+    expect(disambiguateColorNames({}, {})).toEqual(['', '']);
   });
 });

@@ -66,6 +66,14 @@ _INTERNAL_FILE_PREFIXES = ("/userdata/",)
 REASON_INTERNAL_STORAGE = "internal_storage"
 REASON_NO_EXTERNAL_STORAGE = "no_external_storage"
 
+# Not a storage verdict — the file's location was never in question. The
+# printer's FTPS service was inside its post-failed-handshake cool-off when the
+# print started, so the sweep was skipped without a single connection. Stamped
+# on the fallback archive by the print-start handler rather than returned by
+# `_verdict`, and unlike the two above it is temporary: it is the one reason a
+# retry is worth scheduling (#2957).
+REASON_FTPS_COOLOFF = "ftps_cooloff"
+
 # Where a sliced file has ever been found over FTPS, in the order the sweep in
 # `main.py` tries them -- root first, which is where A1/P1-series uploads land
 # (#972), then `/cache`, which is where the H2D keeps its copy of an eMMC job

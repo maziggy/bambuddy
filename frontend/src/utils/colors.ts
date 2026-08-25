@@ -10,10 +10,16 @@
 // arrives instead of staying stuck on the HSL fallback.
 
 let runtimeColorCatalog: Record<string, string> = {};
+// Names a plain hex lookup cannot reach, keyed "<material>|<hex>". A hex is not
+// one colour in Bambu's range -- #FFFFFF is Jade White in PLA Basic and Ivory
+// White in PLA Matte -- so a caller that knows the material (an AMS slot knows
+// it as tray_sub_brands) gets the right one instead of whichever row the
+// backend's collapse happened to keep (#2875).
+let runtimeMaterialCatalog: Record<string, string> = {};
 let catalogVersion = 0;
 const catalogListeners = new Set<() => void>();
 
-export function setColorCatalog(map: Record<string, string>): void {
+export function setColorCatalog(map: Record<string, string>, byMaterial?: Record<string, string>): void {
   // Normalize keys to lowercase 6-char hex (no '#'), defensively. Backend already
   // does this, but the frontend contract is explicit so callers from tests or
   // future integrations can't accidentally break lookups.
@@ -23,7 +29,19 @@ export function setColorCatalog(map: Record<string, string>): void {
     const hex = key.replace('#', '').toLowerCase().slice(0, 6);
     if (hex.length === 6) normalized[hex] = value;
   }
+  const normalizedByMaterial: Record<string, string> = {};
+  for (const [key, value] of Object.entries(byMaterial || {})) {
+    if (!key || !value) continue;
+    // Split on the LAST separator: a material is free text (users edit the
+    // catalog) and may itself contain a '|'.
+    const cut = key.lastIndexOf('|');
+    if (cut <= 0) continue;
+    const material = key.slice(0, cut).trim().toLowerCase();
+    const cleanHex = key.slice(cut + 1).replace('#', '').toLowerCase().slice(0, 6);
+    if (material && cleanHex.length === 6) normalizedByMaterial[`${material}|${cleanHex}`] = value;
+  }
   runtimeColorCatalog = normalized;
+  runtimeMaterialCatalog = normalizedByMaterial;
   catalogVersion += 1;
   // Snapshot listeners to avoid mutation-during-iteration if a listener unsubscribes.
   for (const listener of Array.from(catalogListeners)) {
@@ -45,6 +63,7 @@ export function getColorCatalogVersion(): number {
 /** Test-only hook: reset the catalog to empty so unit tests can exercise fallbacks. */
 export function __resetColorCatalogForTests(): void {
   runtimeColorCatalog = {};
+  runtimeMaterialCatalog = {};
   catalogVersion = 0;
   catalogListeners.clear();
 }
@@ -210,15 +229,66 @@ export function colorSortKey(rgba: string | null | undefined): string {
 /**
  * Get color name from hex color.
  * Looks up the runtime color catalog (backend-sourced), then falls back to HSL.
+ *
+ * Pass `material` whenever the caller knows which variant the colour belongs to
+ * -- for an AMS slot that is the printer's own `tray_sub_brands` ("PLA Matte").
+ * Without it a white Matte spool reads "Jade White", the PLA Basic name that
+ * shares its hex, because the flat map can only keep one name per hex (#2875).
+ * An unknown material falls through to the flat lookup, so passing one can only
+ * ever improve the answer.
  */
-export function getColorName(hexColor: string): string {
+export function getColorName(hexColor: string, material?: string | null): string {
   if (!hexColor) return hexToColorName(hexColor);
   const clean = hexColor.replace('#', '').toLowerCase();
   if (clean.length === 8 && clean.substring(6, 8) === '00') return 'Clear';
   const hex = clean.substring(0, 6);
+  if (material) {
+    const qualified = runtimeMaterialCatalog[`${material.trim().toLowerCase()}|${hex}`];
+    if (qualified) return qualified;
+  }
   const mapped = runtimeColorCatalog[hex];
   if (mapped) return mapped;
   return hexToColorName(hexColor);
+}
+
+/**
+ * Label two colours so a reader can tell which is which.
+ *
+ * `getColorName` resolves a hex against the catalogue and falls back to a
+ * coarse family bucket, so a slicer profile's near-pure `#0028FF` and Bambu's
+ * navy `#0A2989` are both called "Blue". A mismatch warning between those two
+ * then reads as a contradiction of the two identical names printed either side
+ * of it, which is the whole of #2941: the comparison was right, the labels gave
+ * the user no way to see what it was comparing.
+ *
+ * When the names collide the hex is appended to both, because that is what
+ * actually differs. Distinct names are returned untouched -- once the words
+ * separate them the hex is noise. A side with no name falls back to its hex, and
+ * a pair with no usable hex at all keeps the bare names rather than growing an
+ * empty "()".
+ */
+export function disambiguateColorNames(
+  first: { name?: string | null; hex?: string | null },
+  second: { name?: string | null; hex?: string | null },
+): [string, string] {
+  const hexLabel = (hex?: string | null): string => {
+    const clean = (hex ?? '').replace('#', '').trim().slice(0, 6).toUpperCase();
+    return /^[0-9A-F]{6}$/.test(clean) ? `#${clean}` : '';
+  };
+
+  const firstName = (first.name ?? '').trim();
+  const secondName = (second.name ?? '').trim();
+  const firstHex = hexLabel(first.hex);
+  const secondHex = hexLabel(second.hex);
+
+  if (!firstName || !secondName) return [firstName || firstHex, secondName || secondHex];
+  if (firstName.toLowerCase() !== secondName.toLowerCase()) return [firstName, secondName];
+  if (!firstHex && !secondHex) return [firstName, secondName];
+
+  return [
+    firstHex ? `${firstName} (${firstHex})` : firstName,
+    secondHex ? `${secondName} (${secondHex})` : secondName,
+  ];
 }
 
 /**

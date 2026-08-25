@@ -143,7 +143,7 @@ export function FilamentOverride({
                       value={`${f.type}|${f.color}`}
                       className="bg-bambu-dark text-white"
                     >
-                    {f.tray_sub_brands || f.type} ({getColorName(f.color)})
+                    {f.tray_sub_brands || f.type} ({getColorName(f.color, f.tray_sub_brands)})
                     </option>
                   ))}
                 </select>

@@ -27,6 +27,7 @@ from backend.app.services.print_scheduler import (
     PrintScheduler,
     _installed_nozzle_diameters,
     _nozzle_mismatch_message,
+    _rack_nozzle_diameters,
 )
 from backend.tests._fixtures.background_tasks import discarding_spawn_patch
 
@@ -115,6 +116,156 @@ def test_adjacent_sizes_are_distinguished():
 
 
 # ---------------------------------------------------------------------------
+# Tool-changer rack (#2885)
+#
+# H2C-1's live telemetry, captured while it was sitting in the state that
+# reproduces the bug: both hotends read 0.4, R2 (id 17) is an empty dock and so
+# absent from the payload, and id 1 is a hotend whose nozzle is parked back in
+# the rack -- it still reports diameter "0.4", but max_temp 0 / serial "N/A"
+# say nothing is mounted.
+# ---------------------------------------------------------------------------
+
+H2C_NOZZLE_INFO = [
+    {"id": 0, "diameter": "0.4", "wear": 128, "max_temp": 350, "serial_number": "20D06A611826266"},
+    {"id": 1, "diameter": "0.4", "wear": 0, "max_temp": 0, "serial_number": "N/A"},
+    {"id": 16, "diameter": "0.4", "wear": 128, "max_temp": 350, "serial_number": "20D06A630222856"},
+    {"id": 18, "diameter": "0.4", "wear": 128, "max_temp": 350, "serial_number": "20D06A630227749"},
+    {"id": 19, "diameter": "0.4", "wear": 128, "max_temp": 350, "serial_number": "20D06A630222810"},
+    {"id": 20, "diameter": "0.6", "wear": 128, "max_temp": 350, "serial_number": "20D06A610707022"},
+    {"id": 21, "diameter": "0.2", "wear": 128, "max_temp": 350, "serial_number": "20D06A5C2913952"},
+]
+
+
+def _h2c_state():
+    return SimpleNamespace(
+        nozzles=[SimpleNamespace(nozzle_diameter="0.4"), SimpleNamespace(nozzle_diameter="0.4")],
+        nozzle_rack=H2C_NOZZLE_INFO,
+    )
+
+
+def test_rack_reads_dock_positions_only():
+    # ids 16-21 are the docks; 0/1 are the hotends and must not leak in.
+    assert _rack_nozzle_diameters(_h2c_state()) == [0.4, 0.4, 0.4, 0.6, 0.2]
+
+
+def test_rack_empty_dock_is_absent_not_zero():
+    # R2 (id 17) held no nozzle and the printer simply omitted it, so five
+    # entries come back for a six-position rack.
+    assert len(_rack_nozzle_diameters(_h2c_state())) == 5
+
+
+def test_rack_empty_on_printers_without_one():
+    assert _rack_nozzle_diameters(_state("0.4")) == []
+    assert _rack_nozzle_diameters(None) == []
+    assert _rack_nozzle_diameters(SimpleNamespace(nozzle_rack=[])) == []
+
+
+def test_rack_ignores_unparseable_entries():
+    status = SimpleNamespace(
+        nozzle_rack=[
+            {"id": 16, "diameter": ""},
+            {"id": 17, "diameter": "0"},
+            {"id": 18, "diameter": "abc"},
+            {"id": 19, "diameter": "0.4"},
+            "not-a-dict",
+            {"id": "x", "diameter": "0.6"},
+        ]
+    )
+    assert _rack_nozzle_diameters(status) == [0.4]
+
+
+def test_rack_accepts_the_serialised_key_name():
+    # PrinterState says "diameter"; the REST schema says "nozzle_diameter".
+    status = SimpleNamespace(nozzle_rack=[{"id": 21, "nozzle_diameter": "0.2"}])
+    assert _rack_nozzle_diameters(status) == [0.2]
+
+
+def test_installed_drops_a_hotend_with_no_nozzle_mounted():
+    # id 1's "0.4" is stale -- the carriage is empty (max_temp 0, serial N/A).
+    assert _installed_nozzle_diameters(_h2c_state()) == [0.4]
+
+
+def test_installed_keeps_hotends_when_no_nozzle_info_is_reported():
+    # Printers that never send nozzle_info behave exactly as before.
+    assert _installed_nozzle_diameters(_state("0.4", "0.6")) == [0.4, 0.6]
+
+
+def test_installed_keeps_a_hotend_when_only_one_signal_says_empty():
+    # Conservative: the explicit "N/A" serial and a missing temperature rating
+    # must BOTH be present before we discard a reported diameter, so a partial
+    # payload can never invent a mismatch.
+    only_serial_says_empty = SimpleNamespace(
+        nozzles=[SimpleNamespace(nozzle_diameter="0.4")],
+        nozzle_rack=[{"id": 0, "diameter": "0.4", "max_temp": 350, "serial_number": "N/A"}],
+    )
+    only_temp_says_empty = SimpleNamespace(
+        nozzles=[SimpleNamespace(nozzle_diameter="0.4")],
+        nozzle_rack=[{"id": 0, "diameter": "0.4", "max_temp": 0, "serial_number": "SN123"}],
+    )
+    assert _installed_nozzle_diameters(only_serial_says_empty) == [0.4]
+    assert _installed_nozzle_diameters(only_temp_says_empty) == [0.4]
+
+
+def test_installed_keeps_a_hotend_when_the_firmware_reports_neither_field():
+    # A firmware that sends nozzle_info without max_temp/serial normalises to
+    # max_temp 0 + serial "". That is "didn't say", not "empty" -- reading it as
+    # empty would silently switch the #1899 guard off on that machine.
+    quiet = SimpleNamespace(
+        nozzles=[SimpleNamespace(nozzle_diameter="0.4"), SimpleNamespace(nozzle_diameter="0.6")],
+        nozzle_rack=[
+            {"id": 0, "diameter": "0.4", "max_temp": 0, "serial_number": ""},
+            {"id": 1, "diameter": "0.6", "max_temp": 0, "serial_number": ""},
+        ],
+    )
+    assert _installed_nozzle_diameters(quiet) == [0.4, 0.6]
+    # ...and the guard therefore still blocks a genuinely wrong slice.
+    assert _nozzle_mismatch_message(0.2, _installed_nozzle_diameters(quiet), []) is not None
+
+
+def test_installed_tolerates_a_non_numeric_max_temp():
+    odd = SimpleNamespace(
+        nozzles=[SimpleNamespace(nozzle_diameter="0.4")],
+        nozzle_rack=[{"id": 0, "diameter": "0.4", "max_temp": "hot", "serial_number": "N/A"}],
+    )
+    assert _installed_nozzle_diameters(odd) == [0.4]
+
+
+def test_docked_nozzle_counts_as_reachable():
+    # The bug: a 0.2 slice was blocked while a 0.2 sat in R6.
+    assert _nozzle_mismatch_message(0.2, [0.4], [0.4, 0.6, 0.2]) is None
+    # And it was never only about 0.2 -- a 0.6 in R5 was blocked the same way.
+    assert _nozzle_mismatch_message(0.6, [0.4], [0.4, 0.6, 0.2]) is None
+
+
+def test_h2c_live_state_no_longer_blocks_any_stocked_diameter():
+    status = _h2c_state()
+    installed = _installed_nozzle_diameters(status)
+    rack = _rack_nozzle_diameters(status)
+    for sliced in (0.2, 0.4, 0.6):
+        assert _nozzle_mismatch_message(sliced, installed, rack) is None, sliced
+
+
+def test_diameter_in_neither_hotend_nor_rack_still_blocks():
+    msg = _nozzle_mismatch_message(0.8, [0.4], [0.4, 0.6, 0.2])
+    assert msg is not None
+    assert "0.8mm" in msg
+    assert "0.4mm installed" in msg
+    # Deduplicated and rack-labelled, so the user can see what is actually there.
+    assert "0.4mm / 0.6mm / 0.2mm in the nozzle rack" in msg
+
+
+def test_message_names_an_empty_carriage_rather_than_claiming_a_size():
+    msg = _nozzle_mismatch_message(0.8, [], [0.4])
+    assert msg is not None
+    assert "no nozzle mounted" in msg
+
+
+def test_rack_only_still_fail_safe_when_nothing_is_known():
+    # No hotend and no rack -> unknown, never block.
+    assert _nozzle_mismatch_message(0.8, [], []) is None
+
+
+# ---------------------------------------------------------------------------
 # End-to-end: the guard fires inside _start_print BEFORE upload
 # ---------------------------------------------------------------------------
 
@@ -185,9 +336,12 @@ async def archive_case(tmp_path):
         await engine.dispose()
 
 
-async def _run_start_print(ctx, *, installed_nozzles):
+async def _run_start_print(ctx, *, installed_nozzles, nozzle_rack=None):
     scheduler = PrintScheduler()
-    status = SimpleNamespace(nozzles=[SimpleNamespace(nozzle_diameter=d) for d in installed_nozzles])
+    status = SimpleNamespace(
+        nozzles=[SimpleNamespace(nozzle_diameter=d) for d in installed_nozzles],
+        nozzle_rack=nozzle_rack or [],
+    )
     # The mismatch case returns before the upload path; the match case drives it
     # to start_print, so mirror the post-guard dependency patches the
     # cleanup-library harness uses (get_ftp_retry_settings et al. open their own
@@ -247,3 +401,33 @@ async def test_start_print_proceeds_when_nozzle_matches(archive_case):
         item = await db.get(PrintQueueItem, ctx.queue_item_id)
     assert item.status != "failed"
     ctx.start_print.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_start_print_proceeds_when_the_nozzle_is_in_the_rack(archive_case):
+    """#2885: a 0.2 slice dispatched to an H2C whose hotends both read 0.4 but
+    whose rack holds a 0.2 must reach start_print. Before the fix the guard
+    failed the item here, so the rack picker further down never ran and the
+    user had to fetch the nozzle by hand on the printer's own UI."""
+    ctx = await archive_case(sliced_nozzle=0.2)
+    await _run_start_print(ctx, installed_nozzles=["0.4", "0.4"], nozzle_rack=H2C_NOZZLE_INFO)
+
+    async with ctx.session_maker() as db:
+        item = await db.get(PrintQueueItem, ctx.queue_item_id)
+    assert item.status != "failed"
+    ctx.start_print.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_start_print_still_blocks_a_diameter_the_rack_lacks(archive_case):
+    """The rack widens the guard, it does not disable it: 0.8 is in neither a
+    hotend nor a dock, so the item still fails before upload."""
+    ctx = await archive_case(sliced_nozzle=0.8)
+    await _run_start_print(ctx, installed_nozzles=["0.4", "0.4"], nozzle_rack=H2C_NOZZLE_INFO)
+
+    async with ctx.session_maker() as db:
+        item = await db.get(PrintQueueItem, ctx.queue_item_id)
+    assert item.status == "failed"
+    assert "nozzle rack" in item.error_message
+    ctx.upload.assert_not_called()
+    ctx.start_print.assert_not_called()

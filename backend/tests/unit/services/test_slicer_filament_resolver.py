@@ -35,7 +35,7 @@ async def test_pfus_cloud_unavailable_preserves_setting_id():
         "backend.app.api.routes.cloud.build_authenticated_cloud",
         AsyncMock(return_value=None),
     ):
-        tray_info_idx, setting_id, sub_brand = await resolve_slicer_filament(
+        tray_info_idx, setting_id, sub_brand, _type_override = await resolve_slicer_filament(
             db=db,
             current_user=None,
             slicer_filament="PFUS990b6e19965353",
@@ -56,7 +56,7 @@ async def test_pfcn_cloud_unavailable_preserves_setting_id():
         "backend.app.api.routes.cloud.build_authenticated_cloud",
         AsyncMock(return_value=None),
     ):
-        tray_info_idx, setting_id, sub_brand = await resolve_slicer_filament(
+        tray_info_idx, setting_id, sub_brand, _type_override = await resolve_slicer_filament(
             db=db,
             current_user=None,
             slicer_filament="PFCN1234567890",
@@ -82,7 +82,7 @@ async def test_pfus_cloud_resolves_filament_id_regression_guard():
         "backend.app.api.routes.cloud.build_authenticated_cloud",
         AsyncMock(return_value=cloud_mock),
     ):
-        tray_info_idx, setting_id, sub_brand = await resolve_slicer_filament(
+        tray_info_idx, setting_id, sub_brand, _type_override = await resolve_slicer_filament(
             db=db,
             current_user=MagicMock(),
             slicer_filament="PFUS990b6e19965353",
@@ -106,7 +106,7 @@ async def test_gfs_cloud_unavailable_resolves_via_normalize():
         "backend.app.api.routes.cloud.build_authenticated_cloud",
         AsyncMock(return_value=None),
     ):
-        tray_info_idx, setting_id, sub_brand = await resolve_slicer_filament(
+        tray_info_idx, setting_id, sub_brand, _type_override = await resolve_slicer_filament(
             db=db,
             current_user=None,
             slicer_filament="GFSG02",
@@ -130,7 +130,7 @@ async def test_literal_material_name_clears_both():
         "backend.app.api.routes.cloud.build_authenticated_cloud",
         AsyncMock(return_value=None),
     ):
-        tray_info_idx, setting_id, sub_brand = await resolve_slicer_filament(
+        tray_info_idx, setting_id, sub_brand, _type_override = await resolve_slicer_filament(
             db=db,
             current_user=None,
             slicer_filament="PETG",
@@ -140,3 +140,123 @@ async def test_literal_material_name_clears_both():
     assert tray_info_idx == ""
     assert setting_id == ""
     assert sub_brand is None
+
+
+class TestThePresetsOwnType:
+    """#2902: a preset is chosen from a list the slicer defines, so its
+    ``filament_type`` is the slicer's own answer to what the material is --
+    no reading of a product name required. Raised by @doncaruana on the issue
+    after the first fix reduced "PLA Aero" to "PLA".
+
+    The resolver hands that answer back as the fourth element; the two assign
+    routes write it into ``tray_type`` in preference to reducing the spool's
+    material column. ``None`` means no preset said, and the reduction stands.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_local_presets_type_is_returned(self):
+        db = MagicMock()
+        lp = MagicMock()
+        lp.filament_type = "PLA-AERO"
+        lp.setting = None
+        lp.name = "Bambu PLA Aero @BBL X1C"
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=lp)
+        db.execute = AsyncMock(return_value=result)
+
+        _idx, _sid, _brand, type_override = await resolve_slicer_filament(
+            db=db,
+            current_user=None,
+            slicer_filament="38",
+            slicer_filament_name=None,
+            material="PLA",
+        )
+        assert type_override == "PLA-AERO"
+
+    @pytest.mark.asyncio
+    async def test_a_cloud_presets_type_is_read_out_of_its_profile(self):
+        """Both slicers store it as a one-element array, and the preset JSON
+        sits under ``setting`` in the cloud envelope."""
+        db = MagicMock()
+        cloud = MagicMock()
+        cloud.is_authenticated = True
+        cloud.get_setting_detail = AsyncMock(
+            return_value={
+                "filament_id": "GFA11",
+                "name": "Bambu PLA Aero @BBL X1C",
+                "setting": {"filament_type": ["PLA-AERO"]},
+            }
+        )
+        cloud.close = AsyncMock()
+        with patch(
+            "backend.app.api.routes.cloud.build_authenticated_cloud",
+            AsyncMock(return_value=cloud),
+        ):
+            idx, _sid, _brand, type_override = await resolve_slicer_filament(
+                db=db,
+                current_user=None,
+                slicer_filament="GFSA11",
+                slicer_filament_name=None,
+                material="PLA",
+            )
+        assert idx == "GFA11"
+        assert type_override == "PLA-AERO"
+
+    @pytest.mark.asyncio
+    async def test_a_bare_string_filament_type_is_accepted_too(self):
+        """Hand-written and older profiles store it unwrapped. ``orca_profiles``
+        accepts both forms, so this has to as well."""
+        db = MagicMock()
+        cloud = MagicMock()
+        cloud.is_authenticated = True
+        cloud.get_setting_detail = AsyncMock(
+            return_value={"filament_id": "GFG02", "setting": {"filament_type": "PETG"}}
+        )
+        cloud.close = AsyncMock()
+        with patch(
+            "backend.app.api.routes.cloud.build_authenticated_cloud",
+            AsyncMock(return_value=cloud),
+        ):
+            _idx, _sid, _brand, type_override = await resolve_slicer_filament(
+                db=db,
+                current_user=None,
+                slicer_filament="GFSG02",
+                slicer_filament_name=None,
+                material="PETG",
+            )
+        assert type_override == "PETG"
+
+    @pytest.mark.asyncio
+    async def test_no_preset_means_no_answer(self):
+        """A spool with no slicer_filament -- the case this issue was reported
+        for. ``material`` is required on a spool and ``slicer_filament`` is
+        not, so the reduction has to stay as the fallback."""
+        db = MagicMock()
+        _idx, _sid, _brand, type_override = await resolve_slicer_filament(
+            db=db,
+            current_user=None,
+            slicer_filament=None,
+            slicer_filament_name=None,
+            material="PLA+",
+        )
+        assert type_override is None
+
+    @pytest.mark.asyncio
+    async def test_a_preset_that_does_not_say_gets_no_opinion(self):
+        db = MagicMock()
+        cloud = MagicMock()
+        cloud.is_authenticated = True
+        cloud.get_setting_detail = AsyncMock(return_value={"filament_id": "GFG02", "setting": {}})
+        cloud.close = AsyncMock()
+        with patch(
+            "backend.app.api.routes.cloud.build_authenticated_cloud",
+            AsyncMock(return_value=cloud),
+        ):
+            _idx, _sid, _brand, type_override = await resolve_slicer_filament(
+                db=db,
+                current_user=None,
+                slicer_filament="GFSG02",
+                slicer_filament_name=None,
+                material="PETG",
+            )
+        assert type_override is None

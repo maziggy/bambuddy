@@ -4,6 +4,7 @@ import logging
 import os
 import secrets
 import time
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
@@ -1129,6 +1130,15 @@ async def _user_from_api_key(db: AsyncSession, api_key: APIKey) -> User | None:
     return user
 
 
+# The row a successful validation produced for the request in flight. Printer-
+# scoped routes validate the same credential twice -- once in the permission
+# gate, once for the key's printer allowlist -- and a validation is a pbkdf2
+# verify plus a ``last_used`` write, so the second one is pure cost. Keyed by
+# the raw credential so a request carrying two of them can never cross their
+# rows, and held in a ContextVar so it cannot outlive the task that set it.
+_validated_api_key: ContextVar[tuple[str, APIKey] | None] = ContextVar("_validated_api_key", default=None)
+
+
 async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | None:
     """Validate an API key and return the APIKey object if valid, None otherwise.
 
@@ -1163,6 +1173,7 @@ async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | No
                 # Update last_used timestamp
                 api_key.last_used = datetime.now(timezone.utc)
                 await db.commit()
+                _validated_api_key.set((api_key_value, api_key))
                 return api_key
     except Exception as e:  # SEC-AUTH-EXC: validation failure returns None; every caller treats None as "invalid key" → 401 (fail-closed)
         logger.warning("API key validation error: %s", e)
@@ -1625,6 +1636,67 @@ def check_printer_access(api_key: APIKey, printer_id: int) -> None:
         )
 
 
+async def validated_api_key_from_request(
+    credentials: HTTPAuthorizationCredentials | None,
+    x_api_key: str | None,
+) -> APIKey | None:
+    """Return the validated API key carried by a request, if any.
+
+    Permission dependencies intentionally return ``None`` for API-key callers so
+    routes do not mistake a key for a user identity. Printer-bound routes still
+    need the key row to enforce ``printer_ids`` after the normal scope/owner
+    permission gate has run. This helper recognizes both supported transports.
+    """
+
+    candidate = x_api_key
+    if candidate is None and credentials is not None and credentials.credentials.startswith("bb_"):
+        candidate = credentials.credentials
+    if candidate is None:
+        return None
+    cached = _validated_api_key.get()
+    if cached is not None and cached[0] == candidate:
+        return cached[1]
+    async with async_session() as db:
+        api_key = await _validate_api_key(db, candidate)
+        if api_key is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid API key",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        # Touch the JSON-backed value before detaching the row from the session.
+        _ = api_key.printer_ids
+        return api_key
+
+
+async def current_api_key_if_present(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> APIKey | None:
+    """FastAPI dependency exposing only an authenticated API-key principal."""
+
+    return await validated_api_key_from_request(credentials, x_api_key)
+
+
+def require_printer_permission_if_auth_enabled(permission: str | Permission):
+    """Require a permission and enforce an API key's per-printer allowlist."""
+
+    permission_checker = require_permission_if_auth_enabled(permission)
+
+    async def checker(
+        printer_id: int,
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+        x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    ) -> User | None:
+        user = await permission_checker(credentials=credentials, x_api_key=x_api_key)
+        api_key = await validated_api_key_from_request(credentials, x_api_key)
+        if api_key is not None:
+            check_printer_access(api_key, printer_id)
+        return user
+
+    return checker
+
+
 # Convenience dependencies - these are functions that return Depends objects
 def RequireAdmin():
     """Dependency that requires admin role."""
@@ -1832,6 +1904,37 @@ def RequirePermission(*permissions: str | Permission):
 def RequirePermissionIfAuthEnabled(*permissions: str | Permission):
     """Convenience dependency that requires permissions if auth is enabled."""
     return Depends(require_permission_if_auth_enabled(*permissions))
+
+
+def RequirePrinterPermissionIfAuthEnabled(permission: str | Permission):
+    """Require a permission plus any API-key ``printer_ids`` restriction."""
+
+    return Depends(require_printer_permission_if_auth_enabled(permission))
+
+
+def probe_permissions_if_auth_enabled(*permissions: str | Permission):
+    """Return permission availability while preserving authentication errors.
+
+    This is for endpoints that can return a useful permission-independent
+    subset. Missing permissions become ``False``; invalid or absent credentials
+    still retain the normal 401 response from the shared permission checker.
+    """
+
+    permission_checker = require_permission_if_auth_enabled(*permissions)
+
+    async def checker(
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+        x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    ) -> bool:
+        try:
+            await permission_checker(credentials, x_api_key)
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_403_FORBIDDEN:
+                return False
+            raise
+        return True
+
+    return checker
 
 
 def require_any_permission_if_auth_enabled(*permissions: str | Permission):

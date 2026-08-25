@@ -2,12 +2,13 @@
  * Tests for the ArchivesPage component.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { render } from '../utils';
 import { ArchivesPage } from '../../pages/ArchivesPage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { setAuthToken } from '../../api/client';
 
 const mockArchives = [
   {
@@ -68,6 +69,7 @@ const mockArchiveStats = {
 
 describe('ArchivesPage', () => {
   beforeEach(() => {
+    setAuthToken(null);
     server.use(
       http.get('/api/v1/archives/', () => {
         return HttpResponse.json(mockArchives);
@@ -100,6 +102,10 @@ describe('ArchivesPage', () => {
         return HttpResponse.json({ success: true });
       })
     );
+  });
+
+  afterEach(() => {
+    setAuthToken(null);
   });
 
   describe('rendering', () => {
@@ -306,9 +312,154 @@ describe('ArchivesPage', () => {
       // Archives with multi-plate support will show navigation on hover
       // The plates API is called lazily when hovering
     });
+
+    it('names the plate in the card title when it is not the first one', async () => {
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([{ ...mockArchives[1], plate_id: 3 }])
+        )
+      );
+
+      render(<ArchivesPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Bracket v2 \u2014 Plate 3')).toBeInTheDocument();
+      });
+    });
+
+    it('leaves the title alone for a print on plate 1', async () => {
+      // The queue records a plate for single-plate files too, so an ungated
+      // label reads "Plate 1" on ordinary prints (#2796).
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([{ ...mockArchives[0], plate_id: 1 }])
+        )
+      );
+
+      render(<ArchivesPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/Plate 1/)).not.toBeInTheDocument();
+    });
   });
 
   describe('timelapse management', () => {
+    // A card reaches print-video downloads through its context menu; only the
+    // list row keeps an action-bar button for it (#2853).
+    const openCardPrintVideos = async (cardIndex = 0) => {
+      const triggers = await screen.findAllByTitle('Right-click for more options');
+      fireEvent.click(triggers[cardIndex]);
+      return screen.findByRole('button', { name: 'Download print videos' });
+    };
+
+    it('keeps an attached timelapse available without printer-file permission', async () => {
+      setAuthToken('archive-only-token', 'session');
+      server.use(
+        http.get('*/api/v1/auth/status', () => HttpResponse.json({
+          auth_enabled: true,
+          requires_setup: false,
+        })),
+        http.get('/api/v1/auth/me', () => HttpResponse.json({
+          id: 7,
+          username: 'archive-viewer',
+          is_active: true,
+          is_admin: false,
+          groups: [],
+          permissions: ['archives:read_all'],
+          created_at: '2026-08-18T00:00:00Z',
+        })),
+        http.get('/api/v1/archives/', () => HttpResponse.json([
+          { ...mockArchives[0], timelapse_path: 'timelapses/attached.mp4' },
+          { ...mockArchives[1], timelapse_path: null },
+        ])),
+        http.get('/api/v1/archives/:id/printer-media', ({ params }) => HttpResponse.json({
+          archive_id: Number(params.id),
+          printer_id: 1,
+          local_timelapse: { name: 'attached.mp4', size: 1024 },
+          remote_files: [],
+          warnings: ['printer_files_forbidden'],
+        })),
+      );
+
+      render(<ArchivesPage />);
+
+      // One of the two archives has no attached copy, so without printer-file
+      // permission there is nothing left for the action to offer.
+      const deniedItem = await openCardPrintVideos(0);
+      expect(deniedItem).toBeDisabled();
+      expect(deniedItem).toHaveAttribute('title', 'You do not have permission to access printer files');
+      fireEvent.keyDown(document, { key: 'Escape' });
+
+      const mediaItem = await openCardPrintVideos(1);
+      expect(mediaItem).toBeEnabled();
+      fireEvent.click(mediaItem);
+      expect(await screen.findByText('attached.mp4')).toBeInTheDocument();
+      expect(screen.getByText('You do not have permission to access printer files')).toBeInTheDocument();
+    });
+
+    it('opens print video downloads and shows matching IP camera chunks', async () => {
+      server.use(
+        http.get('/api/v1/archives/:id/printer-media', ({ params }) => {
+          return HttpResponse.json({
+            archive_id: Number(params.id),
+            printer_id: 1,
+            local_timelapse: null,
+            remote_files: [
+              {
+                name: 'ipcam-record.2024-01-01_10-05-00.1.mp4',
+                path: '/ipcam/ipcam-record.2024-01-01_10-05-00.1.mp4',
+                size: 250_000_000,
+                mtime: '2024-01-01T10:10:00Z',
+                kind: 'ipcam',
+              },
+            ],
+            warnings: [],
+          });
+        }),
+      );
+
+      render(<ArchivesPage />);
+      fireEvent.click(await openCardPrintVideos());
+
+      expect(await screen.findByText('Print videos')).toBeInTheDocument();
+      expect(await screen.findByText('ipcam-record.2024-01-01_10-05-00.1.mp4')).toBeInTheDocument();
+    });
+
+    it('shows a toast when printer video ZIP preparation fails', async () => {
+      server.use(
+        http.get('/api/v1/archives/:id/printer-media', ({ params }) => HttpResponse.json({
+          archive_id: Number(params.id),
+          printer_id: 1,
+          local_timelapse: null,
+          remote_files: [{
+            name: 'ipcam-record.1.mp4',
+            path: '/ipcam/ipcam-record.1.mp4',
+            size: 250_000_000,
+            mtime: '2024-01-01T10:10:00Z',
+            kind: 'ipcam',
+          }],
+          warnings: [],
+        })),
+        http.post('/api/v1/printers/:id/files/download-job', () => HttpResponse.json({
+          job_id: 'failed-job',
+          state: 'failed',
+          requested: 1,
+          successful: 0,
+          failed: 0,
+          token: null,
+          message: 'Not enough app data volume space',
+        })),
+      );
+
+      render(<ArchivesPage />);
+      fireEvent.click(await openCardPrintVideos());
+      fireEvent.click(await screen.findByRole('button', { name: /Download selected \(1\)/i }));
+
+      expect(await screen.findByText('Download failed: Not enough app data volume space')).toBeInTheDocument();
+    });
+
     it('shows upload timelapse menu item when no timelapse attached', async () => {
       const archivesWithoutTimelapse = mockArchives.map(a => ({ ...a, timelapse_path: null }));
       server.use(
@@ -375,6 +526,46 @@ describe('ArchivesPage', () => {
 
   // #1153 — Sylvain wanted to differentiate VP-uploaded archives (status='archived',
   // never sent to a printer) from those that have been printed at least once.
+  describe('add-to-project submenu (#2888)', () => {
+    // The submenu used to offer active projects only, which left a completed
+    // project unreachable from here while the Edit dialog still offered it.
+    // Both now hide archived projects and nothing else.
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/projects/', () =>
+          HttpResponse.json([
+            { id: 1, name: 'Functional Parts', color: '#00ae42', status: 'active' },
+            { id: 2, name: 'Shipped Last Month', color: '#0088ff', status: 'completed' },
+            { id: 3, name: 'Season 2025', color: '#888888', status: 'archived' },
+          ]),
+        ),
+      );
+    });
+
+    const openSubmenu = async () => {
+      const card = await screen.findByText('Benchy');
+      fireEvent.contextMenu(card);
+      fireEvent.click(await screen.findByText('Add to Project'));
+    };
+
+    it('offers a completed project', async () => {
+      render(<ArchivesPage />);
+      await openSubmenu();
+
+      expect(await screen.findByText('Shipped Last Month')).toBeInTheDocument();
+    });
+
+    it('leaves archived projects out', async () => {
+      render(<ArchivesPage />);
+      await openSubmenu();
+
+      // Anchored on the completed one rather than the active one: the active
+      // project's name is also drawn on an archive card behind the menu.
+      await screen.findByText('Shipped Last Month');
+      expect(screen.queryByText('Season 2025')).not.toBeInTheDocument();
+    });
+  });
+
   describe('Not Printed / Printed collections', () => {
     const mixedStatusArchives = [
       { ...mockArchives[0], id: 100, print_name: 'NeverPrinted', status: 'archived', started_at: null, completed_at: null },

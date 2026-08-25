@@ -15,6 +15,7 @@ tests pin both halves: the probe runs and its hit is archived normally, and a
 miss still ends in #2780's cheap fallback with its reason intact.
 """
 
+import logging
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -252,7 +253,11 @@ def _printer():
 
 async def _run_print_start(url, *, probe_hit, added, handshake_blocked=False):
     """Drive on_print_start for an eMMC dispatch, returning the probe mock and
-    the ArchiveService the success path would have used."""
+    the ArchiveService the success path would have used.
+
+    ``probe_hit`` is the path the probe serves the file from, or None for a
+    miss — the download helper returns the winning path rather than a flag so
+    the hit can be logged by directory (#1820)."""
     printer = _printer()
     state = MagicMock(current_project_url=url, sdcard=True, sdcard_reported=True)
 
@@ -336,7 +341,9 @@ class TestPrintStart:
         the card, and the archive gets the real 3MF instead of a name."""
         added = []
 
-        probe, service, cache = await _run_print_start("brtc://emmc/test.gcode.3mf", probe_hit=True, added=added)
+        probe, service, cache = await _run_print_start(
+            "brtc://emmc/test.gcode.3mf", probe_hit="/cache/test.gcode.3mf", added=added
+        )
 
         probe.assert_awaited_once()
         assert probe.await_args.args[2] == ftp_probe_paths("test.gcode.3mf")
@@ -345,13 +352,29 @@ class TestPrintStart:
         assert _fallback(added) is None, "a fallback archive here is the bug"
 
     @pytest.mark.asyncio
+    async def test_the_hit_names_the_directory_that_served_it(self, caplog):
+        """#1820: a printer that keeps uploads for weeks can serve a same-named
+        copy of an earlier slice. Logging only the filename made that mismatch
+        invisible; the directory is what makes it diagnosable."""
+        added = []
+
+        with caplog.at_level(logging.INFO, logger="backend.app.main"):
+            await _run_print_start("brtc://emmc/test.gcode.3mf", probe_hit="/cache/test.gcode.3mf", added=added)
+
+        found = [r.getMessage() for r in caplog.records if "even though the printer reported" in r.getMessage()]
+        assert found, "the probe hit is not logged at all"
+        assert "/cache/test.gcode.3mf" in found[0]
+
+    @pytest.mark.asyncio
     async def test_the_probed_file_is_shared_with_the_cover_endpoint(self):
         """Same 3MF, one transfer. The cover endpoint runs seconds later while
         the frontend opens the card, and re-fetching 19 MB over the printer's
         single FTP socket is what produced #972's 425 storm."""
         added = []
 
-        _probe, _service, cache = await _run_print_start("brtc://emmc/test.gcode.3mf", probe_hit=True, added=added)
+        _probe, _service, cache = await _run_print_start(
+            "brtc://emmc/test.gcode.3mf", probe_hit="/cache/test.gcode.3mf", added=added
+        )
 
         cache.assert_called_once()
         assert cache.call_args.args[1] == "test.gcode.3mf"
@@ -364,7 +387,7 @@ class TestPrintStart:
         """
         added = []
 
-        probe, service, _cache = await _run_print_start("brtc://emmc/test.gcode.3mf", probe_hit=False, added=added)
+        probe, service, _cache = await _run_print_start("brtc://emmc/test.gcode.3mf", probe_hit=None, added=added)
 
         probe.assert_awaited_once()
         service.archive_print.assert_not_awaited()
@@ -377,11 +400,28 @@ class TestPrintStart:
         added = []
 
         probe, _service, _cache = await _run_print_start(
-            "brtc://emmc/test.gcode.3mf", probe_hit=True, added=added, handshake_blocked=True
+            "brtc://emmc/test.gcode.3mf", probe_hit="/cache/test.gcode.3mf", added=added, handshake_blocked=True
         )
 
         probe.assert_not_awaited()
         assert _fallback(added).extra_data["no_3mf_reason"] == "internal_storage"
+
+    @pytest.mark.asyncio
+    async def test_a_cool_off_on_an_emmc_job_schedules_no_retry(self):
+        """#2957 added a retry for a cool-off give-up, because that one clears
+        in minutes with the file still on the printer. This is not that: the
+        file is on internal eMMC and will not appear at any FTPS path however
+        long we wait, so the retry must not be scheduled here."""
+        from backend.app.main import _fallback_3mf_retry_tasks
+
+        added = []
+        before = dict(_fallback_3mf_retry_tasks)
+
+        with patch("backend.app.main._schedule_fallback_3mf_retry") as schedule:
+            await _run_print_start("brtc://emmc/test.gcode.3mf", probe_hit=None, added=added, handshake_blocked=True)
+
+        schedule.assert_not_called()
+        assert _fallback_3mf_retry_tasks == before
 
     @pytest.mark.asyncio
     async def test_a_gcode_job_is_not_probed_for(self):
@@ -389,7 +429,9 @@ class TestPrintStart:
         stays exactly as cheap as #2780 made it."""
         added = []
 
-        probe, _service, _cache = await _run_print_start("brtc://emmc/plate_1.gcode", probe_hit=True, added=added)
+        probe, _service, _cache = await _run_print_start(
+            "brtc://emmc/plate_1.gcode", probe_hit="/cache/test.gcode.3mf", added=added
+        )
 
         probe.assert_not_awaited()
         assert _fallback(added) is not None

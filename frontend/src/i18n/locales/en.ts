@@ -285,6 +285,7 @@ export default {
     // Card size
     cardSize: {
       small: 'Small cards',
+      smedium: '4 columns cards',
       medium: 'Medium cards',
       large: 'Large cards',
       extraLarge: 'Extra large cards',

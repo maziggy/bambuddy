@@ -22,6 +22,7 @@ from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+from backend.app.services.inventory_mode import spoolman_owns_assignments
 
 
 @dataclass(frozen=True)
@@ -51,18 +52,29 @@ async def find_slot_kprofile_for_extruder(
     profile for this nozzle — an operator who calibrated only one side should
     keep the binding they set by hand rather than have it swapped for a guess.
 
-    Local spools take priority over Spoolman, matching the rest of the
-    K-profile cascade.
+    Only the table the current inventory mode uses is consulted. Before #2812
+    the inactive one was emptied on every mode toggle, so reading the built-in
+    table first and stopping on a hit was safe -- there could be nothing in it
+    to stop on. Nothing is emptied now, and a leftover built-in row would
+    otherwise shadow the Spoolman assignment for the slot, returning that
+    spool's profile or, on the deliberate stop below, no profile at all. That
+    is the symptom #1556 reported from the other direction.
     """
+    spoolman_mode = await spoolman_owns_assignments(db)
+
     assignment = (
-        await db.execute(
-            select(SpoolAssignment).where(
-                SpoolAssignment.printer_id == printer_id,
-                SpoolAssignment.ams_id == ams_id,
-                SpoolAssignment.tray_id == tray_id,
+        None
+        if spoolman_mode
+        else (
+            await db.execute(
+                select(SpoolAssignment).where(
+                    SpoolAssignment.printer_id == printer_id,
+                    SpoolAssignment.ams_id == ams_id,
+                    SpoolAssignment.tray_id == tray_id,
+                )
             )
-        )
-    ).scalar_one_or_none()
+        ).scalar_one_or_none()
+    )
 
     if assignment is not None:
         profile = (
@@ -90,6 +102,9 @@ async def find_slot_kprofile_for_extruder(
             )
         # A known spool with no profile for this nozzle is a deliberate stop:
         # falling through to Spoolman would answer for a different spool.
+        return None
+
+    if not spoolman_mode:
         return None
 
     sm_assignment = (

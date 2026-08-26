@@ -1481,6 +1481,10 @@ async def _track_from_3mf(
                 pass  # Fall back to linear scaling
 
     results = []
+    # Trays this print drew from that no longer have an assignment to charge.
+    # Collected rather than acted on inline so one notification covers the whole
+    # print instead of one per slot (#2812).
+    unassigned_global_trays: list[int] = []
 
     for usage in filament_usage:
         slot_id = usage.get("slot_id", 0)
@@ -1707,7 +1711,19 @@ async def _track_from_3mf(
             print_started_at=print_started_at,
         )
         if spool_id is None:
-            logger.info("[UsageTracker] 3MF: no spool assignment at printer %d AMS%d-T%d", printer_id, ams_id, tray_id)
+            # WARNING, not INFO: everything upstream of this line succeeded --
+            # the 3MF was found, the grams were read, the tray resolved -- and
+            # the print will still report success while this filament is never
+            # deducted. At INFO it was invisible under the default log level and
+            # absent from the reasoning in support bundles (#2812).
+            logger.warning(
+                "[UsageTracker] 3MF: no spool assignment at printer %d AMS%d-T%d — %.1fg not deducted",
+                printer_id,
+                ams_id,
+                tray_id,
+                used_g,
+            )
+            unassigned_global_trays.append(global_tray_id)
             continue
 
         # Load spool
@@ -1816,5 +1832,12 @@ async def _track_from_3mf(
                     joined_types,
                 )
                 archive.filament_type = joined_types
+
+    if unassigned_global_trays:
+        from backend.app.services.spool_assignment_notifications import (
+            notify_missing_spool_assignments_on_print_complete,
+        )
+
+        await notify_missing_spool_assignments_on_print_complete(printer_id, unassigned_global_trays, db, logger)
 
     return results

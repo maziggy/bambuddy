@@ -89,9 +89,19 @@ async def test_missing_assignment_broadcasts_websocket_event_and_push_notificati
     assert notify_kwargs["missing_slots"] == [{"slot": "A2", "profile": "Unknown", "color": "Unknown"}]
 
 
-def _patches(session):
-    """Common patch set: the fake session + stubbed printer state / emitters."""
+def _patches(session, spoolman_mode: bool = False):
+    """Common patch set: the fake session + stubbed printer state / emitters.
+
+    ``spoolman_mode`` decides which assignment table the check reads. Since
+    #2812 it reads one, not both: nothing empties the inactive table on a mode
+    toggle any more, so a leftover row there must not vouch for a tray.
+    """
     return (
+        patch(
+            "backend.app.services.spool_assignment_notifications.spoolman_owns_assignments",
+            new_callable=AsyncMock,
+            return_value=spoolman_mode,
+        ),
         patch(
             "backend.app.services.spool_assignment_notifications.async_session",
             return_value=session,
@@ -122,8 +132,8 @@ async def test_spoolman_only_assignment_suppresses_notification():
         legacy=[],
         spoolman=[SimpleNamespace(ams_id=0, tray_id=0), SimpleNamespace(ams_id=0, tray_id=1)],
     )
-    p_session, p_status, p_ws, p_notify = _patches(session)
-    with p_session, p_status, p_ws as mock_ws, p_notify as mock_notify:
+    p_mode, p_session, p_status, p_ws, p_notify = _patches(session, spoolman_mode=True)
+    with p_mode, p_session, p_status, p_ws as mock_ws, p_notify as mock_notify:
         await notify_missing_spool_assignments_on_print_start(1, data, logger)
 
     mock_ws.assert_not_awaited()
@@ -142,8 +152,8 @@ async def test_spoolman_partial_coverage_flags_only_uncovered_tray():
         legacy=[],
         spoolman=[SimpleNamespace(ams_id=0, tray_id=0)],  # A1 only
     )
-    p_session, p_status, p_ws, p_notify = _patches(session)
-    with p_session, p_status, p_ws as mock_ws, p_notify as mock_notify:
+    p_mode, p_session, p_status, p_ws, p_notify = _patches(session, spoolman_mode=True)
+    with p_mode, p_session, p_status, p_ws as mock_ws, p_notify as mock_notify:
         await notify_missing_spool_assignments_on_print_start(1, data, logger)
 
     mock_ws.assert_awaited_once()
@@ -152,19 +162,47 @@ async def test_spoolman_partial_coverage_flags_only_uncovered_tray():
 
 
 @pytest.mark.asyncio
-async def test_mixed_mode_union_covers_all_used_trays():
-    """A1 bound in the legacy table, A2 bound in spoolman_slot_assignments —
-    the union covers both used trays, so no notification fires."""
+async def test_a_row_in_the_inactive_modes_table_does_not_vouch_for_a_tray():
+    """A1 bound in the legacy table, A2 bound in spoolman_slot_assignments.
+
+    This used to union both and stay quiet. That was safe only because the mode
+    toggle emptied whichever table the current mode was not using, so the two
+    could never both hold rows -- and that emptying is what destroyed people's
+    assignments for merely looking at the other mode (#2812). Nothing is
+    emptied now, so in Spoolman mode the legacy row for A1 is a leftover from
+    before the switch and says nothing about whether A1 is assigned today. A1
+    is exactly the tray this notification exists to flag.
+    """
     logger = logging.getLogger(__name__)
     data = {"ams_mapping": [0, 1], "raw_data": {}}
 
     session = _FakeSession(
         "Printer A",
-        legacy=[SimpleNamespace(ams_id=0, tray_id=0)],  # A1
-        spoolman=[SimpleNamespace(ams_id=0, tray_id=1)],  # A2
+        legacy=[SimpleNamespace(ams_id=0, tray_id=0)],  # A1 — leftover, not current
+        spoolman=[SimpleNamespace(ams_id=0, tray_id=1)],  # A2 — the live binding
     )
-    p_session, p_status, p_ws, p_notify = _patches(session)
-    with p_session, p_status, p_ws as mock_ws, p_notify as mock_notify:
+    p_mode, p_session, p_status, p_ws, p_notify = _patches(session, spoolman_mode=True)
+    with p_mode, p_session, p_status, p_ws as mock_ws, p_notify as mock_notify:
+        await notify_missing_spool_assignments_on_print_start(1, data, logger)
+
+    mock_ws.assert_awaited_once()
+    assert mock_ws.await_args.kwargs["missing_slots"] == [{"slot": "A1", "profile": "Unknown", "color": "Unknown"}]
+    mock_notify.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_built_in_mode_reads_the_built_in_table():
+    """The mirror image: in built-in mode a Spoolman row is the leftover."""
+    logger = logging.getLogger(__name__)
+    data = {"ams_mapping": [0, 1], "raw_data": {}}
+
+    session = _FakeSession(
+        "Printer A",
+        legacy=[SimpleNamespace(ams_id=0, tray_id=0), SimpleNamespace(ams_id=0, tray_id=1)],
+        spoolman=[SimpleNamespace(ams_id=0, tray_id=0)],
+    )
+    p_mode, p_session, p_status, p_ws, p_notify = _patches(session, spoolman_mode=False)
+    with p_mode, p_session, p_status, p_ws as mock_ws, p_notify as mock_notify:
         await notify_missing_spool_assignments_on_print_start(1, data, logger)
 
     mock_ws.assert_not_awaited()

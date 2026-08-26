@@ -76,6 +76,7 @@ async def test_unauthorized_active_print_triggers_stop(monkeypatch):
         remaining_time=0,
         layer_num=0,
         temperatures={},
+        nozzles=[],
         raw_data={},
         stg_cur=0,
         # Real PrinterState always carries these; the status-broadcast dedup
@@ -166,6 +167,7 @@ async def test_bambuddy_authorized_print_is_not_stopped(monkeypatch):
         remaining_time=0,
         layer_num=0,
         temperatures={},
+        nozzles=[],
         raw_data={},
         stg_cur=0,
         # Real PrinterState always carries these; the status-broadcast dedup
@@ -243,6 +245,7 @@ async def test_unauthorized_print_state_is_cleared_when_print_ends(monkeypatch):
         remaining_time=0,
         layer_num=0,
         temperatures={},
+        nozzles=[],
         raw_data={},
         stg_cur=0,
         # Real PrinterState always carries these; the status-broadcast dedup
@@ -270,6 +273,7 @@ async def test_unauthorized_print_state_is_cleared_when_print_ends(monkeypatch):
         remaining_time=0,
         layer_num=0,
         temperatures={},
+        nozzles=[],
         raw_data={},
         stg_cur=0,
         # Real PrinterState always carries these; the status-broadcast dedup
@@ -351,6 +355,7 @@ async def test_persisted_print_is_authorized_after_restart(monkeypatch, printer_
         remaining_time=600,
         layer_num=50,
         temperatures={},
+        nozzles=[],
         raw_data={},
         stg_cur=0,
         # Real PrinterState always carries these; the status-broadcast dedup

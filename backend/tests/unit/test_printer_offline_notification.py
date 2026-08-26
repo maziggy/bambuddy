@@ -53,6 +53,7 @@ def _state(connected: bool, state: str = "IDLE") -> SimpleNamespace:
         progress=0,
         layer_num=0,
         temperatures={},
+        nozzles=[],
         raw_data={},
         stg_cur=0,
         # Real PrinterState always carries these; the status-broadcast dedup

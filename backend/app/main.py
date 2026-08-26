@@ -416,6 +416,15 @@ _INPRINT_BANK_MIN_INTERVAL = 25.0
 # reconnect re-arms reconciliation. Keyed by printer_id.
 _printer_reconciled_since_connect: dict[int, bool] = {}
 
+# Same edge, same keying, for priming the printer's calibration table exactly
+# once per (re)connection. Nothing else asks for it on connect: state.kprofiles
+# is otherwise filled only when someone opens the Profiles page or Configure
+# Slot, when a GitHub backup runs, or when the printer happens to answer
+# somebody else's query on the report topic. Until then the AMS slot card has
+# no K value to show on the printers whose trays carry none of their own
+# (#2854 — H2-series report cali_idx and nothing more).
+_printer_kprofiles_primed_since_connect: dict[int, bool] = {}
+
 # Track expected prints from reprint/scheduled (skip auto-archiving for these)
 # {(printer_id, filename): archive_id}
 _expected_prints: dict[tuple[int, str], int] = {}
@@ -1420,6 +1429,28 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         # Re-arm so the next reconnect triggers reconciliation again.
         _printer_reconciled_since_connect[printer_id] = False
 
+    # Same edge, for the calibration table the AMS card reads its K values from.
+    #
+    # Also gated on knowing a nozzle diameter, which is what decides *which*
+    # tables to ask for. A `state_known` gate alone is not enough: the first
+    # real push_status is what makes the state known, and the nozzle fields do
+    # not always arrive in it. Latching there would spend this connection's one
+    # attempt on a printer that could not yet say what was fitted.
+    nozzle_known = any(n.nozzle_diameter for n in (state.nozzles or []))
+    if (
+        state.connected
+        and state_known
+        and nozzle_known
+        and not _printer_kprofiles_primed_since_connect.get(printer_id, False)
+    ):
+        _printer_kprofiles_primed_since_connect[printer_id] = True
+        spawn_background_task(
+            prime_kprofile_table(printer_id),
+            name=f"prime-kprofiles-{printer_id}",
+        )
+    elif not state.connected and _printer_kprofiles_primed_since_connect.get(printer_id, False):
+        _printer_kprofiles_primed_since_connect[printer_id] = False
+
     # Offline-notification edge (#1752): schedule `on_printer_offline` on
     # connected → disconnected. The "back online" channel is already covered
     # by the print-failure notification (firmware reports gcode_state=FAILED
@@ -1953,17 +1984,26 @@ async def on_ams_change(printer_id: int, ams_data: list):
             from backend.app.api.routes.inventory import _find_tray_in_ams_data
             from backend.app.models.spool import Spool as _Spool
             from backend.app.models.spool_assignment import SpoolAssignment as SA
+            from backend.app.services.inventory_mode import spoolman_owns_assignments
 
-            result = await db.execute(
-                select(SA)
-                .where(SA.printer_id == printer_id)
-                .options(selectinload(SA.spool).selectinload(_Spool.k_profiles))
-            )
+            # Built-in assignments only. Since #2812 they survive a switch to
+            # Spoolman mode rather than being deleted by it, and this pass ends
+            # in ``db.delete`` — left ungated it would unlink them one slot at a
+            # time as the AMS contents changed under the other mode, undoing the
+            # preservation more slowly but just as completely.
+            assignments = []
+            if not await spoolman_owns_assignments(db):
+                result = await db.execute(
+                    select(SA)
+                    .where(SA.printer_id == printer_id)
+                    .options(selectinload(SA.spool).selectinload(_Spool.k_profiles))
+                )
+                assignments = result.scalars().all()
             # ``printing_now`` (top of this function) keeps a runout from
             # unlinking the spool that fed the print — the next idle-time pass
             # unlinks it if the user really did take it out.
             stale = []
-            for assignment in result.scalars().all():
+            for assignment in assignments:
                 # External spool assignments (ams_id=255) live in vt_tray, not AMS data
                 if assignment.ams_id == 255:
                     ps = printer_manager.get_status(printer_id)
@@ -2521,21 +2561,35 @@ async def on_ams_change(printer_id: int, ams_data: list):
 
             from backend.app.models.spool_assignment import SpoolAssignment
             from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+            from backend.app.services.inventory_mode import spoolman_owns_assignments
 
+            # Built-in remaining weight, used by sync_ams_tray only when the
+            # firmware reports an unusable remain%/tray_weight for a slot.
+            #
+            # Left empty since #2812. This block runs in Spoolman mode only,
+            # and until then the built-in table was emptied on the switch, so
+            # there was never anything here to read and the fallback was inert.
+            # Preserving those rows makes it live again, and it is keyed by slot
+            # rather than by spool: after a mode switch the tray may well hold
+            # different filament, and ``create_spool`` writes ``remaining_weight``
+            # unconditionally, so a stale figure would be seeded into a brand new
+            # Spoolman spool. Deliberately kept inert rather than deleted, so the
+            # intent survives for whoever revisits the cross-mode fallback.
             inventory_weights: dict[tuple[int, int], float] = {}
-            try:
-                assign_result = await db.execute(
-                    select(SpoolAssignment)
-                    .options(selectinload(SpoolAssignment.spool))
-                    .where(SpoolAssignment.printer_id == printer_id)
-                )
-                for assignment in assign_result.scalars().all():
-                    spool = assignment.spool
-                    if spool and spool.label_weight > 0:
-                        remaining = max(0.0, spool.label_weight - (spool.weight_used or 0))
-                        inventory_weights[(assignment.ams_id, assignment.tray_id)] = remaining
-            except Exception as e:
-                logger.warning("Could not load inventory weights for printer %s: %s", printer_id, e)
+            if not await spoolman_owns_assignments(db):
+                try:
+                    assign_result = await db.execute(
+                        select(SpoolAssignment)
+                        .options(selectinload(SpoolAssignment.spool))
+                        .where(SpoolAssignment.printer_id == printer_id)
+                    )
+                    for assignment in assign_result.scalars().all():
+                        spool = assignment.spool
+                        if spool and spool.label_weight > 0:
+                            remaining = max(0.0, spool.label_weight - (spool.weight_used or 0))
+                            inventory_weights[(assignment.ams_id, assignment.tray_id)] = remaining
+                except Exception as e:
+                    logger.warning("Could not load inventory weights for printer %s: %s", printer_id, e)
 
             # Load existing Spoolman slot assignments for the no-RFID fallback path
             spoolman_slot_map: dict[tuple[int, int], int] = {}
@@ -5250,6 +5304,58 @@ def _is_active_archive_stale(archive, state) -> tuple[bool, str]:
     if not current_subtask_name:
         return True, "printer subtask_name empty"
     return False, ""
+
+
+async def prime_kprofile_table(printer_id: int) -> int:
+    """Read the printer's calibration table once per connection.
+
+    The AMS slot card shows a K value per slot (#2854). On the printers whose
+    trays carry no ``k`` field of their own -- the whole H2 series, whose trays
+    report ``cali_idx`` and nothing else -- that number can only come from
+    ``state.kprofiles``, and nothing used to fill it on connect. It arrived by
+    luck: someone opening the Profiles page or Configure Slot, a nightly GitHub
+    backup, or the printer answering a query BambuStudio made on the report
+    topic we share. A Bambuddy that nobody visited showed a card with no K
+    values at all.
+
+    Only the diameters actually fitted are asked for, which is one request on a
+    single-nozzle printer and two on a dual. Probing the four sizes blind is
+    what the backup does, and it is both wasteful and the thing that used to
+    blank the table.
+
+    Returns the number of nozzles whose table was read.
+    """
+    client = printer_manager.get_client(printer_id)
+    state = printer_manager.get_status(printer_id)
+    if client is None or state is None or not state.connected:
+        return 0
+
+    # Deduplicated, order preserved: a dual-nozzle printer with two 0.4s should
+    # ask once, and both entries are empty until the first push_status lands.
+    diameters = list(dict.fromkeys(n.nozzle_diameter for n in (state.nozzles or []) if n.nozzle_diameter))
+    if not diameters:
+        logging.getLogger(__name__).debug(
+            "[Printer %s] No nozzle diameter reported yet; leaving the K-profile table to the next reader",
+            printer_id,
+        )
+        return 0
+
+    primed = 0
+    for diameter in diameters:
+        try:
+            profiles = await client.get_kprofiles(nozzle_diameter=diameter, max_retries=2)
+        except Exception as exc:  # noqa: BLE001
+            # A printer that won't answer costs the card its K values, nothing
+            # more — never the connection this runs on the back of.
+            logging.getLogger(__name__).warning(
+                "[Printer %s] Could not read the K-profile table for nozzle %s: %s", printer_id, diameter, exc
+            )
+            continue
+        primed += 1
+        logging.getLogger(__name__).info(
+            "[Printer %s] Primed K-profile table for nozzle %s: %d profiles", printer_id, diameter, len(profiles)
+        )
+    return primed
 
 
 async def reconcile_stale_active_prints(printer_id: int) -> int:

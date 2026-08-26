@@ -7,6 +7,8 @@ Supports accurate partial usage reporting for failed/cancelled prints.
 
 import json
 import logging
+import math
+from dataclasses import dataclass
 
 from sqlalchemy import delete, select
 
@@ -662,6 +664,104 @@ async def _resolve_spool_id_via_slot_assignment(printer_id: int, ams_id: int, tr
         return result.scalar_one_or_none()
 
 
+def _as_positive_number(value) -> float | None:
+    """``value`` as a float when it is a usable positive quantity, else None.
+
+    Rejects bools (``True`` is an int in Python, and ``float(True)`` is 1.0 --
+    a weight of 1 g would price a spool per-gram at its whole cost), and
+    rejects NaN and infinity, which compare False against every bound and would
+    otherwise reach the archive as a NaN cost that no later comparison can
+    clear.
+    """
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or number <= 0:
+        return None
+    return number
+
+
+def _spool_cost_per_gram(spool: dict | None) -> float | None:
+    """What one gram off this Spoolman spool costs, or None if it can't be said.
+
+    Spoolman prices a spool in two places. ``filament.price`` is the catalogue
+    figure for a full spool of that filament, and ``price`` on the spool itself
+    overrides it when a particular purchase cost something else -- a sale, a
+    different vendor, import duty. The spool's own value wins, which is the
+    order the Spoolman UI presents them in.
+
+    The divisor is ``filament.weight``: net filament grams, excluding the core.
+    That is the same field the remain-delta path already divides by to turn a
+    remain%% drop into grams, so a spool that can be charged by percentage can
+    always be priced too.
+
+    A missing or non-positive price is not a free spool, it is an unpriced one,
+    and returns None so the caller can fall back to the global default rate
+    rather than silently recording that this print cost nothing. Mirrors the
+    ``cost_per_kg > 0`` guard the built-in inventory writer applies to its own
+    per-spool rate.
+    """
+    if not isinstance(spool, dict):
+        return None
+    filament = spool.get("filament")
+    if not isinstance(filament, dict):
+        filament = {}
+
+    # A spool-level 0 is treated as "not overridden" rather than "this roll was
+    # free": Spoolman leaves the field null when unset, but an import or an API
+    # client that writes 0 instead is common enough that reading it as free
+    # would price a whole print at the default rate while a perfectly good
+    # catalogue price sat one level down.
+    raw_price = spool.get("price")
+    if _as_positive_number(raw_price) is None:
+        raw_price = filament.get("price")
+
+    price = _as_positive_number(raw_price)
+    weight = _as_positive_number(filament.get("weight"))
+    if price is None or weight is None:
+        return None
+    # Both operands can be finite and the quotient still overflow. A non-finite
+    # rate would reach the archive as a NaN or inf cost, and every later
+    # comparison against it is False, so nothing downstream would correct it.
+    rate = price / weight
+    return rate if math.isfinite(rate) else None
+
+
+@dataclass
+class _PrintCost:
+    """What a print cost, accumulated as each slot is actually charged.
+
+    Only grams that were both charged to a spool *and* priced from it are
+    counted. Everything else -- a slot whose spool has no price, a tray with no
+    Spoolman row at all, filament the 3MF never attributed -- is left for the
+    caller to cover at the global default rate, in one subtraction against the
+    archive's own total. That is the same shape as the built-in inventory
+    writer's untracked-grams top-up (#1344), and it means a partially priced
+    print reports a whole-print figure rather than only the priced share.
+    """
+
+    cost: float = 0.0
+    priced_grams: float = 0.0
+    priced: int = 0
+    unpriced: int = 0
+
+    def add(self, grams: float, spool: dict | None, label: str) -> None:
+        """Price ``grams`` off ``spool``. Call only after the charge succeeded."""
+        if grams <= 0:
+            return
+        rate = _spool_cost_per_gram(spool)
+        if rate is None:
+            self.unpriced += 1
+            logger.debug("[SPOOLMAN] %s: spool has no usable price, will fall back to the default rate", label)
+            return
+        self.cost += grams * rate
+        self.priced_grams += grams
+        self.priced += 1
+
+
 async def _report_spool_usage_for_slots(
     client,
     filament_usage_items: list[tuple[int, float]],
@@ -672,6 +772,7 @@ async def _report_spool_usage_for_slots(
     printer_id: int | None = None,
     slot_colors_out: dict[int, str] | None = None,
     slot_materials_out: dict[int, str] | None = None,
+    cost_out: _PrintCost | None = None,
 ) -> int:
     """Report usage to Spoolman for a list of (slot_id, grams) pairs.
 
@@ -718,6 +819,9 @@ async def _report_spool_usage_for_slots(
         # yields an id and is fetched below.
         spool_color_hex: str | None = None
         spool_material: str | None = None
+        # Full spool row, kept so the price fields (#2591) can be read from the
+        # same fetch the colour and material already pay for.
+        spool_obj: dict | None = None
 
         spool_tag = _resolve_spool_tag(tray_info, printer_serial, global_tray_id)
         if spool_tag:
@@ -725,6 +829,7 @@ async def _report_spool_usage_for_slots(
             if spool:
                 spool_id_to_use = spool["id"]
                 resolution_path = "tag"
+                spool_obj = spool
                 spool_color_hex = (spool.get("filament") or {}).get("color_hex")
                 spool_material = (spool.get("filament") or {}).get("material")
 
@@ -747,17 +852,19 @@ async def _report_spool_usage_for_slots(
         # id, so fetch the spool once for whichever value is still missing.
         # Strictly best-effort: a fetch failure must never abort the weight
         # reporting for the remaining slots, so the catch is broad.
-        if slot_colors_out is not None or slot_materials_out is not None:
+        if slot_colors_out is not None or slot_materials_out is not None or cost_out is not None:
             need_color = slot_colors_out is not None and spool_color_hex is None
             need_material = slot_materials_out is not None and spool_material is None
-            if need_color or need_material:
+            need_price = cost_out is not None and spool_obj is None
+            if need_color or need_material or need_price:
                 try:
-                    _fil = (await client.get_spool(spool_id_to_use)).get("filament") or {}
+                    spool_obj = await client.get_spool(spool_id_to_use)
+                    _fil = spool_obj.get("filament") or {}
                     if need_color:
                         spool_color_hex = _fil.get("color_hex")
                     if need_material:
                         spool_material = _fil.get("material")
-                except Exception as exc:  # noqa: BLE001 — colour/material are non-critical
+                except Exception as exc:  # noqa: BLE001 — colour/material/price are non-critical
                     logger.debug("[SPOOLMAN] Slot %s: could not fetch spool filament: %s", slot_id, exc)
             if slot_colors_out is not None and spool_color_hex:
                 slot_colors_out[slot_id] = spool_color_hex
@@ -775,6 +882,10 @@ async def _report_spool_usage_for_slots(
                 resolution_path,
             )
             spools_updated += 1
+            # Priced only after the charge landed, so a spool Spoolman refused
+            # cannot contribute to what the print is said to have cost.
+            if cost_out is not None:
+                cost_out.add(grams_used, spool_obj, f"Slot {slot_id}")
         except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
             logger.warning("[SPOOLMAN] Failed to record usage for spool %s: %s", spool_id_to_use, exc)
 
@@ -795,6 +906,7 @@ async def _report_spool_usage_split_by_tray_changes(
     printer_id: int,
     slot_colors_out: dict[int, str] | None = None,
     slot_materials_out: dict[int, str] | None = None,
+    cost_out: _PrintCost | None = None,
 ) -> tuple[int, set[int]]:
     """Split each slot's grams across ``tray_changes`` and charge per-segment.
 
@@ -848,6 +960,7 @@ async def _report_spool_usage_split_by_tray_changes(
             resolution_path = ""
             spool_color_hex: str | None = None
             spool_material: str | None = None
+            spool_obj: dict | None = None
 
             spool_tag = _resolve_spool_tag(tray_info, printer_serial, tray_global) if tray_info else ""
             if spool_tag:
@@ -855,6 +968,7 @@ async def _report_spool_usage_split_by_tray_changes(
                 if spool:
                     spool_id_to_use = spool["id"]
                     resolution_path = "tag"
+                    spool_obj = spool
                     spool_color_hex = (spool.get("filament") or {}).get("color_hex")
                     spool_material = (spool.get("filament") or {}).get("material")
 
@@ -882,14 +996,19 @@ async def _report_spool_usage_split_by_tray_changes(
             need_material = (
                 slot_materials_out is not None and slot_id not in slot_materials_out and spool_material is None
             )
-            if need_color or need_material:
+            # Unlike the colour, every segment needs its own price: each was
+            # charged to its own spool, and a backup roll can have cost
+            # something different from the one it replaced.
+            need_price = cost_out is not None and spool_obj is None
+            if need_color or need_material or need_price:
                 try:
-                    _fil = (await client.get_spool(spool_id_to_use)).get("filament") or {}
+                    spool_obj = await client.get_spool(spool_id_to_use)
+                    _fil = spool_obj.get("filament") or {}
                     if need_color:
                         spool_color_hex = _fil.get("color_hex")
                     if need_material:
                         spool_material = _fil.get("material")
-                except Exception as exc:  # noqa: BLE001 — colour/material are non-critical
+                except Exception as exc:  # noqa: BLE001 — colour/material/price are non-critical
                     logger.debug("[SPOOLMAN] Split slot %s: could not fetch spool filament: %s", slot_id, exc)
             if slot_colors_out is not None and slot_id not in slot_colors_out and spool_color_hex:
                 slot_colors_out[slot_id] = spool_color_hex
@@ -909,6 +1028,8 @@ async def _report_spool_usage_split_by_tray_changes(
                     resolution_path,
                 )
                 spools_updated += 1
+                if cost_out is not None:
+                    cost_out.add(round(segment_grams, 2), spool_obj, f"Split slot {slot_id} seg {seg_idx}")
             except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
                 logger.warning(
                     "[SPOOLMAN] Split slot %s seg %s: failed to record usage for spool %s: %s",
@@ -1256,6 +1377,9 @@ async def report_usage(printer_id: int, archive_id: int):
 
         slot_colors: dict[int, str] = {}
         slot_materials: dict[int, str] = {}
+        # Priced as each charge lands, so the figure the archive ends up with
+        # describes the same grams Spoolman actually had deducted (#2591).
+        print_cost = _PrintCost()
         handled_global_tray_ids: set[int] = set()
         spools_updated = 0
 
@@ -1301,6 +1425,7 @@ async def report_usage(printer_id: int, archive_id: int):
                     printer_id=printer_id,
                     slot_colors_out=slot_colors,
                     slot_materials_out=slot_materials,
+                    cost_out=print_cost,
                 )
                 spools_updated += split_updated
                 handled_global_tray_ids |= split_handled
@@ -1317,6 +1442,7 @@ async def report_usage(printer_id: int, archive_id: int):
                     printer_id=printer_id,
                     slot_colors_out=slot_colors,
                     slot_materials_out=slot_materials,
+                    cost_out=print_cost,
                 )
                 # Track which physical slots the 3MF path already covered so
                 # Path 2 doesn't double-charge them.
@@ -1349,6 +1475,7 @@ async def report_usage(printer_id: int, archive_id: int):
                 print_used_keys=_print_used_tray_keys(slot_to_tray, tray_now_at_start, current),
                 slot_colors_out=slot_colors,
                 slot_materials_out=slot_materials,
+                cost_out=print_cost,
             )
             spools_updated += fallback_updates
 
@@ -1379,6 +1506,14 @@ async def report_usage(printer_id: int, archive_id: int):
             # Same for the material: a slot mapped to a differently-typed spool
             # than it was sliced for otherwise records the sliced type (#2563).
             await _apply_spool_types_to_archive(db, archive_id, filament_usage, slot_materials)
+
+        # Cost is applied whether or not the mapping was a guess, unlike the
+        # colour and material above. Those overwrite what the slicer recorded,
+        # which is why a guess must not touch them; the cost has no such
+        # original -- archive.py's figure is itself derived from a default rate
+        # -- and the grams have already been deducted from these spools, so the
+        # archive should say what that deduction was worth.
+        await _apply_spool_cost_to_archive(db, archive_id, print_cost)
 
 
 def _print_used_tray_keys(
@@ -1435,6 +1570,7 @@ async def _report_remain_delta_for_slots(
     print_used_keys: set[tuple[int, int]] | None = None,
     slot_colors_out: dict[int, str] | None = None,
     slot_materials_out: dict[int, str] | None = None,
+    cost_out: _PrintCost | None = None,
 ) -> int:
     """AMS remain%-delta path: write ``(start - current) * filament.weight``
     grams to Spoolman for slots the 3MF path didn't cover.
@@ -1552,6 +1688,10 @@ async def _report_remain_delta_for_slots(
             continue
 
         spools_updated += 1
+        # ``spool`` here is the full row fetched above for its filament weight,
+        # so the price is already in hand (#2591).
+        if cost_out is not None:
+            cost_out.add(grams_used, spool, f"AMS{ams_id}-T{tray_id}")
         # No 3MF slot_id for this path — use the AMS slot key so the maps can
         # still be inspected by callers if needed. The archive rewrites
         # (#1494 colour, #2563 type) key on 3MF slot_ids, so remain-delta-only
@@ -1582,6 +1722,99 @@ async def _report_remain_delta_for_slots(
             ", ".join(not_in_print),
         )
     return spools_updated
+
+
+async def _apply_spool_cost_to_archive(db, archive_id: int, print_cost: _PrintCost) -> None:
+    """Set an archive's cost from what the Spoolman spools that fed it are worth (#2591).
+
+    Until now this was the one thing the Spoolman integration was asked for by
+    name and did not do. ``archive.py`` prices a print once, at archive time,
+    from the built-in Filament catalogue matched on the primary type, falling
+    back to the global default rate -- and in Spoolman mode nothing ever
+    revisited that figure, because the per-spool recompute in
+    ``usage_tracker.on_print_complete`` only runs over rows the built-in
+    inventory wrote and Spoolman mode writes none. An install with an empty
+    catalogue therefore priced every print at the default no matter what the
+    linked spool actually cost.
+
+    Multi-material was wrong twice over there: the primary type's rate applied
+    to the *whole* print's grams, so a slot of expensive PA came out at the
+    price of the PLA next to it. Summing per charged slot is what fixes that,
+    and it falls out of pricing each charge as it is made rather than pricing a
+    total afterwards.
+
+    Grams that could not be priced are covered at the global default rate in a
+    single subtraction against the archive's own total -- a slot whose spool has
+    no price, a tray with no Spoolman row, and filament the 3MF never attributed
+    are all the same case. Without it a print with one priced slot out of four
+    would report a quarter of its cost, which is #1344 in a different inventory
+    mode.
+
+    Only on the first run, matching the built-in writer (#1378): reprint actuals
+    live in ``PrintLogEntry``, and the archive card keeps the first run's figure
+    so a failed 10 g reprint doesn't visually clobber a successful 100 g print.
+
+    Does nothing when no slot could be priced, leaving whatever ``archive.py``
+    recorded. That keeps an install with prices in neither place exactly where
+    it was.
+    """
+    if print_cost.priced == 0:
+        if print_cost.unpriced:
+            logger.info(
+                "[SPOOLMAN] Archive %s: %d charged spool(s) carry no price -- "
+                "leaving the cost as recorded at archive time",
+                archive_id,
+                print_cost.unpriced,
+            )
+        return
+
+    from sqlalchemy import func
+
+    from backend.app.api.routes.settings import get_setting
+    from backend.app.models.archive import PrintArchive
+    from backend.app.models.print_log import PrintLogEntry
+
+    archive = (await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))).scalar_one_or_none()
+    if archive is None:
+        return
+
+    total = print_cost.cost
+    archive_grams = archive.filament_used_grams or 0
+    unpriced_grams = max(0.0, archive_grams - print_cost.priced_grams)
+    if unpriced_grams > 0:
+        # Malformed settings must not cost the whole usage report; the rate is
+        # the least important thing this pass produces.
+        try:
+            _setting = await get_setting(db, "default_filament_cost")
+            default_cost_per_kg = float(_setting) if _setting else 25.0
+        except (TypeError, ValueError):
+            default_cost_per_kg = 25.0
+        if default_cost_per_kg > 0:
+            total += (unpriced_grams / 1000.0) * default_cost_per_kg
+
+    if total <= 0:
+        return
+
+    existing_runs = (
+        await db.execute(select(func.count(PrintLogEntry.id)).where(PrintLogEntry.archive_id == archive_id))
+    ).scalar()
+    if existing_runs:
+        return
+
+    new_cost = round(total, 2)
+    if new_cost != archive.cost:
+        logger.info(
+            "[SPOOLMAN] Archive %s cost %s -> %s (%d slot(s) priced from Spoolman over %.2fg, "
+            "%.2fg at the default rate)",
+            archive_id,
+            archive.cost,
+            new_cost,
+            print_cost.priced,
+            print_cost.priced_grams,
+            unpriced_grams,
+        )
+        archive.cost = new_cost
+        await db.commit()
 
 
 async def _apply_spool_colors_to_archive(

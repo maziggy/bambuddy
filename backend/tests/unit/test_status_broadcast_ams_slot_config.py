@@ -64,6 +64,7 @@ def _state(trays: list[dict]) -> SimpleNamespace:
         progress=0,
         layer_num=0,
         temperatures={},
+        nozzles=[],
         raw_data={"ams": [{"id": "0", "dry_time": 0, "tray": trays}]},
         stg_cur=0,
         # Real PrinterState always carries these; the status-broadcast dedup

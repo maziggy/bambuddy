@@ -1279,6 +1279,24 @@ class BambuMQTTClient:
         # Value: {"nozzle": str, "event": asyncio.Event, "profiles": list | None}.
         self._sequence_id: int = 0
         self._pending_kprofile_requests: dict[str, dict] = {}
+        # The printer's calibration table, one bucket per nozzle diameter.
+        #
+        # An extrusion_cali_get response is the complete table for *one* nozzle
+        # size, and the printer answers whoever asks — including BambuStudio,
+        # whose queries land on the same report topic we subscribe to. Assigning
+        # each response straight to state.kprofiles therefore let any single
+        # answer stand for the whole printer: a GitHub backup probing
+        # 0.2/0.4/0.6/0.8 in turn finished on 0.8, which holds no profiles on a
+        # 0.4+0.6 machine, and left the list empty until something refilled it.
+        # Measured on the maintainer's H2 on 2026-08-25, and visible on the AMS
+        # card because H2-series trays carry no `k` of their own — the slot's
+        # K value is resolved from cali_idx against exactly this list.
+        #
+        # Keyed by diameter so a response only ever replaces the bucket it
+        # actually describes; state.kprofiles is then the union across buckets.
+        # An empty answer for a nozzle the printer doesn't have empties that
+        # bucket alone.
+        self._kprofiles_by_nozzle: dict[str, list] = {}
         # Acks for K-profile *writes* (extrusion_cali_set / extrusion_cali_del),
         # keyed by the sequence_id we sent. The printer echoes it back, measured
         # on both an X1C and an H2D (#2718). Filled by the MQTT thread, drained
@@ -6422,6 +6440,33 @@ class BambuMQTTClient:
                     logger.debug("Failed to parse K-profile from broadcast: %s", e)
         return profiles
 
+    def _store_kprofiles(self, profiles: list, response_nozzle: str | None) -> None:
+        """File one calibration-table response under its nozzle diameter.
+
+        ``response_nozzle`` names the table the printer just sent, so that
+        bucket is replaced wholesale and every other one is left alone. When
+        the envelope carries no diameter, fall back to the diameters the parsed
+        profiles claim for themselves — and if there are none of those either,
+        keep what we have rather than dropping a table we cannot attribute.
+
+        ``state.kprofiles`` stays a flat list because that is what its readers
+        expect; the three assign paths already filter it by ``nozzle_diameter``
+        and were quietly finding nothing whenever the last response happened to
+        be for a different nozzle.
+        """
+        buckets: dict[str, list] = {}
+        if response_nozzle:
+            buckets[str(response_nozzle)] = list(profiles)
+        else:
+            for profile in profiles:
+                buckets.setdefault(str(profile.nozzle_diameter), []).append(profile)
+        if not buckets:
+            return
+        self._kprofiles_by_nozzle.update(buckets)
+        self.state.kprofiles = [
+            kp for nozzle in sorted(self._kprofiles_by_nozzle) for kp in self._kprofiles_by_nozzle[nozzle]
+        ]
+
     def _handle_kprofile_response(self, data: dict):
         """Handle K-profile response from printer."""
         response_nozzle = data.get("nozzle_diameter")
@@ -6469,11 +6514,20 @@ class BambuMQTTClient:
             return
 
         profiles = self._parse_kprofile_entries(filaments, response_nozzle, log_errors=request is not None)
-        self.state.kprofiles = profiles
+        self._store_kprofiles(profiles, response_nozzle)
 
         if request is None:
             # Unsolicited broadcast with nothing in flight: state is refreshed,
-            # nobody to wake.
+            # nobody to wake. Worth a line — this is the printer answering
+            # somebody else (BambuStudio queries the same report topic), and
+            # until it was bucketed by nozzle it was also the quietest way for
+            # the AMS card's K values to change underneath us.
+            logger.debug(
+                "[%s] Adopted unsolicited K-profile table: nozzle=%s, %d profiles",
+                self.serial_number,
+                response_nozzle or "?",
+                len(profiles),
+            )
             return
 
         logger.info("[%s] Got %s K-profiles for nozzle=%s", self.serial_number, len(profiles), response_nozzle)

@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Box, ChevronDown, ChevronUp, Loader2, Plus, Search, Trash2, X, Move, UserMinus } from 'lucide-react';
+import { Box, ChevronDown, ChevronUp, Loader2, Plus, Search, Trash2, X, Move, UserMinus, Pencil } from 'lucide-react';
 import { api } from '../api/client';
 import type { Printer as PrinterType } from '../api/client';
 import { Button } from '../components/Button';
@@ -44,6 +44,10 @@ export function PrinterLocationsPage() {
   // Per-printer move: which printer + which target location
   const [movePrinter, setMovePrinter] = useState<{ id: number; name: string } | null>(null);
   const [moveTarget, setMoveTarget] = useState<string>('');
+
+  // Rename location
+  const [renameLocation, setRenameLocation] = useState<{ name: string } | null>(null);
+  const [renameLocationName, setRenameLocationName] = useState('');
 
   // Filter cached locations for autocomplete (used in Move modal, not Create)
 
@@ -167,6 +171,40 @@ export function PrinterLocationsPage() {
     },
   });
 
+  // Rename location mutation
+  const renameLocationMutation = useMutation({
+    mutationFn: async ({
+      oldName,
+      newName,
+    }: {
+      oldName: string;
+      newName: string;
+    }) => {
+      const currentPrinters = queryClient.getQueryData<PrinterType[]>(['printers']) || [];
+      const printersInLocation = currentPrinters.filter(
+        (p) => (p.location || '') === oldName,
+      );
+      if (printersInLocation.length === 0) return;
+      await Promise.all(
+        printersInLocation.map((p) => api.updatePrinter(p.id, { location: newName })),
+      );
+    },
+    onSuccess: (_, { newName }) => {
+      removeCachedPrinterLocation(renameLocation?.name || '');
+      addCachedPrinterLocation(newName);
+      queryClient.invalidateQueries({ queryKey: ['printers'] });
+      showToast(t('printers.locations.renamed', 'Location renamed'));
+      setRenameLocation(null);
+    },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : t('printers.locations.renameError', 'Failed to rename location');
+      showToast(message, 'error');
+    },
+  });
+
   // Move single printer mutation
   const movePrinterMutation = useMutation({
     mutationFn: ({
@@ -246,6 +284,24 @@ export function PrinterLocationsPage() {
     }
   };
 
+  const handleRenameLocation = () => {
+    if (!renameLocation || !renameLocationName.trim()) return;
+    // Check if location already exists
+    if (locations.some(([name]) => name === renameLocationName.trim())) {
+      showToast(t('printers.locations.exists', 'Location already exists'), 'error');
+      return;
+    }
+    renameLocationMutation.mutate({
+      oldName: renameLocation.name,
+      newName: renameLocationName.trim(),
+    });
+  };
+
+  const handleCancelRename = () => {
+    setRenameLocation(null);
+    setRenameLocationName('');
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -318,7 +374,7 @@ export function PrinterLocationsPage() {
                 <Card key={name}>
                   <CardContent className="p-4">
                     {/* Group header */}
-                    <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center justify-between">
                       <button
                         onClick={() =>
                           setExpandedLocation(isExpanded ? null : name)
@@ -337,6 +393,19 @@ export function PrinterLocationsPage() {
                         </div>
                       </button>
                       <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setRenameLocation({ name });
+                            setNewLocationName(name);
+                          }}
+                          disabled={renameLocationMutation.isPending}
+                          className="text-bambu-gray hover:text-blue-400 hover:bg-blue-500/10"
+                          title={t('printers.locations.rename', 'Rename location')}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -592,6 +661,53 @@ export function PrinterLocationsPage() {
           variant="danger"
           isLoading={deleteLocationMutation.isPending}
         />
+      )}
+
+      {/* Rename Location Modal */}
+      {renameLocation && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md">
+            <CardContent className="space-y-4">
+              <h2 className="text-lg font-semibold text-white">
+                {t('printers.locations.renameTitle', 'Rename Location')}
+              </h2>
+              <input
+                type="text"
+                value={renameLocationName}
+                onChange={(e) => setRenameLocationName(e.target.value)}
+                placeholder={t('printers.locations.namePlaceholder', 'Location name')}
+                className="w-full px-4 py-2 text-sm bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleRenameLocation();
+                  if (e.key === 'Escape') handleCancelRename();
+                }}
+              />
+              <div className="flex gap-2 justify-end">
+                <Button
+                  variant="secondary"
+                  onClick={handleCancelRename}
+                  disabled={renameLocationMutation.isPending}
+                >
+                  {t('common.cancel')}
+                </Button>
+                <Button
+                  onClick={handleRenameLocation}
+                  disabled={renameLocationMutation.isPending || !renameLocationName.trim()}
+                >
+                  {renameLocationMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t('common.saving')}
+                    </>
+                  ) : (
+                    t('common.save')
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Move Printer Modal */}

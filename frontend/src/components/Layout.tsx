@@ -48,7 +48,7 @@ export const defaultNavItems: NavItem[] = [
   { id: 'profiles', to: '/profiles', icon: Cloud, labelKey: 'nav.profiles' },
   { id: 'maintenance', to: '/maintenance', icon: Wrench, labelKey: 'nav.maintenance' },
   { id: 'stats', to: '/stats', icon: BarChart3, labelKey: 'nav.stats' },
-  { id: 'printer-locations', to: '/printer-locations', icon: Box, labelKey: 'nav.printerLocations' },
+  //{ id: 'printer-locations', to: '/printer-locations', icon: Box, labelKey: 'nav.printerLocations' },
   // Opt-in feature: gated in isHidden() on the billing_enabled setting, so the
   // entry stays out of the sidebar entirely until an admin turns billing on.
   { id: 'finance', to: '/finance', icon: Receipt, labelKey: 'nav.finance' },

@@ -869,6 +869,10 @@ export default {
       moveError: "Не удалось переместить принтер",
       removedFromGroup: "Принтер убран из группы",
       removeFromGroupError: "Не удалось убрать принтер из группы",
+      renamed: "Группа переименована",
+      renameError: "Не удалось переименовать группу",
+      renameTitle: "Переименовать группу",
+      rename: "Переименовать группу",
     },
   },
   archives: {

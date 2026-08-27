@@ -48,8 +48,24 @@ export function PrinterLocationsPage() {
   const [renameLocation, setRenameLocation] = useState<{ name: string } | null>(null);
   const [renameLocationName, setRenameLocationName] = useState('');
 
-  // Hide empty groups toggle
-  const [hideEmptyGroups, setHideEmptyGroups] = useState(false);
+  // Hide empty groups toggle — read from localStorage on mount
+  const [hideEmptyGroups, setHideEmptyGroups] = useState(() => {
+    try {
+      const saved = localStorage.getItem('hideEmptyGroups');
+      return saved === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Persist hideEmptyGroups to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('hideEmptyGroups', String(hideEmptyGroups));
+    } catch {
+      // localStorage unavailable
+    }
+  }, [hideEmptyGroups]);
 
   // Bulk selection
   const [selectedPrinterIds, setSelectedPrinterIds] = useState<Set<number>>(new Set());
@@ -618,13 +634,30 @@ export function PrinterLocationsPage() {
                   const status = getPrinterStatus(printer.id);
                   const isConnected = status?.connected;
                   const state = status?.state;
+                  const isSelected = selectedPrinterIds.has(printer.id);
 
                   return (
                     <div
                       key={printer.id}
-                      className="flex items-center justify-between py-2 px-3 rounded-lg bg-bambu-dark-secondary hover:bg-bambu-dark transition-colors"
+                      className={`flex items-center justify-between py-2 px-3 rounded-lg transition-colors ${
+                        isSelected
+                          ? 'bg-bambu-green/10 border border-bambu-green/30'
+                          : 'bg-bambu-dark-secondary hover:bg-bambu-dark'
+                      }`}
                     >
                       <div className="flex items-center gap-3">
+                        {/* Checkbox */}
+                        <button
+                          onClick={() => togglePrinterSelection(printer.id)}
+                          className="text-bambu-gray hover:text-bambu-green transition-colors"
+                          title={t('printers.locations.selectPrinter', 'Select printer')}
+                        >
+                          {isSelected ? (
+                            <CheckSquare className="w-4 h-4 text-bambu-green" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
                         {/* Status indicator */}
                         <div
                           className={`w-2.5 h-2.5 rounded-full ${

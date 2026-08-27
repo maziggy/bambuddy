@@ -862,24 +862,26 @@ export function PrinterLocationsPage() {
                     <div
                       key={printer.id}
                       className={`flex items-center justify-between py-2 px-3 rounded-lg transition-colors ${
-                        isSelected
+                        !groupSelectionMode && isSelected
                           ? 'bg-bambu-green/10 border border-bambu-green/30'
                           : 'bg-bambu-dark-secondary hover:bg-bambu-dark'
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        {/* Checkbox */}
-                        <button
-                          onClick={() => togglePrinterSelection(printer.id)}
-                          className="text-bambu-gray hover:text-bambu-green transition-colors"
-                          title={t('printers.locations.selectPrinter', 'Select printer')}
-                        >
-                          {isSelected ? (
-                            <CheckSquare className="w-4 h-4 text-bambu-green" />
-                          ) : (
-                            <Square className="w-4 h-4" />
-                          )}
-                        </button>
+                        {/* Checkbox — hidden in group selection mode */}
+                        {!groupSelectionMode && (
+                          <button
+                            onClick={() => togglePrinterSelection(printer.id)}
+                            className="text-bambu-gray hover:text-bambu-green transition-colors"
+                            title={t('printers.locations.selectPrinter', 'Select printer')}
+                          >
+                            {isSelected ? (
+                              <CheckSquare className="w-4 h-4 text-bambu-green" />
+                            ) : (
+                              <Square className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
                         {/* Status indicator */}
                         <div
                           className={`w-2.5 h-2.5 rounded-full ${
@@ -924,17 +926,19 @@ export function PrinterLocationsPage() {
                             Offline
                           </span>
                         )}
-                        {/* Move button */}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setMovePrinter({ id: printer.id, name: printer.name })}
-                          disabled={movePrinterMutation.isPending}
-                          className="text-bambu-gray hover:text-bambu-green hover:bg-bambu-green/10"
-                          title={t('printers.locations.move', 'Move to another location')}
-                        >
-                          <Move className="w-3.5 h-3.5" />
-                        </Button>
+                        {/* Move button — hidden in group selection mode */}
+                        {!groupSelectionMode && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setMovePrinter({ id: printer.id, name: printer.name })}
+                            disabled={movePrinterMutation.isPending}
+                            className="text-bambu-gray hover:text-bambu-green hover:bg-bambu-green/10"
+                            title={t('printers.locations.move', 'Move to another location')}
+                          >
+                            <Move className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   );

@@ -13,6 +13,8 @@ import {
   addCachedPrinterLocation,
   removeCachedPrinterLocation,
 } from '../utils/printerLocationsCache';
+import { getLocationIcon, setLocationIcon, removeLocationIcon } from '../utils/printerLocationIcons';
+import { IconPicker, getIconByName } from '../components/IconPicker';
 
 /** Russian pluralization for "printer".
  *  1 printer, 2-4 printers, 5+ printers, with 11-14 exceptions. */
@@ -44,9 +46,10 @@ export function PrinterLocationsPage() {
   const [movePrinter, setMovePrinter] = useState<{ id: number; name: string } | null>(null);
   const [moveTarget, setMoveTarget] = useState<string>('');
 
-  // Rename location
-  const [renameLocation, setRenameLocation] = useState<{ name: string } | null>(null);
-  const [renameLocationName, setRenameLocationName] = useState('');
+  // Edit location (name + icon)
+  const [editLocation, setEditLocation] = useState<{ name: string } | null>(null);
+  const [editLocationName, setEditLocationName] = useState('');
+  const [editLocationIcon, setEditLocationIcon] = useState('');
 
   // Hide empty groups toggle — read from localStorage on mount
   const [hideEmptyGroups, setHideEmptyGroups] = useState(() => {
@@ -170,6 +173,7 @@ export function PrinterLocationsPage() {
     },
     onSuccess: (_, locationName) => {
       removeCachedPrinterLocation(locationName);
+      removeLocationIcon(locationName);
       queryClient.invalidateQueries({ queryKey: ['printers'] });
       showToast(t('printers.locations.deleted', 'Location deleted'));
       setDeleteConfirm(null);
@@ -202,14 +206,16 @@ export function PrinterLocationsPage() {
     },
   });
 
-  // Rename location mutation
-  const renameLocationMutation = useMutation({
+  // Edit location mutation (name + icon)
+  const editLocationMutation = useMutation({
     mutationFn: async ({
       oldName,
       newName,
+      newIcon,
     }: {
       oldName: string;
       newName: string;
+      newIcon: string;
     }) => {
       const currentPrinters = queryClient.getQueryData<PrinterType[]>(['printers']) || [];
       const printersInLocation = currentPrinters.filter(
@@ -219,19 +225,23 @@ export function PrinterLocationsPage() {
       await Promise.all(
         printersInLocation.map((p) => api.updatePrinter(p.id, { location: newName })),
       );
+      return { oldName, newName, newIcon };
     },
-    onSuccess: (_, { newName }) => {
-      removeCachedPrinterLocation(renameLocation?.name || '');
+    onSuccess: (_, { oldName, newName, newIcon }) => {
+      removeCachedPrinterLocation(oldName);
       addCachedPrinterLocation(newName);
+      setLocationIcon(newName, newIcon);
       queryClient.invalidateQueries({ queryKey: ['printers'] });
-      showToast(t('printers.locations.renamed', 'Location renamed'));
-      setRenameLocation(null);
+      showToast(t('printers.locations.editSaved', 'Location updated'));
+      setEditLocation(null);
+      setEditLocationName('');
+      setEditLocationIcon('');
     },
     onError: (error: unknown) => {
       const message =
         error instanceof Error && error.message
           ? error.message
-          : t('printers.locations.renameError', 'Failed to rename location');
+          : t('printers.locations.editError', 'Failed to update location');
       showToast(message, 'error');
     },
   });
@@ -328,7 +338,10 @@ export function PrinterLocationsPage() {
       return groupNames;
     },
     onSuccess: (_, groupNames) => {
-      groupNames.forEach((name) => removeCachedPrinterLocation(name));
+      groupNames.forEach((name) => {
+        removeCachedPrinterLocation(name);
+        removeLocationIcon(name);
+      });
       queryClient.invalidateQueries({ queryKey: ['printers'] });
       showToast(t('printers.locations.groupsDeleted', '{{count}} group(s) deleted', {
         count: groupNames.length,
@@ -377,22 +390,25 @@ export function PrinterLocationsPage() {
     }
   };
 
-  const handleRenameLocation = () => {
-    if (!renameLocation || !renameLocationName.trim()) return;
-    // Check if location already exists
-    if (locations.some(([name]) => name === renameLocationName.trim())) {
+  const handleEditLocation = () => {
+    if (!editLocation || !editLocationName.trim()) return;
+    // Check if location already exists (with different name)
+    if (editLocationName.trim() !== editLocation.name &&
+        locations.some(([name]) => name === editLocationName.trim())) {
       showToast(t('printers.locations.exists', 'Location already exists'), 'error');
       return;
     }
-    renameLocationMutation.mutate({
-      oldName: renameLocation.name,
-      newName: renameLocationName.trim(),
+    editLocationMutation.mutate({
+      oldName: editLocation.name,
+      newName: editLocationName.trim(),
+      newIcon: editLocationIcon,
     });
   };
 
-  const handleCancelRename = () => {
-    setRenameLocation(null);
-    setRenameLocationName('');
+  const handleCancelEdit = () => {
+    setEditLocation(null);
+    setEditLocationName('');
+    setEditLocationIcon('');
   };
 
   // Bulk selection helpers
@@ -565,7 +581,14 @@ export function PrinterLocationsPage() {
                           <ChevronDown className={`w-4 h-4 text-bambu-gray transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                         )}
                         <div className="p-2 rounded-lg bg-bambu-dark group-hover:bg-bambu-dark-tertiary transition-colors">
-                          <Box className="w-[25px] h-[25px] text-bambu-gray" />
+                          {(() => {
+                            const iconName = getLocationIcon(name);
+                            if (iconName) {
+                              const Icon = getIconByName(iconName);
+                              return <Icon className="w-[25px] h-[25px] text-bambu-gray" />;
+                            }
+                            return <Box className="w-[25px] h-[25px] text-bambu-gray" />;
+                          })()}
                         </div>
                         <div className="flex-1 text-left">
                           <p className="text-white font-medium">{name}</p>
@@ -579,12 +602,14 @@ export function PrinterLocationsPage() {
                           variant="ghost"
                           size="sm"
                           onClick={() => {
-                            setRenameLocation({ name });
-                            setRenameLocationName(name);
+                            const icon = getLocationIcon(name);
+                            setEditLocation({ name });
+                            setEditLocationName(name);
+                            setEditLocationIcon(icon || '');
                           }}
-                          disabled={renameLocationMutation.isPending}
+                          disabled={editLocationMutation.isPending}
                           className="text-bambu-gray hover:text-blue-400 hover:bg-blue-500/10"
-                          title={t('printers.locations.rename', 'Rename location')}
+                          title={t('printers.locations.edit', 'Edit')}
                         >
                           <Pencil className="w-4 h-4" />
                         </Button>
@@ -1016,45 +1041,54 @@ export function PrinterLocationsPage() {
         />
       )}
 
-      {/* Rename Location Modal */}
-      {renameLocation && (
+      {/* Edit Location Modal */}
+      {editLocation && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-md">
             <CardContent className="space-y-4">
               <h2 className="text-lg font-semibold text-white">
-                {t('printers.locations.renameTitle', 'Rename Location')}
+                {t('printers.locations.editTitle', 'Edit Location')}
               </h2>
               <input
                 type="text"
-                value={renameLocationName}
-                onChange={(e) => setRenameLocationName(e.target.value)}
-                placeholder={t('printers.locations.namePlaceholder', 'Location name')}
+                value={editLocationName}
+                onChange={(e) => setEditLocationName(e.target.value)}
+                placeholder={t('printers.locations.editNamePlaceholder', 'Location name')}
                 className="w-full px-4 py-2 text-sm bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
                 autoFocus
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleRenameLocation();
-                  if (e.key === 'Escape') handleCancelRename();
+                  if (e.key === 'Enter') handleEditLocation();
+                  if (e.key === 'Escape') handleCancelEdit();
                 }}
               />
+              <div>
+                <p className="text-sm text-bambu-gray mb-2">
+                  {t('printers.locations.editIcon', 'Icon')}
+                </p>
+                <IconPicker
+                  value={editLocationIcon}
+                  onChange={setEditLocationIcon}
+                />
+              </div>
               <div className="flex gap-2 justify-end">
                 <Button
                   variant="secondary"
-                  onClick={handleCancelRename}
-                  disabled={renameLocationMutation.isPending}
+                  onClick={handleCancelEdit}
+                  disabled={editLocationMutation.isPending}
                 >
                   {t('common.cancel')}
                 </Button>
                 <Button
-                  onClick={handleRenameLocation}
-                  disabled={renameLocationMutation.isPending || !renameLocationName.trim()}
+                  onClick={handleEditLocation}
+                  disabled={editLocationMutation.isPending || !editLocationName.trim()}
                 >
-                  {renameLocationMutation.isPending ? (
+                  {editLocationMutation.isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
                       {t('common.saving')}
                     </>
                   ) : (
-                    t('common.save')
+                    t('printers.locations.editSave', 'Save')
                   )}
                 </Button>
               </div>

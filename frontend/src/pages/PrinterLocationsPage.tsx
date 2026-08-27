@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Box, ChevronDown, Loader2, Plus, Search, Trash2, Move, UserMinus, Pencil, CheckSquare, Square } from 'lucide-react';
+import { Box, ChevronDown, Loader2, Plus, Search, Trash2, Move, UserMinus, Pencil, CheckSquare, Square, ChevronUp } from 'lucide-react';
 import { api } from '../api/client';
 import type { Printer as PrinterType } from '../api/client';
 import { Button } from '../components/Button';
@@ -14,17 +14,8 @@ import {
   removeCachedPrinterLocation,
 } from '../utils/printerLocationsCache';
 import { getLocationIcon, setLocationIcon, removeLocationIcon } from '../utils/printerLocationIcons';
+import { getLocationColor, setLocationColor, removeLocationColor, getPresetColors } from '../utils/printerLocationColors';
 import { IconPicker, getIconByName } from '../components/IconPicker';
-
-/** Russian pluralization for "printer".
- *  1 printer, 2-4 printers, 5+ printers, with 11-14 exceptions. */
-function pluralPrinters(count: number): string {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'принтер';
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'принтера';
-  return 'принтеров';
-}
 
 export function PrinterLocationsPage() {
   const queryClient = useQueryClient();
@@ -40,16 +31,19 @@ export function PrinterLocationsPage() {
   } | null>(null);
   const [createLocation, setCreateLocation] = useState(false);
   const [newLocationName, setNewLocationName] = useState('');
+  const [createLocationIcon, setCreateLocationIcon] = useState('');
+  const [createLocationColor, setCreateLocationColor] = useState('');
   const [expandedLocation, setExpandedLocation] = useState<string | null>(null);
 
   // Per-printer move: which printer + which target location
   const [movePrinter, setMovePrinter] = useState<{ id: number; name: string } | null>(null);
   const [moveTarget, setMoveTarget] = useState<string>('');
 
-  // Edit location (name + icon)
+  // Edit location (name + icon + color)
   const [editLocation, setEditLocation] = useState<{ name: string } | null>(null);
   const [editLocationName, setEditLocationName] = useState('');
   const [editLocationIcon, setEditLocationIcon] = useState('');
+  const [editLocationColor, setEditLocationColor] = useState('');
 
   // Hide empty groups toggle — read from localStorage on mount
   const [hideEmptyGroups, setHideEmptyGroups] = useState(() => {
@@ -79,6 +73,25 @@ export function PrinterLocationsPage() {
   const [groupSelectionMode, setGroupSelectionMode] = useState(false);
   const [selectedGroupNames, setSelectedGroupNames] = useState<Set<string>>(new Set());
 
+  // Group sort mode — persisted in localStorage
+  const [sortMode, setSortMode] = useState<'name-asc' | 'name-desc' | 'count-asc' | 'count-desc'>(() => {
+    try {
+      const saved = localStorage.getItem('locationSortMode');
+      if (saved === 'name-desc' || saved === 'count-asc' || saved === 'count-desc') return saved;
+    } catch { /* ignore */ }
+    return 'name-asc';
+  });
+
+  // Persist sort mode
+  useEffect(() => {
+    try {
+      localStorage.setItem('locationSortMode', sortMode);
+    } catch { /* ignore */ }
+  }, [sortMode]);
+
+  // Sort dropdown
+  const [showSortMenu, setShowSortMenu] = useState(false);
+
   // Fetch all printers to derive locations
   const { data: printers, isLoading } = useQuery({
     queryKey: ['printers'],
@@ -106,13 +119,7 @@ export function PrinterLocationsPage() {
       }
     }
 
-    // Sort: empty name ("Ungrouped") first, then alphabetically
-    return Array.from(locationMap.entries())
-      .sort(([a], [b]) => {
-        if (!a) return -1;
-        if (!b) return 1;
-        return a.localeCompare(b);
-      });
+    return Array.from(locationMap.entries());
   })();
 
   // Initial sync: populate cache with any real locations that aren't cached yet
@@ -135,9 +142,30 @@ export function PrinterLocationsPage() {
 
   // Filter out empty groups if toggle is on
   const displayedLocations = useMemo(() => {
-    if (!hideEmptyGroups) return filteredLocations;
-    return filteredLocations.filter(([, count]) => count > 0);
-  }, [filteredLocations, hideEmptyGroups]);
+    let result = hideEmptyGroups
+      ? filteredLocations.filter(([, count]) => count > 0)
+      : filteredLocations;
+
+    // Ungrouped (empty name) always first
+    const ungrouped = result.find(([name]) => !name);
+    const named = result.filter(([name]) => name);
+
+    // Sort named groups
+    const sorted = [...named].sort(([a, countA], [b, countB]) => {
+      switch (sortMode) {
+        case 'name-asc':
+          return a.localeCompare(b);
+        case 'name-desc':
+          return b.localeCompare(a);
+        case 'count-asc':
+          return countA - countB || a.localeCompare(b);
+        case 'count-desc':
+          return countB - countA || a.localeCompare(b);
+      }
+    });
+
+    return ungrouped ? [ungrouped, ...sorted] : sorted;
+  }, [filteredLocations, hideEmptyGroups, sortMode]);
 
   // Get printers for a location
   const getPrintersInLocation = (locationName: string) => {
@@ -174,6 +202,7 @@ export function PrinterLocationsPage() {
     onSuccess: (_, locationName) => {
       removeCachedPrinterLocation(locationName);
       removeLocationIcon(locationName);
+      removeLocationColor(locationName);
       queryClient.invalidateQueries({ queryKey: ['printers'] });
       showToast(t('printers.locations.deleted', 'Location deleted'));
       setDeleteConfirm(null);
@@ -206,16 +235,18 @@ export function PrinterLocationsPage() {
     },
   });
 
-  // Edit location mutation (name + icon)
+  // Edit location mutation (name + icon + color)
   const editLocationMutation = useMutation({
     mutationFn: async ({
       oldName,
       newName,
       newIcon,
+      newColor,
     }: {
       oldName: string;
       newName: string;
       newIcon: string;
+      newColor: string;
     }) => {
       const currentPrinters = queryClient.getQueryData<PrinterType[]>(['printers']) || [];
       const printersInLocation = currentPrinters.filter(
@@ -227,18 +258,21 @@ export function PrinterLocationsPage() {
       );
       return { oldName, newName, newIcon };
     },
-    onSuccess: (_, { oldName, newName, newIcon }) => {
+    onSuccess: (_, { oldName, newName, newIcon, newColor }) => {
       removeCachedPrinterLocation(oldName);
       if (oldName !== newName) {
         removeLocationIcon(oldName);
+        removeLocationColor(oldName);
       }
       addCachedPrinterLocation(newName);
       setLocationIcon(newName, newIcon);
+      setLocationColor(newName, newColor);
       queryClient.invalidateQueries({ queryKey: ['printers'] });
       showToast(t('printers.locations.editSaved', 'Location updated'));
       setEditLocation(null);
       setEditLocationName('');
       setEditLocationIcon('');
+      setEditLocationColor('');
     },
     onError: (error: unknown) => {
       const message =
@@ -249,6 +283,7 @@ export function PrinterLocationsPage() {
       setEditLocation(null);
       setEditLocationName('');
       setEditLocationIcon('');
+      setEditLocationColor('');
     },
   });
 
@@ -313,10 +348,14 @@ export function PrinterLocationsPage() {
       await Promise.resolve();
     },
     onSuccess: () => {
+      setLocationIcon(newLocationName, createLocationIcon);
+      setLocationColor(newLocationName, createLocationColor);
       queryClient.invalidateQueries({ queryKey: ['printers'] });
       showToast(t('printers.locations.created', 'Location created'));
       setCreateLocation(false);
       setNewLocationName('');
+      setCreateLocationIcon('');
+      setCreateLocationColor('');
     },
     onError: (error: unknown) => {
       const message =
@@ -347,6 +386,7 @@ export function PrinterLocationsPage() {
       groupNames.forEach((name) => {
         removeCachedPrinterLocation(name);
         removeLocationIcon(name);
+        removeLocationColor(name);
       });
       queryClient.invalidateQueries({ queryKey: ['printers'] });
       showToast(t('printers.locations.groupsDeleted', '{{count}} group(s) deleted', {
@@ -382,6 +422,13 @@ export function PrinterLocationsPage() {
     createLocationMutation.mutate(newLocationName.trim());
   };
 
+  const handleCancelCreate = () => {
+    setCreateLocation(false);
+    setNewLocationName('');
+    setCreateLocationIcon('');
+    setCreateLocationColor('');
+  };
+
   const handleCancelMove = () => {
     setMovePrinter(null);
     setMoveTarget('');
@@ -408,6 +455,7 @@ export function PrinterLocationsPage() {
       oldName: editLocation.name,
       newName: editLocationName.trim(),
       newIcon: editLocationIcon,
+      newColor: editLocationColor,
     });
   };
 
@@ -415,6 +463,7 @@ export function PrinterLocationsPage() {
     setEditLocation(null);
     setEditLocationName('');
     setEditLocationIcon('');
+    setEditLocationColor('');
   };
 
   // Bulk selection helpers
@@ -528,6 +577,47 @@ export function PrinterLocationsPage() {
             ? t('printers.locations.selectGroupsActive', 'Done')
             : t('printers.locations.selectGroups', 'Select')}
         </Button>
+        <div className="relative">
+          <Button
+            onClick={() => setShowSortMenu(!showSortMenu)}
+            variant="secondary"
+            className="h-10"
+          >
+            <ChevronDown className={`w-4 h-4 mr-1 transition-transform duration-200 ${showSortMenu ? 'rotate-180' : ''}`} />
+            {sortMode === 'name-asc' ? t('printers.locations.sortNameAsc', 'Name A→Z') :
+             sortMode === 'name-desc' ? t('printers.locations.sortNameDesc', 'Name Z→A') :
+             sortMode === 'count-asc' ? t('printers.locations.sortCountAsc', 'Count ↑') :
+             t('printers.locations.sortCountDesc', 'Count ↓')}
+          </Button>
+          {showSortMenu && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowSortMenu(false)} />
+              <div className="absolute right-0 top-full mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg p-1">
+                {([
+                  ['name-asc', t('printers.locations.sortNameAsc', 'Name A→Z')],
+                  ['name-desc', t('printers.locations.sortNameDesc', 'Name Z→A')],
+                  ['count-asc', t('printers.locations.sortCountAsc', 'Count ↑')],
+                  ['count-desc', t('printers.locations.sortCountDesc', 'Count ↓')],
+                ] as const).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    onClick={() => {
+                      setSortMode(mode);
+                      setShowSortMenu(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 text-sm rounded transition-colors ${
+                      sortMode === mode
+                        ? 'bg-bambu-green text-white'
+                        : 'text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         <Button
           onClick={() => setCreateLocation(true)}
           disabled={createLocationMutation.isPending}
@@ -559,7 +649,7 @@ export function PrinterLocationsPage() {
                 <Card key={name}>
                   <CardContent className="p-4">
                     {/* Group header */}
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between relative">
                       <div
                         onClick={groupSelectionMode ? undefined : () =>
                           setExpandedLocation(isExpanded ? null : name)
@@ -586,20 +676,31 @@ export function PrinterLocationsPage() {
                         ) : (
                           <ChevronDown className={`w-4 h-4 text-bambu-gray transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                         )}
-                        <div className="p-2 rounded-lg bg-bambu-dark group-hover:bg-bambu-dark-tertiary transition-colors">
+                        <div className="p-2 rounded-lg bg-bambu-dark group-hover:bg-bambu-dark-tertiary transition-colors relative">
                           {(() => {
                             const iconName = getLocationIcon(name);
+                            const color = getLocationColor(name);
                             if (iconName) {
                               const Icon = getIconByName(iconName);
                               return <Icon className="w-[25px] h-[25px] text-bambu-gray" />;
                             }
                             return <Box className="w-[25px] h-[25px] text-bambu-gray" />;
                           })()}
+                          {(() => {
+                            const color = getLocationColor(name);
+                            if (!color) return null;
+                            return (
+                              <div
+                                className="absolute top-0 left-0 w-1 h-full rounded-l-lg"
+                                style={{ backgroundColor: color }}
+                              />
+                            );
+                          })()}
                         </div>
                         <div className="flex-1 text-left">
                           <p className="text-white font-medium">{name}</p>
                           <p className="text-sm text-bambu-gray">
-                            {count} {pluralPrinters(count)}
+                            {count} {count === 1 ? t('printers.locations.printer') : t('printers.locations.printers')}
                           </p>
                         </div>
                       </div>
@@ -609,9 +710,11 @@ export function PrinterLocationsPage() {
                           size="sm"
                           onClick={() => {
                             const icon = getLocationIcon(name);
+                            const color = getLocationColor(name);
                             setEditLocation({ name });
                             setEditLocationName(name);
                             setEditLocationIcon(icon || '');
+                            setEditLocationColor(color || '');
                           }}
                           disabled={editLocationMutation.isPending}
                           className="text-bambu-gray hover:text-blue-400 hover:bg-blue-500/10"
@@ -750,7 +853,7 @@ export function PrinterLocationsPage() {
           {ungroupedCount > 0 && (
             <div className="pt-4 border-t border-bambu-dark-tertiary">
               <h3 className="text-sm font-medium text-bambu-gray mb-3">
-                {t('printers.locations.ungroupedPrinters', 'Ungrouped Printers')}, {ungroupedCount} {pluralPrinters(ungroupedCount)}
+                {t('printers.locations.ungroupedPrinters', 'Ungrouped Printers')}, {t('printers.locations.printer', { count: ungroupedCount, smartCount: true })}
               </h3>
               <div className="space-y-2">
                 {getPrintersInLocation('').map((printer) => {
@@ -986,16 +1089,53 @@ export function PrinterLocationsPage() {
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleCreateLocation();
-                  if (e.key === 'Escape') setCreateLocation(false);
+                  if (e.key === 'Escape') handleCancelCreate();
                 }}
               />
+              <div>
+                <p className="text-sm text-bambu-gray mb-2">
+                  {t('printers.locations.editIcon', 'Icon')}
+                </p>
+                <IconPicker
+                  value={createLocationIcon}
+                  onChange={setCreateLocationIcon}
+                />
+              </div>
+              <div>
+                <p className="text-sm text-bambu-gray mb-2">
+                  {t('printers.locations.editColor', 'Color')}
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  {getPresetColors().map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setCreateLocationColor(createLocationColor === color ? '' : color)}
+                      className={`w-8 h-8 rounded-lg transition-all ${
+                        createLocationColor === color
+                          ? 'ring-2 ring-white ring-offset-2 ring-offset-bambu-dark-secondary scale-110'
+                          : 'hover:scale-105'
+                      }`}
+                      style={{ backgroundColor: color }}
+                      title={color}
+                    />
+                  ))}
+                  {createLocationColor && (
+                    <button
+                      type="button"
+                      onClick={() => setCreateLocationColor('')}
+                      className="w-8 h-8 rounded-lg border-2 border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white hover:border-bambu-gray transition-all flex items-center justify-center"
+                      title="No color"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                  )}
+                </div>
+              </div>
               <div className="flex gap-2 justify-end">
                 <Button
                   variant="secondary"
-                  onClick={() => {
-                    setCreateLocation(false);
-                    setNewLocationName('');
-                  }}
+                  onClick={handleCancelCreate}
                 >
                   {t('common.cancel')}
                 </Button>
@@ -1075,6 +1215,37 @@ export function PrinterLocationsPage() {
                   value={editLocationIcon}
                   onChange={setEditLocationIcon}
                 />
+              </div>
+              <div>
+                <p className="text-sm text-bambu-gray mb-2">
+                  {t('printers.locations.editColor', 'Color')}
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  {getPresetColors().map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setEditLocationColor(editLocationColor === color ? '' : color)}
+                      className={`w-8 h-8 rounded-lg transition-all ${
+                        editLocationColor === color
+                          ? 'ring-2 ring-white ring-offset-2 ring-offset-bambu-dark-secondary scale-110'
+                          : 'hover:scale-105'
+                      }`}
+                      style={{ backgroundColor: color }}
+                      title={color}
+                    />
+                  ))}
+                  {editLocationColor && (
+                    <button
+                      type="button"
+                      onClick={() => setEditLocationColor('')}
+                      className="w-8 h-8 rounded-lg border-2 border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white hover:border-bambu-gray transition-all flex items-center justify-center"
+                      title="No color"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex gap-2 justify-end">
                 <Button

@@ -229,6 +229,9 @@ export function PrinterLocationsPage() {
     },
     onSuccess: (_, { oldName, newName, newIcon }) => {
       removeCachedPrinterLocation(oldName);
+      if (oldName !== newName) {
+        removeLocationIcon(oldName);
+      }
       addCachedPrinterLocation(newName);
       setLocationIcon(newName, newIcon);
       queryClient.invalidateQueries({ queryKey: ['printers'] });
@@ -243,6 +246,9 @@ export function PrinterLocationsPage() {
           ? error.message
           : t('printers.locations.editError', 'Failed to update location');
       showToast(message, 'error');
+      setEditLocation(null);
+      setEditLocationName('');
+      setEditLocationIcon('');
     },
   });
 

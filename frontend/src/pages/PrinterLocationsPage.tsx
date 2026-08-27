@@ -1,8 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Box, ChevronDown, ChevronUp, Loader2, Plus, Search, Trash2, X, Move, UserMinus, Pencil, CheckSquare, Square } from 'lucide-react';
+import { Box, ChevronDown, Loader2, Plus, Search, Trash2, Move, UserMinus, Pencil, CheckSquare, Square } from 'lucide-react';
 import { api } from '../api/client';
 import type { Printer as PrinterType } from '../api/client';
 import { Button } from '../components/Button';
@@ -26,7 +25,6 @@ function pluralPrinters(count: number): string {
 }
 
 export function PrinterLocationsPage() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -35,6 +33,8 @@ export function PrinterLocationsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{
     name: string;
     count: number;
+    isBulkDelete?: boolean;
+    names?: string[];
   } | null>(null);
   const [createLocation, setCreateLocation] = useState(false);
   const [newLocationName, setNewLocationName] = useState('');
@@ -71,6 +71,10 @@ export function PrinterLocationsPage() {
   const [selectedPrinterIds, setSelectedPrinterIds] = useState<Set<number>>(new Set());
   const [bulkMoveTarget, setBulkMoveTarget] = useState<string>('');
   const [showBulkMove, setShowBulkMove] = useState(false);
+
+  // Group selection mode
+  const [groupSelectionMode, setGroupSelectionMode] = useState(false);
+  const [selectedGroupNames, setSelectedGroupNames] = useState<Set<string>>(new Set());
 
   // Fetch all printers to derive locations
   const { data: printers, isLoading } = useQuery({
@@ -307,6 +311,43 @@ export function PrinterLocationsPage() {
     },
   });
 
+  // Bulk delete groups mutation
+  const bulkDeleteGroupsMutation = useMutation({
+    mutationFn: async (groupNames: string[]) => {
+      const currentPrinters = queryClient.getQueryData<PrinterType[]>(['printers']) || [];
+
+      const printersToRemove = currentPrinters.filter((p) =>
+        groupNames.includes((p.location || '')),
+      );
+
+      // Use empty string '' to clear location
+      await Promise.all(
+        printersToRemove.map((p) => api.updatePrinter(p.id, { location: '' })),
+      );
+
+      return groupNames;
+    },
+    onSuccess: (_, groupNames) => {
+      groupNames.forEach((name) => removeCachedPrinterLocation(name));
+      queryClient.invalidateQueries({ queryKey: ['printers'] });
+      showToast(t('printers.locations.groupsDeleted', '{{count}} group(s) deleted', {
+        count: groupNames.length,
+      }));
+      clearGroupSelection();
+      setGroupSelectionMode(false);
+      setDeleteConfirm(null);
+    },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : t('printers.locations.deleteGroupsError', 'Failed to delete groups');
+      showToast(message, 'error');
+      setGroupSelectionMode(false);
+      setDeleteConfirm(null);
+    },
+  });
+
   const handleCreateLocation = () => {
     if (!newLocationName.trim()) {
       showToast(t('printers.locations.nameRequired', 'Location name is required'), 'error');
@@ -382,6 +423,21 @@ export function PrinterLocationsPage() {
     });
   };
 
+  // Group selection helpers
+  const toggleGroupSelection = (groupName: string) => {
+    const next = new Set(selectedGroupNames);
+    if (next.has(groupName)) {
+      next.delete(groupName);
+    } else {
+      next.add(groupName);
+    }
+    setSelectedGroupNames(next);
+  };
+
+  const clearGroupSelection = () => {
+    setSelectedGroupNames(new Set());
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -434,6 +490,23 @@ export function PrinterLocationsPage() {
             : t('printers.locations.hideEmpty', 'Hide empty')}
         </Button>
         <Button
+          onClick={() => {
+            if (groupSelectionMode) {
+              clearGroupSelection();
+              setGroupSelectionMode(false);
+            } else {
+              setGroupSelectionMode(true);
+            }
+          }}
+          variant={groupSelectionMode ? 'default' : 'secondary'}
+          className="h-10"
+        >
+          <CheckSquare className="w-4 h-4 mr-1" />
+          {groupSelectionMode
+            ? t('printers.locations.selectGroupsActive', 'Done')
+            : t('printers.locations.selectGroups', 'Select')}
+        </Button>
+        <Button
           onClick={() => setCreateLocation(true)}
           disabled={createLocationMutation.isPending}
         >
@@ -465,13 +538,32 @@ export function PrinterLocationsPage() {
                   <CardContent className="p-4">
                     {/* Group header */}
                     <div className="flex items-center justify-between">
-                      <button
-                        onClick={() =>
+                      <div
+                        onClick={groupSelectionMode ? undefined : () =>
                           setExpandedLocation(isExpanded ? null : name)
                         }
                         className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer group"
+                        role="button"
+                        tabIndex={groupSelectionMode ? -1 : 0}
                       >
-                        <ChevronDown className={`w-4 h-4 text-bambu-gray transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                        {groupSelectionMode ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleGroupSelection(name);
+                            }}
+                            className="text-bambu-gray hover:text-bambu-green transition-colors flex-shrink-0"
+                            title={t('printers.locations.selectGroup', 'Select group')}
+                          >
+                            {selectedGroupNames.has(name) ? (
+                              <CheckSquare className="w-4 h-4 text-bambu-green" />
+                            ) : (
+                              <Square className="w-4 h-4" />
+                            )}
+                          </button>
+                        ) : (
+                          <ChevronDown className={`w-4 h-4 text-bambu-gray transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                        )}
                         <div className="p-2 rounded-lg bg-bambu-dark group-hover:bg-bambu-dark-tertiary transition-colors">
                           <Box className="w-[25px] h-[25px] text-bambu-gray" />
                         </div>
@@ -481,7 +573,7 @@ export function PrinterLocationsPage() {
                             {count} {pluralPrinters(count)}
                           </p>
                         </div>
-                      </button>
+                      </div>
                       <div className="flex items-center gap-2">
                         <Button
                           variant="ghost"
@@ -748,6 +840,45 @@ export function PrinterLocationsPage() {
         </div>
       )}
 
+      {/* Bulk delete groups bar */}
+      {selectedGroupNames.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-bambu-dark border border-bambu-dark-tertiary rounded-xl shadow-2xl px-6 py-4 flex items-center gap-4 z-40">
+          <div className="text-white text-sm">
+            {t('printers.locations.selected', '{{count}} selected', { count: selectedGroupNames.size })}
+          </div>
+          <Button
+            onClick={() => {
+              const names = Array.from(selectedGroupNames);
+              const printerCount = (printers || []).filter((p) =>
+                names.includes((p.location || ''))
+              ).length;
+              setDeleteConfirm({
+                name: names.join(', '),
+                count: printerCount,
+                isBulkDelete: true,
+                names,
+              });
+            }}
+            disabled={bulkDeleteGroupsMutation.isPending}
+            className="h-9 bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500/30"
+          >
+            <Trash2 className="w-4 h-4 mr-1" />
+            {t('printers.locations.deleteSelectedGroups', 'Delete selected')}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              clearGroupSelection();
+              setGroupSelectionMode(false);
+            }}
+            disabled={bulkDeleteGroupsMutation.isPending}
+            className="h-9 text-bambu-gray hover:text-white"
+          >
+            {t('common.cancel')}
+          </Button>
+        </div>
+      )}
+
       {/* Bulk Move Modal */}
       {showBulkMove && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -859,15 +990,29 @@ export function PrinterLocationsPage() {
       {/* Delete Confirmation Modal */}
       {deleteConfirm && (
         <ConfirmModal
-          onConfirm={() => deleteLocationMutation.mutate(deleteConfirm.name)}
+          onConfirm={() => {
+            if (deleteConfirm.isBulkDelete && deleteConfirm.names) {
+              bulkDeleteGroupsMutation.mutate(deleteConfirm.names);
+            } else {
+              deleteLocationMutation.mutate(deleteConfirm.name);
+            }
+          }}
           onCancel={() => setDeleteConfirm(null)}
-          title={t('printers.locations.deleteTitle', 'Delete Location')}
-          message={t('printers.locations.deleteDescription', 'Are you sure? This will remove this location from {{count}} printer(s).', {
-            count: deleteConfirm.count,
-          })}
-          confirmText={t('printers.locations.deleteConfirm', 'Delete')}
+          title={deleteConfirm.isBulkDelete
+            ? t('printers.locations.deleteSelectedGroupsTitle', 'Delete Selected Groups')
+            : t('printers.locations.deleteTitle', 'Delete Location')}
+          message={deleteConfirm.isBulkDelete
+            ? t('printers.locations.deleteSelectedGroupsDescription', 'Are you sure? This will remove {{count}} group(s) and ungroup all printers in them.', {
+                count: deleteConfirm.count,
+              })
+            : t('printers.locations.deleteDescription', 'Are you sure? This will remove this location from {{count}} printer(s).', {
+                count: deleteConfirm.count,
+              })}
+          confirmText={deleteConfirm.isBulkDelete
+            ? t('printers.locations.deleteConfirm', 'Delete')
+            : t('printers.locations.deleteConfirm', 'Delete')}
           variant="danger"
-          isLoading={deleteLocationMutation.isPending}
+          isLoading={bulkDeleteGroupsMutation.isPending || deleteLocationMutation.isPending}
         />
       )}
 

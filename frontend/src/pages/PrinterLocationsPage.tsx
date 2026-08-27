@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Box, ChevronDown, Loader2, Plus, Search, Trash2, Move, UserMinus, Pencil, CheckSquare, Square, ChevronUp } from 'lucide-react';
+import { Box, ChevronDown, Loader2, Plus, Search, Trash2, Move, UserMinus, Pencil, CheckSquare, Square } from 'lucide-react';
 import { api } from '../api/client';
 import type { Printer as PrinterType } from '../api/client';
 import { Button } from '../components/Button';
@@ -256,7 +256,7 @@ export function PrinterLocationsPage() {
       await Promise.all(
         printersInLocation.map((p) => api.updatePrinter(p.id, { location: newName })),
       );
-      return { oldName, newName, newIcon };
+      return { oldName, newName, newIcon, newColor };
     },
     onSuccess: (_, { oldName, newName, newIcon, newColor }) => {
       removeCachedPrinterLocation(oldName);
@@ -475,10 +475,6 @@ export function PrinterLocationsPage() {
       next.add(printerId);
     }
     setSelectedPrinterIds(next);
-  };
-
-  const selectAllPrinters = (printers: PrinterType[]) => {
-    setSelectedPrinterIds(new Set(printers.map((p) => p.id)));
   };
 
   const clearSelection = () => {
@@ -853,7 +849,7 @@ export function PrinterLocationsPage() {
           {ungroupedCount > 0 && (
             <div className="pt-4 border-t border-bambu-dark-tertiary">
               <h3 className="text-sm font-medium text-bambu-gray mb-3">
-                {t('printers.locations.ungroupedPrinters', 'Ungrouped Printers')}, {t('printers.locations.printer', { count: ungroupedCount, smartCount: true })}
+                {t('printers.locations.ungroupedPrinters', 'Ungrouped Printers')}, {ungroupedCount} {ungroupedCount === 1 ? t('printers.locations.printer') : t('printers.locations.printers')}
               </h3>
               <div className="space-y-2">
                 {getPrintersInLocation('').map((printer) => {

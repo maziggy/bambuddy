@@ -192,6 +192,14 @@ export function PrintModal({
     return {};
   });
 
+  // The printer `manualMappings` were resolved against (#2799). Its entries are
+  // global tray IDs, which mean nothing on any other machine, so they follow
+  // this one printer instead of every selected one. Seeded when editing an
+  // existing item, whose stored mapping belongs to the printer it is queued on.
+  const [sharedMappingPrinterId, setSharedMappingPrinterId] = useState<number | null>(() =>
+    mode === 'edit-queue-item' ? queueItem?.printer_id ?? null : null,
+  );
+
   // Per-printer override configs (for multi-printer selection)
   const [perPrinterConfigs, setPerPrinterConfigs] = useState<Record<number, PerPrinterConfig>>({});
 
@@ -660,6 +668,7 @@ export function PrintModal({
     setPerPrinterConfigs,
     settings?.prefer_lowest_filament,
     inventoryByTrayIdPerPrinter,
+    sharedMappingPrinterId,
   );
 
   // Auto-select first plate when plates load (single or multi-plate)
@@ -828,12 +837,31 @@ export function PrintModal({
       if (plateId === null || selectedPrinters.length !== 1) return undefined;
       return perPlateAmsMappings.get(plateId);
     }
-    // For multi-printer selection, check if this printer has an override
+    // For multi-printer selection every printer maps against its own AMS.
+    // A mapping is a list of global tray IDs, which only mean something on the
+    // printer they were resolved against, so `amsMapping` — computed against
+    // the first selected printer — cannot be reused on the rest: the slot index
+    // still resolves, so nothing looks wrong, and the job prints from whatever
+    // sits in that tray on the other machine (#2799).
+    //
+    // `getFinalMapping` is the single source of truth here: the hook decides
+    // per printer which overrides legitimately apply (its own, the shared ones
+    // if they were authored against it, otherwise none), and the match badge is
+    // derived from that same decision, so the panel cannot promise one mapping
+    // while another is submitted. Undefined while a printer's status loads —
+    // send none and let the scheduler map it at dispatch, as the multi-plate
+    // path above already does.
     if (selectedPrinters.length > 1) {
-      const printerConfig = perPrinterConfigs[printerId];
-      if (printerConfig && !printerConfig.useDefault) {
-        return multiPrinterMapping.getFinalMapping(printerId);
-      }
+      return multiPrinterMapping.getFinalMapping(printerId);
+    }
+    // The single-printer path says the same thing, explicitly. `amsMapping`
+    // folds in `manualMappings`, so it is this printer's mapping only while this
+    // printer is the one those overrides were authored against. In practice the
+    // effect above clears them whenever the selection changes, but that leaves
+    // the rule enforced in one place and merely implied in the other — a thin
+    // thing to rest on the next time that effect is edited.
+    if (sharedMappingPrinterId !== null && sharedMappingPrinterId !== printerId) {
+      return multiPrinterMapping.getFinalMapping(printerId);
     }
     return amsMapping;
   };
@@ -1743,7 +1771,12 @@ export function PrintModal({
                 printerId={effectivePrinterId!}
                 filamentReqs={effectiveFilamentReqs}
                 manualMappings={manualMappings}
-                onManualMappingChange={setManualMappings}
+                onManualMappingChange={(next) => {
+                  // This panel only renders for a single selected printer, so
+                  // its tray IDs belong to that printer alone (#2799).
+                  setSharedMappingPrinterId(effectivePrinterId!);
+                  setManualMappings(next);
+                }}
                 onEstimatedCostChange={setEstimatedCost}
                 budgetAvailable={billingEnabled ? selectedCostCenter?.budget_available ?? null : null}
                 quantity={effectiveQuantity}

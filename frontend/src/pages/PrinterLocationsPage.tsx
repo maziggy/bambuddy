@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Box, ChevronDown, ChevronUp, Loader2, Plus, Search, Trash2, X, Move, UserMinus, Pencil } from 'lucide-react';
+import { Box, ChevronDown, ChevronUp, Loader2, Plus, Search, Trash2, X, Move, UserMinus, Pencil, CheckSquare, Square } from 'lucide-react';
 import { api } from '../api/client';
 import type { Printer as PrinterType } from '../api/client';
 import { Button } from '../components/Button';
@@ -15,16 +15,6 @@ import {
   removeCachedPrinterLocation,
 } from '../utils/printerLocationsCache';
 
-/** Debounce a value with the given delay (ms). */
-function useDebounce<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState<T>(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(timer);
-  }, [value, delay]);
-  return debounced;
-}
-
 export function PrinterLocationsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -32,7 +22,6 @@ export function PrinterLocationsPage() {
   const { showToast } = useToast();
 
   const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search, 200);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     name: string;
     count: number;
@@ -49,7 +38,13 @@ export function PrinterLocationsPage() {
   const [renameLocation, setRenameLocation] = useState<{ name: string } | null>(null);
   const [renameLocationName, setRenameLocationName] = useState('');
 
-  // Filter cached locations for autocomplete (used in Move modal, not Create)
+  // Hide empty groups toggle
+  const [hideEmptyGroups, setHideEmptyGroups] = useState(false);
+
+  // Bulk selection
+  const [selectedPrinterIds, setSelectedPrinterIds] = useState<Set<number>>(new Set());
+  const [bulkMoveTarget, setBulkMoveTarget] = useState<string>('');
+  const [showBulkMove, setShowBulkMove] = useState(false);
 
   // Fetch all printers to derive locations
   const { data: printers, isLoading } = useQuery({
@@ -98,12 +93,18 @@ export function PrinterLocationsPage() {
     }
   }, []); // run once on mount
 
-  // Filter locations by debounced search
+  // Filter locations by search
   const filteredLocations = useMemo(() => {
-    if (!debouncedSearch.trim()) return locations;
-    const q = debouncedSearch.toLowerCase();
+    if (!search.trim()) return locations;
+    const q = search.toLowerCase();
     return locations.filter(([name]) => name.toLowerCase().includes(q));
-  }, [locations, debouncedSearch]);
+  }, [locations, search]);
+
+  // Filter out empty groups if toggle is on
+  const displayedLocations = useMemo(() => {
+    if (!hideEmptyGroups) return filteredLocations;
+    return filteredLocations.filter(([, count]) => count > 0);
+  }, [filteredLocations, hideEmptyGroups]);
 
   // Get printers for a location
   const getPrintersInLocation = (locationName: string) => {
@@ -228,6 +229,36 @@ export function PrinterLocationsPage() {
     },
   });
 
+  // Bulk move mutation
+  const bulkMoveMutation = useMutation({
+    mutationFn: async ({
+      printerIds,
+      location,
+    }: {
+      printerIds: number[];
+      location: string;
+    }) => {
+      await Promise.all(
+        printerIds.map((id) => api.updatePrinter(id, { location })),
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['printers'] });
+      showToast(t('printers.locations.bulkMoved', '{{count}} printers moved', {
+        count: selectedPrinterIds.size,
+      }));
+      clearSelection();
+      setShowBulkMove(false);
+    },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : t('printers.locations.bulkMoveError', 'Failed to move printers');
+      showToast(message, 'error');
+    },
+  });
+
   // Create location mutation — creates an empty location
   const createLocationMutation = useMutation({
     mutationFn: async (locationName: string) => {
@@ -265,11 +296,6 @@ export function PrinterLocationsPage() {
     createLocationMutation.mutate(newLocationName.trim());
   };
 
-  const handleSelectSuggestion = (name: string) => {
-    setNewLocationName(name);
-    setShowSuggestions(false);
-  };
-
   const handleCancelMove = () => {
     setMovePrinter(null);
     setMoveTarget('');
@@ -300,6 +326,34 @@ export function PrinterLocationsPage() {
   const handleCancelRename = () => {
     setRenameLocation(null);
     setRenameLocationName('');
+  };
+
+  // Bulk selection helpers
+  const togglePrinterSelection = (printerId: number) => {
+    const next = new Set(selectedPrinterIds);
+    if (next.has(printerId)) {
+      next.delete(printerId);
+    } else {
+      next.add(printerId);
+    }
+    setSelectedPrinterIds(next);
+  };
+
+  const selectAllPrinters = (printers: PrinterType[]) => {
+    setSelectedPrinterIds(new Set(printers.map((p) => p.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedPrinterIds(new Set());
+    setBulkMoveTarget('');
+  };
+
+  const handleBulkMove = () => {
+    if (selectedPrinterIds.size === 0 || !bulkMoveTarget) return;
+    bulkMoveMutation.mutate({
+      printerIds: Array.from(selectedPrinterIds),
+      location: bulkMoveTarget === '__ungrouped__' ? '' : bulkMoveTarget,
+    });
   };
 
   if (isLoading) {
@@ -344,6 +398,16 @@ export function PrinterLocationsPage() {
           />
         </div>
         <Button
+          onClick={() => setHideEmptyGroups(!hideEmptyGroups)}
+          variant={hideEmptyGroups ? 'default' : 'secondary'}
+          className="h-10"
+        >
+          <Box className="w-4 h-4 mr-1" />
+          {hideEmptyGroups
+            ? t('printers.locations.showEmpty', 'Show empty')
+            : t('printers.locations.hideEmpty', 'Hide empty')}
+        </Button>
+        <Button
           onClick={() => setCreateLocation(true)}
           disabled={createLocationMutation.isPending}
         >
@@ -353,7 +417,7 @@ export function PrinterLocationsPage() {
       </div>
 
       {/* Locations list */}
-      {filteredLocations.length === 0 && ungroupedCount === 0 ? (
+      {displayedLocations.length === 0 && ungroupedCount === 0 ? (
         <Card>
           <CardContent className="text-center py-12 text-bambu-gray">
             {search
@@ -364,7 +428,7 @@ export function PrinterLocationsPage() {
       ) : (
         <div className="space-y-3">
           {/* Named locations */}
-          {filteredLocations
+          {displayedLocations
             .filter(([name]) => name) // skip ungrouped
             .map(([name, count]) => {
               const printersInGroup = getPrintersInLocation(name);
@@ -398,7 +462,7 @@ export function PrinterLocationsPage() {
                           size="sm"
                           onClick={() => {
                             setRenameLocation({ name });
-                            setNewLocationName(name);
+                            setRenameLocationName(name);
                           }}
                           disabled={renameLocationMutation.isPending}
                           className="text-bambu-gray hover:text-blue-400 hover:bg-blue-500/10"
@@ -430,13 +494,30 @@ export function PrinterLocationsPage() {
                               const status = getPrinterStatus(printer.id);
                               const isConnected = status?.connected;
                               const state = status?.state;
+                              const isSelected = selectedPrinterIds.has(printer.id);
 
                               return (
                                 <div
                                   key={printer.id}
-                                  className="flex items-center justify-between py-2 px-3 rounded-lg bg-bambu-dark-secondary hover:bg-bambu-dark transition-colors"
+                                  className={`flex items-center justify-between py-2 px-3 rounded-lg transition-colors ${
+                                    isSelected
+                                      ? 'bg-bambu-green/10 border border-bambu-green/30'
+                                      : 'bg-bambu-dark-secondary hover:bg-bambu-dark'
+                                  }`}
                                 >
                                   <div className="flex items-center gap-3">
+                                    {/* Checkbox */}
+                                    <button
+                                      onClick={() => togglePrinterSelection(printer.id)}
+                                      className="text-bambu-gray hover:text-bambu-green transition-colors"
+                                      title={t('printers.locations.selectPrinter', 'Select printer')}
+                                    >
+                                      {isSelected ? (
+                                        <CheckSquare className="w-4 h-4 text-bambu-green" />
+                                      ) : (
+                                        <Square className="w-4 h-4" />
+                                      )}
+                                    </button>
                                     {/* Status indicator */}
                                     <div
                                       className={`w-2.5 h-2.5 rounded-full ${
@@ -596,6 +677,90 @@ export function PrinterLocationsPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Bulk move bar */}
+      {selectedPrinterIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-bambu-dark border border-bambu-dark-tertiary rounded-xl shadow-2xl px-6 py-4 flex items-center gap-4 z-40">
+          <div className="text-white text-sm">
+            {t('printers.locations.selected', '{{count}} selected', { count: selectedPrinterIds.size })}
+          </div>
+          <Button
+            onClick={() => setShowBulkMove(true)}
+            disabled={bulkMoveMutation.isPending}
+            className="h-9"
+          >
+            <Move className="w-4 h-4 mr-1" />
+            {t('printers.locations.moveSelected', 'Move')}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={clearSelection}
+            disabled={bulkMoveMutation.isPending}
+            className="h-9 text-bambu-gray hover:text-white"
+          >
+            {t('common.cancel')}
+          </Button>
+        </div>
+      )}
+
+      {/* Bulk Move Modal */}
+      {showBulkMove && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md">
+            <CardContent className="space-y-4">
+              <h2 className="text-lg font-semibold text-white">
+                {t('printers.locations.moveSelectedTitle', 'Move Printers')}
+              </h2>
+              <p className="text-sm text-bambu-gray">
+                {t('printers.locations.moveSelectedCount', '{{count}} printers', { count: selectedPrinterIds.size })}
+              </p>
+              <select
+                value={bulkMoveTarget}
+                onChange={(e) => setBulkMoveTarget(e.target.value)}
+                className="w-full px-4 py-2 text-sm bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-bambu-green/50 focus:border-bambu-green transition-colors"
+                disabled={bulkMoveMutation.isPending}
+                autoFocus
+              >
+                <option value="" disabled className="text-bambu-gray">
+                  {t('printers.locations.selectLocation', 'Select a location...')}
+                </option>
+                {locations
+                  .filter(([name]) => name)
+                  .map(([name]) => (
+                    <option key={name} value={name} className="text-white">
+                      {name}
+                    </option>
+                  ))}
+                <option value="__ungrouped__" className="text-white">
+                  {t('printers.locations.ungrouped', 'Ungrouped')}
+                </option>
+              </select>
+              <div className="flex gap-2 justify-end">
+                <Button
+                  variant="secondary"
+                  onClick={() => setShowBulkMove(false)}
+                  disabled={bulkMoveMutation.isPending}
+                >
+                  {t('common.cancel')}
+                </Button>
+                <Button
+                  onClick={handleBulkMove}
+                  disabled={bulkMoveMutation.isPending || !bulkMoveTarget}
+                >
+                  {bulkMoveMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t('common.saving')}
+                    </>
+                  ) : (
+                    t('printers.locations.moveSelected', 'Move')
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 

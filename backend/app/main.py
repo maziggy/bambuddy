@@ -416,6 +416,15 @@ _INPRINT_BANK_MIN_INTERVAL = 25.0
 # reconnect re-arms reconciliation. Keyed by printer_id.
 _printer_reconciled_since_connect: dict[int, bool] = {}
 
+# Same edge, same keying, for priming the printer's calibration table exactly
+# once per (re)connection. Nothing else asks for it on connect: state.kprofiles
+# is otherwise filled only when someone opens the Profiles page or Configure
+# Slot, when a GitHub backup runs, or when the printer happens to answer
+# somebody else's query on the report topic. Until then the AMS slot card has
+# no K value to show on the printers whose trays carry none of their own
+# (#2854 — H2-series report cali_idx and nothing more).
+_printer_kprofiles_primed_since_connect: dict[int, bool] = {}
+
 # Track expected prints from reprint/scheduled (skip auto-archiving for these)
 # {(printer_id, filename): archive_id}
 _expected_prints: dict[tuple[int, str], int] = {}
@@ -1439,6 +1448,28 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         # Re-arm so the next reconnect triggers reconciliation again.
         _printer_reconciled_since_connect[printer_id] = False
 
+    # Same edge, for the calibration table the AMS card reads its K values from.
+    #
+    # Also gated on knowing a nozzle diameter, which is what decides *which*
+    # tables to ask for. A `state_known` gate alone is not enough: the first
+    # real push_status is what makes the state known, and the nozzle fields do
+    # not always arrive in it. Latching there would spend this connection's one
+    # attempt on a printer that could not yet say what was fitted.
+    nozzle_known = any(n.nozzle_diameter for n in (state.nozzles or []))
+    if (
+        state.connected
+        and state_known
+        and nozzle_known
+        and not _printer_kprofiles_primed_since_connect.get(printer_id, False)
+    ):
+        _printer_kprofiles_primed_since_connect[printer_id] = True
+        spawn_background_task(
+            prime_kprofile_table(printer_id),
+            name=f"prime-kprofiles-{printer_id}",
+        )
+    elif not state.connected and _printer_kprofiles_primed_since_connect.get(printer_id, False):
+        _printer_kprofiles_primed_since_connect[printer_id] = False
+
     # Offline-notification edge (#1752): schedule `on_printer_offline` on
     # connected → disconnected. The "back online" channel is already covered
     # by the print-failure notification (firmware reports gcode_state=FAILED
@@ -1539,6 +1570,19 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     fts_key = (
         state.fila_switch.installed if state.fila_switch else False,
         tuple(sorted(state.ams_switch_inlet.items())),
+        # Which hotend holds which slot. Unlike the two above this does move
+        # mid-print, on every filament change — but only between discrete slots,
+        # so it adds a push per toolchange, not a stream. The AMS slot menu needs
+        # it live: it decides which hotend the Load dialog may offer and whether
+        # Unload has anything to act on.
+        tuple(
+            sorted(
+                ((ext, slot.ams_id, slot.slot_id, slot.has_filament) for ext, slot in state.extruder_slots.items()),
+                # Sort on the extruder id alone: the other members are nullable
+                # and comparing None with an int raises.
+                key=lambda entry: entry[0],
+            )
+        ),
     )
     status_key = (
         f"{state.connected}:{state.state}:{state.progress}:{state.layer_num}:"
@@ -1972,17 +2016,26 @@ async def on_ams_change(printer_id: int, ams_data: list):
             from backend.app.api.routes.inventory import _find_tray_in_ams_data
             from backend.app.models.spool import Spool as _Spool
             from backend.app.models.spool_assignment import SpoolAssignment as SA
+            from backend.app.services.inventory_mode import spoolman_owns_assignments
 
-            result = await db.execute(
-                select(SA)
-                .where(SA.printer_id == printer_id)
-                .options(selectinload(SA.spool).selectinload(_Spool.k_profiles))
-            )
+            # Built-in assignments only. Since #2812 they survive a switch to
+            # Spoolman mode rather than being deleted by it, and this pass ends
+            # in ``db.delete`` — left ungated it would unlink them one slot at a
+            # time as the AMS contents changed under the other mode, undoing the
+            # preservation more slowly but just as completely.
+            assignments = []
+            if not await spoolman_owns_assignments(db):
+                result = await db.execute(
+                    select(SA)
+                    .where(SA.printer_id == printer_id)
+                    .options(selectinload(SA.spool).selectinload(_Spool.k_profiles))
+                )
+                assignments = result.scalars().all()
             # ``printing_now`` (top of this function) keeps a runout from
             # unlinking the spool that fed the print — the next idle-time pass
             # unlinks it if the user really did take it out.
             stale = []
-            for assignment in result.scalars().all():
+            for assignment in assignments:
                 # External spool assignments (ams_id=255) live in vt_tray, not AMS data
                 if assignment.ams_id == 255:
                     ps = printer_manager.get_status(printer_id)
@@ -2540,21 +2593,35 @@ async def on_ams_change(printer_id: int, ams_data: list):
 
             from backend.app.models.spool_assignment import SpoolAssignment
             from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+            from backend.app.services.inventory_mode import spoolman_owns_assignments
 
+            # Built-in remaining weight, used by sync_ams_tray only when the
+            # firmware reports an unusable remain%/tray_weight for a slot.
+            #
+            # Left empty since #2812. This block runs in Spoolman mode only,
+            # and until then the built-in table was emptied on the switch, so
+            # there was never anything here to read and the fallback was inert.
+            # Preserving those rows makes it live again, and it is keyed by slot
+            # rather than by spool: after a mode switch the tray may well hold
+            # different filament, and ``create_spool`` writes ``remaining_weight``
+            # unconditionally, so a stale figure would be seeded into a brand new
+            # Spoolman spool. Deliberately kept inert rather than deleted, so the
+            # intent survives for whoever revisits the cross-mode fallback.
             inventory_weights: dict[tuple[int, int], float] = {}
-            try:
-                assign_result = await db.execute(
-                    select(SpoolAssignment)
-                    .options(selectinload(SpoolAssignment.spool))
-                    .where(SpoolAssignment.printer_id == printer_id)
-                )
-                for assignment in assign_result.scalars().all():
-                    spool = assignment.spool
-                    if spool and spool.label_weight > 0:
-                        remaining = max(0.0, spool.label_weight - (spool.weight_used or 0))
-                        inventory_weights[(assignment.ams_id, assignment.tray_id)] = remaining
-            except Exception as e:
-                logger.warning("Could not load inventory weights for printer %s: %s", printer_id, e)
+            if not await spoolman_owns_assignments(db):
+                try:
+                    assign_result = await db.execute(
+                        select(SpoolAssignment)
+                        .options(selectinload(SpoolAssignment.spool))
+                        .where(SpoolAssignment.printer_id == printer_id)
+                    )
+                    for assignment in assign_result.scalars().all():
+                        spool = assignment.spool
+                        if spool and spool.label_weight > 0:
+                            remaining = max(0.0, spool.label_weight - (spool.weight_used or 0))
+                            inventory_weights[(assignment.ams_id, assignment.tray_id)] = remaining
+                except Exception as e:
+                    logger.warning("Could not load inventory weights for printer %s: %s", printer_id, e)
 
             # Load existing Spoolman slot assignments for the no-RFID fallback path
             spoolman_slot_map: dict[tuple[int, int], int] = {}
@@ -4392,6 +4459,28 @@ async def on_print_start(printer_id: int, data: dict):
                 # Send notification without archive data (file not found)
                 if not notification_sent:
                     await _send_print_start_notification(printer_id, data, logger=logger)
+
+                # The same baseline the other two on_print_start branches take
+                # (#2704), and last for the same reason they are: it lists the
+                # printer's timelapse directory, so a slow card must not delay
+                # the _active_prints registration, the energy reading, the
+                # archive-created event or the start notification above it.
+                #
+                # This branch never took one, so every no-3MF archive reached
+                # completion with no baseline in memory and none on the row, and
+                # the completion scan fell into its "snapshot now" fallback --
+                # which runs after the printer has written the video, so the new
+                # file landed inside the baseline and no diff ever matched
+                # (#2957 follow-up).
+                #
+                # Skipped when the FTPS cool-off is what produced this fallback:
+                # the listing needs the same connection that just failed, so it
+                # could only record that the card was unreadable. The scan
+                # handles that case by refusing to choose between candidates.
+                if not blocked_by_ftps_cooloff:
+                    await _capture_timelapse_baseline_at_start(
+                        printer, printer_id, logger, archive_id=fallback_archive.id
+                    )
                 return
             except Exception as e:
                 logger.error("Failed to create fallback archive: %s", e)
@@ -4566,12 +4655,38 @@ async def _claimed_timelapse_names(db, printer_id: int, exclude_archive_id: int)
     return {Path(p).stem for p in rows.scalars().all() if p}
 
 
+def _timelapse_listing_is_trustworthy(printer) -> bool:
+    """Whether an *empty* timelapse listing for *printer* can be believed.
+
+    ``list_files_async`` answers ``[]`` when its connect fails rather than
+    raising, so a card behind the FTPS handshake cool-off is indistinguishable
+    from one holding no videos. Everywhere that only wants to know "is there a
+    video yet" the difference does not matter — both mean "not yet, retry".
+
+    It matters where an empty listing is recorded as a *baseline*. Recording
+    "the card held nothing" for a card that was never read means every video on
+    it counts as new once the cool-off expires, and the completion scan then
+    attaches a stale video to this print and deletes it from the printer
+    (#2957 follow-up). Those two callers ask this first.
+    """
+    from backend.app.services.bambu_ftp import ftps_handshake_blocked
+
+    ip_address = getattr(printer, "ip_address", None)
+    if not ip_address:
+        return True
+    return not ftps_handshake_blocked(ip_address)
+
+
 async def _list_timelapse_videos(printer) -> tuple[list[dict], str | None]:
     """List video files from printer's timelapse directory.
 
     Finds MP4 (X1/A1 series) and AVI (P1 series) timelapse files.
     Returns (video_files, found_path) where video_files is a list of file dicts
     and found_path is the directory where they were found, or ([], None).
+
+    An empty return does not distinguish "no videos" from "could not read the
+    card" — see :func:`_timelapse_listing_is_trustworthy`, which the two
+    baseline callers consult before believing one.
     """
     from backend.app.services.bambu_ftp import list_files_async
 
@@ -4634,6 +4749,21 @@ async def _capture_timelapse_baseline_at_start(
     """
     names: set[str] | None = None
     try:
+        if not _timelapse_listing_is_trustworthy(printer):
+            # Recorded anyway, deliberately. An empty baseline taken off a card
+            # we could not read is not authoritative, but it is still the right
+            # *default*: Bambuddy deletes each video from the printer once it is
+            # attached, so the usual card holds exactly one video at completion
+            # and an empty baseline resolves it correctly. Persisting NULL
+            # instead would send completion to take its own snapshot, by which
+            # point this print's video is on the card and would be swallowed by
+            # it. The ambiguity is handled where it actually bites — see
+            # ``require_unambiguous`` in the scan (#2957 follow-up).
+            logger.warning(
+                "[TIMELAPSE] Baseline for printer %s taken while its file service is in the FTPS "
+                "handshake cool-off, so the card could not be read — treating it as empty",
+                printer_id,
+            )
         baseline_files, _ = await _list_timelapse_videos(printer)
         names = {f.get("name", "") for f in baseline_files}
         _timelapse_baselines[printer_id] = names
@@ -4687,6 +4817,10 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
     """
     logger = logging.getLogger(__name__)
 
+    # Cleared when the baseline had to be taken off a card we could not read, so
+    # the attach step refuses to choose between several candidates (#2957).
+    baseline_trusted = True
+
     # --- Phase 1: establish the baseline -------------------------------------
     try:
         async with async_session() as db:
@@ -4725,6 +4859,23 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
                 if not printer:
                     logger.warning("[TIMELAPSE] Printer not found for archive %s, aborting", archive_id)
                     return
+
+                if not _timelapse_listing_is_trustworthy(printer):
+                    # The card is unreadable at the one moment a baseline has to
+                    # be taken, so the empty listing below means "we never
+                    # looked", not "these are all new". Carry on with it anyway
+                    # — the usual card holds exactly one video, which resolves
+                    # correctly — but stop the poll from *choosing* between
+                    # several, which is how a stale video got attached to this
+                    # print and then deleted off the printer (#2957 follow-up).
+                    baseline_trusted = False
+                    logger.warning(
+                        "[TIMELAPSE] Baseline for archive %s taken while printer %s is in the FTPS "
+                        "handshake cool-off. A single new video still resolves; several will not be "
+                        "guessed between — use Scan for Timelapse to pick one by hand",
+                        archive_id,
+                        archive.printer_id,
+                    )
 
                 baseline_files, _ = await _list_timelapse_videos(printer)
                 baseline_names = {f.get("name", "") for f in baseline_files}
@@ -4794,7 +4945,15 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
                         logger.info("[TIMELAPSE]   - %s", f.get("name"))
 
                 attached = await _attach_first_unclaimed_timelapse(
-                    archive_id, printer, video_files, baseline_names, claimed, attempt, logger, quiet=not changed
+                    archive_id,
+                    printer,
+                    video_files,
+                    baseline_names,
+                    claimed,
+                    attempt,
+                    logger,
+                    quiet=not changed,
+                    require_unambiguous=not baseline_trusted,
                 )
                 if attached:
                     return
@@ -4828,6 +4987,7 @@ async def _attach_first_unclaimed_timelapse(
     logger: logging.Logger,
     *,
     quiet: bool = False,
+    require_unambiguous: bool = False,
 ) -> bool:
     """Download and attach the one video that belongs to this print.
 
@@ -4867,6 +5027,19 @@ async def _attach_first_unclaimed_timelapse(
         )
         return False
     if len(candidates) > 1:
+        if require_unambiguous:
+            # The baseline is not evidence -- it was taken off a card that could
+            # not be read -- so "new since the baseline" does not narrow these
+            # down at all. Taking the first would attach an arbitrary video to
+            # this print and then delete it from the printer.
+            logger.warning(
+                "[TIMELAPSE] Attempt %s: %s unclaimed videos (%s) and no baseline to tell them apart — "
+                "leaving all of them on the printer for manual selection",
+                attempt,
+                len(candidates),
+                ", ".join(str(f.get("name")) for f in candidates),
+            )
+            return False
         logger.warning(
             "[TIMELAPSE] Attempt %s: %s unclaimed new files (%s) — taking the first; "
             "the rest stay on the printer for manual selection",
@@ -5268,6 +5441,58 @@ def _is_active_archive_stale(archive, state) -> tuple[bool, str]:
     if not current_subtask_name:
         return True, "printer subtask_name empty"
     return False, ""
+
+
+async def prime_kprofile_table(printer_id: int) -> int:
+    """Read the printer's calibration table once per connection.
+
+    The AMS slot card shows a K value per slot (#2854). On the printers whose
+    trays carry no ``k`` field of their own -- the whole H2 series, whose trays
+    report ``cali_idx`` and nothing else -- that number can only come from
+    ``state.kprofiles``, and nothing used to fill it on connect. It arrived by
+    luck: someone opening the Profiles page or Configure Slot, a nightly GitHub
+    backup, or the printer answering a query BambuStudio made on the report
+    topic we share. A Bambuddy that nobody visited showed a card with no K
+    values at all.
+
+    Only the diameters actually fitted are asked for, which is one request on a
+    single-nozzle printer and two on a dual. Probing the four sizes blind is
+    what the backup does, and it is both wasteful and the thing that used to
+    blank the table.
+
+    Returns the number of nozzles whose table was read.
+    """
+    client = printer_manager.get_client(printer_id)
+    state = printer_manager.get_status(printer_id)
+    if client is None or state is None or not state.connected:
+        return 0
+
+    # Deduplicated, order preserved: a dual-nozzle printer with two 0.4s should
+    # ask once, and both entries are empty until the first push_status lands.
+    diameters = list(dict.fromkeys(n.nozzle_diameter for n in (state.nozzles or []) if n.nozzle_diameter))
+    if not diameters:
+        logging.getLogger(__name__).debug(
+            "[Printer %s] No nozzle diameter reported yet; leaving the K-profile table to the next reader",
+            printer_id,
+        )
+        return 0
+
+    primed = 0
+    for diameter in diameters:
+        try:
+            profiles = await client.get_kprofiles(nozzle_diameter=diameter, max_retries=2)
+        except Exception as exc:  # noqa: BLE001
+            # A printer that won't answer costs the card its K values, nothing
+            # more — never the connection this runs on the back of.
+            logging.getLogger(__name__).warning(
+                "[Printer %s] Could not read the K-profile table for nozzle %s: %s", printer_id, diameter, exc
+            )
+            continue
+        primed += 1
+        logging.getLogger(__name__).info(
+            "[Printer %s] Primed K-profile table for nozzle %s: %d profiles", printer_id, diameter, len(profiles)
+        )
+    return primed
 
 
 async def reconcile_stale_active_prints(printer_id: int) -> int:

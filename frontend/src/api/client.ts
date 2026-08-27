@@ -508,6 +508,20 @@ export interface FilaSwitchState {
   out_extruders: number[];
   stat: number;
   info: number;
+  // Whether every AMS is bound to one of the switch's two inlets. Until it is,
+  // the switch cannot route a load anywhere and the printer has to be set up
+  // first ("Manual AMS Setup" on its screen).
+  ready: boolean;
+}
+
+// Which AMS slot one hotend is currently fed from. ams_id/slot_id are null when
+// the hotend holds nothing. Keyed by extruder id ('0' = right, '1' = left).
+// tray_now cannot answer this — it is one value for the whole printer, so on a
+// dual-nozzle machine it names only one of the two loaded hotends.
+export interface ExtruderSlot {
+  ams_id: number | null;
+  slot_id: number | null;
+  has_filament: boolean;
 }
 
 // Which FTS inlet an AMS is plumbed into: 'A' | 'B'.
@@ -583,6 +597,9 @@ export interface PrinterStatus {
   // an entry here reaches BOTH nozzles through the switch, which is why it has
   // no ams_extruder_map entry and must not be badged left or right.
   ams_switch_inlet: Record<string, FtsInlet>;
+  // Which AMS slot each hotend is fed from, keyed by extruder id as a string.
+  // Empty on printers that don't report it (everything but the H2/X2 series).
+  extruder_slots: Record<string, ExtruderSlot>;
   // Currently loaded tray (global tray ID, 255 = no filament loaded, 254 = external spool)
   tray_now: number;
   // Runout / filament-replacement guidance (#2587). Populated only while PAUSED.
@@ -2578,6 +2595,9 @@ export interface PrintBatchPlateProgress {
   estimated_remaining_cost: number | null;
   filament_used_grams: number | null;
   print_time_seconds: number;
+  /** False when this plate owes runs but has no queue item left to clone
+   *  their configuration from, so queueing it could only fail (#2960). */
+  can_dispatch: boolean;
 }
 
 export interface PrintBatch {
@@ -2605,6 +2625,8 @@ export interface PrintBatch {
   has_targets: boolean;
   target_count: number;
   remaining_count: number;
+  /** Of remaining_count, how many runs can actually be queued (#2960). */
+  dispatchable_count: number;
   actual_cost: number | null;
   estimated_remaining_cost: number | null;
   filament_used_grams: number | null;
@@ -3464,6 +3486,13 @@ export type SpoolLabelTemplate =
   | 'box_62x29'
   | 'avery_5160'
   | 'avery_l7160';
+
+export interface PrintSpoolLabelsRequest {
+  spool_ids: number[];
+  template: SpoolLabelTemplate;
+  monochrome: boolean;
+  starting_position: number;
+}
 
 export interface InventorySpool {
   id: number;
@@ -4721,16 +4750,23 @@ export const api = {
     ),
 
   // Load filament from a tray. trayId: 0-15 for AMS (amsId*4+slotId), 254 for external spool.
-  loadAmsTray: (printerId: number, trayId: number) =>
+  // extruderId (0 = right, 1 = left) names the hotend to feed. Pass it only on a
+  // printer with a Filament Track Switch — there the AMS is bound to a switch
+  // inlet rather than a hotend, so the firmware cannot work the target out and
+  // drops the command. Omit it everywhere else, as BambuStudio does.
+  loadAmsTray: (printerId: number, trayId: number, extruderId?: number) =>
     request<{ success: boolean; message: string }>(
-      `/printers/${printerId}/ams/load?tray_id=${trayId}`,
+      `/printers/${printerId}/ams/load?tray_id=${trayId}` +
+        (extruderId !== undefined ? `&extruder_id=${extruderId}` : ''),
       { method: 'POST' }
     ),
 
-  // Unload the currently loaded filament.
-  unloadAms: (printerId: number) =>
+  // Unload filament. trayId names the slot to unload, which is what tells a
+  // dual-nozzle printer which of its two hotends to act on; omit it to unload
+  // whatever the printer's single tray_now field names.
+  unloadAms: (printerId: number, trayId?: number) =>
     request<{ success: boolean; message: string }>(
-      `/printers/${printerId}/ams/unload`,
+      `/printers/${printerId}/ams/unload` + (trayId !== undefined ? `?tray_id=${trayId}` : ''),
       { method: 'POST' }
     ),
 
@@ -5848,8 +5884,10 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+  /** `deleted` is false when the item was kept as cancelled instead: it is the
+   *  last run a batch order could re-queue its plate from (#2960). */
   removeFromQueue: (id: number) =>
-    request<{ message: string }>(`/queue/${id}`, { method: 'DELETE' }),
+    request<{ message: string; deleted: boolean }>(`/queue/${id}`, { method: 'DELETE' }),
   reorderQueue: (items: { id: number; position: number }[]) =>
     request<{ message: string }>('/queue/reorder', {
       method: 'POST',
@@ -6360,7 +6398,7 @@ export const api = {
   // ── Spool label printing (#809) ──────────────────────────────────────────
   // Both endpoints return application/pdf. Frontend opens the resulting Blob
   // in a new tab so the user can print or save from the browser's PDF viewer.
-  printSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate; monochrome?: boolean }): Promise<Blob> => {
+  printSpoolLabels: async (data: PrintSpoolLabelsRequest): Promise<Blob> => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const response = await fetch(`${API_BASE}/inventory/labels`, {
@@ -6374,7 +6412,7 @@ export const api = {
     }
     return response.blob();
   },
-  printSpoolmanSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate; monochrome?: boolean }): Promise<Blob> => {
+  printSpoolmanSpoolLabels: async (data: PrintSpoolLabelsRequest): Promise<Blob> => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const response = await fetch(`${API_BASE}/spoolman/labels`, {

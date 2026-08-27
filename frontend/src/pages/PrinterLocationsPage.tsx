@@ -15,6 +15,16 @@ import {
   removeCachedPrinterLocation,
 } from '../utils/printerLocationsCache';
 
+/** Russian pluralization for "printer".
+ *  1 printer, 2-4 printers, 5+ printers, with 11-14 exceptions. */
+function pluralPrinters(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'принтер';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'принтера';
+  return 'принтеров';
+}
+
 export function PrinterLocationsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -452,7 +462,7 @@ export function PrinterLocationsPage() {
                         <div className="flex-1 text-left">
                           <p className="text-white font-medium">{name}</p>
                           <p className="text-sm text-bambu-gray">
-                            {count} {count === 1 ? t('printers.locations.printer', 'printer') : t('printers.locations.printers', 'printers')}
+                            {count} {pluralPrinters(count)}
                           </p>
                         </div>
                       </button>
@@ -601,7 +611,7 @@ export function PrinterLocationsPage() {
           {ungroupedCount > 0 && (
             <div className="pt-4 border-t border-bambu-dark-tertiary">
               <h3 className="text-sm font-medium text-bambu-gray mb-3">
-                {t('printers.locations.ungroupedPrinters', 'Ungrouped Printers')}, {ungroupedCount}
+                {t('printers.locations.ungroupedPrinters', 'Ungrouped Printers')}, {ungroupedCount} {pluralPrinters(ungroupedCount)}
               </h3>
               <div className="space-y-2">
                 {getPrintersInLocation('').map((printer) => {

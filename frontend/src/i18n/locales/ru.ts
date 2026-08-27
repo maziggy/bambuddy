@@ -857,7 +857,7 @@ export default {
       noResults: "Ничего не найдено",
       ungrouped: "Без группы",
       printer: "принтер",
-      printers: "принтеры",
+      printers: "",
       noPrinters: "В этой группе нет принтеров",
       move: "Переместить в другую группу",
       removeFromGroup: "Убрать из группы",

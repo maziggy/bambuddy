@@ -4771,6 +4771,8 @@ export default {
     // Tabs
     filamentInfoTab: '耗材信息',
     paProfileTab: 'PA 配置',
+    colorAndCostTab: '颜色与成本',
+    printersTab: '打印机',
     filamentInfo: '耗材',
     additional: '附加',
     // Cloud
@@ -4827,6 +4829,23 @@ export default {
     leftNozzle: '左喷嘴',
     rightNozzle: '右喷嘴',
     profilesSelected: '个校准配置已选择',
+    // Printers tab: per-model filament preset + per-hotend K profile
+    filamentPreset: '耗材预设',
+    presetUseSpoolDefault: '使用料卷的预设',
+    presetInherited: '继承',
+    presetOverride: '已覆盖',
+    presetNeedsModel: '该打印机尚未上报机型，因此无法设置专属预设。',
+    autoMatchPresets: '自动匹配',
+    autoMatchPresetsHint: '查找料卷预设中标明各机型的对应版本',
+    kProfilesPerPrinter: 'K 值配置',
+    kProfileNotSet: '未设置',
+    kProfileFlowMismatch: '此配置是在 {{profile}} 喷嘴上测得的，但当前装的是 {{fitted}} 喷嘴，因此不会应用',
+    nozzle: '喷嘴',
+    unknownModel: '未知机型',
+    onePrinter: '1 台打印机',
+    nPrinters: '{{n}} 台打印机',
+    filamentPresetsLoadFailed: '无法加载该料卷的按机型预设',
+    filamentPresetSaveFailed: '无法保存按机型预设',
     // Stats & enhanced table
     totalInventory: '总库存',
     totalConsumed: '总消耗',
@@ -5402,6 +5421,7 @@ export default {
       underExtrusion: '挤出不足',
       powerFailure: '断电',
       userCancelled: '用户取消',
+      noStatusUpdate: '未收到状态更新',
       other: '其他',
     },
     // Archive statuses

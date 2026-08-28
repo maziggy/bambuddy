@@ -38,10 +38,11 @@ from backend.app.core.websocket import ws_manager
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
+from backend.app.models.spool_filament_preset import SpoolmanFilamentPreset
 from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.models.user import User
-from backend.app.schemas.spool import SpoolKProfileBase
+from backend.app.schemas.spool import SpoolFilamentPresetBase, SpoolKProfileBase
 from backend.app.schemas.spoolman import SpoolmanFilamentPatch, SpoolmanSlotAssignmentEnriched
 from backend.app.services.location_service import (
     enrich_spool_dicts_with_location_id,
@@ -50,6 +51,8 @@ from backend.app.services.location_service import (
 )
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.slicer_filament_resolver import resolve_slicer_filament
+from backend.app.services.slot_nozzle import resolve_slot_nozzle
+from backend.app.services.spool_filament_preset import resolve_spoolman_preset
 from backend.app.services.spoolman import (
     SpoolmanClient,
     SpoolmanClientError,
@@ -1507,6 +1510,33 @@ async def assign_spoolman_slot(
             if len(tray_color) == 6:
                 tray_color = tray_color + "FF"
 
+            # Printer state, read here rather than further down because the
+            # per-model preset override below needs the slot's nozzle
+            # diameter and the K-profile cascade further down needs the same
+            # value -- one read, so they cannot disagree. (The previous
+            # `mqtt_client.printer_state` access via hasattr always returned
+            # None -- the attribute is `state`, not `printer_state` -- so the
+            # K-profile cascade silently skipped state.kprofiles, defaulted
+            # nozzle_diameter to 0.4, and left slot_extruder unset.)
+            state = printer_manager.get_status(body.printer_id)
+            slot_nozzle = resolve_slot_nozzle(
+                state, body.ams_id, body.tray_id, printer_manager.get_model(body.printer_id)
+            )
+            nozzle_diameter = slot_nozzle.diameter
+
+            # Per-printer-model preset override, same cascade as internal
+            # mode: a cloud/Orca preset is bound to a model, so one stored
+            # preset per spool is wrong across two models. Returns Spoolman's
+            # own value when no override is set.
+            slot_slicer_filament, slot_slicer_filament_name = await resolve_spoolman_preset(
+                db,
+                spoolman_spool_id=body.spoolman_spool_id,
+                printer_model=printer_manager.get_model(body.printer_id),
+                nozzle_diameter=nozzle_diameter,
+                fallback_filament=mapped.get("slicer_filament"),
+                fallback_name=mapped.get("slicer_filament_name"),
+            )
+
             # #1713: resolve the spool's stored slicer_filament reference
             # (cloud preset, local preset, GF-prefix builtin, or numeric
             # LocalPreset id) to the printer-side tray_info_idx + setting_id.
@@ -1518,8 +1548,8 @@ async def assign_spoolman_slot(
             tray_info_idx, setting_id, sub_brand_override, type_override = await resolve_slicer_filament(
                 db=db,
                 current_user=current_user,
-                slicer_filament=mapped.get("slicer_filament"),
-                slicer_filament_name=mapped.get("slicer_filament_name"),
+                slicer_filament=slot_slicer_filament,
+                slicer_filament_name=slot_slicer_filament_name,
                 material=material,
             )
             if sub_brand_override:
@@ -1563,21 +1593,7 @@ async def assign_spoolman_slot(
             # None (the attribute is `state`, not `printer_state`), so the
             # K-profile cascade silently skipped state.kprofiles, defaulted
             # nozzle_diameter to 0.4, and left slot_extruder unset.
-            state = printer_manager.get_status(body.printer_id)
-            nozzle_diameter = "0.4"
-            if state and state.nozzles:
-                nd = state.nozzles[0].nozzle_diameter
-                if nd:
-                    nozzle_diameter = nd
-
-            slot_extruder = None
-            if state and state.ams_extruder_map:
-                if body.ams_id == 255:
-                    # External slots: ext-L (tray 0) → extruder 1, ext-R (tray 1) → extruder 0
-                    # tray_id 0→1, 1→0
-                    slot_extruder = 1 - body.tray_id
-                else:
-                    slot_extruder = state.ams_extruder_map.get(str(body.ams_id))
+            slot_extruder = slot_nozzle.extruder
 
             # Prefer exact extruder match, fall back to extruder-agnostic kp
             # for the same nozzle. Hard-skipping on mismatch silently dropped
@@ -1586,6 +1602,8 @@ async def assign_spoolman_slot(
             fallback_kp = None
             for kp in kp_rows:
                 if kp.nozzle_diameter != nozzle_diameter or kp.cali_idx is None:
+                    continue
+                if not slot_nozzle.flow_matches(kp.nozzle_type):
                     continue
                 if slot_extruder is not None and kp.extruder is not None and kp.extruder == slot_extruder:
                     exact_kp = kp
@@ -1818,6 +1836,89 @@ def _k_profile_to_dict(p: SpoolmanKProfile) -> dict:
         "setting_id": p.setting_id,
         "created_at": p.created_at,
     }
+
+
+def _filament_preset_to_dict(p: SpoolmanFilamentPreset) -> dict:
+    """Manually map SpoolmanFilamentPreset → SpoolFilamentPresetResponse-compatible dict."""
+    return {
+        "id": p.id,
+        "spool_id": p.spoolman_spool_id,
+        "printer_model": p.printer_model,
+        "nozzle_diameter": p.nozzle_diameter,
+        "slicer_filament": p.slicer_filament,
+        "slicer_filament_name": p.slicer_filament_name,
+        "created_at": p.created_at,
+    }
+
+
+@router.get("/spools/{spool_id}/filament-presets")
+async def get_spoolman_filament_presets(
+    spool_id: int = Path(..., gt=0),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+) -> list[dict]:
+    """Return all per-printer-model preset overrides for a Spoolman spool."""
+    await _get_client(db)
+    result = await db.execute(
+        select(SpoolmanFilamentPreset).where(SpoolmanFilamentPreset.spoolman_spool_id == spool_id)
+    )
+    return [_filament_preset_to_dict(p) for p in result.scalars().all()]
+
+
+@router.put("/spools/{spool_id}/filament-presets")
+async def save_spoolman_filament_presets(
+    spool_id: int = Path(..., gt=0),
+    presets: list[SpoolFilamentPresetBase] = Body(...),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> list[dict]:
+    """Replace all per-printer-model preset overrides for a Spoolman spool."""
+    client = await _get_client(db)
+    async with _translate_spoolman_errors():
+        await client.get_spool(spool_id)
+
+    # Same as the internal route: reject a duplicated (model, diameter) before
+    # touching the stored rows, so a bad payload cannot clear what it fails to
+    # replace.
+    seen: set[tuple[str, str]] = set()
+    for preset in presets:
+        key = (preset.printer_model, preset.nozzle_diameter)
+        if key in seen:
+            raise HTTPException(
+                422,
+                f"Duplicate override for model {preset.printer_model!r} nozzle {preset.nozzle_diameter or 'any'!r}",
+            )
+        seen.add(key)
+
+    saved: list[SpoolmanFilamentPreset] = []
+    try:
+        await db.execute(delete(SpoolmanFilamentPreset).where(SpoolmanFilamentPreset.spoolman_spool_id == spool_id))
+        await db.flush()
+        for preset in presets:
+            obj = SpoolmanFilamentPreset(
+                spoolman_spool_id=spool_id,
+                printer_model=preset.printer_model,
+                nozzle_diameter=preset.nozzle_diameter,
+                slicer_filament=preset.slicer_filament,
+                slicer_filament_name=preset.slicer_filament_name,
+            )
+            db.add(obj)
+            saved.append(obj)
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(422, "Duplicate or invalid preset override (check model and nozzle uniqueness)") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await db.rollback()
+        logger.error("Filament preset save for spool %d failed: %s", spool_id, exc)
+        raise HTTPException(500, "Failed to save filament presets") from exc
+
+    for obj in saved:
+        await db.refresh(obj)
+
+    return [_filament_preset_to_dict(p) for p in saved]
 
 
 def _normalize_filament(raw: dict) -> NormalizedFilament | None:

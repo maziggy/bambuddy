@@ -87,6 +87,7 @@ from backend.app.services.printer_media import (
     remove_printer_files_zip,
     start_printer_files_job,
 )
+from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.utils.filament_ids import filament_id_to_setting_id
 from backend.app.utils.filament_types import printer_filament_type
 from backend.app.utils.fts_routing import slot_extruder
@@ -2651,6 +2652,106 @@ async def delete_slot_preset(
     return {"success": True}
 
 
+@router.get("/{printer_id}/slots/{ams_id}/{tray_id}/spool-defaults")
+async def get_slot_spool_defaults(
+    printer_id: int,
+    ams_id: int,
+    tray_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+):
+    """What the spool assigned to this slot is configured to use here.
+
+    The Configure AMS Slot dialog opens on a slot that usually already holds an
+    assigned spool, and that spool carries a filament preset per printer model
+    and a K profile per hotend. Without this the dialog offered defaults derived
+    from the slot's last manual configuration or from the tray's RFID data --
+    ignoring the very values the spool was configured with, on the one screen
+    that looks like it exists for them.
+
+    Everything is resolved for the nozzle THIS slot feeds, so a dual-nozzle
+    machine gets the answer for the correct hotend. Returns nulls rather than a
+    404 when the slot holds no known spool: "nothing configured" is an ordinary
+    answer here and the dialog falls back to what it did before.
+    """
+    from backend.app.models.spool import Spool
+    from backend.app.models.spool_assignment import SpoolAssignment
+    from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+    from backend.app.services.inventory_mode import spoolman_owns_assignments
+    from backend.app.services.slot_kprofile import find_slot_kprofile_for_extruder
+    from backend.app.services.slot_nozzle import resolve_slot_nozzle
+    from backend.app.services.spool_filament_preset import resolve_spool_preset, resolve_spoolman_preset
+
+    state = printer_manager.get_status(printer_id)
+    model = printer_manager.get_model(printer_id)
+    slot_nozzle = resolve_slot_nozzle(state, ams_id, tray_id, model)
+
+    profile = await find_slot_kprofile_for_extruder(
+        db,
+        printer_id,
+        ams_id,
+        tray_id,
+        slot_nozzle.extruder_or_default,
+        slot_nozzle.diameter,
+        model,
+        slot_nozzle.flow,
+    )
+
+    slicer_filament: str | None = None
+    slicer_filament_name: str | None = None
+    spoolman_mode = await spoolman_owns_assignments(db)
+    if spoolman_mode:
+        sm_assignment = (
+            await db.execute(
+                select(SpoolmanSlotAssignment).where(
+                    SpoolmanSlotAssignment.printer_id == printer_id,
+                    SpoolmanSlotAssignment.ams_id == ams_id,
+                    SpoolmanSlotAssignment.tray_id == tray_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if sm_assignment is not None:
+            slicer_filament, slicer_filament_name = await resolve_spoolman_preset(
+                db,
+                spoolman_spool_id=sm_assignment.spoolman_spool_id,
+                printer_model=model,
+                nozzle_diameter=slot_nozzle.diameter,
+                fallback_filament=None,
+                fallback_name=None,
+            )
+    else:
+        assignment = (
+            await db.execute(
+                select(SpoolAssignment).where(
+                    SpoolAssignment.printer_id == printer_id,
+                    SpoolAssignment.ams_id == ams_id,
+                    SpoolAssignment.tray_id == tray_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if assignment is not None:
+            spool = (await db.execute(select(Spool).where(Spool.id == assignment.spool_id))).scalar_one_or_none()
+            if spool is not None:
+                slicer_filament, slicer_filament_name = await resolve_spool_preset(
+                    db,
+                    spool_id=spool.id,
+                    printer_model=model,
+                    nozzle_diameter=slot_nozzle.diameter,
+                    fallback_filament=spool.slicer_filament,
+                    fallback_name=spool.slicer_filament_name,
+                )
+
+    return {
+        "slicer_filament": slicer_filament,
+        "slicer_filament_name": slicer_filament_name,
+        "cali_idx": profile.cali_idx if profile else None,
+        "k_value": profile.k_value if profile else None,
+        "profile_name": profile.name if profile else None,
+        "extruder": slot_nozzle.extruder,
+        "nozzle_diameter": slot_nozzle.diameter,
+    }
+
+
 @router.post("/{printer_id}/slots/{ams_id}/{tray_id}/configure")
 async def configure_ams_slot(
     printer_id: int,
@@ -4169,13 +4270,12 @@ async def _apply_pa_after_refresh(printer_id: int, ams_id: int, slot_id: int):
             return
 
         # Compute nozzle/extruder once — used by both local and Spoolman lookup.
-        nozzle_diameter = "0.4"
-        if state.nozzles:
-            nd = state.nozzles[0].nozzle_diameter
-            if nd:
-                nozzle_diameter = nd
-
-        resolved_extruder = slot_extruder(ams_id, slot_id, state.ams_extruder_map, state.ams_switch_inlet)
+        # Shared with every other slot-configuring path (services.slot_nozzle),
+        # so the diameter this cascade filters on is the one the slot's own
+        # hotend actually has.
+        slot_nozzle = resolve_slot_nozzle(state, ams_id, slot_id, printer_manager.get_model(printer_id))
+        nozzle_diameter = slot_nozzle.diameter
+        resolved_extruder = slot_nozzle.extruder
 
         # 3-stage K-profile cascade: local SpoolKProfile → Spoolman SpoolmanKProfile
         # → live tray.cali_idx fallback. Pre-Phase-13 only handled the local path
@@ -4214,7 +4314,7 @@ async def _apply_pa_after_refresh(printer_id: int, ams_id: int, slot_id: int):
                     tag_filters.append(Spool.tag_uid == norm_tag)
                 if tag_filters:
                     tag_lookup = await db.execute(
-                        sa_select(Spool).options(selectinload(Spool.k_profiles)).where(or_(*tag_filters)).limit(1)
+                        select(Spool).options(selectinload(Spool.k_profiles)).where(or_(*tag_filters)).limit(1)
                     )
                     spool = tag_lookup.scalar_one_or_none()
                     if spool is not None:
@@ -4236,6 +4336,8 @@ async def _apply_pa_after_refresh(printer_id: int, ams_id: int, slot_id: int):
                 exact_kp = None
                 fallback_kp = None
                 for kp in spool.k_profiles:
+                    if not slot_nozzle.flow_matches(kp.nozzle_type):
+                        continue
                     if kp.printer_id != printer_id or kp.nozzle_diameter != nozzle_diameter or kp.cali_idx is None:
                         continue
                     if resolved_extruder is not None and kp.extruder is not None and kp.extruder == resolved_extruder:
@@ -4256,7 +4358,7 @@ async def _apply_pa_after_refresh(printer_id: int, ams_id: int, slot_id: int):
             # including the tag-based fallback above)
             if matching_cali_idx is None and spool is None:
                 sm_result = await db.execute(
-                    sa_select(SpoolmanSlotAssignment).where(
+                    select(SpoolmanSlotAssignment).where(
                         SpoolmanSlotAssignment.printer_id == printer_id,
                         SpoolmanSlotAssignment.ams_id == ams_id,
                         SpoolmanSlotAssignment.tray_id == slot_id,

@@ -4771,6 +4771,8 @@ export default {
     // Tabs
     filamentInfoTab: '耗材資訊',
     paProfileTab: 'PA 設定',
+    colorAndCostTab: '顏色與成本',
+    printersTab: '印表機',
     filamentInfo: '耗材',
     additional: '附加',
     // Cloud
@@ -4827,6 +4829,23 @@ export default {
     leftNozzle: '左噴嘴',
     rightNozzle: '右噴嘴',
     profilesSelected: '個校準設定已選擇',
+    // Printers tab: per-model filament preset + per-hotend K profile
+    filamentPreset: '耗材預設',
+    presetUseSpoolDefault: '使用線材捲的預設',
+    presetInherited: '繼承',
+    presetOverride: '已覆寫',
+    presetNeedsModel: '此印表機尚未回報機型，因此無法設定專屬預設。',
+    autoMatchPresets: '自動比對',
+    autoMatchPresetsHint: '尋找線材捲預設中標示各機型的對應版本',
+    kProfilesPerPrinter: 'K 值設定檔',
+    kProfileNotSet: '未設定',
+    kProfileFlowMismatch: '此設定檔是在 {{profile}} 噴嘴上測得的，但目前裝的是 {{fitted}} 噴嘴，因此不會套用',
+    nozzle: '噴嘴',
+    unknownModel: '未知機型',
+    onePrinter: '1 台印表機',
+    nPrinters: '{{n}} 台印表機',
+    filamentPresetsLoadFailed: '無法載入此線材捲的各機型預設',
+    filamentPresetSaveFailed: '無法儲存各機型預設',
     // Stats & enhanced table
     totalInventory: '總庫存',
     totalConsumed: '總消耗',
@@ -5402,6 +5421,7 @@ export default {
       underExtrusion: '擠出不足',
       powerFailure: '斷電',
       userCancelled: '使用者取消',
+      noStatusUpdate: '未收到狀態更新',
       other: '其他',
     },
     // Archive statuses

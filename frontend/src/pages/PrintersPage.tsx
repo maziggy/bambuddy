@@ -176,7 +176,7 @@ import { FileUploadModal } from '../components/FileUploadModal';
 import { PrintModal } from '../components/PrintModal';
 import { PrinterInfoModal } from '../components/PrinterInfoModal';
 import { FeedDirectionModal } from '../components/FeedDirectionModal';
-import { getAmsLabel, getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, isBambuLabSpool, resolveSlotNozzleDiameter, resolveSlotExtruder, formatSlotLabel, FTS_INLET_SIDE } from '../utils/amsHelpers';
+import { getAmsLabel, getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, installedNozzleDiameters, isBambuLabSpool, resolveSlotNozzleDiameter, resolveSlotExtruder, formatSlotLabel, FTS_INLET_SIDE } from '../utils/amsHelpers';
 import { MAX_CHAMBER_TEMP_C, getPrinterImage, getWifiStrength, filterCompatibleQueueItems, isPrinterCurrentlyDispatchable } from '../utils/printer';
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
 import { Collapsible } from '../components/Collapsible';
@@ -3929,10 +3929,15 @@ function PrinterCard({
                 </div>
                 <p className="text-sm text-bambu-gray">
                   {printer.model || 'Unknown Model'}
-                  {/* Nozzle Info - only in expanded */}
-                  {viewMode === 'expanded' && status?.nozzles && status.nozzles[0]?.nozzle_diameter && (
-                    <span className="ml-1.5 text-bambu-gray" title={status.nozzles[0].nozzle_type || 'Nozzle'}>
-                      • {status.nozzles[0].nozzle_diameter}mm
+                  {/* Nozzle Info - only in expanded. Every fitted size, not
+                      just nozzles[0]: the array is indexed by extruder, so on a
+                      dual-nozzle machine with two sizes fitted showing the
+                      first entry alone named one hotend and implied it was the
+                      whole printer. Deduplicated, so the usual matching pair
+                      still reads as a single "0.4mm". */}
+                  {viewMode === 'expanded' && installedNozzleDiameters(status).length > 0 && (
+                    <span className="ml-1.5 text-bambu-gray" title={status?.nozzles?.[0]?.nozzle_type || 'Nozzle'}>
+                      • {installedNozzleDiameters(status).join(' / ')}mm
                     </span>
                   )}
                   {viewMode === 'expanded' && maintenanceInfo && maintenanceInfo.total_print_hours > 0 && (

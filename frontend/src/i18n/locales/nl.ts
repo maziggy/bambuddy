@@ -4819,6 +4819,8 @@ export default {
     // Tabs
     filamentInfoTab: 'Filamentinformatie',
     paProfileTab: 'PA-profiel',
+    colorAndCostTab: 'Kleur & kosten',
+    printersTab: 'Printers',
     filamentInfo: 'Filament',
     additional: 'Aanvullend',
     // Cloud
@@ -4878,6 +4880,23 @@ export default {
     leftNozzle: 'Linker nozzle',
     rightNozzle: 'Rechter nozzle',
     profilesSelected: 'kalibratieprofiel(en) geselecteerd',
+    // Printers tab: per-model filament preset + per-hotend K profile
+    filamentPreset: 'Filamentvoorinstelling',
+    presetUseSpoolDefault: 'Voorinstelling van de spoel gebruiken',
+    presetInherited: 'overgenomen',
+    presetOverride: 'aangepast',
+    presetNeedsModel: 'Deze printer heeft zijn model nog niet doorgegeven en kan dus geen eigen voorinstelling hebben.',
+    autoMatchPresets: 'Automatisch koppelen',
+    autoMatchPresetsHint: 'Zoek de variant van de spoelvoorinstelling die elk model noemt',
+    kProfilesPerPrinter: 'K-profielen',
+    kProfileNotSet: 'Niet ingesteld',
+    kProfileFlowMismatch: 'Dit profiel is gemeten met een {{profile}}-nozzle, maar er is een {{fitted}}-nozzle gemonteerd; het wordt dus niet toegepast',
+    nozzle: 'Nozzle',
+    unknownModel: 'Onbekend model',
+    onePrinter: '1 printer',
+    nPrinters: '{{n}} printers',
+    filamentPresetsLoadFailed: 'De voorinstellingen per model van deze spoel konden niet worden geladen',
+    filamentPresetSaveFailed: 'De voorinstellingen per model konden niet worden opgeslagen',
     // Stats & enhanced table
     totalInventory: 'Totale voorraad',
     totalConsumed: 'Totaal verbruikt',
@@ -5464,6 +5483,7 @@ export default {
       underExtrusion: 'Onderextrusie',
       powerFailure: 'Stroomuitval',
       userCancelled: 'Door gebruiker geannuleerd',
+      noStatusUpdate: 'Geen statusupdate ontvangen',
       other: 'Overig',
     },
     // Archive statuses

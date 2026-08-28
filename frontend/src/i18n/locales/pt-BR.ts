@@ -4765,6 +4765,8 @@ export default {
     // Tabs
     filamentInfoTab: 'Informações do Filamento',
     paProfileTab: 'Perfil PA',
+    colorAndCostTab: 'Cor e custo',
+    printersTab: 'Impressoras',
     filamentInfo: 'Filamento',
     additional: 'Adicional',
     // Cloud
@@ -4821,6 +4823,23 @@ export default {
     leftNozzle: 'Bico Esquerdo',
     rightNozzle: 'Bico Direito',
     profilesSelected: 'perfil(is) de calibração selecionado(s)',
+    // Printers tab: per-model filament preset + per-hotend K profile
+    filamentPreset: 'Predefinição de filamento',
+    presetUseSpoolDefault: 'Usar a predefinição do carretel',
+    presetInherited: 'herdada',
+    presetOverride: 'personalizada',
+    presetNeedsModel: 'Esta impressora ainda não informou o modelo, portanto não pode ter uma predefinição própria.',
+    autoMatchPresets: 'Associar automaticamente',
+    autoMatchPresetsHint: 'Encontrar a variante da predefinição do carretel que nomeia cada modelo',
+    kProfilesPerPrinter: 'Perfis K',
+    kProfileNotSet: 'Não definido',
+    kProfileFlowMismatch: 'Este perfil foi medido com um bico {{profile}}, mas há um bico {{fitted}} instalado, portanto não será aplicado',
+    nozzle: 'Bico',
+    unknownModel: 'Modelo desconhecido',
+    onePrinter: '1 impressora',
+    nPrinters: '{{n}} impressoras',
+    filamentPresetsLoadFailed: 'Não foi possível carregar as predefinições por modelo deste carretel',
+    filamentPresetSaveFailed: 'Não foi possível salvar as predefinições por modelo',
     // Stats & enhanced table
     totalInventory: 'Inventário Total',
     totalConsumed: 'Total Consumido',
@@ -5402,6 +5421,7 @@ export default {
       underExtrusion: 'Subextrusão',
       powerFailure: 'Falha de energia',
       userCancelled: 'Cancelado pelo usuário',
+      noStatusUpdate: 'Nenhuma atualização de status recebida',
       other: 'Outro',
     },
     // Archive statuses

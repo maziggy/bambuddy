@@ -459,7 +459,13 @@ export interface ScheduledDrying {
 }
 
 export interface NozzleInfo {
-  nozzle_type: string;  // "stainless_steel" or "hardened_steel"
+  // Two vocabularies live in this field, by printer generation. Legacy
+  // printers (X1/P1) report the nozzle MATERIAL -- "stainless_steel",
+  // "hardened_steel". H2-series report a FLOW code -- "HH01" (high flow),
+  // "HS01" (standard); measured on an H2D. utils/nozzleFlow reads only the
+  // latter and treats anything else as "unknown", which is what makes the
+  // material spelling harmless here.
+  nozzle_type: string;
   nozzle_diameter: string;  // e.g., "0.4"
 }
 
@@ -566,7 +572,10 @@ export interface PrinterStatus {
   wifi_signal: number | null;  // WiFi signal strength in dBm
   wired_network: boolean;  // Ethernet connection detected
   door_open: boolean;  // Enclosure door open (models with a door sensor: X1/X1C/X1E/X2D/P2S/H2*)
-  nozzles: NozzleInfo[];  // Nozzle hardware info (index 0=left/primary, 1=right)
+  // Indexed by EXTRUDER id: [0] is the right hotend, [1] the left. Measured
+  // on an H2D with 0.4 left / 0.6 right. Read it through the helpers in
+  // utils/amsHelpers rather than indexing it directly.
+  nozzles: NozzleInfo[];
   nozzle_rack: NozzleRackSlot[];  // H2C 6-nozzle tool-changer rack
   print_options: PrintOptions | null;  // AI detection and print options
   // Calibration stage tracking
@@ -3628,6 +3637,38 @@ export interface SpoolKProfileInput {
   setting_id?: string | null;
 }
 
+/**
+ * One per-printer-model override of a spool's slicer filament preset.
+ *
+ * A cloud or Orca preset is bound to a printer model ("@BBL X1C"), so the
+ * spool's single `slicer_filament` is wrong as soon as the spool is used on a
+ * second model. `nozzle_diameter` is "" for the model's own default and a bare
+ * decimal ("0.2") for a per-hotend exception; the backend resolves
+ * exact (model, diameter) -> (model, "") -> the spool's own preset.
+ */
+export interface SlotSpoolDefaults {
+  slicer_filament: string | null;
+  slicer_filament_name: string | null;
+  cali_idx: number | null;
+  k_value: number | null;
+  profile_name: string | null;
+  extruder: number | null;
+  nozzle_diameter: string;
+}
+
+export interface SpoolFilamentPresetInput {
+  printer_model: string;
+  nozzle_diameter: string;
+  slicer_filament: string | null;
+  slicer_filament_name: string | null;
+}
+
+export interface SpoolFilamentPreset extends SpoolFilamentPresetInput {
+  id: number;
+  spool_id: number;
+  created_at: string;
+}
+
 /** One inventory-bound AMS slot, as returned by `/printers/{id}/inventory-remain`. */
 export interface SlotMaterial {
   ams_id: number;
@@ -3640,6 +3681,20 @@ export interface SlotMaterial {
   remaining_g: number;
   /** 0 = right / single nozzle, 1 = left. */
   extruder: number;
+  /** How the bound spool should be *named* — display only, never matched on.
+   *  The printer has no brand field and reports no sub-brand for a
+   *  third-party spool, so this is the only place a slot's real identity
+   *  exists. Null when the binding resolves to a spool we cannot describe. */
+  spool?: SlotSpoolIdentity | null;
+}
+
+/** Display identity of an inventory-bound slot. See `SlotMaterial.spool`. */
+export interface SlotSpoolIdentity {
+  brand: string | null;
+  material: string | null;
+  subtype: string | null;
+  color_name: string | null;
+  rgba: string | null;
 }
 
 export interface InventoryRemainResponse {
@@ -6386,6 +6441,20 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(profiles),
     }),
+  /**
+   * What the spool assigned to this slot is configured to use *here* -- its
+   * per-printer-model filament preset and the K profile for this slot's hotend.
+   * Nulls when the slot holds no known spool.
+   */
+  getSlotSpoolDefaults: (printerId: number, amsId: number, trayId: number) =>
+    request<SlotSpoolDefaults>(`/printers/${printerId}/slots/${amsId}/${trayId}/spool-defaults`),
+  getSpoolFilamentPresets: (spoolId: number) =>
+    request<SpoolFilamentPreset[]>(`/inventory/spools/${spoolId}/filament-presets`),
+  saveSpoolFilamentPresets: (spoolId: number, presets: SpoolFilamentPresetInput[]) =>
+    request<SpoolFilamentPreset[]>(`/inventory/spools/${spoolId}/filament-presets`, {
+      method: 'PUT',
+      body: JSON.stringify(presets),
+    }),
   getAssignments: (printerId?: number) =>
     request<SpoolAssignment[]>(`/inventory/assignments${printerId ? `?printer_id=${printerId}` : ''}`),
   assignSpool: (data: { spool_id: number; printer_id: number; ams_id: number; tray_id: number }) =>
@@ -6626,6 +6695,15 @@ export const api = {
     request<SpoolKProfile[]>(`/spoolman/inventory/spools/${spoolId}/k-profiles`, {
       method: 'PUT',
       body: JSON.stringify(profiles),
+    }),
+
+  getSpoolmanFilamentPresets: (spoolId: number) =>
+    request<SpoolFilamentPreset[]>(`/spoolman/inventory/spools/${spoolId}/filament-presets`),
+
+  saveSpoolmanFilamentPresets: (spoolId: number, presets: SpoolFilamentPresetInput[]) =>
+    request<SpoolFilamentPreset[]>(`/spoolman/inventory/spools/${spoolId}/filament-presets`, {
+      method: 'PUT',
+      body: JSON.stringify(presets),
     }),
 
   // Updates

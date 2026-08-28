@@ -4816,6 +4816,8 @@ export default {
     // Tabs
     filamentInfoTab: "Інформація про філамент",
     paProfileTab: "Профіль PA",
+    colorAndCostTab: 'Колір і вартість',
+    printersTab: 'Принтери',
     filamentInfo: "Філамент",
     additional: "Додатково",
     // Cloud
@@ -4875,6 +4877,23 @@ export default {
     leftNozzle: "Ліве сопло",
     rightNozzle: "Праве сопло",
     profilesSelected: "вибрані профілі калібрування",
+    // Printers tab: per-model filament preset + per-hotend K profile
+    filamentPreset: 'Пресет філаменту',
+    presetUseSpoolDefault: 'Використовувати пресет котушки',
+    presetInherited: 'успадковано',
+    presetOverride: 'перевизначено',
+    presetNeedsModel: 'Цей принтер ще не повідомив свою модель, тому не може мати власний пресет.',
+    autoMatchPresets: 'Підібрати автоматично',
+    autoMatchPresetsHint: 'Знайти варіант пресета котушки, у назві якого вказано кожну модель',
+    kProfilesPerPrinter: 'K-профілі',
+    kProfileNotSet: 'Не задано',
+    kProfileFlowMismatch: 'Цей профіль виміряно на соплі {{profile}}, але встановлено сопло {{fitted}}, тому його не буде застосовано',
+    nozzle: 'Сопло',
+    unknownModel: 'Невідома модель',
+    onePrinter: '1 принтер',
+    nPrinters: 'Принтерів: {{n}}',
+    filamentPresetsLoadFailed: 'Не вдалося завантажити пресети за моделями для цієї котушки',
+    filamentPresetSaveFailed: 'Не вдалося зберегти пресети за моделями',
     // Stats & enhanced table
     totalInventory: "Загальний запас",
     totalConsumed: "Всього спожито",
@@ -5456,6 +5475,7 @@ export default {
       underExtrusion: "Підвидавлювання",
       powerFailure: "Збій живлення",
       userCancelled: "Користувач скасовано",
+      noStatusUpdate: "Оновлення статусу не отримано",
       other: "інше",
     },
     // Archive statuses

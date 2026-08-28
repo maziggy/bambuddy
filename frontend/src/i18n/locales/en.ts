@@ -4819,6 +4819,8 @@ export default {
     // Tabs
     filamentInfoTab: 'Filament Info',
     paProfileTab: 'PA Profile',
+    colorAndCostTab: 'Color & Cost',
+    printersTab: 'Printers',
     filamentInfo: 'Filament',
     additional: 'Additional',
     // Cloud
@@ -4878,6 +4880,23 @@ export default {
     leftNozzle: 'Left Nozzle',
     rightNozzle: 'Right Nozzle',
     profilesSelected: 'calibration profile(s) selected',
+    // Printers tab: per-model filament preset + per-hotend K profile
+    filamentPreset: 'Filament preset',
+    presetUseSpoolDefault: 'Use the spool\'s preset',
+    presetInherited: 'inherited',
+    presetOverride: 'override',
+    presetNeedsModel: 'This printer has not reported its model yet, so it cannot have its own preset.',
+    autoMatchPresets: 'Auto-match',
+    autoMatchPresetsHint: 'Find the variant of this spool\'s preset that names each model',
+    kProfilesPerPrinter: 'K profiles',
+    kProfileNotSet: 'Not set',
+    kProfileFlowMismatch: 'This profile was measured on a {{profile}} nozzle but a {{fitted}} nozzle is fitted, so it will not be applied',
+    nozzle: 'Nozzle',
+    unknownModel: 'Unknown model',
+    onePrinter: '1 printer',
+    nPrinters: '{{n}} printers',
+    filamentPresetsLoadFailed: 'Could not load this spool\'s per-model presets',
+    filamentPresetSaveFailed: 'Could not save the per-model presets',
     // Stats & enhanced table
     totalInventory: 'Total Inventory',
     totalConsumed: 'Total Consumed',
@@ -5464,6 +5483,7 @@ export default {
       underExtrusion: 'Under-extrusion',
       powerFailure: 'Power failure',
       userCancelled: 'User cancelled',
+      noStatusUpdate: 'No status update received',
       other: 'Other',
     },
     // Archive statuses

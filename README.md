@@ -71,6 +71,7 @@
   <a href="https://www.igorslab.de/en/bambuddy-the-silent-alternative-to-the-bamboo-cloud/"><img src="https://img.shields.io/badge/Igor's%20Lab-Read-E10000?style=flat-square" alt="Igor's Lab"></a>
   <a href="https://3druck.com/en/programs/bambuddy-open-source-tool-replaces-bambu-cloud-for-management-and-automation-of-3d-print-jobs-38153226/"><img src="https://img.shields.io/badge/3Druck-Read-0080C0?style=flat-square" alt="3Druck"></a>
   <a href="https://www.fastblinker.com/bambuddy-the-open-source-solution-thats-revolutionizing-bambu-lab-3d-printer-management/"><img src="https://img.shields.io/badge/FastBlinker-Read-00B0FF?style=flat-square" alt="FastBlinker"></a>
+  <a href="https://3dbite.com/bambuddy-deep-dive-self-hosted-bambu-dashboard/"><img src="https://img.shields.io/badge/3DBite-Read-046BD2?style=flat-square" alt="3DBite"></a>
 </p>
 
 Two leading 3D-printing publications independently concluded that Bambuddy's feature set **already exceeds Bambu's own cloud**:

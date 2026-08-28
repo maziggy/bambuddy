@@ -853,7 +853,12 @@ class PrinterState:
     wifi_signal: int | None = None  # WiFi signal strength in dBm
     wired_network: bool = False  # Ethernet connection detected (home_flag bit 18)
     door_open: bool = False  # Enclosure door open (home_flag bit 23; models with a door sensor: X1/X1C/X1E/X2D/P2S/H2*)
-    # Nozzle hardware info (for dual nozzle printers, index 0 = left, 1 = right)
+    # Nozzle hardware info. Indexed by EXTRUDER id: [0] is the RIGHT hotend and
+    # [1] the left, measured 2026-08-27 on an H2D fitted with 0.4 left / 0.6
+    # right. (The legacy parser below writes left -> [0], but it only ever runs
+    # for single-nozzle printers -- every dual-nozzle model reports
+    # device.nozzle.info instead.) Read it through services.slot_nozzle rather
+    # than indexing it directly.
     nozzles: list = field(default_factory=lambda: [NozzleInfo(), NozzleInfo()])
     # AI detection and print options
     print_options: PrintOptions = field(default_factory=PrintOptions)

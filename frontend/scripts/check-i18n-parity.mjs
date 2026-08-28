@@ -421,6 +421,7 @@ const UK_COGNATES = [
 // are used untranslated by Dutch slicer users. Each entry below was
 // checked individually against the Dutch translation in #2891.
 const NL_COGNATES = [
+  '1 printer', '{{n}} printers',
   '1 week', '(25%, 50%, 75%)', 'Accent', 'AMS Filament Backup',
   '{{ams}} Slot {{slot}}', 'Auto', 'Auto Home', 'Bambu Cloud',
   'Batch', 'Batches', 'Branch', 'Budget',

@@ -4781,6 +4781,8 @@ export default {
     // Tabs
     filamentInfoTab: 'Información del filamento',
     paProfileTab: 'Perfil PA',
+    colorAndCostTab: 'Color y coste',
+    printersTab: 'Impresoras',
     filamentInfo: 'Filamento',
     additional: 'Adicional',
     // Cloud
@@ -4840,6 +4842,23 @@ export default {
     leftNozzle: 'Boquilla izquierda',
     rightNozzle: 'Boquilla derecha',
     profilesSelected: 'perfil(es) de calibración seleccionado(s)',
+    // Printers tab: per-model filament preset + per-hotend K profile
+    filamentPreset: 'Perfil de filamento',
+    presetUseSpoolDefault: 'Usar el perfil de la bobina',
+    presetInherited: 'heredado',
+    presetOverride: 'personalizado',
+    presetNeedsModel: 'Esta impresora aún no ha indicado su modelo, así que no puede tener su propio perfil.',
+    autoMatchPresets: 'Asignar automáticamente',
+    autoMatchPresetsHint: 'Buscar la variante del perfil de la bobina que nombra cada modelo',
+    kProfilesPerPrinter: 'Perfiles K',
+    kProfileNotSet: 'Sin definir',
+    kProfileFlowMismatch: 'Este perfil se midió con una boquilla {{profile}} pero hay montada una {{fitted}}, así que no se aplicará',
+    nozzle: 'Boquilla',
+    unknownModel: 'Modelo desconocido',
+    onePrinter: '1 impresora',
+    nPrinters: '{{n}} impresoras',
+    filamentPresetsLoadFailed: 'No se pudieron cargar los perfiles por modelo de esta bobina',
+    filamentPresetSaveFailed: 'No se pudieron guardar los perfiles por modelo',
     // Stats & enhanced table
     totalInventory: 'Inventario total',
     totalConsumed: 'Total consumido',
@@ -5421,6 +5440,7 @@ export default {
       underExtrusion: 'Subextrusión',
       powerFailure: 'Corte de corriente',
       userCancelled: 'Cancelada por el usuario',
+      noStatusUpdate: 'No se recibió actualización de estado',
       other: 'Otro',
     },
     // Archive statuses

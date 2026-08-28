@@ -109,6 +109,17 @@ describe('AssignSpoolModal', () => {
     expect(screen.getByText(/Jade White/)).toBeInTheDocument();
   });
 
+  it('shows each spool ID on the assignment card (#2978)', async () => {
+    render(<AssignSpoolModal {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('#1')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('#2')).toBeInTheDocument();
+    expect(screen.getByText('#3')).toBeInTheDocument();
+  });
+
   it('renders a clear tray as the transparency checkerboard, not an invisible circle (#2912)', async () => {
     render(
       <AssignSpoolModal
@@ -467,6 +478,7 @@ describe('AssignSpoolModal — Spoolman enabled (T-Gap 7)', () => {
       expect(screen.getByText(/Bambu Lab/)).toBeInTheDocument();
     });
     expect(api.getSpoolmanInventorySpools).toHaveBeenCalledWith(false);
+    expect(screen.getByText('#200')).toBeInTheDocument();
   });
 
   it('does not fetch Spoolman spools when spoolmanEnabled=false', async () => {

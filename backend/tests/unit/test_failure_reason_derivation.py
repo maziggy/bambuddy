@@ -7,9 +7,27 @@ matched by the old broad heuristic (`module == 0x0C → Layer shift`).
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 
 from backend.app.main import _HMS_FAILURE_REASONS, derive_failure_reason
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+_EN_TS = REPO_ROOT / "frontend" / "src" / "i18n" / "locales" / "en.ts"
+_EDIT_ARCHIVE_MODAL = REPO_ROOT / "frontend" / "src" / "components" / "EditArchiveModal.tsx"
+
+# Dockerfile.test copies backend/, pyproject.toml and the requirements files and
+# nothing else, so frontend/ does not exist inside the test image and the two
+# tests below that read it have nothing to check. A source checkout always has
+# it and keeps those guards live on every test_backend.sh run.
+# frontend/package.json is present in every checkout and never in the image,
+# which is what the launcher config tests use to tell the two apart.
+_needs_the_frontend_tree = pytest.mark.skipif(
+    not (REPO_ROOT / "frontend" / "package.json").is_file(),
+    reason="frontend/ isn't shipped in the Docker test image; the guards run in native runs",
+)
 
 # ---------------------------------------------------------------------------
 # Status-based reasons (no HMS lookup needed)
@@ -212,3 +230,67 @@ def test_the_stale_paths_write_a_key_the_editor_will_not_discard() -> None:
     assert text.count('failure_reason = "noStatusUpdate"') == 2
     assert "Stale - print likely cancelled" not in text
     assert "Stale - reconciled after reconnect" not in text
+
+
+# ---------------------------------------------------------------------------
+# The vocabulary spans two languages, and only a comment says so
+# ---------------------------------------------------------------------------
+
+
+def _keys_the_dropdown_offers() -> set[str]:
+    """The `FAILURE_REASON_KEYS` array exported from EditArchiveModal.tsx."""
+    source = _EDIT_ARCHIVE_MODAL.read_text(encoding="utf-8")
+    block = re.search(r"export const FAILURE_REASON_KEYS = \[(.*?)\] as const;", source, re.S)
+    assert block is not None, f"no FAILURE_REASON_KEYS array in {_EDIT_ARCHIVE_MODAL}"
+    return set(re.findall(r"'([^']+)'", block.group(1)))
+
+
+def _keys_the_frontend_can_translate() -> set[str]:
+    """Every key in the `editArchive.failureReasons` block of en.ts."""
+    source = _EN_TS.read_text(encoding="utf-8")
+    block = re.search(r"failureReasons:\s*\{(.*?)\}", source, re.S)
+    assert block is not None, f"no failureReasons block in {_EN_TS}"
+    return set(re.findall(r"^\s*(\w+):\s*'", block.group(1), re.M))
+
+
+@_needs_the_frontend_tree
+def test_the_backend_vocabulary_matches_the_one_the_frontend_offers() -> None:
+    """The only thing holding the two lists together is a comment asking nicely.
+
+    ``_FAILURE_REASON_KEYS`` in api/routes/print_log.py gates every write, and
+    its own comment says "Keep these two lists in sync if the EditArchiveModal
+    options ever change". Nothing enforces it, and the drift is silent in both
+    directions: a key the frontend offers but the backend rejects turns a save
+    into a 400 the modal has no surface for, and a key the backend accepts but
+    the dropdown omits is a value the editor discards the next time anyone
+    opens that archive.
+
+    Asserting one Python literal against another cannot see either — the other
+    end lives in TypeScript, so the check has to read it.
+    """
+    from backend.app.api.routes.print_log import _FAILURE_REASON_KEYS
+
+    offered = _keys_the_dropdown_offers()
+    assert offered, "the FAILURE_REASON_KEYS array parsed as empty; the regex has gone stale"
+
+    # "" is the backend's "clear the classification" value; the dropdown spells
+    # that as its own placeholder option rather than a key, so it is not drift.
+    backend_keys = set(_FAILURE_REASON_KEYS) - {""}
+
+    assert backend_keys == offered, (
+        f"backend-only: {sorted(backend_keys - offered)}, frontend-only: {sorted(offered - backend_keys)}"
+    )
+
+
+@_needs_the_frontend_tree
+def test_every_offered_key_has_english_text() -> None:
+    """A key with no en.ts entry renders as the raw key in the dropdown.
+
+    The parity script covers the other 13 locales against en.ts, so en.ts is the
+    one end of this that nothing else checks.
+    """
+    translatable = _keys_the_frontend_can_translate()
+    assert translatable, "the failureReasons block parsed as empty; the regex has gone stale"
+
+    untranslated = sorted(_keys_the_dropdown_offers() - translatable)
+    assert not untranslated, f"offered by the dropdown with no editArchive.failureReasons entry: {untranslated}"

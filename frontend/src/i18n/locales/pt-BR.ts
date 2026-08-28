@@ -343,6 +343,7 @@ export default {
     // Printer card
     readyToPrint: 'Pronto para imprimir',
     external: 'Externo',
+    ext: 'Externo',
     extL: 'Ext-L',
     extR: 'Ext-R',
     deleteArchives: 'Excluir arquivos de impressão',
@@ -6768,6 +6769,7 @@ export default {
       assign: 'Atribuir',
       assigning: 'Atribuindo...',
       assignSuccess: 'Atribuído!',
+      assignSuccessColorUpdateFailed: 'Carretel atribuído, mas não foi possível salvar a cor.',
       assignPendingInsert: 'Atribuído. O slot será configurado quando você inserir o carretel.',
       assignError: 'Falha ao atribuir carretel. Tente novamente.',
       noPrinterSelected: 'Selecionar uma impressora...',

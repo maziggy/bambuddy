@@ -343,6 +343,7 @@ export default {
     // Printer card
     readyToPrint: 'Druckbereit',
     external: 'Extern',
+    ext: 'Extern',
     extL: 'Ext-L',
     extR: 'Ext-R',
     deleteArchives: 'Druckarchive löschen',
@@ -6779,6 +6780,7 @@ export default {
       assign: 'Zuweisen',
       assigning: 'Zuweisen...',
       assignSuccess: 'Zugewiesen!',
+      assignSuccessColorUpdateFailed: 'Spule zugewiesen, aber ihre Farbe konnte nicht gespeichert werden.',
       assignPendingInsert: 'Zugewiesen. Slot wird beim Einsetzen der Spule konfiguriert.',
       assignError: 'Fehler beim Zuweisen. Bitte erneut versuchen.',
       noPrinterSelected: 'Drucker auswählen...',

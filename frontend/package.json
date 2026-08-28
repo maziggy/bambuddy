@@ -5,14 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run check:baseline",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run && npm run check:i18n",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
-    "check:i18n": "node scripts/check-i18n-parity.mjs"
+    "check:i18n": "node scripts/check-i18n-parity.mjs",
+    "check:baseline": "node scripts/check-browser-baseline.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -34,6 +35,14 @@
     "i18next-browser-languagedetector": "^8.2.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.555.0",
+    "mdast-util-gfm-footnote": "^2.1.0",
+    "mdast-util-gfm-strikethrough": "^2.0.0",
+    "mdast-util-gfm-table": "^2.0.0",
+    "mdast-util-gfm-task-list-item": "^2.0.0",
+    "micromark-extension-gfm-footnote": "^2.1.0",
+    "micromark-extension-gfm-strikethrough": "^2.1.0",
+    "micromark-extension-gfm-table": "^2.1.1",
+    "micromark-extension-gfm-task-list-item": "^2.1.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -42,7 +51,6 @@
     "react-router-dom": "7.18.2",
     "react-simple-keyboard": "^3.8.164",
     "recharts": "^3.5.1",
-    "remark-gfm": "^4.0.1",
     "three": "^0.181.2"
   },
   "overrides": {
@@ -72,9 +80,11 @@
     "jsdom": "^25.0.0",
     "msw": "^2.6.0",
     "postcss": "^8.5.6",
+    "remark-parse": "^11.0.0",
     "tailwindcss": "^4.1.17",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
+    "unified": "^11.0.5",
     "vite": "^8.0.16",
     "vitest": "^4.1.8"
   }

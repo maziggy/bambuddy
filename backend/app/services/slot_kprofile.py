@@ -23,6 +23,7 @@ from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.services.inventory_mode import spoolman_owns_assignments
+from backend.app.services.spool_filament_preset import resolve_spool_preset, resolve_spoolman_preset
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,13 @@ class SlotKProfile:
     filament_id: str | None
 
 
+def _flow_applies(stored_flow: str | None, fitted_flow: str | None) -> bool:
+    """``SlotNozzle.flow_matches`` for callers that hold only the two strings."""
+    from backend.app.services.slot_nozzle import SlotNozzle
+
+    return SlotNozzle(extruder=None, diameter="", flow=fitted_flow).flow_matches(stored_flow)
+
+
 async def find_slot_kprofile_for_extruder(
     db: AsyncSession,
     printer_id: int,
@@ -45,6 +53,8 @@ async def find_slot_kprofile_for_extruder(
     tray_id: int,
     extruder: int,
     nozzle_diameter: str,
+    printer_model: str | None = None,
+    flow: str | None = None,
 ) -> SlotKProfile | None:
     """Stored profile for whatever is in this slot, calibrated for ``extruder``.
 
@@ -89,16 +99,35 @@ async def find_slot_kprofile_for_extruder(
                 )
             )
             .scalars()
-            .first()
+            .all()
         )
+        # Flow is filtered here rather than in SQL: a stored NULL matches any
+        # fitted nozzle (see SlotNozzle.flow_matches), which is not an equality
+        # test and would need an OR IS NULL that reads worse than this.
+        profile = next((p for p in profile if _flow_applies(p.nozzle_type, flow)), None)
         if profile is not None:
             spool = (await db.execute(select(Spool).where(Spool.id == assignment.spool_id))).scalar_one_or_none()
+            # The preset this profile was calibrated under, through the
+            # per-printer-model cascade: a spool can carry a different preset
+            # per model, and extrusion_cali_sel has to name the one the printer
+            # will actually see in the slot. Falls back to the spool's own
+            # value when the caller cannot say which model this is.
+            filament_id = spool.slicer_filament if spool else None
+            if spool is not None and printer_model:
+                filament_id, _ = await resolve_spool_preset(
+                    db,
+                    spool_id=spool.id,
+                    printer_model=printer_model,
+                    nozzle_diameter=nozzle_diameter,
+                    fallback_filament=spool.slicer_filament,
+                    fallback_name=spool.slicer_filament_name,
+                )
             return SlotKProfile(
                 cali_idx=profile.cali_idx,
                 k_value=profile.k_value,
                 name=profile.name,
                 extruder=profile.extruder,
-                filament_id=(spool.slicer_filament if spool else None),
+                filament_id=filament_id,
             )
         # A known spool with no profile for this nozzle is a deliberate stop:
         # falling through to Spoolman would answer for a different spool.
@@ -131,17 +160,30 @@ async def find_slot_kprofile_for_extruder(
             )
         )
         .scalars()
-        .first()
+        .all()
     )
+    sm_profile = next((p for p in sm_profile if _flow_applies(p.nozzle_type, flow)), None)
     if sm_profile is None:
         return None
 
-    # Spoolman rows carry no slicer preset; the caller falls back to the tray's
-    # own tray_info_idx for filament_id.
+    # A Spoolman K row carries no preset of its own, but the spool can still
+    # have a per-model override stored locally -- that is the same table the
+    # Spoolman assign path writes. Without a model to key on there is nothing
+    # to resolve and the caller falls back to the tray's own tray_info_idx.
+    sm_filament_id = None
+    if printer_model:
+        sm_filament_id, _ = await resolve_spoolman_preset(
+            db,
+            spoolman_spool_id=sm_assignment.spoolman_spool_id,
+            printer_model=printer_model,
+            nozzle_diameter=nozzle_diameter,
+            fallback_filament=None,
+            fallback_name=None,
+        )
     return SlotKProfile(
         cali_idx=sm_profile.cali_idx,
         k_value=sm_profile.k_value,
         name=sm_profile.name,
         extruder=sm_profile.extruder,
-        filament_id=None,
+        filament_id=sm_filament_id,
     )

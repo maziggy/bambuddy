@@ -749,6 +749,37 @@ class FilaSwitchState:
         return (raw >> 8) & 0xFF, raw & 0xFF
 
 
+# ``snow``/``spre``/``star`` all use this sentinel for "nothing here". Studio
+# only special-cases it on single-extruder machines, but 0xFFFF decodes to AMS
+# 255 slot 255 and slot 255 is not a real slot on any machine, so treating it
+# as empty everywhere is strictly safer than reading it as the external spool.
+_EXTRUDER_SLOT_EMPTY = 0xFFFF
+
+
+@dataclass
+class ExtruderSlot:
+    """Which AMS slot an extruder is currently fed from.
+
+    Parsed from ``print.device.extruder.info[i]`` — ``snow`` is snow-encoded
+    exactly like ``fila_switch.in`` (bits 8-15 = AMS id, bits 0-7 = slot), and
+    bit 1 of ``info`` says whether the extruder actually holds filament. Field
+    semantics from BambuStudio's ``DevExtruderSystem::ParseExtruderInfo``.
+
+    ``state.tray_now`` cannot answer this: it is a single value for the whole
+    printer, so on a dual-nozzle machine with both hotends loaded it names only
+    one of them. Unloading a specific slot needs to know which extruder is
+    holding it, which is what this is for.
+    """
+
+    ams_id: int | None = None
+    slot_id: int | None = None
+    has_filament: bool = False
+
+    def holds(self, ams_id: int, slot_id: int) -> bool:
+        """True when this extruder is fed from exactly ``(ams_id, slot_id)``."""
+        return self.ams_id == ams_id and self.slot_id == slot_id
+
+
 @dataclass
 class PrintOptions:
     """AI detection and print options from xcam data."""
@@ -822,7 +853,12 @@ class PrinterState:
     wifi_signal: int | None = None  # WiFi signal strength in dBm
     wired_network: bool = False  # Ethernet connection detected (home_flag bit 18)
     door_open: bool = False  # Enclosure door open (home_flag bit 23; models with a door sensor: X1/X1C/X1E/X2D/P2S/H2*)
-    # Nozzle hardware info (for dual nozzle printers, index 0 = left, 1 = right)
+    # Nozzle hardware info. Indexed by EXTRUDER id: [0] is the RIGHT hotend and
+    # [1] the left, measured 2026-08-27 on an H2D fitted with 0.4 left / 0.6
+    # right. (The legacy parser below writes left -> [0], but it only ever runs
+    # for single-nozzle printers -- every dual-nozzle model reports
+    # device.nozzle.info instead.) Read it through services.slot_nozzle rather
+    # than indexing it directly.
     nozzles: list = field(default_factory=lambda: [NozzleInfo(), NozzleInfo()])
     # AI detection and print options
     print_options: PrintOptions = field(default_factory=PrintOptions)
@@ -873,6 +909,11 @@ class PrinterState:
     # Setup" screen. Only populated when an FTS is installed — without one an AMS
     # is bound to an extruder instead and this stays empty. See FilaSwitchState.
     ams_switch_inlet: dict = field(default_factory=dict)
+    # Which AMS slot each extruder is fed from: {extruder_id: ExtruderSlot}.
+    # Only populated by printers that report ``device.extruder.info`` (H2/X2
+    # series). Empty elsewhere, which every reader has to tolerate — see
+    # ExtruderSlot for why tray_now cannot stand in for it.
+    extruder_slots: dict = field(default_factory=dict)
     # Plate dispatched by Bambuddy for the current print. Some firmware versions
     # (P1S 01.10.00.00) only put the .3mf filename in print.gcode_file, so the
     # regex used to derive the plate number from the path always falls back to
@@ -2836,6 +2877,44 @@ class BambuMQTTClient:
             info=int(fs_data.get("info", 0) or 0),
         )
 
+    def _parse_extruder_slots(self, data: dict) -> None:
+        """Read which AMS slot each extruder is fed from — ``device.extruder.info``.
+
+        Absent on printers that do not report the block, in which case the
+        previous answer is kept rather than cleared: a partial payload carrying
+        only temperatures must not look like "both hotends are now empty".
+        """
+        device = data.get("device")
+        if not isinstance(device, dict):
+            return
+        info = device.get("extruder", {}).get("info") if isinstance(device.get("extruder"), dict) else None
+        if not isinstance(info, list) or not info:
+            return
+
+        slots: dict[int, ExtruderSlot] = {}
+        for entry in info:
+            if not isinstance(entry, dict) or "id" not in entry:
+                continue
+            try:
+                ext_id = int(entry["id"])
+                snow = int(entry.get("snow", _EXTRUDER_SLOT_EMPTY))
+                flags = int(entry.get("info", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if snow == _EXTRUDER_SLOT_EMPTY or snow < 0:
+                ams_id = slot_id = None
+            else:
+                ams_id = (snow >> 8) & 0xFF
+                slot_id = snow & 0xFF
+            slots[ext_id] = ExtruderSlot(
+                ams_id=ams_id,
+                slot_id=slot_id,
+                has_filament=bool(flags & 0b10),
+            )
+
+        if slots:
+            self.state.extruder_slots = slots
+
     def _handle_ams_data(self, ams_data):
         """Handle AMS data changes for Spoolman integration.
 
@@ -4178,6 +4257,7 @@ class BambuMQTTClient:
         # it first. Repeated here so _update_state stays a complete "absorb this
         # payload" step for any other caller; re-parsing the same block is free.
         self._parse_fila_switch(data)
+        self._parse_extruder_slots(data)
 
         if "bed_temper" in data:
             temps["bed"] = float(data["bed_temper"])
@@ -7265,7 +7345,16 @@ class BambuMQTTClient:
             tray_id: Global tray ID — 0..15 for AMS slots, 254 for external spool
                 (single-external printers and Ext-L on dual-nozzle H2D),
                 255 for Ext-R on dual-nozzle H2D.
-            extruder_id: Unused - kept for API compatibility
+            extruder_id: Which hotend to feed (0 = right/main, 1 = left/deputy).
+                Sent only when given, matching BambuStudio: ``extruder_id`` is
+                an optional field on ``ams_change_filament``
+                (``DeviceManager::command_ams_change_filament``) and Studio
+                omits it unless a Filament Track Switch is installed. Without a
+                switch the firmware derives the hotend from the AMS's own
+                extruder binding and an explicit value is redundant; *with* one
+                every AMS reports 0xE and is bound to a switch inlet instead, so
+                the firmware has nothing to derive from and the load silently
+                does nothing until we name the hotend.
 
         Returns:
             True if command was sent, False otherwise
@@ -7320,6 +7409,8 @@ class BambuMQTTClient:
                 "tar_temp": tar_temp,
             }
         }
+        if extruder_id is not None:
+            command["print"]["extruder_id"] = int(extruder_id)
 
         command_json = json.dumps(command)
         logger.info("[%s] Publishing ams_change_filament command: %s", self.serial_number, command_json)
@@ -7334,8 +7425,21 @@ class BambuMQTTClient:
 
         return True
 
-    def ams_unload_filament(self) -> bool:
-        """Unload the currently loaded filament.
+    def ams_unload_filament(self, tray_id: int | None = None) -> bool:
+        """Unload filament, optionally naming the slot to unload.
+
+        Args:
+            tray_id: Global tray ID of the slot being unloaded. When given, the
+                command is addressed to that slot's AMS and is only sent if an
+                extruder is actually fed from it — BambuStudio does the same
+                (``StatusPanel::on_ams_unload`` walks the extruders and sends
+                nothing when none matches). When omitted, the pre-existing
+                behaviour is kept: unload whatever ``tray_now`` names.
+
+        ``tray_now`` is a single value for the whole printer, so on a dual-nozzle
+        machine with both hotends loaded it names only one of them and an
+        unaddressed unload picks that one regardless of which slot the operator
+        clicked. Passing the slot is what makes the two hotends distinguishable.
 
         Returns:
             True if command was sent, False otherwise
@@ -7346,15 +7450,54 @@ class BambuMQTTClient:
 
         # Get the currently loaded tray info
         tray_now = self.state.tray_now
-        logger.info("[%s] Unload requested, tray_now=%s", self.serial_number, tray_now)
+        source_tray = tray_now if tray_id is None else tray_id
+        logger.info("[%s] Unload requested, tray_now=%s, tray_id=%s", self.serial_number, tray_now, tray_id)
 
         # Determine source ams_id for the unload command
-        if tray_now == 255 or tray_now == 254:
+        if source_tray == 255 or source_tray == 254:
             ams_id = 255  # No filament or external spool
-        elif (_a2l := a2l_lite_wire_ids(tray_now // 4, tray_now)) is not None:
+        elif (_a2l := a2l_lite_wire_ids(source_tray // 4, source_tray)) is not None:
             ams_id = _a2l[0]  # A2L AMS-Lite: normalised 6 -> physical 16
         else:
-            ams_id = tray_now // 4  # Source AMS
+            ams_id = source_tray // 4  # Source AMS
+
+        # Refuse an addressed unload of a slot no hotend is holding — but only on
+        # a printer that has more than one hotend, which is the only case the
+        # check exists for. With one hotend there is nothing to disambiguate:
+        # tray_now already names the loaded slot exactly, and running the check
+        # anyway would stake unload on `snow` meaning ams*4+slot there too. It
+        # very likely does, but single-nozzle machines do report the block —
+        # BambuStudio has a dedicated branch for `m_total_extder_count == 1` and
+        # an X1C on the maintainer's own network sends `device.extruder` — and
+        # nobody has read a single-nozzle `snow` off the wire. Guessing wrong
+        # would 409 every unload on every X1C, P1S and A1.
+        #
+        # Gated on the runtime flag rather than on len(extruder_slots), which is
+        # rebuilt from each payload's array and would flip the check off for any
+        # frame that carried a short one; and deliberately not on
+        # ``is_dual_nozzle_model``, whose model-name fallback reports at least
+        # one single-nozzle machine as dual (#1386) — the false positive there is
+        # exactly the case this gate exists to keep out.
+        #
+        # The external spool is excluded for a different reason: 254/255 are not
+        # ams*4+slot, so the local-slot arithmetic below cannot describe them.
+        if tray_id is not None and tray_id not in (254, 255) and self._is_dual_nozzle and self.state.extruder_slots:
+            local_slot = _a2l[1] if (_a2l := a2l_lite_wire_ids(tray_id // 4, tray_id)) is not None else tray_id % 4
+            holder = next(
+                (ext for ext, slot in self.state.extruder_slots.items() if slot.holds(ams_id, local_slot)),
+                None,
+            )
+            if holder is None:
+                logger.info(
+                    "[%s] Unload skipped: no extruder is fed from AMS %s slot %s",
+                    self.serial_number,
+                    ams_id,
+                    local_slot,
+                )
+                return False
+            logger.info(
+                "[%s] Unloading AMS %s slot %s from extruder %s", self.serial_number, ams_id, local_slot, holder
+            )
 
         # Command format from BambuStudio traffic capture:
         # - No extruder_id field

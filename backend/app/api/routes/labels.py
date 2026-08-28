@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes._spoolman_helpers import parse_spoolman_multi_colors
 from backend.app.api.routes.settings import get_setting
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
@@ -127,12 +128,9 @@ def _spoolman_dict_to_label_data(s: dict, deeplink_base: str) -> LabelData:
     color_hex = filament.get("color_hex")
     rgba = color_hex.lstrip("#") if isinstance(color_hex, str) else None
 
-    multi_colors = filament.get("multi_color_hexes")
-    extra: list[str] | None = None
-    if isinstance(multi_colors, str) and multi_colors.strip():
-        extra = [tok.strip().lstrip("#") for tok in multi_colors.split(",") if tok.strip()]
-    elif isinstance(multi_colors, list):
-        extra = [str(t).strip().lstrip("#") for t in multi_colors if str(t).strip()]
+    # Shared with `_map_spoolman_spool`, so the swatch printed on a label and
+    # the swatch drawn on an AMS slot card cannot read the same field two ways.
+    extra: list[str] | None = parse_spoolman_multi_colors(filament) or None
 
     return LabelData(
         spool_id=int(s.get("id", 0)),

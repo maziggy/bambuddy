@@ -15,6 +15,7 @@ import {
   useFilamentMapping,
 } from '../../hooks/useFilamentMapping';
 import { effectivePreferLowest } from '../../utils/amsHelpers';
+import { getColorName } from '../../utils/colors';
 import type { PrinterStatus } from '../../api/client';
 
 // Helper to create a minimal printer status with AMS data
@@ -1443,5 +1444,96 @@ describe('filament type equivalence groups reach the matcher', () => {
     };
     const [item] = buildFilamentComparison(wantPla, buildLoadedFilaments(silk), {});
     expect(item.status).toBe('mismatch');
+  });
+});
+
+describe('buildLoadedFilaments — naming a slot after its bound spool', () => {
+  /**
+   * The printer cannot describe a third-party spool. Its tray record has no
+   * brand field, `tray_sub_brands` stays empty, and the colour hex gets
+   * resolved against Bambu's own catalogue — so a Devil Design PLA Basic
+   * Orange assigned in Bambuddy read back here as "PLA (Sunflower Yellow)",
+   * because Bambu sell a Sunflower Yellow at the same FEC600. The printer
+   * card names it correctly because it reads the assignment; this is that
+   * same identity, reaching the print dialog.
+   */
+  const devilDesign = {
+    brand: 'Devil Design',
+    material: 'PLA',
+    subtype: 'Basic',
+    color_name: 'Orange',
+    rgba: 'FEC600FF',
+  };
+
+  const c1 = createPrinterStatus([
+    {
+      id: 2,
+      tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FEC600FF', tray_info_idx: 'GFA00', tray_sub_brands: '' }],
+    },
+  ]);
+
+  it('names the slot after the spool instead of the catalogue colour', () => {
+    const [slot] = buildLoadedFilaments(c1, new Map([[8, devilDesign]]));
+
+    expect(slot.spoolName).toBe('Devil Design PLA Basic');
+    expect(slot.colorName).toBe('Orange');
+  });
+
+  it('leaves the matching inputs on telemetry', () => {
+    // Auto-assign and the colour-mismatch test have to keep agreeing with the
+    // dispatcher, which only ever sees what the printer reports.
+    const [withSpool] = buildLoadedFilaments(c1, new Map([[8, devilDesign]]));
+    const [without] = buildLoadedFilaments(c1);
+
+    expect(withSpool.type).toBe(without.type);
+    expect(withSpool.color).toBe(without.color);
+    expect(withSpool.trayInfoIdx).toBe(without.trayInfoIdx);
+    expect(withSpool.traySubBrands).toBe(without.traySubBrands);
+  });
+
+  it('falls back per field, not all or nothing', () => {
+    // A spool with no colour name still gets its brand and subtype from the
+    // binding while the colour comes from the catalogue lookup as before.
+    const [slot] = buildLoadedFilaments(
+      createPrinterStatus([
+        { id: 0, tray: [{ id: 2, tray_type: 'PLA', tray_color: '5F6367FF', tray_sub_brands: 'PLA Silk+' }] },
+      ]),
+      new Map([[2, { brand: 'Bambu Lab', material: 'PLA', subtype: 'Silk+', color_name: null, rgba: '5F6367FF' }]]),
+    );
+
+    expect(slot.spoolName).toBe('Bambu Lab PLA Silk+');
+    expect(slot.colorName).toBe(getColorName('#5F6367FF', 'PLA Silk+'));
+  });
+
+  it('describes an unbound slot exactly as it did before', () => {
+    // Only the bound slot is renamed — an empty map must not blank the rest.
+    const [bound, unbound] = buildLoadedFilaments(
+      createPrinterStatus([
+        {
+          id: 0,
+          tray: [
+            { id: 0, tray_type: 'PLA', tray_color: 'FEC600FF' },
+            { id: 1, tray_type: 'PLA', tray_color: '00FF00FF', tray_sub_brands: 'PLA Matte' },
+          ],
+        },
+      ]),
+      new Map([[0, devilDesign]]),
+    );
+
+    expect(bound.spoolName).toBe('Devil Design PLA Basic');
+    expect(unbound.spoolName).toBeUndefined();
+    expect(unbound.colorName).toBe(getColorName('#00FF00FF', 'PLA Matte'));
+  });
+
+  it('names the external spool holder too', () => {
+    // Its global tray id IS the tray id (254 / 255) on both sides.
+    const [slot] = buildLoadedFilaments(
+      createPrinterStatus([], [{ id: 254, tray_type: 'PLA', tray_color: 'FEC600FF' }]),
+      new Map([[254, devilDesign]]),
+    );
+
+    expect(slot.isExternal).toBe(true);
+    expect(slot.spoolName).toBe('Devil Design PLA Basic');
+    expect(slot.colorName).toBe('Orange');
   });
 });

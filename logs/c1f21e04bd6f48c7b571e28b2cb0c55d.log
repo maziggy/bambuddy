@@ -1,0 +1,200 @@
+2026-08-28 23:44:41,926 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:42,924 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:42,924 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:43,927 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:43,927 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:44,922 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:44,923 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:45,926 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:45,927 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:46,923 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:46,924 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:47,927 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:47,928 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:48,348 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:57596
+2026-08-28 23:44:48,926 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:48,927 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:49,923 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:49,924 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:50,929 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:50,930 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:51,923 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:51,923 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:52,924 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:52,924 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:53,930 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:53,930 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:54,927 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:54,927 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:55,931 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:55,932 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:56,925 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:56,926 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:57,927 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:57,927 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:58,929 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:58,930 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:44:59,923 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:44:59,923 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:00,924 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:00,924 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:01,933 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:01,933 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:02,926 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:02,927 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:03,927 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:03,928 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:04,930 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:04,931 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:05,929 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:05,930 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:06,923 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:06,924 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:07,928 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:07,929 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:08,930 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:08,930 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:09,931 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:09,932 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:10,931 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:10,931 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:11,929 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:11,930 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:12,929 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:12,929 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:13,931 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:13,932 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:14,924 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:14,924 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:15,931 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:15,932 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:16,928 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:16,928 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:17,930 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:17,930 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:18,928 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:18,928 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:19,930 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:19,931 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:20,929 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:20,930 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:21,926 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:21,927 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:22,928 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:22,929 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:23,926 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:23,926 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:24,930 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:24,930 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:25,273 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 2819.1s, forcing reconnect
+2026-08-28 23:45:25,274 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-08-28 23:45:25,274 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-08-28 23:45:25,288 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-08-28 23:45:25,928 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:25,928 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:26,394 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-08-28 23:45:26,397 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/2, seq_id=16)
+2026-08-28 23:45:26,474 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=15, 0 profiles, matched=True
+2026-08-28 23:45:26,475 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-08-28 23:45:26,477 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=16, 0 profiles, matched=True
+2026-08-28 23:45:26,477 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-08-28 23:45:26,478 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-08-28 23:45:26,479 INFO [backend.app.main] [-] [Printer 1] Primed K-profile table for nozzle 0.4: 0 profiles
+2026-08-28 23:45:26,925 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:26,926 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:27,439 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-08-28 23:45:27,756 INFO [backend.app.services.spoolman] [-] Updating existing spool 103 for tag 708B92564F394D9F...
+2026-08-28 23:45:27,787 INFO [backend.app.services.spoolman] [-] Updating existing spool 129 for tag 5FD37A3393624124...
+2026-08-28 23:45:27,801 INFO [backend.app.services.spoolman] [-] Updating existing spool 105 for tag 129F6433B27D4CD3...
+2026-08-28 23:45:27,815 INFO [backend.app.main] [-] Auto-synced 3 AMS trays to Spoolman for printer 1
+2026-08-28 23:45:27,932 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:27,933 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:28,407 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"info":{"command":"get_version","sequence_id":"20194"}}...
+2026-08-28 23:45:28,407 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT info command: get_version
+2026-08-28 23:45:28,408 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] Sent version response (product_name=P1P)
+2026-08-28 23:45:28,935 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"201...
+2026-08-28 23:45:28,935 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT print command: extrusion_cali_get for 
+2026-08-28 23:45:48,414 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:57596
+2026-08-28 23:46:36,543 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-28 23:46:48,502 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:57596
+2026-08-28 23:47:26,851 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20196","version":1}}...
+2026-08-28 23:47:26,852 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT pushing command: pushall
+2026-08-28 23:47:26,852 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] Sending status report in response to pushall
+2026-08-28 23:47:48,600 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:57596
+2026-08-28 23:48:48,699 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:57596
+2026-08-28 23:49:48,717 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 3 pushes/min to [IP]:57596
+2026-08-28 23:50:44,533 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-08-28 23:51:36,568 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-28 23:55:23,667 INFO [uvicorn.access] [-] [IP]:58444 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-08-28 23:55:23,735 INFO [uvicorn.access] [-] [IP]:58592 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-28 23:55:23,736 INFO [backend.app.api.routes.camera] [80444609] Using chamber image protocol for P1P
+2026-08-28 23:55:23,736 INFO [backend.app.api.routes.camera] [80444609] Camera viewer attached to printer-1 (subscribers=1)
+2026-08-28 23:55:23,739 INFO [backend.app.api.routes.camera] [80444609] Starting chamber image stream for [IP] (stream_id=1-fanout-f00914fe, model=P1P)
+2026-08-28 23:55:23,904 INFO [backend.app.api.routes.cloud] [0b0a8195] get_filament_info called with 1 IDs: ['GFA01']
+2026-08-28 23:55:24,067 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-08-28 23:55:24,079 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-08-28 23:55:24,080 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-08-28 23:55:24,122 INFO [uvicorn.access] [-] [IP]:58798 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-08-28 23:55:24,493 INFO [backend.app.services.camera] [80444609] Chamber image: connected to [IP]:6000
+2026-08-28 23:55:24,996 INFO [backend.app.api.routes.camera] [80444609] Camera viewer detached from printer-1 (subscribers=0)
+2026-08-28 23:55:25,350 INFO [backend.app.api.routes.camera] [80444609] Chamber image stream cancelled (stream_id=1-fanout-f00914fe)
+2026-08-28 23:55:26,368 INFO [backend.app.api.routes.camera] [80444609] Chamber image stream stopped for [IP] (stream_id=1-fanout-f00914fe)
+2026-08-28 23:55:26,368 INFO [backend.app.api.routes.camera] [9bd2d3ec] Shut down camera fan-out broadcaster for printer 1
+2026-08-28 23:55:26,369 INFO [backend.app.api.routes.camera] [9bd2d3ec] Stopped 0 camera stream(s) for printer 1
+2026-08-28 23:55:26,370 INFO [uvicorn.access] [-] [IP]:58872 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-08-28 23:56:36,581 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-28 23:59:49,469 INFO [uvicorn.access] [-] [IP]:34536 - "POST /api/v1/projects/ HTTP/1.1" 200
+2026-08-28 23:59:55,886 INFO [uvicorn.access] [-] [IP]:39682 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-08-29 00:00:08,944 INFO [uvicorn.access] [-] [IP]:57582 - "PATCH /api/v1/projects/1 HTTP/1.1" 200
+2026-08-29 00:01:19,828 INFO [uvicorn.access] [-] [IP]:51176 - "PATCH /api/v1/projects/2 HTTP/1.1" 200
+2026-08-29 00:01:36,587 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-29 00:04:36,160 INFO [uvicorn.access] [-] [IP]:53570 - "DELETE /api/v1/archives/198 HTTP/1.1" 200
+2026-08-29 00:06:36,599 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-29 00:08:42,938 INFO [uvicorn.access] [-] [IP]:54162 - "POST /api/v1/projects/ HTTP/1.1" 200
+2026-08-29 00:09:09,205 INFO [uvicorn.access] [-] [IP]:35958 - "POST /api/v1/projects/ HTTP/1.1" 200
+2026-08-29 00:10:27,357 INFO [uvicorn.access] [-] [IP]:59738 - "PATCH /api/v1/archives/40 HTTP/1.1" 200
+2026-08-29 00:10:39,138 INFO [uvicorn.access] [-] [IP]:52456 - "PATCH /api/v1/archives/39 HTTP/1.1" 200
+2026-08-29 00:10:47,422 INFO [uvicorn.access] [-] [IP]:54956 - "PATCH /api/v1/archives/38 HTTP/1.1" 200
+2026-08-29 00:10:57,760 INFO [uvicorn.access] [-] [IP]:45620 - "PATCH /api/v1/archives/37 HTTP/1.1" 200
+2026-08-29 00:11:36,606 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-29 00:12:33,615 INFO [uvicorn.access] [-] [IP]:47442 - "POST /api/v1/projects/4/add-archives HTTP/1.1" 200
+2026-08-29 00:13:52,096 INFO [uvicorn.access] [-] [IP]:51208 - "POST /api/v1/projects/4/add-archives HTTP/1.1" 200
+2026-08-29 00:14:59,462 INFO [uvicorn.access] [-] [IP]:59910 - "POST /api/v1/projects/ HTTP/1.1" 200
+2026-08-29 00:16:04,715 INFO [uvicorn.access] [-] [IP]:45692 - "POST /api/v1/projects/5/add-archives HTTP/1.1" 200
+2026-08-29 00:16:19,161 INFO [uvicorn.access] [-] [IP]:54604 - "PATCH /api/v1/projects/5 HTTP/1.1" 200
+2026-08-29 00:16:35,278 INFO [uvicorn.access] [-] [IP]:57956 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-08-29 00:16:36,619 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-29 00:16:58,842 INFO [uvicorn.access] [-] [IP]:46004 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-08-29 00:17:04,336 INFO [uvicorn.access] [-] [IP]:40364 - "PATCH /api/v1/projects/1 HTTP/1.1" 200
+2026-08-29 00:17:11,144 INFO [uvicorn.access] [-] [IP]:50400 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-08-29 00:17:20,496 INFO [uvicorn.access] [-] [IP]:55390 - "PATCH /api/v1/projects/1 HTTP/1.1" 200
+2026-08-29 00:18:30,062 INFO [uvicorn.access] [-] [IP]:39990 - "POST /api/v1/projects/ HTTP/1.1" 200
+2026-08-29 00:19:18,637 INFO [uvicorn.access] [-] [IP]:47088 - "POST /api/v1/projects/ HTTP/1.1" 200
+2026-08-29 00:19:38,046 INFO [uvicorn.access] [-] [IP]:41184 - "POST /api/v1/projects/ HTTP/1.1" 200
+2026-08-29 00:20:08,975 INFO [uvicorn.access] [-] [IP]:33018 - "POST /api/v1/projects/7/add-archives HTTP/1.1" 200
+2026-08-29 00:20:47,866 INFO [uvicorn.access] [-] [IP]:44782 - "POST /api/v1/projects/8/add-archives HTTP/1.1" 200
+2026-08-29 00:21:36,627 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-29 00:26:36,640 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-29 00:31:36,647 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-29 00:36:23,858 INFO [backend.app.api.routes.support] [78196731] Log level changed to DEBUG
+2026-08-29 00:36:23,858 INFO [backend.app.api.routes.bug_report] [78196731] Bug report: enabled debug logging
+2026-08-29 00:36:23,858 DEBUG [backend.app.services.bambu_mqtt] [78196731] [[SERIAL]] Requesting status update (pushall)
+2026-08-29 00:36:23,859 INFO [uvicorn.access] [-] [IP]:54530 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-08-29 00:36:23,898 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-08-29 00:36:23,898 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'b', 'tray_is_bbl_bits': 'b', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'b', 'tray_reading_bits': '0', 'version': 6, 'insert_flag': True, 'power_on_flag': False}
+2026-08-29 00:36:23,899 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-08-29 00:36:23,899 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-08-29 00:36:23,899 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x2003 -> extruder 0
+2026-08-29 00:36:23,899 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-08-29 00:36:23,899 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-08-29 00:36:23,899 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-29 00:36:23,899 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-08-29 00:36:23,900 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-08-29 00:36:23,900 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-08-29 00:36:23,900 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-08-29 00:36:23,900 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-08-29 00:36:23,900 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-08-29 00:36:23,900 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -40dBm
+2026-08-29 00:36:23,900 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-08-29 00:36:23,901 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-08-29 00:36:27,922 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status

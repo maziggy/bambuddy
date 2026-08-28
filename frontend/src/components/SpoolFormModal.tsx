@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, Loader2, Save, Beaker, Palette, Zap, Tag, Unlink } from 'lucide-react';
+import { X, Loader2, Save, Beaker, Palette, Zap, Tag, Link2, Unlink } from 'lucide-react';
 import { api, ApiError } from '../api/client';
 import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, BuiltinFilament, SpoolmanBulkCreateResult, SpoolFilamentPresetInput, SpoolKProfileInput, SpoolmanFilamentEntry } from '../api/client';
 import { Button } from './Button';
@@ -24,6 +24,7 @@ import { SpoolmanFilamentPicker } from './spool-form/SpoolmanFilamentPicker';
 import { PrinterProfilesSection } from './spool-form/PrinterProfilesSection';
 import { normaliseFlow } from '../utils/nozzleFlow';
 import { SpoolUsageHistory } from './SpoolUsageHistory';
+import { AssignToAmsModal } from './spoolbuddy/AssignToAmsModal';
 import {
   invalidateInventoryLocations,
   invalidateSpoolAndLocationQueries,
@@ -78,6 +79,11 @@ export function SpoolFormModal({
   const [locationIdTouched, setLocationIdTouched] = useState(false);
   const [quickAdd, setQuickAdd] = useState(false);
   const [quantity, setQuantity] = useState(1);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+
+  useEffect(() => {
+    setShowAssignModal(false);
+  }, [isOpen, spool?.id]);
 
   // Cloud presets
   const [cloudAuthenticated, setCloudAuthenticated] = useState(false);
@@ -688,12 +694,12 @@ export function SpoolFormModal({
   // the slot assignment lives in the spoolman_slot_assignments table keyed by
   // spoolman_spool_id, not in the legacy spool_assignments table — #1336 was the
   // resulting "Unassign button is always disabled" report.
-  const { data: assignments } = useQuery({
+  const { data: assignments, isLoading: assignmentsLoading } = useQuery({
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
     enabled: isOpen && isEditing && !spoolmanMode,
   });
-  const { data: spoolmanSlotAssignments } = useQuery({
+  const { data: spoolmanSlotAssignments, isLoading: spoolmanAssignmentsLoading } = useQuery({
     queryKey: ['spoolman-slot-assignments-all'],
     queryFn: () => api.getSpoolmanSlotAssignments(),
     enabled: isOpen && isEditing && spoolmanMode,
@@ -705,6 +711,7 @@ export function SpoolFormModal({
     }
     return assignments?.find(a => a.spool_id === spool.id);
   })();
+  const assignmentLoading = spoolmanMode ? spoolmanAssignmentsLoading : assignmentsLoading;
 
   // Read inventory + settings caches (already populated by InventoryPage) to
   // drive the category autocomplete and low-stock-threshold placeholder. #729
@@ -900,6 +907,7 @@ export function SpoolFormModal({
   const isPending = createMutation.isPending || bulkCreateMutation.isPending || updateMutation.isPending || deleteTagMutation.isPending || unassignMutation.isPending;
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -1136,14 +1144,25 @@ export function SpoolFormModal({
                 <Tag className="w-4 h-4" />
                 {t('inventory.clearRfid', 'Clear RFID Tag')}
               </Button>
-              <Button
-                variant="secondary"
-                onClick={() => unassignMutation.mutate()}
-                disabled={isPending || !spoolAssignment}
-              >
-                <Unlink className="w-4 h-4" />
-                {t('inventory.unassignSpool', 'Unassign')}
-              </Button>
+              {spoolAssignment ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => unassignMutation.mutate()}
+                  disabled={isPending || assignmentLoading}
+                >
+                  <Unlink className="w-4 h-4" />
+                  {t('inventory.unassignSpool', 'Unassign')}
+                </Button>
+              ) : (
+                <Button
+                  variant="secondary"
+                  onClick={() => setShowAssignModal(true)}
+                  disabled={isPending || assignmentLoading}
+                >
+                  <Link2 className="w-4 h-4" />
+                  {t('inventory.assignSpool', 'Assign Spool')}
+                </Button>
+              )}
             </div>
           )}
           <div className="flex gap-2 ml-auto">
@@ -1170,5 +1189,15 @@ export function SpoolFormModal({
         </div>
       </div>
     </div>
+    {isEditing && spool && (
+      <AssignToAmsModal
+        isOpen={showAssignModal}
+        onClose={() => setShowAssignModal(false)}
+        spool={spool}
+        printerId={null}
+        spoolmanMode={spoolmanMode}
+      />
+    )}
+    </>
   );
 }

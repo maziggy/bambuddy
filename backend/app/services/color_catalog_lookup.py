@@ -28,8 +28,26 @@ async def resolve_bambu_color_name(db: AsyncSession, rgba: str | None, sub_brand
     None is a real answer and not a failure. The catalogue is seeded from Bambu's
     published hex list and lags new colours, so a roll it has never heard of has
     no name to give and the caller has to cope rather than pick something.
+
+    Alpha 00 short-circuits to "Clear" (#1545) before the catalogue is consulted.
+    The catalogue stores RGB only, so a clear roll's ``00000000`` would look up
+    ``#000000`` and come back "Black" -- the exact bug #1545 was filed for. This
+    is a deliberate carry-over, not an oversight: the built-in path does the same
+    thing, and the point of this module is that the two modes stop answering this
+    question differently. Without it a clear roll is named "Clear" by internal
+    mode and "Black" by Spoolman mode on the same printer.
+
+    Naming a genuinely translucent roll from the catalogue would very likely beat
+    "Clear", but that changes both modes and what internal mode has returned
+    since #1545, so it is not something an extraction should decide on its way
+    past.
     """
-    if not rgba or len(rgba) < 6:
+    if not rgba:
+        return None
+    # #1545, and the same test the built-in path applies.
+    if len(rgba) == 8 and rgba[6:8].lower() == "00":
+        return "Clear"
+    if len(rgba) < 6:
         return None
     hex_prefix = f"#{rgba[:6].upper()}"
     query = (
@@ -67,6 +85,15 @@ def filament_matches_product_line(
 
     Both encode the product line, so both distinguish PLA Basic from PLA Matte.
     A filament named neither is not this line and must not be reused.
+
+    The colour name is a proxy for the line and a lossy one, so be clear about
+    what it cannot do: ``#000000`` is "Black" under PLA Basic, PLA Tough, PLA-CF,
+    ABS, ASA, PETG HF, PETG-CF and TPU 90A alike. Lines that share a base
+    material *and* a colour name still collapse into one filament. This is
+    pre-existing and not made worse here -- the material check upstream already
+    separates ABS from PLA -- but "both encode the product line" is a weaker
+    statement than it looks, and the case it does not cover is two PLA lines
+    whose catalogue rows carry the same colour name.
     """
     name = (filament_name or "").strip().lower()
     if not name:

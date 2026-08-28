@@ -743,6 +743,22 @@ class TestFindOrCreateFilament:
             tray_weight=1000,
         )
 
+    @pytest.fixture
+    def tray_matte(self):
+        """The reported roll: PLA Matte Charcoal, same material and hex as PLA Basic Black."""
+        return AMSTray(
+            ams_id=0,
+            tray_id=0,
+            tray_type="PLA",
+            tray_sub_brands="PLA Matte",
+            tray_color="000000FF",
+            remain=100,
+            tag_uid="",
+            tray_uuid="A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
+            tray_info_idx="GFA01",
+            tray_weight=1000,
+        )
+
     async def _run(self, client, tray, db, *, filaments=None, external=None):
         with (
             patch.object(client, "ensure_bambu_vendor", AsyncMock(return_value=2)),
@@ -794,21 +810,9 @@ class TestFindOrCreateFilament:
         mock_create.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_does_not_reuse_a_filament_from_a_different_product_line(self, client):
+    async def test_does_not_reuse_a_filament_from_a_different_product_line(self, client, tray_matte):
         """The reported case. A PLA Matte Charcoal roll must not attach to the
         PLA Basic Black filament that happens to share its material and hex."""
-        tray_matte = AMSTray(
-            ams_id=0,
-            tray_id=0,
-            tray_type="PLA",
-            tray_sub_brands="PLA Matte",
-            tray_color="000000FF",
-            remain=100,
-            tag_uid="",
-            tray_uuid="A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
-            tray_info_idx="GFA01",
-            tray_weight=1000,
-        )
         pla_basic_black = {"id": 6, "name": "Black", "material": "PLA", "color_hex": "000000", "vendor_id": 2}
 
         _, _, mock_create = await self._run(client, tray_matte, _Catalog("Charcoal"), filaments=[pla_basic_black])
@@ -864,13 +868,22 @@ class TestFindOrCreateFilament:
         assert kwargs["density"] == 1.26
 
     @pytest.mark.asyncio
-    async def test_prefers_the_external_entry_the_catalogue_names(self, client, tray_pla_black):
+    async def test_prefers_the_external_entry_the_catalogue_names(self, client, tray_matte):
         """The tie-break selects on the catalogue's colour name, not on tray_sub_brands.
 
-        This test used to assert the opposite, on the premise that SpoolmanDB carries
-        line-shaped names like "PLA Basic". It does not -- Bambu's external entries are
-        colour-named, so the old equality against tray_sub_brands never held and
-        candidates[0] simply always won. #2907.
+        The fixture is the real pair. A current SpoolmanDB carries, for Bambu Lab
+        PLA at #000000, ``bambulab_pla_black_1000_175_n`` named "Black" and
+        ``bambulab_pla_mattecharcoal_1000_175_n`` named "Matte Charcoal" -- both
+        material "PLA", because the line lives in the id and the name, never in
+        the material column. The previous version of this test staged an entry
+        named "PLA Basic" instead, which is a row SpoolmanDB does not contain:
+        none of its 269 Bambu Lab entries is named for a sub-brand.
+
+        That matters for what the old code did. Against this fixture the old
+        equality (``name == tray_sub_brands``, i.e. "pla matte") matches nothing,
+        so it falls through to candidates[0] -- "Black" -- and a Matte roll is
+        created as PLA Basic Black. That is #2907. Against the invented fixture
+        it matched, which is why the old test passed.
         """
         external = [
             {
@@ -882,9 +895,9 @@ class TestFindOrCreateFilament:
                 "density": 1.24,
             },
             {
-                "id": "bambulab_plabasic_black_1000_175_n",
+                "id": "bambulab_pla_mattecharcoal_1000_175_n",
                 "manufacturer": "Bambu Lab",
-                "name": "PLA Basic",
+                "name": "Matte Charcoal",
                 "material": "PLA",
                 "color_hex": "000000",
                 "density": 1.26,
@@ -896,16 +909,15 @@ class TestFindOrCreateFilament:
             patch.object(client, "get_external_filaments", AsyncMock(return_value=external)),
             patch.object(client, "create_filament", AsyncMock(return_value={"id": 99})) as mock_create,
         ):
-            await client._find_or_create_filament(tray_pla_black, _Catalog("Black"))
+            await client._find_or_create_filament(tray_matte, _Catalog("Matte Charcoal"))
 
         mock_create.assert_called_once()
         kwargs = mock_create.call_args.kwargs
-        # "Black" is what the catalogue calls this colour for this product line.
-        # The old tie-break took "PLA Basic" here, and only by accident: the
-        # equality it tested never matched, so it fell through to candidates[0],
-        # which this fixture happens to list second.
-        assert kwargs["name"] == "Black"
-        assert kwargs["density"] == 1.24
+        # The catalogue calls #000000 "Matte Charcoal" for PLA Matte, so that is
+        # the entry -- and the density that comes with it. candidates[0] is
+        # "Black", which is what the old tie-break would have taken here.
+        assert kwargs["name"] == "Matte Charcoal"
+        assert kwargs["density"] == 1.26
 
     @pytest.mark.asyncio
     async def test_falls_back_to_create_when_no_bambu_match_anywhere(self, client, tray_pla_black):
@@ -1059,6 +1071,28 @@ class TestColorHexAlphaHandling:
         ):
             await client._find_or_create_filament(self._tray("00000000"), _NoCatalog())
 
+        assert mock_create.call_args.kwargs["color_hex"] == "00000000"
+
+    @pytest.mark.asyncio
+    async def test_a_clear_tray_is_not_named_from_the_catalogue_even_when_it_can_answer(self, client):
+        """#1545 at this level: the catalogue must not get to name a clear roll.
+
+        The test above passes a session that cannot answer, so it says nothing
+        about the guard. Here the catalogue does have a row -- the trap is that a
+        clear roll reports ``00000000`` and the catalogue stores RGB, so the
+        lookup would hit #000000 and come back "Black". Without the guard this
+        creates a Spoolman filament called "Black" for a clear roll, while the
+        built-in path calls the same roll "Clear" on the same printer.
+        """
+        with (
+            patch.object(client, "ensure_bambu_vendor", AsyncMock(return_value=2)),
+            patch.object(client, "get_filaments", AsyncMock(return_value=[])),
+            patch.object(client, "get_external_filaments", AsyncMock(return_value=[])),
+            patch.object(client, "create_filament", AsyncMock(return_value={"id": 99})) as mock_create,
+        ):
+            await client._find_or_create_filament(self._tray("00000000"), _Catalog("Black"))
+
+        assert mock_create.call_args.kwargs["name"] == "Clear"
         assert mock_create.call_args.kwargs["color_hex"] == "00000000"
 
     @pytest.mark.asyncio

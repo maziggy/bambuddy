@@ -1318,11 +1318,15 @@ class SpoolmanClient:
                 bambu_candidates.append(filament)
 
         # Pick the entry the catalogue names for this colour. The previous
-        # tie-break compared `name` against `tray_sub_brands` -- but Bambu's
-        # external entries are colour-named ("Black") while tray_sub_brands is a
-        # product line ("PLA Basic"), so the equality never held and
-        # candidates[0] always won. The comment above it expected line-shaped
-        # names there, which is where the premise went wrong (#2907).
+        # tie-break compared `name` against `tray_sub_brands`, expecting
+        # line-shaped names in the external library. There are none: every Bambu
+        # Lab entry is colour-named ("Black", "Matte Charcoal", "Tough+ Black")
+        # with the line folded into the id, and none of the 269 on a current
+        # SpoolmanDB is named for a sub-brand. So against a real library that
+        # equality cannot match and candidates[0] wins by default -- which for a
+        # PLA Matte roll is the PLA Basic entry, since both are PLA at #000000
+        # and "Black" sorts first. Comparing on the catalogue's colour name
+        # instead separates them, because the catalogue keys on the line (#2907).
         if expected_color_name:
             chosen = next(
                 (

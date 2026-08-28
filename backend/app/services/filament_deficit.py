@@ -38,6 +38,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
 from backend.app.core.config import settings as app_settings
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.spool_assignment import SpoolAssignment
@@ -186,7 +187,15 @@ def _normalize_color_for_id(raw: str | None) -> str:
     Strips the leading ``#``, uppercases, and drops the alpha channel when
     the hex is 8 chars long (``RRGGBBAA``) so a fully-opaque 8-char hex
     matches a 6-char hex of the same RGB. Empty / None → empty string.
+
+    Anything that is not a string reads as "no colour" rather than raising.
+    In Spoolman mode ``raw`` comes straight off the wire as
+    ``filament.color_hex``, and this runs on the dispatch path — a record
+    holding a number there would otherwise fail a queue start rather than
+    merely fail to pool.
     """
+    if not isinstance(raw, str):
+        raw = None
     s = (raw or "").strip().lstrip("#").upper()
     if len(s) == 8:  # RRGGBBAA → strip alpha
         s = s[:6]
@@ -225,9 +234,14 @@ def _material_identity_spoolman(spool: dict | None) -> str:
     pins the variant. Spools without a resolvable filament id get a
     per-spool unique key so they never pair.
     """
-    if not spool:
+    if not isinstance(spool, dict) or not spool:
         return "unmatched:none"
+    # Both are free-form JSON off the Spoolman API, and this is the dispatch
+    # path: a wrongly-typed member must cost the slot its pool, never the
+    # queue its start.
     filament = spool.get("filament") or {}
+    if not isinstance(filament, dict):
+        filament = {}
     fil_id = filament.get("id")
     if isinstance(fil_id, (int, str)) and str(fil_id).strip():
         # Prefer the per-spool override colour when set (Spoolman lets the user
@@ -302,6 +316,102 @@ async def _get_printer_backup_context(
 
 
 @dataclass(frozen=True)
+class SlotSpoolIdentity:
+    """How the spool bound to a slot should be *named*, as opposed to matched.
+
+    The printer cannot supply this and never will. A tray record carries no
+    brand field at all, and ``tray_sub_brands`` stays empty for anything that
+    isn't a Bambu spool, so a client naming a slot from telemetry alone has
+    only the type and the colour hex to work with — and turns that hex into
+    whichever catalogue colour happens to share it. A Devil Design PLA Basic
+    Orange the operator assigned in Bambuddy reads back as "PLA (Sunflower
+    Yellow)", because Bambu sell a Sunflower Yellow at the same ``FEC600``.
+
+    Only the assignment knows the answer, which is why it is served alongside
+    the pooling key rather than left to the client to resolve: the identity
+    rule differs per inventory mode, and the printer card and the print dialog
+    disagreeing about what is in a slot is the bug this exists to close.
+
+    Purely descriptive — nothing here takes part in matching, which stays on
+    the printer's own telemetry so the dialog and the dispatcher cannot draw
+    different conclusions from the same slot.
+    """
+
+    brand: str | None
+    material: str | None
+    subtype: str | None
+    color_name: str | None
+    rgba: str | None
+
+    def to_dict(self) -> dict:
+        return {
+            "brand": self.brand,
+            "material": self.material,
+            "subtype": self.subtype,
+            "color_name": self.color_name,
+            "rgba": self.rgba,
+        }
+
+
+def _clean(value) -> str | None:
+    """Trim a display field, collapsing blanks to None so the client can skip it."""
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _identity_from_internal(spool) -> SlotSpoolIdentity:
+    """Display identity from an internal-inventory ``Spool`` row."""
+    return SlotSpoolIdentity(
+        brand=_clean(spool.brand),
+        material=_clean(spool.material),
+        subtype=_clean(spool.subtype),
+        color_name=_clean(spool.color_name),
+        rgba=_clean(spool.rgba),
+    )
+
+
+def _identity_from_spoolman(spool_dict: dict) -> SlotSpoolIdentity | None:
+    """Display identity from a raw Spoolman spool dict, or None if unreadable.
+
+    Goes through ``_map_spoolman_spool`` rather than reading the dict directly:
+    brand lives on the nested vendor, subtype is the filament name with its
+    material prefix stripped, and ``color_name`` has a three-step read order
+    Spoolman itself has no field for. Re-deriving any of that here is how the
+    two modes would drift apart.
+    """
+    # Broad on purpose. This is a name for a dropdown, and the caller is on the
+    # dispatch path -- ``compute_deficit_for_queue_item`` runs it before every
+    # queue start. ``_map_spoolman_spool`` walks a dozen nested fields off the
+    # wire (``filament.vendor.name``, ``extra.tag``, ``filament.color_hex``) and
+    # any of them arriving as the wrong type raises AttributeError rather than
+    # ValueError, so a narrow catch here would turn one malformed Spoolman
+    # record into a failed dispatch. Losing the name costs a fallback to
+    # telemetry, which is what every slot did before this existed.
+    try:
+        mapped = _map_spoolman_spool(spool_dict)
+    except Exception as exc:  # noqa: BLE001 - display-only, must never block a dispatch
+        logger.debug(
+            "Spoolman spool %r has no usable display identity: %s",
+            spool_dict.get("id") if isinstance(spool_dict, dict) else spool_dict,
+            exc,
+        )
+        return None
+    # Spoolman has no colour-name field, so `_map_spoolman_spool` synthesises
+    # one from the subtype when nothing is stored -- which reads fine in an
+    # inventory list ("PLA Basic") and badly as a colour ("Devil Design PLA
+    # Basic (Basic)"). Drop it and let the client's catalogue lookup name the
+    # hex, which is what an unnamed slot got before this existed.
+    color_name = None if mapped.get("color_name_is_synthesized") else _clean(mapped.get("color_name"))
+    return SlotSpoolIdentity(
+        brand=_clean(mapped.get("brand")),
+        material=_clean(mapped.get("material")),
+        subtype=_clean(mapped.get("subtype")),
+        color_name=color_name,
+        rgba=_clean(mapped.get("rgba")),
+    )
+
+
+@dataclass(frozen=True)
 class SlotMaterial:
     """One inventory-bound AMS slot: what's in it, how much is left, which side."""
 
@@ -314,6 +424,9 @@ class SlotMaterial:
     material_key: str
     remaining_grams: float
     extruder: int
+    # Display-only; see SlotSpoolIdentity. None when the binding resolves to a
+    # spool we cannot describe, which callers render from telemetry as before.
+    spool: SlotSpoolIdentity | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -323,6 +436,7 @@ class SlotMaterial:
             "material_key": self.material_key,
             "remaining_g": self.remaining_grams,
             "extruder": self.extruder,
+            "spool": self.spool.to_dict() if self.spool else None,
         }
 
 
@@ -344,7 +458,13 @@ async def build_slot_materials(db: AsyncSession, printer_id: int) -> list[SlotMa
     _, ams_extruder_map, is_dual = await _get_printer_backup_context(printer_id)
     materials: list[SlotMaterial] = []
 
-    def _append(ams_id: int, tray_id: int, material_key: str, remaining: float) -> None:
+    def _append(
+        ams_id: int,
+        tray_id: int,
+        material_key: str,
+        remaining: float,
+        spool: SlotSpoolIdentity | None = None,
+    ) -> None:
         materials.append(
             SlotMaterial(
                 ams_id=ams_id,
@@ -353,6 +473,7 @@ async def build_slot_materials(db: AsyncSession, printer_id: int) -> list[SlotMa
                 material_key=material_key,
                 remaining_grams=remaining,
                 extruder=_extruder_side_for_ams(ams_id, ams_extruder_map, is_dual),
+                spool=spool,
             )
         )
 
@@ -391,7 +512,13 @@ async def build_slot_materials(db: AsyncSession, printer_id: int) -> list[SlotMa
                     remaining = max(0.0, float(total) - float(used))
             if remaining is None:
                 continue
-            _append(sa.ams_id, sa.tray_id, _material_identity_spoolman(spool_dict), remaining)
+            _append(
+                sa.ams_id,
+                sa.tray_id,
+                _material_identity_spoolman(spool_dict),
+                remaining,
+                _identity_from_spoolman(spool_dict),
+            )
         return materials
 
     internal_all = await db.execute(
@@ -412,6 +539,7 @@ async def build_slot_materials(db: AsyncSession, printer_id: int) -> list[SlotMa
             assignment.tray_id,
             _material_identity_internal(spool),
             max(0.0, label_weight - weight_used),
+            _identity_from_internal(spool),
         )
     return materials
 

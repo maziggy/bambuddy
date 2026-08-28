@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import mm
 
 from backend.app.services.label_renderer import LabelData, render_labels
 
@@ -96,6 +100,37 @@ def test_sheet_template_paginates_when_count_exceeds_one_sheet():
     assert len(two) > len(one)
 
 
+def test_sheet_starting_position_offsets_first_label():
+    with patch("backend.app.services.label_renderer._draw_label") as draw_label:
+        render_labels("avery_5160", [_sample(1)], starting_position=8)
+
+    first_call = draw_label.call_args_list[0].args
+    assert first_call[1] == pytest.approx(4.76 * mm + 66.675 * mm + 3.175 * mm)
+    assert first_call[2] == pytest.approx(letter[1] - 12.7 * mm - 3 * 25.4 * mm)
+
+
+def test_sheet_starting_position_resets_on_second_page():
+    data = [_sample(i) for i in range(1, 25)]
+    with patch("backend.app.services.label_renderer._draw_label") as draw_label:
+        render_labels("avery_5160", data, starting_position=8)
+
+    last_first_page_call = draw_label.call_args_list[22].args
+    first_second_page_call = draw_label.call_args_list[23].args
+    assert last_first_page_call[1] == pytest.approx(4.76 * mm + 2 * (66.675 * mm + 3.175 * mm))
+    assert last_first_page_call[2] == pytest.approx(letter[1] - 12.7 * mm - 10 * 25.4 * mm)
+    assert first_second_page_call[1] == pytest.approx(4.76 * mm)
+    assert first_second_page_call[2] == pytest.approx(letter[1] - 12.7 * mm - 25.4 * mm)
+
+
+@pytest.mark.parametrize(
+    ("template", "starting_position"),
+    (("avery_5160", 0), ("avery_5160", 31), ("avery_l7160", 22), ("box_62x29", 2)),
+)
+def test_invalid_starting_position_raises(template, starting_position):
+    with pytest.raises(ValueError, match="Starting position"):
+        render_labels(template, [_sample()], starting_position=starting_position)
+
+
 def test_qr_payload_is_present_in_pdf_stream():
     """The QR encodes the deeplink URL via embedded PNG; we can at least
     sanity-check that the PDF contains an image stream when a deeplink is set
@@ -170,6 +205,17 @@ def _render_uncompressed(template, data, monochrome=False):
         c.showPage()
     c.save()
     return buf.getvalue()
+
+
+def test_transparent_swatch_does_not_apply_its_alpha_to_qr():
+    pdf = _render_uncompressed(
+        "box_62x29",
+        [_sample(rgba="FF000000", deeplink_url="https://example.test/inventory?spool=1")],
+    )
+
+    alpha_start = pdf.index(b"/gRLs0 gs")
+    qr_draw = pdf.index(b" Do", alpha_start)
+    assert b"Q" in pdf[alpha_start:qr_draw]
 
 
 def test_ams_template_actually_renders_text():

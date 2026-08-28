@@ -935,3 +935,289 @@ class TestBuildSlotMaterials:
                 p.stop()
 
         assert slots == []
+
+
+class TestSlotSpoolIdentity:
+    """The display half of ``build_slot_materials``.
+
+    A tray record has no brand field, and ``tray_sub_brands`` stays empty for
+    anything that isn't a Bambu spool, so a client naming a slot from telemetry
+    alone has only the type and a colour hex — which it resolves against
+    Bambu's own colour catalogue. The reporter's Devil Design PLA Basic Orange
+    therefore read as "PLA (Sunflower Yellow)" in the print dialog while the
+    printer card, which reads the assignment, named it correctly.
+
+    Descriptive only: nothing here takes part in matching, which stays on the
+    printer's telemetry so the dialog and the dispatcher cannot disagree.
+    """
+
+    @pytest.mark.asyncio
+    async def test_internal_mode_carries_what_the_printer_cannot_say(self, db_session, printer_factory):
+        """Brand and subtype exist nowhere in the telemetry for a third-party spool."""
+        from backend.app.services.filament_deficit import build_slot_materials
+
+        printer = await printer_factory(model="H2C")
+        spool = Spool(
+            brand="Devil Design",
+            material="PLA",
+            subtype="Basic",
+            color_name="Orange",
+            rgba="FEC600FF",
+            label_weight=1000,
+            weight_used=0.0,
+        )
+        db_session.add(spool)
+        await db_session.commit()
+        await db_session.refresh(spool)
+        await _assign(db_session, printer_id=printer.id, spool_id=spool.id, ams_id=2, tray_id=0)
+
+        patches = TestFilamentDeficitBackupAware._patch_status(printer_id=printer.id, backup_on=False, model="H2C")
+        for p in patches:
+            p.start()
+        try:
+            slots = await build_slot_materials(db_session, printer.id)
+        finally:
+            for p in patches:
+                p.stop()
+
+        assert len(slots) == 1
+        identity = slots[0].spool
+        assert identity is not None
+        assert identity.to_dict() == {
+            "brand": "Devil Design",
+            "material": "PLA",
+            "subtype": "Basic",
+            # The hex is FEC600, which is also Bambu's "Sunflower Yellow" —
+            # naming this slot from the hex is exactly the bug.
+            "color_name": "Orange",
+            "rgba": "FEC600FF",
+        }
+
+    @pytest.mark.asyncio
+    async def test_blank_fields_become_null_so_the_client_can_fall_back(self, db_session, printer_factory):
+        """Per-field, not all-or-nothing: an unnamed colour still falls back to
+        the catalogue lookup while the brand and subtype come from the spool."""
+        from backend.app.services.filament_deficit import build_slot_materials
+
+        printer = await printer_factory(model="H2C")
+        spool = Spool(
+            brand="  ",
+            material="PLA",
+            subtype="Silk+",
+            color_name=None,
+            rgba="5F6367FF",
+            label_weight=1000,
+            weight_used=0.0,
+        )
+        db_session.add(spool)
+        await db_session.commit()
+        await db_session.refresh(spool)
+        await _assign(db_session, printer_id=printer.id, spool_id=spool.id, ams_id=0, tray_id=2)
+
+        patches = TestFilamentDeficitBackupAware._patch_status(printer_id=printer.id, backup_on=False, model="H2C")
+        for p in patches:
+            p.start()
+        try:
+            slots = await build_slot_materials(db_session, printer.id)
+        finally:
+            for p in patches:
+                p.stop()
+
+        identity = slots[0].spool
+        assert identity is not None
+        assert identity.brand is None
+        assert identity.color_name is None
+        assert identity.subtype == "Silk+"
+
+    @pytest.mark.asyncio
+    async def test_spoolman_mode_reaches_the_same_shape(self, db_session, printer_factory):
+        """Parity (#1390): brand off the nested vendor, subtype from the
+        filament name with its material prefix stripped. Derived through
+        ``_map_spoolman_spool`` rather than re-read here, which is what stops
+        the two inventory modes drifting apart."""
+        from unittest.mock import AsyncMock
+
+        from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+        from backend.app.services.filament_deficit import build_slot_materials
+
+        printer = await printer_factory(model="H2C")
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        db_session.add(SpoolmanSlotAssignment(printer_id=printer.id, ams_id=2, tray_id=0, spoolman_spool_id=42))
+        await db_session.commit()
+
+        client = AsyncMock()
+        client.get_spool = AsyncMock(
+            return_value={
+                "id": 42,
+                "remaining_weight": 800.0,
+                "extra": {"bambu_color_name": '"Orange"'},
+                "filament": {
+                    "id": 7,
+                    "name": "PLA Basic",
+                    "material": "PLA",
+                    "color_hex": "FEC600",
+                    "weight": 1000,
+                    "vendor": {"id": 3, "name": "Devil Design"},
+                },
+            }
+        )
+
+        patches = TestFilamentDeficitBackupAware._patch_status(printer_id=printer.id, backup_on=False, model="H2C")
+        for p in patches:
+            p.start()
+        try:
+            with patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=client),
+            ):
+                slots = await build_slot_materials(db_session, printer.id)
+        finally:
+            for p in patches:
+                p.stop()
+
+        identity = slots[0].spool
+        assert identity is not None
+        assert identity.brand == "Devil Design"
+        assert identity.material == "PLA"
+        assert identity.subtype == "Basic"
+        assert identity.color_name == "Orange"
+        assert identity.rgba == "FEC600FF"
+
+    @pytest.mark.asyncio
+    async def test_spoolman_synthesised_colour_name_is_dropped(self, db_session, printer_factory):
+        """Spoolman has no colour-name field, so `_map_spoolman_spool` falls
+        back to the subtype when nothing is stored. That reads fine in an
+        inventory list and badly as a colour — "Devil Design PLA Basic
+        (Basic)". Withheld, so the client names the hex as it did before."""
+        from unittest.mock import AsyncMock
+
+        from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+        from backend.app.services.filament_deficit import build_slot_materials
+
+        printer = await printer_factory(model="H2C")
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        db_session.add(SpoolmanSlotAssignment(printer_id=printer.id, ams_id=0, tray_id=0, spoolman_spool_id=9))
+        await db_session.commit()
+
+        client = AsyncMock()
+        # No extra.bambu_color_name and no filament.color_name — the two places
+        # a real one can come from.
+        client.get_spool = AsyncMock(
+            return_value={
+                "id": 9,
+                "remaining_weight": 500.0,
+                "filament": {
+                    "id": 2,
+                    "name": "PLA Basic",
+                    "material": "PLA",
+                    "color_hex": "FEC600",
+                    "vendor": {"id": 1, "name": "Devil Design"},
+                },
+            }
+        )
+
+        patches = TestFilamentDeficitBackupAware._patch_status(printer_id=printer.id, backup_on=False, model="H2C")
+        for p in patches:
+            p.start()
+        try:
+            with patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=client),
+            ):
+                slots = await build_slot_materials(db_session, printer.id)
+        finally:
+            for p in patches:
+                p.stop()
+
+        identity = slots[0].spool
+        assert identity is not None
+        assert identity.subtype == "Basic"
+        assert identity.color_name is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"id": 1, "remaining_weight": 500.0, "filament": "PLA"},
+            {"id": 1, "remaining_weight": 500.0, "filament": {"id": 2}, "extra": "nope"},
+            {"id": 1, "remaining_weight": 500.0, "filament": {"id": 2}, "extra": {"tag": 12345}},
+            {"id": 1, "remaining_weight": 500.0, "filament": {"id": 2, "color_hex": 255}},
+            {"id": 1, "remaining_weight": 500.0, "filament": {"id": 2, "vendor": ["x"]}},
+        ],
+        ids=["filament-not-a-dict", "extra-not-a-dict", "tag-not-a-str", "hex-not-a-str", "vendor-not-a-dict"],
+    )
+    async def test_malformed_spoolman_payload_cannot_break_a_dispatch(self, db_session, printer_factory, payload):
+        """Naming a slot must never cost a queue start.
+
+        ``build_slot_materials`` is on the dispatch path — every queue start
+        runs it through ``compute_deficit_for_queue_item``. The mapper walks a
+        dozen nested wire fields, and each of these arrives as the wrong type
+        and raises AttributeError, not ValueError.
+        """
+        from unittest.mock import AsyncMock
+
+        from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+        from backend.app.services.filament_deficit import build_slot_materials
+
+        printer = await printer_factory(model="X1C")
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        db_session.add(SpoolmanSlotAssignment(printer_id=printer.id, ams_id=0, tray_id=0, spoolman_spool_id=1))
+        await db_session.commit()
+
+        client = AsyncMock()
+        client.get_spool = AsyncMock(return_value=payload)
+
+        patches = TestFilamentDeficitBackupAware._patch_status(printer_id=printer.id, backup_on=False, model="X1C")
+        for p in patches:
+            p.start()
+        try:
+            with patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=client),
+            ):
+                slots = await build_slot_materials(db_session, printer.id)
+        finally:
+            for p in patches:
+                p.stop()
+
+        # The slot keeps its grams — only the name is lost.
+        assert len(slots) == 1
+        assert slots[0].remaining_grams == 500.0
+        assert slots[0].spool is None
+
+    @pytest.mark.asyncio
+    async def test_unreadable_spoolman_spool_keeps_the_slot_but_drops_the_name(self, db_session, printer_factory):
+        """A spool we cannot describe must not cost the slot its place in the
+        pool — the backup accounting still needs its grams. The client falls
+        back to telemetry for the name, exactly as before this existed."""
+        from unittest.mock import AsyncMock
+
+        from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+        from backend.app.services.filament_deficit import build_slot_materials
+
+        printer = await printer_factory(model="X1C")
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        db_session.add(SpoolmanSlotAssignment(printer_id=printer.id, ams_id=0, tray_id=0, spoolman_spool_id=5))
+        await db_session.commit()
+
+        client = AsyncMock()
+        # No id — `_map_spoolman_spool` raises, and only the naming is lost.
+        client.get_spool = AsyncMock(return_value={"remaining_weight": 500.0, "filament": {"id": 1}})
+
+        patches = TestFilamentDeficitBackupAware._patch_status(printer_id=printer.id, backup_on=False, model="X1C")
+        for p in patches:
+            p.start()
+        try:
+            with patch(
+                "backend.app.services.spoolman.get_spoolman_client",
+                AsyncMock(return_value=client),
+            ):
+                slots = await build_slot_materials(db_session, printer.id)
+        finally:
+            for p in patches:
+                p.stop()
+
+        assert len(slots) == 1
+        assert slots[0].remaining_grams == 500.0
+        assert slots[0].spool is None
+        assert slots[0].to_dict()["spool"] is None

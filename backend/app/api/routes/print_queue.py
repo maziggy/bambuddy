@@ -50,6 +50,7 @@ from backend.app.services.print_batch import (
     dispatch_remaining,
     load_progress,
     refresh_batch_status,
+    refresh_batch_status_for_item,
 )
 from backend.app.services.print_cost_estimate import estimate_queue_source_cost
 from backend.app.utils.printer_models import (
@@ -199,6 +200,65 @@ def _assert_can_queue_library_file(library_file: LibraryFile, current_user: User
         and library_file.created_by_id != current_user.id
     ):
         raise HTTPException(404, "Library file not found")
+
+
+async def _is_orders_last_source(db: AsyncSession, item: PrintQueueItem) -> bool:
+    """True when deleting *item* would leave an order owing runs it can't queue.
+
+    Dispatch produces the runs an order still owes by cloning an existing
+    queue item for the same plate — that row is the only record of the printer
+    target, AMS mapping and print options the user chose. Delete the last one
+    while the plate still has a target and the order is stranded: it goes on
+    reporting work outstanding with no way left to produce it (#2960).
+    """
+    if item.batch_id is None:
+        return False
+
+    # A cancelled order can never dispatch again, so nothing about it can be
+    # stranded and its leftover rows must stay deletable — tidying up after a
+    # cancel is the most likely reason anyone deletes them.
+    status = (await db.execute(select(PrintBatch.status).where(PrintBatch.id == item.batch_id))).scalar_one_or_none()
+    if status == "cancelled":
+        return False
+
+    plate_scope = (
+        PrintBatchPlate.plate_id == item.plate_id if item.plate_id is not None else PrintBatchPlate.plate_id.is_(None)
+    )
+    # first(), not scalar_one_or_none(): a UNIQUE(batch_id, plate_id) does not
+    # constrain NULL plate_ids on either dialect, and a duplicate whole-file
+    # row must not turn a delete into a 500.
+    target = (
+        (
+            await db.execute(
+                select(PrintBatchPlate.quantity_target)
+                .where(PrintBatchPlate.batch_id == item.batch_id)
+                .where(plate_scope)
+                .order_by(PrintBatchPlate.quantity_target.desc())
+                .limit(1)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    # No target row: a grouping, or a plate assigned into the order by hand.
+    # A target of 0 is legal and means the plate is not wanted. Neither owes
+    # anything, so neither can be stranded.
+    if not target:
+        return False
+
+    item_scope = (
+        PrintQueueItem.plate_id == item.plate_id if item.plate_id is not None else PrintQueueItem.plate_id.is_(None)
+    )
+    survivor = (
+        await db.execute(
+            select(PrintQueueItem.id)
+            .where(PrintQueueItem.batch_id == item.batch_id)
+            .where(item_scope)
+            .where(PrintQueueItem.id != item.id)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return survivor is None
 
 
 async def _assert_can_dispatch_batch_sources(db: AsyncSession, batch_id: int, current_user: User | None) -> None:
@@ -1743,6 +1803,7 @@ async def _build_batch_response(
         has_targets=progress.has_targets,
         target_count=progress.target,
         remaining_count=progress.remaining,
+        dispatchable_count=progress.dispatchable_remaining,
         actual_cost=progress.actual_cost,
         estimated_remaining_cost=progress.estimated_remaining_cost,
         filament_used_grams=progress.filament_used_grams,
@@ -1764,6 +1825,7 @@ async def _build_batch_response(
                 estimated_remaining_cost=plate.estimated_remaining_cost,
                 filament_used_grams=plate.filament_used_grams,
                 print_time_seconds=plate.print_time_seconds,
+                can_dispatch=plate.can_dispatch,
             )
             for plate in progress.plates
         ],
@@ -1992,7 +2054,15 @@ async def delete_queue_item(
         )
     ),
 ):
-    """Remove an item from the queue."""
+    """Remove an item from the queue.
+
+    An order's last surviving run for a plate is cancelled instead of deleted
+    (#2960). The row is what a later dispatch clones, so removing it would
+    leave the order reporting work outstanding that nothing could ever
+    produce. A completed run is exempt: it is the record of something that was
+    actually made, and rewriting it as cancelled would falsify the order's
+    progress.
+    """
     user, can_modify_all = auth_result
 
     result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))
@@ -2008,13 +2078,22 @@ async def delete_queue_item(
     if item.status == "printing":
         raise HTTPException(400, "Cannot delete item that is currently printing")
 
+    keep_as_cancelled = item.status != "completed" and await _is_orders_last_source(db, item)
+
     await release_budget_reservation(
         db,
         source_type="print_queue",
         source_id=item.id,
         status="released",
     )
-    await db.delete(item)
+    if keep_as_cancelled:
+        item.status = "cancelled"
+        await db.flush()
+        # The order may have been sitting on "completed" if this run's target
+        # was met by it; cancelling reopens it.
+        await refresh_batch_status_for_item(db, item.id)
+    else:
+        await db.delete(item)
     await db.commit()
 
     # Stop an in-flight preheat for this item: the dispatch coroutine is
@@ -2023,8 +2102,15 @@ async def delete_queue_item(
 
     _scheduler.notify_dispatch_cancelled(item_id)
 
+    if keep_as_cancelled:
+        logger.info("Kept queue item %s as cancelled — last source for its batch order plate", item_id)
+        return {
+            "message": "Item cancelled rather than deleted: it is the only run the order can re-queue this plate from",
+            "deleted": False,
+        }
+
     logger.info("Deleted queue item %s", item_id)
-    return {"message": "Queue item deleted"}
+    return {"message": "Queue item deleted", "deleted": True}
 
 
 @router.post("/reorder")

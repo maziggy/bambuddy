@@ -25,6 +25,52 @@ from backend.app.utils.safe_path import PathTraversalError, safe_join_under
 logger = logging.getLogger(__name__)
 
 
+# Bed temperature is not one key in a BambuStudio project. Every plate type has
+# its own per-filament array, and the plate actually fitted is named separately
+# in ``curr_bed_type`` -- so reading a bed temperature means picking the array
+# the plate points at. Keys and mapping are BambuStudio's own
+# ``get_bed_temp_1st_layer_key`` / ``get_bed_temp_key`` (PrintConfig.hpp), and
+# the plate names are the ``curr_bed_type`` enum values (PrintConfig.cpp).
+# First-layer temperature first: that is what the printer heats to before the
+# print starts, which is what preheat is trying to reach.
+#
+# ``Default Plate`` is deliberately absent -- BambuStudio maps it to no key at
+# all, so there is nothing to read and guessing a plate would invent a bed
+# temperature the slice never specified.
+_BED_TEMP_KEYS: dict[str, tuple[str, str]] = {
+    "Cool Plate": ("cool_plate_temp_initial_layer", "cool_plate_temp"),
+    "Engineering Plate": ("eng_plate_temp_initial_layer", "eng_plate_temp"),
+    "High Temp Plate": ("hot_plate_temp_initial_layer", "hot_plate_temp"),
+    "Textured PEI Plate": ("textured_plate_temp_initial_layer", "textured_plate_temp"),
+    "Supertack Plate": ("supertack_plate_temp_initial_layer", "supertack_plate_temp"),
+}
+
+# Fallback for a config that names no plate: the Orca/PrusaSlicer spelling,
+# which is a single value rather than a per-plate array.
+_GENERIC_BED_TEMP_KEYS = ("bed_temperature_initial_layer", "bed_temperature")
+
+
+def _plate_temperature(val) -> int | None:
+    """Bed temperature from one plate-temperature entry, or None.
+
+    The plate arrays carry one entry per filament in the project, and a 0 means
+    that filament cannot print on this plate. The bed only has one temperature,
+    so the print runs at the highest its filaments ask for -- taking entry 0 the
+    way the neighbouring scalar settings do would store a 0 for any project
+    whose first filament is not one this plate is heated for.
+    """
+    values = val if isinstance(val, list) else [val]
+    temps = []
+    for entry in values:
+        if isinstance(entry, bool) or not isinstance(entry, (int, float, str)):
+            continue
+        try:
+            temps.append(int(float(entry)))
+        except (TypeError, ValueError):
+            continue
+    return max(temps) if temps else None
+
+
 def _copy_and_fsync(src: Path, dst: Path, chunk_size: int = 1024 * 1024) -> None:
     """Copy src to dst with an explicit chunked read/write and fsync the dst.
 
@@ -498,14 +544,21 @@ class ThreeMFParser:
                 elif isinstance(val, (int, float, str)):
                     self.metadata["nozzle_diameter"] = float(val)
 
-            # Bed temperature - first layer or regular
-            for key in ["bed_temperature_initial_layer", "bed_temperature"]:
-                if key in data:
-                    val = data[key]
-                    if isinstance(val, list) and val:
-                        self.metadata["bed_temperature"] = int(float(val[0]))
-                    elif isinstance(val, (int, float, str)):
-                        self.metadata["bed_temperature"] = int(float(val))
+            # Bed temperature, for the plate this project is sliced for. This
+            # used to look for `bed_temperature` alone, a key BambuStudio does
+            # not write -- so every archive from a Bambu slice stored NULL, and
+            # preheat fell back to a configured bed temperature on every job
+            # (#2989). Orca-exported 3MFs keep working through the generic keys.
+            bed_type = str(data.get("curr_bed_type") or "").strip()
+            for key in (*_BED_TEMP_KEYS.get(bed_type, ()), *_GENERIC_BED_TEMP_KEYS):
+                if key not in data:
+                    continue
+                temperature = _plate_temperature(data[key])
+                # A plate array of all zeros means no filament in the project
+                # prints on this plate, which is not a bed temperature -- keep
+                # looking rather than recording a 0 that reads as "cold bed".
+                if temperature:
+                    self.metadata["bed_temperature"] = temperature
                     break
 
             # Nozzle temperature

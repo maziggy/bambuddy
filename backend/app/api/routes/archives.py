@@ -1814,6 +1814,25 @@ async def toggle_favorite(
     return archive
 
 
+async def _spoolman_owns_cost(db: AsyncSession) -> bool:
+    """True when per-spool pricing lives in Spoolman rather than in our tables.
+
+    Both cost recalculations below rebuild a print's cost from
+    ``SpoolUsageHistory``, and fall back to the built-in Filament catalogue or
+    the global default rate when there are no rows for it. In Spoolman mode
+    there are never any rows -- the built-in usage tracker is handed
+    ``spoolman_owns_usage`` at print start and writes none -- so that fallback
+    is not a recalculation, it is a downgrade: it would overwrite the
+    Spoolman-priced figure ``spoolman_tracking`` recorded at completion with a
+    default-rate one, and the per-slot spool resolution it came from is
+    transient and cannot be rebuilt here (#2591).
+    """
+    from backend.app.api.routes.settings import get_setting
+
+    setting = await get_setting(db, "spoolman_enabled")
+    return bool(setting) and setting.lower() == "true"
+
+
 @router.post("/{archive_id}/rescan", response_model=ArchiveResponse)
 async def rescan_archive(
     archive_id: int,
@@ -1884,6 +1903,10 @@ async def rescan_archive(
             if untracked_grams > 0 and default_cost_per_kg > 0:
                 total_cost += (untracked_grams / 1000.0) * default_cost_per_kg
             archive.cost = float(Decimal(str(total_cost)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+        elif await _spoolman_owns_cost(db) and archive.cost is not None:
+            # Keep what completion priced from the linked spools. A rescan
+            # re-reads the 3MF's metadata; it learns nothing about spools.
+            pass
         else:
             primary_type = archive.filament_type.split(",")[0].strip()
             filament_result = await db.execute(select(Filament).where(Filament.type == primary_type).limit(1))
@@ -1943,7 +1966,10 @@ async def recalculate_all_costs(
         if row[0] is not None and row[1] is not None and row[1] > 0
     }
 
+    spoolman_owns = await _spoolman_owns_cost(db)
+
     updated = 0
+    preserved = 0
     for archive in archives:
         usage = cost_map.get(archive.id)
         if usage is not None:
@@ -1965,6 +1991,11 @@ async def recalculate_all_costs(
             fallback_cost = usage_result.scalar()
             if fallback_cost is not None and fallback_cost > 0:
                 new_cost = round(fallback_cost, 2)
+            elif spoolman_owns and archive.cost is not None:
+                # Priced from the linked Spoolman spools at completion; there is
+                # nothing better to recompute it from here (#2591).
+                new_cost = None
+                preserved += 1
             elif archive.filament_used_grams and archive.filament_type:
                 primary_type = archive.filament_type.split(",")[0].strip()
                 cost_per_kg = filaments.get(primary_type, default_cost_per_kg)
@@ -1976,7 +2007,10 @@ async def recalculate_all_costs(
             updated += 1
 
     await db.commit()
-    return {"message": f"Recalculated costs for {updated} archives", "updated": updated}
+    message = f"Recalculated costs for {updated} archives"
+    if preserved:
+        message += f"; kept {preserved} priced from Spoolman"
+    return {"message": message, "updated": updated, "preserved": preserved}
 
 
 @router.post("/rescan-all")

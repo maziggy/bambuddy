@@ -976,7 +976,13 @@ class BambuFTPClient:
                     logger.debug("Post-error SIZE check failed: %s", size_err)
                     server_size = None
                 if server_size is not None and server_size == file_size:
-                    logger.warning(
+                    # INFO, not WARNING: a 426 whose bytes verify is the normal
+                    # way Bambu FTPS ends a transfer, not a fault. It fired 54
+                    # times in one support bundle and every one was followed by
+                    # a completed upload, which buried the 26 handshake failures
+                    # in the same log that actually cost the user two prints
+                    # (#2987). The unverified branch below is still an error.
+                    logger.info(
                         "FTP STOR returned %s for %s but file is intact on the "
                         "printer (%s bytes match) — proceeding: %s",
                         type(e).__name__,
@@ -1110,7 +1116,8 @@ class BambuFTPClient:
                     logger.debug("Post-error SIZE check failed: %s", size_err)
                     server_size = None
                 if server_size is not None and server_size == len(data):
-                    logger.warning(
+                    # INFO for the same reason as upload_file above (#2987).
+                    logger.info(
                         "FTP STOR returned %s for %s but file is intact on the "
                         "printer (%s bytes match) — proceeding: %s",
                         type(e).__name__,

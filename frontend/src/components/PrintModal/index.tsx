@@ -352,6 +352,10 @@ export function PrintModal({
       queryKey: ['printer-inventory-remain', printerId],
       queryFn: () => api.getInventoryRemain(printerId),
       staleTime: 30 * 1000,
+      // Same key, same reason as FilamentMapping's copy — see the note there.
+      // Concurrent mounts dedupe, so opening the dialog costs one fetch per
+      // printer however many plate panels are on screen.
+      refetchOnMount: 'always',
       enabled: selectedPrinters.length > 0,
     })),
   });

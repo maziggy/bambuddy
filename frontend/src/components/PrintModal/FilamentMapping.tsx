@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Circle, Check, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Palette } from 'lucide-react';
 import { api } from '../../api/client';
+import type { SlotSpoolIdentity } from '../../api/client';
 import { useFilamentMapping } from '../../hooks/useFilamentMapping';
 import { getGlobalTrayId, effectivePreferLowest, FTS_INLET_SIDE } from '../../utils/amsHelpers';
 import { disambiguateColorNames, getColorName } from '../../utils/colors';
@@ -112,6 +113,14 @@ export function FilamentMapping({
     queryFn: () => api.getInventoryRemain(printerId),
     enabled: !!printerId,
     staleTime: 30 * 1000,
+    // Fresh on every open, cached while open. This payload now names the
+    // slots, and a spool assigned moments ago would otherwise keep its old
+    // name for the rest of the stale window. Doing it here rather than
+    // invalidating the key from each of the eighteen places a binding or a
+    // spool can change: half of those are internal-inventory paths and half
+    // are Spoolman ones, and covering some of them would make freshness
+    // depend on which inventory mode you run.
+    refetchOnMount: 'always',
   });
   const inventoryByTrayId = useMemo(() => {
     if (!inventoryRemain?.inventory_remain_g) return undefined;
@@ -122,13 +131,34 @@ export function FilamentMapping({
     });
     return map;
   }, [inventoryRemain]);
+  // The other half of the same payload: what Bambuddy has bound to each slot,
+  // so a slot reads as the spool the operator assigned rather than as whatever
+  // the printer can say about it. A third-party spool reports no sub-brand at
+  // all and its colour hex resolves against Bambu's catalogue, so without this
+  // the dialog named slots differently from the printer card.
+  const slotSpools = useMemo(() => {
+    const slots = inventoryRemain?.slot_materials;
+    if (!slots?.length) return undefined;
+    const map = new Map<number, SlotSpoolIdentity>();
+    slots.forEach((slot) => {
+      if (slot.spool) map.set(slot.global_tray_id, slot.spool);
+    });
+    return map.size > 0 ? map : undefined;
+  }, [inventoryRemain]);
   const gatedPreferLowest = effectivePreferLowest(
     settings?.prefer_lowest_filament,
     printerStatus?.ams_filament_backup,
   );
 
   const { loadedFilaments, filamentComparison, hasTypeMismatch, hasColorMismatch } =
-    useFilamentMapping(filamentReqs, printerStatus, manualMappings, gatedPreferLowest, inventoryByTrayId);
+    useFilamentMapping(
+      filamentReqs,
+      printerStatus,
+      manualMappings,
+      gatedPreferLowest,
+      inventoryByTrayId,
+      slotSpools,
+    );
 
   // Per-slot sub-brand + material-disambiguated colour labels (#1718). Same
   // shared hook the model-mode FilamentOverride uses so both panels render
@@ -508,7 +538,7 @@ export function FilamentMapping({
                       const ftsBadge = ftsInlet == null ? '' : ` [${FTS_INLET_SIDE[ftsInlet]}]`;
                       return (
                         <option key={f.globalTrayId} value={f.globalTrayId} className="bg-bambu-dark text-white">
-                          {f.label}: {f.traySubBrands || f.type} ({f.colorName}){remainingLabel}{ftsBadge}
+                          {f.label}: {f.spoolName || f.traySubBrands || f.type} ({f.colorName}){remainingLabel}{ftsBadge}
                         </option>
                       );
                   })}

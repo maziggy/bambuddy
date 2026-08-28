@@ -330,6 +330,7 @@ async def init_db():
         spool,
         spool_assignment,
         spool_catalog,
+        spool_filament_preset,
         spool_k_profile,
         spool_usage_history,
         spoolbuddy_device,
@@ -1316,6 +1317,251 @@ async def _migrate_add_print_archive_cost_center(conn) -> None:
     )
 
 
+# Historical failure-reason labels, mapped to the canonical key that replaced
+# them (issue #2974).
+#
+# Three writers used to put three different spellings of one cause into
+# ``failure_reason``: the backend wrote English display labels, older versions
+# of the archive editor wrote the *translated* label in whatever locale that
+# user was running, and two stale-archive paths wrote English prose sentences.
+# The Failure Analysis widget groups on the raw column, so one real cause could
+# occupy several buckets -- measured on a live install before this landed: 91
+# rows reading "User cancelled" beside 1 reading "userCancelled", which in an
+# English UI rendered as the same words twice with different counts.
+#
+# This is deliberately a FROZEN SNAPSHOT rather than something derived from the
+# locale files at run time. It maps values as they were written historically; if
+# a translation is reworded tomorrow, the old string is still what sits in the
+# database and still has to map. Regenerating it from ``en.ts`` and friends
+# would silently stop recognising the very rows it exists to convert.
+#
+# Every label here resolves to exactly one key -- verified across all 14 locales
+# with no collisions -- so the conversion is exact rather than a best guess. A
+# value that is NOT in this map (free text from an older build, a translation
+# since edited) is deliberately left alone: it already renders through the
+# ``defaultValue`` fallback in both the editor and the Statistics breakdown, and
+# guessing at it would be worse than leaving one honest string in its own bucket.
+_LEGACY_FAILURE_REASON_LABELS: dict[str, str] = {
+    "Adhesion failure": "adhesionFailure",
+    "Agotamiento del filamento": "filamentRunout",
+    "Alabeo": "warping",
+    "Altro": "other",
+    "Annullato dall'utente": "userCancelled",
+    "Annulé par l'utilisateur": "userCancelled",
+    "Aucune mise à jour d'état reçue": "noStatusUpdate",
+    "Autre": "other",
+    "Az ekstrüzyon": "underExtrusion",
+    "Bico entupido": "cloggedNozzle",
+    "Boquilla obstruida": "cloggedNozzle",
+    "Buse bouchée": "cloggedNozzle",
+    "Bükülme": "warping",
+    "Cancelada por el usuario": "userCancelled",
+    "Cancelado pelo usuário": "userCancelled",
+    "Clogged nozzle": "cloggedNozzle",
+    "Corte de corriente": "powerFailure",
+    "Coupure courant": "powerFailure",
+    "Deformazione": "warping",
+    "Deslocamento de camada": "layerShift",
+    "Desplazamiento de capa": "layerShift",
+    "Diğer": "other",
+    "Door gebruiker geannuleerd": "userCancelled",
+    "Draadvorming": "stringing",
+    "Durum güncellemesi alınmadı": "noStatusUpdate",
+    "Décalage de couche": "layerShift",
+    "Défaut d'adhésion": "adhesionFailure",
+    "Empenamento": "warping",
+    "Espagueti / Desprendido": "spaghettiDetached",
+    "Fadenziehen": "stringing",
+    "Falha de adesão": "adhesionFailure",
+    "Falha de energia": "powerFailure",
+    "Fallimento adesione": "adhesionFailure",
+    "Fallo de adhesión": "adhesionFailure",
+    "Filament aufgebraucht": "filamentRunout",
+    "Filament bitti": "filamentRunout",
+    "Filament fini": "filamentRunout",
+    "Filament op": "filamentRunout",
+    "Filament runout": "filamentRunout",
+    "Filamento": "stringing",
+    "Filamento esaurito": "filamentRunout",
+    "Fim do filamento": "filamentRunout",
+    "Fios": "stringing",
+    "Geen statusupdate ontvangen": "noStatusUpdate",
+    "Güç kesintisi": "powerFailure",
+    "Haftungsfehler": "adhesionFailure",
+    "Hechtingsprobleem": "adhesionFailure",
+    "Hilos": "stringing",
+    "Katman kayması": "layerShift",
+    "Kein Statusupdate empfangen": "noStatusUpdate",
+    "Kromtrekken": "warping",
+    "Kullanıcı iptal etti": "userCancelled",
+    "Laagverschuiving": "layerShift",
+    "Layer shift": "layerShift",
+    "Mancanza corrente": "powerFailure",
+    "Nenhuma atualização de status recebida": "noStatusUpdate",
+    "Nessun aggiornamento di stato ricevuto": "noStatusUpdate",
+    "No se recibió actualización de estado": "noStatusUpdate",
+    "No status update received": "noStatusUpdate",
+    "Onderextrusie": "underExtrusion",
+    "Other": "other",
+    "Otro": "other",
+    "Outro": "other",
+    "Overig": "other",
+    "Power failure": "powerFailure",
+    "Schichtversatz": "layerShift",
+    "Sonstiges": "other",
+    "Sotto-estrusione": "underExtrusion",
+    "Sous-extrusion": "underExtrusion",
+    "Spagetti / Ayrılmış": "spaghettiDetached",
+    "Spaghetti / Abgelöst": "spaghettiDetached",
+    "Spaghetti / Destacado": "spaghettiDetached",
+    "Spaghetti / Detached": "spaghettiDetached",
+    "Spaghetti / Détaché": "spaghettiDetached",
+    "Spaghetti / losgeraakt": "spaghettiDetached",
+    "Spaghetti / staccato": "spaghettiDetached",
+    "Spostamento layer": "layerShift",
+    "Stale - print likely cancelled or failed without status update": "noStatusUpdate",
+    "Stale - reconciled after reconnect, end time unknown": "noStatusUpdate",
+    "Stringing": "stringing",
+    "Stringing (Cheveux d'ange)": "stringing",
+    "Stromausfall": "powerFailure",
+    "Stroomuitval": "powerFailure",
+    "Subextrusión": "underExtrusion",
+    "Subextrusão": "underExtrusion",
+    "Tıkalı nozul": "cloggedNozzle",
+    "Ugello intasato": "cloggedNozzle",
+    "Under-extrusion": "underExtrusion",
+    "Unterextrusion": "underExtrusion",
+    "User cancelled": "userCancelled",
+    "Verformung": "warping",
+    "Verstopfte Düse": "cloggedNozzle",
+    "Verstopte nozzle": "cloggedNozzle",
+    "Vom Benutzer abgebrochen": "userCancelled",
+    "Warping": "warping",
+    "Warping (Déformation)": "warping",
+    "Yapışma başarısız": "adhesionFailure",
+    "İplik oluşumu": "stringing",
+    "Биття філаменту": "filamentRunout",
+    "Викривлення": "warping",
+    "Другое": "other",
+    "Закончился филамент": "filamentRunout",
+    "Засмічене сопло": "cloggedNozzle",
+    "Засор сопла": "cloggedNozzle",
+    "Збій живлення": "powerFailure",
+    "Зсув шару": "layerShift",
+    "Користувач скасовано": "userCancelled",
+    "Коробление": "warping",
+    "Нанизування": "stringing",
+    "Недоэкструзия": "underExtrusion",
+    "Обновление статуса не получено": "noStatusUpdate",
+    "Оновлення статусу не отримано": "noStatusUpdate",
+    "Отменено пользователем": "userCancelled",
+    "Плохая адгезия к столу": "adhesionFailure",
+    "Порушення адгезії": "adhesionFailure",
+    "Підвидавлювання": "underExtrusion",
+    "Сбой питания": "powerFailure",
+    "Сдвиг слоёв": "layerShift",
+    "Спагетти / отрыв детали": "spaghettiDetached",
+    "Спагетті / Відр": "spaghettiDetached",
+    "Стрингинг": "stringing",
+    "інше": "other",
+    "その他": "other",
+    "ステータス更新を受信できませんでした": "noStatusUpdate",
+    "スパゲッティ / 剥離": "spaghettiDetached",
+    "ノズル詰まり": "cloggedNozzle",
+    "フィラメント切れ": "filamentRunout",
+    "ユーザーによるキャンセル": "userCancelled",
+    "レイヤーシフト": "layerShift",
+    "使用者取消": "userCancelled",
+    "其他": "other",
+    "反り": "warping",
+    "喷嘴堵塞": "cloggedNozzle",
+    "噴嘴堵塞": "cloggedNozzle",
+    "定着不良": "adhesionFailure",
+    "层偏移": "layerShift",
+    "層偏移": "layerShift",
+    "押出不足": "underExtrusion",
+    "拉丝": "stringing",
+    "拉丝 / 脱落": "spaghettiDetached",
+    "拉絲": "stringing",
+    "拉絲 / 脫落": "spaghettiDetached",
+    "挤出不足": "underExtrusion",
+    "擠出不足": "underExtrusion",
+    "断电": "powerFailure",
+    "斷電": "powerFailure",
+    "未收到状态更新": "noStatusUpdate",
+    "未收到狀態更新": "noStatusUpdate",
+    "用户取消": "userCancelled",
+    "糸引き": "stringing",
+    "翘曲": "warping",
+    "翹曲": "warping",
+    "耗材用完": "filamentRunout",
+    "附着力失败": "adhesionFailure",
+    "附著力失敗": "adhesionFailure",
+    "電源障害": "powerFailure",
+    "기타": "other",
+    "노즐 막힘": "cloggedNozzle",
+    "레이어 시프트": "layerShift",
+    "사용자 취소": "userCancelled",
+    "상태 업데이트를 받지 못함": "noStatusUpdate",
+    "스트링": "stringing",
+    "스파게티 / 분리": "spaghettiDetached",
+    "압출 부족": "underExtrusion",
+    "전원 실패": "powerFailure",
+    "접착 실패": "adhesionFailure",
+    "필라멘트 소진": "filamentRunout",
+    "휨": "warping",
+}
+
+
+async def _migrate_failure_reason_vocabulary(conn):
+    """Fold historical failure-reason labels onto the canonical keys (#2974).
+
+    ``print_archives.failure_reason`` and ``print_log_entries.failure_reason``
+    accumulated three spellings of the same cause -- see
+    ``_LEGACY_FAILURE_REASON_LABELS`` for who wrote what. The PATCH route in
+    ``api/routes/print_log.py`` has enforced the key vocabulary for a while and
+    ``derive_failure_reason`` now produces it too, so this is the one-time pass
+    that brings existing rows in line.
+
+    Deliberately NOT gated behind a settings flag, unlike the #2614 backfill.
+    The statement is self-terminating -- it only matches values in the map, and
+    a key is never a label, so a second run updates nothing -- which makes the
+    flag pure overhead. It would also be actively wrong: a user who restores an
+    older database, or upgrades through this version twice, would carry the flag
+    with none of the conversion, and their legacy rows would never be touched
+    again. Cheap and repeatable beats one-shot here.
+    """
+    from collections import defaultdict
+
+    from sqlalchemy import bindparam, text
+
+    # Invert the map before issuing anything: 168 labels collapse onto 12 keys,
+    # so one UPDATE per key with an IN list is 24 statements rather than 336
+    # single-value ones on every boot. Identity rows (an en.ts label that is
+    # spelled the same as its own key) are dropped -- they would match and
+    # rewrite themselves to the value they already hold.
+    by_key: dict[str, list[str]] = defaultdict(list)
+    for label, key in _LEGACY_FAILURE_REASON_LABELS.items():
+        if label != key:
+            by_key[key].append(label)
+
+    total = 0
+    async with conn.begin_nested():
+        for table in ("print_archives", "print_log_entries"):
+            for key, labels in by_key.items():
+                result = await conn.execute(
+                    text(
+                        f"UPDATE {table} SET failure_reason = :key "  # noqa: S608 - table name is a literal
+                        "WHERE failure_reason IN :labels"
+                    ).bindparams(bindparam("key"), bindparam("labels", expanding=True)),
+                    {"key": key, "labels": labels},
+                )
+                total += result.rowcount or 0
+
+    if total:
+        logger.info("[#2974] converted %d failure_reason value(s) to the canonical vocabulary", total)
+
+
 async def run_migrations(conn):
     """Run all schema migrations and data backfills on startup.
 
@@ -1334,6 +1580,11 @@ async def run_migrations(conn):
     # exist before any ALTER TABLE / CREATE INDEX statements below reference
     # them. Fresh installs remain idempotent because create_all() runs first.
     await _migrate_create_finance_tables(conn)
+
+    # Data migration: one vocabulary for failure_reason (#2974). Runs early so
+    # the Failure Analysis widget and the archive editor never observe a
+    # half-converted column.
+    await _migrate_failure_reason_vocabulary(conn)
 
     # Migration: Add parent_run_id column to pipeline_runs (#1425 PR C).
     # Links a retry-failed run back to its parent so the dashboard can show

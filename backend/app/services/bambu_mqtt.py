@@ -111,6 +111,34 @@ def normalize_am_unit_id(ams_id: int) -> int:
     return A2L_LITE_NORMALIZED_AMS_ID if ams_id == A2L_LITE_PHYSICAL_AMS_ID else ams_id
 
 
+def wire_tray_color(tray_color: str | None) -> str:
+    """Normalise a colour to the form AMS firmware actually parses: UPPERCASE hex.
+
+    P1S firmware 01.10.00.00 parses every lowercase hex letter in ``tray_color``
+    as a zero, and does it silently: the command response echoes the value you
+    sent and reports ``result: "success"``, so only the next AMS push shows what
+    was really stored. Measured on the reporter's machine (#2987), where the
+    spool's own ``rgba`` is stored lowercase and went out verbatim:
+
+        sent 09ff00ff  ->  AMS reports 09000000
+        sent ff5100ff  ->  AMS reports 00510000
+        sent 090000FF  ->  AMS reports 090000FF
+
+    A mangled colour is not merely cosmetic. The auto-unlink sweep compares the
+    tray against the spool it is assigned to, so the tray Bambuddy just wrote no
+    longer matches the spool that asked for it and the assignment is deleted
+    seconds after being made -- and re-assigning through the slot modal writes
+    the mangled colour back, because the modal seeds itself from the tray.
+
+    Applied here, at the one place the command is built, rather than in each of
+    the four callers: a caller that forgets is exactly how this arrived.
+
+    A leading ``#`` is stripped -- the wire format carries bare hex -- and a
+    blank stays blank, which is how a slot is cleared.
+    """
+    return (tray_color or "").strip().lstrip("#").upper()
+
+
 def a2l_lite_wire_ids(ams_id: int, tray_id: int) -> tuple[int, int, int] | None:
     """Translate a normalised A2L slot back to the physical wire form.
 
@@ -749,6 +777,37 @@ class FilaSwitchState:
         return (raw >> 8) & 0xFF, raw & 0xFF
 
 
+# ``snow``/``spre``/``star`` all use this sentinel for "nothing here". Studio
+# only special-cases it on single-extruder machines, but 0xFFFF decodes to AMS
+# 255 slot 255 and slot 255 is not a real slot on any machine, so treating it
+# as empty everywhere is strictly safer than reading it as the external spool.
+_EXTRUDER_SLOT_EMPTY = 0xFFFF
+
+
+@dataclass
+class ExtruderSlot:
+    """Which AMS slot an extruder is currently fed from.
+
+    Parsed from ``print.device.extruder.info[i]`` — ``snow`` is snow-encoded
+    exactly like ``fila_switch.in`` (bits 8-15 = AMS id, bits 0-7 = slot), and
+    bit 1 of ``info`` says whether the extruder actually holds filament. Field
+    semantics from BambuStudio's ``DevExtruderSystem::ParseExtruderInfo``.
+
+    ``state.tray_now`` cannot answer this: it is a single value for the whole
+    printer, so on a dual-nozzle machine with both hotends loaded it names only
+    one of them. Unloading a specific slot needs to know which extruder is
+    holding it, which is what this is for.
+    """
+
+    ams_id: int | None = None
+    slot_id: int | None = None
+    has_filament: bool = False
+
+    def holds(self, ams_id: int, slot_id: int) -> bool:
+        """True when this extruder is fed from exactly ``(ams_id, slot_id)``."""
+        return self.ams_id == ams_id and self.slot_id == slot_id
+
+
 @dataclass
 class PrintOptions:
     """AI detection and print options from xcam data."""
@@ -822,7 +881,12 @@ class PrinterState:
     wifi_signal: int | None = None  # WiFi signal strength in dBm
     wired_network: bool = False  # Ethernet connection detected (home_flag bit 18)
     door_open: bool = False  # Enclosure door open (home_flag bit 23; models with a door sensor: X1/X1C/X1E/X2D/P2S/H2*)
-    # Nozzle hardware info (for dual nozzle printers, index 0 = left, 1 = right)
+    # Nozzle hardware info. Indexed by EXTRUDER id: [0] is the RIGHT hotend and
+    # [1] the left, measured 2026-08-27 on an H2D fitted with 0.4 left / 0.6
+    # right. (The legacy parser below writes left -> [0], but it only ever runs
+    # for single-nozzle printers -- every dual-nozzle model reports
+    # device.nozzle.info instead.) Read it through services.slot_nozzle rather
+    # than indexing it directly.
     nozzles: list = field(default_factory=lambda: [NozzleInfo(), NozzleInfo()])
     # AI detection and print options
     print_options: PrintOptions = field(default_factory=PrintOptions)
@@ -873,6 +937,11 @@ class PrinterState:
     # Setup" screen. Only populated when an FTS is installed — without one an AMS
     # is bound to an extruder instead and this stays empty. See FilaSwitchState.
     ams_switch_inlet: dict = field(default_factory=dict)
+    # Which AMS slot each extruder is fed from: {extruder_id: ExtruderSlot}.
+    # Only populated by printers that report ``device.extruder.info`` (H2/X2
+    # series). Empty elsewhere, which every reader has to tolerate — see
+    # ExtruderSlot for why tray_now cannot stand in for it.
+    extruder_slots: dict = field(default_factory=dict)
     # Plate dispatched by Bambuddy for the current print. Some firmware versions
     # (P1S 01.10.00.00) only put the .3mf filename in print.gcode_file, so the
     # regex used to derive the plate number from the path always falls back to
@@ -1085,6 +1154,17 @@ class BambuMQTTClient:
     # Class-level cache: serial_number -> False when request topic is known unsupported.
     # Persists across client instances so reconnects don't re-trigger failed subscriptions.
     _request_topic_cache: dict[str, bool] = {}
+    # serial_number -> consecutive disconnects seen shortly after subscribing to
+    # the request topic. A SUBACK failure is the broker answering the question;
+    # a disconnect is only circumstantial, and any drop inside the window looks
+    # identical -- a network blip, the printer rebooting, the container being
+    # stopped mid-probe. Latching on the first one costs ams_mapping capture for
+    # the rest of the process on a printer that supports it perfectly well
+    # (#2953). Require the drop to repeat before believing it; a printer that
+    # really does refuse the topic answers the same way every time and pays one
+    # extra reconnect for it.
+    _request_topic_probe_failures: dict[str, int] = {}
+    _REQUEST_TOPIC_PROBE_LIMIT: int = 2
     # Counter for generating unique MQTT client IDs across instances.
     _client_instance_counter: int = 0
 
@@ -1268,6 +1348,24 @@ class BambuMQTTClient:
         # Value: {"nozzle": str, "event": asyncio.Event, "profiles": list | None}.
         self._sequence_id: int = 0
         self._pending_kprofile_requests: dict[str, dict] = {}
+        # The printer's calibration table, one bucket per nozzle diameter.
+        #
+        # An extrusion_cali_get response is the complete table for *one* nozzle
+        # size, and the printer answers whoever asks — including BambuStudio,
+        # whose queries land on the same report topic we subscribe to. Assigning
+        # each response straight to state.kprofiles therefore let any single
+        # answer stand for the whole printer: a GitHub backup probing
+        # 0.2/0.4/0.6/0.8 in turn finished on 0.8, which holds no profiles on a
+        # 0.4+0.6 machine, and left the list empty until something refilled it.
+        # Measured on the maintainer's H2 on 2026-08-25, and visible on the AMS
+        # card because H2-series trays carry no `k` of their own — the slot's
+        # K value is resolved from cali_idx against exactly this list.
+        #
+        # Keyed by diameter so a response only ever replaces the bucket it
+        # actually describes; state.kprofiles is then the union across buckets.
+        # An empty answer for a nozzle the printer doesn't have empties that
+        # bucket alone.
+        self._kprofiles_by_nozzle: dict[str, list] = {}
         # Acks for K-profile *writes* (extrusion_cali_set / extrusion_cali_del),
         # keyed by the sequence_id we sent. The printer echoes it back, measured
         # on both an X1C and an H2D (#2718). Filled by the MQTT thread, drained
@@ -1698,6 +1796,7 @@ class BambuMQTTClient:
                     )
                     self._request_topic_confirmed = True
                     BambuMQTTClient._request_topic_cache[self.serial_number] = True
+                    BambuMQTTClient._request_topic_probe_failures.pop(self.serial_number, None)
             self._request_topic_sub_mid = None
             self._request_topic_sub_time = 0.0
 
@@ -1754,13 +1853,30 @@ class BambuMQTTClient:
             self._request_topic_sub_time > 0
             and not self._request_topic_confirmed
             and time.time() - self._request_topic_sub_time < 10.0
+            # A disconnect we asked for says nothing about the subscription.
+            and self._disconnection_event is None
         ):
-            logger.warning(
-                "[%s] Disconnected shortly after request topic subscription. Disabling request topic for this printer.",
-                self.serial_number,
-            )
-            self._request_topic_supported = False
-            BambuMQTTClient._request_topic_cache[self.serial_number] = False
+            failures = BambuMQTTClient._request_topic_probe_failures.get(self.serial_number, 0) + 1
+            BambuMQTTClient._request_topic_probe_failures[self.serial_number] = failures
+            if failures >= BambuMQTTClient._REQUEST_TOPIC_PROBE_LIMIT:
+                logger.warning(
+                    "[%s] Disconnected shortly after request topic subscription %d times. "
+                    "Disabling request topic for this printer — ams_mapping capture from "
+                    "slicer-initiated prints is unavailable, and their filament will be "
+                    "attributed from the printer's own tray reporting instead.",
+                    self.serial_number,
+                    failures,
+                )
+                self._request_topic_supported = False
+                BambuMQTTClient._request_topic_cache[self.serial_number] = False
+            else:
+                logger.info(
+                    "[%s] Disconnected shortly after request topic subscription (%d/%d). "
+                    "Retrying it on the next connection before giving up.",
+                    self.serial_number,
+                    failures,
+                    BambuMQTTClient._REQUEST_TOPIC_PROBE_LIMIT,
+                )
         self._request_topic_sub_mid = None
         self._request_topic_sub_time = 0.0
 
@@ -2788,6 +2904,44 @@ class BambuMQTTClient:
             stat=int(fs_data.get("stat", 0) or 0),
             info=int(fs_data.get("info", 0) or 0),
         )
+
+    def _parse_extruder_slots(self, data: dict) -> None:
+        """Read which AMS slot each extruder is fed from — ``device.extruder.info``.
+
+        Absent on printers that do not report the block, in which case the
+        previous answer is kept rather than cleared: a partial payload carrying
+        only temperatures must not look like "both hotends are now empty".
+        """
+        device = data.get("device")
+        if not isinstance(device, dict):
+            return
+        info = device.get("extruder", {}).get("info") if isinstance(device.get("extruder"), dict) else None
+        if not isinstance(info, list) or not info:
+            return
+
+        slots: dict[int, ExtruderSlot] = {}
+        for entry in info:
+            if not isinstance(entry, dict) or "id" not in entry:
+                continue
+            try:
+                ext_id = int(entry["id"])
+                snow = int(entry.get("snow", _EXTRUDER_SLOT_EMPTY))
+                flags = int(entry.get("info", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if snow == _EXTRUDER_SLOT_EMPTY or snow < 0:
+                ams_id = slot_id = None
+            else:
+                ams_id = (snow >> 8) & 0xFF
+                slot_id = snow & 0xFF
+            slots[ext_id] = ExtruderSlot(
+                ams_id=ams_id,
+                slot_id=slot_id,
+                has_filament=bool(flags & 0b10),
+            )
+
+        if slots:
+            self.state.extruder_slots = slots
 
     def _handle_ams_data(self, ams_data):
         """Handle AMS data changes for Spoolman integration.
@@ -4131,6 +4285,7 @@ class BambuMQTTClient:
         # it first. Repeated here so _update_state stays a complete "absorb this
         # payload" step for any other caller; re-parsing the same block is free.
         self._parse_fila_switch(data)
+        self._parse_extruder_slots(data)
 
         if "bed_temper" in data:
             temps["bed"] = float(data["bed_temper"])
@@ -6393,6 +6548,33 @@ class BambuMQTTClient:
                     logger.debug("Failed to parse K-profile from broadcast: %s", e)
         return profiles
 
+    def _store_kprofiles(self, profiles: list, response_nozzle: str | None) -> None:
+        """File one calibration-table response under its nozzle diameter.
+
+        ``response_nozzle`` names the table the printer just sent, so that
+        bucket is replaced wholesale and every other one is left alone. When
+        the envelope carries no diameter, fall back to the diameters the parsed
+        profiles claim for themselves — and if there are none of those either,
+        keep what we have rather than dropping a table we cannot attribute.
+
+        ``state.kprofiles`` stays a flat list because that is what its readers
+        expect; the three assign paths already filter it by ``nozzle_diameter``
+        and were quietly finding nothing whenever the last response happened to
+        be for a different nozzle.
+        """
+        buckets: dict[str, list] = {}
+        if response_nozzle:
+            buckets[str(response_nozzle)] = list(profiles)
+        else:
+            for profile in profiles:
+                buckets.setdefault(str(profile.nozzle_diameter), []).append(profile)
+        if not buckets:
+            return
+        self._kprofiles_by_nozzle.update(buckets)
+        self.state.kprofiles = [
+            kp for nozzle in sorted(self._kprofiles_by_nozzle) for kp in self._kprofiles_by_nozzle[nozzle]
+        ]
+
     def _handle_kprofile_response(self, data: dict):
         """Handle K-profile response from printer."""
         response_nozzle = data.get("nozzle_diameter")
@@ -6440,11 +6622,20 @@ class BambuMQTTClient:
             return
 
         profiles = self._parse_kprofile_entries(filaments, response_nozzle, log_errors=request is not None)
-        self.state.kprofiles = profiles
+        self._store_kprofiles(profiles, response_nozzle)
 
         if request is None:
             # Unsolicited broadcast with nothing in flight: state is refreshed,
-            # nobody to wake.
+            # nobody to wake. Worth a line — this is the printer answering
+            # somebody else (BambuStudio queries the same report topic), and
+            # until it was bucketed by nozzle it was also the quietest way for
+            # the AMS card's K values to change underneath us.
+            logger.debug(
+                "[%s] Adopted unsolicited K-profile table: nozzle=%s, %d profiles",
+                self.serial_number,
+                response_nozzle or "?",
+                len(profiles),
+            )
             return
 
         logger.info("[%s] Got %s K-profiles for nozzle=%s", self.serial_number, len(profiles), response_nozzle)
@@ -7182,7 +7373,16 @@ class BambuMQTTClient:
             tray_id: Global tray ID — 0..15 for AMS slots, 254 for external spool
                 (single-external printers and Ext-L on dual-nozzle H2D),
                 255 for Ext-R on dual-nozzle H2D.
-            extruder_id: Unused - kept for API compatibility
+            extruder_id: Which hotend to feed (0 = right/main, 1 = left/deputy).
+                Sent only when given, matching BambuStudio: ``extruder_id`` is
+                an optional field on ``ams_change_filament``
+                (``DeviceManager::command_ams_change_filament``) and Studio
+                omits it unless a Filament Track Switch is installed. Without a
+                switch the firmware derives the hotend from the AMS's own
+                extruder binding and an explicit value is redundant; *with* one
+                every AMS reports 0xE and is bound to a switch inlet instead, so
+                the firmware has nothing to derive from and the load silently
+                does nothing until we name the hotend.
 
         Returns:
             True if command was sent, False otherwise
@@ -7237,6 +7437,8 @@ class BambuMQTTClient:
                 "tar_temp": tar_temp,
             }
         }
+        if extruder_id is not None:
+            command["print"]["extruder_id"] = int(extruder_id)
 
         command_json = json.dumps(command)
         logger.info("[%s] Publishing ams_change_filament command: %s", self.serial_number, command_json)
@@ -7251,8 +7453,21 @@ class BambuMQTTClient:
 
         return True
 
-    def ams_unload_filament(self) -> bool:
-        """Unload the currently loaded filament.
+    def ams_unload_filament(self, tray_id: int | None = None) -> bool:
+        """Unload filament, optionally naming the slot to unload.
+
+        Args:
+            tray_id: Global tray ID of the slot being unloaded. When given, the
+                command is addressed to that slot's AMS and is only sent if an
+                extruder is actually fed from it — BambuStudio does the same
+                (``StatusPanel::on_ams_unload`` walks the extruders and sends
+                nothing when none matches). When omitted, the pre-existing
+                behaviour is kept: unload whatever ``tray_now`` names.
+
+        ``tray_now`` is a single value for the whole printer, so on a dual-nozzle
+        machine with both hotends loaded it names only one of them and an
+        unaddressed unload picks that one regardless of which slot the operator
+        clicked. Passing the slot is what makes the two hotends distinguishable.
 
         Returns:
             True if command was sent, False otherwise
@@ -7263,15 +7478,54 @@ class BambuMQTTClient:
 
         # Get the currently loaded tray info
         tray_now = self.state.tray_now
-        logger.info("[%s] Unload requested, tray_now=%s", self.serial_number, tray_now)
+        source_tray = tray_now if tray_id is None else tray_id
+        logger.info("[%s] Unload requested, tray_now=%s, tray_id=%s", self.serial_number, tray_now, tray_id)
 
         # Determine source ams_id for the unload command
-        if tray_now == 255 or tray_now == 254:
+        if source_tray == 255 or source_tray == 254:
             ams_id = 255  # No filament or external spool
-        elif (_a2l := a2l_lite_wire_ids(tray_now // 4, tray_now)) is not None:
+        elif (_a2l := a2l_lite_wire_ids(source_tray // 4, source_tray)) is not None:
             ams_id = _a2l[0]  # A2L AMS-Lite: normalised 6 -> physical 16
         else:
-            ams_id = tray_now // 4  # Source AMS
+            ams_id = source_tray // 4  # Source AMS
+
+        # Refuse an addressed unload of a slot no hotend is holding — but only on
+        # a printer that has more than one hotend, which is the only case the
+        # check exists for. With one hotend there is nothing to disambiguate:
+        # tray_now already names the loaded slot exactly, and running the check
+        # anyway would stake unload on `snow` meaning ams*4+slot there too. It
+        # very likely does, but single-nozzle machines do report the block —
+        # BambuStudio has a dedicated branch for `m_total_extder_count == 1` and
+        # an X1C on the maintainer's own network sends `device.extruder` — and
+        # nobody has read a single-nozzle `snow` off the wire. Guessing wrong
+        # would 409 every unload on every X1C, P1S and A1.
+        #
+        # Gated on the runtime flag rather than on len(extruder_slots), which is
+        # rebuilt from each payload's array and would flip the check off for any
+        # frame that carried a short one; and deliberately not on
+        # ``is_dual_nozzle_model``, whose model-name fallback reports at least
+        # one single-nozzle machine as dual (#1386) — the false positive there is
+        # exactly the case this gate exists to keep out.
+        #
+        # The external spool is excluded for a different reason: 254/255 are not
+        # ams*4+slot, so the local-slot arithmetic below cannot describe them.
+        if tray_id is not None and tray_id not in (254, 255) and self._is_dual_nozzle and self.state.extruder_slots:
+            local_slot = _a2l[1] if (_a2l := a2l_lite_wire_ids(tray_id // 4, tray_id)) is not None else tray_id % 4
+            holder = next(
+                (ext for ext, slot in self.state.extruder_slots.items() if slot.holds(ams_id, local_slot)),
+                None,
+            )
+            if holder is None:
+                logger.info(
+                    "[%s] Unload skipped: no extruder is fed from AMS %s slot %s",
+                    self.serial_number,
+                    ams_id,
+                    local_slot,
+                )
+                return False
+            logger.info(
+                "[%s] Unloading AMS %s slot %s from extruder %s", self.serial_number, ams_id, local_slot, holder
+            )
 
         # Command format from BambuStudio traffic capture:
         # - No extruder_id field
@@ -7454,7 +7708,9 @@ class BambuMQTTClient:
                 "tray_info_idx": tray_info_idx,
                 "tray_type": tray_type,
                 "tray_sub_brands": tray_sub_brands,
-                "tray_color": tray_color,
+                # UPPERCASE, always: lowercase hex is silently read as zeros by
+                # P1S firmware and acknowledged as a success (#2987).
+                "tray_color": wire_tray_color(tray_color),
                 "nozzle_temp_min": nozzle_temp_min,
                 "nozzle_temp_max": nozzle_temp_max,
                 "sequence_id": "0",

@@ -661,6 +661,69 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_status_reports_switch_readiness_on_the_first_load(self, async_client: AsyncClient, printer_factory):
+        """``ready`` has to be computed by the REST route, not just the WebSocket.
+
+        This response is what the page has before any push arrives. Leaving the
+        field at its default would tell a correctly set-up machine that its
+        switch is not set up, and the AMS menu refuses Load on that.
+        """
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_mqtt import FilaSwitchState, PrinterState
+
+        printer = await printer_factory()
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "IDLE"
+        state.fila_switch = FilaSwitchState(installed=True)
+        state.raw_data = {"ams": [{"id": "0", "tray": []}, {"id": "1", "tray": []}]}
+        state.ams_switch_inlet = {"0": "A"}
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            unbound = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+            state.ams_switch_inlet = {"0": "A", "1": "B"}
+            bound = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert unbound.json()["fila_switch"]["ready"] is False
+        assert bound.json()["fila_switch"]["ready"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_status_reports_which_hotend_holds_which_slot(self, async_client: AsyncClient, printer_factory):
+        """Also needed on the first load: it decides which hotend Load may offer."""
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_mqtt import ExtruderSlot, PrinterState
+
+        printer = await printer_factory()
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "IDLE"
+        state.extruder_slots = {
+            0: ExtruderSlot(ams_id=0, slot_id=2, has_filament=True),
+            1: ExtruderSlot(),
+        }
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert response.json()["extruder_slots"] == {
+            "0": {"ams_id": 0, "slot_id": 2, "has_filament": True},
+            "1": {"ams_id": None, "slot_id": None, "has_filament": False},
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_cover_uses_dispatched_plate_when_gcode_file_lacks_path(
         self, async_client: AsyncClient, printer_factory, db_session, tmp_path
     ):
@@ -1324,7 +1387,7 @@ class TestAMSLoadUnloadAPI:
             response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=5")
 
             assert response.status_code == 200
-            mock_client.ams_load_filament.assert_called_once_with(5)
+            mock_client.ams_load_filament.assert_called_once_with(5, extruder_id=None)
             assert "AMS 1" in response.json()["message"]
 
     @pytest.mark.asyncio
@@ -1342,7 +1405,7 @@ class TestAMSLoadUnloadAPI:
             response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=254")
 
             assert response.status_code == 200
-            mock_client.ams_load_filament.assert_called_once_with(254)
+            mock_client.ams_load_filament.assert_called_once_with(254, extruder_id=None)
             assert "external" in response.json()["message"].lower()
 
     @pytest.mark.asyncio
@@ -1360,7 +1423,7 @@ class TestAMSLoadUnloadAPI:
             response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=255")
 
             assert response.status_code == 200
-            mock_client.ams_load_filament.assert_called_once_with(255)
+            mock_client.ams_load_filament.assert_called_once_with(255, extruder_id=None)
             assert "Ext-R" in response.json()["message"]
 
     @pytest.mark.asyncio
@@ -1378,6 +1441,33 @@ class TestAMSLoadUnloadAPI:
 
             assert response.status_code == 500
             assert "failed" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_forwards_the_chosen_hotend(self, async_client: AsyncClient, printer_factory):
+        """A printer with a Filament Track Switch has to name the hotend to feed."""
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_load_filament.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=5&extruder_id=1")
+
+            assert response.status_code == 200
+            mock_client.ams_load_filament.assert_called_once_with(5, extruder_id=1)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_load_rejects_a_hotend_that_does_not_exist(self, async_client: AsyncClient, printer_factory):
+        """Only 0 and 1 are real hotends; anything else is a client bug."""
+        printer = await printer_factory(name="P")
+
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=5&extruder_id=2")
+
+        assert response.status_code == 422
 
     # ── unload ───────────────────────────────────────────────────────────────
 
@@ -1414,8 +1504,56 @@ class TestAMSLoadUnloadAPI:
             response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload")
 
             assert response.status_code == 200
-            mock_client.ams_unload_filament.assert_called_once_with()
+            mock_client.ams_unload_filament.assert_called_once_with(None)
             assert response.json()["success"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_forwards_the_slot(self, async_client: AsyncClient, printer_factory):
+        """The slot is what tells a dual-nozzle printer which hotend to unload."""
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_unload_filament.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload?tray_id=2")
+
+            assert response.status_code == 200
+            mock_client.ams_unload_filament.assert_called_once_with(2)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_of_an_unloaded_slot_is_a_conflict_not_a_fault(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        """Clicking Unload on an idle slot is a no-op the operator can understand.
+
+        A 500 would read as a broken printer; the menu is per-slot and picking a
+        slot no hotend is fed from is an ordinary mistake.
+        """
+        printer = await printer_factory(name="P")
+
+        mock_client = MagicMock()
+        mock_client.ams_unload_filament.return_value = False
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload?tray_id=2")
+
+            assert response.status_code == 409
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unload_rejects_an_invalid_slot(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P")
+
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/unload?tray_id=99")
+
+        assert response.status_code == 400
 
     @pytest.mark.asyncio
     @pytest.mark.integration

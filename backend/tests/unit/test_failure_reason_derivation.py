@@ -1,6 +1,6 @@
 """Regression tests for derive_failure_reason in backend.app.main.
 
-Ensures user-cancelled prints don't get archived as "Layer shift" — the bug
+Ensures user-cancelled prints don't get archived as "layerShift" — the bug
 seen on H2D where the firmware's cancel-sequence module-0x0C HMS was being
 matched by the old broad heuristic (`module == 0x0C → Layer shift`).
 """
@@ -18,8 +18,8 @@ from backend.app.main import derive_failure_reason
 
 @pytest.mark.parametrize("status", ["aborted", "cancelled"])
 def test_user_cancel_status_yields_user_cancelled(status: str) -> None:
-    assert derive_failure_reason(status, None) == "User cancelled"
-    assert derive_failure_reason(status, []) == "User cancelled"
+    assert derive_failure_reason(status, None) == "userCancelled"
+    assert derive_failure_reason(status, []) == "userCancelled"
 
 
 def test_completed_status_returns_none() -> None:
@@ -27,7 +27,7 @@ def test_completed_status_returns_none() -> None:
 
 
 # ---------------------------------------------------------------------------
-# H2D regression: cancel-sequence HMS must not be labelled "Layer shift"
+# H2D regression: cancel-sequence HMS must not be labelled "layerShift"
 # ---------------------------------------------------------------------------
 
 
@@ -59,19 +59,19 @@ def test_unknown_module_0x0c_code_returns_none() -> None:
 def test_real_layer_shift_short_code_detected() -> None:
     """0300_4057 ("Z-axis step loss") is a real layer-shift code from the wiki."""
     hms = [{"code": "0x4057", "attr": 0x0300_0000, "module": 0x03, "severity": 1}]
-    assert derive_failure_reason("failed", hms) == "Layer shift"
+    assert derive_failure_reason("failed", hms) == "layerShift"
 
 
 def test_real_filament_runout_short_code_detected() -> None:
     """07FF_8011 = external filament runout."""
     hms = [{"code": "0x8011", "attr": 0x07FF_0000, "module": 0x07, "severity": 2}]
-    assert derive_failure_reason("failed", hms) == "Filament runout"
+    assert derive_failure_reason("failed", hms) == "filamentRunout"
 
 
 def test_real_clogged_nozzle_short_code_detected() -> None:
     """0300_4006 = "The nozzle is clogged"."""
     hms = [{"code": "0x4006", "attr": 0x0300_0000, "module": 0x03, "severity": 1}]
-    assert derive_failure_reason("failed", hms) == "Clogged nozzle"
+    assert derive_failure_reason("failed", hms) == "cloggedNozzle"
 
 
 def test_first_matching_code_wins() -> None:
@@ -80,7 +80,7 @@ def test_first_matching_code_wins() -> None:
         {"code": "0x4057", "attr": 0x0300_0000, "module": 0x03, "severity": 1},  # layer shift
         {"code": "0x8011", "attr": 0x07FF_0000, "module": 0x07, "severity": 2},  # filament runout
     ]
-    assert derive_failure_reason("failed", hms) == "Layer shift"
+    assert derive_failure_reason("failed", hms) == "layerShift"
 
 
 def test_failed_with_no_hms_returns_none() -> None:
@@ -96,4 +96,58 @@ def test_failed_with_no_hms_returns_none() -> None:
 def test_int_code_field_accepted() -> None:
     """The MQTT parser sometimes leaves `code` as an int rather than a hex string."""
     hms = [{"code": 0x4057, "attr": 0x0300_0000, "module": 0x03, "severity": 1}]
-    assert derive_failure_reason("failed", hms) == "Layer shift"
+    assert derive_failure_reason("failed", hms) == "layerShift"
+
+
+# ---------------------------------------------------------------------------
+# One vocabulary in storage (issue #2974)
+# ---------------------------------------------------------------------------
+
+
+def test_every_derived_reason_is_a_canonical_key() -> None:
+    """The map may only hold values the rest of the stack agrees are reasons.
+
+    Three writers used to put three spellings of one cause into
+    ``failure_reason``. The whole point of #2974 is that there is now exactly
+    one, so a display label sneaking back into the map -- which is what shipped
+    for months -- has to fail here rather than in a user's Statistics panel.
+    """
+    from backend.app.api.routes.print_log import _FAILURE_REASON_KEYS
+    from backend.app.main import _HMS_FAILURE_REASONS
+
+    offenders = sorted(set(_HMS_FAILURE_REASONS.values()) - _FAILURE_REASON_KEYS)
+    assert not offenders, f"not canonical failure-reason keys: {offenders}"
+
+
+@pytest.mark.parametrize("status", ["aborted", "cancelled", "failed"])
+def test_derived_reason_is_always_a_canonical_key(status: str) -> None:
+    """Covers the status branch too, not just the HMS table."""
+    from backend.app.api.routes.print_log import _FAILURE_REASON_KEYS
+    from backend.app.main import _HMS_FAILURE_REASONS
+
+    for code in _HMS_FAILURE_REASONS:
+        attr = int(code.split("_")[0], 16) << 16
+        reason = derive_failure_reason(status, [{"attr": attr, "code": int(code.split("_")[1], 16)}])
+        assert reason is None or reason in _FAILURE_REASON_KEYS, reason
+
+
+def test_the_stale_paths_write_a_key_the_editor_will_not_discard() -> None:
+    """Both stale writers in main.py store ``noStatusUpdate``.
+
+    Read from the source rather than by calling them: they sit deep inside the
+    MQTT archive paths and need a printer, a session and a live status. What
+    matters is the value, and that the archive editor recognises it -- an
+    unrecognised value opens the dropdown empty and the next save clears the
+    classification outright.
+    """
+    from pathlib import Path
+
+    from backend.app.api.routes.print_log import _FAILURE_REASON_KEYS
+
+    source = Path(__file__).resolve().parents[3] / "backend" / "app" / "main.py"
+    text = source.read_text(encoding="utf-8")
+
+    assert "noStatusUpdate" in _FAILURE_REASON_KEYS
+    assert text.count('failure_reason = "noStatusUpdate"') == 2
+    assert "Stale - print likely cancelled" not in text
+    assert "Stale - reconciled after reconnect" not in text

@@ -26,6 +26,7 @@ from backend.app.models.settings import Settings
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spool_catalog import SpoolCatalogEntry
+from backend.app.models.spool_filament_preset import SpoolFilamentPreset
 from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.user import User
 from backend.app.schemas.location import LocationCreate, LocationResponse, LocationUpdate
@@ -34,6 +35,8 @@ from backend.app.schemas.spool import (
     SpoolAssignmentResponse,
     SpoolBulkCreate,
     SpoolCreate,
+    SpoolFilamentPresetBase,
+    SpoolFilamentPresetResponse,
     SpoolKProfileBase,
     SpoolKProfileResponse,
     SpoolResponse,
@@ -53,6 +56,7 @@ from backend.app.services.location_service import (
     rename_location as rename_location_record,
 )
 from backend.app.services.slicer_filament_resolver import resolve_slicer_filament
+from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_csv import (
     MAX_CSV_IMPORT_BYTES,
     ImportPreview,
@@ -60,6 +64,7 @@ from backend.app.services.spool_csv import (
     parse_and_validate,
     serialize,
 )
+from backend.app.services.spool_filament_preset import resolve_spool_preset
 from backend.app.services.spoolman import SpoolmanClient, get_spoolman_client, init_spoolman_client
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
@@ -130,6 +135,27 @@ async def apply_spool_to_slot_via_mqtt(
 
     _generic_id_values = _GENERIC_ID_VALUES
 
+    # Which nozzle this slot feeds, and how wide it is. One resolution shared
+    # with every other path that configures a slot (see services.slot_nozzle),
+    # and used twice below -- for the spool's per-model preset override and for
+    # its K profile -- so the two lookups cannot answer for different nozzles.
+    slot_nozzle = resolve_slot_nozzle(state, ams_id, tray_id, printer_manager.get_model(printer_id))
+    nozzle_diameter = slot_nozzle.diameter
+
+    # A cloud or Orca preset is bound to a printer MODEL ("@BBL X1C"), so the
+    # spool's single slicer_filament stops being right the moment the same
+    # spool is used on a second model. resolve_spool_preset returns the
+    # spool's own value unless the user has set an override for this model,
+    # so a spool nobody has configured behaves exactly as it did before.
+    slot_slicer_filament, slot_slicer_filament_name = await resolve_spool_preset(
+        db,
+        spool_id=spool.id,
+        printer_model=printer_manager.get_model(printer_id),
+        nozzle_diameter=nozzle_diameter,
+        fallback_filament=spool.slicer_filament,
+        fallback_name=spool.slicer_filament_name,
+    )
+
     # slicer_filament → (tray_info_idx, setting_id) resolution is shared with
     # the Spoolman-mode route via this helper (#1713). The helper handles
     # GFS/PFUS/PFCN cloud lookup, GF normalize, integer LocalPreset id,
@@ -139,8 +165,8 @@ async def apply_spool_to_slot_via_mqtt(
     tray_info_idx, setting_id, sub_brand_override, type_override = await resolve_slicer_filament(
         db=db,
         current_user=current_user,
-        slicer_filament=spool.slicer_filament,
-        slicer_filament_name=spool.slicer_filament_name,
+        slicer_filament=slot_slicer_filament,
+        slicer_filament_name=slot_slicer_filament_name,
         material=spool.material,
     )
     if sub_brand_override:
@@ -198,18 +224,7 @@ async def apply_spool_to_slot_via_mqtt(
     if spool.nozzle_temp_max is not None:
         temp_max = spool.nozzle_temp_max
 
-    nozzle_diameter = "0.4"
-    if state and state.nozzles:
-        nd = state.nozzles[0].nozzle_diameter
-        if nd:
-            nozzle_diameter = nd
-
-    slot_extruder = None
-    if state and state.ams_extruder_map:
-        if ams_id == 255:
-            slot_extruder = 1 - tray_id  # ext-L (tray 0) → extruder 1, ext-R (tray 1) → extruder 0
-        else:
-            slot_extruder = state.ams_extruder_map.get(str(ams_id))
+    slot_extruder = slot_nozzle.extruder
 
     # Prefer exact extruder match, fall back to extruder-agnostic kp for the
     # same nozzle. Hard-skipping on mismatch silently drops valid stored
@@ -218,6 +233,12 @@ async def apply_spool_to_slot_via_mqtt(
     fallback_kp = None
     for kp in spool.k_profiles:
         if kp.printer_id != printer_id or kp.nozzle_diameter != nozzle_diameter:
+            continue
+        # A profile measured on a high-flow nozzle is not a fact about a
+        # standard one. Rows with no stored flow -- everything saved before
+        # this, and everything from a printer whose table declares none --
+        # still match, see SlotNozzle.flow_matches.
+        if not slot_nozzle.flow_matches(kp.nozzle_type):
             continue
         if slot_extruder is not None and kp.extruder is not None and kp.extruder == slot_extruder:
             exact_kp = kp
@@ -1665,6 +1686,73 @@ async def replace_k_profiles(
     for kp in new_profiles:
         await db.refresh(kp)
     return new_profiles
+
+
+@router.get("/spools/{spool_id}/filament-presets", response_model=list[SpoolFilamentPresetResponse])
+async def list_filament_presets(
+    spool_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """List per-printer-model preset overrides for a spool.
+
+    A dedicated endpoint rather than a field on ``SpoolResponse``: the
+    inventory list returns every spool the user owns, and only the spool form
+    and the assign path ever need this list, one spool at a time.
+    """
+    result = await db.execute(select(SpoolFilamentPreset).where(SpoolFilamentPreset.spool_id == spool_id))
+    return list(result.scalars().all())
+
+
+@router.put("/spools/{spool_id}/filament-presets", response_model=list[SpoolFilamentPresetResponse])
+async def replace_filament_presets(
+    spool_id: int,
+    presets: list[SpoolFilamentPresetBase],
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Replace all per-printer-model preset overrides for a spool.
+
+    Replace rather than merge, matching the K-profile endpoint next door: the
+    spool form always holds the complete set, and an empty list is how the
+    user clears every override back to the spool's own preset.
+    """
+    result = await db.execute(select(Spool).where(Spool.id == spool_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(404, "Spool not found")
+
+    # (model, diameter) is UNIQUE, so a payload that names one twice would
+    # fail on flush with an IntegrityError the client cannot act on. Reject it
+    # by name instead -- and reject it BEFORE deleting the existing rows, so a
+    # bad request cannot wipe overrides it then fails to replace.
+    seen: set[tuple[str, str]] = set()
+    for p in presets:
+        key = (p.printer_model, p.nozzle_diameter)
+        if key in seen:
+            raise HTTPException(
+                422,
+                f"Duplicate override for model {p.printer_model!r} nozzle {p.nozzle_diameter or 'any'!r}",
+            )
+        seen.add(key)
+
+    existing = await db.execute(select(SpoolFilamentPreset).where(SpoolFilamentPreset.spool_id == spool_id))
+    for old in existing.scalars().all():
+        await db.delete(old)
+    # Land the deletes before the inserts: within one transaction SQLAlchemy is
+    # free to order the INSERTs first, which trips the UNIQUE constraint
+    # against rows this call is about to remove.
+    await db.flush()
+
+    new_presets = []
+    for p in presets:
+        row = SpoolFilamentPreset(spool_id=spool_id, **p.model_dump())
+        db.add(row)
+        new_presets.append(row)
+
+    await db.commit()
+    for row in new_presets:
+        await db.refresh(row)
+    return new_presets
 
 
 # ── Spool Assignments ────────────────────────────────────────────────────────

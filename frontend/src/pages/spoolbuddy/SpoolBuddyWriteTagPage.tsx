@@ -669,7 +669,13 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
 
       const pc = printersWithCalibrations.find(p => p.printer.id === printerId);
       if (pc) {
-        const cal = pc.calibrations.find(c => c.cali_idx === caliIdx);
+        // Match the extruder too, not cali_idx alone: the printer numbers its
+        // calibration table PER NOZZLE, so on a dual-nozzle machine the same
+        // cali_idx exists on both hotends and means different things. Resolving
+        // by index alone could persist the other hotend's K value and diameter.
+        const cal = pc.calibrations.find(
+          c => c.cali_idx === caliIdx && (c.extruder_id ?? 0) === extruder,
+        );
         if (cal) {
           profiles.push({
             printer_id: printerId,

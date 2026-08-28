@@ -71,6 +71,7 @@ def _state(trays: list[dict]) -> SimpleNamespace:
         # key reads them so a Filament Track Switch rebind reaches the card.
         fila_switch=None,
         ams_switch_inlet={},
+        extruder_slots={},
         cooling_fan_speed=0,
         big_fan1_speed=0,
         big_fan2_speed=0,

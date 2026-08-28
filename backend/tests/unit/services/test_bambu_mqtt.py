@@ -6117,6 +6117,158 @@ class TestAmsLoadFilamentEncoding:
         assert mqtt_client.ams_load_filament(0) is False
         mqtt_client._client.publish.assert_not_called()
 
+    def test_extruder_id_is_absent_unless_asked_for(self, mqtt_client):
+        """The field must not appear on a printer that did not ask for it.
+
+        BambuStudio only sets it when a Filament Track Switch is installed
+        (``command_ams_change_filament`` takes it as std::optional). Everywhere
+        else the firmware derives the hotend from the AMS binding, and sending a
+        value would be us guessing at something it already knows.
+        """
+        assert mqtt_client.ams_load_filament(5) is True
+        assert "extruder_id" not in self._published(mqtt_client)["print"]
+
+    @pytest.mark.parametrize("extruder_id", [0, 1])
+    def test_extruder_id_rides_along_when_given(self, mqtt_client, extruder_id):
+        """With a switch fitted the hotend has to be named, or nothing happens."""
+        assert mqtt_client.ams_load_filament(5, extruder_id=extruder_id) is True
+        assert self._published(mqtt_client)["print"]["extruder_id"] == extruder_id
+
+
+class TestAmsUnloadFilamentTargeting:
+    """Which hotend an unload acts on, for dual-nozzle printers.
+
+    ``tray_now`` is a single printer-wide value, so with both hotends loaded it
+    names only one of them. BambuStudio addresses the unload by walking its
+    extruders for the one fed from the clicked slot
+    (``StatusPanel::on_ams_unload``) and publishes nothing when none matches.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient, ExtruderSlot
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client._client = MagicMock()
+        client.state.connected = True
+        # The check only runs once the printer has reported two extruders; a
+        # single-nozzle machine has nothing to disambiguate.
+        client._is_dual_nozzle = True
+        # Right hotend fed from AMS 1 slot 1 (global tray 5), left from AMS 0
+        # slot 2 (global tray 2). tray_now names only the first of the two.
+        client.state.tray_now = 5
+        client.state.extruder_slots = {
+            0: ExtruderSlot(ams_id=1, slot_id=1, has_filament=True),
+            1: ExtruderSlot(ams_id=0, slot_id=2, has_filament=True),
+        }
+        return client
+
+    @staticmethod
+    def _published(client) -> dict:
+        last_call = client._client.publish.call_args_list[-1]
+        _topic, payload, *_ = last_call.args
+        return json.loads(payload)
+
+    def test_an_addressed_unload_targets_that_slots_ams(self, mqtt_client):
+        """Tray 2 is on the left hotend, which tray_now does not name."""
+        assert mqtt_client.ams_unload_filament(2) is True
+        cmd = self._published(mqtt_client)["print"]
+        assert cmd["ams_id"] == 0
+        assert cmd["slot_id"] == 255
+        assert cmd["target"] == 255
+
+    def test_an_unaddressed_unload_still_follows_tray_now(self, mqtt_client):
+        """Single-nozzle printers have no slot to pass; that path is unchanged."""
+        assert mqtt_client.ams_unload_filament() is True
+        assert self._published(mqtt_client)["print"]["ams_id"] == 1
+
+    def test_a_slot_no_hotend_holds_publishes_nothing(self, mqtt_client):
+        """Clicking Unload on an idle slot is a no-op, not a command."""
+        assert mqtt_client.ams_unload_filament(7) is False
+        mqtt_client._client.publish.assert_not_called()
+
+    def test_the_check_is_skipped_when_the_printer_reports_no_extruder_slots(self, mqtt_client):
+        """An empty map means "did not say", never "no hotend holds it".
+
+        Every printer outside the H2/X2 series omits ``device.extruder.info``,
+        and reading that silence as a negative would break unload on all of them.
+        """
+        mqtt_client.state.extruder_slots = {}
+        assert mqtt_client.ams_unload_filament(7) is True
+        assert self._published(mqtt_client)["print"]["ams_id"] == 1
+
+    def test_a_single_nozzle_printer_is_never_gated_on_snow(self, mqtt_client):
+        """One hotend means tray_now is already unambiguous.
+
+        Single-nozzle machines do report ``device.extruder.info`` — BambuStudio
+        has a branch for it and an X1C sends the block — but nobody has read a
+        single-nozzle ``snow`` off the wire. Running the match there would stake
+        every X1C/P1S/A1 unload on an unverified encoding, so it is not run.
+        """
+        mqtt_client._is_dual_nozzle = False
+
+        assert mqtt_client.ams_unload_filament(7) is True
+        assert self._published(mqtt_client)["print"]["ams_id"] == 1
+
+    def test_the_external_spool_is_not_matched_against_ams_slots(self, mqtt_client):
+        """254/255 are not ams*4+slot, so the slot arithmetic cannot describe them."""
+        assert mqtt_client.ams_unload_filament(254) is True
+        assert self._published(mqtt_client)["print"]["ams_id"] == 255
+
+
+class TestParseExtruderSlots:
+    """Decoding ``device.extruder.info`` into per-hotend loaded slots."""
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client._client = MagicMock()
+        return client
+
+    def test_snow_decodes_to_ams_and_slot(self, mqtt_client):
+        """snow is bits 8-15 = AMS id, bits 0-7 = slot — same shape as fila_switch.in."""
+        mqtt_client._parse_extruder_slots({"device": {"extruder": {"info": [{"id": 0, "snow": 0x0102, "info": 0b10}]}}})
+
+        slot = mqtt_client.state.extruder_slots[0]
+        assert (slot.ams_id, slot.slot_id) == (1, 2)
+        assert slot.has_filament is True
+
+    def test_the_empty_sentinel_is_not_read_as_a_slot(self, mqtt_client):
+        """0xFFFF would otherwise decode to the nonexistent AMS 255 slot 255."""
+        mqtt_client._parse_extruder_slots({"device": {"extruder": {"info": [{"id": 1, "snow": 0xFFFF, "info": 0}]}}})
+
+        slot = mqtt_client.state.extruder_slots[1]
+        assert slot.ams_id is None and slot.slot_id is None
+        assert slot.has_filament is False
+
+    def test_a_payload_without_the_block_keeps_the_last_answer(self, mqtt_client):
+        """A temperatures-only frame must not read as "both hotends are empty"."""
+        mqtt_client._parse_extruder_slots({"device": {"extruder": {"info": [{"id": 0, "snow": 0x0003, "info": 0b10}]}}})
+        mqtt_client._parse_extruder_slots({"bed_temper": 60})
+
+        assert mqtt_client.state.extruder_slots[0].ams_id == 0
+
+    def test_holds_answers_for_one_slot_only(self, mqtt_client):
+        from backend.app.services.bambu_mqtt import ExtruderSlot
+
+        assert ExtruderSlot(ams_id=1, slot_id=2).holds(1, 2) is True
+        assert ExtruderSlot(ams_id=1, slot_id=2).holds(1, 3) is False
+        assert ExtruderSlot().holds(0, 0) is False
+
 
 class TestAmsFilamentSettingExternalSpoolEncoding:
     """Encoding of `ams_filament_setting` / `reset_ams_slot` for the external spool.

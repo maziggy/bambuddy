@@ -8,7 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.printer import Printer
-from backend.app.services.bambu_mqtt import BambuMQTTClient, MQTTLogEntry, PrinterState, get_stage_name
+from backend.app.services.bambu_mqtt import (
+    STAGE_NAMES,
+    BambuMQTTClient,
+    MQTTLogEntry,
+    PrinterState,
+    get_stage_name,
+)
 from backend.app.utils.kprofile_lookup import build_slot_k_resolver
 
 logger = logging.getLogger(__name__)
@@ -1170,6 +1176,23 @@ def get_derived_status_name(state: PrinterState, model: str | None = None) -> st
     # X1 models use -1 for idle, A1/P1 models use 255 for idle
     # Valid stage numbers are 0-254
     if 0 <= state.stg_cur < 255:
+        # A stage number the table does not cover is named "Preparing" rather
+        # than "Unknown stage (72)". New models report stages before Bambuddy
+        # learns their names -- the H2C still has several -- and the card is
+        # the wrong place to say so: the number means nothing to the person
+        # reading it, and every stage that has ever turned out to be unnamed
+        # was part of the run-up to printing, so "Preparing" is both the more
+        # useful answer and the more likely one.
+        #
+        # This is display only, and deliberately not pushed down into
+        # `get_stage_name`. That function also feeds the stage-transition log
+        # line and the once-per-session warning that exists precisely to
+        # capture unnamed stages so they can be named later (bambu_mqtt.py
+        # ~4100) -- there the number is the entire diagnostic value, and
+        # replacing it with "Preparing" would hide the very thing that
+        # reports these.
+        if state.stg_cur not in STAGE_NAMES:
+            return "Preparing"
         return get_stage_name(state.stg_cur)
 
     # If not in RUNNING state, no derived status needed
@@ -1590,6 +1613,22 @@ def printer_state_to_dict(
                 "out_extruders": list(state.fila_switch.out_extruders),
                 "stat": state.fila_switch.stat,
                 "info": state.fila_switch.info,
+                # Mirrors BambuStudio's DevFilaSwitch::IsReady — every AMS has to
+                # be bound to an inlet before the switch can route anything. Until
+                # the operator has done that on the printer's Manual AMS Setup
+                # screen, Studio refuses a load outright rather than sending a
+                # command the firmware cannot act on, and so do we.
+                # An empty AMS list is "ready", as it is in Studio: there is then
+                # no slot to load from, so nothing can reach the check anyway, and
+                # reporting not-ready would only mean a confusing toast on a
+                # payload that has not carried the AMS block yet.
+                #
+                # An AMS still reporting a real extruder id rather than 0xE has no
+                # inlet entry, so a machine with one hard-wired unit reads as not
+                # ready. That looks harsh but is exactly Studio's own rule —
+                # IsReady() requires a switcher position on *every* AMS, and only
+                # the 0xE branch ever sets one (DevFilaSystem.cpp:596-615).
+                "ready": all(str(u["id"]) in state.ams_switch_inlet for u in ams_units),
             }
             if state.fila_switch and state.fila_switch.installed
             else None
@@ -1597,6 +1636,18 @@ def printer_state_to_dict(
         # Per-AMS FTS inlet binding: {ams_id: "A" | "B"}. Gated on the accessory
         # so a stale binding cannot outlive it being unplugged.
         "ams_switch_inlet": (dict(state.ams_switch_inlet) if state.fila_switch and state.fila_switch.installed else {}),
+        # Which AMS slot each hotend is fed from: {extruder_id: {...}}. Travels on
+        # the WebSocket for the same reason as fila_switch above — the frontend
+        # shallow-merges pushes over its cached status, so an absent field keeps a
+        # stale value forever. Empty on printers that do not report it.
+        "extruder_slots": {
+            str(ext_id): {
+                "ams_id": slot.ams_id,
+                "slot_id": slot.slot_id,
+                "has_filament": slot.has_filament,
+            }
+            for ext_id, slot in state.extruder_slots.items()
+        },
         # WiFi signal strength
         "wifi_signal": state.wifi_signal,
         "wired_network": state.wired_network,

@@ -4,6 +4,7 @@ These tests verify that /api/v1/spoolman/inventory/spools/* correctly
 translates between Spoolman's data model and Bambuddy's InventorySpool format.
 """
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -71,10 +72,17 @@ def mock_spoolman_client():
     # been 1000.0 and the "remaining unchanged" assertion below would have
     # failed. The one check that could have caught the bug was cancelled out by
     # the mock.
+    #
+    # The baseline is staged as the JSON string '"250.0"', not the JSON number
+    # '250.0'. Spoolman registers an unseen extra key as field_type "text" and
+    # then requires the value to decode to a str, so the number form is
+    # rejected with "Value is not a string." -- staging it here would be the
+    # same class of mistake as the used_weight=0 above: a value the real server
+    # cannot hold.
     mock_client.reset_spool_consumed_counter = AsyncMock(
         return_value={
             **SAMPLE_SPOOLMAN_SPOOL,
-            "extra": {**SAMPLE_SPOOLMAN_SPOOL["extra"], "bambu_weight_used_baseline": "250.0"},
+            "extra": {**SAMPLE_SPOOLMAN_SPOOL["extra"], "bambu_weight_used_baseline": json.dumps("250.0")},
         }
     )
     mock_client.update_spool_full = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)

@@ -182,9 +182,20 @@ def _extract_extra_float(extra: dict, key: str) -> float | None:
             decoded = json.loads(raw)
         except (json.JSONDecodeError, ValueError):
             return None
-        if not isinstance(decoded, (int, float)) or isinstance(decoded, bool):
+        if isinstance(decoded, str):
+            # Spoolman's extra fields default to field_type "text", which only
+            # accepts values that decode to a str, so numbers written through
+            # it arrive as '"263.0"' rather than '263.0'. Both spellings have
+            # to read back the same, or a baseline written by the reset would
+            # be invisible to the code that subtracts it.
+            try:
+                value = float(decoded)
+            except ValueError:
+                return None
+        elif isinstance(decoded, (int, float)) and not isinstance(decoded, bool):
+            value = float(decoded)
+        else:
             return None
-        value = float(decoded)
     else:
         return None
     return value if math.isfinite(value) else None
@@ -260,7 +271,14 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     # `weight_used - weight_used_baseline`. The reset used to PATCH Spoolman's
     # used_weight to 0 instead, and Spoolman recomputes remaining from initial
     # minus used, so the spool jumped back to full (#2906).
-    stored_baseline = _extract_extra_float(extra, BAMBU_WEIGHT_USED_BASELINE_KEY) or 0.0
+    # `or 0.0` would collapse None and 0.0, which is the one distinction
+    # _extract_extra_float exists to preserve; spell the absent case out.
+    # Clamp the low end too: the write side already refuses a negative
+    # baseline, and without the same rule here a negative value stored by hand
+    # would be subtracted, inflating the displayed counter. min() below only
+    # bounds the other end.
+    stored = _extract_extra_float(extra, BAMBU_WEIGHT_USED_BASELINE_KEY)
+    stored_baseline = 0.0 if stored is None else max(0.0, stored)
     remaining_raw = spool.get("remaining_weight")
     if remaining_raw is not None:
         remaining_weight: float = _safe_float(remaining_raw, 0.0)
@@ -268,7 +286,7 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         weight_used_baseline: float = max(0.0, used_weight - real_used_weight + stored_baseline)
     else:
         used_weight = real_used_weight
-        weight_used_baseline = max(0.0, stored_baseline)
+        weight_used_baseline = stored_baseline  # already clamped to >= 0 above
     # Never let the displayed counter read negative: a baseline larger than
     # what the spool has consumed means used_weight moved backwards in Spoolman
     # after the reset, which is the user's edit and not ours to reinterpret.

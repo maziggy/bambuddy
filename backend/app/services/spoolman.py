@@ -704,7 +704,17 @@ class SpoolmanClient:
                 baseline = 0.0
             merged = {
                 **(current.get("extra") or {}),
-                BAMBU_WEIGHT_USED_BASELINE_KEY: json.dumps(baseline),
+                # Stored as a JSON *string*, not a JSON number. Spoolman
+                # registers an unseen extra key as field_type "text" on first
+                # write, and its validate_extra_field_value then requires the
+                # value to decode to a str -- a bare 263.0 is rejected with
+                # "Value is not a string." and the PATCH 400s, so the reset
+                # would never land. It has to be right the first time:
+                # add_or_update_extra_field refuses to change a field's type
+                # afterwards, so one numeric write would pin the key to text on
+                # that install permanently. tag, bambu_color_name and both
+                # slicer keys already store the string form for this reason.
+                BAMBU_WEIGHT_USED_BASELINE_KEY: json.dumps(str(baseline)),
             }
             return await self.update_spool_full(spool_id=spool_id, extra=merged)
 

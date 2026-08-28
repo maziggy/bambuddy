@@ -72,6 +72,7 @@ from backend.app.utils.threemf_tools import (
     default_plate_number,
     extract_rack_plan_from_3mf,
     extract_slot_extruders_from_3mf,
+    select_plate_gcode_name,
 )
 
 logger = logging.getLogger(__name__)
@@ -719,13 +720,21 @@ def _effective_plate_id(explicit_plate_id: int | None, file_path: Path) -> int:
     every call site below it: G-code injection, rack-plan lookup,
     slot-extruder lookup, and the actual print command.
 
-    An explicit ``plate_id`` on the queue item always wins. Falling back to a
-    bare ``1`` instead of reading the archive assumes a single-plate file's
-    one G-code is numbered 1, which only holds for a plate exported on its
-    own — one cut out of a larger project keeps its ORIGINAL plate number, so
-    a printer asked to print "plate 1" of a file whose only G-code is
-    ``plate_2.gcode`` accepts the command, can't find the file, throws an HMS
-    error, and sits wedged in IDLE until power-cycled (#2947).
+    A positive explicit ``plate_id`` on the queue item always wins. A
+    non-positive one is treated as "not set" and resolved from the archive,
+    the way the rest of the queue code already reads it (``if item.plate_id:``
+    in ``api/routes/print_queue.py``): the schemas put no lower bound on the
+    field, and passing a 0 straight through would build a print command for
+    ``Metadata/plate_0.gcode``, which is the same wedge this function exists
+    to prevent. The ``item.plate_id or 1`` this replaced mapped 0 to 1.
+
+    Falling back to a bare ``1`` instead of reading the archive assumes a
+    single-plate file's one G-code is numbered 1, which only holds for a
+    plate exported on its own: one cut out of a larger project keeps its
+    ORIGINAL plate number, so a printer asked to print "plate 1" of a file
+    whose only G-code is ``plate_2.gcode`` accepts the command, can't find
+    the file, throws an HMS error, and sits wedged in IDLE until
+    power-cycled (#2947).
 
     The four call sites agreed on a fallback only by accident before this:
     with G-code injection on, ``inject_gcode_into_3mf`` already falls back to
@@ -736,14 +745,43 @@ def _effective_plate_id(explicit_plate_id: int | None, file_path: Path) -> int:
     Falls back to 1 when the archive can't be read, holds no G-code member at
     all, or its default member doesn't follow the ``plate_N`` naming
     convention (a slicer that doesn't use it has no number to dispatch).
+
+    An explicit plate the archive doesn't hold is logged and then sent
+    anyway. It wedges the printer exactly like #2947 did, but redirecting it
+    to a plate that is in the file would print a model nobody asked for,
+    which is the worse of the two.
     """
-    if explicit_plate_id is not None:
-        return explicit_plate_id
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
-            resolved = default_plate_number(zf.namelist())
-    except (OSError, zipfile.BadZipFile):
-        resolved = None
+            names = zf.namelist()
+    except (OSError, zipfile.BadZipFile) as exc:
+        logger.warning(
+            "Dispatch plate: cannot read %s (%s), so the archive's own plate numbering "
+            "is unavailable; dispatching plate %s",
+            file_path,
+            exc,
+            explicit_plate_id if explicit_plate_id is not None and explicit_plate_id > 0 else 1,
+        )
+        names = None
+
+    if explicit_plate_id is not None and explicit_plate_id > 0:
+        if (
+            names is not None
+            and default_plate_number(names) is not None
+            and select_plate_gcode_name(names, explicit_plate_id) is None
+        ):
+            logger.warning(
+                "Dispatch plate: %s was queued for plate %s but holds no G-code for it "
+                "(it has %s). Sending plate %s as asked; expect the printer to reject the "
+                "file, since printing a different plate would print the wrong model (#2947)",
+                file_path,
+                explicit_plate_id,
+                ", ".join(sorted(n for n in names if n.endswith(".gcode"))),
+                explicit_plate_id,
+            )
+        return explicit_plate_id
+
+    resolved = default_plate_number(names) if names is not None else None
     return resolved if resolved is not None else 1
 
 
@@ -6311,7 +6349,11 @@ class PrintScheduler:
                 ams_mapping=ams_mapping,
                 created_by_id=item.created_by_id,
                 cost_center_id=item.cost_center_id,
-                plate_id=item.plate_id,
+                # The plate actually dispatched, not the queue item's raw
+                # column: on None, `register_expected_print` stores nothing,
+                # and `extract_filament_usage_from_3mf` then books every
+                # filament in the file rather than the one plate that printed.
+                plate_id=effective_plate_id,
             )
             # Registration happens before the print command by necessity (the
             # printer can report the print before the send returns), so record

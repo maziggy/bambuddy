@@ -7,6 +7,15 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 
+from backend.app.models.notification import NotificationProvider
+
+# Every per-event toggle, read off the table rather than listed here (#2945).
+#
+# A hardcoded list only covers the toggles someone remembered to add to it, so
+# it carries the same hazard as the field maps it is meant to police, one layer
+# up. Derived, a toggle added tomorrow is exercised the day its column lands.
+EVENT_TOGGLE_COLUMNS = sorted(c.name for c in NotificationProvider.__table__.columns if c.name.startswith("on_"))
+
 
 class TestNotificationsAPI:
     """Integration tests for /api/v1/notifications/ endpoints."""
@@ -493,7 +502,7 @@ class TestNotificationsAPI:
         response = await async_client.get(f"/api/v1/notifications/{provider.id}")
         assert response.json()["on_billing_charge_failed"] is False
 
-    # Per-event toggles that live only in these hand-maintained field maps.
+    # Every per-event toggle, across the hand-maintained field maps.
     #
     # These have to be exercised through the route, not the ORM: both
     # directions of notifications.py are hand-maintained field-by-field maps,
@@ -511,10 +520,7 @@ class TestNotificationsAPI:
     # the toggles could not be turned on at all.
     @pytest.mark.asyncio
     @pytest.mark.integration
-    @pytest.mark.parametrize(
-        "field",
-        ["on_ha_sensor_alert", "on_location_ha_sensor_alert", "on_stock_reorder_alert", "on_stock_break_alert"],
-    )
+    @pytest.mark.parametrize("field", EVENT_TOGGLE_COLUMNS)
     async def test_create_persists_and_returns_the_toggle(self, async_client: AsyncClient, field: str):
         response = await async_client.post(
             "/api/v1/notifications/",
@@ -537,10 +543,7 @@ class TestNotificationsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    @pytest.mark.parametrize(
-        "field",
-        ["on_ha_sensor_alert", "on_location_ha_sensor_alert", "on_stock_reorder_alert", "on_stock_break_alert"],
-    )
+    @pytest.mark.parametrize("field", EVENT_TOGGLE_COLUMNS)
     async def test_patch_is_reflected_by_every_read_route(
         self, async_client: AsyncClient, notification_provider_factory, field: str
     ):

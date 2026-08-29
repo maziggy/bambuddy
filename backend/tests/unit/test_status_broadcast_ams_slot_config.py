@@ -64,12 +64,14 @@ def _state(trays: list[dict]) -> SimpleNamespace:
         progress=0,
         layer_num=0,
         temperatures={},
+        nozzles=[],
         raw_data={"ams": [{"id": "0", "dry_time": 0, "tray": trays}]},
         stg_cur=0,
         # Real PrinterState always carries these; the status-broadcast dedup
         # key reads them so a Filament Track Switch rebind reaches the card.
         fila_switch=None,
         ams_switch_inlet={},
+        extruder_slots={},
         cooling_fan_speed=0,
         big_fan1_speed=0,
         big_fan2_speed=0,

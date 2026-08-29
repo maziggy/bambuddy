@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, ScanEye, Check, X, AlertTriangle, Info } from 'lucide-react';
@@ -81,26 +81,39 @@ export function FailureDetectionSettings() {
     },
   });
 
-  // Auto-save on change (debounced)
-  useEffect(() => {
-    if (!initialized || !settings) return;
-    const changed =
+  const hasUnsavedChanges = useMemo(() => {
+    if (!initialized || !settings) return false;
+    return (
       settings.obico_enabled !== enabled ||
       settings.obico_ml_url !== mlUrl ||
       (settings.obico_ml_token ?? '') !== mlToken ||
       settings.obico_sensitivity !== sensitivity ||
       settings.obico_action !== action ||
       settings.obico_poll_interval !== pollInterval ||
-      settings.obico_enabled_printers !== (enabledPrinters === null ? '' : JSON.stringify(enabledPrinters));
-    if (!changed) return;
+      settings.obico_enabled_printers !== (enabledPrinters === null ? '' : JSON.stringify(enabledPrinters))
+    );
+  }, [settings, initialized, enabled, mlUrl, mlToken, sensitivity, action, pollInterval, enabledPrinters]);
+
+  // Auto-save on change (debounced)
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
     const id = setTimeout(() => saveMutation.mutate(), 500);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, mlUrl, mlToken, sensitivity, action, pollInterval, enabledPrinters, initialized]);
+  }, [hasUnsavedChanges, enabled, mlUrl, mlToken, sensitivity, action, pollInterval, enabledPrinters]);
 
   const handleTest = async () => {
     setTestResult(null);
     try {
+      // Flush first, so a green result describes the configuration the
+      // detection loop is actually running with. The loop reads the saved
+      // settings; this form tests what is typed in the boxes. Inside the 500ms
+      // auto-save debounce — or after a save that failed — those are different
+      // values, and "reachable and healthy" for a token the service never
+      // received is the reassuring-green-light problem all over again (#2952).
+      if (hasUnsavedChanges) {
+        await saveMutation.mutateAsync();
+      }
       const res = await api.testObicoConnection(mlUrl, mlToken);
       if (res.ok) {
         // auth_ok is null when the token could not be checked — don't claim it

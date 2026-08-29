@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 import aiohttp
 
 from backend.app.core.logging_filters import redact_url_credentials
+from backend.app.utils.ffmpeg_output import NO_FFMPEG_OUTPUT, summarize_ffmpeg_stderr
 
 logger = logging.getLogger(__name__)
 
@@ -517,7 +518,7 @@ async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
 
         if process.returncode != 0:
-            logger.error("ffmpeg USB capture failed: %s", stderr.decode()[:200])
+            logger.error("ffmpeg USB capture failed: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT)
             return None
 
         if not stdout or len(stdout) < 100:
@@ -701,8 +702,8 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         )
 
         if process.returncode != 0:
-            # ffmpeg echoes the RTSP input URL, which carries the camera password.
-            logger.error("ffmpeg RTSP capture failed: %s", redact_url_credentials(stderr.decode())[:200])
+            # The summariser masks the camera password the input URL carries.
+            logger.error("ffmpeg RTSP capture failed: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT)
             return None
 
         if not stdout or len(stdout) < 100:
@@ -1149,8 +1150,10 @@ async def _stream_rtsp(
         await asyncio.sleep(0.1)
         if process.returncode is not None:
             stderr = await process.stderr.read()
-            # ffmpeg echoes the RTSP input URL, which carries the camera password.
-            logger.error("ffmpeg RTSP stream failed immediately: %s", redact_url_credentials(stderr.decode())[:300])
+            # The summariser masks the camera password the input URL carries.
+            logger.error(
+                "ffmpeg RTSP stream failed immediately: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT
+            )
             return
 
         buffer = b""
@@ -1262,7 +1265,9 @@ async def _stream_usb(
         await asyncio.sleep(0.5)
         if process.returncode is not None:
             stderr = await process.stderr.read()
-            logger.error("ffmpeg USB stream failed immediately: %s", stderr.decode()[:300])
+            logger.error(
+                "ffmpeg USB stream failed immediately: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT
+            )
             return
 
         buffer = b""

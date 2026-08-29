@@ -590,10 +590,14 @@ export function installedNozzleDiameters(
  * the machine instead of assuming 0.4mm (#1899).
  *
  * On dual-nozzle printers (H2D) each AMS is bound to one extruder via
- * `ams_extruder_map` (amsId → extruder index, 0=left/primary, 1=right), so we
- * read that nozzle's diameter. Single-nozzle printers have no map entry and
- * fall back to the primary nozzle (index 0). Returns undefined when the printer
- * hasn't reported nozzle hardware yet, letting the caller keep its own default.
+ * `ams_extruder_map` (amsId → extruder index), so we read that nozzle's
+ * diameter. `status.nozzles` is indexed by extruder id -- [0] is the RIGHT
+ * hotend and [1] the left, measured on an H2D fitted with 0.4 left / 0.6 right
+ * -- so indexing it by the extruder is correct. (This comment used to say
+ * "0=left/primary, 1=right", which was backwards; the code was always right.)
+ * Single-nozzle printers have no map entry and fall back to index 0. Returns
+ * undefined when the printer hasn't reported nozzle hardware yet, letting the
+ * caller keep its own default.
  * Diameter is the bare decimal string the status carries, e.g. "0.4" / "0.6".
  */
 export function resolveSlotNozzleDiameter(

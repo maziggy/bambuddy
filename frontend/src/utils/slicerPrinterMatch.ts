@@ -45,6 +45,12 @@ export const EMPTY_COMPATIBILITY_INDEX: PrinterCompatibilityIndex = {
 // (e.g. "X1" ⇄ "X1C") would silently group truly distinct printers.
 const PRINTER_MODEL_SUFFIX_ALIASES: Record<string, readonly string[]> = {
   'A1 MINI': ['A1M'],
+  // Same shape, spotted while tracing #2982: the bundle names every H2D Pro
+  // process and filament preset "@BBL H2DP" while the printer preset — and
+  // PRINTER_MODEL_MAP with it — spells the model "H2D Pro". Without the alias
+  // the H2D Pro classified all 198 bundled processes as belonging to another
+  // printer.
+  'H2D PRO': ['H2DP'],
 };
 
 /**
@@ -318,4 +324,80 @@ export function presetCompatibility(
   // (2) BambuStudio's `@BBL <model>` name convention — covers cloud /
   // standard presets that don't carry compatible_printers.
   return classifyByBambuName(preset.name, selectedPrinterName, index.bambuModelByShortCode);
+}
+
+// model token compiles to a flexible-whitespace word-boundary regex.
+function _tokenToRegex(token: string): RegExp {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  return new RegExp(`\\b${escaped}\\b`, 'i');
+}
+
+// Extract printer model from a preset name → normalized short code
+// (e.g. "X1C", "H2D"). Two strategies in order:
+//
+// (1) ``@`` suffix — the BambuStudio naming convention. Two shapes:
+//   - "@BBL X1C 0.4 nozzle"               → "X1C"  (short-code form,
+//      Bambu Cloud system presets)
+//   - "@Bambu Lab X1 Carbon 0.4 nozzle"   → "X1C"  (long-form, used by
+//      user-renamed Bambu Cloud presets and most Orca Cloud profiles —
+//      reverse-looked-up via the backend printer-model registry)
+//
+// (2) Body scan — many user-authored / Orca Cloud presets put the printer
+// model at the START of the name with no @ suffix at all (the literal
+// shape that surfaced #1623: "X1C eSUN PETG-Basic Filament"). Scan the
+// name for any known model token (every long-name fragment + every short
+// code from the registry) and return the first match. Long-first sort
+// keeps "A1 Mini" / "X1 Carbon" / "H2D Pro" from being eaten by their
+// shorter sibling ("A1" / "X1" / "H2D"). Word-boundary regex prevents
+// false-positives on partial substrings (e.g. "PA1" doesn't match "A1",
+// "X1Box" doesn't match "X1").
+//
+// Returns null when neither strategy resolves; the caller keeps such
+// presets visible (can't filter what we can't classify).
+//
+// ``printerModelsLongToShort`` is the backend's PRINTER_MODEL_MAP shape:
+// keys are "Bambu Lab <long>", values are short codes.
+export function extractPresetModel(
+  name: string,
+  printerModelsLongToShort: Record<string, string>,
+): string | null {
+  const atIdx = name.indexOf('@');
+  if (atIdx >= 0) {
+    const suffix = name.slice(atIdx + 1).trim();
+    const bblMatch = suffix.match(/^BBL\s+(.+?)(?:\s+[\d.]+\s*nozzle)?$/i);
+    if (bblMatch) return bblMatch[1].trim();
+    const longMatch = suffix.match(/^Bambu Lab\s+(.+?)(?:\s+[\d.]+\s*nozzle)?$/i);
+    if (longMatch) {
+      const longFragment = longMatch[1].trim();
+      const fullKey = `Bambu Lab ${longFragment}`;
+      if (printerModelsLongToShort[fullKey]) return printerModelsLongToShort[fullKey];
+      const lower = fullKey.toLowerCase();
+      for (const [k, v] of Object.entries(printerModelsLongToShort)) {
+        if (k.toLowerCase() === lower) return v;
+      }
+      return longFragment;
+    }
+  }
+
+  // Body scan — accumulate {token, short} pairs and try long-first.
+  const tokens: Array<{ token: string; short: string }> = [];
+  const seen = new Set<string>();
+  for (const [longName, short] of Object.entries(printerModelsLongToShort)) {
+    const fragment = longName.replace(/^Bambu Lab\s+/, '');
+    const key = fragment.toLowerCase();
+    if (!seen.has(key)) {
+      tokens.push({ token: fragment, short });
+      seen.add(key);
+    }
+    const shortKey = short.toLowerCase();
+    if (!seen.has(shortKey)) {
+      tokens.push({ token: short, short });
+      seen.add(shortKey);
+    }
+  }
+  tokens.sort((a, b) => b.token.length - a.token.length);
+  for (const { token, short } of tokens) {
+    if (_tokenToRegex(token).test(name)) return short;
+  }
+  return null;
 }

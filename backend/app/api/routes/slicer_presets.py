@@ -309,7 +309,10 @@ async def _fetch_local_presets(db: AsyncSession) -> dict[str, list[UnifiedPreset
 
 
 def _content_compatible_printers(content: dict) -> list[str] | None:
-    """Pull ``compatible_printers`` out of an inline profile content dict.
+    """Pull ``compatible_printers`` out of a profile content dict.
+
+    Serves both callers that have one: an Orca Cloud profile's inline
+    ``content``, and an entry of the sidecar's bundled listing.
 
     Orca profiles carry it as a list of printer-preset names (the same shape
     ``orca_profiles.py`` stores on import); a single-printer profile may store
@@ -403,13 +406,26 @@ async def _fetch_bundled_presets(db: AsyncSession, *, refresh: bool = False) -> 
                 continue
             # Bundled presets are addressed by name (the slicer resolves them
             # by name during the `inherits:` walk), so name doubles as id.
-            extra: dict[str, str | None] = {}
+            preset = UnifiedPreset(id=name, name=name, source="standard")
             if slot == "filament":
-                extra["filament_type"] = entry.get("filament_type")
-                extra["filament_colour"] = entry.get("filament_colour")
-            slots[slot].append(
-                UnifiedPreset(id=name, name=name, source="standard", **extra),
-            )
+                preset.filament_type = entry.get("filament_type")
+                preset.filament_colour = entry.get("filament_colour")
+            if slot in ("process", "filament"):
+                # The slicer's own compatible-printer list, and the only
+                # truthful answer for several Bambu printers: the bundle ships
+                # no process preset named after a P1S, an X1, an X1E or an H2D
+                # Pro -- each one is served by another model's preset that
+                # names it here. Inferring the printer from the preset NAME
+                # instead read all 198 as belonging to the model in their
+                # `@BBL` tag, so a P1S had zero compatible processes, the
+                # dropdown hid every one of them, and the auto-pick landed on
+                # an A1 0.2-nozzle process the CLI then refused (#2982).
+                #
+                # Older sidecars don't report the field. They return None here,
+                # which leaves the SliceModal on the name matcher for the
+                # standard tier -- degraded exactly as before, not broken.
+                preset.compatible_printers = _content_compatible_printers(entry)
+            slots[slot].append(preset)
 
     _bundled_cache = (now, slots)
     return slots

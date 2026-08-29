@@ -66,6 +66,7 @@ from backend.app.schemas.library import (
 from backend.app.schemas.slicer import SliceRequest, SliceResponse
 from backend.app.services.archive import ThreeMFParser
 from backend.app.services.design_settings import (
+    DesignOverride,
     apply_design_overrides,
     extract_design_process_overrides,
     overrides_from_config,
@@ -74,7 +75,12 @@ from backend.app.services.filament_requirements import annotate_rack_groups
 from backend.app.services.mesh_export import MeshExportError, export_mesh_stl, is_exportable
 from backend.app.services.plate_thumbnail import inject_plate_thumbnails_if_missing
 from backend.app.services.process_overrides import apply_process_overrides
-from backend.app.services.slice_output_check import missing_start_gcode_message, start_gcode_is_missing
+from backend.app.services.slice_output_check import (
+    missing_start_gcode_message,
+    start_gcode_is_missing,
+    unresolved_filament_message,
+    unresolved_filament_slots,
+)
 from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
 from backend.app.utils.filename import (
     MAX_FILENAME_BYTES,
@@ -3619,6 +3625,101 @@ def _patch_process_bed_type(process_json: str, bed_type: str) -> str:
     return json.dumps(profile)
 
 
+def _source_plate_colours(model_bytes: bytes) -> list[str]:
+    """Per-slot colours the source 3MF was designed with, or ``[]``.
+
+    Read from ``project_settings.config`` rather than ``slice_info.config``:
+    the latter records the colour the file was *last sliced* with, which for a
+    source that never carried one is the slicer's own #00AE42 default — the
+    exact value #2977 is about, so using it as a fallback would be circular.
+    STL and mesh-only 3MF sources have no project settings and yield ``[]``.
+    """
+    from io import BytesIO
+
+    try:
+        with zipfile.ZipFile(BytesIO(model_bytes), "r") as zf:
+            return [str(f.get("color") or "") for f in extract_project_filaments_from_3mf(zf)]
+    except (zipfile.BadZipFile, OSError, ValueError):
+        return []
+
+
+def _preset_default_colour(profile: dict) -> str:
+    """A filament preset's own ``default_filament_colour``, or ``""``.
+
+    OrcaSlicer's third-party vendor profiles carry this; Bambu Studio's
+    bundled BBL filament profiles carry it nowhere (checked across the whole
+    shipped `resources/profiles/BBL/filament/` tree — zero occurrences), which
+    is why it can only ever be one link in the chain and never the whole fix.
+
+    It is read here and rewritten as ``filament_colour`` because the CLI does
+    not read it itself. Measured against a 02.08.02.61 sidecar: a profile
+    carrying only ``default_filament_colour: ["#FF00FF"]`` still slices to
+    ``filament_colour: ["#00AE42"]``. Bambu Studio consumes the default in the
+    GUI when a project is created, not in ``--load-filaments``.
+    """
+    raw = profile.get("default_filament_colour")
+    if isinstance(raw, list):
+        raw = raw[0] if raw else None
+    return raw.strip() if isinstance(raw, str) else ""
+
+
+def _patch_filament_colours(
+    filament_jsons: list[str],
+    requested: list[str],
+    model_bytes: bytes,
+) -> list[str]:
+    """Write ``filament_colour`` onto each resolved filament profile (#2977).
+
+    Neither slicer stores a colour on a filament *preset* — it is a per-project
+    property their GUIs set from the plate — so a CLI slice with no colour
+    supplied records Bambu Studio's compiled-in default for every slot. That
+    default is `#00AE42`, which is why every internal-slicer output was green
+    regardless of the filament picked, and why the print dialog's AMS mapping
+    reported a colour mismatch against whatever was actually loaded.
+
+    Per slot, first non-empty of:
+
+    1. the caller's explicit colour (the SliceModal's per-slot swatch),
+    2. the preset's own ``default_filament_colour``,
+    3. the colour the source 3MF's plate was designed with.
+
+    All three empty means the slot is left untouched rather than being given a
+    guess: the slicer's default is then still wrong, but it is at least the
+    same wrong value the file would have had before this function existed.
+
+    Returns a new list; a profile that isn't parseable JSON is passed through
+    unchanged, on the same reasoning as ``_patch_process_bed_type`` — a colour
+    is not worth failing a slice that would otherwise succeed.
+    """
+    source_colours = _source_plate_colours(model_bytes) if filament_jsons else []
+    patched: list[str] = []
+    for i, raw in enumerate(filament_jsons):
+        try:
+            profile = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("Filament colour skipped for slot %d: profile is not valid JSON", i + 1)
+            patched.append(raw)
+            continue
+        if not isinstance(profile, dict):
+            patched.append(raw)
+            continue
+        colour = (
+            (requested[i].strip() if i < len(requested) and requested[i] else "")
+            or _preset_default_colour(profile)
+            or (source_colours[i].strip() if i < len(source_colours) and source_colours[i] else "")
+        )
+        if not colour:
+            patched.append(raw)
+            continue
+        # One-element array: the same shape the CLI uses for every other
+        # per-filament field (`filament_type`, `filament_vendor`), and the
+        # shape a `--load-filaments` profile is parsed as. A bare string is
+        # accepted by the JSON parser but not by the config deserialiser.
+        profile["filament_colour"] = [colour]
+        patched.append(json.dumps(profile))
+    return patched
+
+
 # Support-related keys we lift from the source 3MF's project_settings.config
 # into the picked process preset before `--load-settings` sees it (#1881).
 # BambuStudio's shipped process presets ("0.20mm Standard @BBL H2D" etc.)
@@ -3635,7 +3736,31 @@ _SOURCE_PROCESS_SUPPORT_KEYS_TO_PRESERVE = (
 )
 
 
-def _patch_process_support_settings(process_json: str, source_3mf_bytes: bytes) -> str:
+def _declined_source_keys(offered: list[DesignOverride], requested: list[str] | None) -> set[str]:
+    """Settings the file offered and the caller left unticked (#2942).
+
+    The slice dialog lists what the designer changed and applies only the keys
+    that are switched on, so the answer to "which of these does this slice
+    want" is already in the request. This reads the other half of it — the
+    ones that were on offer and turned down — which the support carry-over
+    below must not put back.
+
+    ``requested`` of ``None`` is a caller that predates the per-key choice and
+    so cannot have declined anything; an empty list is one that was shown the
+    file's settings and took none. Collapsing those two into "nothing
+    selected" is what made an empty panel indistinguishable from an old
+    client, and only one of them means the user said no.
+    """
+    if requested is None:
+        return set()
+    return {override.key for override in offered} - set(requested)
+
+
+def _patch_process_support_settings(
+    process_json: str,
+    source_3mf_bytes: bytes,
+    declined: set[str] | frozenset[str] = frozenset(),
+) -> str:
     """Overlay the source 3MF's support configuration onto the process JSON.
 
     The carry is deliberately one-way: a source can switch supports *on*,
@@ -3647,6 +3772,13 @@ def _patch_process_support_settings(process_json: str, source_3mf_bytes: bytes) 
     Nothing is lost by not carrying the off direction: a process preset
     with supports *on* is by definition a deliberate user preset, since
     Bambu's shipped ones all ship them off.
+
+    ``declined`` names keys the caller offered the user as the file's own
+    (#2622) and that the user left unticked, which this carry must then not
+    reinstate behind their back (#2942). It is empty for a source that offers
+    nothing — an OrcaSlicer export carries no ``different_settings_to_system``,
+    so there is nothing to tick and #1881's blanket carry still applies — and
+    for a client that predates the per-key ticks.
 
     Only fires on 3MF sources — STL / STEP don't carry `project_settings.
     config`. Silently no-ops when the source doesn't have the config, has
@@ -3675,7 +3807,11 @@ def _patch_process_support_settings(process_json: str, source_3mf_bytes: bytes) 
     if not isinstance(process_cfg, dict):
         return process_json
 
-    carried = {key: src_cfg[key] for key in _SOURCE_PROCESS_SUPPORT_KEYS_TO_PRESERVE if key in src_cfg}
+    carried = {
+        key: src_cfg[key] for key in _SOURCE_PROCESS_SUPPORT_KEYS_TO_PRESERVE if key in src_cfg and key not in declined
+    }
+    if not carried:
+        return process_json
     process_cfg.update(carried)
     # Logged because this is the one layer of the process JSON the user
     # can't see coming: the slice modal shows the picked preset's values,
@@ -3810,6 +3946,11 @@ async def _run_slicer_with_fallback(
         assert ref is not None, "schema validator guarantees filament list is non-None"
         filament_jsons.append(await resolve_preset_ref(db, user, ref, "filament"))
 
+    # Give every slot a colour before anything else touches the list, so the
+    # unused-slot substitution below propagates a complete profile rather than
+    # one that still has to be patched afterwards (#2977).
+    filament_jsons = _patch_filament_colours(filament_jsons, request.filament_colours, model_bytes)
+
     # Bed-type override (#1337): patch curr_bed_type onto the resolved
     # process JSON so the slicer's StaticPrintConfig pass picks up the
     # user's pick instead of whatever the process preset defaults to.
@@ -3863,18 +4004,29 @@ async def _run_slicer_with_fallback(
         # didn't touch) still drive the slice.
         primary_bytes = _sanitize_project_settings_sentinels(primary_bytes)
 
+        # #2622: the process settings the file's designer moved off the stock
+        # preset. Read once — the support patch below needs to know which of
+        # them the user was shown, and the carry after it needs their values.
+        design_offered = extract_design_process_overrides(primary_bytes)
+
+        declined_from_file = _declined_source_keys(design_offered, request.design_overrides)
+
         # #1881: preserve the source 3MF's support configuration on top of
         # the picked process preset. Bambu's shipped process presets set
         # `enable_support: 0` by default (supports are a per-print, not
         # per-quality, decision); `--load-settings` is authoritative so
         # without patching, the source's `enable_support: 1` + support-slot
         # assignments get discarded and the slice comes out single-material
-        # with a PVA slot loaded but never used.
-        presets["process"] = _patch_process_support_settings(presets["process"], primary_bytes)
+        # with a PVA slot loaded but never used. Bounded by the ticks: this
+        # runs for a source that offers no per-key choice at all, and for the
+        # keys of one that does but whose ticks the user left on.
+        presets["process"] = _patch_process_support_settings(
+            presets["process"], primary_bytes, declined=declined_from_file
+        )
 
-        # #2622: carry the designer's own process tweaks onto the picked preset.
-        # BambuStudio records exactly which keys deviate from the system preset
-        # in `different_settings_to_system`, so a MakerWorld author's 5 walls /
+        # Carry the designer's tweaks onto the picked preset. BambuStudio
+        # records exactly which keys deviate from the system preset in
+        # `different_settings_to_system`, so a MakerWorld author's 5 walls /
         # 100% infill / 0.1mm first layer survive a re-slice for another printer
         # instead of being flattened by --load-settings. Opt-in per key: only the
         # keys the caller names are applied, and only if the source really lists
@@ -3883,7 +4035,7 @@ async def _run_slicer_with_fallback(
         if request.design_overrides:
             presets["process"] = apply_design_overrides(
                 presets["process"],
-                extract_design_process_overrides(primary_bytes),
+                design_offered,
                 request.design_overrides,
             )
 
@@ -4233,6 +4385,21 @@ async def _run_slicer_with_fallback(
             "3mf" if request.export_3mf else "gcode",
         )
         raise HTTPException(status_code=502, detail=missing_start_gcode_message(request.printer_preset.id))
+
+    # Found while investigating #2977: a filament preset the sidecar's bundle
+    # cannot resolve is not an error there — the CLI inherits nothing and
+    # slices with its own defaults, so a PETG pick comes back as PLA at 200 C.
+    # Warned rather than refused: the file prints, and the user may well have
+    # meant to slice with a profile their sidecar image predates. Skipped on
+    # the embedded-settings path, which sends no filament profiles for the
+    # bundle to resolve in the first place.
+    if not used_embedded_settings:
+        unresolved = unresolved_filament_slots(result.content, export_3mf=bool(request.export_3mf))
+        if unresolved:
+            logger.warning(
+                "%s",
+                unresolved_filament_message(unresolved, [ref.id for ref in request.filament_presets]),
+            )
 
     return result, used_embedded_settings
 

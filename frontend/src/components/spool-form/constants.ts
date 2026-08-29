@@ -107,3 +107,13 @@ export const ALL_COLORS: ColorPreset[] = [...QUICK_COLORS, ...EXTENDED_COLORS];
 // Local storage keys
 export const RECENT_COLORS_KEY = 'bambuddy-recent-colors';
 export const MAX_RECENT_COLORS = 8;
+
+/**
+ * The nozzle sizes Bambu sells, smallest first.
+ *
+ * The spool form offers a filament preset and a K profile for every one of
+ * them, not only the size currently screwed into the machine: a spool is
+ * configured once and nozzles get swapped, and the calibration table on the
+ * printer keeps entries per diameter regardless of what is fitted right now.
+ */
+export const STANDARD_NOZZLE_DIAMETERS = ['0.2', '0.4', '0.6', '0.8'];

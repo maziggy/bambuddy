@@ -83,7 +83,10 @@ async def test_nothing_derivable_before_the_first_midnight(db_session):
     plug = await _plug(db_session)
     now = datetime.now(timezone.utc)
     # Snapshot taken this morning, after midnight — no baseline for the day.
-    await _snapshot(db_session, plug.id, now - timedelta(minutes=30), 102.0)
+    # Anchored to the boundary, not to the wall clock: `now - 30 minutes` is
+    # before local midnight for the first half hour of every local day, which
+    # made this the only test in the file that could drift (#2938).
+    await _snapshot(db_session, plug.id, local_day_start(now) + timedelta(minutes=30), 102.0)
 
     today, yesterday = await derive_today_yesterday(db_session, plug.id, live_total_kwh=103.5)
 

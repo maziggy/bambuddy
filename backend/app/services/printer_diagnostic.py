@@ -391,16 +391,21 @@ async def run_connection_diagnostic(
     elif not (last_verdict := last_print_storage_verdict(state)).reachable and not await _last_print_file_is_reachable(
         printer, last_verdict, ftps_ok=ftps_state == "ok"
     ):
-        # The toggle is on, a card is in, the printer said it put the last print
-        # on internal storage — and a probe confirmed the file really is out of
+        # The toggle is on, a card is in, the printer said the last print's file
+        # is on internal storage — and a probe confirmed it really is out of
         # reach. That is what H2-series and P2S firmware does, and no setting
         # here changes it (#2762 tracks reading that storage). A pass here would
         # be a lie; a fail would be unresolvable.
+        #
+        # The verdict's own reason, not a fixed one: a print started from the
+        # printer's screen reaches this branch too, and it never involved a
+        # slicer, so the advice attached to REASON_INTERNAL_STORAGE would name a
+        # dialog its operator never opened (#1820).
         checks.append(
             DiagnosticCheck(
                 id="external_storage",
                 status="warn",
-                params={"reason": REASON_INTERNAL_STORAGE},
+                params={"reason": last_verdict.reason or REASON_INTERNAL_STORAGE},
             )
         )
     elif not last_verdict.reachable:

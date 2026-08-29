@@ -5,10 +5,11 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { X, ScanEye, AlertCircle, Settings } from 'lucide-react';
+import { aiDetectionClass, hasVerdict, type AiDetection } from '../utils/aiDetection';
 
 interface AiDetectionModalProps {
   printerName: string;
-  detection?: { class: string; frame_count: number; score: number };
+  detection?: AiDetection;
   // null = no error, or the viewer lacks settings:read (the backend withholds
   // error strings from non-settings users because they can embed config URLs)
   lastError: string | null;
@@ -27,9 +28,7 @@ export function AiDetectionModal({ printerName, detection, lastError, onClose }:
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const cls = detection
-    ? (detection.class === 'failure' || detection.class === 'warning' ? detection.class : 'safe')
-    : 'idle';
+  const cls = aiDetectionClass(detection);
   const statusColor =
     cls === 'failure'
       ? 'text-status-error'
@@ -37,7 +36,14 @@ export function AiDetectionModal({ printerName, detection, lastError, onClose }:
         ? 'text-status-warning'
         : cls === 'safe'
           ? 'text-status-ok'
-          : 'text-bambu-gray';
+          : cls === 'error'
+            ? 'text-amber-600 dark:text-amber-400'
+            : 'text-bambu-gray';
+
+  // This printer's own reason beats the service-wide one: with several printers
+  // monitored, the global string is whichever failed most recently and may be
+  // about someone else's printer entirely.
+  const reason = detection?.error ?? lastError;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -66,7 +72,7 @@ export function AiDetectionModal({ printerName, detection, lastError, onClose }:
               <span className="text-bambu-gray">{t('printers.aiDetection.currentStatus')}</span>
               <span className={`font-medium ${statusColor}`}>{t(`printers.aiDetection.${cls}`)}</span>
             </div>
-            {detection ? (
+            {detection && hasVerdict(cls) && (
               <>
                 <div className="flex justify-between">
                   <span className="text-bambu-gray">{t('printers.aiDetection.score')}</span>
@@ -77,19 +83,22 @@ export function AiDetectionModal({ printerName, detection, lastError, onClose }:
                   <span className="text-white font-mono">{detection.frame_count}</span>
                 </div>
               </>
-            ) : (
-              <p className="text-bambu-gray">{t('printers.aiDetection.idleHint')}</p>
             )}
+            {/* A score of 0.000 next to "Not checking" reads as a reassuring
+                measurement rather than the absence of one, so it is withheld
+                until an inference has actually produced it (#2952). */}
+            {cls === 'error' && <p className="text-bambu-gray">{t('printers.aiDetection.errorHint')}</p>}
+            {!detection && <p className="text-bambu-gray">{t('printers.aiDetection.idleHint')}</p>}
           </div>
 
-          {lastError && (
+          {reason && (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30">
               <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-red-700 dark:text-red-400" />
               <div className="min-w-0">
                 <div className="font-medium text-red-700 dark:text-red-400">
                   {t('printers.aiDetection.lastError')}
                 </div>
-                <p className="text-red-700/80 dark:text-red-300/80 break-words mt-1">{lastError}</p>
+                <p className="text-red-700/80 dark:text-red-300/80 break-words mt-1">{reason}</p>
               </div>
             </div>
           )}

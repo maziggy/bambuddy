@@ -41,7 +41,14 @@ class ModelProviderRegistry:
         return tuple(self._providers.values())
 
     def find_for_url(self, url: str) -> ModelProvider | None:
-        """Return the provider that claims ``url``, or ``None`` if none do."""
+        """Return the provider that claims ``url``, or ``None`` if none do.
+
+        Iterates in registration (dict insertion) order; when more than one
+        provider ``supports_url`` the *first registered* one wins. Providers
+        overlap rarely (``host_patterns`` are usually disjoint), so this
+        tie-break is documented rather than policed — a "generic" provider
+        must register after the specific ones it might shadow.
+        """
         for provider in self._providers.values():
             if provider.supports_url(url):
                 return provider

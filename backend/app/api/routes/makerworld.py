@@ -274,24 +274,31 @@ async def import_instance(
             )
         effective_folder_id: int | None = body.folder_id
     else:
-        # Default destination: the provider's dedicated top-level folder
-        # (``default_folder_name``). Keeps imports out of the library root so
-        # power users can still organise manually in subfolders, and
-        # auto-creates the folder on the first import so users don't have to
-        # set it up themselves.
-        mw_folder_q = await db.execute(
-            select(LibraryFolder).where(
-                LibraryFolder.name == provider.default_folder_name,
-                LibraryFolder.parent_id.is_(None),
-                LibraryFolder.is_external.is_(False),
+        # Default destination: the resolved provider's dedicated top-level
+        # folder (``default_folder_name`` — read off *provider*, not the
+        # MakerWorld singleton, so the second provider lands in its own
+        # folder). Keeps imports out of the library root so power users can
+        # still organise manually in subfolders, and auto-creates the folder
+        # on the first import so users don't have to set it up themselves. A
+        # provider that leaves it unset imports into the library root rather
+        # than minting a NULL-named folder.
+        default_folder_name = provider.default_folder_name
+        if default_folder_name is None:
+            effective_folder_id = None
+        else:
+            default_folder_q = await db.execute(
+                select(LibraryFolder).where(
+                    LibraryFolder.name == default_folder_name,
+                    LibraryFolder.parent_id.is_(None),
+                    LibraryFolder.is_external.is_(False),
+                )
             )
-        )
-        mw_folder = mw_folder_q.scalar_one_or_none()
-        if mw_folder is None:
-            mw_folder = LibraryFolder(name=provider.default_folder_name, parent_id=None)
-            db.add(mw_folder)
-            await db.flush()
-        effective_folder_id = mw_folder.id
+            default_folder = default_folder_q.scalar_one_or_none()
+            if default_folder is None:
+                default_folder = LibraryFolder(name=default_folder_name, parent_id=None)
+                db.add(default_folder)
+                await db.flush()
+            effective_folder_id = default_folder.id
 
     service = await _build_service(db, provider, current_user, api_key_cloud_owner)
 

@@ -422,6 +422,33 @@ class TestImport:
         ).scalar_one_or_none() is None
 
     @pytest.mark.asyncio
+    async def test_none_default_folder_name_imports_to_library_root(self, async_client, db_session):
+        """A provider that leaves ``default_folder_name`` unset imports into the
+        library root rather than minting a NULL-named folder (review round 3,
+        note 3)."""
+        dummy = _DummyProvider(default_folder_name=None)
+        svc = _fake_service(
+            get_download=_download_info(),
+            download=ProviderDownload(file_bytes=self._FAKE_3MF_BYTES, filename="benchy.3mf"),
+        )
+
+        with (
+            patch("backend.app.api.routes.makerworld._provider_for_source", return_value=dummy),
+            patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)),
+        ):
+            resp = await async_client.post(
+                "/api/v1/makerworld/import",
+                json={"model_id": 1400373, "profile_id": 298919107, "source_type": "dummy", "folder_id": None},
+            )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["folder_id"] is None
+
+        from sqlalchemy import select
+
+        result = await db_session.execute(select(LibraryFolder))
+        assert result.scalars().all() == []
+
+    @pytest.mark.asyncio
     async def test_uses_existing_folder_when_folder_id_provided(self, async_client, db_session):
         """Caller-supplied ``folder_id`` must be honoured even if the default
         ``MakerWorld`` folder also exists — no silent hijacking."""

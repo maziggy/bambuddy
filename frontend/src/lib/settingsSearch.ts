@@ -11,6 +11,7 @@
 export type SettingsSearchTab =
   | 'general'
   | 'plugs'
+  | 'sensors'
   | 'notifications'
   | 'queue'
   | 'filament'

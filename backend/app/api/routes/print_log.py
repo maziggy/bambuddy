@@ -237,6 +237,12 @@ _FAILURE_REASON_KEYS = frozenset(
         "underExtrusion",
         "powerFailure",
         "userCancelled",
+        # Written by the two stale-archive paths in main.py when no end-of-print
+        # status ever arrived (issue #2974). It has to be in the vocabulary, not
+        # just tolerated: the archive editor clears any stored value it does not
+        # recognise, so leaving it out would delete the classification on the
+        # next save of such an archive.
+        "noStatusUpdate",
         "other",
     }
 )

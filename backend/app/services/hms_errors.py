@@ -873,3 +873,48 @@ def get_error_description(error_code: str) -> str | None:
         Human-readable description or None if not found
     """
     return HMS_ERROR_DESCRIPTIONS.get(error_code.upper())
+
+
+def describe_fault(full_code: str | None) -> str | None:
+    """Resolve a fault's description from the canonical `full_code`.
+
+    `full_code` is the identifier the firmware itself matches on: 8 hex chars
+    for a 32-bit `print_error`, 16 for a 64-bit `hms[]` entry. This is the one
+    place that maps either shape onto this table, so every surface that reports
+    a fault says the same thing about it.
+
+    An 8-char code is this table's `MMMM_EEEE` key with the separator removed --
+    the parser derives `full_code` and that key from the same 32-bit value -- so
+    it resolves exactly.
+
+    A 16-char code is tried whole first, then collapsed to `G1_G4` (the first
+    and last of its four hex groups). That collapse is lossy and not injective:
+    it discards the Part No. and Alert level groups, and #2728 measured 65
+    documented faults falling onto `0300_0001` alone, so a hit can in principle
+    attribute a neighbouring fault's sentence to this one. It is kept because it
+    is what this codebase has always done -- the notification path, the queue's
+    failure-reason helper and the frontend modal all resolve `hms[]` faults this
+    way, and it does resolve real ones (a `0500_4038` nozzle mismatch arrives in
+    that shape). Refusing to collapse would not be a stricter reading of the
+    same data; it would silently stop describing faults that are described
+    today, and leave this field null while the UI shows text for the same fault.
+    Narrowing it is #2728's subject, and belongs there where the key spaces can
+    be changed together.
+
+    Returns None for an empty, malformed, or unknown code.
+    """
+    if not full_code:
+        return None
+    code = full_code.strip().upper()
+    if len(code) == 8:
+        return HMS_ERROR_DESCRIPTIONS.get(f"{code[:4]}_{code[4:]}")
+    if len(code) == 16:
+        # `is not None` rather than truthiness: an entry whose text is empty is
+        # still an entry, and falling through on it would resolve the fault to a
+        # neighbour's sentence. No blank values ship today; the frontend lookup
+        # draws the same distinction and a regenerated catalogue could.
+        exact = HMS_ERROR_DESCRIPTIONS.get(code)
+        if exact is not None:
+            return exact
+        return HMS_ERROR_DESCRIPTIONS.get(f"{code[:4]}_{code[12:]}")
+    return None

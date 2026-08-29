@@ -1569,9 +1569,13 @@ export function QueuePage() {
 
   const removeMutation = useMutation({
     mutationFn: (id: number) => api.removeFromQueue(id),
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast(t('queue.toast.removed'));
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      // The backend keeps an order's last run for a plate, cancelled rather
+      // than deleted, so the order can still re-queue it (#2960). Say so:
+      // the row stays on screen and silence would read as a failed delete.
+      showToast(result.deleted === false ? t('queue.toast.keptForOrder') : t('queue.toast.removed'));
     },
     onError: () => showToast(t('queue.toast.removeFailed'), 'error'),
   });
@@ -1635,14 +1639,25 @@ export function QueuePage() {
       const historyItems = queue?.filter(i =>
         ['completed', 'failed', 'skipped', 'cancelled'].includes(i.status)
       ) || [];
+      let cleared = 0;
+      let kept = 0;
       for (const item of historyItems) {
-        await api.removeFromQueue(item.id);
+        const result = await api.removeFromQueue(item.id);
+        // A row a batch order still needs is kept rather than deleted, so the
+        // count has to come from what the backend actually did (#2960).
+        if (result.deleted === false) kept += 1;
+        else cleared += 1;
       }
-      return historyItems.length;
+      return { cleared, kept };
     },
-    onSuccess: (count) => {
+    onSuccess: ({ cleared, kept }) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast(t('queue.toast.historyCleared', { count }));
+      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      showToast(
+        kept > 0
+          ? `${t('queue.toast.historyCleared', { count: cleared })} ${t('queue.toast.historyKeptForOrders', { kept })}`
+          : t('queue.toast.historyCleared', { count: cleared })
+      );
     },
     onError: () => showToast(t('queue.toast.clearHistoryFailed'), 'error'),
   });

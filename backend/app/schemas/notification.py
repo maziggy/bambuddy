@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.app.core.compat import StrEnum
 
@@ -65,9 +65,15 @@ class NotificationProviderBase(BaseModel):
         default=False, description="Notify when AMS-HT temperature exceeds threshold"
     )
 
-    # Event triggers - Home Assistant sensors (#1148)
+    # Event triggers - Home Assistant sensors bound to a printer (#1148)
     on_ha_sensor_alert: bool = Field(
         default=False, description="Notify when a bound Home Assistant sensor enters its alert state"
+    )
+
+    # Event triggers - Home Assistant sensors bound to a storage location (#2824)
+    on_location_ha_sensor_alert: bool = Field(
+        default=False,
+        description="Notify when a Home Assistant sensor bound to a storage location enters its alert state",
     )
 
     # Event triggers - Build plate detection
@@ -81,6 +87,19 @@ class NotificationProviderBase(BaseModel):
 
     # Event triggers - First layer complete
     on_first_layer_complete: bool = Field(default=False, description="Notify when first layer completes")
+
+    # Event triggers - Inventory stock alerts
+    # Missing from this schema until now, so every payload naming them was
+    # dropped silently: the UI's toggles round-tripped as 200 OK and the row
+    # never changed, and _provider_to_dict never returned them either, so they
+    # always read back off. The columns and the sending code have existed since
+    # the inventory forecast landed.
+    on_stock_reorder_alert: bool = Field(
+        default=False, description="Notify when an inventory SKU hits its reorder point"
+    )
+    on_stock_break_alert: bool = Field(
+        default=False, description="Notify when stock will run out before replenishment arrives"
+    )
 
     # Event triggers - Print queue
     on_queue_job_added: bool = Field(default=False, description="Notify when job is added to queue")
@@ -159,8 +178,11 @@ class NotificationProviderUpdate(BaseModel):
     on_ams_ht_humidity_high: bool | None = None
     on_ams_ht_temperature_high: bool | None = None
 
-    # Event triggers - Home Assistant sensors (#1148)
+    # Event triggers - Home Assistant sensors bound to a printer (#1148)
     on_ha_sensor_alert: bool | None = None
+
+    # Event triggers - Home Assistant sensors bound to a storage location (#2824)
+    on_location_ha_sensor_alert: bool | None = None
 
     # Event triggers - Build plate detection
     on_plate_not_empty: bool | None = None
@@ -171,6 +193,10 @@ class NotificationProviderUpdate(BaseModel):
 
     # Event triggers - First layer complete
     on_first_layer_complete: bool | None = None
+
+    # Event triggers - Inventory stock alerts
+    on_stock_reorder_alert: bool | None = None
+    on_stock_break_alert: bool | None = None
 
     # Event triggers - Print queue
     on_queue_job_added: bool | None = None
@@ -196,6 +222,42 @@ class NotificationProviderUpdate(BaseModel):
 
 class NotificationProviderResponse(NotificationProviderBase):
     """Schema for notification provider API responses."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _null_event_flags_read_as_off(cls, data: Any) -> Any:
+        """Read a NULL event flag as off instead of failing the whole response.
+
+        Every on_* column on notification_providers is nullable with no server
+        default -- the values come from the ORM at INSERT time. A row created
+        before a flag's column existed keeps NULL there forever unless a
+        migration backfills it, and one that did not (the column was created by
+        Base.metadata before run_migrations, so the ALTER ... DEFAULT false was
+        swallowed as a duplicate) leaves NULLs behind on a live install.
+
+        Those NULLs are harmless until the flag is declared on this schema: the
+        Response inherits the write model, so `bool` is then required on the way
+        out, pydantic rejects None, and every provider row fails at once -- the
+        list route 500s and the UI renders an empty list, which reads to the user
+        as "my providers are gone". That is exactly what shipped in #2827.
+
+        Off is not a guess: _get_providers_for_event selects on `.is_(True)`, so
+        the sender already skips a NULL flag. This makes the read agree with the
+        behaviour the row already has, rather than with the field's declared
+        default -- some of which are True, and none of which should switch a
+        notification on as a side effect of repairing a legacy row.
+
+        Writes are untouched: Create and Update inherit from the base, not here,
+        so a payload sending null for a flag is still a 422.
+        """
+        # Every route returns _provider_to_dict(); anything else (an ORM object
+        # via from_attributes) is passed through for pydantic to handle.
+        if not isinstance(data, dict):
+            return data
+        flags = [name for name, f in cls.model_fields.items() if f.annotation is bool]
+        if any(data.get(name, False) is None for name in flags):
+            data = {**data, **{name: False for name in flags if data.get(name, False) is None}}
+        return data
 
     id: int
     last_success: datetime | None = None

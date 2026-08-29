@@ -579,3 +579,29 @@ body {
     opacity: 1;
   }
 }
+
+/* Per-slot filament colour swatch in the slice modal (#2977). A native
+   <input type="color"> paints its value inside a fixed inner padding and its
+   own border, so at 14px the colour reads as a dot inside a pale ring rather
+   than as the round swatch it replaced. These reset both so the element is
+   nothing but the colour. */
+.slice-colour-swatch {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  overflow: hidden;
+}
+
+.slice-colour-swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.slice-colour-swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: 999px;
+}
+
+.slice-colour-swatch::-moz-color-swatch {
+  border: none;
+  border-radius: 999px;
+}

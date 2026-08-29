@@ -9,6 +9,8 @@ from typing import Literal
 
 import httpx
 
+from backend.app.utils.color_utils import color_match_key, spoolman_color_hex
+
 logger = logging.getLogger(__name__)
 
 BAMBU_RFID_TAG_LENGTH = 32
@@ -111,6 +113,12 @@ class SpoolmanClient:
         # grows with spool count; scoped to the instance so a client pointed at
         # a different Spoolman starts over.
         self._ensured_extra_fields: set[str] = set()
+        # Whether Spoolman's extra-field listing has been read once. Separate
+        # from the set above because the two answer different questions: the
+        # set is "which fields are known to exist", this is "have we asked".
+        # Without it a client registering three brand-new fields re-read the
+        # whole listing before each one.
+        self._extra_fields_listed = False
         self._ensure_extra_lock = asyncio.Lock()
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -356,9 +364,10 @@ class SpoolmanClient:
         if material:
             data["material"] = material
         if color_hex:
-            # Strip alpha channel if present (RRGGBBAA -> RRGGBB)
-            color_hex = color_hex[:6] if len(color_hex) >= 6 else color_hex
-            data["color_hex"] = color_hex
+            # Every create funnels through here, so this is where the stored shape
+            # is decided: six characters for an opaque spool, eight only when the
+            # alpha byte says the filament is translucent. See #2912.
+            data["color_hex"] = spoolman_color_hex(color_hex) or color_hex
         if color_name:
             data["color_name"] = color_name
         if weight:
@@ -757,7 +766,12 @@ class SpoolmanClient:
     ) -> int:
         """Return the filament ID matching material/name/brand/color, creating it if absent."""
         name = f"{material} {subtype}".strip() if subtype else material
-        color = color_hex[:6].upper() if len(color_hex) >= 6 else color_hex.upper()
+        # One value in both roles. `color_match_key` returns the shape the colour
+        # would be stored as, so the key the loop below compares on and the value
+        # a new filament is created with are the same string by construction: an
+        # opaque spool keys and stores as six characters, a translucent one as
+        # eight, and neither can be conflated with the other (#2912).
+        color = color_match_key(color_hex)
 
         vendor_id: int | None = None
         if brand:
@@ -772,7 +786,7 @@ class SpoolmanClient:
         filaments = await self.get_filaments()
         for f in filaments:
             f_material = (f.get("material") or "").upper()
-            f_color = (f.get("color_hex") or "").upper()[:6]
+            f_color = color_match_key(f.get("color_hex"))
             f_vendor = f.get("vendor") or {}
             f_vendor_name = (f_vendor.get("name") or "").strip().lower()
 
@@ -945,6 +959,36 @@ class SpoolmanClient:
         """Register the 'tag' extra field in Spoolman if not present; returns True on success."""
         return await self.ensure_extra_field("tag")
 
+    async def _load_existing_extra_field_keys(self) -> set[str] | None:
+        """Keys of the spool extra fields Spoolman already has, or ``None`` when
+        the listing could not be read.
+
+        ``None`` and ``set()`` mean different things and the caller acts on the
+        difference: an empty set is "Spoolman has no extra fields", which means
+        every field Bambuddy needs must be created; ``None`` is "we could not
+        find out", where the only safe move is to fall back to attempting the
+        write blind.
+        """
+        try:
+            client = await self._get_client()
+            response = await client.get(f"{self.api_url}/field/spool")
+            if response.status_code != 200:
+                logger.debug(
+                    "Spoolman extra-field listing returned %s; falling back to blind registration",
+                    response.status_code,
+                )
+                return None
+            fields = response.json()
+        except Exception as e:  # noqa: BLE001 — registration is best-effort, see _ensure_extra_fields
+            logger.debug("Could not read Spoolman extra-field listing: %s", e)
+            return None
+        if not isinstance(fields, list):
+            return None
+        # Match on `key`, not `name`: `key` is the identifier the extra dict is
+        # written under and the one Bambuddy cares about, while `name` is the
+        # free-text label a user is free to change in Spoolman's UI.
+        return {f["key"] for f in fields if isinstance(f, dict) and isinstance(f.get("key"), str)}
+
     async def ensure_extra_field(self, name: str, field_type: str = "text") -> bool:
         """Register a custom extra field in Spoolman if not present.
 
@@ -952,18 +996,40 @@ class SpoolmanClient:
         with HTTP 400 ('Unknown extra field <name>.'), so any custom field
         Bambuddy persists alongside spools needs to be pre-registered.
         Idempotent — returns True if the field already exists.
+
+        Existence is read from ``GET /field/spool``, the whole-listing endpoint.
+        This used to probe ``GET /field/spool/{name}`` for one field at a time,
+        which Spoolman has never served: it declares only POST and DELETE at
+        that path, so the probe answered 405 every time and the check could
+        never succeed (issue #2983, reported by @ngreatorex).
+
+        Falling through to the POST on every call was worse than a wasted
+        request, because that endpoint is an upsert rather than a create. It
+        answered 200 whether or not the field was already there, so a field a
+        user had renamed, retyped or given a default in Spoolman's own UI was
+        silently reset to Bambuddy's version of it on every restart. Reading
+        the listing first is what lets an existing field be left alone.
         """
         try:
-            client = await self._get_client()
-
-            # Check if field already exists
-            response = await client.get(f"{self.api_url}/field/spool/{name}")
-            if response.status_code == 200:
-                logger.debug("Spoolman extra field %r already exists", name)
-                self._ensured_extra_fields.add(name)
+            if name in self._ensured_extra_fields:
                 return True
 
-            # Field doesn't exist - create it
+            if not self._extra_fields_listed:
+                existing = await self._load_existing_extra_field_keys()
+                if existing is not None:
+                    # Bank the whole listing: the caller registers several
+                    # fields in a row, and each one it already has is a request
+                    # not sent and a user customisation not overwritten. Read
+                    # once per client — every field created after this point is
+                    # added to the set as it is created, so re-reading would
+                    # only ever confirm what we already know.
+                    self._ensured_extra_fields |= existing
+                    self._extra_fields_listed = True
+                    if name in existing:
+                        logger.debug("Spoolman extra field %r already exists", name)
+                        return True
+
+            client = await self._get_client()
             field_data = {
                 "name": name,
                 "field_type": field_type,
@@ -1199,7 +1265,7 @@ class SpoolmanClient:
                         material=tray.tray_type,
                         subtype="",
                         brand=brand,
-                        color_hex=tray.tray_color[:6],
+                        color_hex=tray.tray_color,
                         label_weight=tray.tray_weight,
                     )
                 except (SpoolmanNotFoundError, SpoolmanUnavailableError, SpoolmanClientError):
@@ -1249,9 +1315,12 @@ class SpoolmanClient:
     async def _find_or_create_filament(self, tray: AMSTray) -> dict | None:
         """Return a Bambu Lab filament matching the tray's material/color, creating it if absent."""
         bambu_vendor_id = await self.ensure_bambu_vendor()
-        color_hex = tray.tray_color[:6]  # Strip alpha channel
         material_upper = tray.tray_type.upper()
-        color_upper = color_hex.upper()
+        # Same single value as the user-driven path: the match key is the stored
+        # shape. That is what lets an opaque tray still find the six-character
+        # filaments every existing instance is full of, while a clear tray keys
+        # to eight and gets its own record (#2912).
+        color = color_match_key(tray.tray_color)
 
         # Search internal filaments - only match Bambu Lab vendor
         filaments = await self.get_filaments()
@@ -1260,8 +1329,7 @@ class SpoolmanClient:
             if fil_vendor_id != bambu_vendor_id:
                 continue
             fil_material = filament.get("material") or ""
-            fil_color = filament.get("color_hex") or ""
-            if fil_material.upper() == material_upper and fil_color.upper() == color_upper:
+            if fil_material.upper() == material_upper and color_match_key(filament.get("color_hex")) == color:
                 return filament
 
         # Search external filaments (SpoolmanDB) — restrict to Bambu Lab only.
@@ -1277,8 +1345,7 @@ class SpoolmanClient:
             if manufacturer != "bambu lab" and not ext_id.startswith("bambulab_"):
                 continue
             fil_material = filament.get("material") or ""
-            fil_color = filament.get("color_hex") or ""
-            if fil_material.upper() == material_upper and fil_color.upper() == color_upper:
+            if fil_material.upper() == material_upper and color_match_key(filament.get("color_hex")) == color:
                 bambu_candidates.append(filament)
 
         if bambu_candidates:
@@ -1296,7 +1363,7 @@ class SpoolmanClient:
             name=tray.tray_sub_brands or tray.tray_type,
             vendor_id=bambu_vendor_id,
             material=tray.tray_type,
-            color_hex=color_hex,
+            color_hex=color,
             weight=tray.tray_weight,
         )
 
@@ -1307,7 +1374,11 @@ class SpoolmanClient:
             name=external.get("name", tray.tray_sub_brands),
             vendor_id=vendor_id,
             material=external.get("material", tray.tray_type),
-            color_hex=external.get("color_hex", tray.tray_color[:6]),
+            # `or`, not a two-argument get: an entry that carries the key with an
+            # explicit null would hand None to create_filament rather than reach
+            # the tray fallback. Only a candidate when the tray colour is empty
+            # too, so this is a correctness tidy, not a fix for a live path.
+            color_hex=external.get("color_hex") or color_match_key(tray.tray_color),
             weight=external.get("weight", tray.tray_weight),
             density=external.get("density"),
         )

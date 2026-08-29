@@ -28,6 +28,8 @@ class MappedSpoolFields(TypedDict):
     color_name: str | None
     color_name_is_synthesized: bool
     rgba: str | None
+    extra_colors: str | None
+    effect_type: None
     label_weight: int | None
     core_weight: int | None
     core_weight_catalog_id: None
@@ -91,7 +93,10 @@ def assert_safe_spoolman_url(url: str) -> None:
     assert_safe_lan_service_url(url, label="Spoolman URL")
 
 
-_COLOR_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}$")
+# Six characters, or eight when the filament carries an alpha byte. The write
+# side stores eight only for genuinely translucent spools (#2912); rejecting
+# them here turned every clear spool into neutral grey on read.
+_COLOR_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?$")
 _TAG_HEX_RE = re.compile(r"^[0-9A-F]+$")
 
 
@@ -153,6 +158,30 @@ def _extract_extra_str(extra: dict, key: str) -> str:
     return decoded if isinstance(decoded, str) else ""
 
 
+def parse_spoolman_multi_colors(filament: dict) -> list[str]:
+    """Spoolman's ``multi_color_hexes`` as a list of bare 6/8-char hex tokens.
+
+    Spoolman stores the extra stops of a gradient / dual / multi-colour
+    filament here, and writes the field as a comma-separated string in some
+    releases and a list in others -- both shapes are accepted. Tokens keep the
+    case they arrived in and lose any leading ``#``, which is the form
+    ``Spool.extra_colors`` stores and ``parseStops`` on the client expects.
+
+    Shared with the label renderer rather than parsed twice: the two read the
+    same field for the same purpose, and a swatch on a printer card that
+    disagreed with the swatch on the printed label would be worse than either
+    being wrong on its own.
+    """
+    raw = filament.get("multi_color_hexes")
+    if isinstance(raw, str):
+        tokens = raw.split(",")
+    elif isinstance(raw, list):
+        tokens = [str(token) for token in raw]
+    else:
+        return []
+    return [cleaned for token in tokens if (cleaned := token.strip().lstrip("#"))]
+
+
 def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     """Convert a raw Spoolman spool dict to the InventorySpool-compatible format.
 
@@ -197,10 +226,19 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     else:
         subtype = filament_name or None
 
-    # Colour: validate as 6-char hex; fall back to neutral grey for invalid values
+    # Colour: validate as 6- or 8-char hex; fall back to neutral grey for invalid
+    # values. An 8-char value already carries its alpha, so appending the opaque
+    # byte would push it to ten and lose the translucency it was stored to keep.
     raw_color = (filament.get("color_hex") or "").upper().removeprefix("#")
     color_hex: str = raw_color if _COLOR_HEX_RE.match(raw_color) else "808080"
-    rgba: str = color_hex + "FF"
+    rgba: str = color_hex if len(color_hex) == 8 else color_hex + "FF"
+    # Spoolman carries the extra stops but has no concept of a surface effect
+    # -- its only neighbouring field is `multi_color_direction`, which says how
+    # the stops are laid out, not that the filament is silk or glitter. So a
+    # Spoolman spool can render its gradient and never an effect overlay, and
+    # `effect_type` is pinned to None rather than guessed at.
+    extra_stops = parse_spoolman_multi_colors(filament)
+    extra_colors: str | None = ",".join(extra_stops) if extra_stops else None
 
     label_weight: int = _safe_int(filament.get("weight"), 1000)
     real_used_weight: float = _safe_float(spool.get("used_weight"), 0.0)
@@ -265,6 +303,8 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         "color_name": color_name,
         "color_name_is_synthesized": color_name_is_synthesized,
         "rgba": rgba,
+        "extra_colors": extra_colors,
+        "effect_type": None,
         "brand": vendor.get("name") or None,
         "label_weight": label_weight,
         "core_weight": _safe_int(

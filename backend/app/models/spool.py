@@ -74,10 +74,18 @@ class Spool(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     k_profiles: Mapped[list["SpoolKProfile"]] = relationship(back_populates="spool", cascade="all, delete-orphan")
+    # Per-printer-model preset overrides. Deliberately NOT embedded in
+    # SpoolResponse the way k_profiles is: the inventory list returns every
+    # spool a user owns, and this list is only ever read by the spool form
+    # and the assign path, both of which fetch it for one spool at a time.
+    filament_presets: Mapped[list["SpoolFilamentPreset"]] = relationship(
+        back_populates="spool", cascade="all, delete-orphan"
+    )
     assignments: Mapped[list["SpoolAssignment"]] = relationship(back_populates="spool", cascade="all, delete-orphan")
     location: Mapped["Location | None"] = relationship(back_populates="spools")
 
 
 from backend.app.models.location import Location  # noqa: E402
 from backend.app.models.spool_assignment import SpoolAssignment  # noqa: E402
+from backend.app.models.spool_filament_preset import SpoolFilamentPreset  # noqa: E402
 from backend.app.models.spool_k_profile import SpoolKProfile  # noqa: E402

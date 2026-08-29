@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { SliceModal } from '../../components/SliceModal';
@@ -259,6 +259,10 @@ describe('SliceModal', () => {
         process_preset: { source: 'local', id: '2' },
         filament_preset: { source: 'local', id: '3' },
         filament_presets: [{ source: 'local', id: '3' }],
+        // An STL has no designed colour and the swatch was not touched, so
+        // the slot is handed back to the backend's fallback chain rather
+        // than being pinned to the picker's displayed default (#2977).
+        filament_colours: [''],
       });
     });
     await waitFor(() => expect(onClose).toHaveBeenCalled());
@@ -376,7 +380,7 @@ describe('SliceModal', () => {
     return found;
   }
 
-  it("carries the design's printer-independent settings by default (#2622)", async () => {
+  it('carries nothing out of the file until it is asked to (#2942)', async () => {
     mockApi.sliceLibraryFile.mockResolvedValue({
       job_id: 42,
       status: 'pending',
@@ -389,8 +393,9 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    // Two of three pre-selected: the speed key is machine-coupled and is
-    // offered but never pre-ticked.
+    // Nothing pre-ticked: "Use the file's built-in settings" is off, so the
+    // slice runs on the picked preset and the file's own values wait to be
+    // asked for by name.
     await waitFor(() => expect(screen.getByRole('button', { name: /^Slice$/ })).toBeEnabled());
 
     const user = userEvent.setup();
@@ -398,7 +403,10 @@ describe('SliceModal', () => {
 
     await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
     const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as { design_overrides?: string[] };
-    expect([...(payload.design_overrides ?? [])].sort()).toEqual(['sparse_infill_density', 'wall_loops']);
+    // Empty, not absent: the backend reads the difference. A list that is
+    // there and empty says the user was shown the file's settings and took
+    // none of them, which also stands the support carry-over down (#1881).
+    expect(payload.design_overrides).toEqual([]);
   });
 
   // The file's layer height is the one deviation that must not ride along: it
@@ -412,7 +420,7 @@ describe('SliceModal', () => {
     ],
   };
 
-  it("leaves the file's layer height off by default so the picked preset wins", async () => {
+  it("leaves the file's layer height off even in bulk, so the picked preset wins", async () => {
     mockApi.sliceLibraryFile.mockResolvedValue({
       job_id: 42,
       status: 'pending',
@@ -427,11 +435,14 @@ describe('SliceModal', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: /^Slice$/ })).toBeEnabled());
 
-    const user = userEvent.setup();
+    const user = await openDesignSection();
+    await user.click(screen.getByRole('button', { name: /Use the designer's settings/ }));
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
 
     await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
     const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as { design_overrides?: string[] };
+    // The bulk action takes the keys that carry across printers. Layer height
+    // *is* the preset that was picked, so it stays a per-key decision.
     expect(payload.design_overrides).toEqual(['wall_loops']);
   });
 
@@ -460,7 +471,7 @@ describe('SliceModal', () => {
 
     await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
     const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as { design_overrides?: string[] };
-    expect([...(payload.design_overrides ?? [])].sort()).toEqual(['layer_height', 'wall_loops']);
+    expect(payload.design_overrides).toEqual(['layer_height']);
   });
 
   it('lists every changed setting with its value and flags the machine-coupled ones (#2622)', async () => {
@@ -473,10 +484,14 @@ describe('SliceModal', () => {
 
     const user = await openDesignSection();
 
-    // Carried keys show the designer's value in the option's own control.
+    // Offered but not taken: the row is flagged and the control still shows
+    // the baseline, until the tick says the file's value should win.
     await user.type(screen.getByPlaceholderText('Search settings'), 'wall loops');
+    await waitFor(() => expect(sourceCheckbox('Wall loops')).toBeInTheDocument());
+    expect(sourceCheckbox('Wall loops').checked).toBe(false);
+    expect(screen.getByLabelText(/^Wall loops/)).not.toHaveValue(5);
+    await user.click(sourceCheckbox('Wall loops'));
     await waitFor(() => expect(screen.getByLabelText(/^Wall loops/)).toHaveValue(5));
-    expect(sourceCheckbox('Wall loops').checked).toBe(true);
 
     await user.clear(screen.getByPlaceholderText('Search settings'));
     await user.type(screen.getByPlaceholderText('Search settings'), 'outer wall speed');
@@ -485,7 +500,7 @@ describe('SliceModal', () => {
     expect(sourceCheckbox('Outer wall').checked).toBe(false);
   });
 
-  it('lets the user opt a machine-coupled setting in and a safe one out (#2622)', async () => {
+  it('lets the user opt a machine-coupled setting in on its own (#2622)', async () => {
     mockApi.sliceLibraryFile.mockResolvedValue({
       job_id: 42,
       status: 'pending',
@@ -504,19 +519,123 @@ describe('SliceModal', () => {
     await waitFor(() => expect(sourceCheckbox('Outer wall')).toBeInTheDocument());
     await user.click(sourceCheckbox('Outer wall'));
 
-    await user.clear(screen.getByPlaceholderText('Search settings'));
-    await user.type(screen.getByPlaceholderText('Search settings'), 'wall loops');
-    await waitFor(() => expect(sourceCheckbox('Wall loops')).toBeInTheDocument());
-    await user.click(sourceCheckbox('Wall loops'));
-
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
 
     await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
     const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as { design_overrides?: string[] };
-    expect([...(payload.design_overrides ?? [])].sort()).toEqual(['outer_wall_speed', 'sparse_infill_density']);
+    // Only the key that was asked for -- the two printer-independent ones are
+    // still on offer and still untouched.
+    expect(payload.design_overrides).toEqual(['outer_wall_speed']);
   });
 
-  it('omits design_overrides entirely when the user unticks everything (#2622)', async () => {
+  it('omits design_overrides entirely for a file that offered nothing (#2942)', async () => {
+    // The other half of the distinction the backend reads: no list at all
+    // means there was nothing to decide, which leaves #1881's support
+    // carry-over unconditional for sources -- an OrcaSlicer export, say --
+    // that record no deviations to tick in the first place.
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+    mockApi.getLibraryFilePlates.mockResolvedValue({ ...designedFor, design_overrides: [] });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Slice$/ })).toBeEnabled());
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
+    expect(mockApi.sliceLibraryFile.mock.calls[0][1]).not.toHaveProperty('design_overrides');
+  });
+
+  // #2942: the per-key ticks answer the same question the toggle above them
+  // does -- where do this slice's settings come from -- so one governs the
+  // other. They used to be pre-ticked whatever it said, which is how a slice
+  // with the toggle deliberately off still took sixteen values from the file.
+  const designedForThisPrinter = {
+    ...designedFor,
+    embedded_printer: 'Bambu Lab X1 Carbon 0.4 nozzle',
+    embedded_process: '0.20mm Standard',
+    // Seam position sits on the panel's opening page at the simple tier, so
+    // its tick can be read without driving a panel the toggle has disabled.
+    design_overrides: [
+      ...designedFor.design_overrides,
+      { key: 'seam_position', value: 'rear', printer_coupled: false, preset_defining: false },
+    ],
+  };
+
+  it('shows every setting as coming from the file while the built-in toggle is on (#2942)', async () => {
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+    mockApi.getLibraryFilePlates.mockResolvedValue(designedForThisPrinter);
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose: vi.fn(),
+    });
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByLabelText(/Use the file's built-in settings/));
+    await user.click(await screen.findByRole('button', { name: /Process settings/ }));
+    await screen.findByPlaceholderText('Search settings');
+
+    // A readout, not a control: on this path the file drives the whole slice,
+    // so a tick that said otherwise would be describing the wrong run. The
+    // panel is inactive throughout -- nothing here is sent.
+    await waitFor(() => expect(sourceCheckbox('Seam position').checked).toBe(true));
+    expect(sourceCheckbox('Seam position').disabled).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+    await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
+    const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as {
+      design_overrides?: string[];
+      use_embedded_settings?: boolean;
+    };
+    expect(payload.use_embedded_settings).toBe(true);
+    expect(payload).not.toHaveProperty('design_overrides');
+  });
+
+  it('clears them again when the built-in toggle goes back off (#2942)', async () => {
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+    mockApi.getLibraryFilePlates.mockResolvedValue(designedForThisPrinter);
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose: vi.fn(),
+    });
+
+    const user = userEvent.setup();
+    const toggle = await screen.findByLabelText(/Use the file's built-in settings/);
+    await user.click(toggle);
+    await user.click(toggle);
+
+    await openDesignSection();
+    await user.type(screen.getByPlaceholderText('Search settings'), 'wall loops');
+    await waitFor(() => expect(sourceCheckbox('Wall loops').checked).toBe(false));
+
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+    await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
+    const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as {
+      design_overrides?: string[];
+      use_embedded_settings?: boolean;
+    };
+    expect(payload.design_overrides).toEqual([]);
+    expect(payload).not.toHaveProperty('use_embedded_settings');
+  });
+
+  it("takes the designer's settings in bulk, without the machine-coupled ones (#2942)", async () => {
     mockApi.sliceLibraryFile.mockResolvedValue({
       job_id: 42,
       status: 'pending',
@@ -530,17 +649,18 @@ describe('SliceModal', () => {
     });
 
     const user = await openDesignSection();
-    for (const key of ['Wall loops', 'Sparse infill density']) {
-      await user.clear(screen.getByPlaceholderText('Search settings'));
-      await user.type(screen.getByPlaceholderText('Search settings'), key.toLowerCase());
-      await waitFor(() => expect(sourceCheckbox(key)).toBeInTheDocument());
-      if (sourceCheckbox(key).checked) await user.click(sourceCheckbox(key));
-    }
+    // Without this the file's settings would be reachable only by hunting for
+    // chips across six pages of 348 options.
+    expect(screen.getByText(/The designer changed 3 process settings/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Use the designer's settings/ }));
 
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
-
     await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
-    expect(mockApi.sliceLibraryFile.mock.calls[0][1]).not.toHaveProperty('design_overrides');
+    const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as { design_overrides?: string[] };
+    expect([...(payload.design_overrides ?? [])].sort()).toEqual([
+      'sparse_infill_density',
+      'wall_loops',
+    ]);
   });
 
   it('hides the section for a file that changes nothing (#2622)', async () => {
@@ -1607,6 +1727,287 @@ describe('SliceModal', () => {
     });
   });
 
+  /**
+   * Per-slot filament colour (#2977).
+   *
+   * A filament preset carries no colour in either slicer -- colour is a
+   * per-project property their GUIs set from the plate -- so a slice that
+   * supplies none records the CLI's compiled-in #00AE42 for every slot. That
+   * is what made every internal-slicer thumbnail Bambu green regardless of
+   * the filament picked, and what made the print dialog report a colour
+   * mismatch against the AMS slot it had just correctly mapped to.
+   *
+   * The swatch is the only place the colour can come from for an STL, which
+   * has none anywhere else, so it is offered for single-slot sources too.
+   */
+  describe('filament colour swatch', () => {
+    function colourInputs(): HTMLInputElement[] {
+      return screen
+        .getAllByLabelText('Filament colour')
+        .filter((el): el is HTMLInputElement => el instanceof HTMLInputElement);
+    }
+
+    it('shows the hex beside the swatch so it reads as a control, not a decoration', async () => {
+      // The reason this exists: a bare dot next to a label was taken for the
+      // read-only swatch multi-colour rows already had, so on the STL -- the
+      // one source with no colour to inherit -- nothing said it was settable.
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      expect(screen.getByText('#00AE42')).toBeDefined();
+    });
+
+    it('puts the whole control on the dropdown row, not in the label', async () => {
+      // Sitting beside the <select> and styled like it is what makes it read
+      // as a control. In the label row it read as a caption on the label.
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      const row = colourInputs()[0].closest('div');
+      expect(row?.querySelector('select')).not.toBeNull();
+    });
+
+    it('wraps the swatch and its hex in one label bound to the input', async () => {
+      // So a click anywhere on the pill opens the picker, rather than only a
+      // 16px dot being live.
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      const pill = screen.getByText('#00AE42').closest('label');
+      expect(pill?.getAttribute('for')).toBe(colourInputs()[0].id);
+      expect(pill?.contains(colourInputs()[0])).toBe(true);
+    });
+
+    it('the hex follows the swatch when it is changed', async () => {
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      fireEvent.change(colourInputs()[0], { target: { value: '#e8b00c' } });
+      await waitFor(() => expect(screen.getByText('#E8B00C')).toBeDefined());
+    });
+
+    it('paints the colour on the input itself, not only via the native swatch', async () => {
+      // An engine that does not paint ::-webkit-color-swatch would otherwise
+      // leave an empty ring, which is indistinguishable from no swatch.
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      expect(colourInputs()[0].style.backgroundColor).not.toBe('');
+    });
+
+    it('offers a colour swatch for a single-slot STL, which has no colour of its own', async () => {
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      expect(colourInputs()).toHaveLength(1);
+    });
+
+    it("shows the slicer's own default for a source that carries no colour", async () => {
+      // Not an invented placeholder: #00AE42 is exactly what the slice would
+      // record if nothing were sent, so the swatch tells the truth about the
+      // file that is about to be produced.
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      expect(colourInputs()[0].value).toBe('#00ae42');
+    });
+
+    it("pre-fills each slot from the source plate's designed colour", async () => {
+      mockApi.getLibraryFilePlates.mockResolvedValue(makeMultiColorPlateResponse());
+      mockApi.getLibraryFileFilamentRequirements.mockResolvedValue(makeMultiColorRequirementsResponse());
+      mockApi.getSlicerPresets.mockResolvedValue(makeColorAwarePresets());
+
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'TwoColor.3mf' },
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
+      expect(colourInputs().map((i) => i.value)).toEqual(['#000000', '#ffffff']);
+    });
+
+    it("sends the source plate's colours when the swatches are left alone", async () => {
+      mockApi.getLibraryFilePlates.mockResolvedValue(makeMultiColorPlateResponse());
+      mockApi.getLibraryFileFilamentRequirements.mockResolvedValue(makeMultiColorRequirementsResponse());
+      mockApi.getSlicerPresets.mockResolvedValue(makeColorAwarePresets());
+      mockApi.sliceLibraryFile.mockResolvedValue({
+        job_id: 42,
+        status: 'pending',
+        status_url: '/api/v1/slice-jobs/42',
+      });
+
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'TwoColor.3mf' },
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
+      await userEvent.setup().click(screen.getByRole('button', { name: /^Slice$/ }));
+
+      await waitFor(() => {
+        expect(mockApi.sliceLibraryFile).toHaveBeenCalledWith(
+          100,
+          expect.objectContaining({ filament_colours: ['#000000', '#FFFFFF'] }),
+        );
+      });
+    });
+
+    it('sends an empty string for a slot with no colour, so the backend fallbacks still run', async () => {
+      // A sent colour outranks the preset's own default_filament_colour, so
+      // pinning the picker's displayed #00AE42 here would silently discard
+      // the real colour of an Orca-imported profile that carries one.
+      mockApi.sliceLibraryFile.mockResolvedValue({
+        job_id: 42,
+        status: 'pending',
+        status_url: '/api/v1/slice-jobs/42',
+      });
+
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      await userEvent.setup().click(screen.getByRole('button', { name: /^Slice$/ }));
+
+      await waitFor(() => {
+        expect(mockApi.sliceLibraryFile).toHaveBeenCalledWith(
+          100,
+          expect.objectContaining({ filament_colours: [''] }),
+        );
+      });
+    });
+
+    it('sends the user\'s pick, upper-cased, once a swatch is changed', async () => {
+      mockApi.sliceLibraryFile.mockResolvedValue({
+        job_id: 42,
+        status: 'pending',
+        status_url: '/api/v1/slice-jobs/42',
+      });
+
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      const user = userEvent.setup();
+      // A colour input has no text entry; fire the change the picker would.
+      fireEvent.change(colourInputs()[0], { target: { value: '#e8b00c' } });
+      await waitFor(() => expect(colourInputs()[0].value).toBe('#e8b00c'));
+
+      await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+      await waitFor(() => {
+        expect(mockApi.sliceLibraryFile).toHaveBeenCalledWith(
+          100,
+          expect.objectContaining({ filament_colours: ['#E8B00C'] }),
+        );
+      });
+    });
+
+    it('only overrides the slot that was changed', async () => {
+      mockApi.getLibraryFilePlates.mockResolvedValue(makeMultiColorPlateResponse());
+      mockApi.getLibraryFileFilamentRequirements.mockResolvedValue(makeMultiColorRequirementsResponse());
+      mockApi.getSlicerPresets.mockResolvedValue(makeColorAwarePresets());
+      mockApi.sliceLibraryFile.mockResolvedValue({
+        job_id: 42,
+        status: 'pending',
+        status_url: '/api/v1/slice-jobs/42',
+      });
+
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'TwoColor.3mf' },
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
+      fireEvent.change(colourInputs()[1], { target: { value: '#112233' } });
+
+      await userEvent.setup().click(screen.getByRole('button', { name: /^Slice$/ }));
+      await waitFor(() => {
+        expect(mockApi.sliceLibraryFile).toHaveBeenCalledWith(
+          100,
+          expect.objectContaining({ filament_colours: ['#000000', '#112233'] }),
+        );
+      });
+    });
+
+    it('trims the alpha byte for display but submits the colour whole', async () => {
+      // The AMS reports colours with an alpha byte and a source 3MF can carry
+      // one; <input type="color"> accepts only the 6-digit form.
+      mockApi.getLibraryFileFilamentRequirements.mockResolvedValue({
+        file_id: 100,
+        filename: 'Alpha.3mf',
+        plate_id: 1,
+        filaments: [{ slot_id: 1, type: 'PLA', color: '#E8B00CFF', used_grams: 10, used_meters: 3 }],
+      });
+      mockApi.sliceLibraryFile.mockResolvedValue({
+        job_id: 42,
+        status: 'pending',
+        status_url: '/api/v1/slice-jobs/42',
+      });
+
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'Alpha.3mf' },
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      expect(colourInputs()[0].value).toBe('#e8b00c');
+
+      await userEvent.setup().click(screen.getByRole('button', { name: /^Slice$/ }));
+      await waitFor(() => {
+        expect(mockApi.sliceLibraryFile).toHaveBeenCalledWith(
+          100,
+          expect.objectContaining({ filament_colours: ['#E8B00CFF'] }),
+        );
+      });
+    });
+
+    it('is disabled in "slice as designed" mode, which sends no filament profiles', async () => {
+      mockApi.getLibraryFilePlates.mockResolvedValue({
+        file_id: 100,
+        filename: 'Designed.3mf',
+        plates: [],
+        is_multi_plate: false,
+        embedded_printer: 'Imported X1C 0.4',
+        embedded_process: '0.20mm Standard',
+      });
+
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+        onClose: vi.fn(),
+      });
+
+      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      const toggle = screen.getByRole('checkbox', { name: /built-in settings/i });
+      expect(colourInputs()[0].disabled).toBe(false);
+      await userEvent.setup().click(toggle);
+      expect(colourInputs()[0].disabled).toBe(true);
+    });
+  });
+
 });
 
 // Pure-function tests for the filament slot picker. Pinned as a separate
@@ -2039,5 +2440,248 @@ describe('pickFilamentForSlot — long-form printer tag (#2628)', () => {
     );
 
     expect(pick).toEqual({ source: 'cloud', id: 'sunlu-tpu-h2d' });
+  });
+});
+
+describe('SliceModal — material and printer filtering (#2982)', () => {
+  const A1 = 'Bambu Lab A1 0.4 nozzle';
+  const P1S = 'Bambu Lab P1S 0.4 nozzle';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockApi.getSlicerPresetValues.mockResolvedValue({ resolved: true, values: {}, reason: 'ok' });
+    mockApi.getSlicerPrinterModels.mockResolvedValue({
+      'Bambu Lab A1': 'A1',
+      'Bambu Lab P1S': 'P1S',
+      'Bambu Lab X1 Carbon': 'X1C',
+    });
+    mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [] });
+    mockApi.getLibraryFilePlates.mockResolvedValue({ file_id: 100, filename: 'Plate.3mf', plates: [] });
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+    mockApi.getSliceJob.mockResolvedValue({
+      job_id: 42,
+      status: 'running',
+      kind: 'library_file',
+      source_id: 100,
+      source_name: 'Plate.3mf',
+      created_at: new Date().toISOString(),
+      started_at: null,
+      completed_at: null,
+    });
+  });
+
+  // One PLA plate slot — the case the report is about.
+  function plaPlate() {
+    return {
+      file_id: 100,
+      filename: 'Plate.3mf',
+      plate_id: 1,
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10, used_meters: 3 }],
+    };
+  }
+
+  function presetsFor(printer: string, filaments: UnifiedPresetsResponse['standard']['filament']) {
+    return makeUnified({
+      standard: {
+        printer: [{ id: printer, name: printer, source: 'standard' }],
+        process: [
+          {
+            id: '0.20mm Standard @BBL X1C',
+            name: '0.20mm Standard @BBL X1C',
+            source: 'standard',
+            compatible_printers: [P1S, 'Bambu Lab X1 Carbon 0.4 nozzle'],
+          },
+        ],
+        filament: filaments,
+      },
+    });
+  }
+
+  it('does not auto-pick a stated PETG for a PLA plate', async () => {
+    mockApi.getLibraryFileFilamentRequirements.mockResolvedValue(plaPlate());
+    mockApi.getSlicerPresets.mockResolvedValue(
+      presetsFor(A1, [
+        { id: 'petg', name: 'eSUN PETG Basic @BBL A1', source: 'standard', filament_type: 'PETG', filament_colour: '#FF0000' },
+        { id: 'pla', name: 'Bambu PLA Basic @BBL A1', source: 'standard', filament_type: 'PLA', filament_colour: '#FFFFFF' },
+      ]),
+    );
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Plate.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByText(A1)).toBeDefined());
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => {
+      const [, body] = mockApi.sliceLibraryFile.mock.calls[0];
+      expect(body.filament_presets).toEqual([{ source: 'standard', id: 'pla' }]);
+    });
+  });
+
+  it('drops a wrong-material pick once the listing learns the material', async () => {
+    // The sequence a user upgrading their sidecar actually goes through. The
+    // first listing reports no material for anything, so the pre-pick has
+    // only colour to go on and lands on the PETG. The second reports the
+    // materials — and the wrong pick has to go, which it did not, because the
+    // slot was held on printer-compatibility alone.
+    const colourless = presetsFor(A1, [
+      { id: 'petg', name: 'eSUN PETG Basic @BBL A1', source: 'standard', filament_type: null, filament_colour: '#FF0000' },
+      { id: 'pla', name: 'Bambu PLA Basic @BBL A1', source: 'standard', filament_type: null, filament_colour: '#FFFFFF' },
+    ]);
+    const typed = presetsFor(A1, [
+      { id: 'petg', name: 'eSUN PETG Basic @BBL A1', source: 'standard', filament_type: 'PETG', filament_colour: '#FF0000' },
+      { id: 'pla', name: 'Bambu PLA Basic @BBL A1', source: 'standard', filament_type: 'PLA', filament_colour: '#FFFFFF' },
+    ]);
+    mockApi.getLibraryFileFilamentRequirements.mockResolvedValue(plaPlate());
+    mockApi.getSlicerPresets.mockResolvedValueOnce(colourless).mockResolvedValue(typed);
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Plate.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByText(A1)).toBeDefined());
+    const user = userEvent.setup();
+
+    // The colour-matched PETG is what the first listing produces.
+    await waitFor(() => {
+      const select = presetSelects().find((el) => el.value.startsWith('standard:p'));
+      expect(select?.value).toBe('standard:petg');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    await waitFor(() => {
+      const select = presetSelects().find((el) => el.value.startsWith('standard:p'));
+      expect(select?.value).toBe('standard:pla');
+    });
+  });
+
+  it('keeps a wrong-material preset the user picked on purpose', async () => {
+    // Printing PETG on a plate a designer labelled PLA is a legitimate thing
+    // to do. The material rule corrects the auto-pick; it must not overrule
+    // a choice made in the dropdown.
+    const pla = { id: 'pla', name: 'Bambu PLA Basic @BBL A1', source: 'standard' as const, filament_type: 'PLA', filament_colour: '#FF0000' };
+    const petg = { id: 'petg', name: 'eSUN PETG Basic @BBL A1', source: 'standard' as const, filament_type: 'PETG', filament_colour: '#FFFFFF' };
+    const matte = { id: 'matte', name: 'Bambu PLA Matte @BBL A1', source: 'standard' as const, filament_type: 'PLA', filament_colour: '#00FF00' };
+    mockApi.getLibraryFileFilamentRequirements.mockResolvedValue(plaPlate());
+    // The refresh has to return a *different* listing, or React Query's
+    // structural sharing hands back the same object and the pre-pick never
+    // re-runs — which would make this test pass without proving anything.
+    mockApi.getSlicerPresets
+      .mockResolvedValueOnce(presetsFor(A1, [pla, petg]))
+      .mockResolvedValue(presetsFor(A1, [pla, petg, matte]));
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Plate.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByText(A1)).toBeDefined());
+
+    const user = userEvent.setup();
+    const filamentSelect = presetSelects().find((el) =>
+      Array.from(el.options).some((o) => o.textContent?.includes('eSUN PETG Basic')),
+    );
+    expect(filamentSelect).toBeDefined();
+    await user.selectOptions(filamentSelect!, 'standard:petg');
+
+    // Refreshing re-runs the pre-pick over the same slots. That is exactly
+    // where an un-exempted material rule would quietly undo the choice.
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    await waitFor(() => {
+      const select = presetSelects().find((el) => el.value.startsWith('standard:p'));
+      expect(select?.value).toBe('standard:petg');
+    });
+
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => {
+      const [, body] = mockApi.sliceLibraryFile.mock.calls[0];
+      expect(body.filament_presets).toEqual([{ source: 'standard', id: 'petg' }]);
+    });
+  });
+
+  it('shows every process when the printer filter would leave the list empty', async () => {
+    // A P1S against a sidecar too old to report compatible_printers: all 198
+    // processes read as another printer's, so the dropdown held one
+    // auto-picked entry and a "Show all" link, with nothing saying the list
+    // itself was the problem.
+    mockApi.getLibraryFileFilamentRequirements.mockResolvedValue(plaPlate());
+    mockApi.getSlicerPresets.mockResolvedValue(
+      makeUnified({
+        standard: {
+          printer: [{ id: P1S, name: P1S, source: 'standard' }],
+          process: [
+            { id: 'x1c', name: '0.20mm Standard @BBL X1C', source: 'standard' },
+            { id: 'a1', name: '0.06mm Fine @BBL A1 0.2 nozzle', source: 'standard' },
+          ],
+          filament: [
+            { id: 'pla', name: 'Bambu PLA Basic @BBL A1', source: 'standard', filament_type: 'PLA' },
+          ],
+        },
+      }),
+    );
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Plate.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByText(P1S)).toBeDefined());
+
+    const processSelect = presetSelects().find((el) =>
+      Array.from(el.options).some((o) => o.textContent?.includes('0.20mm Standard @BBL X1C')),
+    );
+    expect(processSelect).toBeDefined();
+    // Both are visible rather than one hidden behind "Show all".
+    const labels = Array.from(processSelect!.options).map((o) => o.textContent);
+    expect(labels.some((l) => l?.includes('0.20mm Standard @BBL X1C'))).toBe(true);
+    expect(labels.some((l) => l?.includes('0.06mm Fine @BBL A1 0.2 nozzle'))).toBe(true);
+  });
+
+  it('still hides other-printer presets when some do match', async () => {
+    // The guard is for an empty list only — the normal filter must survive.
+    mockApi.getLibraryFileFilamentRequirements.mockResolvedValue(plaPlate());
+    mockApi.getSlicerPresets.mockResolvedValue(
+      makeUnified({
+        standard: {
+          printer: [{ id: P1S, name: P1S, source: 'standard' }],
+          process: [
+            {
+              id: 'x1c',
+              name: '0.20mm Standard @BBL X1C',
+              source: 'standard',
+              compatible_printers: [P1S],
+            },
+            { id: 'a1', name: '0.06mm Fine @BBL A1 0.2 nozzle', source: 'standard' },
+          ],
+          filament: [
+            { id: 'pla', name: 'Bambu PLA Basic @BBL A1', source: 'standard', filament_type: 'PLA' },
+          ],
+        },
+      }),
+    );
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Plate.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByText(P1S)).toBeDefined());
+
+    const processSelect = presetSelects().find((el) =>
+      Array.from(el.options).some((o) => o.textContent?.includes('0.20mm Standard @BBL X1C')),
+    );
+    const labels = Array.from(processSelect!.options).map((o) => o.textContent);
+    expect(labels.some((l) => l?.includes('0.06mm Fine @BBL A1 0.2 nozzle'))).toBe(false);
   });
 });

@@ -139,9 +139,15 @@ DEFAULT_TEMPLATES = [
     },
     {
         "event_type": "ha_sensor_alert",
-        "name": "Home Assistant Sensor Alert",
+        "name": "Printer Sensor Alert",
         "title_template": "Sensor Alert",
         "body_template": "{printer}: {sensor} is {state}",
+    },
+    {
+        "event_type": "location_ha_sensor_alert",
+        "name": "Storage Location Sensor Alert",
+        "title_template": "Sensor Alert",
+        "body_template": "{location}: {sensor} is {state}",
     },
     {
         "event_type": "first_layer_complete",

@@ -252,6 +252,62 @@ describe('EditArchiveModal', () => {
         expect(patched?.failure_reason).toBe('cloggedNozzle');
       });
     });
+
+    // A value outside the vocabulary used to initialise the dropdown to '',
+    // and saving from that state wrote the empty selection over the stored
+    // text -- opening the editor and pressing Save destroyed the
+    // classification. The startup migration folds every known spelling onto a
+    // key, so what reaches here is genuinely unrecognisable text; it has to
+    // survive rather than be silently discarded (issue #2974).
+    const freeTextArchive = {
+      ...mockArchive,
+      status: 'failed',
+      failure_reason: 'Custom legacy reason',
+    };
+
+    it('keeps a stored value it cannot map, as its own option', () => {
+      render(<EditArchiveModal archive={freeTextArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      const select = screen.getByLabelText(/failure reason/i) as HTMLSelectElement;
+      expect(select.value).toBe('Custom legacy reason');
+      expect(
+        screen.getByRole('option', { name: 'Custom legacy reason' }),
+      ).toBeInTheDocument();
+    });
+
+    it('does not clear an unmappable reason on an untouched save', async () => {
+      const user = userEvent.setup();
+      let patched: { failure_reason?: string } | undefined;
+      server.use(
+        http.patch('/api/v1/archives/:id', async ({ request }) => {
+          patched = (await request.json()) as { failure_reason?: string };
+          return HttpResponse.json({ ...freeTextArchive, ...patched });
+        }),
+      );
+
+      render(<EditArchiveModal archive={freeTextArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => {
+        expect(patched?.failure_reason).toBe('Custom legacy reason');
+      });
+    });
+
+    it('offers the stale-path reason the backend now writes', () => {
+      // Both stale writers in main.py store `noStatusUpdate`. If it were
+      // missing from the dropdown the editor would treat it as unmappable and
+      // show the raw key to the user instead of a translated label.
+      const staleArchive = {
+        ...mockArchive,
+        status: 'failed',
+        failure_reason: 'noStatusUpdate',
+      };
+      render(<EditArchiveModal archive={staleArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      const select = screen.getByLabelText(/failure reason/i) as HTMLSelectElement;
+      expect(select.value).toBe('noStatusUpdate');
+      expect(
+        screen.getByRole('option', { name: 'No status update received' }),
+      ).toBeInTheDocument();
+    });
   });
 
   describe('filament grams (#1820)', () => {

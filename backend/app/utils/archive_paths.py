@@ -58,6 +58,24 @@ def _legacy_shared_photos_dir(archive: object) -> Path | None:
     return settings.base_dir / "photos"  # SEC-PATH-OK: constant subdirectory
 
 
+def _pre_recovery_photos_dir(archive: object) -> Path | None:
+    """Where this archive's photos were written while it had no 3MF.
+
+    An archive that started as a no-3MF fallback and was later filled in from a
+    3MF that turned up (#2957) changes directory: ``archive_dir`` derives from
+    ``file_path``, which goes from empty to a real path. Anything written to
+    ``<archive_dir>/<id>/photos`` before that moment is still there, so it stays
+    a lookup candidate afterwards -- the same reason
+    :func:`_legacy_shared_photos_dir` exists.
+
+    None while ``file_path`` is empty, where this *is* the current directory and
+    the caller already checks it.
+    """
+    if not (getattr(archive, "file_path", "") or ""):
+        return None
+    return settings.archive_dir / str(archive.id) / "photos"  # SEC-PATH-OK: archive.id is an int primary key
+
+
 def find_archive_photo(archive: object, filename: str) -> Path | None:
     """Locate an existing photo, or None if it is in neither location.
 
@@ -67,7 +85,11 @@ def find_archive_photo(archive: object, filename: str) -> Path | None:
     one caller is a background notification task, where an HTTP error would
     have nowhere to go.
     """
-    for directory in (archive_photos_dir(archive), _legacy_shared_photos_dir(archive)):
+    for directory in (
+        archive_photos_dir(archive),
+        _legacy_shared_photos_dir(archive),
+        _pre_recovery_photos_dir(archive),
+    ):
         if directory is None:
             continue
         try:

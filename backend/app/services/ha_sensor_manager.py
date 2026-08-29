@@ -18,12 +18,13 @@ door contact that stops responding must not strand the queue.
 import asyncio
 import logging
 from dataclasses import dataclass
+from typing import Protocol
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.printer import Printer
-from backend.app.models.printer_ha_sensor import PrinterHASensor
+from backend.app.models.printer_ha_sensor import LAST_STATE_MAX_LENGTH, PrinterHASensor
 from backend.app.services.homeassistant import as_float, homeassistant_service
 from backend.app.utils.local_time import utcnow_naive
 
@@ -42,6 +43,25 @@ class SensorReading:
     value: float | None  # parsed number for numeric sensors
     alerting: bool
     reachable: bool
+
+
+def persistable_state(state: str | None, max_length: int) -> str | None:
+    """Fit a raw HA state into a last_state column.
+
+    A numeric entity can start reporting free text (an enum, an error string)
+    longer than the column. PostgreSQL rejects the oversized row, and since a
+    poll pass commits every sensor at once, one such entity would sink every
+    other sensor's update on every tick -- and for printer sensors that also
+    freezes the print interlock's view of the world.
+
+    The cached SensorReading keeps the full state; only what is persisted is
+    cut, and the comparison against the stored value is done on the cut form so
+    an unchanged-but-long state does not read as a change on every poll.
+
+    Shared with the storage-location poller, which has the same column on its
+    own table -- each caller passes its own model's width.
+    """
+    return state[:max_length] if state else state
 
 
 class HASensorManager:
@@ -162,8 +182,9 @@ class HASensorManager:
             self._last_alerting[sensor.id] = reading.alerting
 
         sensor.last_checked = utcnow_naive()
-        if reading.reachable and sensor.last_state != reading.state:
-            sensor.last_state = reading.state
+        persisted = persistable_state(reading.state, LAST_STATE_MAX_LENGTH)
+        if reading.reachable and sensor.last_state != persisted:
+            sensor.last_state = persisted
             sensor.last_changed = sensor.last_checked
         await db.commit()
         await db.refresh(sensor)
@@ -196,8 +217,9 @@ class HASensorManager:
 
             sensor.last_checked = now
             if reading.reachable:
-                if sensor.last_state != reading.state:
-                    sensor.last_state = reading.state
+                persisted = persistable_state(reading.state, LAST_STATE_MAX_LENGTH)
+                if sensor.last_state != persisted:
+                    sensor.last_state = persisted
                     sensor.last_changed = now
 
             # Notify on the edge into alerting only. `was_alerting is None` is
@@ -228,7 +250,25 @@ class HASensorManager:
                 logger.warning("Failed to send HA sensor alert for '%s': %s", sensor.name, e)
 
 
-def evaluate(sensor: PrinterHASensor, payload: dict | None) -> SensorReading:
+class _AlertableSensor(Protocol):
+    """Structural type for evaluate()/describe_state().
+
+    PrinterHASensor and LocationHASensor are unrelated SQLAlchemy models —
+    one has no base class in common with the other beyond ``Base`` — but both
+    carry these five fields with the same meaning, and location_ha_sensor_
+    manager.py imports these two functions to reuse the exact same alert
+    logic rather than reimplementing it. A concrete PrinterHASensor
+    annotation here would be a lie for half of the actual callers.
+    """
+
+    kind: str
+    unit: str | None
+    alert_state: str | None
+    alert_above: float | None
+    alert_below: float | None
+
+
+def evaluate(sensor: _AlertableSensor, payload: dict | None) -> SensorReading:
     """Turn one HA state payload into a reading.
 
     Split out from the manager so the alert rules can be tested without a
@@ -261,7 +301,7 @@ def evaluate(sensor: PrinterHASensor, payload: dict | None) -> SensorReading:
     return SensorReading(state=normalized, value=None, alerting=alerting, reachable=True)
 
 
-def describe_state(sensor: PrinterHASensor, reading: SensorReading) -> str:
+def describe_state(sensor: _AlertableSensor, reading: SensorReading) -> str:
     """Human-readable state for a notification body ("open", "31.4 °C")."""
     if sensor.kind == "numeric" and reading.value is not None:
         return f"{reading.value:g} {sensor.unit}".strip() if sensor.unit else f"{reading.value:g}"

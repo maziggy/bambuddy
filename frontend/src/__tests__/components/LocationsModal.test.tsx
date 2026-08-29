@@ -241,3 +241,63 @@ describe('LocationsModal', () => {
     });
   });
 });
+
+describe('LocationsModal — startCreating', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.getLocations).mockResolvedValue(locations);
+    vi.mocked(api.createLocation).mockResolvedValue({
+      id: 3,
+      name: 'Garage',
+      identifier: null,
+      spool_count: 0,
+      created_at: '2026-01-01',
+      updated_at: '2026-01-01',
+    });
+  });
+
+  function renderCreatingModal(withPickLocation: boolean) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <LocationsModal
+            open
+            onClose={mockOnClose}
+            onPickLocation={withPickLocation ? mockOnPickLocation : undefined}
+            startCreating
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it('calls onPickLocation and onClose on a successful create', async () => {
+    const user = userEvent.setup();
+    renderCreatingModal(true);
+
+    const input = await screen.findByLabelText(/name|locations\.name/i);
+    await user.type(input, 'Garage');
+    await user.click(screen.getByRole('button', { name: /save|common\.save/i }));
+
+    await waitFor(() => expect(mockOnPickLocation).toHaveBeenCalledWith(3));
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('still closes on a successful create when onPickLocation is not provided', async () => {
+    // Regression: gating the close on onPickLocation being set left editorOpen
+    // false with open still true — nothing left to render (startCreating has
+    // no location-list view to fall back to), but the caller never told to
+    // close, so the modal effectively vanished stuck "open".
+    const user = userEvent.setup();
+    renderCreatingModal(false);
+
+    const input = await screen.findByLabelText(/name|locations\.name/i);
+    await user.type(input, 'Garage');
+    await user.click(screen.getByRole('button', { name: /save|common\.save/i }));
+
+    await waitFor(() => expect(api.createLocation).toHaveBeenCalledWith({ name: 'Garage' }));
+    await waitFor(() => expect(mockOnClose).toHaveBeenCalledTimes(1));
+    expect(mockOnPickLocation).not.toHaveBeenCalled();
+  });
+});

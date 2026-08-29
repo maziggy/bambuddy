@@ -23,9 +23,11 @@ Identity rewriting at cache time:
 
   - `upgrade_state.sn` (and any other nested dict's `sn` matching the real
     serial) → VP serial
-  - `net.info[*].ip` little-endian uint32 → VP bind IP. BambuStudio reads
-    this as the FTP destination IP. Without this the slicer FTPs straight
-    to the real printer and bypasses Bambuddy.
+  - `net.info[*].ip` little-endian uint32 → the address a slicer can reach
+    Bambuddy on. BambuStudio reads this as the FTP destination IP. Without
+    this the slicer FTPs straight to the real printer and bypasses Bambuddy.
+    Normally that address is the VP bind IP; `VIRTUAL_PRINTER_ADVERTISE_ADDRESS`
+    overrides it for NAT'd deployments (see `ADVERTISE_ADDRESS_ENV`).
   - `ipcam.rtsp_url` is left unchanged: BambuStudio overrides the URL host
     with the device IP it bound to (the VP), so the slicer hits the VP's
     own RTSPS proxy on port 322.
@@ -38,6 +40,7 @@ import copy
 import ipaddress
 import json
 import logging
+import os
 import socket
 from typing import TYPE_CHECKING
 
@@ -52,6 +55,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 REFRESH_INTERVAL_SECONDS = 30.0
+
+# Opt-in override for the address written into `net.info[].ip`. Needed only
+# where the address a slicer has to use to reach Bambuddy is not one of the
+# container's own interfaces — Docker bridge networking being the case that
+# prompted it (#2930), where the bind address is a container-private IP like
+# `172.24.0.2` and a slicer that follows it opens an FTP connection to
+# nothing. Host and macvlan networking stay the supported modes and need
+# nothing set here.
+#
+# Deliberately an environment variable rather than a change to how the VP IP
+# is resolved: the alternative was to prefer the VP's "Network Interface
+# Override" (`remote_interface_ip`), which today feeds SSDP and the cert SANs
+# only. Reading it here would silently move the FTP destination for every
+# install that has it set — the multi-NIC, VLAN and Tailscale setups, i.e.
+# exactly the ones most likely to have been tuned by hand. Unset, this
+# variable changes nothing. Mirrors `VIRTUAL_PRINTER_PASV_ADDRESS`, which
+# exists for the same reason on the FTP side.
+ADVERTISE_ADDRESS_ENV = "VIRTUAL_PRINTER_ADVERTISE_ADDRESS"
 
 # Bambuddy's internal printer state in bambu_mqtt.py (around line 2686+) is
 # updated per-field — each `if "X" in data: self.state.X = ...` block leaves
@@ -132,6 +153,32 @@ def _resolve_host_interface_for_target(target_ip: str) -> str | None:
         return None
     ip = iface.get("ip")
     return ip if isinstance(ip, str) and ip else None
+
+
+def _resolve_advertise_override(vp_name: str) -> str:
+    """Return the validated `net.info[].ip` override from the environment, or "".
+
+    Validated here rather than on each refresh tick for two reasons: a typo
+    produces one warning instead of one every 30s, and an unusable value
+    falls back to the bind address instead of leaving the rewrite unarmed.
+    That second part matters — an unarmed rewrite puts the *real printer IP*
+    back in front of the slicer (#1429), so a mistyped override must not be
+    able to reopen the leak this whole path exists to close.
+    """
+    raw = os.environ.get(ADVERTISE_ADDRESS_ENV, "").strip()
+    if not raw:
+        return ""
+    try:
+        _ip_to_uint32_le(raw)
+    except ValueError:
+        logger.warning(
+            "[%s] %s=%r is not a dotted-quad IPv4 — ignoring it, using the VP bind address instead",
+            vp_name,
+            ADVERTISE_ADDRESS_ENV,
+            raw,
+        )
+        return ""
+    return raw
 
 
 def _merge_ams_dict(prev_ams: dict, new_ams: dict) -> dict:
@@ -269,6 +316,10 @@ class MQTTBridge:
         # follow-up: makes silent early-returns visible without grepping the
         # source.
         self._not_armed_reason: str | None = None
+        # NAT escape hatch for `net.info[].ip`, resolved once — the process
+        # environment cannot change without a restart. "" means "use the VP
+        # bind address", which is every install that has not set it.
+        self._advertise_address = _resolve_advertise_override(vp_name)
         self._loop: asyncio.AbstractEventLoop | None = None
         self._refresh_task: asyncio.Task | None = None
         self._stopping = False
@@ -427,12 +478,15 @@ class MQTTBridge:
         sees the rewritten value (#1429). Without this sweep the sticky-key
         preservation keeps the poisoned `net.info[].ip` alive forever.
 
-        VP bind IP resolution: when `mqtt_server.bind_address` is empty or
-        `0.0.0.0` (the default for VPs that were never assigned a dedicated
-        bind IP), fall back to auto-resolving the host interface in the same
-        subnet as the printer's IP. Without this fallback, the rewrite never
-        arms on a default-config flat-LAN install and `net.info[].ip` leaks
-        the real printer IP — slicer follows it on Send (#1429 residual).
+        VP IP resolution, in order: the `VIRTUAL_PRINTER_ADVERTISE_ADDRESS`
+        override if one is set (NAT'd deployments where no local interface
+        carries the address slicers use — see `ADVERTISE_ADDRESS_ENV`), then
+        `mqtt_server.bind_address`, then — when that is empty or `0.0.0.0`,
+        the default for VPs never assigned a dedicated bind IP — the host
+        interface sharing a subnet with the printer's IP. Without that last
+        fallback the rewrite never arms on a default-config flat-LAN install
+        and `net.info[].ip` leaks the real printer IP — the slicer follows it
+        on Send (#1429 residual).
         """
 
         def _log_not_armed(reason: str) -> None:
@@ -463,14 +517,19 @@ class MQTTBridge:
             )
             return
 
-        vp_ip = getattr(self._mqtt_server, "bind_address", None)
-        vp_ip_source = "bind_address"
+        if self._advertise_address:
+            vp_ip = self._advertise_address
+            vp_ip_source = ADVERTISE_ADDRESS_ENV
+        else:
+            vp_ip = getattr(self._mqtt_server, "bind_address", None)
+            vp_ip_source = "bind_address"
         if not vp_ip or vp_ip in ("0.0.0.0", ""):  # nosec B104
             resolved = _resolve_host_interface_for_target(target_ip)
             if not resolved:
                 _log_not_armed(
                     f"no host interface shares a subnet with printer IP {target_ip} "
-                    "(and VP bind_address is 0.0.0.0/empty)"
+                    f"(and VP bind_address is 0.0.0.0/empty) — set {ADVERTISE_ADDRESS_ENV} "
+                    "to the address slicers reach Bambuddy on if this host is NAT'd"
                 )
                 return
             vp_ip = resolved
@@ -514,7 +573,7 @@ class MQTTBridge:
                 )
 
     def _rewrite_net_info_ips(self, print_state: dict) -> int:
-        """Rewrite every non-zero `net.info[].ip` in `print_state` to the VP bind IP.
+        """Rewrite every non-zero `net.info[].ip` in `print_state` to the VP's IP.
 
         Returns the number of entries rewritten. Mutates `print_state` in place.
 
@@ -595,7 +654,7 @@ class MQTTBridge:
             # stream directly from the printer. On the same LAN this works as
             # long as the slicer's stored access code matches the printer's
             # (i.e. configure the VP with the same access code as its target).
-            # Rewrite real printer IP → VP bind IP in `net.info[*].ip` so the
+            # Rewrite real printer IP → the VP's IP in `net.info[*].ip` so the
             # slicer's FTP destination resolves to the VP, not the real printer.
             self._rewrite_net_info_ips(print_data)
             # Defensive deep copy on store so the cache is fully decoupled from

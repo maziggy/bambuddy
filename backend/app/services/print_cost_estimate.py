@@ -12,6 +12,7 @@ from backend.app.core.config import settings
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.spool_assignment import SpoolAssignment
+from backend.app.services.inventory_mode import spoolman_owns_assignments
 from backend.app.utils import threemf_tools
 from backend.app.utils.safe_path import safe_join_under
 
@@ -135,7 +136,11 @@ async def estimate_queue_source_cost(
     default_cost = await _default_cost_per_kg(db)
     cost_by_tray: dict[int, float | None] = {}
     mapping = _parse_mapping(ams_mapping)
-    if printer_id is not None and mapping:
+    # Built-in spool prices only. In Spoolman mode the built-in table may still
+    # hold rows from before the user switched -- nothing clears it since #2812 --
+    # and pricing an estimate from a spool the printer is not drawing on would
+    # be worse than the default rate this falls back to.
+    if printer_id is not None and mapping and not await spoolman_owns_assignments(db):
         assignments = (
             (
                 await db.execute(

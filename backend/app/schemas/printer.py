@@ -170,6 +170,15 @@ class HMSErrorResponse(BaseModel):
     # truncated short_code that historically caused silent command rejection
     # (#1830, H2D wrong-plate verification).
     full_code: str = ""
+    # The bundled catalogue's sentence for this fault, so a client does not have
+    # to carry its own copy of the same table to tell a user why a print halted
+    # (#2926). English only and not localized — the catalogue ships one language.
+    # None when the catalogue does not cover the code, which is common for
+    # `hms[]`-array faults: those resolve through a lossy collapse of their
+    # 16-char identifier and many land on no key at all (#2728). A client should
+    # treat null as "no text available", never as "no fault" — `full_code` is
+    # what identifies the fault, and it is always present.
+    description: str | None = None
 
 
 class AMSTray(BaseModel):
@@ -267,6 +276,25 @@ class FilaSwitchResponse(BaseModel):
     out_extruders: list[int] = []
     stat: int = 0
     info: int = 0
+    # Whether the switch is set up: every AMS bound to one of its two inlets.
+    # A load cannot be routed until it is, so the UI blocks on this rather than
+    # sending a command the firmware will drop.
+    ready: bool = False
+
+
+class ExtruderSlotResponse(BaseModel):
+    """Which AMS slot one hotend is currently fed from.
+
+    From ``device.extruder.info[i].snow``. Needed because ``tray_now`` is a
+    single printer-wide value: on a dual-nozzle machine with both hotends
+    loaded it names only one of them, so it cannot say which hotend holds a
+    given slot.
+    """
+
+    # None when the hotend is not fed from any slot.
+    ams_id: int | None = None
+    slot_id: int | None = None
+    has_filament: bool = False
 
 
 class PrintOptionsResponse(BaseModel):
@@ -344,6 +372,10 @@ class PrinterStatus(BaseModel):
     # an FTS-bound AMS reaches BOTH nozzles, so it has no entry in
     # ams_extruder_map and must not be labelled left or right.
     ams_switch_inlet: dict[str, str] = {}
+    # Which AMS slot each hotend is fed from, keyed by extruder id as a string
+    # ("0" = right/main, "1" = left/deputy). Empty on printers that do not
+    # report ``device.extruder.info``.
+    extruder_slots: dict[str, ExtruderSlotResponse] = {}
     # Currently loaded tray (global ID): 254 = external spool, 255 = no filament
     tray_now: int = 255
     # Runout / filament-replacement guidance (#2587). Populated only while the

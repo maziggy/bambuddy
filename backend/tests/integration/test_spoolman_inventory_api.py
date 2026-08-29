@@ -380,6 +380,88 @@ class TestSpoolmanInventoryCRUD:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_create_spool_keeps_a_clear_colour_translucent(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """#2912: the create route truncated rgba to six characters, so entering
+        "fully transparent" by hand landed on the same opaque black as the AMS
+        case in the report."""
+        payload = {
+            "material": "PLA",
+            "rgba": "00000000",
+            "label_weight": 1000,
+            "weight_used": 0,
+        }
+        response = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
+
+        assert response.status_code == 200
+        assert mock_spoolman_client.find_or_create_filament.call_args.kwargs["color_hex"] == "00000000"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_spool_keeps_an_opaque_colour_at_six(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """The opaque case has to stay six characters or every create starts
+        writing a shape the rest of the instance does not hold."""
+        payload = {
+            "material": "PLA",
+            "rgba": "FF0000FF",
+            "label_weight": 1000,
+            "weight_used": 0,
+        }
+        response = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
+
+        assert response.status_code == 200
+        assert mock_spoolman_client.find_or_create_filament.call_args.kwargs["color_hex"] == "FF0000"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_alpha_only_edit_reaches_the_filament(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """#2912: making a spool translucent is a real change to the filament's
+        colour. Comparing bare RGB prefixes would call it a no-op and the edit
+        would never land."""
+        # Sample filament is FF0000; make it half-transparent.
+        payload = {"rgba": "FF000080"}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+
+        assert response.status_code == 200
+        mock_spoolman_client.patch_filament.assert_called_once()
+        assert mock_spoolman_client.patch_filament.call_args.args[1]["color_hex"] == "FF000080"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_with_the_round_tripped_opaque_rgba_is_a_no_op(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """#2912: the read side hands the frontend FF0000FF for a filament stored
+        as FF0000, and the edit form sends it straight back. Comparing raw strings
+        would make metadata_unchanged permanently False and PATCH the filament on
+        every no-op edit.
+        """
+        payload = {"rgba": "FF0000FF", "note": "unrelated change"}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+
+        assert response.status_code == 200
+        mock_spoolman_client.patch_filament.assert_not_called()
+        mock_spoolman_client.find_or_create_filament.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_update_shared_filament_falls_back_to_find_or_create(
         self,
         async_client: AsyncClient,

@@ -11,6 +11,7 @@ from backend.app.models.kprofile_note import KProfileNote
 from backend.app.models.library import FileVariantGroup, LibraryFile, LibraryFolder
 from backend.app.models.local_preset import LocalPreset
 from backend.app.models.location import Location
+from backend.app.models.location_ha_sensor import LocationHASensor
 from backend.app.models.long_lived_token import LongLivedToken
 from backend.app.models.maintenance import MaintenanceHistory, MaintenanceType, PrinterMaintenance
 from backend.app.models.notification import NotificationLog
@@ -33,6 +34,7 @@ from backend.app.models.sponsor_toast_state import SponsorToastState
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spool_catalog import SpoolCatalogEntry
+from backend.app.models.spool_filament_preset import SpoolFilamentPreset, SpoolmanFilamentPreset
 from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.spoolbuddy_device import SpoolBuddyDevice
@@ -81,7 +83,9 @@ __all__ = [
     "PipelineRun",
     "SlicerPipeline",
     "Spool",
+    "SpoolFilamentPreset",
     "SpoolKProfile",
+    "SpoolmanFilamentPreset",
     "SpoolAssignment",
     "SpoolCatalogEntry",
     "SpoolUsageHistory",

@@ -106,6 +106,7 @@ def _fake_state(**overrides):
         # printer_state_to_dict gates both of these on.
         "fila_switch": None,
         "ams_switch_inlet": {},
+        "extruder_slots": {},
     }
     base.update(overrides)
     return SimpleNamespace(**base)

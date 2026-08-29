@@ -9172,17 +9172,19 @@ export function PrintersPage() {
   };
 
   // Grid classes based on card size (1=small, 2=medium, 3=large, 4=xl)
+  // NEW grid setup with SM size fo 4 cards
   const getGridClasses = () => {
     switch (cardSize) {
       case 1: return 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'; // S: many small cards
-      case 2: return 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'; // M: medium cards
-      case 3: return 'grid-cols-1 lg:grid-cols-2'; // L: large cards, 2 columns max
-      case 4: return 'grid-cols-1'; // XL: single column, full width
+      case 2: return 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4'; // MS: medium cards (4 cards)
+      case 3: return 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'; // M: medium cards
+      case 4: return 'grid-cols-1 lg:grid-cols-2'; // L: large cards, 2 columns max
+      case 5: return 'grid-cols-1'; // XL: single column, full width
       default: return 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3';
     }
   };
 
-  const cardSizeLabels = ['S', 'M', 'L', 'XL'];
+  const cardSizeLabels = ['S', 'SM', 'M', 'L', 'XL'];
 
   // Increment version counter whenever a printer status cache entry is updated so
   // filteredPrinters re-computes reactively on WebSocket-driven status changes.
@@ -9520,6 +9522,13 @@ export function PrintersPage() {
             <ArrowDown className="w-4 h-4 text-white" />
           )}
         </button>
+        <RouterLink
+          to="/printer-locations"
+          className="h-8 shrink-0 px-2 rounded-lg border bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary transition-colors flex items-center justify-center"
+          title={t('printers.locations.title')}
+        >
+          <Box className="w-4 h-4 text-bambu-green" />
+        </RouterLink>
       </div>
 
       {/* Page view toggle: Cards / Cam Wall */}
@@ -9593,7 +9602,7 @@ export function PrintersPage() {
                   ? 'bg-bambu-green text-white'
                   : 'text-white hover:bg-bambu-dark-tertiary'
               }`}
-              title={label === 'S' ? t('printers.cardSize.small') : label === 'M' ? t('printers.cardSize.medium') : label === 'L' ? t('printers.cardSize.large') : t('printers.cardSize.extraLarge')}
+              title={label === 'S' ? t('printers.cardSize.small') : label === 'M' ? t('printers.cardSize.medium') : label === 'SM' ? t('printers.cardSize.smedium') : label === 'L' ? t('printers.cardSize.large') : t('printers.cardSize.extraLarge')}
             >
               {label}
             </button>

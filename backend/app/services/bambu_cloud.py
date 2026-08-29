@@ -634,9 +634,6 @@ class BambuCloudService:
             web_origin = "https://bambulab.cn" if "bambulab.cn" in self.base_url else "https://bambulab.com"
             tfa_url = f"{web_origin}/api/sign-in/tfa"
 
-            if self._captcha_cooloff_holds(web_origin):
-                return self._captcha_refusal()
-
             # #2696: the web origin is CSRF-protected (double submit). Without
             # both halves the endpoint 403s before it ever evaluates the code,
             # which surfaced to users as a permanent, misleading "Invalid code".

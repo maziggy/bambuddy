@@ -30,7 +30,6 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@TheUltimateC0der](https://github.com/TheUltimateC0der)
 - [@rstocks](https://github.com/rstocks)
 - [@Neasham21](https://github.com/Neasham21)
-- [@strikerfab](https://github.com/strikerfab)
 
 ## Supporters ($15/mo+)
 
@@ -72,7 +71,6 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@g7ufo](https://github.com/g7ufo)
 - [@Heidelberger2000](https://github.com/Heidelberger2000)
 - [@MorganMLGman](https://github.com/MorganMLGman)
-- [@NeighborGeek](https://github.com/NeighborGeek)
 
 ---
 

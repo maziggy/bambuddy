@@ -1,0 +1,200 @@
+2026-08-29 15:54:22,304 INFO [uvicorn.access] [-] [IP]:59210 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:54:22,696 INFO [backend.app.api.routes.cloud] [ec284584] get_filament_info called with 1 IDs: ['GFA00']
+2026-08-29 15:54:22,718 INFO [backend.app.api.routes.printers] [4f7d9d4d] Cover using cached 3MF from /app/data/archive/temp/Gridfinity_USB_Insert_–_Parametric_USB-A_C_Holder.gcode.3mf (avoided duplicate FTP)
+2026-08-29 15:54:22,718 INFO [backend.app.api.routes.printers] [4f7d9d4d] Downloaded file size: 214572 bytes
+2026-08-29 15:54:22,719 INFO [backend.app.api.routes.printers] [4f7d9d4d] Cover: detected plate 1 from 3MF contents
+2026-08-29 15:54:22,951 INFO [uvicorn.access] [-] [IP]:59352 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-08-29 15:54:23,871 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:54:23,871 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-08-29 15:54:25,652 INFO [uvicorn.access] [-] [IP]:49320 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:54:25,854 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 106860 bytes
+2026-08-29 15:54:29,036 INFO [uvicorn.access] [-] [IP]:49338 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:54:32,662 INFO [uvicorn.access] [-] [IP]:49382 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:54:36,104 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:54:36,105 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-08-29 15:54:38,151 INFO [uvicorn.access] [-] [IP]:36712 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:54:38,688 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 107238 bytes
+2026-08-29 15:54:42,781 INFO [uvicorn.access] [-] [IP]:36762 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:54:43,054 INFO [backend.app.services.discovery] [ead8e89b] Starting subnet scan of [IP]/24 (254 hosts)
+2026-08-29 15:54:43,064 INFO [uvicorn.access] [-] [IP]:36764 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-08-29 15:54:44,132 INFO [backend.app.services.discovery] [ead8e89b] Found potential Bambu printer at [IP]
+2026-08-29 15:54:48,553 INFO [uvicorn.access] [-] [IP]:40968 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:54:49,174 INFO [backend.app.services.discovery] [ead8e89b] Subnet scan complete. Found 1 printers.
+2026-08-29 15:54:50,726 INFO [uvicorn.access] [-] [IP]:41078 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-08-29 15:54:50,731 INFO [uvicorn.access] [-] [IP]:41090 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-08-29 15:54:55,065 INFO [uvicorn.access] [-] [IP]:38434 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:54:59,087 INFO [backend.app.services.discovery] [780ed26a] Starting subnet scan of [IP]/24 (254 hosts)
+2026-08-29 15:54:59,092 INFO [uvicorn.access] [-] [IP]:38446 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-08-29 15:55:00,136 INFO [backend.app.services.discovery] [780ed26a] Found potential Bambu printer at [IP]
+2026-08-29 15:55:01,938 INFO [uvicorn.access] [-] [IP]:38552 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:55:02,422 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:55:02,422 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-08-29 15:55:04,068 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 128823 bytes
+2026-08-29 15:55:05,169 INFO [backend.app.services.discovery] [780ed26a] Subnet scan complete. Found 1 printers.
+2026-08-29 15:55:09,177 INFO [uvicorn.access] [-] [IP]:34414 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:55:14,404 INFO [uvicorn.access] [-] [IP]:34470 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:55:21,166 INFO [uvicorn.access] [-] [IP]:42288 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:55:27,633 INFO [uvicorn.access] [-] [IP]:54748 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:55:29,920 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:55:29,920 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-08-29 15:55:33,765 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 119060 bytes
+2026-08-29 15:55:35,345 INFO [uvicorn.access] [-] [IP]:39704 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:55:40,844 INFO [uvicorn.access] [-] [IP]:39758 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:55:46,285 INFO [uvicorn.access] [-] [IP]:55218 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:55:50,642 INFO [uvicorn.access] [-] [IP]:55262 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:55:56,308 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:55:56,308 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-08-29 15:55:56,309 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:55:57,799 INFO [uvicorn.access] [-] [IP]:40082 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:55:58,284 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 116734 bytes
+2026-08-29 15:55:58,284 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 116734 bytes (no second connection opened)
+2026-08-29 15:55:58,284 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 116734 bytes
+2026-08-29 15:56:03,206 INFO [uvicorn.access] [-] [IP]:40118 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:56:09,414 INFO [uvicorn.access] [-] [IP]:60300 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:56:16,200 INFO [uvicorn.access] [-] [IP]:58290 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:56:21,125 INFO [uvicorn.access] [-] [IP]:58370 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:56:22,649 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:56:22,649 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-08-29 15:56:24,757 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 112243 bytes
+2026-08-29 15:56:25,808 INFO [uvicorn.access] [-] [IP]:35032 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:56:30,075 INFO [uvicorn.access] [-] [IP]:35048 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:56:35,183 INFO [uvicorn.access] [-] [IP]:46790 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:56:41,867 INFO [uvicorn.access] [-] [IP]:46830 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:56:45,889 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-08-29 15:56:45,890 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-08-29 15:56:47,852 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-08-29 15:56:47,853 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-08-29 15:56:48,428 INFO [uvicorn.access] [-] [IP]:60454 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:56:50,705 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-08-29 15:56:50,706 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-08-29 15:56:51,101 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:56:51,101 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-08-29 15:56:53,140 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:56:53,708 INFO [uvicorn.access] [-] [IP]:60354 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-08-29 15:56:53,747 INFO [uvicorn.access] [-] [IP]:60534 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:56:53,871 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 92221 bytes
+2026-08-29 15:56:53,871 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 92221 bytes (no second connection opened)
+2026-08-29 15:56:53,871 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 92221 bytes
+2026-08-29 15:56:59,416 INFO [uvicorn.access] [-] [IP]:39580 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:57:06,171 INFO [uvicorn.access] [-] [IP]:43256 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:57:12,109 INFO [uvicorn.access] [-] [IP]:43298 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:57:17,483 INFO [uvicorn.access] [-] [IP]:53596 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:57:21,771 INFO [uvicorn.access] [-] [IP]:53654 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:57:25,629 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:57:25,630 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-08-29 15:57:27,847 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 141951 bytes
+2026-08-29 15:57:29,033 INFO [uvicorn.access] [-] [IP]:60170 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:57:29,487 INFO [uvicorn.access] [-] [IP]:60186 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-08-29 15:57:29,488 INFO [uvicorn.access] [-] [IP]:60202 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-08-29 15:57:36,263 INFO [uvicorn.access] [-] [IP]:48368 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:57:37,006 INFO [backend.app.services.discovery] [15faf0a0] Starting subnet scan of [IP]/24 (254 hosts)
+2026-08-29 15:57:37,014 INFO [uvicorn.access] [-] [IP]:48380 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-08-29 15:57:38,133 INFO [backend.app.services.discovery] [15faf0a0] Found potential Bambu printer at [IP]
+2026-08-29 15:57:41,634 INFO [uvicorn.access] [-] [IP]:48562 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:57:43,171 INFO [backend.app.services.discovery] [15faf0a0] Subnet scan complete. Found 1 printers.
+2026-08-29 15:57:47,608 INFO [uvicorn.access] [-] [IP]:46768 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:57:47,785 INFO [uvicorn.access] [-] [IP]:46790 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-08-29 15:57:47,785 INFO [uvicorn.access] [-] [IP]:46784 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-08-29 15:57:52,993 INFO [uvicorn.access] [-] [IP]:46878 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:57:53,821 INFO [backend.app.services.discovery] [8504d795] Starting subnet scan of [IP]/24 (254 hosts)
+2026-08-29 15:57:53,826 INFO [uvicorn.access] [-] [IP]:46894 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-08-29 15:57:54,898 INFO [backend.app.services.discovery] [8504d795] Found potential Bambu printer at [IP]
+2026-08-29 15:57:56,115 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:57:56,115 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-08-29 15:57:58,009 INFO [uvicorn.access] [-] [IP]:35550 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:57:58,070 INFO [uvicorn.access] [-] [IP]:35566 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-08-29 15:57:58,070 INFO [uvicorn.access] [-] [IP]:35580 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-08-29 15:57:58,220 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:57:58,925 INFO [backend.app.services.discovery] [8504d795] Subnet scan complete. Found 1 printers.
+2026-08-29 15:57:58,947 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 110552 bytes
+2026-08-29 15:57:58,948 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 110552 bytes (no second connection opened)
+2026-08-29 15:57:58,948 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 110552 bytes
+2026-08-29 15:58:02,584 INFO [uvicorn.access] [-] [IP]:35650 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:58:10,457 INFO [uvicorn.access] [-] [IP]:48564 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:58:11,459 INFO [uvicorn.access] [-] [IP]:48586 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-08-29 15:58:11,460 INFO [uvicorn.access] [-] [IP]:48572 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-08-29 15:58:17,847 INFO [uvicorn.access] [-] [IP]:36716 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:58:25,119 INFO [uvicorn.access] [-] [IP]:52198 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:58:29,543 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:58:29,543 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-08-29 15:58:29,871 INFO [uvicorn.access] [-] [IP]:52234 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:58:33,384 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 112808 bytes
+2026-08-29 15:58:37,120 INFO [uvicorn.access] [-] [IP]:47534 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:58:40,712 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-29 15:58:41,656 INFO [uvicorn.access] [-] [IP]:47582 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:58:46,633 INFO [uvicorn.access] [-] [IP]:52794 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:58:50,796 INFO [uvicorn.access] [-] [IP]:52828 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:58:58,513 INFO [uvicorn.access] [-] [IP]:33560 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:59:04,060 INFO [uvicorn.access] [-] [IP]:33604 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:59:06,346 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:59:06,346 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-08-29 15:59:08,409 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:59:08,426 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 125319 bytes
+2026-08-29 15:59:08,426 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 125319 bytes (no second connection opened)
+2026-08-29 15:59:08,426 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 125319 bytes
+2026-08-29 15:59:11,052 INFO [uvicorn.access] [-] [IP]:59770 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:59:17,503 INFO [uvicorn.access] [-] [IP]:44202 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:59:23,731 INFO [uvicorn.access] [-] [IP]:44292 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:59:28,749 INFO [uvicorn.access] [-] [IP]:51630 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:59:34,733 INFO [uvicorn.access] [-] [IP]:51668 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:59:41,051 INFO [backend.app.api.routes.support] [93c37a66] Log level changed to DEBUG
+2026-08-29 15:59:41,052 INFO [backend.app.api.routes.bug_report] [93c37a66] Bug report: enabled debug logging
+2026-08-29 15:59:41,052 DEBUG [backend.app.services.bambu_mqtt] [93c37a66] [[SERIAL]] Requesting status update (pushall)
+2026-08-29 15:59:41,052 INFO [uvicorn.access] [-] [IP]:59422 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-08-29 15:59:41,889 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-08-29 15:59:41,889 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-08-29 15:59:41,890 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: Gridfinity_USB_Insert_–_Parametric_USB-A_C_Holder.gcode.3mf, subtask_name: Gridfinity_USB_Insert_–_Parametric_USB-A_C_Holder
+2026-08-29 15:59:41,890 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': '2', 'tray_is_bbl_bits': '2', 'tray_tar': '1', 'tray_now': '1', 'tray_pre': '1', 'tray_read_done_bits': '2', 'tray_reading_bits': '0', 'version': 5, 'insert_flag': True, 'power_on_flag': True}
+2026-08-29 15:59:41,890 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 1
+2026-08-29 15:59:41,890 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-08-29 15:59:41,891 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-08-29 15:59:41,891 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-08-29 15:59:41,891 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-08-29 15:59:41,891 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-29 15:59:41,892 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-08-29 15:59:41,892 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-08-29 15:59:41,892 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-08-29 15:59:41,893 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-08-29 15:59:41,893 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-08-29 15:59:41,893 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-08-29 15:59:41,894 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-08-29 15:59:41,895 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-08-29 15:59:41,895 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: Gridfinity_USB_Insert_–_Parametric_USB-A_C_Holder.gcode.3mf, subtask: Gridfinity_USB_Insert_–_Parametric_USB-A_C_Holder
+2026-08-29 15:59:42,530 INFO [uvicorn.access] [-] [IP]:59446 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:59:43,936 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-29 15:59:43,936 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -44dBm
+2026-08-29 15:59:45,420 DEBUG [backend.app.main] [-] Recorded 3 printer sensor history entries
+2026-08-29 15:59:48,339 INFO [backend.app.services.discovery] [7685327d] Starting subnet scan of [IP]/24 (254 hosts)
+2026-08-29 15:59:48,353 INFO [uvicorn.access] [-] [IP]:55184 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-08-29 15:59:49,199 INFO [uvicorn.access] [-] [IP]:55214 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:59:49,384 DEBUG [backend.app.services.discovery] [7685327d] Port 990 open on [IP]
+2026-08-29 15:59:49,394 DEBUG [backend.app.services.discovery] [7685327d] Port 8883 open on [IP]
+2026-08-29 15:59:49,394 INFO [backend.app.services.discovery] [7685327d] Found potential Bambu printer at [IP]
+2026-08-29 15:59:50,019 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-29 15:59:50,020 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm
+2026-08-29 15:59:50,030 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:59:50,030 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 15:59:50,031 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-08-29 15:59:50,396 DEBUG [backend.app.services.discovery] [-] SSDP query to [IP] failed: timed out
+2026-08-29 15:59:52,056 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-29 15:59:52,057 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-08-29 15:59:52,337 DEBUG [backend.app.services.camera] [-] Chamber image: received 120449 bytes
+2026-08-29 15:59:52,349 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 120449 bytes
+2026-08-29 15:59:52,349 DEBUG [backend.app.main] [-] [FINISH-PHOTO-BANK] banked in-print frame for printer 1 at layer 36/123 (120449 bytes)
+2026-08-29 15:59:52,350 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 120449 bytes (no second connection opened)
+2026-08-29 15:59:52,350 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 120449 bytes
+2026-08-29 15:59:52,351 DEBUG [backend.app.main] [-] [FINISH-PHOTO-BANK] banked in-print frame for printer 1 at layer 36/123 (120449 bytes)
+2026-08-29 15:59:53,144 DEBUG [backend.app.api.routes.printers] [4d98bac4] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-08-29 15:59:53,144 DEBUG [backend.app.api.routes.printers] [4d98bac4] Using tray_now directly as global ID: 1
+2026-08-29 15:59:54,121 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-29 15:59:54,122 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -50dBm
+2026-08-29 15:59:54,427 INFO [backend.app.services.discovery] [7685327d] Subnet scan complete. Found 1 printers.
+2026-08-29 15:59:56,117 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-29 15:59:56,117 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -43dBm
+2026-08-29 15:59:56,389 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: added 30s, total=780s (0.22h)
+2026-08-29 15:59:56,394 DEBUG [backend.app.main] [-] Updated runtime for 1 printer(s)
+2026-08-29 15:59:56,628 INFO [uvicorn.access] [-] [IP]:40988 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-29 15:59:58,980 INFO [uvicorn.access] [-] [IP]:41016 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-08-29 15:59:58,981 INFO [uvicorn.access] [-] [IP]:41018 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-08-29 16:00:00,310 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-29 16:00:00,311 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm

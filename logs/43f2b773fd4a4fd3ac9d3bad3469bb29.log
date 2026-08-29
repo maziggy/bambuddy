@@ -1,0 +1,200 @@
+2026-08-29 10:31:37,844 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-29 10:31:39,991 INFO [uvicorn.access] [-] [IP]:60522 - "POST /api/v1/library/files?folder_id=777&generate_stl_thumbnails=true HTTP/1.1" 200
+2026-08-29 10:31:47,712 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:31:57,957 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:31:57,958 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:32:00,035 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 95776 bytes
+2026-08-29 10:32:01,170 INFO [uvicorn.access] [-] [IP]:54356 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-08-29 10:32:14,972 INFO [backend.app.api.routes.camera] [bdce00ca] Using chamber image protocol for P1P
+2026-08-29 10:32:14,972 INFO [backend.app.api.routes.camera] [bdce00ca] Camera viewer attached to printer-1 (subscribers=1)
+2026-08-29 10:32:14,973 INFO [backend.app.api.routes.camera] [bdce00ca] Starting chamber image stream for [IP] (stream_id=1-fanout-42d383de, model=P1P)
+2026-08-29 10:32:14,981 INFO [backend.app.api.routes.printers] [47e3b9db] Cover: resolved plate 3 before download (subtask=fou_gabriel)
+2026-08-29 10:32:15,738 INFO [backend.app.services.camera] [bdce00ca] Chamber image: connected to [IP]:6000
+2026-08-29 10:32:26,507 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20008","version":1}}...
+2026-08-29 10:32:26,508 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT pushing command: pushall
+2026-08-29 10:32:26,508 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] Sending status report in response to pushall
+2026-08-29 10:32:28,403 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 99921 bytes
+2026-08-29 10:32:42,431 INFO [backend.app.api.routes.camera] [bdce00ca] Camera viewer detached from printer-1 (subscribers=0)
+2026-08-29 10:32:44,219 INFO [backend.app.api.routes.camera] [bdce00ca] Chamber image stream cancelled (stream_id=1-fanout-42d383de)
+2026-08-29 10:32:44,261 INFO [backend.app.api.routes.camera] [bdce00ca] Chamber image stream stopped for [IP] (stream_id=1-fanout-42d383de)
+2026-08-29 10:32:44,272 INFO [backend.app.api.routes.camera] [d5afffb3] Shut down camera fan-out broadcaster for printer 1
+2026-08-29 10:32:44,272 INFO [backend.app.api.routes.camera] [d5afffb3] Stopped 0 camera stream(s) for printer 1
+2026-08-29 10:32:44,326 INFO [uvicorn.access] [-] [IP]:46324 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-08-29 10:32:47,868 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:32:58,869 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:32:58,869 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:33:00,524 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 94886 bytes
+2026-08-29 10:33:29,349 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:33:29,350 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:33:30,714 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 95799 bytes
+2026-08-29 10:33:39,483 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-08-29 10:33:39,800 INFO [backend.app.services.spoolman] [-] Updating existing spool 103 for tag 708B92564F394D9F...
+2026-08-29 10:33:39,820 INFO [backend.app.services.spoolman] [-] Updating existing spool 129 for tag 5FD37A3393624124...
+2026-08-29 10:33:39,838 INFO [backend.app.services.spoolman] [-] Updating existing spool 105 for tag 129F6433B27D4CD3...
+2026-08-29 10:33:39,864 INFO [backend.app.main] [-] Auto-synced 3 AMS trays to Spoolman for printer 1
+2026-08-29 10:33:47,963 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:33:55,673 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:33:55,674 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:33:57,147 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 100973 bytes
+2026-08-29 10:34:26,041 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:34:26,041 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:34:28,082 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 98712 bytes
+2026-08-29 10:34:48,329 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:34:56,542 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:34:56,542 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:34:58,715 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 101291 bytes
+2026-08-29 10:35:24,905 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:35:24,905 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:35:26,868 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 101369 bytes
+2026-08-29 10:35:48,463 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:35:59,385 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:35:59,386 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:36:00,717 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 100408 bytes
+2026-08-29 10:36:33,827 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:36:33,828 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:36:35,267 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 99216 bytes
+2026-08-29 10:36:37,856 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-29 10:36:48,552 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:37:04,299 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:37:04,299 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:37:07,075 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 97908 bytes
+2026-08-29 10:37:27,522 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20009","version":1}}...
+2026-08-29 10:37:27,523 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT pushing command: pushall
+2026-08-29 10:37:27,523 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] Sending status report in response to pushall
+2026-08-29 10:37:34,679 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:37:34,680 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:37:36,480 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 100815 bytes
+2026-08-29 10:37:48,657 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:38:01,003 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:38:01,004 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:38:03,597 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 102109 bytes
+2026-08-29 10:38:35,447 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:38:35,447 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:38:37,480 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 98916 bytes
+2026-08-29 10:38:48,756 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:39:07,928 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:39:07,928 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:39:09,750 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 99663 bytes
+2026-08-29 10:39:20,101 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-08-29 10:39:20,432 INFO [backend.app.services.spoolman] [-] Updating existing spool 103 for tag 708B92564F394D9F...
+2026-08-29 10:39:20,443 INFO [backend.app.services.spoolman] [-] Updating existing spool 129 for tag 5FD37A3393624124...
+2026-08-29 10:39:20,456 INFO [backend.app.services.spoolman] [-] Updating existing spool 105 for tag 129F6433B27D4CD3...
+2026-08-29 10:39:20,468 INFO [backend.app.main] [-] Auto-synced 3 AMS trays to Spoolman for printer 1
+2026-08-29 10:39:36,431 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:39:36,431 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:39:37,821 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 96644 bytes
+2026-08-29 10:39:48,849 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:40:08,974 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:40:08,974 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:40:10,373 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 96765 bytes
+2026-08-29 10:40:43,672 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:40:43,682 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:40:45,613 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 102081 bytes
+2026-08-29 10:40:48,987 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:41:31,926 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:41:31,926 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:41:33,367 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 99021 bytes
+2026-08-29 10:41:37,869 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-29 10:41:49,078 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:42:04,541 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:42:04,542 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:42:06,483 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 100924 bytes
+2026-08-29 10:42:28,537 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20010","version":1}}...
+2026-08-29 10:42:28,537 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT pushing command: pushall
+2026-08-29 10:42:28,537 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] Sending status report in response to pushall
+2026-08-29 10:42:49,180 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:43:05,579 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:43:05,579 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:43:07,784 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 101663 bytes
+2026-08-29 10:43:49,275 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:43:54,484 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:43:54,484 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:43:56,591 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 98545 bytes
+2026-08-29 10:44:04,611 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:44:04,611 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:44:06,345 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 100903 bytes
+2026-08-29 10:44:11,885 INFO [backend.app.services.virtual_printer.bind_server] [3216bc83] Bind server: client connected from [IP]:58759
+2026-08-29 10:44:11,885 INFO [backend.app.services.virtual_printer.bind_server] [3216bc83] Bind server: client connected from [IP]:58760
+2026-08-29 10:44:11,886 INFO [backend.app.services.virtual_printer.bind_server] [3216bc83] Bind server: received from [IP]:58759: {'login': {'command': 'detect', 'sequence_id': '20000'}}
+2026-08-29 10:44:11,886 INFO [backend.app.services.virtual_printer.bind_server] [3216bc83] Bind server: sent detect response to [IP]:58759 (serial=[SERIAL])
+2026-08-29 10:44:11,886 INFO [backend.app.services.virtual_printer.bind_server] [3216bc83] Bind server: received from [IP]:58760: {'login': {'command': 'detect', 'sequence_id': '20001'}}
+2026-08-29 10:44:11,887 INFO [backend.app.services.virtual_printer.bind_server] [3216bc83] Bind server: sent detect response to [IP]:58760 (serial=[SERIAL])
+2026-08-29 10:44:18,520 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] MQTT TLS connection from ('[IP]', 58773) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-08-29 10:44:18,520 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] MQTT client connected: [IP]:58773
+2026-08-29 10:44:18,521 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] MQTT client authenticated successfully
+2026-08-29 10:44:18,522 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] MQTT client [IP]:58773 authenticated (negotiated keepalive=60s, idle disconnect disabled)
+2026-08-29 10:44:18,525 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] MQTT subscribe: device/[SERIAL]/report QoS=0
+2026-08-29 10:44:18,610 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20001","version":1}}...
+2026-08-29 10:44:18,610 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT pushing command: pushall
+2026-08-29 10:44:18,611 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] Sending status report in response to pushall
+2026-08-29 10:44:18,613 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"info":{"command":"get_version","sequence_id":"20002"}}...
+2026-08-29 10:44:18,613 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT info command: get_version
+2026-08-29 10:44:18,613 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] Sent version response (product_name=P1P)
+2026-08-29 10:44:18,613 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"info":{"command":"get_version","sequence_id":"20003"}}...
+2026-08-29 10:44:18,614 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT info command: get_version
+2026-08-29 10:44:18,614 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] Sent version response (product_name=P1P)
+2026-08-29 10:44:20,981 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:44:20,982 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:44:23,149 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 98812 bytes
+2026-08-29 10:44:49,384 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:44:49,384 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 12 pushes/min to [IP]:58773
+2026-08-29 10:44:49,563 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:44:49,563 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:44:51,910 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 99678 bytes
+2026-08-29 10:45:40,345 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:45:40,345 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:45:41,835 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 102704 bytes
+2026-08-29 10:45:49,465 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:46:08,670 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:46:08,671 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:46:11,069 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 102218 bytes
+2026-08-29 10:46:37,881 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-29 10:46:49,553 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:47:01,449 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:47:01,449 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:47:02,888 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 102355 bytes
+2026-08-29 10:47:17,971 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-08-29 10:47:18,291 INFO [backend.app.services.spoolman] [-] Updating existing spool 103 for tag 708B92564F394D9F...
+2026-08-29 10:47:18,312 INFO [backend.app.services.spoolman] [-] Updating existing spool 129 for tag 5FD37A3393624124...
+2026-08-29 10:47:18,325 INFO [backend.app.services.spoolman] [-] Updating existing spool 105 for tag 129F6433B27D4CD3...
+2026-08-29 10:47:18,337 INFO [backend.app.main] [-] Auto-synced 3 AMS trays to Spoolman for printer 1
+2026-08-29 10:47:29,551 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20011","version":1}}...
+2026-08-29 10:47:29,552 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] MQTT pushing command: pushall
+2026-08-29 10:47:29,552 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] Sending status report in response to pushall
+2026-08-29 10:47:30,125 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:47:30,126 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:47:31,597 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 104915 bytes
+2026-08-29 10:47:49,648 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:48:20,990 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:48:20,991 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:48:20,992 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:48:23,162 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 97286 bytes
+2026-08-29 10:48:23,163 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 97286 bytes (no second connection opened)
+2026-08-29 10:48:23,163 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 97286 bytes
+2026-08-29 10:48:48,443 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:48:48,443 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)
+2026-08-29 10:48:49,744 INFO [backend.app.services.virtual_printer.mqtt_server] [3216bc83] [p1p virtuelle] 1Hz status push: 60 pushes/min to [IP]:52816
+2026-08-29 10:48:50,049 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 100283 bytes
+2026-08-29 10:49:17,568 INFO [backend.app.api.routes.support] [b161c936] Log level changed to DEBUG
+2026-08-29 10:49:17,568 INFO [backend.app.api.routes.bug_report] [b161c936] Bug report: enabled debug logging
+2026-08-29 10:49:17,568 DEBUG [backend.app.services.bambu_mqtt] [b161c936] [[SERIAL]] Requesting status update (pushall)
+2026-08-29 10:49:17,569 INFO [uvicorn.access] [-] [IP]:54324 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-08-29 10:49:18,172 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: fou_gabriel.3mf, subtask_name: fou_gabriel
+2026-08-29 10:49:18,173 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'b', 'tray_is_bbl_bits': 'b', 'tray_tar': '3', 'tray_now': '3', 'tray_pre': '3', 'tray_read_done_bits': 'b', 'tray_reading_bits': '0', 'version': 6, 'insert_flag': True, 'power_on_flag': False}
+2026-08-29 10:49:18,173 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 3
+2026-08-29 10:49:18,173 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-08-29 10:49:18,174 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x2003 -> extruder 0
+2026-08-29 10:49:18,174 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-08-29 10:49:18,174 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-08-29 10:49:18,174 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-29 10:49:18,175 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-08-29 10:49:18,175 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-08-29 10:49:18,175 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-08-29 10:49:18,177 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-08-29 10:49:18,177 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-08-29 10:49:18,177 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-08-29 10:49:18,178 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-08-29 10:49:18,178 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-08-29 10:49:18,178 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: fou_gabriel.3mf, subtask: fou_gabriel
+2026-08-29 10:49:18,182 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-08-29 10:49:18,182 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1P)

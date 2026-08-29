@@ -86,9 +86,11 @@ class MakerWorldProvider(ModelProvider):
             auth_token=token,
             user=identity,
             on_auth_failure=lambda: mark_cloud_token_invalid(user_id),
-            # The thumbnail proxy's SSRF allowlist is the provider's declared
-            # seam — the service must not hardcode its own copy.
+            # The SSRF allowlists are the provider's declared seams — the
+            # service must not hardcode its own copies (symmetric pair,
+            # ``fetch_thumbnail`` / ``download``).
             thumbnail_hosts=self.thumbnail_hosts(),
+            download_hosts=self.download_hosts(),
         )
 
     def parse_url(self, url: str) -> ProviderResourceRef:
@@ -107,6 +109,9 @@ class MakerWorldProvider(ModelProvider):
         return (column == prefix) | (column.like(f"{prefix}#profileId-%"))
 
     def thumbnail_hosts(self) -> tuple[str, ...]:
+        return MAKERWORLD_CDN_HOSTS
+
+    def download_hosts(self) -> tuple[str, ...]:
         return MAKERWORLD_CDN_HOSTS
 
 

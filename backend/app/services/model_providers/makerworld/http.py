@@ -32,10 +32,12 @@ MAKERWORLD_API_BASE = "https://api.bambulab.com/v1/design-service"
 # matches any regional S3 endpoint.
 _ALLOWED_DOWNLOAD_SUFFIXES = (".amazonaws.com",)
 
-# The SSRF allowlist for MakerWorld CDN traffic — both the thumbnail proxy
-# (exact host match, surfaced through ``MakerWorldProvider.thumbnail_hosts``)
-# and the 3MF download path. Lives here with the other transport guards so
-# the whole allowlist is in one place.
+# The shared default SSRF allowlist for MakerWorld CDN traffic. The thumbnail
+# proxy and the 3MF download path are both driven by the provider descriptor
+# instead — ``build_service`` feeds the runner's ``ModelProvider.thumbnail_hosts()``
+# and ``download_hosts()`` into ``MakerWorldService`` — and this tuple is what
+# those methods return by default. Lives here with the other transport guards
+# so the allowlist is in one place.
 MAKERWORLD_CDN_HOSTS = ("makerworld.bblmw.com", "public-cdn.bblmw.com")
 
 # Client identity sent to MakerWorld / api.bambulab.com. We identify honestly

@@ -587,6 +587,30 @@ class TestDownload3MF:
             await svc.download_3mf(url)
 
     @pytest.mark.asyncio
+    async def test_download_allowlist_is_driven_by_injected_hosts(self):
+        """``download_hosts`` is the SSRF seam, not a hardcoded constant (review
+        round 3 note 2). ``build_service`` passes ``ModelProvider.download_hosts()``
+        into ``MakerWorldService`` — prove the injection is live by accepting a
+        host inside a custom allowlist and refusing a MakerWorld CDN host that
+        isn't in it."""
+        svc = MakerWorldService(client=MagicMock(spec=httpx.AsyncClient), download_hosts=("cdn.example.com",))
+
+        resp = MagicMock()
+        resp.status_code = 200
+
+        async def _chunks():
+            yield b"PK\x03\x04"
+
+        resp.aiter_bytes = lambda: _chunks()
+        svc._client.stream = MagicMock(return_value=self._stream_ctx(resp))
+
+        payload, _ = await svc.download_3mf("https://cdn.example.com/m/foo.3mf?exp=1&key=k")
+        assert payload == b"PK\x03\x04"
+
+        with pytest.raises(MakerWorldUrlError):
+            await svc.download_3mf("https://makerworld.bblmw.com/makerworld/model/X/Y/foo.3mf?exp=1&key=k")
+
+    @pytest.mark.asyncio
     async def test_s3_host_delegates_to_urllib_path(self):
         svc = MakerWorldService(client=MagicMock(spec=httpx.AsyncClient))
         with patch(

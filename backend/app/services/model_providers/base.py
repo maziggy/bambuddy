@@ -261,6 +261,17 @@ class ModelProvider(ABC):
         """
         return ()
 
+    def download_hosts(self) -> tuple[str, ...]:
+        """Hosts whose file URLs may be fetched by the download path.
+
+        Serves as the SSRF allowlist for :meth:`ProviderService.download`,
+        symmetric to :meth:`thumbnail_hosts`; empty means the provider has no
+        server-side file fetch (so no allowlist constraint applies). Providers
+        whose service fetches files must override this — a new provider gets
+        the same structural hint the thumbnail proxy gives its counterpart.
+        """
+        return ()
+
 
 class ProviderService(ABC):
     """Per-request client for a single provider.
@@ -295,7 +306,11 @@ class ProviderService(ABC):
 
     @abstractmethod
     async def download(self, info: ProviderDownloadInfo) -> ProviderDownload:
-        """Fetch the file bytes for a :class:`ProviderDownloadInfo`."""
+        """Fetch the file bytes for a :class:`ProviderDownloadInfo`.
+
+        Must restrict the upstream URL host to :meth:`ModelProvider.download_hosts`
+        (SSRF guard — the symmetric counterpart to ``fetch_thumbnail``).
+        """
 
     @abstractmethod
     async def fetch_thumbnail(self, url: str) -> tuple[bytes, str]:

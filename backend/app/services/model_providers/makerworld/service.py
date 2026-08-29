@@ -106,18 +106,20 @@ class MakerWorldService(ProviderService):
         user: Any | None = None,
         on_auth_failure: Callable[[], Awaitable[None]] | None = None,
         thumbnail_hosts: tuple[str, ...] = MAKERWORLD_CDN_HOSTS,
+        download_hosts: tuple[str, ...] = MAKERWORLD_CDN_HOSTS,
     ):
         # Fired when Bambu rejects the stored token (401). MakerWorld runs on the
         # same Bambu Cloud bearer as everything else, so a rejection here means
         # the credential is dead app-wide — see ``build_authenticated_cloud``.
         self._on_auth_failure = on_auth_failure
         self._auth_failure_reported = False
-        # SSRF allowlist for the thumbnail proxy. Defaults to MakerWorld's CDN
-        # hosts; ``MakerWorldProvider.build_service`` passes
-        # ``ModelProvider.thumbnail_hosts()`` so the guard is driven by the
-        # provider descriptor rather than enforced by coincidence (interface
-        # contract on ``ProviderService.fetch_thumbnail``).
+        # SSRF allowlists for the thumbnail proxy and the 3MF download guard.
+        # Default to MakerWorld's CDN hosts; ``MakerWorldProvider.build_service``
+        # passes ``ModelProvider.thumbnail_hosts()`` / ``download_hosts()`` so
+        # the guards are driven by the provider descriptor rather than enforced
+        # by coincidence (interface contract on ``ProviderService``).
         self._thumbnail_hosts = tuple(thumbnail_hosts)
+        self._download_hosts = tuple(download_hosts)
         if client is not None:
             self._client = client
             self._owns_client = False
@@ -459,8 +461,11 @@ class MakerWorldService(ProviderService):
     async def download_3mf(self, signed_url: str) -> tuple[bytes, str]:
         """Fetch the 3MF bytes from a signed MakerWorld CDN URL.
 
-        Validates that the URL's host is one of the known MakerWorld CDN hosts
-        (SSRF guard — pattern matches ``_spoolman_helpers.assert_safe_spoolman_url``).
+        Validates that the URL's host is one of the declared download hosts
+        (SSRF guard — driven by ``ModelProvider.download_hosts()`` via
+        ``build_service``, the symmetric counterpart to the thumbnail
+        allowlist) or a known signed-URL suffix (Bambu's S3 regional
+        endpoints); pattern matches ``_spoolman_helpers.assert_safe_spoolman_url``.
         Enforces a 200 MB cap so a single bad response can't exhaust disk.
 
         Returns ``(file_bytes, suggested_filename)``.
@@ -471,7 +476,7 @@ class MakerWorldService(ProviderService):
             raise MakerWorldUrlError(f"Invalid download URL: {exc}") from exc
 
         host = (parsed.hostname or "").lower()
-        is_allowed = host in MAKERWORLD_CDN_HOSTS or any(host.endswith(suffix) for suffix in _ALLOWED_DOWNLOAD_SUFFIXES)
+        is_allowed = host in self._download_hosts or any(host.endswith(suffix) for suffix in _ALLOWED_DOWNLOAD_SUFFIXES)
         if not is_allowed:
             raise MakerWorldUrlError(f"Refusing to download from non-MakerWorld host: {host!r}")
 
@@ -519,8 +524,9 @@ class MakerWorldService(ProviderService):
         SPA's ``img-src`` CSP and keeps users' IP addresses out of
         MakerWorld's access logs.
 
-        Validates that the URL's host is one of the known MakerWorld CDN
-        hosts (SSRF guard — same allowlist as :meth:`download_3mf`). Caps
+        Validates that the URL's host is one of the declared thumbnail hosts
+        (SSRF guard — symmetric to :meth:`download_3mf`; both allowlists are
+        fed from the provider descriptor by ``build_service``). Caps
         payload at 5 MB. Returns ``(bytes, content_type)``; content type
         defaults to ``image/jpeg`` if the upstream didn't set one.
         """

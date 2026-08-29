@@ -50,6 +50,13 @@ class TestMakerWorldProviderDescriptor:
         assert "makerworld.bblmw.com" in makerworld_provider.thumbnail_hosts()
         assert "public-cdn.bblmw.com" in makerworld_provider.thumbnail_hosts()
 
+    def test_download_hosts_is_the_cdn_allowlist(self):
+        """The download-guard SSRF seam mirrors the thumbnail one — a provider
+        that fetches files server-side declares the hosts its service may
+        fetch from (review round 3, note 2)."""
+        assert "makerworld.bblmw.com" in makerworld_provider.download_hosts()
+        assert "public-cdn.bblmw.com" in makerworld_provider.download_hosts()
+
     def test_parse_and_canonical_roundtrip(self):
         ref = makerworld_provider.parse_url("https://makerworld.com/en/models/1400373-slug#profileId-1452154")
         assert ref.external_id == "1400373"
@@ -171,6 +178,22 @@ class TestBuildService:
 
         assert svc._thumbnail_hosts == makerworld_provider.thumbnail_hosts()
         assert len(svc._thumbnail_hosts) > 0
+        await svc.close()
+
+    @pytest.mark.asyncio
+    async def test_build_service_passes_declared_download_hosts(self):
+        """Symmetric SSRF seam contract: ``download``'s allowlist must come
+        from ``ModelProvider.download_hosts()`` via build_service — not from
+        a hardcoded copy inside the service (review round 3, note 2)."""
+        db = AsyncMock()
+        with patch(
+            "backend.app.services.model_providers.makerworld.provider.get_stored_token",
+            AsyncMock(return_value=(None, None, "global")),
+        ):
+            svc = await makerworld_provider.build_service(db=db, user=None)
+
+        assert svc._download_hosts == makerworld_provider.download_hosts()
+        assert len(svc._download_hosts) > 0
         await svc.close()
 
     @pytest.mark.asyncio

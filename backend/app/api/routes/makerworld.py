@@ -278,14 +278,14 @@ async def import_instance(
         # set it up themselves.
         mw_folder_q = await db.execute(
             select(LibraryFolder).where(
-                LibraryFolder.name == makerworld_provider.default_folder_name,
+                LibraryFolder.name == provider.default_folder_name,
                 LibraryFolder.parent_id.is_(None),
                 LibraryFolder.is_external.is_(False),
             )
         )
         mw_folder = mw_folder_q.scalar_one_or_none()
         if mw_folder is None:
-            mw_folder = LibraryFolder(name=makerworld_provider.default_folder_name, parent_id=None)
+            mw_folder = LibraryFolder(name=provider.default_folder_name, parent_id=None)
             db.add(mw_folder)
             await db.flush()
         effective_folder_id = mw_folder.id

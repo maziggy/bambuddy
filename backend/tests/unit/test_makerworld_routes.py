@@ -16,6 +16,7 @@ import pytest
 
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.services.model_providers.base import (
+    ModelProvider,
     ProviderDownload,
     ProviderDownloadInfo,
     ProviderResolvedModel,
@@ -49,6 +50,30 @@ def _fake_service(**stubs):
         else:
             setattr(svc, name, AsyncMock(return_value=value))
     return svc
+
+
+class _DummyProvider(ModelProvider):
+    """Stand-in for a second registered model provider.
+
+    Lets the route tests exercise behaviour that differs from the MakerWorld
+    singleton — a provider-specific default folder name, or none at all —
+    without registering anything in the app-wide registry.
+    """
+
+    source_type = "dummy"
+    display_name = "Dummy"
+
+    def __init__(self, default_folder_name: str | None = "Dummy Imports"):
+        self.default_folder_name = default_folder_name
+
+    async def build_service(self, *, db, user, api_key_owner=None, client=None):
+        raise NotImplementedError
+
+    def parse_url(self, url):
+        raise NotImplementedError
+
+    def canonical_url(self, ref):
+        return f"https://dummy.example.com/models/{ref.external_id}"
 
 
 class TestThumbnail:
@@ -332,6 +357,41 @@ class TestImport:
         )
         folder = result.scalar_one()
         assert resp.json()["folder_id"] == folder.id
+
+    @pytest.mark.asyncio
+    async def test_default_folder_comes_from_resolved_provider(self, async_client, db_session):
+        """``import_instance`` must read ``default_folder_name`` off the provider
+        it resolved — not the MakerWorld singleton (review round 3 fix). Latent
+        with one provider, but the difference is visible behind a stand-in: a
+        second provider's import lands in *its* folder, not "MakerWorld"."""
+        dummy = _DummyProvider(default_folder_name="Dummy Imports")
+        svc = _fake_service(
+            get_download=_download_info(),
+            download=ProviderDownload(file_bytes=self._FAKE_3MF_BYTES, filename="benchy.3mf"),
+        )
+
+        with (
+            patch("backend.app.api.routes.makerworld._provider_for_source", return_value=dummy),
+            patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)),
+        ):
+            resp = await async_client.post(
+                "/api/v1/makerworld/import",
+                json={"model_id": 1400373, "profile_id": 298919107, "source_type": "dummy"},
+            )
+        assert resp.status_code == 200, resp.text
+
+        from sqlalchemy import select
+
+        result = await db_session.execute(
+            select(LibraryFolder).where(LibraryFolder.name == "Dummy Imports", LibraryFolder.parent_id.is_(None))
+        )
+        assert result.scalar_one_or_none() is not None
+        # The MakerWorld singleton's folder must NOT be auto-created instead.
+        assert (
+            await db_session.execute(
+                select(LibraryFolder).where(LibraryFolder.name == "MakerWorld", LibraryFolder.parent_id.is_(None))
+            )
+        ).scalar_one_or_none() is None
 
     @pytest.mark.asyncio
     async def test_uses_existing_folder_when_folder_id_provided(self, async_client, db_session):

@@ -21,6 +21,7 @@ from backend.app.services.model_providers.base import (
     ProviderDownloadInfo,
     ProviderResolvedModel,
     ProviderResourceRef,
+    ProviderStatus,
 )
 from backend.app.services.model_providers.makerworld import makerworld_provider
 
@@ -164,6 +165,33 @@ class TestStatus:
         await db_session.commit()
 
         resp = await async_client.get("/api/v1/makerworld/status")
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "has_cloud_token": True,
+            "can_download": False,
+            "sign_in_expired": True,
+        }
+
+    @pytest.mark.asyncio
+    async def test_sign_in_expired_reads_credential_rejected_not_auth_error(self, async_client):
+        """The route keys ``sign_in_expired`` off the machine-readable
+        ``credential_rejected`` flag, not ``auth_error`` (review round 3 note 1):
+        ``auth_error`` is the human-readable reason and may be set for non-
+        credential failures too. A service reporting an expired credential
+        *without* a message must still surface ``sign_in_expired=True``."""
+        svc = AsyncMock()
+        svc.close = AsyncMock()
+        svc.get_status = AsyncMock(
+            return_value=ProviderStatus(
+                authenticated=True,
+                can_download=False,
+                auth_error=None,
+                credential_rejected=True,
+            )
+        )
+
+        with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
+            resp = await async_client.get("/api/v1/makerworld/status")
         assert resp.status_code == 200
         assert resp.json() == {
             "has_cloud_token": True,

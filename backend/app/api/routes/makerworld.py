@@ -183,10 +183,13 @@ async def get_status(
     return MakerWorldStatus(
         has_cloud_token=status.authenticated,
         can_download=status.can_download,
-        # ``auth_error`` is set exactly when a stored token exists *and* was
-        # rejected — the "sign-in expired" state. No token means there is no
-        # sign-in to have expired.
-        sign_in_expired=status.auth_error is not None,
+        # ``credential_rejected`` is the machine-readable "your sign-in
+        # expired" state the provider set exactly when a stored token exists
+        # *and* was rejected — no token means there is no sign-in to have
+        # expired. It is read instead of ``auth_error is not None`` because
+        # the latter is a human-readable reason that providers may also set
+        # for non-credential failures (network, rate limit).
+        sign_in_expired=status.credential_rejected,
     )
 
 

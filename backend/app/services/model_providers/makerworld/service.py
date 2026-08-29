@@ -164,14 +164,16 @@ class MakerWorldService(ProviderService):
 
     async def get_status(self, db: Any) -> ProviderStatus:
         """Whether the caller can download: needs a stored, non-rejected Bambu
-        Cloud token. ``auth_error`` names the expired state explicitly so the
-        UI can say "your sign-in expired" rather than a bare "sign in"."""
+        Cloud token. ``credential_rejected`` is the machine-readable expired
+        state; ``auth_error`` names it for humans so the UI can say "your
+        sign-in expired" rather than a bare "sign in"."""
         has_token = bool(self._auth_token)
         expired = has_token and await is_cloud_token_invalid(db, self._user)
         return ProviderStatus(
             authenticated=has_token,
             can_download=has_token and not expired,
             auth_error=_SIGN_IN_EXPIRED_MESSAGE if expired else None,
+            credential_rejected=expired,
         )
 
     async def resolve(self, ref: ProviderResourceRef) -> ProviderResolvedModel:

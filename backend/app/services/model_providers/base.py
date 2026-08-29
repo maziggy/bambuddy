@@ -98,12 +98,17 @@ class ProviderStatus:
 
     ``auth_error`` carries a human-readable reason when the caller is signed
     in but the stored credential has been rejected (e.g. expired); ``None``
-    when there is no error to report.
+    when there is no error to report. ``credential_rejected`` is the
+    machine-readable counterpart — set exactly when the stored credential
+    exists *and* was refused by the provider — so callers (e.g. a route
+    reporting "sign-in expired") never have to infer it from ``auth_error``,
+    which may legitimately be set for other failures (network, rate limit).
     """
 
     authenticated: bool
     can_download: bool
     auth_error: str | None = None
+    credential_rejected: bool = False
 
 
 @dataclass

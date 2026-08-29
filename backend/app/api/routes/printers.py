@@ -1292,7 +1292,17 @@ async def _cloud_task_cover(printer_id: int, subtask_name: str) -> bytes | None:
     if subtask_id in ("", "0"):
         logger.info("Cover: no subtask_id for '%s', cloud fallback skipped", subtask_name)
         return None
+    return await cloud_cover_bytes(subtask_id)
 
+
+async def cloud_cover_bytes(subtask_id: str) -> bytes | None:
+    """The plate render Bambu Cloud holds for *subtask_id*, or None.
+
+    Split out of :func:`_cloud_task_cover` so the archive path can reuse it: that one
+    has the id on the row already and no live printer state to read it from.
+
+    Best-effort — every failure returns None.
+    """
     async with database.async_session() as db:
         token, _email, region = await get_stored_token(db, None)
         if not token:

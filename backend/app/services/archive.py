@@ -1418,7 +1418,9 @@ class ArchiveService:
             existing.file_path = str(dest_file.relative_to(settings.base_dir))
             existing.file_size = dest_file.stat().st_size
             existing.content_hash = content_hash
-            existing.thumbnail_path = thumbnail_path
+            # `or`: a 3MF that turns up without a thumbnail must not blank one the
+            # cloud cover already supplied (#2910).
+            existing.thumbnail_path = thumbnail_path or existing.thumbnail_path
             existing.print_name = (
                 clean_display_name(display_stem)
                 if prefer_filename_for_name

@@ -266,3 +266,76 @@ class TestGetTask:
         svc = self._service(raises=httpx.ConnectError("no route"))
         with pytest.raises(BambuCloudError):
             await svc.get_task("123")
+
+
+class TestArchiveThumbnailFill:
+    """Step 3 of #2910: the no-3MF archive ROW, not just the live card.
+
+    The card gets the cloud cover at request time, but `thumbnail_path` stayed NULL, so print
+    history was blank for exactly the prints the fallback exists for — and nothing later filled
+    it, because a storage verdict schedules no 3MF retry.
+    """
+
+    @pytest.mark.asyncio
+    async def test_writes_the_cover_and_records_the_path(self, tmp_path):
+        from backend.app.main import _fill_cloud_cover_thumbnail
+
+        archive = SimpleNamespace(id=7, subtask_id="12345", file_path="", thumbnail_path=None)
+        db = MagicMock()
+        db.commit = AsyncMock()
+
+        with (
+            patch("backend.app.api.routes.printers.cloud_cover_bytes", AsyncMock(return_value=PNG)),
+            patch("backend.app.core.config.settings.base_dir", tmp_path),
+            patch("backend.app.core.config.settings.archive_dir", tmp_path / "archive"),
+        ):
+            assert await _fill_cloud_cover_thumbnail(db, archive) is True
+
+        written = tmp_path / "archive" / "7" / "thumbnail.png"
+        assert written.read_bytes() == PNG
+        assert archive.thumbnail_path == "archive/7/thumbnail.png"
+        db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("subtask_id", ["", "0", "  ", None])
+    async def test_declines_without_a_usable_subtask_id(self, subtask_id):
+        """ "0" is the firmware's "no job" and passes both `!= 0` and truthiness."""
+        from backend.app.main import _fill_cloud_cover_thumbnail
+
+        archive = SimpleNamespace(id=7, subtask_id=subtask_id, file_path="", thumbnail_path=None)
+        fetch = AsyncMock(return_value=PNG)
+
+        with patch("backend.app.api.routes.printers.cloud_cover_bytes", fetch):
+            assert await _fill_cloud_cover_thumbnail(MagicMock(), archive) is False
+
+        fetch.assert_not_awaited()
+        assert archive.thumbnail_path is None
+
+    @pytest.mark.asyncio
+    async def test_no_cover_leaves_the_row_alone(self):
+        from backend.app.main import _fill_cloud_cover_thumbnail
+
+        archive = SimpleNamespace(id=7, subtask_id="12345", file_path="", thumbnail_path=None)
+        db = MagicMock()
+        db.commit = AsyncMock()
+
+        with patch("backend.app.api.routes.printers.cloud_cover_bytes", AsyncMock(return_value=None)):
+            assert await _fill_cloud_cover_thumbnail(db, archive) is False
+
+        assert archive.thumbnail_path is None
+        db.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_raising_fetch_never_reaches_the_caller(self):
+        """Print start must not fail because a decoration could not be fetched."""
+        from backend.app.main import _fill_cloud_cover_thumbnail
+
+        archive = SimpleNamespace(id=7, subtask_id="12345", file_path="", thumbnail_path=None)
+
+        with patch(
+            "backend.app.api.routes.printers.cloud_cover_bytes",
+            AsyncMock(side_effect=RuntimeError("boom")),
+        ):
+            assert await _fill_cloud_cover_thumbnail(MagicMock(), archive) is False
+
+        assert archive.thumbnail_path is None

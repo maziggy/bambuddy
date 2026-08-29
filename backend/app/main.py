@@ -3089,6 +3089,41 @@ _fallback_3mf_retry_tasks: dict[int, asyncio.Task] = {}
 _fallback_recovery_locks: dict[int, asyncio.Lock] = {}
 
 
+async def _fill_cloud_cover_thumbnail(db, archive) -> bool:
+    """Give a no-3MF archive the Bambu Cloud task's plate render, if there is one.
+
+    The card gets this fallback at request time, but the row keeps ``thumbnail_path``
+    NULL, so print history stays blank for exactly the prints the fallback exists for
+    and nothing later fills it — a storage verdict schedules no retry (#2910).
+
+    Best-effort: any failure leaves the row as it was.
+    """
+    logger = logging.getLogger(__name__)
+
+    subtask_id = (archive.subtask_id or "").strip()
+    if subtask_id in ("", "0"):
+        return False
+
+    from backend.app.api.routes.printers import cloud_cover_bytes
+    from backend.app.utils.archive_paths import archive_dir
+
+    try:
+        cover = await cloud_cover_bytes(subtask_id)
+        if not cover:
+            return False
+        target = archive_dir(archive) / "thumbnail.png"  # SEC-PATH-OK: constant name under the archive's own dir
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(cover)
+        archive.thumbnail_path = str(target.relative_to(app_settings.base_dir))
+        await db.commit()
+    except Exception as e:
+        logger.info("Cloud cover thumbnail for archive %s skipped: %s", archive.id, e)
+        return False
+
+    logger.info("Archive %s took its thumbnail from the cloud task cover", archive.id)
+    return True
+
+
 async def _recover_fallback_archive(archive_id: int, source_3mf: Path, printer_id: int) -> bool:
     """Fill in a no-3MF archive from a 3MF that turned up later.
 
@@ -4395,6 +4430,8 @@ async def on_print_start(printer_id: int, data: dict):
                 await db.refresh(fallback_archive)
 
                 logger.info("Created fallback archive %s for %s (no 3MF available)", fallback_archive.id, print_name)
+
+                await _fill_cloud_cover_thumbnail(db, fallback_archive)
 
                 _maybe_start_layer_timelapse(printer, printer_id, fallback_archive.id)
 

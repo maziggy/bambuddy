@@ -209,6 +209,8 @@ class TestDecimation:
 
         result = _decimate_if_needed(DenseMesh())
         assert isinstance(result, Reduced)
+
+
 @pytest.mark.skipif(not _check_trimesh_available(), reason="trimesh not installed")
 class TestTheExportStep:
     """The two branches after the mesh has loaded.
@@ -245,3 +247,38 @@ class TestTheExportStep:
         blob = export_mesh_stl(path)
         assert isinstance(blob, bytes)
         assert blob == b"solid ascii\n"
+
+
+class TestTheSourceSizeCap:
+    """Library uploads have no size cap, and the route is a GET anyone can drive in parallel.
+
+    `trimesh.load` holds the whole model in RAM and the export buffers again, in the shared
+    default executor every other `to_thread` caller queues behind.
+    """
+
+    def test_an_oversize_file_is_refused_before_it_is_read(self, tmp_path, monkeypatch):
+        from backend.app.services import mesh_export
+
+        model = tmp_path / "huge.stl"
+        model.write_bytes(b"\0" * 1024)
+        monkeypatch.setattr(mesh_export, "MAX_SOURCE_BYTES", 512)
+
+        def _explode(*a, **k):  # the point of the cap: trimesh must never see it
+            raise AssertionError("trimesh.load reached for an oversize file")
+
+        monkeypatch.setattr("trimesh.load", _explode)
+
+        with pytest.raises(mesh_export.MeshExportError, match="mesh-export limit"):
+            mesh_export.export_mesh_stl(model)
+
+    def test_a_file_at_the_cap_is_still_read(self, tmp_path, monkeypatch):
+        """The bound is inclusive — a file exactly at the limit is not oversize."""
+        from backend.app.services import mesh_export
+
+        model = tmp_path / "atlimit.stl"
+        model.write_bytes(b"\0" * 1024)
+        monkeypatch.setattr(mesh_export, "MAX_SOURCE_BYTES", 1024)
+
+        with pytest.raises(mesh_export.MeshExportError) as excinfo:
+            mesh_export.export_mesh_stl(model)
+        assert "mesh-export limit" not in str(excinfo.value)

@@ -37,6 +37,13 @@ SUPPORTED_SUFFIXES = (".3mf", ".stl", ".obj", ".ply")
 # Pre-skipping keeps trimesh's parser warnings out of the log for stub uploads.
 MIN_USABLE_BYTES = 200
 
+# Library uploads have no size cap, and this route is a GET any reader can drive
+# repeatedly and in parallel. `trimesh.load` holds the whole model in RAM and the
+# export buffers again, in the shared default executor every other `to_thread`
+# caller queues behind. Checked before the read, so an oversize file costs a stat
+# rather than the memory. Matches `makerworld._MAX_3MF_BYTES`.
+MAX_SOURCE_BYTES = 200 * 1024 * 1024
+
 
 class MeshExportError(Exception):
     """Raised when a file cannot be turned into a mesh.
@@ -77,8 +84,12 @@ def export_mesh_stl(model_path: Path) -> bytes:
     if not model_path.exists():
         raise MeshExportError("File not found on disk.")
 
-    if model_path.stat().st_size < MIN_USABLE_BYTES:
+    size = model_path.stat().st_size
+    if size < MIN_USABLE_BYTES:
         raise MeshExportError("This file is too small to contain a mesh.")
+
+    if size > MAX_SOURCE_BYTES:
+        raise MeshExportError(f"This file is larger than the {MAX_SOURCE_BYTES // (1024 * 1024)} MB mesh-export limit.")
 
     # Imported here, matching `stl_thumbnail`: trimesh pulls in numpy, networkx and lxml,
     # which the route table should not pay for on import.

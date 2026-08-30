@@ -1,0 +1,200 @@
+2026-08-30 10:34:43,137 INFO [backend.app.services.bambu_mqtt] [e823fca6] [[SERIAL]] Publishing extrusion_cali_sel: AMS 0, tray 2, cali_idx=-1
+2026-08-30 10:34:43,138 INFO [backend.app.api.routes.printers] [e823fca6] [configure_ams_slot] Requesting status update from printer
+2026-08-30 10:34:43,138 INFO [backend.app.api.routes.printers] [e823fca6] [configure_ams_slot] Status update request result: True
+2026-08-30 10:34:43,139 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/printers/1/slots/0/2/configure?tray_info_idx=PFUS9ddc938fe3ab8f&tray_type=AZ_SUNLU_TPU95AHF&tray_sub_brands=AZ_SUNLU_TPU95AHF&tray_color=FFA500FF&nozzle_temp_min=200&nozzle_temp_max=240&cali_idx=-1&nozzle_diameter=0.4&setting_id=PFUS9ddc938fe3ab8f HTTP/1.1" 200
+2026-08-30 10:34:43,158 INFO [uvicorn.access] [-] [IP]:0 - "PUT /api/v1/printers/1/slot-presets/0/2?preset_id=PFUS9ddc938fe3ab8f&preset_name=AZ_SUNLU_TPU95AHF&preset_source=cloud HTTP/1.1" 200
+2026-08-30 10:34:47,610 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-08-30 10:36:54,705 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-30 10:37:37,729 INFO [backend.app.api.routes.cloud] [42378860] get_filament_info called with 4 IDs: ['GFNLS03', 'GFNLS08', 'PFUS9ddc', 'GFL99']
+2026-08-30 10:37:37,968 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-08-30 10:37:39,864 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-08-30 10:37:39,864 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-08-30 10:37:39,864 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-08-30 10:37:39,965 INFO [backend.app.services.print_scheduler] [-] Print scheduler stopped
+2026-08-30 10:37:39,965 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler stopped
+2026-08-30 10:37:39,965 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop stopped
+2026-08-30 10:37:39,965 INFO [backend.app.services.ha_sensor_manager] [-] Home Assistant sensor poller stopped
+2026-08-30 10:37:39,965 INFO [backend.app.services.location_ha_sensor_manager] [-] Home Assistant location-sensor poller stopped
+2026-08-30 10:37:39,965 INFO [backend.app.services.notification_service] [-] Notification digest scheduler stopped
+2026-08-30 10:37:39,965 INFO [backend.app.services.github_backup] [-] Stopped GitHub backup scheduler
+2026-08-30 10:37:39,965 INFO [backend.app.services.local_backup] [-] Stopped local backup scheduler
+2026-08-30 10:37:39,966 INFO [backend.app.services.library_trash] [-] Stopped library trash sweeper
+2026-08-30 10:37:39,966 INFO [backend.app.services.archive_purge] [-] Stopped archive auto-purge sweeper
+2026-08-30 10:37:39,966 INFO [backend.app.services.obico_detection] [-] Stopped Obico detection service
+2026-08-30 10:37:39,966 INFO [backend.app.main] [-] AMS history recording stopped
+2026-08-30 10:37:39,966 INFO [backend.app.main] [-] Printer sensor history recording stopped
+2026-08-30 10:37:39,966 INFO [backend.app.main] [-] Printer runtime tracking stopped
+2026-08-30 10:37:39,966 INFO [backend.app.main] [-] SpoolBuddy watchdog stopped
+2026-08-30 10:37:39,966 INFO [backend.app.main] [-] Camera stream cleanup stopped
+2026-08-30 10:37:39,966 INFO [backend.app.main] [-] Printer connection watchdog stopped
+2026-08-30 10:37:39,966 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog stopped
+2026-08-30 10:37:39,967 INFO [backend.app.main] [-] Expected prints cleanup stopped
+2026-08-30 10:37:39,967 INFO [backend.app.main] [-] Auth periodic cleanup stopped
+2026-08-30 10:37:39,971 INFO [backend.app.services.virtual_printer.manager] [-] Stopping all virtual printer services...
+2026-08-30 10:37:39,972 INFO [backend.app.services.virtual_printer.manager] [-] All virtual printer services stopped
+2026-08-30 10:37:39,978 INFO [root] [-] WAL checkpoint completed
+2026-08-30 10:37:44,057 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-08-30 10:37:44,057 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-08-30 10:37:46,609 INFO [backend.app.services.printer_manager] [-] Loaded 1 printer(s) awaiting plate-clear acknowledgment: [1]
+2026-08-30 10:37:46,616 INFO [backend.app.services.mqtt_relay] [-] MQTT relay disabled
+2026-08-30 10:37:47,425 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-08-30 10:37:47,425 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnected shortly after request topic subscription (1/2). Retrying it on the next connection before giving up.
+2026-08-30 10:37:47,426 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-08-30 10:37:47,634 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-08-30 10:37:47,634 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-08-30 10:37:47,634 INFO [backend.app.services.ha_sensor_manager] [-] Home Assistant sensor poller started
+2026-08-30 10:37:47,634 INFO [backend.app.services.location_ha_sensor_manager] [-] Home Assistant location-sensor poller started
+2026-08-30 10:37:47,640 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-08-30 10:37:47,646 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-08-30 10:37:47,647 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-08-30 10:37:47,647 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-08-30 10:37:47,654 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-08-30 10:37:47,655 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-08-30 10:37:47,655 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-08-30 10:37:47,655 INFO [backend.app.main] [-] AMS history recording started
+2026-08-30 10:37:47,655 INFO [backend.app.main] [-] Printer sensor history recording started
+2026-08-30 10:37:47,655 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-08-30 10:37:47,655 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-08-30 10:37:47,655 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-08-30 10:37:47,655 INFO [backend.app.main] [-] Printer connection watchdog started
+2026-08-30 10:37:47,736 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-08-30 10:37:47,736 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-08-30 10:37:47,737 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-08-30 10:37:47,753 INFO [root] [-] Virtual printer manager synced from database
+2026-08-30 10:37:48,000 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-08-30 10:37:49,211 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-08-30 10:37:49,223 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-08-30 10:37:49,224 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnected shortly after request topic subscription 2 times. Disabling request topic for this printer — ams_mapping capture from slicer-initiated prints is unavailable, and their filament will be attributed from the printer's own tray reporting instead.
+2026-08-30 10:37:49,224 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-08-30 10:37:49,772 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-08-30 10:37:49,898 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-30 10:37:50,112 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-30 10:37:50,135 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-08-30 10:37:50,157 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-08-30 10:37:50,158 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-08-30 10:37:50,164 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-08-30 10:37:50,179 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-08-30 10:37:50,180 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-08-30 10:37:50,999 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-08-30 10:37:51,092 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Unnamed print stage 255 on model A1, entered from -1 (Unknown stage (-1)); state=FINISH progress=100.0% layer=362/362
+2026-08-30 10:37:51,095 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-08-30 10:37:51,096 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] State is FINISH but completion NOT triggered: prev=None, was_running=False, already_triggered=False, has_callback=True
+2026-08-30 10:37:51,098 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-08-30 10:37:51,102 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/2, seq_id=7)
+2026-08-30 10:37:51,103 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Firmware version: 01.08.01.00
+2026-08-30 10:37:51,105 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS unit 0: serial number not available in version info
+2026-08-30 10:37:51,106 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS unit 0: firmware version not available in version info
+2026-08-30 10:37:51,108 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=6, 1 profiles, matched=True
+2026-08-30 10:37:51,108 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 1 K-profiles for nozzle=0.4
+2026-08-30 10:37:51,109 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 1 K-profiles for nozzle=0.4 on attempt 1
+2026-08-30 10:37:51,109 INFO [backend.app.main] [-] [Printer 1] Primed K-profile table for nozzle 0.4: 1 profiles
+2026-08-30 10:37:51,157 INFO [backend.app.api.routes.cloud] [1c64a2c1] get_filament_info called with 4 IDs: ['GFNLS03', 'GFNLS08', 'PFUS9ddc', 'GFL99']
+2026-08-30 10:37:51,752 INFO [uvicorn.access] [-] [IP]:54466 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-08-30 10:37:51,977 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-08-30 10:37:52,000 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-08-30 10:37:52,003 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-08-30 10:37:52,003 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-08-30 10:37:56,231 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=8)
+2026-08-30 10:37:56,245 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Developer mode probe: ENABLED (result='success')
+2026-08-30 10:37:57,759 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-30 10:38:10,246 INFO [backend.app.services.bambu_mqtt] [65f55982] [[SERIAL]] Publishing ams_filament_setting: AMS 0, tray 2, tray_info_idx=GFU00, setting_id=PFUS9ddc938fe3ab8f
+2026-08-30 10:38:10,246 INFO [backend.app.services.bambu_mqtt] [65f55982] [[SERIAL]] Publishing extrusion_cali_sel: AMS 0, tray 2, cali_idx=-1
+2026-08-30 10:38:10,247 INFO [backend.app.api.routes.inventory] [65f55982] No stored K-profile for spool 23 — reset slot to Default K (cali_idx=-1)
+2026-08-30 10:38:10,256 INFO [backend.app.api.routes.inventory] [65f55982] Auto-configured AMS slot ams=0 tray=2 for spool 23 on printer 1
+2026-08-30 10:38:10,263 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/inventory/assignments HTTP/1.1" 200
+2026-08-30 10:38:10,332 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/printers/1/refresh-status HTTP/1.1" 200
+2026-08-30 10:38:15,771 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Assignment verified: AMS0-T2 now reports GFU00 (kprofile_applied=True)
+2026-08-30 10:38:15,913 INFO [backend.app.api.routes.cloud] [86c05390] get_filament_info called with 4 IDs: ['GFNLS03', 'GFNLS08', 'GFU00', 'GFL99']
+2026-08-30 10:38:16,144 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-08-30 10:38:40,828 INFO [backend.app.services.bambu_mqtt] [fe09659a] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3, seq_id=9)
+2026-08-30 10:38:40,867 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=9, 1 profiles, matched=True
+2026-08-30 10:38:40,867 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 1 K-profiles for nozzle=0.4
+2026-08-30 10:38:40,868 INFO [backend.app.services.bambu_mqtt] [fe09659a] [[SERIAL]] Got 1 K-profiles for nozzle=0.4 on attempt 1
+2026-08-30 10:38:44,882 INFO [backend.app.api.routes.printers] [d8ec8f39] [configure_ams_slot] printer_id=1, ams_id=0, tray_id=2
+2026-08-30 10:38:44,882 INFO [backend.app.api.routes.printers] [d8ec8f39] [configure_ams_slot] tray_info_idx='PFUS9ddc938fe3ab8f', tray_type='AZ_SUNLU_TPU95AHF', tray_sub_brands='AZ_SUNLU_TPU95AHF'
+2026-08-30 10:38:44,882 INFO [backend.app.api.routes.printers] [d8ec8f39] [configure_ams_slot] setting_id='PFUS9ddc938fe3ab8f', kprofile_filament_id='', kprofile_setting_id=''
+2026-08-30 10:38:44,882 INFO [backend.app.api.routes.printers] [d8ec8f39] [configure_ams_slot] tray_type 'AZ_SUNLU_TPU95AHF' → 'TPU'
+2026-08-30 10:38:44,883 INFO [backend.app.services.bambu_mqtt] [d8ec8f39] [[SERIAL]] Publishing ams_filament_setting: AMS 0, tray 2, tray_info_idx=PFUS9ddc938fe3ab8f, setting_id=PFUS9ddc938fe3ab8f
+2026-08-30 10:38:44,883 INFO [backend.app.services.bambu_mqtt] [d8ec8f39] [[SERIAL]] Publishing extrusion_cali_sel: AMS 0, tray 2, cali_idx=-1
+2026-08-30 10:38:44,883 INFO [backend.app.api.routes.printers] [d8ec8f39] [configure_ams_slot] Requesting status update from printer
+2026-08-30 10:38:44,883 INFO [backend.app.api.routes.printers] [d8ec8f39] [configure_ams_slot] Status update request result: True
+2026-08-30 10:38:44,884 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/printers/1/slots/0/2/configure?tray_info_idx=PFUS9ddc938fe3ab8f&tray_type=AZ_SUNLU_TPU95AHF&tray_sub_brands=AZ_SUNLU_TPU95AHF&tray_color=008BE4FF&nozzle_temp_min=200&nozzle_temp_max=240&cali_idx=-1&nozzle_diameter=0.4&setting_id=PFUS9ddc938fe3ab8f HTTP/1.1" 200
+2026-08-30 10:38:44,902 INFO [uvicorn.access] [-] [IP]:0 - "PUT /api/v1/printers/1/slot-presets/0/2?preset_id=PFUS9ddc938fe3ab8f&preset_name=AZ_SUNLU_TPU95AHF&preset_source=cloud HTTP/1.1" 200
+2026-08-30 10:39:53,936 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Assignment NOT confirmed: AMS0-T2 expected PFUS9DDC938FE3AB8F, tray shows PFUS9DDC (saw_tray=True)
+2026-08-30 10:42:57,770 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-30 10:47:57,783 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-30 10:52:57,796 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-30 10:57:57,808 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-30 11:02:57,820 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-30 11:07:57,832 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-30 11:12:57,843 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-30 11:17:57,853 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-30 11:22:57,864 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-30 11:27:57,875 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-30 11:30:46,148 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-08-30 11:30:46,167 INFO [backend.app.api.routes.cloud] [16f2dc56] get_filament_info called with 4 IDs: ['GFNLS03', 'GFNLS08', 'PFUS9ddc', 'GFL99']
+2026-08-30 11:30:47,059 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-08-30 11:30:59,996 INFO [uvicorn.access] [-] [IP]:0 - "DELETE /api/v1/inventory/assignments/1/0/2 HTTP/1.1" 200
+2026-08-30 11:31:03,884 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-08-30 11:31:15,038 INFO [backend.app.services.bambu_mqtt] [484e9412] [[SERIAL]] Publishing ams_filament_setting: AMS 0, tray 2, tray_info_idx=GFNLS03, setting_id=PFUSfb87cd50b76616
+2026-08-30 11:31:15,039 INFO [backend.app.services.bambu_mqtt] [484e9412] [[SERIAL]] Publishing extrusion_cali_sel: AMS 0, tray 2, cali_idx=-1
+2026-08-30 11:31:15,039 INFO [backend.app.api.routes.inventory] [484e9412] No stored K-profile for spool 2 — reset slot to Default K (cali_idx=-1)
+2026-08-30 11:31:15,043 INFO [backend.app.api.routes.inventory] [484e9412] Auto-configured AMS slot ams=0 tray=2 for spool 2 on printer 1
+2026-08-30 11:31:15,049 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/inventory/assignments HTTP/1.1" 200
+2026-08-30 11:31:15,105 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/printers/1/refresh-status HTTP/1.1" 200
+2026-08-30 11:31:21,956 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Assignment verified: AMS0-T2 now reports GFNLS03 (kprofile_applied=True)
+2026-08-30 11:31:21,957 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-08-30 11:31:21,967 INFO [backend.app.main] [-] Auto-unlink: spool 2 AMS0-T2 — fingerprint mismatch but tray matches spool, updating fp
+2026-08-30 11:31:22,083 INFO [backend.app.api.routes.cloud] [3079902d] get_filament_info called with 3 IDs: ['GFNLS03', 'GFNLS08', 'GFL99']
+2026-08-30 11:31:22,084 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-08-30 11:32:57,887 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-30 11:37:57,898 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-08-30 11:40:40,185 INFO [backend.app.api.routes.support] [f3ac8525] Log level changed to DEBUG
+2026-08-30 11:40:40,185 INFO [backend.app.api.routes.bug_report] [f3ac8525] Bug report: enabled debug logging
+2026-08-30 11:40:40,185 DEBUG [backend.app.services.bambu_mqtt] [f3ac8525] [[SERIAL]] Requesting status update (pushall)
+2026-08-30 11:40:40,186 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-08-30 11:40:40,249 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-08-30 11:40:40,249 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-08-30 11:40:40,249 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: Fully_Printed_Y-Splitter
+2026-08-30 11:40:40,249 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 98, 'insert_flag': True, 'power_on_flag': False}
+2026-08-30 11:40:40,249 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-08-30 11:40:40,249 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-08-30 11:40:40,250 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-08-30 11:40:40,250 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-08-30 11:40:40,250 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-08-30 11:40:40,250 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-30 11:40:40,250 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-08-30 11:40:40,251 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-08-30 11:40:40,251 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-08-30 11:40:40,251 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-08-30 11:40:40,251 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-08-30 11:40:40,251 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-08-30 11:40:40,251 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -50dBm
+2026-08-30 11:40:40,251 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-08-30 11:40:40,251 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: Fully_Printed_Y-Splitter
+2026-08-30 11:40:44,303 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-30 11:40:48,336 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-30 11:40:56,430 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-30 11:40:56,430 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -49dBm
+2026-08-30 11:40:58,230 DEBUG [backend.app.main] [-] Recorded 3 printer sensor history entries
+2026-08-30 11:40:58,465 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-30 11:40:58,466 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -50dBm
+2026-08-30 11:41:02,511 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-30 11:41:02,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -51dBm
+2026-08-30 11:41:06,559 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-30 11:41:06,559 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -50dBm
+2026-08-30 11:41:10,611 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-30 11:41:16,678 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-30 11:41:16,678 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -49dBm
+2026-08-30 11:41:18,700 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-30 11:41:18,700 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -50dBm
+2026-08-30 11:41:20,739 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-30 11:41:20,739 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -49dBm
+2026-08-30 11:41:22,757 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-30 11:41:22,757 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -51dBm
+2026-08-30 11:41:26,799 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-30 11:41:26,800 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -50dBm
+2026-08-30 11:41:28,840 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-30 11:41:28,841 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -51dBm
+2026-08-30 11:41:30,838 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-08-30 11:41:30,838 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -50dBm

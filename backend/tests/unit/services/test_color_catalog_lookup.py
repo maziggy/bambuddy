@@ -76,10 +76,23 @@ async def test_a_sub_brand_the_catalogue_does_not_carry_has_no_answer(db_session
 
 @pytest.mark.asyncio
 async def test_no_sub_brand_falls_back_to_the_lowest_id(db_session):
-    """A third-party roll reports no sub-brand, so the filter cannot settle it.
+    """With no sub-brand the filter cannot settle it, so the lowest id wins.
 
-    The tie-break is ``order_by(id).limit(1)`` -- the same ordering the built-in
-    path uses, so the two modes cannot disagree about which row wins.
+    Not a third-party roll, which was the reasoning here before and was wrong:
+    such a roll cannot reach this module from its only caller. ``is_bambu_lab_spool``
+    gates non-Bambu rolls out, and ``parse_ams_tray`` substitutes ``tray_type``
+    when ``tray_sub_brands`` is empty (spoolman.py:1116-1118), so ``sub_brand``
+    is never empty on that path. The branch becomes live when the built-in side
+    adopts the module, which is the reason to keep it and to pin what it does.
+
+    The ordering itself is not pinned here, and no better test exists to write.
+    Deleting the ``order_by`` leaves this passing; only reversing it to
+    ``.desc()`` fails. On SQLite the id is the rowid, so an unordered scan comes
+    back in id order anyway -- assigning ids against insertion order does not
+    separate them either -- and the suite is SQLite-only with no Postgres job,
+    so nothing in CI can notice if that ORDER BY goes. The determinism it buys
+    is real and untested; saying so is more honest than a docstring that claims
+    the two modes cannot disagree about which row wins.
     """
     await _seed(db_session, [BAMBU_BLACK, BAMBU_CHARCOAL])
 

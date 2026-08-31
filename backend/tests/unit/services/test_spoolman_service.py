@@ -952,6 +952,80 @@ class TestFindOrCreateFilament:
         assert kwargs["vendor_id"] == 2
 
     @pytest.mark.asyncio
+    async def test_a_colour_the_catalogue_lags_is_built_from_the_tray_not_a_bambu_entry(self, client, tray_pla_black):
+        """A real Bambu candidate is present and deliberately not used.
+
+        This is the first half of the decision the fall-through makes, and the
+        half ``test_falls_back_to_create_when_no_bambu_match_anywhere`` does not
+        reach: its only external entry is 3DJAKE, which the manufacturer filter
+        drops before ``bambu_candidates`` is built, so that test arrives at this
+        branch with an empty candidate list. An empty list exercises nothing
+        about the choice.
+
+        Here the library does carry this roll's material and colour under Bambu
+        Lab, and the catalogue -- seeded from Bambu's published list, so it lags
+        new releases -- has no row to name it. Without a name there is nothing to
+        select on, and attaching to whichever candidate came first is the
+        misattribution #2907 is about, so the roll is built from what the printer
+        reported instead.
+        """
+        external = [
+            {
+                "id": "bambulab_pla_black_1000_175_n",
+                "manufacturer": "Bambu Lab",
+                "name": "Black",
+                "material": "PLA",
+                "color_hex": "000000",
+                "density": 1.31,
+            },
+        ]
+        _, _, mock_create = await self._run(client, tray_pla_black, _NoCatalog(), external=external)
+
+        mock_create.assert_called_once()
+        kwargs = mock_create.call_args.kwargs
+        # The tray's own sub-brand, not the candidate's colour name.
+        assert kwargs["name"] == "PLA Basic"
+        assert kwargs["material"] == "PLA"
+        assert kwargs["color_hex"] == "000000"
+        assert kwargs["weight"] == 1000
+        # `density` reaches create_filament only via _create_filament_from_external,
+        # so its absence is what separates the two paths -- the name alone would
+        # not, since the candidate here is called "Black" for other reasons too.
+        assert "density" not in kwargs
+
+    @pytest.mark.asyncio
+    async def test_a_name_the_library_does_not_carry_is_built_from_the_tray_too(self, client, tray_matte):
+        """The other half: the catalogue answers and no candidate carries that name.
+
+        The catalogue names this roll "Matte Charcoal"; the library offers only
+        "Black" for Bambu Lab PLA at #000000. That is the state an instance sits
+        in between a colour shipping and SpoolmanDB catching up. The name is the
+        only field separating the two product lines at this hex, so a candidate
+        that does not carry it is not this roll -- and "Black" is exactly the
+        entry the old tie-break took.
+        """
+        external = [
+            {
+                "id": "bambulab_pla_black_1000_175_n",
+                "manufacturer": "Bambu Lab",
+                "name": "Black",
+                "material": "PLA",
+                "color_hex": "000000",
+                "density": 1.24,
+            },
+        ]
+        _, _, mock_create = await self._run(client, tray_matte, _Catalog("Matte Charcoal"), external=external)
+
+        mock_create.assert_called_once()
+        kwargs = mock_create.call_args.kwargs
+        # The catalogue's name is what the filament is called; what it must not
+        # take is the "Black" entry's identity or the density that comes with it.
+        assert kwargs["name"] == "Matte Charcoal"
+        assert kwargs["material"] == "PLA"
+        assert kwargs["color_hex"] == "000000"
+        assert "density" not in kwargs
+
+    @pytest.mark.asyncio
     async def test_accepts_external_entry_via_id_prefix_when_manufacturer_missing(self, client, tray_pla_black):
         """Defensive fallback: if `manufacturer` is absent or empty but the entry's `id`
         starts with `bambulab_`, treat it as a Bambu Lab entry. Keeps the filter robust

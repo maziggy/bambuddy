@@ -9,6 +9,8 @@ from sqlalchemy.orm import selectinload
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.schemas.spool import normalize_effect_type
+from backend.app.services.slot_nozzle import resolve_slot_nozzle
+from backend.app.services.spool_filament_preset import printer_safe_filament_id, resolve_spool_preset
 from backend.app.utils.tag_normalization import (
     normalize_tag_uid as _normalize_tag_uid,
     normalize_tray_uuid as _normalize_tray_uuid,
@@ -566,24 +568,49 @@ async def auto_assign_spool(
     try:
         client = printer_manager.get_client(printer_id)
         if client:
-            # Apply K-profile if available
-            nozzle_diameter = "0.4"
-            if state and state.nozzles:
-                nd = state.nozzles[0].nozzle_diameter
-                if nd:
-                    nozzle_diameter = nd
+            # Which nozzle this slot feeds, resolved the same way every other
+            # slot-configuring path resolves it (services.slot_nozzle).
+            slot_nozzle = resolve_slot_nozzle(state, ams_id, tray_id, printer_manager.get_model(printer_id))
+            nozzle_diameter = slot_nozzle.diameter
 
-            matching_kp = None
+            # Prefer the profile calibrated for THIS hotend, falling back to one
+            # stored for the same nozzle size on the other. Before this the
+            # first row matching (printer, diameter) won outright with no
+            # extruder test at all -- on a dual-nozzle printer that is a coin
+            # toss between the two hotends, on the path that fires unattended
+            # every time an RFID spool is loaded.
+            exact_kp = None
+            fallback_kp = None
             for kp in spool.k_profiles:
-                if kp.printer_id == printer_id and kp.nozzle_diameter == nozzle_diameter:
-                    matching_kp = kp
+                if kp.printer_id != printer_id or kp.nozzle_diameter != nozzle_diameter:
+                    continue
+                if not slot_nozzle.flow_matches(kp.nozzle_type):
+                    continue
+                if slot_nozzle.extruder is not None and kp.extruder == slot_nozzle.extruder:
+                    exact_kp = kp
                     break
+                if fallback_kp is None:
+                    fallback_kp = kp
+            matching_kp = exact_kp or fallback_kp
+
+            # The id sent with extrusion_cali_sel has to name the preset the
+            # profile was calibrated under, and that preset can differ per
+            # printer model -- so it comes from the same cascade the assign
+            # paths use rather than straight off the spool.
+            model_filament, _ = await resolve_spool_preset(
+                db,
+                spool_id=spool.id,
+                printer_model=printer_manager.get_model(printer_id),
+                nozzle_diameter=nozzle_diameter,
+                fallback_filament=spool.slicer_filament,
+                fallback_name=spool.slicer_filament_name,
+            )
 
             if matching_kp and matching_kp.cali_idx is not None:
                 # The filament_id in extrusion_cali_sel must match the filament preset
                 # under which the K-profile was calibrated. Use spool.slicer_filament
                 # (the preset assigned in inventory), falling back to tray's RFID value.
-                cali_filament_id = spool.slicer_filament or tray_info_idx or ""
+                cali_filament_id = printer_safe_filament_id(model_filament, spool.slicer_filament, tray_info_idx)
                 client.extrusion_cali_sel(
                     ams_id=ams_id,
                     tray_id=tray_id,
@@ -610,7 +637,7 @@ async def auto_assign_spool(
                 # so the printer keeps its existing calibration selection.
                 live_cali_idx = tray.get("cali_idx")
                 if live_cali_idx is not None and live_cali_idx >= 0:
-                    cali_filament_id = spool.slicer_filament or tray_info_idx or ""
+                    cali_filament_id = printer_safe_filament_id(model_filament, spool.slicer_filament, tray_info_idx)
                     client.extrusion_cali_sel(
                         ams_id=ams_id,
                         tray_id=tray_id,

@@ -14,10 +14,14 @@
 //   and the caller relies on the order, not a single merged list.
 // - `pickProcessDefault` honours a 3MF's embedded process preset when
 //   it exists and isn't printer-incompatible; otherwise prefers a
-//   match-on-printer pick, then unknown-compat, then plain priority.
+//   match-on-printer pick, then unknown-compat, then plain priority --
+//   preferring a middle-of-the-road layer height within each of those
+//   (#2982).
 // - `pickFilamentForSlot` partitions candidates into compatible/unknown
 //   vs mismatch buckets and only consults the mismatch bucket when
-//   the compatible bucket is empty (#1851).
+//   the compatible bucket is empty (#1851). Material type partitions the
+//   same way: a preset that states a different material than the plate
+//   asks for is never the right answer (#2982).
 
 import type {
   PresetRef,
@@ -100,14 +104,78 @@ export function pickProcessDefault(
   }
   for (const wanted of ['match', 'unknown'] as const) {
     for (const tier of SLICE_MODAL_TIER_ORDER) {
-      for (const p of by[tier].process) {
-        if (presetCompatibility(p, 'process', printerName, compatIndex) === wanted) {
-          return { source: p.source, id: p.id };
-        }
-      }
+      const candidates = by[tier].process.filter(
+        (p) => presetCompatibility(p, 'process', printerName, compatIndex) === wanted,
+      );
+      const chosen = preferDefaultLayerHeight(candidates);
+      if (chosen) return { source: chosen.source, id: chosen.id };
     }
   }
   return pickDefault(by, 'process');
+}
+
+// Bambu's default layer height, and the one its own presets are named
+// "Standard" at. Used only to order candidates that are equally valid.
+const DEFAULT_LAYER_HEIGHT_MM = 0.2;
+
+// Leading "<n>mm" on a process preset name — "0.20mm Standard @BBL X1C".
+const PROCESS_LAYER_HEIGHT = /^\s*([\d.]+)\s*mm\b/i;
+
+/**
+ * Pick the best of a set of process presets that are all equally compatible.
+ *
+ * Tier order says which *source* to prefer, but within one tier the list is
+ * alphabetical, and alphabetical order on Bambu's naming scheme puts the
+ * finest layer height first. So the auto-pick landed on `0.08mm Extra Fine`
+ * for an X1C and `0.06mm Fine` for an A1 mini — a correct preset, but the
+ * slowest one the slicer ships, silently chosen for every slice that didn't
+ * name its own process (#2982).
+ *
+ * Preferring the height nearest 0.2mm gives the same answer a person would:
+ * `0.20mm Standard` where it exists, and the closest thing to it otherwise.
+ * Ties break toward the coarser height, then toward the earlier name, so the
+ * result stays deterministic. A name with no readable height sorts last but
+ * is still eligible — an imported preset called "My Draft" must remain
+ * pickable when it is the only candidate.
+ */
+function preferDefaultLayerHeight(candidates: UnifiedPreset[]): UnifiedPreset | null {
+  let best: UnifiedPreset | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let bestHeight = Number.NEGATIVE_INFINITY;
+  for (const p of candidates) {
+    const match = PROCESS_LAYER_HEIGHT.exec(p.name);
+    const height = match ? Number.parseFloat(match[1]) : Number.NaN;
+    const usable = Number.isFinite(height) && height > 0;
+    const distance = usable
+      ? Math.abs(height - DEFAULT_LAYER_HEIGHT_MM)
+      : Number.POSITIVE_INFINITY;
+    if (best == null || distance < bestDistance
+      || (distance === bestDistance && usable && height > bestHeight)) {
+      best = p;
+      bestDistance = distance;
+      bestHeight = usable ? height : Number.NEGATIVE_INFINITY;
+    }
+  }
+  return best;
+}
+
+/**
+ * True when ``preset`` states a material and it is not the one the plate slot
+ * asks for.
+ *
+ * Deliberately three-valued in effect: a preset with no stated material is not
+ * "different", it is unknown, and stays eligible. 32 profiles in the shipped
+ * BBL bundle inherit from a parent the bundle doesn't contain, so their
+ * material genuinely cannot be resolved — excluding those would leave slots
+ * with nothing to pick.
+ */
+export function statesDifferentMaterial(
+  preset: Pick<UnifiedPreset, 'filament_type'>,
+  requiredType: string,
+): boolean {
+  const required = requiredType.trim().toUpperCase();
+  const stated = (preset.filament_type ?? '').trim().toUpperCase();
+  return Boolean(required) && Boolean(stated) && required !== stated;
 }
 
 export function pickFilamentForSlot(
@@ -136,11 +204,29 @@ export function pickFilamentForSlot(
   // printer-correct alternative exists, which preserves the graceful-degrade
   // behaviour for presets registries that genuinely have nothing for the
   // selected printer.
+  //
+  // Material is the second hard partition (#2982). A preset that states a
+  // material the plate did not ask for is not a worse answer, it is the wrong
+  // one: printing a PLA plate with a PETG profile means the wrong nozzle
+  // temperature, the wrong bed temperature and the wrong flow. It used to be
+  // only a missed +10 bonus, which a colour hit plus a tier bonus could
+  // outweigh — and did, every time, once the standard tier's `filament_type`
+  // turned out to be null for every preset it listed: an A1 mini offered
+  // `Bambu PETG Basic` for a PLA plate, a P1S offered `Bambu PC`. Fixing the
+  // sidecar to report the material restores the signal; skipping a stated
+  // mismatch is what stops a wrong material from ever winning on colour again,
+  // whatever a future registry reports.
+  //
+  // A preset that states NO material stays eligible — that is "don't know",
+  // not "different", and 32 profiles in the shipped bundle inherit from a
+  // parent it doesn't contain, so their material is genuinely unknown. The
+  // same asymmetry `presetCompatibility` applies to printers.
   const reqType = required.type.trim().toUpperCase();
   const reqColor = normalizeColorForCompare(required.color);
 
   let bestCompatible: { ref: PresetRef; score: number } | null = null;
   let bestMismatch: { ref: PresetRef; score: number } | null = null;
+  let bestWrongType: { ref: PresetRef; score: number } | null = null;
   for (const tier of SLICE_MODAL_TIER_ORDER) {
     for (const p of by[tier].filament) {
       let score = 0;
@@ -153,7 +239,11 @@ export function pickFilamentForSlot(
       }
       score += TIER_BONUS[tier];
       const ref = { source: p.source, id: p.id };
-      if (presetCompatibility(p, 'filament', printerName, compatIndex) === 'mismatch') {
+      if (statesDifferentMaterial(p, reqType)) {
+        if (bestWrongType == null || score > bestWrongType.score) {
+          bestWrongType = { ref, score };
+        }
+      } else if (presetCompatibility(p, 'filament', printerName, compatIndex) === 'mismatch') {
         if (bestMismatch == null || score > bestMismatch.score) {
           bestMismatch = { ref, score };
         }
@@ -164,6 +254,10 @@ export function pickFilamentForSlot(
   }
   if (bestCompatible != null) return bestCompatible.ref;
   if (bestMismatch != null) return bestMismatch.ref;
+  // Nothing of the right material anywhere. Better a wrong-material preset the
+  // user can see and change in the dropdown than a null the modal renders as
+  // an empty slot, which is what shipped before the partition existed.
+  if (bestWrongType != null) return bestWrongType.ref;
   // Final fallback when there are no filament presets at all (empty
   // registry) — pickDefault returns null in that case too, but keeping the
   // call mirrors the rest of the picker logic for shape consistency.

@@ -110,4 +110,80 @@ describe('FolderReadmePanel', () => {
     expect((await screen.findAllByRole('button', { name: 'Show README' })).length).toBeGreaterThan(0);
     expect(screen.queryByRole('heading', { name: 'Robot model' })).not.toBeInTheDocument();
   });
+
+  /**
+   * The panel renders GFM through `remarkGfmNoAutolink` rather than
+   * `remark-gfm`, because `remark-gfm` reaches a regex lookbehind that iOS
+   * 16.0-16.3 cannot parse and that blanked the entire app (#2971). These pin
+   * the two halves of that trade: every GFM feature a README uses still works,
+   * and the one feature we gave up stays given up on purpose rather than
+   * creeping back in with a future dependency bump.
+   */
+  describe('GFM support without autolink literals (#2971)', () => {
+    const withReadme = (content: string) =>
+      server.use(
+        http.get('/api/v1/library/folders/:id/readme', () =>
+          HttpResponse.json({ filename: 'README.md', content, truncated: false }),
+        ),
+      );
+
+    it('renders GFM tables', async () => {
+      withReadme('| Part | Filament |\n| --- | --- |\n| Body | PLA |');
+      render(<FolderReadmePanel folderId={11} />);
+      expect(await screen.findByRole('columnheader', { name: 'Part' })).toBeInTheDocument();
+      expect(screen.getByRole('columnheader', { name: 'Filament' })).toBeInTheDocument();
+      expect(screen.getByRole('cell', { name: 'Body' })).toBeInTheDocument();
+    });
+
+    it('renders GFM strikethrough', async () => {
+      withReadme('Print at ~~0.2mm~~ 0.16mm.');
+      const { container } = render(<FolderReadmePanel folderId={12} />);
+      await waitFor(() => {
+        expect(container.querySelector('del')).toHaveTextContent('0.2mm');
+      });
+    });
+
+    it('renders GFM task lists', async () => {
+      withReadme('- [x] Sliced\n- [ ] Printed');
+      render(<FolderReadmePanel folderId={13} />);
+      const boxes = await screen.findAllByRole('checkbox');
+      expect(boxes).toHaveLength(2);
+      expect(boxes[0]).toBeChecked();
+      expect(boxes[1]).not.toBeChecked();
+    });
+
+    it('renders GFM footnotes', async () => {
+      withReadme('Supports supports[^1]\n\n[^1]: Tree, 0.4mm.');
+      const { container } = render(<FolderReadmePanel folderId={14} />);
+      await waitFor(() => {
+        expect(container.querySelector('a[href="#user-content-fn-1"]')).toBeInTheDocument();
+      });
+      expect(screen.getByText(/Tree, 0.4mm./)).toBeInTheDocument();
+    });
+
+    it('keeps core-markdown links working', async () => {
+      withReadme('See [the model](https://example.com/model) and <https://example.com/raw>.');
+      const { container } = render(<FolderReadmePanel folderId={15} />);
+      expect(await screen.findByRole('link', { name: 'the model' })).toHaveAttribute(
+        'href',
+        'https://example.com/model',
+      );
+      expect(container.querySelector('a[href="https://example.com/raw"]')).toBeInTheDocument();
+    });
+
+    it('leaves a bare URL as plain text - the deliberate cost of dropping autolink literals', async () => {
+      withReadme('Grab it from https://example.com/model today.');
+      const { container } = render(<FolderReadmePanel folderId={16} />);
+      // Wait for the body to render before asserting on an absence.
+      expect(await screen.findByText(/Grab it from/)).toBeInTheDocument();
+      expect(container.querySelector('a')).toBeNull();
+    });
+
+    it('leaves a bare email as plain text', async () => {
+      withReadme('Questions to nobody@example.com please.');
+      const { container } = render(<FolderReadmePanel folderId={17} />);
+      expect(await screen.findByText(/Questions to/)).toBeInTheDocument();
+      expect(container.querySelector('a')).toBeNull();
+    });
+  });
 });

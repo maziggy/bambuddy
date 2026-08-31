@@ -8,7 +8,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.printer import Printer
-from backend.app.services.bambu_mqtt import BambuMQTTClient, MQTTLogEntry, PrinterState, get_stage_name
+from backend.app.services.bambu_mqtt import (
+    STAGE_NAMES,
+    BambuMQTTClient,
+    MQTTLogEntry,
+    PrinterState,
+    get_stage_name,
+)
+from backend.app.utils.kprofile_lookup import build_slot_k_resolver
 
 logger = logging.getLogger(__name__)
 
@@ -1169,6 +1176,23 @@ def get_derived_status_name(state: PrinterState, model: str | None = None) -> st
     # X1 models use -1 for idle, A1/P1 models use 255 for idle
     # Valid stage numbers are 0-254
     if 0 <= state.stg_cur < 255:
+        # A stage number the table does not cover is named "Preparing" rather
+        # than "Unknown stage (72)". New models report stages before Bambuddy
+        # learns their names -- the H2C still has several -- and the card is
+        # the wrong place to say so: the number means nothing to the person
+        # reading it, and every stage that has ever turned out to be unnamed
+        # was part of the run-up to printing, so "Preparing" is both the more
+        # useful answer and the more likely one.
+        #
+        # This is display only, and deliberately not pushed down into
+        # `get_stage_name`. That function also feeds the stage-transition log
+        # line and the once-per-session warning that exists precisely to
+        # capture unnamed stages so they can be named later (bambu_mqtt.py
+        # ~4100) -- there the number is the entire diagnostic value, and
+        # replacing it with "Preparing" would hide the very thing that
+        # reports these.
+        if state.stg_cur not in STAGE_NAMES:
+            return "Preparing"
         return get_stage_name(state.stg_cur)
 
     # If not in RUNNING state, no derived status needed
@@ -1330,14 +1354,11 @@ def printer_state_to_dict(
     vt_tray = []
     raw_data = state.raw_data or {}
 
-    # Build K-profile lookup map: cali_idx -> k_value
-    kprofile_map: dict[int, float] = {}
-    for kp in state.kprofiles or []:
-        if kp.slot_id is not None and kp.k_value:
-            try:
-                kprofile_map[kp.slot_id] = float(kp.k_value)
-            except (ValueError, TypeError):
-                pass  # Skip K-profile entries with unparseable values
+    # K value for a slot's bound profile. Shared with the REST serializer of
+    # the same card (routes/printers.py) so the two cannot answer differently:
+    # this one used to key on cali_idx alone, which on a dual-nozzle machine
+    # meant whichever nozzle's table was listed last won the slot.
+    resolve_slot_k = build_slot_k_resolver(state)
 
     if "ams" in raw_data and isinstance(raw_data["ams"], list):
         for ams_data in raw_data["ams"]:
@@ -1353,8 +1374,8 @@ def printer_state_to_dict(
                 # Get K value: first try tray's k field, then lookup from K-profiles
                 k_value = tray.get("k")
                 cali_idx = tray.get("cali_idx")
-                if k_value is None and cali_idx is not None and cali_idx in kprofile_map:
-                    k_value = kprofile_map[cali_idx]
+                if k_value is None:
+                    k_value = resolve_slot_k(cali_idx, int(ams_data.get("id", 0)), int(tray.get("id", 0)))
 
                 # P1S / A1 Mini physically-empty-slot signal (#1322 follow-up by
                 # @RosdasHH): for a truly empty slot the firmware sends only
@@ -1486,8 +1507,11 @@ def printer_state_to_dict(
             # Get K value for vt_tray
             vt_k_value = vt_data.get("k")
             vt_cali_idx = vt_data.get("cali_idx")
-            if vt_k_value is None and vt_cali_idx is not None and vt_cali_idx in kprofile_map:
-                vt_k_value = kprofile_map[vt_cali_idx]
+            if vt_k_value is None:
+                # External holder: id 254 is Ext-L, 255 is Ext-R. The resolver
+                # takes the 0/1 tray index, so normalise before asking.
+                vt_id = int(vt_data.get("id", 254))
+                vt_k_value = resolve_slot_k(vt_cali_idx, 255, vt_id - 254 if vt_id >= 254 else vt_id)
 
             tray_id = int(vt_data.get("id", 254))
             vt_tray.append(
@@ -1589,6 +1613,22 @@ def printer_state_to_dict(
                 "out_extruders": list(state.fila_switch.out_extruders),
                 "stat": state.fila_switch.stat,
                 "info": state.fila_switch.info,
+                # Mirrors BambuStudio's DevFilaSwitch::IsReady — every AMS has to
+                # be bound to an inlet before the switch can route anything. Until
+                # the operator has done that on the printer's Manual AMS Setup
+                # screen, Studio refuses a load outright rather than sending a
+                # command the firmware cannot act on, and so do we.
+                # An empty AMS list is "ready", as it is in Studio: there is then
+                # no slot to load from, so nothing can reach the check anyway, and
+                # reporting not-ready would only mean a confusing toast on a
+                # payload that has not carried the AMS block yet.
+                #
+                # An AMS still reporting a real extruder id rather than 0xE has no
+                # inlet entry, so a machine with one hard-wired unit reads as not
+                # ready. That looks harsh but is exactly Studio's own rule —
+                # IsReady() requires a switcher position on *every* AMS, and only
+                # the 0xE branch ever sets one (DevFilaSystem.cpp:596-615).
+                "ready": all(str(u["id"]) in state.ams_switch_inlet for u in ams_units),
             }
             if state.fila_switch and state.fila_switch.installed
             else None
@@ -1596,6 +1636,18 @@ def printer_state_to_dict(
         # Per-AMS FTS inlet binding: {ams_id: "A" | "B"}. Gated on the accessory
         # so a stale binding cannot outlive it being unplugged.
         "ams_switch_inlet": (dict(state.ams_switch_inlet) if state.fila_switch and state.fila_switch.installed else {}),
+        # Which AMS slot each hotend is fed from: {extruder_id: {...}}. Travels on
+        # the WebSocket for the same reason as fila_switch above — the frontend
+        # shallow-merges pushes over its cached status, so an absent field keeps a
+        # stale value forever. Empty on printers that do not report it.
+        "extruder_slots": {
+            str(ext_id): {
+                "ams_id": slot.ams_id,
+                "slot_id": slot.slot_id,
+                "has_filament": slot.has_filament,
+            }
+            for ext_id, slot in state.extruder_slots.items()
+        },
         # WiFi signal strength
         "wifi_signal": state.wifi_signal,
         "wired_network": state.wired_network,

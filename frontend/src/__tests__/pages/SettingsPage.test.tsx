@@ -27,6 +27,7 @@ const mockSettings = {
   ams_humidity_fair: 60,
   ams_temp_good: 30,
   ams_temp_fair: 35,
+  ams_temp_alarm: null,
   time_format: 'system',
   date_format: 'system',
   mqtt_enabled: false,
@@ -770,6 +771,94 @@ describe('SettingsPage', () => {
       await openFilamentTab(60);
 
       expect(screen.queryByText(/Auto-drying cannot reach this value/)).not.toBeInTheDocument();
+    });
+
+    // #2905: the alarm threshold is a separate value from the Fair display
+    // band, and unset means "use Fair" rather than "never alarm". Everything
+    // below turns on telling those two apart.
+    const openFilamentTabWith = async (overrides: Record<string, unknown>) => {
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json({ ...mockSettings, ...overrides }))
+      );
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+      await waitFor(() => {
+        expect(screen.getAllByText('Filament').length).toBeGreaterThan(0);
+      });
+      await user.click(screen.getAllByText('Filament')[0]);
+      await waitFor(() => {
+        expect(screen.getByText('AMS Display Thresholds')).toBeInTheDocument();
+      });
+    };
+
+    const alarmInput = () =>
+      within(screen.getByText('Alarm above').parentElement!).getByRole('spinbutton');
+
+    it('shows the fair threshold as the placeholder while the alarm threshold is unset', async () => {
+      // The fallback has to be visible in the field itself. Blank with no hint
+      // reads as "no alarm", which is the opposite of what unset does.
+      await openFilamentTabWith({ ams_temp_fair: 38, ams_temp_alarm: null });
+
+      const input = alarmInput();
+      expect(input).toHaveValue(null);
+      expect(input).toHaveAttribute('placeholder', '38');
+    });
+
+    it('sends the typed alarm threshold on save', async () => {
+      let saved: Record<string, unknown> | null = null;
+      server.use(
+        http.put('/api/v1/settings/', async ({ request }) => {
+          saved = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...mockSettings, ...saved });
+        })
+      );
+      await openFilamentTabWith({ ams_temp_alarm: null });
+      // The page suppresses auto-save for 100ms after the settings load.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      await userEvent.type(alarmInput(), '45');
+
+      // Assert on the value rather than merely on a save having happened: two
+      // keystrokes can straddle the 500ms debounce on a slow runner, and the
+      // first save would then carry 4. Waiting for 45 rides that out.
+      await waitFor(() => {
+        expect(saved?.ams_temp_alarm).toBe(45);
+      }, { timeout: 3000 });
+    });
+
+    it('sends null when the alarm threshold is cleared', async () => {
+      // The one path the backend tests cannot reach on their own: clearing has
+      // to send an explicit null, not omit the key, or the old threshold stays.
+      let saved: Record<string, unknown> | null = null;
+      server.use(
+        http.put('/api/v1/settings/', async ({ request }) => {
+          saved = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...mockSettings, ...saved });
+        })
+      );
+      await openFilamentTabWith({ ams_temp_alarm: 45 });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      await userEvent.clear(alarmInput());
+
+      await waitFor(() => {
+        expect(saved).not.toBeNull();
+        expect(saved!.ams_temp_alarm).toBeNull();
+      }, { timeout: 3000 });
+    });
+
+    it('warns that a non-positive alarm threshold is ignored', async () => {
+      // The backend refuses <= 0 and falls back to Fair. Saying so beats a min=
+      // attribute the browser only enforces on submit.
+      await openFilamentTabWith({ ams_temp_alarm: 0 });
+
+      expect(await screen.findByText(/A threshold of 0 or less is ignored/)).toBeInTheDocument();
+    });
+
+    it('stays quiet for an alarm threshold the backend will honour', async () => {
+      await openFilamentTabWith({ ams_temp_alarm: 45 });
+
+      expect(screen.queryByText(/A threshold of 0 or less is ignored/)).not.toBeInTheDocument();
     });
   });
 

@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.app.api.routes.printers import get_inventory_remain
-from backend.app.services.filament_deficit import SlotMaterial
+from backend.app.services.filament_deficit import SlotMaterial, SlotSpoolIdentity
 
 
 @pytest.fixture
@@ -145,5 +145,65 @@ class TestGetInventoryRemain:
                 "material_key": "preset:PFUS6488|color:616777",
                 "remaining_g": 1000.0,
                 "extruder": 0,
+                # Present even when there is nothing to say, so the client can
+                # branch on the field rather than on its absence.
+                "spool": None,
             }
         ]
+
+    @pytest.mark.asyncio
+    async def test_slot_materials_carry_the_bound_spool_s_display_identity(self, db):
+        """What the printer cannot say about a slot has to reach the client here.
+
+        A tray record has no brand field and reports no sub-brand for anything
+        that isn't a Bambu spool, so the print dialog named the reporter's
+        Devil Design PLA Basic Orange after whichever catalogue colour shares
+        its hex — "PLA (Sunflower Yellow)" — while the printer card, which
+        reads the assignment, had it right.
+        """
+        state = SimpleNamespace(raw_data={})
+        with (
+            patch(
+                "backend.app.services.printer_manager.printer_manager.get_status",
+                return_value=state,
+            ),
+            patch(
+                "backend.app.services.print_scheduler.PrintScheduler._build_loaded_filaments",
+                return_value=[],
+            ),
+            patch(
+                "backend.app.services.print_scheduler.PrintScheduler._build_inventory_remain_overrides",
+                new=AsyncMock(return_value={}),
+            ),
+            patch(
+                "backend.app.services.filament_deficit.build_slot_materials",
+                new=AsyncMock(
+                    return_value=[
+                        SlotMaterial(
+                            ams_id=2,
+                            tray_id=0,
+                            global_tray_id=8,
+                            material_key="unmatched:85",
+                            remaining_grams=640.0,
+                            extruder=1,
+                            spool=SlotSpoolIdentity(
+                                brand="Devil Design",
+                                material="PLA",
+                                subtype="Basic",
+                                color_name="Orange",
+                                rgba="FEC600FF",
+                            ),
+                        ),
+                    ]
+                ),
+            ),
+        ):
+            result = await _call_endpoint(db)
+
+        assert result["slot_materials"][0]["spool"] == {
+            "brand": "Devil Design",
+            "material": "PLA",
+            "subtype": "Basic",
+            "color_name": "Orange",
+            "rgba": "FEC600FF",
+        }

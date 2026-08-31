@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Droplets, Copy, Check, Settings2, Package, Unlink } from 'lucide-react';
 import { isLightColor, resolveSpoolColorName } from '../utils/colors';
+import { buildFilamentBackground, parseStops } from './filamentSwatchHelpers';
 
 interface FilamentData {
   vendor: 'Bambu Lab' | 'Generic';
@@ -36,7 +37,20 @@ interface InventoryConfig {
   // `subtype` is part of the spool's name, not decoration: "PLA" and "PLA Wood"
   // are different filaments, and a card that prints only the material tells the
   // user their wood-filled roll is plain PLA (the display-side half of #2902).
-  assignedSpool?: { id: number; material: string; subtype: string | null; brand: string | null; color_name: string | null; remainingWeightGrams?: number | null } | null;
+  // `rgba` / `extra_colors` / `effect_type` are the spool's own swatch. The
+  // slot's telemetry colour is a single hex and can never describe a gradient
+  // or a surface effect, so a tri-colour roll read as one flat band (#2967).
+  assignedSpool?: {
+    id: number;
+    material: string;
+    subtype: string | null;
+    brand: string | null;
+    color_name: string | null;
+    rgba?: string | null;
+    extra_colors?: string | null;
+    effect_type?: string | null;
+    remainingWeightGrams?: number | null;
+  } | null;
   isAssigned?: boolean;
 }
 
@@ -205,6 +219,52 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
   const displayColorName = assignedColorName || data.colorName;
   const assignedRemainingWeight = inventory?.assignedSpool?.remainingWeightGrams ?? null;
 
+  // The header paints the spool's own swatch whenever the spool describes more
+  // than one colour, or any surface effect (#2967). Telemetry cannot: a tray
+  // record carries a single `tray_color` hex, so a Tri Color roll of yellow,
+  // cyan and pink read as one flat band of whichever hex the slot was
+  // configured with.
+  //
+  // Only when the spool actually says something extra. A plain single-colour
+  // spool keeps the flat `backgroundColor` it has always had, so the common
+  // case is untouched and the gradient machinery cannot regress it.
+  const assignedSwatch = inventory?.assignedSpool ?? null;
+  const swatchStops = parseStops(assignedSwatch?.extra_colors);
+  const hasSwatchEffect = Boolean(assignedSwatch?.effect_type);
+  // Any stop at all, not just two: `buildColorLayer` ignores `rgba` the moment
+  // stops exist, so a one-stop spool renders that stop's colour and not the
+  // slot hex. Honouring it here is what keeps this header agreeing with the
+  // Inventory swatch, which is the whole point of sharing the builder.
+  const useSpoolSwatch = Boolean(assignedSwatch) && (swatchStops.length > 0 || hasSwatchEffect);
+  // Built from the spool end to end when used. Mixing the spool's stops over
+  // the slot's base hex would render a gradient the user never configured if
+  // the two ever disagreed.
+  const spoolSwatchStyle = useSpoolSwatch
+    ? buildFilamentBackground({
+        effectSize: 'card',
+        rgba: assignedSwatch?.rgba ?? colorHex,
+        extraColors: assignedSwatch?.extra_colors,
+        effectType: assignedSwatch?.effect_type,
+        subtype: assignedSwatch?.subtype,
+      })
+    : null;
+  // A single hex cannot decide legibility across several bands, and the header
+  // label sits dead centre where a multi-stop background is most likely to
+  // change under it. So a genuinely multi-band swatch puts the name on the same
+  // scrim the vendor badge already uses rather than betting on one of the
+  // stops. One stop, or an effect over one colour, leaves the base colour
+  // intact -- the contrast test still has a real answer there, and scrimming
+  // every effect spool would put a black pill on cards that never needed one.
+  const swatchNeedsScrim = swatchStops.length > 1;
+  // Which colour the contrast test should actually run against. Not always the
+  // slot hex any more: once the spool's swatch is painted, a single stop
+  // replaces the base entirely, and an effect-only spool paints the spool's own
+  // rgba rather than the slot's. Testing the slot hex in either case would pick
+  // the text colour for a background that is no longer on screen.
+  const contrastBaseHex = useSpoolSwatch
+    ? (swatchStops.length === 1 ? swatchStops[0] : assignedSwatch?.rgba ?? colorHex)
+    : colorHex;
+
   return (
     <div
       ref={triggerRef}
@@ -243,20 +303,28 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
             {/* Color swatch header - the hero element */}
             <div
               className="h-12 relative overflow-hidden"
-              style={{
-                backgroundColor: colorHex || '#3d3d3d',
-              }}
+              style={
+                spoolSwatchStyle
+                  ? { ...spoolSwatchStyle, backgroundColor: colorHex || '#3d3d3d' }
+                  : { backgroundColor: colorHex || '#3d3d3d' }
+              }
             >
               {/* Subtle gradient overlay for depth */}
               <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent" />
 
               {/* Color name on swatch */}
-              <div className={`
-                absolute inset-0 flex items-center justify-center
-                font-semibold text-sm tracking-wide
-                ${isLightColor(colorHex) ? 'text-black/80' : 'text-white/90'}
-              `}>
-                {displayColorName}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span
+                  className={
+                    swatchNeedsScrim
+                      ? 'px-2 py-0.5 rounded bg-black/60 text-white font-semibold text-sm tracking-wide'
+                      : `font-semibold text-sm tracking-wide ${
+                          isLightColor(contrastBaseHex) ? 'text-black/80' : 'text-white/90'
+                        }`
+                  }
+                >
+                  {displayColorName}
+                </span>
               </div>
 
               {/* Vendor badge - solid background for visibility on any color */}

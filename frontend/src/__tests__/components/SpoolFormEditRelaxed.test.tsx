@@ -41,6 +41,10 @@ vi.mock('../../api/client', () => ({
     createSpool: vi.fn().mockResolvedValue({ id: 99 }),
     updateSpool: vi.fn().mockResolvedValue({ id: 7 }),
     saveSpoolKProfiles: vi.fn().mockResolvedValue([]),
+    getSpoolFilamentPresets: vi.fn().mockResolvedValue([]),
+    saveSpoolFilamentPresets: vi.fn().mockResolvedValue([]),
+    getSpoolmanFilamentPresets: vi.fn().mockResolvedValue([]),
+    saveSpoolmanFilamentPresets: vi.fn().mockResolvedValue([]),
     getSpoolmanInventoryFilaments: vi.fn().mockResolvedValue([]),
     getAssignments: vi.fn().mockResolvedValue([]),
     unassignSpool: vi.fn().mockResolvedValue({}),
@@ -175,8 +179,8 @@ describe('SpoolFormModal relaxed edit/copy validation (#1905)', () => {
 
     const presetInput = screen.getByPlaceholderText('Search filament presets...');
     fireEvent.focus(presetInput);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Generic ASA' })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: 'Generic ASA' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Generic ASA\b/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /^Generic ASA\b/ }));
 
     // parsePresetName('Generic ASA') yields brand "Generic" — it must not
     // replace the manufacturer the spool already carries.
@@ -192,8 +196,8 @@ describe('SpoolFormModal relaxed edit/copy validation (#1905)', () => {
 
     const presetInput = screen.getByPlaceholderText('Search filament presets...');
     fireEvent.focus(presetInput);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Generic ASA' })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: 'Generic ASA' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Generic ASA\b/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /^Generic ASA\b/ }));
 
     expect(screen.getByPlaceholderText('Search brand...')).toHaveValue('Generic');
     expect(screen.getByPlaceholderText('Select material...')).toHaveValue('ASA');

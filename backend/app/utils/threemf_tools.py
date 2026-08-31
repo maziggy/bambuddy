@@ -1025,6 +1025,96 @@ def extract_bed_type_from_3mf(file_path: Path, plate_id: int | None = None) -> s
     return extract_plate_metadata_from_3mf(file_path, plate_id).bed_type
 
 
+# Bed temperature is not one key in a BambuStudio project. Every plate type has
+# its own per-filament array, and the plate actually fitted is named separately
+# in ``curr_bed_type`` -- so reading a bed temperature means picking the array
+# the plate points at. Keys and mapping are BambuStudio's own
+# ``get_bed_temp_1st_layer_key`` / ``get_bed_temp_key`` (PrintConfig.hpp), and
+# the plate names are the ``curr_bed_type`` enum values (PrintConfig.cpp).
+# First-layer temperature first: that is what the printer heats to before the
+# print starts, which is what preheat is trying to reach.
+#
+# ``Default Plate`` is deliberately absent -- BambuStudio maps it to no key at
+# all, so there is nothing to read and guessing a plate would invent a bed
+# temperature the slice never specified.
+_BED_TEMP_KEYS: dict[str, tuple[str, str]] = {
+    "Cool Plate": ("cool_plate_temp_initial_layer", "cool_plate_temp"),
+    "Engineering Plate": ("eng_plate_temp_initial_layer", "eng_plate_temp"),
+    "High Temp Plate": ("hot_plate_temp_initial_layer", "hot_plate_temp"),
+    "Textured PEI Plate": ("textured_plate_temp_initial_layer", "textured_plate_temp"),
+    "Supertack Plate": ("supertack_plate_temp_initial_layer", "supertack_plate_temp"),
+}
+
+# Fallback for a config that names no plate: the Orca/PrusaSlicer spelling,
+# which is a single value rather than a per-plate array.
+_GENERIC_BED_TEMP_KEYS = ("bed_temperature_initial_layer", "bed_temperature")
+
+
+def _plate_temperature(val) -> int | None:
+    """Bed temperature from one plate-temperature entry, or None.
+
+    The plate arrays carry one entry per filament in the project, and a 0 means
+    that filament cannot print on this plate. The bed only has one temperature,
+    so the print runs at the highest its filaments ask for -- taking entry 0 the
+    way the neighbouring scalar settings do would store a 0 for any project
+    whose first filament is not one this plate is heated for.
+    """
+    values = val if isinstance(val, list) else [val]
+    temps = []
+    for entry in values:
+        if isinstance(entry, bool) or not isinstance(entry, (int, float, str)):
+            continue
+        try:
+            temps.append(int(float(entry)))
+        except (TypeError, ValueError):
+            continue
+    return max(temps) if temps else None
+
+
+def bed_temperature_from_config(data: dict) -> int | None:
+    """Bed temperature for the plate *data* is sliced for, or None (#2989).
+
+    *data* is a parsed ``Metadata/project_settings.config``. Lives here rather
+    than beside the archive parser so the ingest path and the one-shot backfill
+    that repairs archives written before the fix read it exactly the same way.
+    """
+    bed_type = str(data.get("curr_bed_type") or "").strip()
+    for key in (*_BED_TEMP_KEYS.get(bed_type, ()), *_GENERIC_BED_TEMP_KEYS):
+        if key not in data:
+            continue
+        temperature = _plate_temperature(data[key])
+        # A plate array of all zeros means no filament in the project prints on
+        # this plate, which is not a bed temperature -- keep looking rather than
+        # recording a 0 that reads as "cold bed".
+        if temperature:
+            return temperature
+    return None
+
+
+def extract_bed_temperature_from_3mf(file_path: Path) -> int | None:
+    """Read a 3MF's bed temperature straight off disk, or None.
+
+    For the backfill, which has a ``file_path`` and nothing else. Opens only
+    ``Metadata/project_settings.config`` -- the archive parser reads thumbnails,
+    the model and the slice info as well, and none of that is wanted here.
+
+    Every failure is None. Deliberately broader than the handful of exceptions a
+    malformed zip is expected to raise: the caller runs inside the startup
+    migration, which has no handler above it, so anything unlisted escaping here
+    does not skip one archive -- it stops Bambuddy from booting, and keeps
+    stopping it, because the one-shot flag is written in the same transaction
+    that just rolled back. A bed temperature is not worth that.
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            if "Metadata/project_settings.config" not in zf.namelist():
+                return None
+            data = json.loads(zf.read("Metadata/project_settings.config").decode())
+        return bed_temperature_from_config(data) if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
 # Header values exposed as `{placeholder}` substitutions inside snippets.
 # Aliases let users write Prusa-style names (`{max_layer_z}`) that map onto
 # Bambu/Orca header keys (`max_z_height`).
@@ -1118,6 +1208,39 @@ def default_plate_gcode_name(names: list[str]) -> str | None:
     if numbered:
         return min(numbered)[1]
     return gcodes[0]
+
+
+def names_carry_gcode(names: list[str]) -> bool:
+    """Is this 3MF a sliced file — does it carry printer-executable G-code?
+
+    One definition, because several of them is the bug (#2993). The archive
+    side judged a file by what it holds -- the card's GCODE badge reads the
+    layer count and print time parsed out of the plate G-code, and
+    ``/archives/{id}/capabilities`` scanned the zip -- while the library judged
+    it by its filename. So a sliced 3MF stored as ``Foo.3mf`` rather than
+    ``Foo.gcode.3mf`` carried the badge and still re-imported as a source-only
+    project. This is the answer for anything asking the zip directly.
+
+    Defers to ``default_plate_gcode_name`` rather than testing for
+    ``Metadata/plate_<n>.gcode``, so a slicer that lays its output out some
+    other way is judged by the same rule everywhere.
+    """
+    return default_plate_gcode_name(names) is not None
+
+
+def carries_gcode(file_path: Path | str) -> bool:
+    """``names_carry_gcode`` for a file on disk. False for anything unreadable.
+
+    Only the zip's central directory is read — no member is decompressed — so
+    this is cheap enough to run on every ingested file.
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            return names_carry_gcode(zf.namelist())
+    except (OSError, zipfile.BadZipFile):
+        # Not a zip, gone, or unreadable. Callers treat that as "no G-code
+        # visible", which is what they did before this check existed.
+        return False
 
 
 # The header block sits at the very top of the plate G-code. Read only that

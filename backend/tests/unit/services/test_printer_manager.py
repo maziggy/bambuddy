@@ -849,6 +849,7 @@ class TestPrinterStateToDict:
         state.raw_data = {}
         state.stg_cur = -1  # No calibration stage active
         state.firmware_version = None
+        state.extruder_slots = {}
         return state
 
     def test_fila_switch_and_inlets_ride_the_websocket(self, mock_state):
@@ -874,7 +875,52 @@ class TestPrinterStateToDict:
             "out_extruders": [1, 0],
             "stat": 0,
             "info": 1,
+            "ready": True,
         }
+
+    def test_a_switch_is_not_ready_until_every_ams_has_an_inlet(self, mock_state):
+        """An AMS with no inlet binding means the switch cannot route a load.
+
+        The load dialog blocks on this rather than publishing a command the
+        firmware will drop, the same way BambuStudio's DevFilaSwitch::IsReady
+        gates its own dialog.
+        """
+        from backend.app.services.bambu_mqtt import FilaSwitchState
+
+        mock_state.fila_switch = FilaSwitchState(installed=True)
+        mock_state.raw_data = {"ams": [{"id": "0", "tray": []}, {"id": "1", "tray": []}]}
+        mock_state.ams_switch_inlet = {"0": "A"}
+
+        assert printer_state_to_dict(mock_state)["fila_switch"]["ready"] is False
+
+        mock_state.ams_switch_inlet = {"0": "A", "1": "B"}
+
+        assert printer_state_to_dict(mock_state)["fila_switch"]["ready"] is True
+
+    def test_extruder_slots_ride_the_websocket(self, mock_state):
+        """Which hotend holds which slot has to travel with every push.
+
+        The AMS slot menu decides from it which hotend the load dialog may
+        offer, and tray_now cannot stand in: it is one value for the whole
+        printer, so with both hotends loaded it names only one of them.
+        """
+        from backend.app.services.bambu_mqtt import ExtruderSlot
+
+        mock_state.extruder_slots = {
+            0: ExtruderSlot(ams_id=0, slot_id=2, has_filament=True),
+            1: ExtruderSlot(ams_id=None, slot_id=None, has_filament=False),
+        }
+
+        result = printer_state_to_dict(mock_state)
+
+        assert result["extruder_slots"] == {
+            "0": {"ams_id": 0, "slot_id": 2, "has_filament": True},
+            "1": {"ams_id": None, "slot_id": None, "has_filament": False},
+        }
+
+    def test_extruder_slots_are_empty_when_unreported(self, mock_state):
+        """Printers outside the H2/X2 series never send the block."""
+        assert printer_state_to_dict(mock_state)["extruder_slots"] == {}
 
     def test_inlets_are_dropped_without_a_switch(self, mock_state):
         """A binding must not outlive the accessory being unplugged."""

@@ -115,6 +115,18 @@ class AppSettings(BaseModel):
     ams_temp_fair: float = Field(
         default=35.0, description="Temperature threshold for fair (orange): <= this value, > is red"
     )
+    # Separate from ams_temp_fair on purpose (#2905). The fair threshold decides
+    # when the AMS card turns amber; this decides when a notification is sent.
+    # 35 C is a sensible place to change a colour and not a sensible place to
+    # page someone -- a room above 35 C makes the alarm fire once an hour for as
+    # long as the weather lasts, and the only way to silence it was to raise the
+    # display band and lose the colour that says the unit is warm. None means
+    # "not set", which resolves to ams_temp_fair so every existing install keeps
+    # behaving exactly as it does now.
+    ams_temp_alarm: float | None = Field(
+        default=None,
+        description="Temperature threshold (°C) for sending an alarm. Unset falls back to ams_temp_fair.",
+    )
     ams_history_retention_days: int = Field(default=30, description="Number of days to keep AMS sensor history data")
     printer_sensor_history_retention_days: int = Field(
         default=30, description="Number of days to keep printer heater history data (nozzle / bed / chamber)"
@@ -664,6 +676,7 @@ class AppSettingsUpdate(BaseModel):
     ams_humidity_fair: int | None = None
     ams_temp_good: float | None = None
     ams_temp_fair: float | None = None
+    ams_temp_alarm: float | None = None
     ams_history_retention_days: int | None = None
     printer_sensor_history_retention_days: int | None = None
     queue_drying_enabled: bool | None = None

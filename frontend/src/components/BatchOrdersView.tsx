@@ -163,6 +163,9 @@ function BatchOrderCard({
   const denominator = batch.has_targets ? batch.target_count : batch.completed_count + batch.pending_count
     + batch.printing_count + batch.failed_count;
   const percent = denominator > 0 ? Math.round((batch.completed_count / denominator) * 100) : 0;
+  // Runs the order owes that nothing can produce any more: their plate's last
+  // queue item was deleted, so there is no configuration left to clone (#2960).
+  const strandedCount = batch.has_targets ? batch.remaining_count - batch.dispatchable_count : 0;
   const dueDate = batch.due_date ? parseUTCDate(batch.due_date) : null;
   const isOverdue = dueDate != null && batch.status === 'active' && dueDate.getTime() < Date.now();
 
@@ -199,13 +202,17 @@ function BatchOrderCard({
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          {batch.has_targets && batch.remaining_count > 0 && batch.status !== 'cancelled' && canDispatch && (
+          {batch.has_targets && batch.dispatchable_count > 0 && batch.status !== 'cancelled' && canDispatch && (
             <Button variant="primary" size="sm" onClick={() => onDispatch()} disabled={isDispatching}>
               <PlayCircle className="w-4 h-4 mr-1" />
-              {t('queue.batchOrders.dispatchRemaining', { count: batch.remaining_count })}
+              {t('queue.batchOrders.dispatchRemaining', { count: batch.dispatchable_count })}
             </Button>
           )}
-          {batch.status === 'active' && batch.pending_count > 0 && canCancel && (
+          {/* Cancel is the only way to close an order out, so it must not be
+              gated on there being pending items to cancel: an order whose runs
+              were all deleted has none, and is exactly the one that needs
+              closing (#2960). */}
+          {batch.status === 'active' && canCancel && (
             <Button variant="ghost" size="sm" onClick={onCancel}>
               <XCircle className="w-4 h-4 mr-1" />
               {t('queue.cancelBatch')}
@@ -264,6 +271,13 @@ function BatchOrderCard({
           </span>
         )}
       </div>
+
+      {strandedCount > 0 && batch.status !== 'cancelled' && (
+        <p className="flex items-start gap-1.5 text-xs text-orange-600 dark:text-orange-400 mb-1">
+          <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+          <span>{t('queue.batchOrders.strandedNotice', { runs: strandedCount, owed: batch.remaining_count })}</span>
+        </p>
+      )}
 
       {batch.has_targets && batch.plates.length > 0 && (
         <div className="mt-3 border-t border-bambu-dark-tertiary pt-3 space-y-1.5">
@@ -328,15 +342,21 @@ function PlateRow({
           <span className="text-bambu-gray">
             {t('queue.batchOrders.remaining', { count: plate.remaining })}
           </span>
-          {canDispatch && (
-            <button
-              type="button"
-              onClick={onDispatch}
-              disabled={isDispatching}
-              className="text-bambu-green hover:underline disabled:opacity-50"
-            >
-              {t('queue.batchOrders.dispatchPlate')}
-            </button>
+          {!plate.can_dispatch ? (
+            <span className="text-orange-600 dark:text-orange-400">
+              {t('queue.batchOrders.strandedPlate')}
+            </span>
+          ) : (
+            canDispatch && (
+              <button
+                type="button"
+                onClick={onDispatch}
+                disabled={isDispatching}
+                className="text-bambu-green hover:underline disabled:opacity-50"
+              >
+                {t('queue.batchOrders.dispatchPlate')}
+              </button>
+            )
           )}
         </span>
       )}

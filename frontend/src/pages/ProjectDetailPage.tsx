@@ -47,12 +47,7 @@ import { PrintModal } from '../components/PrintModal';
 // Project edit modal (reused from ProjectsPage)
 import { ProjectModal } from './ProjectsPage';
 import { getCurrencySymbol } from '../utils/currency';
-
-// Returns true for sliced (printable) files: .gcode and .gcode.3mf
-function isSlicedFilename(filename: string): boolean {
-  const lower = filename.toLowerCase();
-  return lower.endsWith('.gcode') || lower.endsWith('.gcode.3mf');
-}
+import { isSlicedLibraryFile } from '../utils/libraryFiles';
 
 function formatFilament(grams: number): string {
   if (grams >= 1000) {
@@ -286,7 +281,7 @@ export function ProjectDetailPage() {
   const completeSets = useMemo(() => {
     const target = project?.target_sets;
     if (!target || !allProjectFiles) return null;
-    const printable = allProjectFiles.filter((f) => isSlicedFilename(f.filename));
+    const printable = allProjectFiles.filter((f) => isSlicedLibraryFile(f));
     if (printable.length === 0) return null;
     return Math.min(...printable.map((f) => Math.min(progressByFileId.get(f.id) ?? 0, target)));
   }, [project?.target_sets, allProjectFiles, progressByFileId]);
@@ -1059,7 +1054,7 @@ export function ProjectDetailPage() {
                     ) : (
                       <div className="space-y-1 pl-3">
                         {files.map((file) => {
-                          const printable = isSlicedFilename(file.filename);
+                          const printable = isSlicedLibraryFile(file);
                           return (
                             <div
                               key={file.id}

@@ -415,6 +415,46 @@ const UK_COGNATES = [
   '(25%, 50%, 75%)',
 ];
 
+// Dutch cognates. Dutch shares most technical UI vocabulary with English
+// verbatim -- printer, filament, status, nozzle, timelapse, dashboard --
+// and the slicer feature names (support, ironing, prime tower, gap fill)
+// are used untranslated by Dutch slicer users. Each entry below was
+// checked individually against the Dutch translation in #2891.
+const NL_COGNATES = [
+  '1 printer', '{{n}} printers',
+  '1 week', '(25%, 50%, 75%)', 'Accent', 'AMS Filament Backup',
+  '{{ams}} Slot {{slot}}', 'Auto', 'Auto Home', 'Bambu Cloud',
+  'Batch', 'Batches', 'Branch', 'Budget',
+  'Camera', 'China', 'Client Secret', 'Cloud',
+  'Commit', 'Compact', '({{count}}/8)', '{{count}} downloads',
+  '{{count}} filament', '({{count}} item)', '{{count}} item', '({{count}} items)',
+  '{{count}} items', '{{count}} object', 'Dashboard', 'Diagnose',
+  'Diameter', 'EC984C,#6CD4BC,A66EB9,D87694', 'Effect', 'email',
+  'ETA {{minutes}} min', 'Expert', 'Extruder', 'Extruders',
+  'Factor', 'Filament', 'Filament {{index}} ({{type}})', 'Filament {{n}}',
+  '{{filament}} @ {{temp}}°C', 'Filters', 'Firmware', 'Flow',
+  'Galaxy', 'Gap fill', 'Hex', 'Hex: #{{hex}}',
+  'Host', 'In browser', 'Interval', 'Interval (min)',
+  'Interval ({{type}})', 'Ironing', 'Jade White, Fire Red...', 'Label',
+  'Label...', 'LAN Developer Mode', 'Live', 'Long-Lived Access Token',
+  'Ludicrous (166%)', 'MakerWorld: {{designer}}', 'Metadata', 'Min',
+  'Model', '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}', '{{name}} - Timelapse', 'Nozzle',
+  'Nozzle 2', '{{n}} run', '{{n}} runs', 'Offline',
+  'Online', 'Open', 'Orca Cloud', 'parallel',
+  'Personal Access Token', 'Pipeline', 'Pipelines', 'Platform',
+  'Pressure Advance', 'Prime tower', 'Printer', 'Printer:',
+  '{{printer}}: {{error}}', '{{printer}} is offline', 'Printer is offline', 'Printer offline',
+  'Printers', 'Project', 'Project: {{name}}', 'Protocol',
+  'Providers', 'Provider: {{type}}', 'Proxy', 'Recent',
+  'Records', 'round robin', 'Scopes', 'Score',
+  'sets', 'Skirt / brim', 'Slicer', 'SpoolBuddy is offline',
+  'Sport (124%)', 'Start', 'Status', 'Subtype',
+  'Support', 'Tag', 'Tags', 'Temp',
+  'Timelapse', 'Topic', 'Trend', 'Type',
+  'Type:', 'Updates', 'Uptime', 'Urgent',
+  'Warm', '{{weight}}g', 'Workflow',
+];
+
 const IDENTICAL_TO_EN_ALLOWED = {
   de: new Set(DE_COGNATES),
   fr: new Set(FR_COGNATES),
@@ -428,6 +468,7 @@ const IDENTICAL_TO_EN_ALLOWED = {
   tr: new Set(TR_COGNATES),
   ru: new Set(RU_COGNATES),
   uk: new Set(UK_COGNATES),
+  nl: new Set(NL_COGNATES),
 };
 
 // Pure comparison logic, exported so tests can verify each failure mode

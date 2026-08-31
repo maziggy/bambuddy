@@ -58,6 +58,10 @@ from backend.app.services.printer_manager import (
     supports_drying_while_printing,
 )
 from backend.app.services.smart_plug_manager import smart_plug_manager
+from backend.app.services.spool_assignment_notifications import (
+    _global_tray_from_assignment,
+    _slot_label_from_global_tray,
+)
 from backend.app.utils.color_utils import perceptual_color_distance
 from backend.app.utils.filament_types import canonical_filament_type
 from backend.app.utils.filename import derive_remote_filename
@@ -73,6 +77,47 @@ from backend.app.utils.threemf_tools import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _ams_slot_label(ams_id: int, tray_id: int) -> str:
+    """Human slot name for an assignment tuple, in the spelling already in use.
+
+    Composed from the notification side's own pair rather than spelled out again
+    here. The hand-rolled version this replaces got three real slot kinds wrong:
+    ams_id 254 fell into its ``>= 128`` branch and came out as ``HT-`` plus
+    ``chr(191)``; both externals collapsed to one label, because an external
+    assignment stores ams_id 255 with tray_id picking left or right
+    (inventory.py:1771, ``ext_id = data.tray_id + 254``); and an A2L AMS-Lite,
+    normalised to unit 6, read as ``AMS-G`` instead of ``Lite-``.
+
+    Naming the same slot two ways is its own defect once an alert and the
+    Inventory page are meant to be talking about the same tray, so this defers
+    rather than adding a fifth spelling.
+    """
+    return _slot_label_from_global_tray(_global_tray_from_assignment(ams_id, tray_id))
+
+
+# Minimum seconds between low-filament checks. Matches the scheduler's idle
+# interval: the fast path runs every 3 s while an upload is in flight, and a
+# low spool does not need answering at that resolution (#2913).
+_FILAMENT_LOW_MIN_INTERVAL = 30.0
+
+
+def _remaining_percent(label_weight: int | float | None, weight_used: float | None) -> float | None:
+    """Remaining filament as a percentage of the label weight.
+
+    The same arithmetic the Inventory page's Low Stock count uses, and it works
+    unchanged in both inventory modes: internal spools store ``weight_used``
+    directly, and ``_map_spoolman_spool`` derives it from Spoolman's
+    ``remaining_weight`` so the shape matches. Returns None when there is no
+    label weight to be a percentage of -- a spool that cannot say how full it
+    started cannot say how empty it is.
+    """
+    if not label_weight or label_weight <= 0:
+        return None
+    remaining = max(0.0, float(label_weight) - float(weight_used or 0.0))
+    return remaining / float(label_weight) * 100.0
+
 
 # Dispatch-toast progress throttling (#1625 follow-up). Mirrors the legacy
 # background_dispatch.py upload_progress_callback (200 ms time gate + 256 KB
@@ -830,6 +875,23 @@ class PrintScheduler:
         #                  still above the threshold
         #   suspended    — we have stopped arming this unit and said so
         self._auto_dry_units: dict[tuple[int, int], dict[str, object]] = {}
+        # Slots already notified as low on filament:
+        # {(printer_id, ams_id, tray_id, spool_id)}.
+        # Cleared when the slot goes back above its threshold rather than on a
+        # timer, mirroring _notified_hms_errors — a spool hovering at the
+        # boundary must not produce an alert on every pass, and a slot that has
+        # been refilled has to be able to alert again. See #2913.
+        #
+        # The spool id is part of the key because the slot alone cannot clear
+        # itself. Pull a low spool and put a different part-used one in the same
+        # slot: the key survives the pass where the slot resolves to nothing --
+        # deliberately, so a brief Spoolman outage does not re-alert everything
+        # when it returns -- and the replacement never goes above the threshold,
+        # so it can never re-arm. Keyed with the spool, the new spool is simply a
+        # different key and the stale one is inert.
+        self._notified_filament_low: set[tuple[int, int, int, int]] = set()
+        # Earliest monotonic time the next low-filament check may run (#2913).
+        self._filament_low_next_check: float = 0.0
         # Printers with a "running" scheduled drying row (#2638). Rebuilt from the
         # DB on every _check_scheduled_dryings call so route-side cancels show up.
         # Auto-drying's stop-all branches must not stop or untrack these printers;
@@ -1163,6 +1225,7 @@ class PrintScheduler:
                 self._sweep_keep_warm(active_candidates=set(), dispatched=set())
                 inflight_printers = {pid for (_task, pid) in self._inflight.values() if pid is not None}
                 await self._check_auto_drying(db, [], inflight_printers)
+                await self._check_filament_low(db)
                 return bool(self._inflight)
 
             logger.info(
@@ -1750,6 +1813,12 @@ class PrintScheduler:
 
             # Auto-drying: start drying on idle printers that have no pending queue items
             await self._check_auto_drying(db, items, dispatching_printers)
+
+            # Low filament: alert on assigned spools that have crossed their
+            # low-stock threshold (#2913). Runs on both paths out of this method
+            # for the same reason auto-drying does — an empty queue does not mean
+            # the spools in the printers stopped mattering.
+            await self._check_filament_low(db)
 
             # Keep the loop on the fast interval while any upload is in flight so
             # a slot freed mid-tick refills within seconds rather than after the
@@ -3799,6 +3868,196 @@ class PrintScheduler:
         if min_temp is None:
             return None
         return (min_temp, max_hours or 12, filament_type)
+
+    async def _check_filament_low(self, db: AsyncSession) -> None:
+        """Alert on AMS slots whose assigned spool has crossed its low-stock threshold (#2913).
+
+        ``on_filament_low`` has had a column, a schema field, a route, a template
+        and a UI toggle since the notification system was built, and no caller --
+        so the toggle could be switched on and could never fire. This is the
+        producer.
+
+        No new setting. ``low_stock_threshold`` (default 20%) with the per-spool
+        ``low_stock_threshold_pct`` override is already exactly this decision:
+        already configurable, already surfaced, already driving the Inventory
+        page's Low Stock count. The AMS ``remain`` percentage is deliberately not
+        consulted -- it has been measured up to 56 points out against a scale,
+        which is not a number to page someone on.
+
+        Only slots with an assigned spool produce an event. A slot Bambuddy
+        cannot resolve to a spool has no remaining weight it can stand behind,
+        and guessing one is how the remain percentage would have got in.
+        """
+        from backend.app.models.spool import Spool
+
+        # Time-gated rather than run on every pass. run() sleeps
+        # _fast_check_interval -- 3 seconds -- on any productive pass, and the
+        # early-return path counts as productive while an upload is in flight
+        # (#2602), so an unthrottled check would re-read the whole spool
+        # collection every 3 seconds for the length of a batch drain. In
+        # Spoolman mode that is a request storm against a third-party service,
+        # which is the thing this producer's design note argues against; and
+        # when Spoolman is down, _get_with_retry burns ~16 s inside
+        # check_queue holding the scheduler's session, so the outage would
+        # throttle the print queue itself. A low spool is not a 3-second
+        # concern -- the idle interval is the natural resolution.
+        now = time.monotonic()
+        if now < self._filament_low_next_check:
+            return
+        self._filament_low_next_check = now + _FILAMENT_LOW_MIN_INTERVAL
+
+        try:
+            global_threshold = await self._get_low_stock_threshold(db)
+            spoolman_on = await self._get_bool_setting(db, "spoolman_enabled")
+
+            # (printer_id, ams_id, tray_id, spool_id) -> (remaining_pct, threshold)
+            slots: dict[tuple[int, int, int, int], tuple[float, float]] = {}
+
+            if spoolman_on:
+                slots = await self._filament_low_slots_spoolman(db, global_threshold)
+            else:
+                rows = (
+                    await db.execute(
+                        select(SpoolAssignment, Spool)
+                        .join(Spool, SpoolAssignment.spool_id == Spool.id)
+                        # An archived spool is not stock. The Inventory page's
+                        # Low Stock count skips them (InventoryPage.tsx:1089)
+                        # and get_all_spools without allow_archived already
+                        # excludes them in Spoolman mode, so without this the
+                        # internal path is the only one that alerts on them.
+                        .where(Spool.archived_at.is_(None))
+                    )
+                ).all()
+                for assignment, spool in rows:
+                    pct = _remaining_percent(spool.label_weight, spool.weight_used)
+                    if pct is None:
+                        continue
+                    threshold = float(spool.low_stock_threshold_pct or global_threshold)
+                    slots[(assignment.printer_id, assignment.ams_id, assignment.tray_id, spool.id)] = (pct, threshold)
+
+            if not slots:
+                # Nothing resolvable this pass. Deliberately not clearing the
+                # notified set: a Spoolman that is briefly unreachable would
+                # otherwise re-alert on every spool as soon as it came back.
+                return
+
+            await self._emit_filament_low(db, slots)
+        except Exception as e:
+            logger.warning("Low-filament check failed: %s", e, exc_info=True)
+
+    async def _get_low_stock_threshold(self, db: AsyncSession) -> float:
+        """The global low-stock percentage, defaulting to the schema's 20.0."""
+        raw = (await db.execute(select(Settings).where(Settings.key == "low_stock_threshold"))).scalar_one_or_none()
+        if raw is None or raw.value is None:
+            return 20.0
+        try:
+            value = float(raw.value)
+        except (TypeError, ValueError):
+            return 20.0
+        return value if 0 < value <= 100 else 20.0
+
+    async def _filament_low_slots_spoolman(
+        self, db: AsyncSession, global_threshold: float
+    ) -> dict[tuple[int, int, int, int], tuple[float, float]]:
+        """Resolve Spoolman-mode slots to (remaining %, threshold).
+
+        Spoolman spools carry no per-spool override -- ``low_stock_threshold_pct``
+        is a column on Bambuddy's own spool table and has no Spoolman equivalent,
+        so the global threshold is the only one that applies here. That matches
+        what the Inventory page already does in this mode.
+
+        One ``get_all_spools`` call covers every slot rather than a request per
+        spool. Archived spools do not appear -- ``get_all_spools`` excludes them
+        without ``allow_archived`` -- which is the behaviour the internal path
+        has to ask for explicitly.
+
+        An unreachable Spoolman returns no slots rather than raising. It is an
+        ordinary state for a third-party service, not an error in this pass: the
+        caller's "nothing resolvable" branch already leaves the notified set
+        alone, which is exactly right here, whereas letting it reach the broad
+        ``except`` would write a full traceback every time the check runs.
+        """
+        from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
+        from backend.app.services.spoolman import SpoolmanUnavailableError, get_spoolman_client
+
+        assignments = (await db.execute(select(SpoolmanSlotAssignment))).scalars().all()
+        if not assignments:
+            return {}
+
+        client = await get_spoolman_client()
+        if client is None:
+            return {}
+
+        try:
+            all_spools = await client.get_all_spools()
+        except SpoolmanUnavailableError as e:
+            logger.debug("Low-filament check skipped, Spoolman unreachable: %s", e)
+            return {}
+
+        by_id: dict[int, dict] = {}
+        for raw in all_spools:
+            raw_id = raw.get("id")
+            if isinstance(raw_id, int):
+                by_id[raw_id] = raw
+
+        slots: dict[tuple[int, int, int, int], tuple[float, float]] = {}
+        for assignment in assignments:
+            raw = by_id.get(assignment.spoolman_spool_id)
+            if raw is None:
+                continue
+            try:
+                mapped = _map_spoolman_spool(raw)
+            except ValueError:
+                continue
+            pct = _remaining_percent(mapped.get("label_weight"), mapped.get("weight_used"))
+            if pct is None:
+                continue
+            key = (assignment.printer_id, assignment.ams_id, assignment.tray_id, assignment.spoolman_spool_id)
+            slots[key] = (pct, global_threshold)
+        return slots
+
+    async def _emit_filament_low(
+        self, db: AsyncSession, slots: dict[tuple[int, int, int, int], tuple[float, float]]
+    ) -> None:
+        """Send one notification per slot that has newly crossed its threshold."""
+        printer_names: dict[int, str] = {}
+        for key, (pct, threshold) in slots.items():
+            printer_id, ams_id, tray_id, _spool_id = key
+            if pct >= threshold:
+                # Back above the line: re-arm rather than expire on a timer, so a
+                # refilled slot can alert again and a spool sitting just under the
+                # threshold stays quiet.
+                self._notified_filament_low.discard(key)
+                continue
+            if key in self._notified_filament_low:
+                continue
+            # Marked before sending, which is a choice rather than the only
+            # option, and it is the opposite failure mode from the one the
+            # debounce argues against: one transient provider failure loses this
+            # alert until the spool goes back above the threshold and crosses it
+            # again. Marking after a successful send would trade that for
+            # re-alerting on every pass while a provider is down -- which is the
+            # repetition the whole debounce exists to prevent, and the louder of
+            # the two failures. A spool that is low stays low, so the next real
+            # signal is not far away; a provider stuck retrying is a signal that
+            # never stops.
+            self._notified_filament_low.add(key)
+
+            if printer_id not in printer_names:
+                printer = (await db.execute(select(Printer).where(Printer.id == printer_id))).scalar_one_or_none()
+                if printer is None:
+                    continue
+                printer_names[printer_id] = printer.name
+            try:
+                await notification_service.on_filament_low(
+                    printer_id,
+                    printer_names[printer_id],
+                    _ams_slot_label(ams_id, tray_id),
+                    int(pct),
+                    db,
+                )
+            except Exception as e:
+                logger.warning("Low-filament notification failed for slot %s: %s", key, e)
 
     async def _check_auto_drying(
         self,

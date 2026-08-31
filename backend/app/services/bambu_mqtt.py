@@ -111,6 +111,34 @@ def normalize_am_unit_id(ams_id: int) -> int:
     return A2L_LITE_NORMALIZED_AMS_ID if ams_id == A2L_LITE_PHYSICAL_AMS_ID else ams_id
 
 
+def wire_tray_color(tray_color: str | None) -> str:
+    """Normalise a colour to the form AMS firmware actually parses: UPPERCASE hex.
+
+    P1S firmware 01.10.00.00 parses every lowercase hex letter in ``tray_color``
+    as a zero, and does it silently: the command response echoes the value you
+    sent and reports ``result: "success"``, so only the next AMS push shows what
+    was really stored. Measured on the reporter's machine (#2987), where the
+    spool's own ``rgba`` is stored lowercase and went out verbatim:
+
+        sent 09ff00ff  ->  AMS reports 09000000
+        sent ff5100ff  ->  AMS reports 00510000
+        sent 090000FF  ->  AMS reports 090000FF
+
+    A mangled colour is not merely cosmetic. The auto-unlink sweep compares the
+    tray against the spool it is assigned to, so the tray Bambuddy just wrote no
+    longer matches the spool that asked for it and the assignment is deleted
+    seconds after being made -- and re-assigning through the slot modal writes
+    the mangled colour back, because the modal seeds itself from the tray.
+
+    Applied here, at the one place the command is built, rather than in each of
+    the four callers: a caller that forgets is exactly how this arrived.
+
+    A leading ``#`` is stripped -- the wire format carries bare hex -- and a
+    blank stays blank, which is how a slot is cleared.
+    """
+    return (tray_color or "").strip().lstrip("#").upper()
+
+
 def a2l_lite_wire_ids(ams_id: int, tray_id: int) -> tuple[int, int, int] | None:
     """Translate a normalised A2L slot back to the physical wire form.
 
@@ -7680,7 +7708,9 @@ class BambuMQTTClient:
                 "tray_info_idx": tray_info_idx,
                 "tray_type": tray_type,
                 "tray_sub_brands": tray_sub_brands,
-                "tray_color": tray_color,
+                # UPPERCASE, always: lowercase hex is silently read as zeros by
+                # P1S firmware and acknowledged as a success (#2987).
+                "tray_color": wire_tray_color(tray_color),
                 "nozzle_temp_min": nozzle_temp_min,
                 "nozzle_temp_max": nozzle_temp_max,
                 "sequence_id": "0",

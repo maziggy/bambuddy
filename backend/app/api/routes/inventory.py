@@ -124,13 +124,12 @@ async def apply_spool_to_slot_via_mqtt(
     # may actually hold ("PLA+", "HTPLA") stays in tray_sub_brands below, which
     # is where Bambu puts it too (issue #2902).
     tray_type = printer_filament_type(spool.material)
-    tray_sub_brands = (
-        f"{spool.brand} {spool.material} {spool.subtype}".strip()
-        if spool.brand
-        else f"{spool.material} {spool.subtype}"
-        if spool.subtype
-        else spool.material
-    )
+    # Join only the parts that exist. The previous shape interpolated
+    # `spool.subtype` into the branded string without checking it, so a spool
+    # with a brand and no subtype went to the printer as
+    # "Sunlu PLA Matte None" -- the string "None", on the wire (#2987). The
+    # unbranded branch guarded subtype; the branded one did not.
+    tray_sub_brands = " ".join(p for p in (spool.brand, spool.material, spool.subtype) if p) or spool.material
     tray_color = spool.rgba or "FFFFFFFF"
 
     _generic_id_values = _GENERIC_ID_VALUES

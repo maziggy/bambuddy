@@ -4027,6 +4027,8 @@ export default {
     partOf: '屬於 {{name}}',
     subProjectCount: '{{count}} 個子專案',
     subProjectsOf: '{{name}} 的子專案',
+    collapseSubProjects: '摺疊子專案',
+    expandSubProjects: '展開子專案',
     title: '專案',
     subtitle: '組織和追蹤您的 3D 列印專案',
     newProject: '新增專案',

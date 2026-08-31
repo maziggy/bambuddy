@@ -60,14 +60,21 @@ class TestNotificationsAPI:
         provider = await notification_provider_factory(name="Legacy Provider")
 
         flags = ["on_stock_reorder_alert", "on_stock_break_alert"]
+        # nosec B608 - the only interpolated fragments are built from `flags`,
+        # the literal list directly above. A column name cannot be a bind
+        # parameter, which is why it is written into the string at all; the id,
+        # which is the one caller-supplied value here, is bound.
+        null_assignments = ", ".join(f"{f} = NULL" for f in flags)
         await db_session.execute(
-            text(f"UPDATE notification_providers SET {', '.join(f'{f} = NULL' for f in flags)} WHERE id = :id"),
+            text(f"UPDATE notification_providers SET {null_assignments} WHERE id = :id"),  # nosec B608
             {"id": provider.id},
         )
         await db_session.commit()
 
+        columns = ", ".join(flags)
         stored = await db_session.execute(
-            text(f"SELECT {', '.join(flags)} FROM notification_providers WHERE id = :id"), {"id": provider.id}
+            text(f"SELECT {columns} FROM notification_providers WHERE id = :id"),  # nosec B608
+            {"id": provider.id},
         )
         assert all(value is None for value in stored.one()), "row under test must actually hold NULLs"
 

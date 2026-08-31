@@ -22,12 +22,12 @@ from backend.app.core.auth import (
     create_camera_stream_token,
 )
 from backend.app.core.database import get_db
-from backend.app.core.logging_filters import redact_url_credentials
 from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
 from backend.app.models.user import User
 from backend.app.services.camera import (
     capture_camera_frame,
+    close_tls_proxy,
     create_tls_proxy,
     generate_chamber_image_stream,
     get_camera_port,
@@ -45,6 +45,7 @@ from backend.app.services.camera_fanout import (
     shutdown_broadcaster,
 )
 from backend.app.services.camera_profiles import get_camera_profile
+from backend.app.utils.ffmpeg_output import summarize_ffmpeg_stderr
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["camera"])
@@ -407,37 +408,11 @@ async def _terminate_ffmpeg(process: asyncio.subprocess.Process, stream_id: str 
         _spawned_ffmpeg_pids.pop(process.pid, None)
 
 
-def _summarize_ffmpeg_stderr(text: str | None) -> str:
-    """Strip ffmpeg's boilerplate banner and keep only actionable lines.
-
-    ffmpeg prints ~20 lines of version/build/configuration/lib headers before
-    any actual error message. Logging the full banner on every retry floods
-    the log (hundreds of lines per failed stream). This filter drops the
-    banner and caps output at the last 10 meaningful lines.
-
-    Credentials are masked here rather than at each ``logger`` call because
-    this is the one funnel every stderr log in this module passes through.
-    ffmpeg echoes the RTSP input URL back in its ``Input #0`` line, which
-    carries the printer access code.
-    """
-    if not text:
-        return ""
-    text = redact_url_credentials(text) or ""
-    banner_prefixes = (
-        "ffmpeg version ",
-        "  built with ",
-        "  configuration:",
-        "  libavutil ",
-        "  libavcodec ",
-        "  libavformat ",
-        "  libavdevice ",
-        "  libavfilter ",
-        "  libswscale ",
-        "  libswresample ",
-        "  libpostproc ",
-    )
-    meaningful = [ln for ln in text.splitlines() if ln.strip() and not ln.startswith(banner_prefixes)]
-    return "\n".join(meaningful[-10:])
+# The banner-stripping summariser moved to backend.app.utils.ffmpeg_output so
+# the seven other places that log ffmpeg stderr could stop truncating it from
+# the front (#2968). Imported under the private name this module has always
+# used: _FfmpegStderrTail and the tests both reach for it by that name.
+_summarize_ffmpeg_stderr = summarize_ffmpeg_stderr
 
 
 class _FfmpegStderrTail:
@@ -851,8 +826,7 @@ async def generate_rtsp_mjpeg_stream(
             await stderr_tail.aclose()
 
         # Shut down the TLS proxy
-        proxy_server.close()
-        await proxy_server.wait_closed()
+        await close_tls_proxy(proxy_server)
 
 
 @router.post("/camera/stream-token")

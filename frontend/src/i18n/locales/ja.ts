@@ -4039,6 +4039,8 @@ export default {
     partOf: '{{name}} の一部',
     subProjectCount: 'サブプロジェクト {{count}} 件',
     subProjectsOf: '{{name}} のサブプロジェクト',
+    collapseSubProjects: 'サブプロジェクトを折りたたむ',
+    expandSubProjects: 'サブプロジェクトを展開',
     title: 'プロジェクト',
     subtitle: '印刷プロジェクトを管理',
     newProject: '新規プロジェクト',

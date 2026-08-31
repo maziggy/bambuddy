@@ -4067,6 +4067,8 @@ export default {
     partOf: "Частина проєкту {{name}}",
     subProjectCount: "Підпроєктів: {{count}}",
     subProjectsOf: "Підпроєкти проєкту {{name}}",
+    collapseSubProjects: "Згорнути підпроєкти",
+    expandSubProjects: "Розгорнути підпроєкти",
     title: "Проєкти",
     subtitle: "Організовуйте та відстежуйте свої проєкти 3D-друку",
     newProject: "Новий проєкт",

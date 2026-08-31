@@ -632,6 +632,34 @@ export function isBambuLabSpool(tray: {
   return false;
 }
 
+/**
+ * Does a stored slot preset still describe what is in the slot?
+ *
+ * `slot_preset_mappings` remembers the preset a slot was last configured with,
+ * and the AMS slot card shows that name ahead of anything the printer reports —
+ * which is what lets a slot keep a hand-picked name like "# Bambu PLA Matte
+ * @BBL H2C 0.4 nozzle (Custom)" instead of the plain catalog one. The cost is
+ * that a swapped spool leaves the previous spool's name on the card until the
+ * row is refetched, and until then a cached row outranks live telemetry.
+ *
+ * The printer's own `tray_info_idx` settles it, but only for official Bambu
+ * presets, where the two id forms differ by one letter (setting_id `GFSA01` ↔
+ * filament_id `GFA01`). A user preset genuinely carries two unrelated ids — a
+ * slot configured with `PFUSa3b8b0c664c142` reports `tray_info_idx=P8a85d5a` —
+ * and a local preset (`local_68`) has no printer-side id at all, so neither can
+ * be checked here and both keep the stored name. Same for a slot reporting no
+ * id (generic filament with no tag), which is the case the row exists for.
+ */
+export function slotPresetDescribesTray(
+  presetId: string | null | undefined,
+  trayInfoIdx: string | null | undefined,
+): boolean {
+  const preset = (presetId || '').split('_')[0].toUpperCase();
+  const tray = (trayInfoIdx || '').split('_')[0].toUpperCase();
+  if (!preset.startsWith('GFS') || !tray.startsWith('GF') || tray.startsWith('GFS')) return true;
+  return `GF${preset.slice(3)}` === tray;
+}
+
 export interface AmsTrayLike {
   id: number;
   tray_type: string | null | undefined;

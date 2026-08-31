@@ -88,6 +88,7 @@ from backend.app.utils.filename import (
 )
 from backend.app.utils.safe_path import PathTraversalError, assert_under, safe_join_under
 from backend.app.utils.threemf_tools import (
+    carries_gcode,
     default_plate_gcode_name,
     expand_to_project_slots,
     extract_embedded_presets_from_3mf,
@@ -146,7 +147,7 @@ def get_library_files_dir() -> Path:
     return files_dir
 
 
-def classify_file_type(filename: str) -> str:
+def classify_file_type(filename: str, file_path: Path | str | None = None) -> str:
     """Return the canonical ``LibraryFile.file_type`` for *filename*.
 
     Compound extensions are preserved — a `.gcode.3mf` file (a sliced
@@ -158,12 +159,23 @@ def classify_file_type(filename: str) -> str:
     downstream gates (gcode download, file-type filter, thumbnail
     extraction) only need to handle one canonical name per file family.
     Files with no extension classify as ``unknown``.
+
+    Pass ``file_path`` and a ``.3mf`` is judged on what the zip actually holds
+    rather than on its name (#2993). The name is not evidence: a plate exported
+    from Studio or a print dispatched through the cloud reaches the archive as
+    ``Foo.3mf``, G-code and all, and downloading that and re-importing it used
+    to land a fully printable file in the library as a source-only project. The
+    file is not opened when the name already settles it, so the common case
+    still costs nothing.
     """
     lower = filename.lower()
     if lower.endswith(".gcode.3mf"):
         return "gcode.3mf"
     ext = os.path.splitext(lower)[1]
-    return ext[1:] if ext else "unknown"
+    file_type = ext[1:] if ext else "unknown"
+    if file_type == "3mf" and file_path is not None and carries_gcode(file_path):
+        return "gcode.3mf"
+    return file_type
 
 
 def get_library_thumbnails_dir() -> Path:
@@ -658,7 +670,7 @@ async def save_3mf_bytes_to_library(
         is_external=is_external,
         filename=filename,
         file_path=_stored_file_path(file_path, is_external),
-        file_type=classify_file_type(filename),
+        file_type=classify_file_type(filename, file_path),
         file_size=len(file_bytes),
         file_hash=file_hash,
         thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
@@ -1889,7 +1901,10 @@ async def scan_external_folder(
             except OSError:
                 continue
 
-            file_type = classify_file_type(filename)
+            # The zip is opened for the thumbnail immediately below either way,
+            # so judging a `.3mf` on its contents rather than its name (#2993)
+            # costs this scan nothing.
+            file_type = classify_file_type(filename, filepath)
 
             # Extract thumbnail for 3mf files (including .gcode.3mf sliced
             # outputs — those are 3MF zips on disk and carry the same
@@ -2234,12 +2249,12 @@ async def upload_file(
             validate_print_filename(filename)
         except InvalidFilenameError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
-        ext = os.path.splitext(filename)[1].lower()
-        # `file_type` is compound-aware (`gcode.3mf` for sliced outputs).
-        # `ext` stays the trailing extension because the on-disk filename
-        # uses it directly and the 3MF-parse branch below still gates on
+        # `ext` stays the trailing extension because the on-disk filename uses
+        # it directly and the 3MF-parse branch below still gates on
         # `ext == ".3mf"`, which is correct for both `.3mf` and `.gcode.3mf`.
-        file_type = classify_file_type(filename)
+        # `file_type` is compound-aware and is decided further down, once the
+        # bytes are on disk to be read.
+        ext = os.path.splitext(filename)[1].lower()
 
         # Verify folder exists if specified
         target_folder = None
@@ -2266,6 +2281,10 @@ async def upload_file(
         # Save file
         with open(file_path, "wb") as f:
             f.write(content)
+
+        # Now that the bytes are on disk the zip can settle what the name only
+        # guessed at: a sliced 3MF uploaded as `Foo.3mf` is a sliced 3MF (#2993).
+        file_type = classify_file_type(filename, file_path)
 
         # Calculate hash
         file_hash = calculate_file_hash(file_path)
@@ -2533,7 +2552,6 @@ async def extract_zip_file(
                     # Extract file
                     filename = os.path.basename(zip_path)
                     ext = os.path.splitext(filename)[1].lower()
-                    file_type = classify_file_type(filename)
 
                     # Generate unique filename for storage
                     unique_filename = f"{uuid.uuid4().hex}{ext}"
@@ -2545,6 +2563,11 @@ async def extract_zip_file(
                     file_content = zf.read(zip_path)
                     with open(file_path, "wb") as f:
                         f.write(file_content)
+
+                    # Classified once the bytes are on disk so a sliced 3MF
+                    # named `Foo.3mf` inside the zip is recognised as sliced
+                    # (#2993) rather than trusted to say so in its name.
+                    file_type = classify_file_type(filename, file_path)
 
                     # Calculate hash
                     file_hash = calculate_file_hash(file_path)

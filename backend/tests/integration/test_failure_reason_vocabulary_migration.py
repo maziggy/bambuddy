@@ -27,7 +27,9 @@ from backend.app.models.print_log import PrintLogEntry
 # The columns each model needs beyond ``failure_reason``. Rows stay minimal on
 # purpose -- these tests exercise the UPDATE, not the schema.
 _REQUIRED = {
-    "PrintArchive": {"filename": "x.3mf", "file_path": "/tmp/x.3mf", "file_size": 1},
+    # nosec B108 - a column value, not a path anything opens. The row exists
+    # to be UPDATEd; nothing in these tests touches the filesystem.
+    "PrintArchive": {"filename": "x.3mf", "file_path": "/tmp/x.3mf", "file_size": 1},  # nosec B108
     "PrintLogEntry": {},
 }
 

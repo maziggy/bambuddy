@@ -253,14 +253,24 @@ async def test_the_baseline_is_stored_in_the_form_a_text_field_accepts(client, f
 
 @pytest.mark.asyncio
 async def test_the_baseline_key_is_registered_before_it_is_written(client, fake):
-    """It is not registered on an existing install, so the reset has to create it."""
+    """It is not registered on an existing install, so the reset has to create it.
+
+    The claim is the ordering, not the shape of the probe. Spoolman answers 400
+    "Unknown extra field <name>." for a key it was never told about, so the
+    registration has to land before the PATCH that carries the value -- which is
+    what ``_ensure_extra_fields`` buys (#2903). How it decides the key is
+    missing is its own business: it probed the key directly when this test was
+    first written and lists the fields now, and pinning either spelling here
+    would fail on a change that does not touch the behaviour under test.
+    """
     assert "bambu_weight_used_baseline" not in fake.fields
 
     await client.reset_spool_consumed_counter(42)
 
     assert fake.fields["bambu_weight_used_baseline"] == "text"
-    assert "GET /field/spool/bambu_weight_used_baseline" in fake.log
-    assert "POST /field/spool/bambu_weight_used_baseline" in fake.log
+    registered = fake.log.index("POST /field/spool/bambu_weight_used_baseline")
+    written = fake.log.index("PATCH /spool/42")
+    assert registered < written, f"registration must precede the write: {fake.log}"
 
 
 @pytest.mark.asyncio

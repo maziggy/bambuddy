@@ -24,27 +24,37 @@ from __future__ import annotations
 
 import pytest
 
-from backend.app.models.notification import NotificationProvider
 from backend.app.schemas.notification import (
     NotificationProviderCreate,
     NotificationProviderUpdate,
 )
-
-EVENT_COLUMNS = sorted(c.name for c in NotificationProvider.__table__.columns if c.name.startswith("on_"))
+from backend.tests._fixtures.notification_toggles import EVENT_TOGGLE_COLUMNS, TOGGLE_TARGET
 
 
 def test_there_are_event_columns_to_check() -> None:
     """Guard the guard: an empty enumeration would make every test below vacuous."""
-    assert len(EVENT_COLUMNS) > 20
+    assert len(EVENT_TOGGLE_COLUMNS) > 20
 
 
-@pytest.mark.parametrize("column", EVENT_COLUMNS)
+def test_the_targets_cover_both_directions() -> None:
+    """Guard the other guard, the one the integration round-trips lean on.
+
+    ``TOGGLE_TARGET`` exists so a test drives each toggle to whatever its
+    default is not. If every column defaulted the same way -- or if the default
+    lookup quietly started returning one constant -- the targets would collapse
+    to a single value and the round-trips would be answered by the default again
+    without anything failing. Both values have to appear.
+    """
+    assert set(TOGGLE_TARGET.values()) == {True, False}
+
+
+@pytest.mark.parametrize("column", EVENT_TOGGLE_COLUMNS)
 def test_every_event_column_is_settable_on_create(column: str) -> None:
     """Absent from the Create schema, the field is silently dropped from the POST."""
     assert column in NotificationProviderCreate.model_fields
 
 
-@pytest.mark.parametrize("column", EVENT_COLUMNS)
+@pytest.mark.parametrize("column", EVENT_TOGGLE_COLUMNS)
 def test_every_event_column_is_settable_on_update(column: str) -> None:
     """This is the one the report hit: the PATCH succeeds and writes nothing."""
     assert column in NotificationProviderUpdate.model_fields

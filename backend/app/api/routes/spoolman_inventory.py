@@ -310,9 +310,12 @@ class SpoolmanInventoryCreate(BaseModel):
     color_name: str | None = Field(None, max_length=64)
     rgba: str | None = Field(None, max_length=8, description="6-digit hex (RRGGBB) or 8-digit (RRGGBBAA)")
     label_weight: int = Field(1000, ge=1, le=100_000)
-    core_weight: int = Field(
-        250, ge=0, le=10_000
-    )  # Accepted for schema parity but not persisted to Spoolman (stored on filament type, not spool)
+    # Persisted to the Spoolman spool's own `spool_weight` (tare), which takes
+    # priority over the filament-level value both in _map_spoolman_spool and in
+    # the weigh endpoint. Only written when the request actually sets it: the
+    # 250 default is the display fallback, and writing it on every create would
+    # stamp an explicit tare on spools that should keep inheriting one (#2908).
+    core_weight: int = Field(250, ge=0, le=10_000)
     weight_used: float = Field(0.0, ge=0.0, le=100_000.0)
     note: str | None = Field(None, max_length=1000)
     cost_per_kg: float | None = Field(None, ge=0.0, le=1_000_000.0)
@@ -351,9 +354,11 @@ class SpoolmanInventoryUpdate(BaseModel):
     color_name: str | None = Field(None, max_length=64)
     rgba: str | None = Field(None, max_length=8, description="6-digit hex (RRGGBB) or 8-digit (RRGGBBAA)")
     label_weight: int | None = Field(None, ge=1, le=100_000)
-    core_weight: int | None = Field(
-        None, ge=0, le=10_000
-    )  # Accepted for schema parity but not persisted to Spoolman (stored on filament type, not spool)
+    # Persisted to the spool's own `spool_weight` (see the Create schema).
+    # Omitted / null leaves the current value alone, as with every other field
+    # here. There is no per-spool "go back to inheriting" through this route;
+    # the filament-level route already owns that decision (#2908).
+    core_weight: int | None = Field(None, ge=0, le=10_000)
     weight_used: float | None = Field(None, ge=0.0, le=100_000.0)
     note: str | None = Field(None, max_length=1000)
     cost_per_kg: float | None = Field(None, ge=0.0, le=1_000_000.0)
@@ -551,6 +556,7 @@ async def create_spool(
                 remaining_weight=remaining,
                 comment=data.note or None,
                 location=storage_location or None,
+                spool_weight=(data.core_weight if "core_weight" in data.model_fields_set else None),
             )
     except HTTPException as exc:
         if exc.status_code == 404 and data.spoolman_filament_id is not None:
@@ -640,6 +646,7 @@ async def bulk_create_spools(
                 remaining_weight=remaining,
                 comment=data.note or None,
                 location=storage_location or None,
+                spool_weight=(data.core_weight if "core_weight" in data.model_fields_set else None),
             )
         except (SpoolmanUnavailableError, SpoolmanClientError, SpoolmanNotFoundError) as exc:
             logger.warning("Bulk spool creation: one spool failed: %s", exc)
@@ -853,6 +860,11 @@ async def update_spool(
                 extra=extra,
                 location=storage_location or None,
                 clear_location=storage_location_changed and not storage_location,
+                # No model_fields_set guard here, unlike create: this schema
+                # already defaults core_weight to None, and None is what
+                # update_spool_full reads as "leave the tare alone". A guard
+                # would be a second spelling of the same condition.
+                spool_weight=data.core_weight,
             )
 
     # Persist BambuStudio slicer preset AND color_name under spool.extra.

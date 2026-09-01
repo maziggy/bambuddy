@@ -80,6 +80,19 @@ describe('spoolMatchesQuery', () => {
     expect(spoolMatchesQuery(spool, '4')).toBe(true);
     expect(spoolMatchesQuery(spool, '99')).toBe(false);
   });
+
+  it('treats a hash-prefixed number as an exact spool ID (#2978)', () => {
+    expect(spoolMatchesQuery(makeSpool({ id: 3 }), '#3')).toBe(true);
+    expect(spoolMatchesQuery(makeSpool({ id: 13 }), '#3')).toBe(false);
+    expect(spoolMatchesQuery(makeSpool({ id: 30 }), '#3')).toBe(false);
+    expect(spoolMatchesQuery(makeSpool({ id: 3 }), '  #3  ')).toBe(true);
+  });
+
+  it('keeps plain numeric ID searches as partial matches (#2978)', () => {
+    expect(spoolMatchesQuery(makeSpool({ id: 3 }), '3')).toBe(true);
+    expect(spoolMatchesQuery(makeSpool({ id: 13 }), '3')).toBe(true);
+    expect(spoolMatchesQuery(makeSpool({ id: 30 }), '3')).toBe(true);
+  });
 });
 
 describe('filterSpoolsByQuery', () => {
@@ -113,5 +126,10 @@ describe('filterSpoolsByQuery', () => {
 
   it('returns empty array when no match', () => {
     expect(filterSpoolsByQuery(spools, 'nylon')).toHaveLength(0);
+  });
+
+  it('returns only the exact spool for a #ID query (#2978)', () => {
+    const result = filterSpoolsByQuery(spools, '#3');
+    expect(result.map((spool) => spool.id)).toEqual([3]);
   });
 });

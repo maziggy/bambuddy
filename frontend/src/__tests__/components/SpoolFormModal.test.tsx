@@ -963,7 +963,7 @@ describe('SpoolFormModal — SpoolmanFilamentPicker integration (T2)', () => {
   });
 });
 
-describe('SpoolFormModal — Unassign button (#1336)', () => {
+describe('SpoolFormModal — assignment actions (#1336, #2978)', () => {
   const spoolmanSpool: InventorySpool = {
     id: 42,
     material: 'PLA',
@@ -1040,7 +1040,7 @@ describe('SpoolFormModal — Unassign button (#1336)', () => {
     expect(api.unassignSpool).not.toHaveBeenCalled();
   });
 
-  it('keeps Unassign disabled in Spoolman mode when no slot assignment exists', async () => {
+  it('offers direct assignment when no Spoolman slot assignment exists (#2978)', async () => {
     vi.mocked(api.getSpoolmanSlotAssignments).mockResolvedValueOnce([]);
 
     render(
@@ -1054,12 +1054,16 @@ describe('SpoolFormModal — Unassign button (#1336)', () => {
       />
     );
 
-    const unassignBtn = await screen.findByRole('button', { name: /unassign/i });
-    // Wait one tick for the (empty) query result to settle so the disabled state is final.
     await waitFor(() => {
       expect(api.getSpoolmanSlotAssignments).toHaveBeenCalled();
     });
-    expect(unassignBtn).toBeDisabled();
+
+    expect(screen.queryByRole('button', { name: /unassign/i })).not.toBeInTheDocument();
+    const assignBtn = screen.getByRole('button', { name: /assign spool/i });
+    expect(assignBtn).not.toBeDisabled();
+
+    fireEvent.click(assignBtn);
+    expect(await screen.findByRole('heading', { name: /assign to AMS/i })).toBeInTheDocument();
   });
 });
 

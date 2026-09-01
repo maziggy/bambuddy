@@ -421,9 +421,12 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                         : 'bg-bambu-dark border-bambu-dark-tertiary hover:border-bambu-gray'
                     }`}
                   >
-                    <p className="text-white text-sm font-medium truncate">
-                      {spool.brand ? `${spool.brand} ` : ''}{spool.material}{spool.subtype ? ` ${spool.subtype}` : ''}
-                    </p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-white text-sm font-medium truncate">
+                        {spool.brand ? `${spool.brand} ` : ''}{spool.material}{spool.subtype ? ` ${spool.subtype}` : ''}
+                      </p>
+                      <span className="text-[10px] font-mono text-bambu-gray shrink-0">#{spool.id}</span>
+                    </div>
                     <div className="flex items-center gap-1.5 mt-1">
                       {spool.rgba && (
                         <span
@@ -501,9 +504,12 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                                 : 'bg-bambu-dark border-bambu-dark-tertiary hover:border-bambu-gray'
                             }`}
                           >
-                            <p className="text-white text-sm font-medium truncate">
-                              {spool.brand ? `${spool.brand} ` : ''}{spool.material}{spool.subtype ? ` ${spool.subtype}` : ''}
-                            </p>
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-white text-sm font-medium truncate">
+                                {spool.brand ? `${spool.brand} ` : ''}{spool.material}{spool.subtype ? ` ${spool.subtype}` : ''}
+                              </p>
+                              <span className="text-[10px] font-mono text-bambu-gray shrink-0">#{spool.id}</span>
+                            </div>
                             <div className="flex items-center gap-1.5 mt-1">
                               {spool.rgba && (
                                 <span

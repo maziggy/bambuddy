@@ -8379,6 +8379,7 @@ function EditPrinterModal({
   const { showToast } = useToast();
   const [form, setForm] = useState({
     name: printer.name,
+    notification_alias: printer.notification_alias || '',
     ip_address: printer.ip_address,
     access_code: '',
     model: printer.model || '',
@@ -8414,6 +8415,7 @@ function EditPrinterModal({
   const doSave = () => {
     const data: Partial<PrinterCreate> = {
       name: form.name,
+      notification_alias: form.notification_alias || null,
       ip_address: form.ip_address,
       model: form.model || undefined,
       location: form.location || undefined,
@@ -8467,6 +8469,20 @@ function EditPrinterModal({
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder={t('printers.modal.myPrinter')}
               />
+            </div>
+            <div>
+              <label className="block text-sm text-bambu-gray mb-1">Notification alias (optional)</label>
+              <input
+                type="text"
+                maxLength={100}
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                value={form.notification_alias}
+                onChange={(e) => setForm({ ...form, notification_alias: e.target.value })}
+                placeholder="Printer 1"
+              />
+              <p className="text-xs text-bambu-gray mt-1">
+                Available to notification templates as {'{printer_alias}'}. {'{printer}'} keeps the canonical name.
+              </p>
             </div>
             <div>
               <label className="block text-sm text-bambu-gray mb-1">{t('printers.ipAddress')}</label>

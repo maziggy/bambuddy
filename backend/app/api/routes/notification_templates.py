@@ -160,7 +160,9 @@ async def preview_template(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATION_TEMPLATES_READ),
 ):
     """Preview a template with sample data."""
-    sample = SAMPLE_DATA.get(request.event_type, {})
+    sample = dict(SAMPLE_DATA.get(request.event_type, {}))
+    if "printer" in sample:
+        sample.setdefault("printer_alias", "Printer 1")
 
     # Safe template rendering - replace missing vars with empty string
     def safe_format(template: str, data: dict) -> str:

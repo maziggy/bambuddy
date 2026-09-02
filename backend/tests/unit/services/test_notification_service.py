@@ -80,6 +80,24 @@ class TestNotificationService:
             mock_send.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_template_receives_canonical_name_and_notification_alias(self, service, mock_db):
+        """Templates can choose the short notification alias without changing the canonical name."""
+        template = MagicMock(title_template="{printer} / {printer_alias}", body_template="{printer_alias} finished")
+        aliases = MagicMock()
+        aliases.all.return_value = ["Printer 1"]
+        result = MagicMock()
+        result.scalars.return_value = aliases
+        mock_db.execute.return_value = result
+
+        with patch.object(service, "_get_template", new_callable=AsyncMock, return_value=template):
+            title, body = await service._build_message_from_template(
+                mock_db, "print_complete", {"printer": "LPX-A1-001"}
+            )
+
+        assert title == "LPX-A1-001 / Printer 1"
+        assert body == "Printer 1 finished"
+
+    @pytest.mark.asyncio
     async def test_on_print_start_skipped_when_no_providers(self, service, mock_db):
         """Verify no error when no providers are configured for event."""
         with (

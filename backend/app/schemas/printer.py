@@ -7,6 +7,7 @@ from backend.app.utils.printer_models import supports_nozzle_flow_type
 
 class PrinterBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
+    notification_alias: str | None = Field(default=None, max_length=100)
     serial_number: str = Field(..., min_length=1, max_length=50)
 
     @field_validator("serial_number")
@@ -25,6 +26,14 @@ class PrinterBase(BaseModel):
         if not normalized:
             raise ValueError("serial_number must not be blank")
         return normalized
+
+    @field_validator("notification_alias")
+    @classmethod
+    def _normalize_notification_alias(cls, v: str | None) -> str | None:
+        """Store an empty alias as unset so notifications fall back to the printer name."""
+        if v is None:
+            return None
+        return v.strip() or None
 
     ip_address: str = Field(
         ...,
@@ -59,6 +68,7 @@ class PlateDetectionROI(BaseModel):
 
 class PrinterUpdate(BaseModel):
     name: str | None = None
+    notification_alias: str | None = Field(default=None, max_length=100)
     ip_address: str | None = Field(
         default=None,
         max_length=253,
@@ -77,6 +87,13 @@ class PrinterUpdate(BaseModel):
     camera_rotation: int | None = None  # 0, 90, 180, 270 degrees
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
+
+    @field_validator("notification_alias")
+    @classmethod
+    def _normalize_notification_alias(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return v.strip() or None
 
 
 class PrinterResponse(PrinterBase):

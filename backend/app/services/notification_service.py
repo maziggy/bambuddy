@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.notification import NotificationDigestQueue, NotificationLog, NotificationProvider
 from backend.app.models.notification_template import NotificationTemplate
+from backend.app.models.printer import Printer
 
 logger = logging.getLogger(__name__)
 
@@ -248,6 +249,15 @@ class NotificationService:
         self, db: AsyncSession, event_type: str, variables: dict[str, Any]
     ) -> tuple[str, str]:
         """Build notification title and body from template."""
+        printer_name = variables.get("printer")
+        if isinstance(printer_name, str) and printer_name:
+            # Notifications are dispatched with the canonical printer name so
+            # logs, provider scoping, and integrations keep their stable IDs.
+            # Templates can independently choose the short display alias.
+            result = await db.execute(select(Printer.notification_alias).where(Printer.name == printer_name))
+            aliases = result.scalars().all()
+            variables["printer_alias"] = aliases[0] if len(aliases) == 1 and aliases[0] else printer_name
+
         # Add common variables
         variables["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M")
         variables["app_name"] = "Bambuddy"

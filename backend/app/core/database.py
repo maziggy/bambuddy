@@ -1806,6 +1806,9 @@ async def run_migrations(conn):
     # Migration: Add location column to printers for grouping
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN location VARCHAR(100)")
 
+    # Migration: Add an optional display name for notification templates.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN notification_alias VARCHAR(100)")
+
     # Migration: Add interval_type column to maintenance_types
     await _safe_execute(conn, "ALTER TABLE maintenance_types ADD COLUMN interval_type VARCHAR(20) DEFAULT 'hours'")
 

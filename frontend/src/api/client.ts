@@ -352,6 +352,7 @@ export interface OverlayStatus {
 export interface Printer {
   id: number;
   name: string;
+  notification_alias: string | null;
   serial_number: string;
   ip_address: string;
   // Optional because the backend only returns access_code when the caller has
@@ -658,6 +659,7 @@ export interface PrinterStatus {
 
 export interface PrinterCreate {
   name: string;
+  notification_alias?: string | null;
   serial_number: string;
   ip_address: string;
   access_code: string;

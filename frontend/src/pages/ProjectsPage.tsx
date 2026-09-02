@@ -17,6 +17,7 @@ import {
   Clock,
   CheckCircle2,
   AlertTriangle,
+  ChevronDown,
   ChevronRight,
   MoreVertical,
   Download,
@@ -930,6 +931,26 @@ export function ProjectsPage() {
   const [editingProject, setEditingProject] = useState<ProjectListItem | undefined>();
   const [statusFilter, setStatusFilter] = useState<string>('active');
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  // Sub-project groups fold away (#2991). Every sub-project at every depth was
+  // drawn expanded with no way to shut one, so a three-level hierarchy over a
+  // couple of hundred archives turned this page into a very long scroll. The
+  // pill next to the filter tabs sets the default and is remembered; the
+  // chevron on a group deviates from it for that one parent.
+  const [collapseSubProjects, setCollapseSubProjects] = useState(
+    () => localStorage.getItem('projects-collapse-subprojects') === 'true',
+  );
+  const [subProjectOverrides, setSubProjectOverrides] = useState<Record<number, boolean>>({});
+
+  const toggleCollapseDefault = () => {
+    const next = !collapseSubProjects;
+    setCollapseSubProjects(next);
+    // Every deviation was made against the old default, so keeping them would
+    // leave groups sitting open right after the user asked for everything
+    // shut. Same bargain the file manager's folder tree makes, where flipping
+    // its Collapse toggle remounts the tree and drops each folder's own state.
+    setSubProjectOverrides({});
+    localStorage.setItem('projects-collapse-subprojects', String(next));
+  };
 
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -1014,20 +1035,49 @@ export function ProjectsPage() {
     const children = (childrenByParent.get(project.id) || []).filter((c) => !descended.has(c.id));
     if (children.length === 0) return <div key={project.id}>{card}</div>;
 
+    const expanded = subProjectOverrides[project.id] ?? !collapseSubProjects;
+
     return (
-      <div key={project.id} className="col-span-full space-y-4">
+      // A shut group is a card like any other, so it takes one grid cell
+      // instead of a whole row of its own — folding a deep tree that still
+      // spent a full-width row per parent would only halve the scrolling.
+      <div key={project.id} className={expanded ? 'col-span-full space-y-4' : 'space-y-4'}>
         {card}
         <div
           className="ml-4 md:ml-8 pl-4 md:pl-6 border-l-2 rounded-l space-y-4"
           style={{ borderColor: project.color || '#6b7280' }}
         >
-          <p className="text-xs uppercase tracking-wide text-bambu-gray flex items-center gap-1.5">
-            <FolderTree className="w-3.5 h-3.5" />
-            {t('projects.subProjectsOf', { name: project.name })}
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {children.map((child) => renderProjectTree(child, depth + 1, descended))}
-          </div>
+          {/* The caption is the toggle rather than the card above it: clicking
+              a card opens the project, and taking that over would surprise
+              every user who has no sub-projects to fold. */}
+          <button
+            type="button"
+            onClick={() => setSubProjectOverrides((prev) => ({ ...prev, [project.id]: !expanded }))}
+            aria-expanded={expanded}
+            title={expanded ? t('projects.collapseSubProjects') : t('projects.expandSubProjects')}
+            className="text-xs uppercase tracking-wide text-bambu-gray hover:text-white transition-colors flex items-center gap-1.5 max-w-full min-w-0"
+          >
+            {expanded
+              ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" />
+              : <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" />}
+            <FolderTree className="w-3.5 h-3.5 flex-shrink-0" />
+            {/* Truncated because a shut group lives in one grid column, where
+                a long project name would otherwise run out of the card. */}
+            <span className="truncate">{t('projects.subProjectsOf', { name: project.name })}</span>
+            {/* Counted from what is actually nested here, not from the card's
+                own badge: the API counts sub-projects across every status on
+                purpose, so that badge can say 2 where only one card is behind
+                this chevron. A count that disagrees with what unfolds is
+                worse than no count. */}
+            <span className="px-1.5 py-0.5 rounded-full bg-bambu-dark normal-case tracking-normal flex-shrink-0">
+              {children.length}
+            </span>
+          </button>
+          {expanded && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {children.map((child) => renderProjectTree(child, depth + 1, descended))}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1242,33 +1292,53 @@ export function ProjectsPage() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-1 p-1 bg-bambu-dark rounded-xl w-fit">
-        {[
-          { key: 'active', label: t('projects.statusActive'), icon: Clock },
-          { key: 'completed', label: t('projects.statusCompleted'), icon: CheckCircle2 },
-          { key: 'archived', label: t('projects.statusArchived'), icon: Archive },
-          { key: 'all', label: t('common.all'), icon: FolderKanban },
-        ].map(({ key, label, icon: Icon }) => (
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex gap-1 p-1 bg-bambu-dark rounded-xl w-fit">
+          {[
+            { key: 'active', label: t('projects.statusActive'), icon: Clock },
+            { key: 'completed', label: t('projects.statusCompleted'), icon: CheckCircle2 },
+            { key: 'archived', label: t('projects.statusArchived'), icon: Archive },
+            { key: 'all', label: t('common.all'), icon: FolderKanban },
+          ].map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setStatusFilter(key)}
+              className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-all ${
+                statusFilter === key
+                  ? 'bg-bambu-card text-white shadow-sm'
+                  : 'text-bambu-gray hover:text-white'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              <span>{label}</span>
+              {projectCounts[key] > 0 && (
+                <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                  statusFilter === key ? 'bg-bambu-green/20 text-bambu-green' : 'bg-bambu-dark-tertiary'
+                }`}>
+                  {projectCounts[key]}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+        {/* Only where something can actually be folded -- with no nesting under
+            the current filter this would be a control that does nothing. */}
+        {childrenByParent.size > 0 && (
           <button
-            key={key}
-            onClick={() => setStatusFilter(key)}
-            className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-all ${
-              statusFilter === key
-                ? 'bg-bambu-card text-white shadow-sm'
-                : 'text-bambu-gray hover:text-white'
+            type="button"
+            onClick={toggleCollapseDefault}
+            aria-pressed={collapseSubProjects}
+            title={collapseSubProjects ? t('projects.expandSubProjects') : t('projects.collapseSubProjects')}
+            className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+              collapseSubProjects
+                ? 'bg-bambu-green/20 text-bambu-green'
+                : 'text-bambu-gray hover:text-white hover:bg-bambu-dark'
             }`}
           >
-            <Icon className="w-4 h-4" />
-            <span>{label}</span>
-            {projectCounts[key] > 0 && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                statusFilter === key ? 'bg-bambu-green/20 text-bambu-green' : 'bg-bambu-dark-tertiary'
-              }`}>
-                {projectCounts[key]}
-              </span>
-            )}
+            <FolderTree className="w-4 h-4" />
+            {t('common.collapse')}
           </button>
-        ))}
+        )}
       </div>
 
       {/* Content */}

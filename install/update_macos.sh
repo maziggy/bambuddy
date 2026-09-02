@@ -57,6 +57,54 @@ is_service_active() {
   launchctl list | grep -q "$SERVICE_NAME"
 }
 
+# Restore the --loop asyncio pin on a plist written before it existed (#3001).
+#
+# The macOS twin of the systemd repair in update.sh, and there for the same
+# reason: install.sh has pinned the loop since 2026-07-05 (#1896), this script
+# has never rewritten the plist, and nothing else does -- so an install created
+# before that date still launches on uvloop today. uvloop reaches macOS as
+# well, since uvicorn[standard] only excludes it on Windows. That costs every
+# RTSP camera (#3001) and risks silently truncated Virtual Printer FTP uploads
+# (#1896), neither of which is visible from outside the machine.
+#
+# PlistBuddy is used rather than sed because the plist is XML and
+# ProgramArguments is an array; appending the two strings is safe because
+# uvicorn accepts its options in any order after the app path.
+repair_loop_flag() {
+  local plistbuddy="/usr/libexec/PlistBuddy" backup
+
+  [ -f "$PLIST_PATH" ] || return 0
+  if grep -q -- '--loop' "$PLIST_PATH"; then
+    return 0
+  fi
+  if [ ! -x "$plistbuddy" ]; then
+    warn "PlistBuddy not found; add '--loop' and 'asyncio' to ProgramArguments in $PLIST_PATH by hand. See #1896."
+    return 0
+  fi
+  # A plist that does not invoke uvicorn directly is someone else's
+  # arrangement and is described rather than edited.
+  if ! grep -q 'uvicorn' "$PLIST_PATH"; then
+    warn "$PLIST_PATH does not start uvicorn directly; add '--loop asyncio' to it by hand. See #1896."
+    return 0
+  fi
+
+  backup="$PLIST_PATH.bak-$(date +%Y%m%d-%H%M%S)"
+  cp -p "$PLIST_PATH" "$backup" || {
+    warn "Could not back up $PLIST_PATH; leaving it alone."
+    return 0
+  }
+
+  if ! "$plistbuddy" -c 'Add :ProgramArguments: string --loop' \
+                     -c 'Add :ProgramArguments: string asyncio' "$PLIST_PATH" >/dev/null 2>&1; then
+    warn "Failed to edit $PLIST_PATH; restoring from $backup."
+    cp -p "$backup" "$PLIST_PATH" || true
+    return 0
+  fi
+
+  log "Added the missing '--loop asyncio' flag to $PLIST_PATH (was written before #1896; backup at $backup)"
+  log "Without it Bambuddy runs on uvloop, which breaks RTSP cameras (#3001) and can truncate Virtual Printer FTP uploads (#1896)."
+}
+
 on_error() {
   local exit_code="$1"
 
@@ -210,6 +258,8 @@ if [ -f "$FRONTEND_DIR/package.json" ]; then
 else
   warn "Skipping frontend build (frontend/package.json not found)."
 fi
+
+repair_loop_flag
 
 log "Starting service: $SERVICE_NAME"
 launchctl load "$PLIST_PATH"

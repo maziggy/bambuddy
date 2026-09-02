@@ -124,21 +124,35 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Run tests (shard ${{ matrix.shard }}/4)
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: |
           cd backend
           # -v dropped: 5300+ "PASSED foo::bar" lines per worker eat 30-60s
           # of stdout I/O time on 2-vCPU runners. --tb=short is enough.
-          # --splits 4 --group N uses pytest-split to slice the collected
-          # test set roughly evenly across the 4 matrix shards; first run
-          # is name-hash-based, subsequent runs improve via .test_durations
-          # if you ever commit one (we don't — even the naive hash split
-          # gets us ≈25% per shard given the test mix here).
+          #
+          # --splits 4 --group N slices the suite across the 4 matrix shards.
+          # Without a durations file pytest-split balances by test COUNT, which
+          # is not the same thing as time: measured 2026-08-31, that put 658s of
+          # the suite's 1046s into shard 1 and 101s into shard 4 -- a 6.5x spread
+          # that walked shard 1 into the old 10-minute timeout on a docs-only
+          # commit. tests/.test_durations is committed so the split is balanced
+          # by measured time instead (1.01x spread). Shard test counts are
+          # lopsided by design once it is used: shard 4 takes thousands of fast
+          # unit tests, shard 1 keeps the slow integration ones.
+          #
+          # --durations-path must be explicit: pytest-split defaults it to
+          # $CWD/.test_durations, and this job runs from backend/ while the
+          # Docker job below runs from the image root. Left implicit, one of
+          # them silently finds no file and falls back to the count split.
+          # Regenerate after adding slow tests:
+          #   cd backend && python -m pytest tests/ --store-durations \
+          #     --durations-path tests/.test_durations
           python -m pytest tests/ \
             --tb=short \
             --timeout=60 --timeout-method=thread \
             -n auto \
-            --splits 4 --group ${{ matrix.shard }}
+            --splits 4 --group ${{ matrix.shard }} \
+            --durations-path tests/.test_durations
 
   # ============================================================================
   # Frontend Checks
@@ -365,7 +379,8 @@ jobs:
               --timeout=60 --timeout-method=thread \
               -p no:cacheprovider \
               -n auto \
-              --splits 4 --group ${{ matrix.shard }}
+              --splits 4 --group ${{ matrix.shard }} \
+              --durations-path backend/tests/.test_durations
 
   docker-test:
     name: Docker Build

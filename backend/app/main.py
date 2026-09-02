@@ -2774,6 +2774,26 @@ async def on_ams_change(printer_id: int, ams_data: list):
                 except Exception as e:
                     await db.rollback()
                     logger.error("Error persisting Spoolman slot assignments for printer %s: %s", printer_id, e)
+                else:
+                    # Tell open browsers the slot changed. This loop rewrites
+                    # slot_preset_mappings via upsert_slot_preset_for_spoolman_spool
+                    # above, and the AMS slot card reads that row ahead of the
+                    # live tray_info_idx -- so with no event the card keeps
+                    # showing the previous spool's preset name. Internal mode
+                    # raises spool_auto_assigned for the same reason; this loop
+                    # broadcast nothing at all, which made Spoolman mode the
+                    # worse half of the same bug. On the else branch so a
+                    # failed commit stays silent and a broadcast failure cannot
+                    # roll back rows that are already committed.
+                    for ams_id, tray_id, *_ in (*slot_changes, *empty_slots):
+                        await ws_manager.broadcast(
+                            {
+                                "type": "spool_assignment_changed",
+                                "printer_id": printer_id,
+                                "ams_id": ams_id,
+                                "tray_id": tray_id,
+                            }
+                        )
 
     except Exception as e:
         logging.getLogger(__name__).error("Spoolman AMS sync failed for printer %s: %s", printer_id, e)
@@ -8747,9 +8767,13 @@ async def lifespan(app: FastAPI):
     # Startup
     # Install Windows-only asyncio Proactor cleanup-RST filter (#1113) before
     # anything else can spawn tasks that might trip it.
-    from backend.app.core.asyncio_handlers import install_proactor_reset_filter
+    from backend.app.core.asyncio_handlers import install_proactor_reset_filter, warn_if_running_on_uvloop
 
     install_proactor_reset_filter()
+
+    # Before init_db, so the warning is near the top of the log rather than
+    # below a migration run. See warn_if_running_on_uvloop for what is at stake.
+    warn_if_running_on_uvloop()
 
     await init_db()
 

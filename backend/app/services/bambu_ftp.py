@@ -8,8 +8,9 @@ import ssl
 import threading
 import time
 import weakref
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum
 from ftplib import FTP, FTP_TLS  # nosec B402
@@ -57,6 +58,147 @@ _ftp_executor = ThreadPoolExecutor(max_workers=_FTP_MAX_WORKERS, thread_name_pre
 _UPLOAD_FLOOR_BYTES_PER_SEC = 25 * 1024
 _UPLOAD_MIN_TIMEOUT = 600.0
 
+# The same idea for the other direction (#2957). ``ftp_timeout`` is handed to
+# every download as BOTH the socket inactivity timeout and the whole-transfer
+# deadline, so its 30 s default is a cap on how big a file the printer is
+# allowed to serve. A reporter measured the same 5.4 MB 3MF at 45 s off a worn
+# P1S SD card and 25 s off a new one, and a 15.15 MB 3MF at 105 s; a 7.8 MB
+# archive in his older logs survived only because it finished inside the retry
+# grace. None of those transfers were unhealthy -- they were slow, which is what
+# the inactivity timeout is for and what a total deadline cannot tell apart.
+#
+# So the total deadline follows the file instead, at the same pessimistic floor
+# rate the upload path uses. The extension is granted only once the printer has
+# answered SIZE, which it can only do from a running worker: the queue wait that
+# #2572's cap exists to bound is not lengthened by any of this.
+_DOWNLOAD_FLOOR_BYTES_PER_SEC = 25 * 1024
+
+# ...but not without a ceiling, and for a reason that has nothing to do with FTP:
+# ``on_print_start`` runs its whole 3MF hunt inside one ``async_session``, so
+# every second a download is allowed is a second a pooled DB connection is held
+# (the same coupling behind #2572's cap). 300 s is ~7.5 MB at the floor rate and
+# covers the reporter's 15.15 MB / 105 s measurement three times over, because
+# the floor is pessimistic by design and a real link is not that slow.
+_DOWNLOAD_MAX_TIMEOUT = 300.0
+
+
+def _download_extension(size: int | None, base_timeout: float) -> float:
+    """Extra seconds to allow a download the printer says is this big.
+
+    Zero when the size is unknown -- no SIZE reply means no transfer got under
+    way, so the base deadline stands and a printer that is not answering still
+    fails on schedule. Zero, too, once the base deadline is already the more
+    generous of the two: this only ever lengthens a deadline.
+    """
+    if not size or size <= 0:
+        return 0.0
+    return max(0.0, min(size / _DOWNLOAD_FLOOR_BYTES_PER_SEC, _DOWNLOAD_MAX_TIMEOUT) - base_timeout)
+
+
+# How long a download will wait for another one on the same printer to finish
+# before going ahead alongside it (#2957). A P1S at print start is already
+# serving the print off the same SD card and talking MQTT to the slicer, and a
+# reporter watched Bambu Studio itself lose its connection while Bambuddy pulled
+# a 12 MB 3MF -- with a second Bambuddy transfer for the same file running at
+# the same time. 30 s covers the transfer sizes that actually overlap at print
+# start -- the reporter's 5.4 MB 3MF took 25 s off a healthy SD card -- and the
+# wait is deliberately no longer, because the gate is contention relief and not
+# a correctness control. Whoever cannot have it goes anyway, exactly as every
+# download did before this existed: a print must never lose its 3MF to queueing,
+# and the caller's own deadline stays untouched either way.
+_DOWNLOAD_GATE_WAIT_SECONDS = 30.0
+
+# How long to wait for a cancelled path-walk worker to unwind before releasing
+# the printer to the next download. It checks the flag once per 8 KiB chunk, so
+# this is one chunk on a link slow enough to have blown the deadline.
+_DOWNLOAD_UNWIND_SECONDS = 30.0
+
+
+def _discard_worker_outcome(worker: asyncio.Future) -> None:
+    """Read a shielded worker's result so asyncio does not complain about it.
+
+    ``asyncio.wait_for`` cancels the shield, not the executor thread behind it,
+    so the worker future outlives the call and nobody is left to look at what it
+    raised. An unretrieved exception surfaces later as a loop-level
+    ``Future exception was never retrieved`` ERROR with a traceback, logged
+    after the caller has already reported the real failure -- the same class of
+    noise as #2968, and measurably reproducible with a transport error that
+    lands just after the cap. The value is genuinely unwanted here; only the
+    fact that something read it matters.
+    """
+
+    def _read(fut: asyncio.Future) -> None:
+        if fut.cancelled():
+            return
+        exc = fut.exception()
+        if exc is not None:
+            logger.debug("FTP path-walk worker failed after its caller gave up: %s", exc)
+
+    if worker.done():
+        _read(worker)
+    else:
+        worker.add_done_callback(_read)
+
+
+# One heavy download at a time per printer. Keyed per event loop for the same
+# reason ``_upload_locks`` is: an asyncio.Lock binds to the loop that first
+# awaits it, and the test suite runs each case on a fresh loop.
+_download_locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, asyncio.Lock]] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _download_lock(loop: asyncio.AbstractEventLoop, ip_address: str) -> asyncio.Lock:
+    per_loop = _download_locks.setdefault(loop, {})
+    lock = per_loop.get(ip_address)
+    if lock is None:
+        lock = asyncio.Lock()
+        per_loop[ip_address] = lock
+    return lock
+
+
+@asynccontextmanager
+async def _serialized_download(ip_address: str, what: str, *, enabled: bool = True) -> AsyncIterator[bool]:
+    """Hold this printer's download gate for the block, or go without it.
+
+    Yields whether the gate was actually held, which is what the tests assert on
+    -- from the outside a serialized download and a concurrent one differ only
+    in timing. The wait is its own budget rather than a slice of the caller's
+    transfer deadline: a print-start download that queued behind a thumbnail
+    would otherwise fail on a timer and leave the print with no archive, which
+    is a worse outcome than the contention this is here to relieve.
+
+    ``enabled=False`` skips the gate entirely, for the callers that documented
+    themselves as lock-free before this existed -- see ``serialize`` on
+    :func:`download_file_async`.
+    """
+    if not enabled:
+        yield False
+        return
+    loop = asyncio.get_event_loop()
+    lock = _download_lock(loop, ip_address)
+    started = loop.time()
+    held = False
+    try:
+        await asyncio.wait_for(lock.acquire(), timeout=_DOWNLOAD_GATE_WAIT_SECONDS)
+        held = True
+        waited = loop.time() - started
+        if waited > 1.0:
+            logger.info("Waited %.1fs for printer %s to finish its other download before %s", waited, ip_address, what)
+    except TimeoutError:
+        logger.warning(
+            "Printer %s is still busy with another download after %ss — starting %s alongside it",
+            ip_address,
+            _DOWNLOAD_GATE_WAIT_SECONDS,
+            what,
+        )
+    try:
+        yield held
+    finally:
+        if held:
+            lock.release()
+
+
 # How long to give the worker thread to notice the cancel flag, unwind, and
 # delete its partial file. It checks the flag once per CHUNK_SIZE, so on a link
 # slow enough to have hit the deadline this is one chunk plus the delete.
@@ -84,6 +226,20 @@ class DownloadLimitExceeded(Exception):
 
 class DownloadInsufficientSpace(Exception):
     """Raised before an FTP callback consumes the application's disk reserve."""
+
+
+class DownloadDeadlineExceeded(Exception):
+    """A transfer overran the deadline derived from the size the printer reported.
+
+    Never retried, for the reason ``UploadCancelled`` is not (#2529): the
+    deadline was already stretched to fit the file at a floor rate no working
+    link falls below, so another attempt would spend another full deadline
+    reaching the same conclusion -- and ``on_print_start`` spends it holding a
+    pooled database connection. Raised instead of returning False so
+    ``with_ftp_retry`` can tell this apart from an ordinary failed attempt
+    (#2957); callers that do not retry see it through their existing handlers,
+    which is why the archive flow advances to its next candidate path.
+    """
 
 
 @dataclass(frozen=True)
@@ -735,8 +891,15 @@ class BambuFTPClient:
         max_bytes: int | None = None,
         cancel_event: threading.Event | None = None,
         min_free_bytes: int | None = None,
+        size_callback: Callable[[int], None] | None = None,
     ) -> bool:
-        """Download a file with cooperative cancellation and byte bounds."""
+        """Download a file with cooperative cancellation and byte bounds.
+
+        ``size_callback`` is handed the size the printer reported for this file,
+        once, before the transfer starts. The async wrappers use it to grow a
+        whole-transfer deadline that was set before anyone knew how big the file
+        was (#2957); it must not raise.
+        """
         if not self._ftp:
             logger.warning("download_to_file called but FTP not connected")
             return False
@@ -757,6 +920,8 @@ class BambuFTPClient:
             if min_free_bytes is not None and authoritative_size is not None:
                 if shutil.disk_usage(local_path.parent).free < min_free_bytes + authoritative_size:
                     raise DownloadInsufficientSpace(remote_path)
+            if size_callback is not None and authoritative_size is not None and authoritative_size > 0:
+                size_callback(authoritative_size)
             with open(local_path, "wb") as f:
                 written = 0
                 # retrbinary hands over 8 KiB at a time, so checking the volume
@@ -1399,6 +1564,7 @@ async def download_file_async(
     max_bytes: int | None = None,
     cancel_event: threading.Event | None = None,
     min_free_bytes: int | None = None,
+    serialize: bool = True,
 ) -> bool:
     """Async wrapper for downloading a file with timeout.
 
@@ -1420,6 +1586,12 @@ async def download_file_async(
         timeout: Overall operation timeout (asyncio)
         socket_timeout: FTP socket timeout for slow connections (e.g., A1 printers)
         printer_model: Printer model for A1-specific workarounds
+        serialize: take this printer's download gate for the transfer (#2957).
+            Pass False from a path that must neither queue behind another
+            download nor make one queue behind it -- the printer file browser
+            is both, and says so: a preview must not wait out somebody else's
+            ten-gigabyte selection, and that selection must not hold the printer
+            for the twenty minutes it legitimately takes.
     """
     loop = asyncio.get_event_loop()
     is_a1 = printer_model in BambuFTPClient.A1_MODELS if printer_model else False
@@ -1468,6 +1640,7 @@ async def download_file_async(
                         max_bytes=max_bytes,
                         cancel_event=combined_cancel,
                         min_free_bytes=min_free_bytes,
+                        size_callback=lambda n: completion.__setitem__("size", n),
                     )
                     if result:
                         BambuFTPClient.cache_mode(ip_address, mode_str)
@@ -1484,8 +1657,32 @@ async def download_file_async(
         done = threading.Event()
         attempt_cancel = threading.Event()
         worker = loop.run_in_executor(_ftp_executor, _download, force_prot_c, completion, done, attempt_cancel)
+        # What this attempt was actually allowed, for the log lines below: the
+        # size-derived extension moves it after the fact.
+        allowed = timeout
+        extended = False
         try:
-            return await asyncio.wait_for(asyncio.shield(worker), timeout=timeout)
+            try:
+                return await asyncio.wait_for(asyncio.shield(worker), timeout=timeout)
+            except TimeoutError:
+                # The deadline was set before anyone knew the file's size. Now
+                # the printer has told us, so give a transfer that is genuinely
+                # under way the time that size needs (#2957). Re-raises into the
+                # handler below when the size is unknown or already covered.
+                extension = _download_extension(completion.get("size"), timeout)
+                if extension <= 0:
+                    raise
+                logger.info(
+                    "FTP download of %s passed its %ss deadline but the printer reports %s bytes — "
+                    "allowing %.0fs more rather than declaring a slow transfer dead (#2957)",
+                    remote_path,
+                    timeout,
+                    completion.get("size"),
+                    extension,
+                )
+                allowed = timeout + extension
+                extended = True
+                return await asyncio.wait_for(asyncio.shield(worker), timeout=extension)
         except asyncio.CancelledError:
             # Cancelling an asyncio Future cannot stop its executor thread. Set
             # the callback-visible flag and do not let the caller unlink the
@@ -1526,15 +1723,26 @@ async def download_file_async(
             if completion["success"] and local_path.exists() and local_path.stat().st_size > 0:
                 logger.info(
                     "FTP download wait_for timed out after %ss for %s, but thread completed within %ss grace (%s bytes) — salvaging",
-                    timeout,
+                    allowed,
                     remote_path,
                     grace,
                     local_path.stat().st_size,
                 )
                 return True
+            if extended:
+                # The transfer had already been given the time its own reported
+                # size needs. Retrying spends that again to learn the same
+                # thing, so say so rather than reporting an ordinary miss.
+                logger.warning(
+                    "FTP download of %s did not finish inside the %ss its size bought it (plus %ss grace)",
+                    remote_path,
+                    allowed,
+                    grace,
+                )
+                raise DownloadDeadlineExceeded(remote_path)
             logger.warning(
                 "FTP download timed out after %ss (plus %ss grace) for %s",
-                timeout,
+                allowed,
                 grace,
                 remote_path,
             )
@@ -1543,20 +1751,24 @@ async def download_file_async(
     # Check if we have a cached mode for this printer
     cached_mode = BambuFTPClient._mode_cache.get(ip_address)
 
-    if cached_mode:
-        force_prot_c = cached_mode == "prot_c"
-        return await _run(force_prot_c)
+    # The gate spans the prot_c fallback too: those are two attempts at one
+    # transfer, and letting go between them would hand the printer to a waiter
+    # mid-download (#2957).
+    async with _serialized_download(ip_address, f"a download of {remote_path}", enabled=serialize):
+        if cached_mode:
+            force_prot_c = cached_mode == "prot_c"
+            return await _run(force_prot_c)
 
-    # No cached mode - try prot_p first
-    if await _run(False):
-        return True
+        # No cached mode - try prot_p first
+        if await _run(False):
+            return True
 
-    # Download failed - for A1 models, try prot_c fallback
-    if is_a1:
-        logger.info("FTP download failed with prot_p for A1 model, trying prot_c fallback...")
-        return await _run(True)
+        # Download failed - for A1 models, try prot_c fallback
+        if is_a1:
+            logger.info("FTP download failed with prot_p for A1 model, trying prot_c fallback...")
+            return await _run(True)
 
-    return False
+        return False
 
 
 async def download_file_try_paths_async(
@@ -1587,34 +1799,67 @@ async def download_file_try_paths_async(
             connects, that queue wait is otherwise unbounded — and any caller
             holding a DB connection while awaiting this would pin it until the
             pool is exhausted (#2572). The cap converts that into a bounded
-            wait; the orphaned worker finishes and its result is discarded.
+            wait; the worker is then cancelled and waited out rather than
+            orphaned (#2957), so a DB-holding caller's worst case is the gate
+            wait plus this cap plus one unwind -- still bounded, and the
+            orphaned worker no longer keeps the printer's socket after it.
     """
     loop = asyncio.get_event_loop()
+    # An executor thread cannot be cancelled, so the cap alone used to leave a
+    # worker walking the remaining paths -- still holding the printer's FTP
+    # socket -- long after this coroutine had given up on it. A reporter's log
+    # shows one of those still going as the archive flow's own download landed,
+    # two Bambuddy transfers deep into a P1S that was mid-print (#2957). The
+    # flag stops it at the next chunk instead.
+    cancel = threading.Event()
+    done = threading.Event()
 
     def _download():
-        client = BambuFTPClient(ip_address, access_code, timeout=socket_timeout, printer_model=printer_model)
-        if not client.connect():
-            return None
-
         try:
-            # FileNotOnPrinterError signals "try the next path", not "give up" —
-            # this function's whole purpose is to walk a list of candidates
-            # over one connection. Only a real transport error should bubble.
-            for remote_path in remote_paths:
-                try:
-                    if client.download_to_file(remote_path, local_path):
-                        return remote_path
-                except FileNotOnPrinterError:
-                    continue
-            return None
-        finally:
-            client.disconnect()
+            client = BambuFTPClient(ip_address, access_code, timeout=socket_timeout, printer_model=printer_model)
+            if not client.connect():
+                return None
 
-    try:
-        return await asyncio.wait_for(loop.run_in_executor(_ftp_executor, _download), timeout=timeout)
-    except TimeoutError:
-        logger.warning("FTP download_try_paths exceeded its %ss cap for %s (#2572)", timeout, ip_address)
-        return None
+            try:
+                # FileNotOnPrinterError signals "try the next path", not "give up" —
+                # this function's whole purpose is to walk a list of candidates
+                # over one connection. Only a real transport error should bubble.
+                for remote_path in remote_paths:
+                    if cancel.is_set():
+                        return None
+                    try:
+                        if client.download_to_file(remote_path, local_path, cancel_event=cancel):
+                            return remote_path
+                    except FileNotOnPrinterError:
+                        continue
+                    except DownloadCancelled:
+                        return None
+                return None
+            finally:
+                client.disconnect()
+        finally:
+            done.set()
+
+    async with _serialized_download(ip_address, f"a {len(remote_paths)}-path lookup"):
+        worker = loop.run_in_executor(_ftp_executor, _download)
+        try:
+            return await asyncio.wait_for(asyncio.shield(worker), timeout=timeout)
+        except asyncio.CancelledError:
+            # The caller is going away and should not be made to wait, but the
+            # worker must not keep the printer to itself either.
+            cancel.set()
+            _discard_worker_outcome(worker)
+            raise
+        except TimeoutError:
+            logger.warning("FTP download_try_paths exceeded its %ss cap for %s (#2572)", timeout, ip_address)
+            cancel.set()
+            # Do not hand the printer to the next download while this worker is
+            # still on its socket. The DEFAULT executor, never ``_ftp_executor``:
+            # parking a waiter in the same bounded pool as the worker it waits
+            # for is how a deadlock gets built.
+            await loop.run_in_executor(None, done.wait, _DOWNLOAD_UNWIND_SECONDS)
+            _discard_worker_outcome(worker)
+            return None
 
 
 def _upload_deadline(local_path: Path) -> float:
@@ -2207,6 +2452,8 @@ async def with_ftp_retry(
     ``UploadCancelled`` is never retried, whatever the caller passes: it means
     the transfer overran its size-derived deadline, so a retry would spend
     another full deadline reaching the same conclusion (#2529).
+    ``DownloadDeadlineExceeded`` is the same thing in the other direction
+    (#2957) and is treated the same way.
     """
     last_error = None
     attempts_made = 0
@@ -2223,7 +2470,7 @@ async def with_ftp_retry(
             # Operation returned failure indicator
             if attempt > 0:
                 logger.info("%s attempt %s/%s returned failure", operation_name, attempt + 1, max_retries + 1)
-        except UploadCancelled:
+        except (UploadCancelled, DownloadDeadlineExceeded):
             raise
         except Exception as e:
             if non_retry_exceptions and isinstance(e, non_retry_exceptions):

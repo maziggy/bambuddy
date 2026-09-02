@@ -53,6 +53,7 @@ from backend.app.utils.threemf_tools import (
     extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
+    names_carry_gcode,
     select_plate_gcode_name,
 )
 
@@ -3522,8 +3523,10 @@ async def get_archive_capabilities(
         with zipfile.ZipFile(file_path, "r") as zf:
             names = zf.namelist()
 
-            # Check for G-code in the sliced file
-            has_gcode = any(n.startswith("Metadata/") and n.endswith(".gcode") for n in names)
+            # Check for G-code in the sliced file. Shared with the library's
+            # file-type classification so the card's badge and what the File
+            # Manager makes of the same file cannot disagree (#2993).
+            has_gcode = names_carry_gcode(names)
 
             # Check for 3D model in sliced file (fallback if no source)
             if not has_model:

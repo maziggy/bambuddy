@@ -1,5 +1,6 @@
 """API routes for File Manager (Library) functionality."""
 
+import asyncio
 import base64
 import binascii
 import contextlib
@@ -14,7 +15,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse as FastAPIFileResponse
 from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,6 +72,7 @@ from backend.app.services.design_settings import (
     overrides_from_config,
 )
 from backend.app.services.filament_requirements import annotate_rack_groups
+from backend.app.services.mesh_export import MeshExportError, export_mesh_stl, is_exportable
 from backend.app.services.plate_thumbnail import inject_plate_thumbnails_if_missing
 from backend.app.services.process_overrides import apply_process_overrides
 from backend.app.services.slice_output_check import (
@@ -86,6 +88,7 @@ from backend.app.utils.filename import (
     safe_path_component,
     validate_print_filename,
 )
+from backend.app.utils.http import build_content_disposition, safe_download_filename
 from backend.app.utils.safe_path import PathTraversalError, assert_under, safe_join_under
 from backend.app.utils.threemf_tools import (
     carries_gcode,
@@ -5226,6 +5229,92 @@ async def download_file(
         str(abs_path),
         filename=file.filename,
         media_type="application/octet-stream",
+    )
+
+
+def _mesh_etag(file: LibraryFile) -> str:
+    """A validator for a file's exported mesh.
+
+    ``fs_modified_at`` and ``file_size`` are what move when a tracked external file is replaced
+    on disk; the id alone would not, because the row survives the replacement.
+    """
+    stamp = int(file.fs_modified_at.timestamp()) if file.fs_modified_at else 0
+    return f'"mesh-{file.id}-{stamp}-{file.file_size or 0}"'
+
+
+@router.get("/files/{file_id}/mesh")
+async def get_file_mesh(
+    file_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
+):
+    """Return the file's geometry as a binary STL.
+
+    Lets a client show a model in 3D without implementing its own ZIP and 3MF parsing to
+    reach geometry the server already loads for thumbnails. Sliced `.gcode.3mf` is refused
+    with a 400 — it carries toolpaths, and trimesh cannot read its scene graph anyway.
+    """
+    user, can_read_all = auth_result
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
+    file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
+
+    # Refused on the name before touching disk, so the caller gets a specific status.
+    if not is_exportable(file.filename):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This file is not a model container Bambuddy can export a mesh from. "
+                "Sliced files carry toolpaths — use the G-code viewer for those."
+            ),
+        )
+
+    abs_path = to_absolute_path(file.file_path)
+    if not abs_path or not abs_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    # Answered before the parse, which is the point: a 304 costs a database row rather than
+    # seconds of CPU. Built from the two fields that move when the bytes do — a tracked
+    # external file replaced over the mount keeps its id but not its mtime or size.
+    etag = _mesh_etag(file)
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "private, no-cache"})
+
+    # Off the event loop: parsing and decimating is CPU-bound and can take seconds.
+    # `asyncio.to_thread` matches how `system.py` and `support.py` offload blocking work.
+    try:
+        blob = await asyncio.to_thread(export_mesh_stl, abs_path)
+    except MeshExportError as e:
+        # 422, not 500: the request was well formed and the server is healthy; this file
+        # has no geometry to give.
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    stem = Path(safe_download_filename(file.filename)).stem
+    if stem.lower().endswith(".gcode"):  # defensive; is_exportable already refused
+        stem = stem[: -len(".gcode")]
+
+    return Response(
+        content=blob,
+        media_type="model/stl",
+        headers={
+            # Through the helper for the RFC 5987 form, and through safe_download_filename
+            # first because an EXTERNAL name is never validated on the way in — a POSIX
+            # filename may hold a newline, which the helper's quote stripping would keep.
+            # Same order archives.py and printers.py use for externally-sourced names.
+            "Content-Disposition": build_content_disposition(f"{stem}.stl", "inline"),
+            # `no-cache` means "store, but revalidate", not "do not store". The mesh is a pure
+            # function of the file's bytes, but those are only immutable for a MANAGED file:
+            # scan_external_folder keeps the row for a path it already tracks and refreshes
+            # fs_modified_at, so a model replaced over the mount has the same id and different
+            # geometry. The ETag closes that while keeping the bandwidth saving.
+            "Cache-Control": "private, no-cache",
+            "ETag": etag,
+        },
     )
 
 

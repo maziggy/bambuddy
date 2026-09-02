@@ -1,0 +1,200 @@
+2026-09-01 20:08:00,904 INFO [backend.app.main] [-] [TIMING] Finance charge update: 2.620s elapsed
+2026-09-01 20:08:00,908 INFO [backend.app.main] [-] [PRINT_LOG] Log entry written for archive 1
+2026-09-01 20:08:00,909 INFO [backend.app.main] [-] [TIMING] Print log entry: 2.626s elapsed
+2026-09-01 20:08:00,909 INFO [backend.app.main] [-] [TIMING] Background tasks scheduled (energy, photo): 2.626s elapsed
+2026-09-01 20:08:00,909 INFO [backend.app.main] [-] [TIMING] All background tasks scheduled: 2.626s elapsed
+2026-09-01 20:08:00,909 INFO [backend.app.main] [-] [CALLBACK] on_print_complete finished for printer 1, archive 1
+2026-09-01 20:08:00,910 INFO [backend.app.main] [-] [ENERGY-BG] Starting energy calculation for archive 1
+2026-09-01 20:08:00,910 INFO [backend.app.main] [-] [PHOTO-BG] Starting finish photo capture for archive 1
+2026-09-01 20:08:00,911 INFO [backend.app.main] [-] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-09-01 20:08:00,911 INFO [backend.app.main] [-] [MAINT-BG] Starting maintenance check for printer 1
+2026-09-01 20:08:00,912 INFO [backend.app.main] [-] [LAYER-TL] Stitching layer timelapse for printer 1
+2026-09-01 20:08:00,912 INFO [backend.app.main] [-] [AUTO-OFF-BG] Completed
+2026-09-01 20:08:00,914 INFO [backend.app.main] [-] [ENERGY-BG] No start kWh recorded for archive 1
+2026-09-01 20:08:00,923 INFO [backend.app.services.notification_service] [-] No notification providers configured for maintenance_due event on printer 1
+2026-09-01 20:08:00,923 INFO [backend.app.main] [-] [MAINT-BG] Sent notification: 5 items need attention
+2026-09-01 20:08:01,312 INFO [backend.app.main] [-] [FINISH-PHOTO-MOMENT] captured RTSP frame (55755 bytes)
+2026-09-01 20:08:01,313 INFO [backend.app.main] [-] [PHOTO-BG] Saved stage-22 pre-captured frame: finish_20260901_200801_c92e0979.jpg (55755 bytes)
+2026-09-01 20:08:01,316 INFO [backend.app.main] [-] [PHOTO-BG] Saved: finish_20260901_200801_c92e0979.jpg
+2026-09-01 20:08:01,316 INFO [backend.app.main] [-] [PHOTO-NOTIFY] Photo task returned: finish_20260901_200801_c92e0979.jpg
+2026-09-01 20:08:01,316 INFO [backend.app.main] [-] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260901_200801_c92e0979.jpg
+2026-09-01 20:08:01,319 INFO [backend.app.main] [-] [NOTIFY-BG] Loaded finish photo bytes: 55755 bytes
+2026-09-01 20:08:01,319 INFO [backend.app.services.notification_service] [-] on_print_complete called for printer 1 ([PRINTER]), status=completed
+2026-09-01 20:08:01,322 INFO [backend.app.services.notification_service] [-] No notification providers configured for on_print_complete event on printer 1
+2026-09-01 20:08:01,322 INFO [backend.app.main] [-] [NOTIFY-BG] Completed
+2026-09-01 20:08:42,481 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 20:10:12,874 INFO [uvicorn.access] [-] [IP]:59860 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-01 20:10:13,047 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-09-01 20:10:13,048 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-01 20:10:13,048 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-01 20:11:34,463 INFO [uvicorn.access] [-] [IP]:60928 - "POST /api/v1/library/files/4/slice HTTP/1.1" 202
+2026-09-01 20:11:34,888 INFO [backend.app.api.routes.library] [4665c822] 3MF sanitiser: removed sentinel '-1' for keys ['raft_first_layer_expansion', 'tree_support_wall_count'] — slicer will use --load-settings defaults
+2026-09-01 20:11:35,214 INFO [backend.app.api.routes.library] [4665c822] Carried support settings from the source 3MF onto the process preset: {'support_filament': '0', 'support_interface_filament': '0', 'support_type': 'tree(auto)'}
+2026-09-01 20:11:35,324 INFO [backend.app.services.slicer_api] [4665c822] Slicing Shade Motor.3mf (3.5 MB) plate=all with 3 profile(s)
+2026-09-01 20:12:25,035 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-01 20:13:26,353 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-01 20:13:26,355 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-01 20:13:26,355 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-01 20:13:42,490 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 20:18:42,498 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 20:23:42,511 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 20:24:12,766 INFO [uvicorn.access] [-] [IP]:44526 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-01 20:24:12,793 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-09-01 20:24:12,794 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-01 20:24:12,794 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-01 20:24:30,896 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-01 20:28:42,518 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 20:33:42,528 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 20:38:42,535 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 20:43:42,543 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 20:48:42,553 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 20:53:42,561 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 20:58:42,568 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 21:03:42,578 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 21:08:42,586 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 21:13:42,594 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 21:18:42,601 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 21:23:42,608 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 21:28:42,616 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 21:33:42,622 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 21:36:00,341 INFO [uvicorn.access] [-] [IP]:36732 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-09-01 21:36:00,440 INFO [uvicorn.access] [-] [IP]:36770 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-01 21:36:00,466 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-09-01 21:36:00,467 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-01 21:36:00,467 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-01 21:38:03,412 INFO [uvicorn.access] [-] [IP]:38374 - "POST /api/v1/library/files/3/slice HTTP/1.1" 202
+2026-09-01 21:38:03,712 INFO [backend.app.api.routes.library] [97dacf32] 3MF sanitiser: removed sentinel '-1' for keys ['raft_first_layer_expansion', 'tree_support_wall_count'] — slicer will use --load-settings defaults
+2026-09-01 21:38:03,760 INFO [backend.app.services.slicer_api] [97dacf32] Slicing 18650.3mf (0.9 MB) plate=all with 3 profile(s)
+2026-09-01 21:38:42,630 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 21:40:01,064 INFO [backend.app.services.stl_thumbnail] [80291323] Generated STL thumbnail: /app/data/archive/library/thumbnails/6c43cb233af54905b3dfd7389312000f.png
+2026-09-01 21:40:01,081 INFO [uvicorn.access] [-] [IP]:59638 - "POST /api/v1/library/files?generate_stl_thumbnails=true HTTP/1.1" 200
+2026-09-01 21:40:33,847 INFO [uvicorn.access] [-] [IP]:37804 - "POST /api/v1/library/files/5/slice HTTP/1.1" 202
+2026-09-01 21:40:34,241 INFO [backend.app.services.slicer_api] [502444f1] Slicing Ball mount.stl (0.4 MB) plate=all with 3 profile(s)
+2026-09-01 21:41:46,620 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-01 21:42:15,340 INFO [uvicorn.access] [-] [IP]:37224 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-09-01 21:42:15,469 INFO [uvicorn.access] [-] [IP]:37254 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-01 21:42:15,496 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-09-01 21:42:15,497 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-01 21:42:15,497 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-01 21:42:27,405 INFO [uvicorn.access] [-] [IP]:37224 - "POST /api/v1/library/files/5/slice HTTP/1.1" 202
+2026-09-01 21:42:27,870 INFO [backend.app.services.slicer_api] [bdd2554b] Slicing Ball mount.stl (0.4 MB) plate=all with 3 profile(s)
+2026-09-01 21:42:57,098 INFO [uvicorn.access] [-] [IP]:33416 - "POST /api/v1/library/files/5/slice HTTP/1.1" 202
+2026-09-01 21:42:57,483 INFO [backend.app.services.slicer_api] [8176bcdf] Slicing Ball mount.stl (0.4 MB) plate=all with 3 profile(s)
+2026-09-01 21:43:42,639 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 21:43:46,725 INFO [uvicorn.access] [-] [IP]:49992 - "POST /api/v1/library/files/5/slice HTTP/1.1" 202
+2026-09-01 21:43:47,061 INFO [backend.app.services.slicer_api] [daa6c137] Slicing Ball mount.stl (0.4 MB) plate=all with 3 profile(s)
+2026-09-01 21:44:27,370 INFO [uvicorn.access] [-] [IP]:45958 - "POST /api/v1/library/files/5/slice HTTP/1.1" 202
+2026-09-01 21:44:27,712 INFO [backend.app.services.slicer_api] [9d7c2972] Slicing Ball mount.stl (0.4 MB) plate=all with 3 profile(s)
+2026-09-01 21:44:58,693 INFO [uvicorn.access] [-] [IP]:58002 - "POST /api/v1/library/files/5/slice HTTP/1.1" 202
+2026-09-01 21:44:59,199 INFO [backend.app.services.slicer_api] [e212ca31] Slicing Ball mount.stl (0.4 MB) plate=all with 3 profile(s)
+2026-09-01 21:45:27,877 INFO [uvicorn.access] [-] [IP]:37598 - "POST /api/v1/library/files/5/slice HTTP/1.1" 202
+2026-09-01 21:45:28,208 INFO [backend.app.services.slicer_api] [adb2144f] Slicing Ball mount.stl (0.4 MB) plate=all with 3 profile(s)
+2026-09-01 21:46:11,922 INFO [uvicorn.access] [-] [IP]:54084 - "POST /api/v1/library/files/5/slice HTTP/1.1" 202
+2026-09-01 21:46:12,296 INFO [backend.app.services.slicer_api] [5c8b6733] Slicing Ball mount.stl (0.4 MB) plate=all with 3 profile(s)
+2026-09-01 21:46:30,957 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-01 21:46:53,040 INFO [uvicorn.access] [-] [IP]:54264 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-01 21:46:53,071 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-09-01 21:46:53,071 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-01 21:46:53,072 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-01 21:47:07,293 INFO [uvicorn.access] [-] [IP]:54364 - "POST /api/v1/library/files/5/slice HTTP/1.1" 202
+2026-09-01 21:47:07,648 INFO [backend.app.services.slicer_api] [1a26b8e8] Slicing Ball mount.stl (0.4 MB) plate=all with 3 profile(s)
+2026-09-01 21:48:42,655 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 21:50:50,461 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-01 21:51:06,581 INFO [uvicorn.access] [-] [IP]:36374 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-01 21:51:06,603 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-09-01 21:51:06,603 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-01 21:51:06,604 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-01 21:51:41,848 INFO [backend.app.api.routes.support] [3508e721] Log level changed to DEBUG
+2026-09-01 21:51:41,848 INFO [backend.app.api.routes.bug_report] [3508e721] Bug report: enabled debug logging
+2026-09-01 21:51:41,848 DEBUG [backend.app.services.bambu_mqtt] [3508e721] [[SERIAL]] Requesting status update (pushall)
+2026-09-01 21:51:41,849 INFO [uvicorn.access] [-] [IP]:47256 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-09-01 21:51:41,945 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: Lüftergitter_Fan_Grill_120mm
+2026-09-01 21:51:41,945 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '3', 'tray_exist_bits': 'ff', 'tray_is_bbl_bits': 'ff', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'ff', 'tray_reading_bits': '0', 'version': 21, 'insert_flag': True, 'power_on_flag': False}
+2026-09-01 21:51:41,945 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-09-01 21:51:41,945 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-09-01 21:51:41,945 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x2003 -> extruder 0
+2026-09-01 21:51:41,945 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 1 info=0x1001 -> extruder 0
+2026-09-01 21:51:41,945 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '1': 0}
+2026-09-01 21:51:41,945 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-09-01 21:51:41,945 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:51:41,945 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-09-01 21:51:41,945 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-09-01 21:51:41,946 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-09-01 21:51:41,946 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-09-01 21:51:41,946 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-01 21:51:41,946 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-09-01 21:51:41,946 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -62dBm
+2026-09-01 21:51:41,946 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-09-01 21:51:41,946 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: Lüftergitter_Fan_Grill_120mm
+2026-09-01 21:51:43,751 DEBUG [backend.app.main] [-] Recorded 3 printer sensor history entries
+2026-09-01 21:51:46,023 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:51:46,023 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-09-01 21:51:50,071 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:51:54,119 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:51:56,164 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:51:56,164 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -64dBm
+2026-09-01 21:51:56,686 DEBUG [backend.app.services.virtual_printer.ssdp_server] [178e769f] Sent SSDP NOTIFY for Virtual P1s (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-09-01 21:51:58,234 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:51:58,234 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-09-01 21:52:04,310 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:04,310 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -64dBm
+2026-09-01 21:52:08,378 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:08,378 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-09-01 21:52:10,444 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:12,470 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:12,470 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -66dBm
+2026-09-01 21:52:16,680 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:16,680 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -64dBm
+2026-09-01 21:52:20,599 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:20,599 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -65dBm
+2026-09-01 21:52:24,671 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:24,671 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-09-01 21:52:26,704 DEBUG [backend.app.services.virtual_printer.ssdp_server] [178e769f] Sent SSDP NOTIFY for Virtual P1s (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-09-01 21:52:26,709 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:32,848 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:32,848 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -64dBm
+2026-09-01 21:52:34,835 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:34,835 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-09-01 21:52:36,887 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:40,972 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:42,990 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:42,990 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -64dBm
+2026-09-01 21:52:43,755 DEBUG [backend.app.main] [-] Recorded 3 printer sensor history entries
+2026-09-01 21:52:45,031 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:45,031 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-09-01 21:52:49,211 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:51,121 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:51,121 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -64dBm
+2026-09-01 21:52:56,721 DEBUG [backend.app.services.virtual_printer.ssdp_server] [178e769f] Sent SSDP NOTIFY for Virtual P1s (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-09-01 21:52:59,237 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:52:59,237 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -66dBm
+2026-09-01 21:53:01,279 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:53:01,279 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -64dBm
+2026-09-01 21:53:05,346 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:53:07,411 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:53:07,411 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-09-01 21:53:09,506 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:53:09,507 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -64dBm
+2026-09-01 21:53:15,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:53:15,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-09-01 21:53:21,608 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:53:21,609 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -64dBm
+2026-09-01 21:53:23,660 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:53:23,660 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-09-01 21:53:25,735 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:53:25,735 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -62dBm
+2026-09-01 21:53:26,034 INFO [uvicorn.access] [-] [IP]:45022 - "POST /api/v1/library/files/3/slice HTTP/1.1" 202
+2026-09-01 21:53:26,369 INFO [backend.app.api.routes.library] [ae54ec6f] 3MF sanitiser: removed sentinel '-1' for keys ['raft_first_layer_expansion', 'tree_support_wall_count'] — slicer will use --load-settings defaults
+2026-09-01 21:53:26,412 INFO [backend.app.services.slicer_api] [ae54ec6f] Slicing 18650.3mf (0.9 MB) plate=all with 3 profile(s)
+2026-09-01 21:53:26,755 DEBUG [backend.app.services.virtual_printer.ssdp_server] [178e769f] Sent SSDP NOTIFY for Virtual P1s (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-09-01 21:53:29,774 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:53:29,774 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -65dBm
+2026-09-01 21:53:31,943 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:53:33,878 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:53:33,878 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-09-01 21:53:40,009 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:53:40,009 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -65dBm
+2026-09-01 21:53:42,044 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-01 21:53:42,045 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-09-01 21:53:42,663 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-09-01 21:53:43,758 DEBUG [backend.app.main] [-] Recorded 3 printer sensor history entries

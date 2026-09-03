@@ -1,0 +1,200 @@
+2026-09-03 19:43:09,830 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:43:39,865 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:43:39,870 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:44:09,903 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:44:09,907 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:44:39,941 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:44:39,947 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:44:46,060 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-03 19:45:09,978 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:45:09,983 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:45:40,016 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:45:40,022 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:46:10,058 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:46:10,064 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:46:40,101 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:46:40,107 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:47:10,138 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:47:10,143 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:47:40,165 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:47:40,167 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:48:10,183 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:48:10,185 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:48:40,200 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:48:40,202 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:49:10,218 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:49:10,220 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:49:40,246 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:49:40,249 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:49:46,075 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-03 19:50:10,275 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:50:10,279 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:50:40,306 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:50:40,310 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:51:10,336 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:51:10,340 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:51:40,367 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:51:40,371 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:52:10,396 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:52:10,400 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:52:40,430 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:52:40,435 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:53:10,465 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:53:10,470 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:53:40,500 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:53:40,505 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:54:10,535 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:54:10,542 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:54:40,574 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:54:40,578 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:54:46,088 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-03 19:55:10,607 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:55:10,611 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:55:40,644 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:55:40,648 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:56:10,683 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:56:10,689 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:56:40,720 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:56:40,724 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:57:10,754 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:57:10,758 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:57:40,788 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:57:40,792 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:58:10,827 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:58:10,833 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:58:40,865 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:58:40,869 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:59:10,894 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:59:10,897 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:59:40,928 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 19:59:40,932 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 19:59:46,105 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-03 20:00:10,964 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:00:10,970 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:00:41,001 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:00:41,005 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:01:11,034 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:01:11,037 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:01:41,066 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:01:41,071 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:02:11,103 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:02:11,107 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:02:41,137 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:02:41,143 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:03:11,174 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:03:11,178 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:03:41,206 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:03:41,211 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:04:11,231 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:04:11,236 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:04:41,271 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:04:41,276 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:04:46,123 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-03 20:05:11,303 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:05:11,306 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:05:41,332 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:05:41,337 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:06:11,368 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:06:11,374 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:06:41,402 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:06:41,408 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:07:11,440 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:07:11,443 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:07:41,471 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:07:41,476 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:08:11,503 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:08:11,506 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:08:41,540 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:08:41,547 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:09:11,583 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:09:11,593 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:09:41,619 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:09:41,621 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:09:46,131 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-03 20:10:11,647 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:10:11,650 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:10:41,672 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:10:41,674 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:11:11,696 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:11:11,698 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:11:41,721 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:11:41,728 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:12:11,756 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:12:11,760 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:12:41,783 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:12:41,786 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:13:11,813 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:13:11,817 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:13:41,847 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:13:41,856 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:14:11,887 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:14:11,892 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:14:41,921 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:14:41,924 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:14:46,145 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-03 20:15:11,955 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:15:11,961 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:15:41,995 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:15:41,999 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:16:12,030 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:16:12,035 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:16:42,062 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:16:42,065 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:17:12,090 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:17:12,094 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:17:42,120 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:17:42,123 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:18:12,150 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:18:12,155 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:18:42,183 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:18:42,187 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:18:52,114 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-09-03 20:18:52,378 INFO [uvicorn.access] [-] [IP]:39710 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-09-03 20:18:55,179 INFO [uvicorn.access] [-] [IP]:39738 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-03 20:18:55,212 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-09-03 20:18:55,216 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-03 20:18:55,218 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 3 printers
+2026-09-03 20:18:58,144 INFO [backend.app.api.routes.cloud] [189b4969] get_filament_info called with 4 IDs: ['GFS98', 'GFB50', 'GFB00', 'GFB98']
+2026-09-03 20:18:58,178 INFO [backend.app.api.routes.cloud] [b9ad6987] get_filament_info called with 3 IDs: ['GFG99', 'GFA00', 'GFU99']
+2026-09-03 20:18:58,871 INFO [uvicorn.access] [-] [IP]:40034 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-09-03 20:18:59,010 INFO [uvicorn.access] [-] [IP]:40042 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-09-03 20:19:12,218 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:19:12,224 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:19:19,831 INFO [backend.app.api.routes.smart_plugs] [931e94f9] Updated smart plug 'bambu-p1s-sonoff'
+2026-09-03 20:19:19,832 INFO [uvicorn.access] [-] [IP]:47336 - "PATCH /api/v1/smart-plugs/1 HTTP/1.1" 200
+2026-09-03 20:19:36,732 INFO [backend.app.api.routes.smart_plugs] [98529adc] Updated smart plug 'bambu-p1s-sonoff'
+2026-09-03 20:19:36,733 INFO [uvicorn.access] [-] [IP]:48420 - "PATCH /api/v1/smart-plugs/1 HTTP/1.1" 200
+2026-09-03 20:19:42,253 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:19:42,257 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:19:46,161 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-03 20:20:12,284 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:20:12,287 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:20:38,670 INFO [backend.app.api.routes.support] [8bb7b670] Log level changed to DEBUG
+2026-09-03 20:20:38,671 INFO [backend.app.api.routes.bug_report] [8bb7b670] Bug report: enabled debug logging
+2026-09-03 20:20:38,671 WARNING [backend.app.services.bambu_mqtt] [8bb7b670] [[SERIAL]] request_status_update: not connected
+2026-09-03 20:20:38,671 DEBUG [backend.app.services.bambu_mqtt] [8bb7b670] [[SERIAL]] Requesting status update (pushall)
+2026-09-03 20:20:38,671 WARNING [backend.app.services.bambu_mqtt] [8bb7b670] [[SERIAL]] request_status_update: not connected
+2026-09-03 20:20:38,673 INFO [uvicorn.access] [-] [IP]:50334 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-09-03 20:20:38,777 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: gpu_adonis_v3_plate_2
+2026-09-03 20:20:38,777 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 17, 'insert_flag': True, 'power_on_flag': False}
+2026-09-03 20:20:38,778 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-09-03 20:20:38,778 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-09-03 20:20:38,778 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-09-03 20:20:38,778 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-09-03 20:20:38,778 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-09-03 20:20:38,779 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 20:20:38,779 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-09-03 20:20:38,779 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-09-03 20:20:38,779 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-09-03 20:20:38,780 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-09-03 20:20:38,780 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-03 20:20:38,780 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-09-03 20:20:38,781 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -42dBm
+2026-09-03 20:20:38,781 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-09-03 20:20:38,781 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: gpu_adonis_v3_plate_2
+2026-09-03 20:20:40,811 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 20:20:42,311 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(134, 2, 103, None)]
+2026-09-03 20:20:42,314 DEBUG [backend.app.services.print_scheduler] [-] Printer 2: not idle — awaiting plate-clear acknowledgment (state=FINISH)
+2026-09-03 20:20:42,315 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-03 20:20:44,860 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 20:20:46,886 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status

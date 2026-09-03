@@ -4034,6 +4034,8 @@ export default {
     partOf: '{{name}} projesinin parçası',
     subProjectCount: '{{count}} alt proje',
     subProjectsOf: '{{name}} alt projeleri',
+    collapseSubProjects: 'Alt projeleri daralt',
+    expandSubProjects: 'Alt projeleri genişlet',
     title: 'Projeler',
     subtitle: '3D baskı projelerinizi organize edin ve takip edin',
     newProject: 'Yeni Proje',

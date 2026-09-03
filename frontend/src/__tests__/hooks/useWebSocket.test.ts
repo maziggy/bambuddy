@@ -470,6 +470,102 @@ describe('useWebSocket hook', () => {
       vi.unstubAllGlobals();
     });
 
+    /*
+     * Swapping a spool leaves the previous spool's preset name on the AMS slot
+     * card.
+     *
+     * The RFID auto-assign rewrites the slot's slot_preset_mappings row, and
+     * PrintersPage reads `slotPreset?.preset_name` *ahead of* the live
+     * tray_info_idx lookup -- so a cached row wins over correct data pushed
+     * over the socket. Everything else on the card rides the status push and
+     * updates instantly, which is why this surfaces as one wrong line rather
+     * than a stale card: pull a Bambu ABS Orange, insert a PLA Matte Dark
+     * Blue, and the card reads "Bambu ABS" against the new colour.
+     *
+     * `slotPresets` has a 2-minute staleTime and no refetch interval, so on a
+     * dashboard left open and focused nothing ever refetches it.
+     */
+    it('invalidates slot presets on spool_auto_assigned message', async () => {
+      vi.useFakeTimers();
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      const ws = await waitForWs();
+
+      act(() => {
+        ws.open();
+      });
+
+      act(() => {
+        ws.simulateMessage({
+          type: 'spool_auto_assigned',
+          printer_id: 7,
+          ams_id: 0,
+          tray_id: 0,
+          spool_id: 110,
+        });
+      });
+
+      // No timer advance: the user is standing at the printer looking at the
+      // card, so the slot's own queries must not wait out the 3s cascade
+      // debounce (which any further event would restart anyway).
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['slotPresets'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['spool-assignments'] });
+
+      // The spool list is not on the card's critical path and stays debounced.
+      expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['inventory-spools'] });
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inventory-spools'] });
+
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
+    /*
+     * Spoolman mode reaches the same slot_preset_mappings row through its own
+     * AMS sync, which raises spool_assignment_changed. Its slot rows live under
+     * a different query key, so the internal-mode key alone left that half of
+     * the UI on the previous spool.
+     */
+    it('invalidates both inventory modes on spool_assignment_changed message', async () => {
+      vi.useFakeTimers();
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      const ws = await waitForWs();
+
+      act(() => {
+        ws.open();
+      });
+
+      act(() => {
+        ws.simulateMessage({
+          type: 'spool_assignment_changed',
+          printer_id: 7,
+          ams_id: 0,
+          tray_id: 0,
+        });
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['slotPresets'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['spool-assignments'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['spoolman-slot-assignments'] });
+
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
     it('handles missing_spool_assignment message without error', async () => {
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 

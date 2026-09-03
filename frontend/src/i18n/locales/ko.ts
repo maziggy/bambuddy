@@ -3846,6 +3846,8 @@ export default {
     partOf: '{{name}}의 일부',
     subProjectCount: '하위 프로젝트 {{count}}개',
     subProjectsOf: '{{name}}의 하위 프로젝트',
+    collapseSubProjects: '하위 프로젝트 접기',
+    expandSubProjects: '하위 프로젝트 펼치기',
     title: '프로젝트',
     subtitle: '3D 인쇄 프로젝트 정리 및 추적',
     newProject: '새 프로젝트',

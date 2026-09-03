@@ -75,7 +75,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatDuration, parseUTCDate, formatDate } from '../utils/date';
 import { formatFileSize } from '../utils/file';
 import { assignableProjects } from '../utils/projectTree';
-import { isApiSliceableFilename, isSliceableFilename, openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
+import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
+import { isSlicedLibraryFile, isSliceableLibraryFile } from '../utils/libraryFiles';
 
 type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
 type SortDirection = 'asc' | 'desc';
@@ -742,12 +743,6 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
   );
 }
 
-// Helper to check if a file is sliced (printable)
-function isSlicedFilename(filename: string): boolean {
-  const lower = filename.toLowerCase();
-  return lower.endsWith('.gcode') || lower.endsWith('.gcode.3mf');
-}
-
 // File Card
 interface FileCardProps {
   file: LibraryFileListItem;
@@ -786,7 +781,7 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
   const canDelete = canModify('library', 'delete', file.created_by_id);
 
   const menuItems: ContextMenuItem[] = [];
-  if (onPrint && isSlicedFilename(file.filename)) {
+  if (onPrint && isSlicedLibraryFile(file)) {
     menuItems.push({
       label: t('common.print'),
       // The action stays visually distinct now that the menu component styles
@@ -797,8 +792,7 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
       title: !hasPermission('queue:create') ? t('fileManager.noPermissionAddToQueue') : undefined,
     });
   }
-  if ((useSlicerApi ? isApiSliceableFilename(file.filename) : isSliceableFilename(file.filename))
-      && (useSlicerApi ? onSlice : onOpenInSlicer)) {
+  if (isSliceableLibraryFile(file, !!useSlicerApi) && (useSlicerApi ? onSlice : onOpenInSlicer)) {
     menuItems.push({
       label: t('slice.action'),
       icon: useSlicerApi ? <Cog className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />,
@@ -807,7 +801,7 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
       title: !canSlice ? (useSlicerApi ? t('fileManager.noPermissionSlice') : t('fileManager.noPermissionDownload')) : undefined,
     });
   }
-  if (onRunPipeline && useSlicerApi && isApiSliceableFilename(file.filename)) {
+  if (onRunPipeline && useSlicerApi && isSliceableLibraryFile(file, true)) {
     menuItems.push({
       label: t('library.runWithPipeline.actionLabel'),
       icon: <Play className="w-4 h-4" />,
@@ -1574,17 +1568,11 @@ export function FileManagerPage() {
     onError: (error: Error) => showToast(error.message, 'error'),
   });
 
-  // Helper to check if a file is sliced (printable)
-  const isSlicedFile = useCallback((filename: string) => {
-    const lower = filename.toLowerCase();
-    return lower.endsWith('.gcode') || lower.includes('.gcode.');
-  }, []);
-
   // Get sliced files from selection
   const selectedSlicedFiles = useMemo(() => {
     if (!files) return [];
-    return files.filter(f => selectedFiles.includes(f.id) && isSlicedFile(f.filename));
-  }, [files, selectedFiles, isSlicedFile]);
+    return files.filter(f => selectedFiles.includes(f.id) && isSlicedLibraryFile(f));
+  }, [files, selectedFiles]);
 
   // The clicked file's variant group, so printing one member offers the rest
   // without the user re-selecting them (#2570).
@@ -2448,7 +2436,7 @@ export function FileManagerPage() {
                       // full-page gcode viewer the archive card uses, so
                       // the two paths feel consistent. STL / source 3MF
                       // continue to use the in-app 3D model viewer modal.
-                      if (isSlicedFilename(f.filename)) {
+                      if (isSlicedLibraryFile(f)) {
                         navigate(`/gcode-viewer?library_file=${f.id}`);
                       } else {
                         setViewerFile(f);
@@ -2602,7 +2590,7 @@ export function FileManagerPage() {
                     </div>
                     {/* Actions */}
                     <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                      {isSlicedFilename(file.filename) && (
+                      {isSlicedLibraryFile(file) && (
                         <>
                           <button
                             onClick={() => hasPermission('queue:create') && setPrintFile(file)}
@@ -2618,7 +2606,7 @@ export function FileManagerPage() {
                           </button>
                         </>
                       )}
-                      {(settings?.use_slicer_api ? isApiSliceableFilename(file.filename) : isSliceableFilename(file.filename)) && (
+                      {isSliceableLibraryFile(file, !!settings?.use_slicer_api) && (
                         <button
                           onClick={() => {
                             if (!canSlice()) return;
@@ -2635,7 +2623,7 @@ export function FileManagerPage() {
                           {settings?.use_slicer_api ? <Cog className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />}
                         </button>
                       )}
-                      {(settings?.use_slicer_api ?? false) && isApiSliceableFilename(file.filename) && (
+                      {(settings?.use_slicer_api ?? false) && isSliceableLibraryFile(file, true) && (
                         <button
                           onClick={() => hasPermission('pipelines:run') && setRunPipelineFile(file)}
                           className={`p-1.5 rounded transition-colors ${
@@ -2653,7 +2641,7 @@ export function FileManagerPage() {
                         <button
                           onClick={() => {
                             if (!hasPermission('library:read')) return;
-                            if (isSlicedFilename(file.filename)) {
+                            if (isSlicedLibraryFile(file)) {
                               navigate(`/gcode-viewer?library_file=${file.id}`);
                             } else {
                               setViewerFile(file);
@@ -2881,7 +2869,7 @@ export function FileManagerPage() {
           onSliceWithBambuddy={
             // Only offer in-app slicing on files the SliceModal can actually
             // handle (matches the file-row Cog visibility check at :2127).
-            isApiSliceableFilename(viewerFile.filename) && hasPermission('library:upload')
+            isSliceableLibraryFile(viewerFile, true) && hasPermission('library:upload')
               ? () => {
                   const f = viewerFile;
                   setViewerFile(null);

@@ -31,6 +31,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@rstocks](https://github.com/rstocks)
 - [@Neasham21](https://github.com/Neasham21)
 - [@strikerfab](https://github.com/strikerfab)
+- [@Thomansky](https://github.com/Thomansky)
 
 ## Supporters ($15/mo+)
 

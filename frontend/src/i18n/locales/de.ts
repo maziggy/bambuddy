@@ -4039,6 +4039,8 @@ export default {
     partOf: 'Teil von {{name}}',
     subProjectCount: '{{count}} Unterprojekte',
     subProjectsOf: 'Unterprojekte von {{name}}',
+    collapseSubProjects: 'Unterprojekte einklappen',
+    expandSubProjects: 'Unterprojekte ausklappen',
     title: 'Projekte',
     subtitle: 'Organisieren und verfolgen Sie Ihre 3D-Druckprojekte',
     newProject: 'Neues Projekt',

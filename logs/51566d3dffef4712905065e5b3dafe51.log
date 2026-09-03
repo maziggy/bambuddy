@@ -1,0 +1,200 @@
+2026-09-03 09:42:45,843 INFO [backend.app.services.print_scheduler] [-] Queue: printer 12 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-03 09:42:45,843 INFO [backend.app.services.print_scheduler] [-] Queue: printer 13 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-03 09:42:45,891 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 786432/64553750 bytes
+2026-09-03 09:42:46,090 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:46,092 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -62dBm
+2026-09-03 09:42:46,104 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 917504/64553750 bytes
+2026-09-03 09:42:46,216 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 851968/64553750 bytes
+2026-09-03 09:42:46,374 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:46,374 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -56dBm
+2026-09-03 09:42:46,406 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 983040/64553750 bytes
+2026-09-03 09:42:46,502 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:46,502 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -56dBm
+2026-09-03 09:42:46,612 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-03 09:42:46,613 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-03 09:42:46,613 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-09-03 09:42:46,614 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:46,615 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-03 09:42:46,616 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-03 09:42:46,617 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-09-03 09:42:46,617 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-09-03 09:42:46,633 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 917504/64553750 bytes
+2026-09-03 09:42:46,777 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1048576/64553750 bytes
+2026-09-03 09:42:46,935 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:46,936 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -64dBm
+2026-09-03 09:42:46,970 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 983040/64553750 bytes
+2026-09-03 09:42:47,064 DEBUG [backend.app.main] [-] Recorded 39 printer sensor history entries
+2026-09-03 09:42:47,087 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1114112/64553750 bytes
+2026-09-03 09:42:47,337 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1179648/64553750 bytes
+2026-09-03 09:42:47,679 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-03 09:42:47,679 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-03 09:42:47,680 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-09-03 09:42:47,681 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:47,681 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-03 09:42:47,682 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-03 09:42:47,683 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-09-03 09:42:47,684 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-09-03 09:42:47,730 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1245184/64553750 bytes
+2026-09-03 09:42:48,024 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1310720/64553750 bytes
+2026-09-03 09:42:48,079 DEBUG [backend.app.api.routes.printers] [b9545220] API returning ams_mapping: [], ams_extruder_map: {}
+2026-09-03 09:42:48,080 DEBUG [backend.app.api.routes.printers] [b9545220] Using tray_now directly as global ID: 254
+2026-09-03 09:42:48,093 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:48,095 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -59dBm
+2026-09-03 09:42:48,244 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1376256/64553750 bytes
+2026-09-03 09:42:48,397 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:48,526 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:48,527 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -57dBm
+2026-09-03 09:42:48,614 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1441792/64553750 bytes
+2026-09-03 09:42:48,796 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-03 09:42:48,797 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-03 09:42:48,798 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-09-03 09:42:48,799 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:48,802 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-03 09:42:48,804 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-03 09:42:48,806 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-09-03 09:42:48,812 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-09-03 09:42:49,083 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:49,084 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1048576/64553750 bytes
+2026-09-03 09:42:49,084 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -56dBm
+2026-09-03 09:42:49,095 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:49,097 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-09-03 09:42:49,103 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1507328/64553750 bytes
+2026-09-03 09:42:49,103 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:49,108 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -78dBm
+2026-09-03 09:42:49,110 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:49,111 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -61dBm
+2026-09-03 09:42:49,126 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1572864/64553750 bytes
+2026-09-03 09:42:49,133 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:49,134 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -60dBm
+2026-09-03 09:42:49,142 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(69, 7, None, 6)]
+2026-09-03 09:42:49,195 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-09-03 09:42:49,195 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-03 09:42:49,196 INFO [backend.app.services.print_scheduler] [-] Queue: printer 3 not available — connected=True, state=FINISH, awaiting_plate_clear=False
+2026-09-03 09:42:49,196 INFO [backend.app.services.print_scheduler] [-] Queue: printer 4 not available — connected=True, state=FINISH, awaiting_plate_clear=False
+2026-09-03 09:42:49,197 INFO [backend.app.services.print_scheduler] [-] Queue: printer 9 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-03 09:42:49,197 INFO [backend.app.services.print_scheduler] [-] Queue: printer 10 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-03 09:42:49,198 INFO [backend.app.services.print_scheduler] [-] Queue: printer 11 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-03 09:42:49,198 INFO [backend.app.services.print_scheduler] [-] Queue: printer 12 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-03 09:42:49,198 INFO [backend.app.services.print_scheduler] [-] Queue: printer 13 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-03 09:42:49,384 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1114112/64553750 bytes
+2026-09-03 09:42:49,661 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1638400/64553750 bytes
+2026-09-03 09:42:49,728 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1179648/64553750 bytes
+2026-09-03 09:42:49,884 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-03 09:42:49,885 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-03 09:42:49,886 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-09-03 09:42:49,888 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:49,890 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-03 09:42:49,894 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-03 09:42:49,896 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-09-03 09:42:49,897 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-09-03 09:42:49,925 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1703936/64553750 bytes
+2026-09-03 09:42:50,078 DEBUG [backend.app.api.routes.printers] [539529cd] API returning ams_mapping: [], ams_extruder_map: {}
+2026-09-03 09:42:50,100 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1245184/64553750 bytes
+2026-09-03 09:42:50,100 DEBUG [backend.app.api.routes.printers] [539529cd] Using tray_now directly as global ID: 254
+2026-09-03 09:42:50,107 DEBUG [backend.app.api.routes.printers] [8accfca3] API returning ams_mapping: [], ams_extruder_map: {}
+2026-09-03 09:42:50,107 DEBUG [backend.app.api.routes.printers] [8accfca3] Using tray_now directly as global ID: 254
+2026-09-03 09:42:50,303 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1769472/64553750 bytes
+2026-09-03 09:42:50,361 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1310720/64553750 bytes
+2026-09-03 09:42:50,435 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:50,436 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -57dBm
+2026-09-03 09:42:50,613 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1835008/64553750 bytes
+2026-09-03 09:42:50,691 DEBUG [backend.app.api.routes.printers] [45d644f1] API returning ams_mapping: [], ams_extruder_map: {}
+2026-09-03 09:42:50,692 DEBUG [backend.app.api.routes.printers] [45d644f1] Using tray_now directly as global ID: 254
+2026-09-03 09:42:50,779 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1376256/64553750 bytes
+2026-09-03 09:42:50,841 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1900544/64553750 bytes
+2026-09-03 09:42:50,884 DEBUG [backend.app.api.routes.printers] [ca92abee] API returning ams_mapping: [], ams_extruder_map: {}
+2026-09-03 09:42:50,885 DEBUG [backend.app.api.routes.printers] [ca92abee] Using tray_now directly as global ID: 254
+2026-09-03 09:42:50,974 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:50,975 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -70dBm
+2026-09-03 09:42:51,013 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-03 09:42:51,014 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-03 09:42:51,015 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-09-03 09:42:51,016 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:51,018 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-03 09:42:51,018 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-03 09:42:51,020 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-09-03 09:42:51,021 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-09-03 09:42:51,036 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1441792/64553750 bytes
+2026-09-03 09:42:51,046 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:51,047 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -57dBm
+2026-09-03 09:42:51,059 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:51,117 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:51,119 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:51,121 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-09-03 09:42:51,141 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:51,148 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:51,149 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -61dBm
+2026-09-03 09:42:51,213 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1966080/64553750 bytes
+2026-09-03 09:42:51,385 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1507328/64553750 bytes
+2026-09-03 09:42:51,594 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 2031616/64553750 bytes
+2026-09-03 09:42:51,724 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1572864/64553750 bytes
+2026-09-03 09:42:51,828 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 2097152/64553750 bytes
+2026-09-03 09:42:52,105 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:52,141 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 2162688/64553750 bytes
+2026-09-03 09:42:52,151 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1638400/64553750 bytes
+2026-09-03 09:42:52,157 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-03 09:42:52,159 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-03 09:42:52,160 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-09-03 09:42:52,162 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:52,166 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-03 09:42:52,168 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-03 09:42:52,169 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-09-03 09:42:52,170 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-09-03 09:42:52,303 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(69, 7, None, 6)]
+2026-09-03 09:42:52,314 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-09-03 09:42:52,315 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-03 09:42:52,315 INFO [backend.app.services.print_scheduler] [-] Queue: printer 3 not available — connected=True, state=FINISH, awaiting_plate_clear=False
+2026-09-03 09:42:52,316 INFO [backend.app.services.print_scheduler] [-] Queue: printer 4 not available — connected=True, state=FINISH, awaiting_plate_clear=False
+2026-09-03 09:42:52,316 INFO [backend.app.services.print_scheduler] [-] Queue: printer 9 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-03 09:42:52,316 INFO [backend.app.services.print_scheduler] [-] Queue: printer 10 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-03 09:42:52,317 INFO [backend.app.services.print_scheduler] [-] Queue: printer 11 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-03 09:42:52,317 INFO [backend.app.services.print_scheduler] [-] Queue: printer 12 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-03 09:42:52,318 INFO [backend.app.services.print_scheduler] [-] Queue: printer 13 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-03 09:42:52,448 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 2228224/64553750 bytes
+2026-09-03 09:42:52,450 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:52,450 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-09-03 09:42:52,510 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1703936/64553750 bytes
+2026-09-03 09:42:52,589 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:52,804 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 2293760/64553750 bytes
+2026-09-03 09:42:52,827 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1769472/64553750 bytes
+2026-09-03 09:42:52,996 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:52,997 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -66dBm
+2026-09-03 09:42:53,053 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:53,069 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:53,070 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -53dBm
+2026-09-03 09:42:53,102 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 2359296/64553750 bytes
+2026-09-03 09:42:53,127 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:53,142 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:53,143 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -77dBm
+2026-09-03 09:42:53,154 DEBUG [backend.app.api.routes.printers] [117eeeb3] API returning ams_mapping: [], ams_extruder_map: {}
+2026-09-03 09:42:53,155 DEBUG [backend.app.api.routes.printers] [117eeeb3] Using tray_now directly as global ID: 254
+2026-09-03 09:42:53,165 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:53,184 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:53,185 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -61dBm
+2026-09-03 09:42:53,189 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1835008/64553750 bytes
+2026-09-03 09:42:53,243 DEBUG [backend.app.api.routes.printers] [6554df84] API returning ams_mapping: [], ams_extruder_map: {}
+2026-09-03 09:42:53,245 DEBUG [backend.app.api.routes.printers] [6554df84] Using tray_now directly as global ID: 254
+2026-09-03 09:42:53,254 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-03 09:42:53,258 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-03 09:42:53,258 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-09-03 09:42:53,259 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:53,260 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-03 09:42:53,260 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-03 09:42:53,261 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-09-03 09:42:53,261 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-09-03 09:42:53,335 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 2424832/64553750 bytes
+2026-09-03 09:42:53,548 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1900544/64553750 bytes
+2026-09-03 09:42:53,728 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 2490368/64553750 bytes
+2026-09-03 09:42:53,882 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 1966080/64553750 bytes
+2026-09-03 09:42:54,032 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 2555904/64553750 bytes
+2026-09-03 09:42:54,139 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 2031616/64553750 bytes
+2026-09-03 09:42:54,330 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 2621440/64553750 bytes
+2026-09-03 09:42:54,413 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-03 09:42:54,414 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-03 09:42:54,414 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-09-03 09:42:54,415 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-03 09:42:54,416 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-03 09:42:54,416 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-03 09:42:54,417 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-09-03 09:42:54,417 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-09-03 09:42:54,491 DEBUG [backend.app.services.bambu_ftp] [-] FTP upload progress: 2097152/64553750 bytes

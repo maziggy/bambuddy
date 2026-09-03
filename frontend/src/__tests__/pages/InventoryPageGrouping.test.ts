@@ -85,6 +85,7 @@ function makeSpool(overrides: Partial<InventorySpool> & { id: number }): Invento
     last_used: null,
     encode_time: null,
     tag_uid: null,
+    tag_uid_2: null,
     tray_uuid: null,
     data_origin: null,
     tag_type: null,

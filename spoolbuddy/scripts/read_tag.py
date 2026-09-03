@@ -61,7 +61,7 @@ BAMBU_MASTER_KEY = bytes(
 BAMBU_CONTEXT = b"RFID-A\x00"  # 7 bytes including null terminator
 
 # Blocks to read for Bambu tag data
-BAMBU_BLOCKS = [1, 2, 4, 5]
+BAMBU_BLOCKS = [1, 2, 4, 5, 9]
 
 
 def hkdf_derive_keys(uid: bytes) -> bytes:

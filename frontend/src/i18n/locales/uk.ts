@@ -1664,6 +1664,15 @@ export default {
     printActivity: "Активність друку",
     filamentTypes: "Типи філаментів",
     filamentTrends: "Тенденції філаменту",
+    // Consumption/cost grouped by the internal material number (#2870).
+    materialNumbers: {
+      title: 'За номером матеріалу',
+      empty: 'Номери матеріалів ще не призначено. Додайте їх до котушок в інвентарі, щоб групувати тут споживання та витрати.',
+      spools: 'Котушки',
+      remaining: 'Залишок',
+      consumed: 'Спожито',
+      cost: 'Вартість',
+    },
     failureAnalysis: "Аналіз невдач",
     timeAccuracy: "Точність оцінки часу",
     successful: "Успішно:",
@@ -4763,6 +4772,11 @@ export default {
     storageLocationNone: "Місцезнаходження не встановлено",
     lowStockThresholdOverride: "Поріг низького запасу (ця котушка)",
     lowStockThresholdOverrideHelp: "Залиште поле порожнім, щоб використовувати глобальне порогове значення ({{global}}%).",
+    // Internal material / article number (#2870)
+    materialNumber: 'Мат. №',
+    materialNumberPlaceholder: 'напр. 15',
+    materialNumberHelp: 'Внутрішній закупівельний номер — спільний для всіх котушок цього продукту. Нові котушки того самого продукту успадковують його.',
+    materialNumberNone: 'Без номера матеріалу',
     // RFID button rename (was "Delete Tag" — confusing because it sounds like a
     // taxonomy delete; this clears the RFID tag/UUID off the spool record)
     clearRfid: "Очистити тег RFID.",

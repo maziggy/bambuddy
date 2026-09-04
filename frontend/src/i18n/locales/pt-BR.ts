@@ -1648,6 +1648,15 @@ export default {
     printActivity: 'Atividade de Impressão',
     filamentTypes: 'Tipos de Filamento',
     filamentTrends: 'Tendências de Filamento',
+    // Consumption/cost grouped by the internal material number (#2870).
+    materialNumbers: {
+      title: 'Por Número de Material',
+      empty: 'Nenhum número de material atribuído ainda. Adicione-os aos carretéis no inventário para agrupar consumo e custos aqui.',
+      spools: 'Carretéis',
+      remaining: 'Restante',
+      consumed: 'Consumido',
+      cost: 'Custo',
+    },
     failureAnalysis: 'Análise de Falhas',
     timeAccuracy: 'Precisão do Tempo',
     successful: 'Bem-sucedido:',
@@ -4714,6 +4723,11 @@ export default {
     storageLocationNone: 'Sem local definido',
     lowStockThresholdOverride: 'Limite de estoque baixo (este carretel)',
     lowStockThresholdOverrideHelp: 'Deixe em branco para usar o limite global ({{global}}%).',
+    // Internal material / article number (#2870)
+    materialNumber: 'Nº do Material',
+    materialNumberPlaceholder: 'ex. 15',
+    materialNumberHelp: 'Número interno de compra - compartilhado por todos os carretéis deste produto. Novos carretéis do mesmo produto o herdam.',
+    materialNumberNone: 'Sem número de material',
     clearRfid: 'Limpar tag RFID',
     rfidCleared: 'Tag RFID limpa',
     archive: 'Arquivar',

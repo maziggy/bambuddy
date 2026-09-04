@@ -121,6 +121,9 @@ class SpoolBase(BaseModel):
     # User-defined category + per-spool low-stock threshold override (#729).
     category: str | None = Field(default=None, max_length=50)
     low_stock_threshold_pct: int | None = Field(default=None, ge=1, le=99)
+    # Internal material / article number (#2870) — the purchasing identifier,
+    # shared by all spools of the same product. Free text, no uniqueness.
+    material_number: str | None = Field(default=None, max_length=64)
     # Free-text storage location, distinct from `location` (AMS slot
     # assignment). Column has lived on the ORM since the inventory rework
     # but was missing from this schema, so writes were silently dropped (#1291).
@@ -174,6 +177,8 @@ class SpoolUpdate(BaseModel):
     # User-defined category + per-spool low-stock threshold override (#729).
     category: str | None = Field(default=None, max_length=50)
     low_stock_threshold_pct: int | None = Field(default=None, ge=1, le=99)
+    # Internal material / article number (#2870).
+    material_number: str | None = Field(default=None, max_length=64)
     storage_location: str | None = Field(default=None, max_length=255)
     location_id: int | None = Field(default=None, gt=0)
 
@@ -244,6 +249,22 @@ class SpoolResponse(SpoolBase):
 
     class Config:
         from_attributes = True
+
+
+class MaterialNumberStats(BaseModel):
+    """Per-material-number inventory aggregate (#2870).
+
+    ``spool_count`` and ``remaining_g`` cover active (non-archived) spools;
+    ``consumed_g`` and ``cost`` sum the recorded usage history of every spool
+    carrying the number, archived included — consumption doesn't disappear
+    when a spool is archived.
+    """
+
+    material_number: str
+    spool_count: int
+    remaining_g: float
+    consumed_g: float
+    cost: float
 
 
 class SpoolAssignmentCreate(BaseModel):

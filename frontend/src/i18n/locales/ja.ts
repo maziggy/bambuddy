@@ -1647,6 +1647,15 @@ export default {
     printActivity: '印刷アクティビティ',
     filamentTypes: 'フィラメントタイプ',
     filamentTrends: 'フィラメントトレンド',
+    // Consumption/cost grouped by the internal material number (#2870).
+    materialNumbers: {
+      title: '資材番号別',
+      empty: 'まだ資材番号が割り当てられていません。在庫のスプールに資材番号を追加すると、ここで消費量とコストをまとめて確認できます。',
+      spools: 'スプール',
+      remaining: '残量',
+      consumed: '消費量',
+      cost: 'コスト',
+    },
     failureAnalysis: '失敗分析',
     timeAccuracy: '時間精度',
     successful: '成功',
@@ -4726,6 +4735,11 @@ export default {
     storageLocationNone: '保管場所未設定',
     lowStockThresholdOverride: '在庫低下のしきい値（このスプール）',
     lowStockThresholdOverrideHelp: '空欄の場合、グローバル設定（{{global}}%）を使用します。',
+    // Internal material / article number (#2870)
+    materialNumber: '資材番号',
+    materialNumberPlaceholder: '例：15',
+    materialNumberHelp: '社内の購買番号です。同じ製品のすべてのスプールで共有され、同じ製品の新しいスプールに自動的に引き継がれます。',
+    materialNumberNone: '資材番号なし',
     clearRfid: 'RFIDタグをクリア',
     rfidCleared: 'RFIDタグをクリアしました',
     archive: 'アーカイブ',

@@ -1578,6 +1578,15 @@ export default {
     printActivity: "Активность печати",
     filamentTypes: "Типы филамента",
     filamentTrends: "Расход филамента",
+    // Consumption/cost grouped by the internal material number (#2870).
+    materialNumbers: {
+      title: 'По артикулам',
+      empty: 'Артикулы пока не назначены. Добавьте их катушкам в инвентаре, чтобы группировать здесь расход и затраты.',
+      spools: 'Катушки',
+      remaining: 'Остаток',
+      consumed: 'Израсходовано',
+      cost: 'Стоимость',
+    },
     failureAnalysis: "Анализ неудач",
     timeAccuracy: "Точность оценки времени",
     successful: "Успешно:",
@@ -4502,6 +4511,11 @@ export default {
     storageLocationNone: "Место не указано",
     lowStockThresholdOverride: "Порог малого остатка (эта катушка)",
     lowStockThresholdOverrideHelp: "Оставьте пустым, чтобы использовать общий порог ({{global}}%).",
+    // Internal material / article number (#2870)
+    materialNumber: 'Артикул',
+    materialNumberPlaceholder: 'напр. 15',
+    materialNumberHelp: 'Внутренний закупочный номер — общий для всех катушек этого товара. Новые катушки того же товара наследуют его.',
+    materialNumberNone: 'Без артикула',
     clearRfid: "Очистить RFID-метку",
     rfidCleared: "RFID-метка очищена",
     archive: "Архивировать",

@@ -1581,6 +1581,15 @@ export default {
     printActivity: '인쇄 활동',
     filamentTypes: '필라멘트 종류',
     filamentTrends: '필라멘트 추세',
+    // Consumption/cost grouped by the internal material number (#2870).
+    materialNumbers: {
+      title: '자재 번호별',
+      empty: '아직 지정된 자재 번호가 없습니다. 인벤토리에서 스풀에 자재 번호를 추가하면 여기에서 소비량과 비용을 그룹화할 수 있습니다.',
+      spools: '스풀',
+      remaining: '남은 양',
+      consumed: '소비량',
+      cost: '비용',
+    },
     failureAnalysis: '실패 분석',
     timeAccuracy: '시간 정확도',
     successful: '성공:',
@@ -4511,6 +4520,11 @@ export default {
     categoryNone: '미분류',
     lowStockThresholdOverride: '재고 부족 임계값 (이 스풀)',
     lowStockThresholdOverrideHelp: '전역 임계값({{global}}%)을 사용하려면 비워두세요.',
+    // Internal material / article number (#2870)
+    materialNumber: '자재 번호',
+    materialNumberPlaceholder: '예: 15',
+    materialNumberHelp: '내부 구매 번호 - 이 제품의 모든 스풀이 공유합니다. 같은 제품의 새 스풀은 이 번호를 이어받습니다.',
+    materialNumberNone: '자재 번호 없음',
     clearRfid: 'RFID 태그 초기화',
     rfidCleared: 'RFID 태그가 초기화되었습니다',
     archive: '보관',

@@ -1648,6 +1648,15 @@ export default {
     printActivity: 'Activité d\'impression',
     filamentTypes: 'Types de filament',
     filamentTrends: 'Tendances filament',
+    // Consumption/cost grouped by the internal material number (#2870).
+    materialNumbers: {
+      title: 'Par numéro de matière',
+      empty: 'Aucun numéro de matière attribué pour l\'instant. Ajoutez-en aux bobines dans l\'inventaire pour regrouper ici la consommation et les coûts.',
+      spools: 'Bobines',
+      remaining: 'Restant',
+      consumed: 'Consommé',
+      cost: 'Coût',
+    },
     failureAnalysis: 'Analyse des échecs',
     timeAccuracy: 'Précision du temps',
     successful: 'Succès :',
@@ -4715,6 +4724,11 @@ export default {
     storageLocationNone: 'Aucun emplacement défini',
     lowStockThresholdOverride: 'Seuil bas (cette bobine)',
     lowStockThresholdOverrideHelp: 'Laisser vide pour utiliser le seuil global ({{global}} %).',
+    // Internal material / article number (#2870)
+    materialNumber: 'N° matière',
+    materialNumberPlaceholder: 'ex. 15',
+    materialNumberHelp: 'Numéro d\'achat interne - partagé par toutes les bobines de ce produit. Les nouvelles bobines du même produit en héritent.',
+    materialNumberNone: 'Aucun numéro de matière',
     clearRfid: 'Effacer le tag RFID',
     rfidCleared: 'Tag RFID effacé',
     archive: 'Archiver',

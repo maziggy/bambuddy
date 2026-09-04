@@ -953,6 +953,9 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
               availableCategories={Array.from(new Set(
                 allSpoolsForForm.map((s) => s.category?.trim()).filter((c): c is string => !!c),
               )).sort((a, b) => a.localeCompare(b))}
+              availableMaterialNumbers={Array.from(new Set(
+                allSpoolsForForm.map((s) => s.material_number?.trim()).filter((n): n is string => !!n),
+              )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))}
               globalLowStockThreshold={settingsForForm?.low_stock_threshold ?? 20}
             />
           </div>

@@ -1665,6 +1665,15 @@ export default {
     printActivity: 'Afdrukactiviteit',
     filamentTypes: 'Filamenttypen',
     filamentTrends: 'Filamenttrends',
+    // Consumption/cost grouped by the internal material number (#2870).
+    materialNumbers: {
+      title: 'Per materiaalnummer',
+      empty: 'Nog geen materiaalnummers toegewezen. Voeg ze toe aan spoelen in de voorraad om verbruik en kosten hier te groeperen.',
+      spools: 'Spoelen',
+      remaining: 'Resterend',
+      consumed: 'Verbruikt',
+      cost: 'Kosten',
+    },
     failureAnalysis: 'Foutenanalyse',
     timeAccuracy: 'Tijdnauwkeurigheid',
     successful: 'Geslaagd:',
@@ -4766,6 +4775,11 @@ export default {
     storageLocationNone: 'Geen locatie ingesteld',
     lowStockThresholdOverride: 'Drempel lage voorraad (deze spoel)',
     lowStockThresholdOverrideHelp: 'Laat leeg om de globale drempel ({{global}}%) te gebruiken.',
+    // Internal material / article number (#2870)
+    materialNumber: 'Materiaalnr.',
+    materialNumberPlaceholder: 'bijv. 15',
+    materialNumberHelp: 'Intern inkoopnummer - gedeeld door alle spoelen van dit product. Nieuwe spoelen van hetzelfde product nemen het over.',
+    materialNumberNone: 'Geen materiaalnummer',
     // RFID button rename (was "Delete Tag" — confusing because it sounds like a
     // taxonomy delete; this clears the RFID tag/UUID off the spool record)
     clearRfid: 'RFID-tag wissen',

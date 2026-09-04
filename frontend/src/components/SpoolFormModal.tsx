@@ -410,6 +410,7 @@ export function SpoolFormModal({
           cost_per_kg: spool.cost_per_kg ?? null,
           category: spool.category || '',
           low_stock_threshold_pct: spool.low_stock_threshold_pct ?? null,
+          material_number: spool.material_number || '',
           location_id: spool.location_id ?? null,
           spoolman_filament_id: null,
         });
@@ -738,6 +739,16 @@ export function SpoolFormModal({
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   })();
+  // Autocomplete for the internal material number (#2870), mirroring the
+  // category datalist above.
+  const availableMaterialNumbers = (() => {
+    const set = new Set<string>();
+    for (const s of allSpools ?? []) {
+      const n = s.material_number?.trim();
+      if (n) set.add(n);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  })();
   const globalLowStockThreshold = settingsForForm?.low_stock_threshold ?? 20;
 
   const unassignMutation = useMutation({
@@ -873,6 +884,7 @@ export function SpoolFormModal({
       cost_per_kg: formData.cost_per_kg,
       category: formData.category.trim() || null,
       low_stock_threshold_pct: formData.low_stock_threshold_pct,
+      material_number: formData.material_number.trim() || null,
       ...(spoolmanMode ? { spoolman_filament_id: formData.spoolman_filament_id } : {}),
     };
 
@@ -1078,6 +1090,7 @@ export function SpoolFormModal({
                   spoolCatalog={spoolCatalog}
                   currencySymbol={currencySymbol}
                   availableCategories={availableCategories}
+                  availableMaterialNumbers={availableMaterialNumbers}
                   availableLocations={storageLocations}
                   onCreateLocation={async (name) => {
                     try {

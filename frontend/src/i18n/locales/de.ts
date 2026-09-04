@@ -1648,6 +1648,15 @@ export default {
     printActivity: 'Druckaktivität',
     filamentTypes: 'Filamenttypen',
     filamentTrends: 'Filamenttrends',
+    // Consumption/cost grouped by the internal material number (#2870).
+    materialNumbers: {
+      title: 'Nach Materialnummer',
+      empty: 'Noch keine Materialnummern vergeben. Weise sie Spulen im Bestand zu, um Verbrauch und Kosten hier zu gruppieren.',
+      spools: 'Spulen',
+      remaining: 'Verbleibend',
+      consumed: 'Verbraucht',
+      cost: 'Kosten',
+    },
     failureAnalysis: 'Fehleranalyse',
     timeAccuracy: 'Zeitgenauigkeit',
     successful: 'Erfolgreich:',
@@ -4726,6 +4735,11 @@ export default {
     storageLocationNone: 'Kein Lagerort',
     lowStockThresholdOverride: 'Niedrigbestandsschwelle (diese Spule)',
     lowStockThresholdOverrideHelp: 'Leer lassen, um den globalen Schwellenwert ({{global}}%) zu verwenden.',
+    // Internal material / article number (#2870)
+    materialNumber: 'Material-Nr.',
+    materialNumberPlaceholder: 'z. B. 15',
+    materialNumberHelp: 'Interne Einkaufsnummer - wird von allen Spulen dieses Produkts geteilt. Neue Spulen desselben Produkts übernehmen sie.',
+    materialNumberNone: 'Keine Materialnummer',
     // RFID button rename (was "Tag löschen")
     clearRfid: 'RFID-Tag löschen',
     rfidCleared: 'RFID-Tag gelöscht',

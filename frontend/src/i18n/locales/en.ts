@@ -1665,6 +1665,15 @@ export default {
     printActivity: 'Print Activity',
     filamentTypes: 'Filament Types',
     filamentTrends: 'Filament Trends',
+    // Consumption/cost grouped by the internal material number (#2870).
+    materialNumbers: {
+      title: 'By Material Number',
+      empty: 'No material numbers assigned yet. Add them to spools in the inventory to group consumption and costs here.',
+      spools: 'Spools',
+      remaining: 'Remaining',
+      consumed: 'Consumed',
+      cost: 'Cost',
+    },
     failureAnalysis: 'Failure Analysis',
     timeAccuracy: 'Time Accuracy',
     successful: 'Successful:',
@@ -4766,6 +4775,11 @@ export default {
     storageLocationNone: 'No location set',
     lowStockThresholdOverride: 'Low-stock threshold (this spool)',
     lowStockThresholdOverrideHelp: 'Leave blank to use the global threshold ({{global}}%).',
+    // Internal material / article number (#2870)
+    materialNumber: 'Material No.',
+    materialNumberPlaceholder: 'e.g. 15',
+    materialNumberHelp: 'Internal purchasing number — shared by all spools of this product. New spools of the same product inherit it.',
+    materialNumberNone: 'No material number',
     // RFID button rename (was "Delete Tag" — confusing because it sounds like a
     // taxonomy delete; this clears the RFID tag/UUID off the spool record)
     clearRfid: 'Clear RFID Tag',

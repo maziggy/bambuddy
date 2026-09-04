@@ -1,0 +1,200 @@
+2026-09-04 10:31:25,729 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-04 10:31:25,730 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-04 10:31:55,360 INFO [backend.app.services.print_scheduler] [-] Queue check: found 10 pending items: [(24, 1, 12, None), (25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:31:55,368 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-04 10:32:25,471 INFO [backend.app.services.print_scheduler] [-] Queue check: found 10 pending items: [(24, 1, 12, None), (25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:32:25,480 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-04 10:32:55,602 INFO [backend.app.services.print_scheduler] [-] Queue check: found 10 pending items: [(24, 1, 12, None), (25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:32:55,623 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-04 10:33:09,576 INFO [uvicorn.access] [-] [IP]:40972 - "POST /api/v1/printers/1/bed-jog?distance=-10 HTTP/1.1" 200
+2026-09-04 10:33:20,018 INFO [uvicorn.access] [-] [IP]:40972 - "POST /api/v1/printers/1/extruder-jog?distance=-10 HTTP/1.1" 200
+2026-09-04 10:33:21,693 INFO [uvicorn.access] [-] [IP]:40972 - "POST /api/v1/printers/1/extruder-jog?distance=10 HTTP/1.1" 200
+2026-09-04 10:33:23,700 INFO [uvicorn.access] [-] [IP]:48166 - "POST /api/v1/printers/1/bed-jog?distance=-10 HTTP/1.1" 200
+2026-09-04 10:33:25,713 INFO [backend.app.services.print_scheduler] [-] Queue check: found 10 pending items: [(24, 1, 12, None), (25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:33:25,731 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-04 10:33:26,668 INFO [uvicorn.access] [-] [IP]:40972 - "POST /api/v1/printers/1/bed-jog?distance=-10 HTTP/1.1" 200
+2026-09-04 10:33:28,533 INFO [uvicorn.access] [-] [IP]:40972 - "POST /api/v1/printers/1/bed-jog?distance=-10 HTTP/1.1" 200
+2026-09-04 10:33:31,163 INFO [uvicorn.access] [-] [IP]:40972 - "POST /api/v1/printers/1/bed-jog?distance=-10 HTTP/1.1" 200
+2026-09-04 10:33:33,478 INFO [uvicorn.access] [-] [IP]:40972 - "POST /api/v1/printers/1/bed-jog?distance=-10 HTTP/1.1" 200
+2026-09-04 10:33:38,229 INFO [uvicorn.access] [-] [IP]:40972 - "POST /api/v1/printers/1/bed-jog?distance=10 HTTP/1.1" 200
+2026-09-04 10:33:39,207 INFO [uvicorn.access] [-] [IP]:33878 - "POST /api/v1/printers/1/bed-jog?distance=10 HTTP/1.1" 200
+2026-09-04 10:33:40,181 INFO [uvicorn.access] [-] [IP]:33878 - "POST /api/v1/printers/1/bed-jog?distance=10 HTTP/1.1" 200
+2026-09-04 10:33:40,844 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 10:33:41,316 INFO [uvicorn.access] [-] [IP]:33878 - "POST /api/v1/printers/1/bed-jog?distance=10 HTTP/1.1" 200
+2026-09-04 10:33:42,138 INFO [uvicorn.access] [-] [IP]:33878 - "POST /api/v1/printers/1/bed-jog?distance=10 HTTP/1.1" 200
+2026-09-04 10:33:44,896 INFO [uvicorn.access] [-] [IP]:33878 - "POST /api/v1/printers/1/bed-jog?distance=10 HTTP/1.1" 200
+2026-09-04 10:33:47,772 INFO [uvicorn.access] [-] [IP]:33878 - "POST /api/v1/printers/1/bed-jog?distance=10 HTTP/1.1" 200
+2026-09-04 10:33:55,869 INFO [backend.app.services.print_scheduler] [-] Queue check: found 10 pending items: [(24, 1, 12, None), (25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:33:55,876 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-04 10:34:25,949 INFO [backend.app.services.print_scheduler] [-] Queue check: found 10 pending items: [(24, 1, 12, None), (25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:34:25,959 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-04 10:34:56,033 INFO [backend.app.services.print_scheduler] [-] Queue check: found 10 pending items: [(24, 1, 12, None), (25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:34:56,040 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-04 10:35:26,099 INFO [backend.app.services.print_scheduler] [-] Queue check: found 10 pending items: [(24, 1, 12, None), (25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:35:26,107 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-04 10:35:56,236 INFO [backend.app.services.print_scheduler] [-] Queue check: found 10 pending items: [(24, 1, 12, None), (25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:35:56,247 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-04 10:36:26,350 INFO [backend.app.services.print_scheduler] [-] Queue check: found 10 pending items: [(24, 1, 12, None), (25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:36:26,363 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-04 10:36:56,423 INFO [backend.app.services.print_scheduler] [-] Queue check: found 10 pending items: [(24, 1, 12, None), (25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:36:56,439 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-04 10:37:26,526 INFO [backend.app.services.print_scheduler] [-] Queue check: found 10 pending items: [(24, 1, 12, None), (25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:37:26,536 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-04 10:37:56,595 INFO [backend.app.services.print_scheduler] [-] Queue check: found 10 pending items: [(24, 1, 12, None), (25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:37:56,602 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-09-04 10:38:04,920 INFO [backend.app.api.routes.cloud] [04edc9b4] get_filament_info called with 3 IDs: ['GFA00', 'GFA01', 'GFG99']
+2026-09-04 10:38:05,427 INFO [uvicorn.access] [-] [IP]:45976 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-09-04 10:38:09,219 INFO [uvicorn.access] [-] [IP]:45976 - "POST /api/v1/printers/1/clear-plate HTTP/1.1" 200
+2026-09-04 10:38:21,973 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-04 10:38:26,669 INFO [backend.app.services.print_scheduler] [-] Queue check: found 10 pending items: [(24, 1, 12, None), (25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:38:26,742 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=False
+2026-09-04 10:38:26,751 INFO [backend.app.services.print_scheduler] [-] Launching 1 upload(s) (pool 0/4 in flight)
+2026-09-04 10:38:26,774 INFO [backend.app.services.print_scheduler] [-] Starting queue item 24
+2026-09-04 10:38:30,029 INFO [backend.app.services.print_scheduler] [-] Queue item 24: G-code injected for model X2D
+2026-09-04 10:38:30,073 INFO [backend.app.services.print_scheduler] [-] Queue item 24: FTP upload starting - printer=[PRINTER] (X2D), ip=[IP], file=x2toolbox_v2(2).3mf, local_path=/tmp/tmpy7gw4k8o.3mf, retry_enabled=True, retry_count=3, timeout=30.0
+2026-09-04 10:38:30,106 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:38:30,114 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=False
+2026-09-04 10:38:30,737 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=X2D, prot_c=False)
+2026-09-04 10:38:30,747 INFO [backend.app.services.bambu_ftp] [-] FTP connecting to [IP] for upload (model=X2D, mode=prot_p, socket_timeout=30.0s, deadline=600s)...
+2026-09-04 10:38:31,465 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=X2D, prot_c=False)
+2026-09-04 10:38:31,466 INFO [backend.app.services.bambu_ftp] [-] FTP connected to [IP]
+2026-09-04 10:38:31,466 INFO [backend.app.services.bambu_ftp] [-] FTP uploading /tmp/tmpy7gw4k8o.3mf (5107633 bytes) to /x2toolbox_v2(2).3mf
+2026-09-04 10:38:31,590 INFO [backend.app.services.bambu_ftp] [-] FTP data channel ready in 0.1s (PASV + TLS handshake)
+2026-09-04 10:38:33,108 INFO [backend.app.services.bambu_ftp] [-] FTP STOR returned error_temp for /x2toolbox_v2(2).3mf but file is intact on the printer (5107633 bytes match) — proceeding: 426 Failure reading network stream.
+2026-09-04 10:38:33,109 INFO [backend.app.services.bambu_ftp] [-] FTP upload complete: /x2toolbox_v2(2).3mf (5107633 bytes in 1.6s, 3037 KB/s)
+2026-09-04 10:38:33,109 INFO [backend.app.services.bambu_ftp] [-] FTP mode cached for [IP]: prot_p
+2026-09-04 10:38:33,150 INFO [backend.app.main] [-] Registered expected print: printer=1, file=x2toolbox_v2(2).3mf, archive=12, ams_mapping=[1], plate_id=1
+2026-09-04 10:38:33,171 INFO [backend.app.services.print_scheduler] [-] Queue item 24: Status set to 'printing', sending print command...
+2026-09-04 10:38:33,188 INFO [backend.app.services.printer_manager] [-] PRINT COMMAND: printer=1, file=x2toolbox_v2(2).3mf, caller=print_scheduler.py:1874:_dispatch_one
+2026-09-04 10:38:33,188 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_1.gcode", "url": "ftp://x2toolbox_v2(2).3mf", "file": "x2toolbox_v2(2).3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": false, "auto_bed_leveling": 2, "flow_cali": false, "vibration_cali": true, "layer_inspect": true, "use_ams": true, "cfg": "0", "extrude_cali_flag": 2, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 2, "subtask_name": "x2toolbox_v2(2)", "profile_id": "0", "project_id": "1826318884", "subtask_id": "1826318884", "task_id": "1826318884", "ams_mapping": [1], "ams_mapping2": [{"ams_id": 0, "slot_id": 1}]}}
+2026-09-04 10:38:33,189 INFO [backend.app.services.print_scheduler] [-] Queue item 24: Print started successfully - x2toolbox_v2(2).gcode.3mf
+2026-09-04 10:38:33,201 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Captured ams_mapping from print command: [1]
+2026-09-04 10:38:33,234 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:38:33,242 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=False
+2026-09-04 10:38:33,311 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS Filament Backup: OFF
+2026-09-04 10:38:34,203 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS Filament Backup: ON
+2026-09-04 10:38:40,453 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT START detected - file: /data/Metadata/plate_1.gcode, subtask: x2toolbox_v2(2), is_new: True, is_file_change: False
+2026-09-04 10:38:40,454 INFO [backend.app.main] [-] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-09-04 10:38:40,469 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping=[1], tray_now=254, last_loaded_tray=254
+2026-09-04 10:38:40,469 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping-related keys: {'mapping': [1], 'ams_extruder_map': {'0': 1}}
+2026-09-04 10:38:40,470 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 0: T0(type=PLA, color=000000FF, now=?, tar=?), T1(type=PLA, color=FFFFFFFF, now=?, tar=?), T2(type=PLA, color=0078BFFF, now=?, tar=?), T3(type=PLA, color=DE4343FF, now=?, tar=?)
+2026-09-04 10:38:40,474 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Snapshotted 5 spool assignments for printer 1: {'0-0': 5, '0-1': 4, '0-2': 16, '0-3': 17, '255-1': 3}
+2026-09-04 10:38:40,485 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (6 trays): {'0-0': 100, '0-1': 100, '0-2': 100, '0-3': 100, '255-0': 0, '255-1': 0}
+2026-09-04 10:38:40,493 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-09-04 10:38:40,494 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: /data/Metadata/plate_1.gcode, subtask: x2toolbox_v2(2)
+2026-09-04 10:38:40,495 INFO [backend.app.main] [-] Using expected archive 12 for print (skipping duplicate)
+2026-09-04 10:38:40,558 INFO [backend.app.main] [-] [ENERGY] Recorded starting energy (expected-print) for archive 12 from plug '[PRINTER]': 1.06958472222222 kWh
+2026-09-04 10:38:40,566 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-04 10:38:40,568 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-04 10:38:40,862 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 10:38:42,621 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 297489 bytes
+2026-09-04 10:38:42,622 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 297489 bytes
+2026-09-04 10:38:42,622 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 ([PRINTER])
+2026-09-04 10:38:42,630 INFO [backend.app.services.notification_service] [-] No notification providers configured for print_start event on printer 1
+2026-09-04 10:38:42,644 INFO [backend.app.main] [-] Loaded 2 printable objects for printer 1
+2026-09-04 10:38:43,329 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=X2D, prot_c=False)
+2026-09-04 10:38:44,034 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=X2D, prot_c=False)
+2026-09-04 10:38:44,041 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /timelapse/video: 550 Failed to change directory.
+2026-09-04 10:38:44,737 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=X2D, prot_c=False)
+2026-09-04 10:38:44,749 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /record: 550 Failed to change directory.
+2026-09-04 10:38:45,435 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=X2D, prot_c=False)
+2026-09-04 10:38:45,442 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /recording: 550 Failed to change directory.
+2026-09-04 10:38:45,448 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 0 video files for printer 1
+2026-09-04 10:38:57,228 INFO [backend.app.api.routes.printers] [0506ce9b] Cover: resolved plate 1 before download (subtask=x2toolbox_v2(2))
+2026-09-04 10:38:57,284 INFO [backend.app.api.routes.printers] [0506ce9b] Cover using the running print's archived 3MF at /app/data/archive/unassigned/20260904_033028_x2toolbox_v2(2)/x2toolbox_v2(2).gcode.3mf (no FTP)
+2026-09-04 10:38:57,285 INFO [backend.app.api.routes.printers] [0506ce9b] Downloaded file size: 5080284 bytes
+2026-09-04 10:38:59,422 INFO [uvicorn.access] [-] [IP]:35912 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-04 10:38:59,599 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-09-04 10:38:59,604 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-04 10:38:59,606 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-04 10:39:03,305 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:39:03,312 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:39:15,917 INFO [backend.app.api.routes.printers] [ff0392f2] Cover: resolved plate 1 before download (subtask=x2toolbox_v2(2))
+2026-09-04 10:39:15,929 INFO [backend.app.api.routes.printers] [ff0392f2] Cover using the running print's archived 3MF at /app/data/archive/unassigned/20260904_033028_x2toolbox_v2(2)/x2toolbox_v2(2).gcode.3mf (no FTP)
+2026-09-04 10:39:15,930 INFO [backend.app.api.routes.printers] [ff0392f2] Downloaded file size: 5080284 bytes
+2026-09-04 10:39:15,938 INFO [backend.app.api.routes.printers] [ea1d71df] Cover: resolved plate 1 before download (subtask=x2toolbox_v2(2))
+2026-09-04 10:39:15,947 INFO [backend.app.api.routes.printers] [ea1d71df] Cover using the running print's archived 3MF at /app/data/archive/unassigned/20260904_033028_x2toolbox_v2(2)/x2toolbox_v2(2).gcode.3mf (no FTP)
+2026-09-04 10:39:15,948 INFO [backend.app.api.routes.printers] [ea1d71df] Downloaded file size: 5080284 bytes
+2026-09-04 10:39:33,373 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:39:33,382 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:39:49,102 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-04 10:40:03,444 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:40:03,451 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:40:12,727 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Unnamed print stage 73 on model X2D, entered from 11 (Identifying build plate type); state=RUNNING progress=0.0% layer=0/118
+2026-09-04 10:40:29,295 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Tray change during print: tray=1 at layer=0
+2026-09-04 10:40:33,538 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:40:33,550 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:40:35,734 INFO [uvicorn.access] [-] [IP]:42390 - "POST /api/v1/auth/login HTTP/1.1" 401
+2026-09-04 10:40:39,705 INFO [uvicorn.access] [-] [IP]:42390 - "POST /api/v1/auth/login HTTP/1.1" 200
+2026-09-04 10:40:40,353 INFO [uvicorn.access] [-] [IP]:59964 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-09-04 10:40:40,490 INFO [uvicorn.access] [-] [IP]:60118 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-04 10:40:40,757 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-09-04 10:40:40,852 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-04 10:40:40,854 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-04 10:40:41,274 INFO [backend.app.api.routes.printers] [385ad0ad] Cover: resolved plate 1 before download (subtask=x2toolbox_v2(2))
+2026-09-04 10:40:41,350 INFO [backend.app.api.routes.cloud] [d5c3d180] get_filament_info called with 3 IDs: ['GFA00', 'GFA01', 'GFG99']
+2026-09-04 10:40:41,364 INFO [uvicorn.access] [-] [IP]:59994 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-09-04 10:40:41,622 INFO [backend.app.api.routes.printers] [0f8fe3c3] Cover: resolved plate 1 before download (subtask=x2toolbox_v2(2))
+2026-09-04 10:41:03,631 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:41:03,638 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:41:33,698 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:41:33,706 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:41:39,146 INFO [backend.app.api.routes.printers] [89cd88e5] Cover: resolved plate 1 before download (subtask=x2toolbox_v2(2))
+2026-09-04 10:41:47,334 INFO [uvicorn.access] [-] [IP]:43496 - "POST /api/v1/archives/recalculate-costs HTTP/1.1" 200
+2026-09-04 10:42:03,766 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:42:03,774 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:42:33,840 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:42:33,847 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:43:03,933 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:43:03,944 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:43:34,046 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:43:34,072 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:43:40,884 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 10:44:04,183 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:44:04,197 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:44:34,308 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:44:34,315 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:44:46,449 INFO [backend.app.api.routes.printers] [605f509e] Cover: resolved plate 1 before download (subtask=x2toolbox_v2(2))
+2026-09-04 10:45:04,375 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:45:04,383 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:45:34,489 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:45:34,499 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:45:48,525 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-04 10:45:48,527 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-04 10:45:50,651 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 176244 bytes
+2026-09-04 10:45:50,652 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 176244 bytes
+2026-09-04 10:46:04,558 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:46:04,565 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:46:19,843 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-04 10:46:19,845 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-04 10:46:22,015 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 170098 bytes
+2026-09-04 10:46:22,016 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 170098 bytes
+2026-09-04 10:46:34,169 INFO [backend.app.api.routes.support] [2991598a] Log level changed to DEBUG
+2026-09-04 10:46:34,169 INFO [backend.app.api.routes.bug_report] [2991598a] Bug report: enabled debug logging
+2026-09-04 10:46:34,170 DEBUG [backend.app.services.bambu_mqtt] [2991598a] [[SERIAL]] Requesting status update (pushall)
+2026-09-04 10:46:34,172 INFO [uvicorn.access] [-] [IP]:49758 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-09-04 10:46:34,625 INFO [backend.app.services.print_scheduler] [-] Queue check: found 9 pending items: [(25, 1, 12, None), (26, 1, 12, None), (27, 1, 12, None), (14, 1, None, 10), (13, 1, None, 10), (5, 1, None, 7), (23, 1, 10, None), (20, 1, None, 5), (19, 1, None, 5)]
+2026-09-04 10:46:34,634 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-04 10:46:34,658 DEBUG [backend.app.services.print_scheduler] [-] Auto-drying: printer 1 skipped — printing or about to
+2026-09-04 10:46:34,985 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-04 10:46:34,986 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-04 10:46:34,986 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-09-04 10:46:34,986 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: x2toolbox_v2(2)
+2026-09-04 10:46:34,987 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'cfs': [2, 5, 7], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '2', 'tray_is_bbl_bits': 'f', 'tray_now': '1', 'tray_pre': '1', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '1', 'unbind_ams_stat': 0, 'version': 256}
+2026-09-04 10:46:34,987 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 1
+2026-09-04 10:46:34,988 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-09-04 10:46:34,988 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x11001103 -> extruder 1
+2026-09-04 10:46:34,988 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1}
+2026-09-04 10:46:34,989 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-09-04 10:46:34,989 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-04 10:46:34,990 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=33042 (switch_state bits 12-14: 0)
+2026-09-04 10:46:34,990 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 32°C (heater OFF)
+2026-09-04 10:46:34,990 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-09-04 10:46:34,991 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=32.0, heating=False, respect_local=False
+2026-09-04 10:46:34,991 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 32.0, target: 0.0, heating: False
+2026-09-04 10:46:34,991 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-04 10:46:34,992 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_external_free_kb': 88652096, 'tl_external_total_kb': 121353664, 'tl_internal_free_kb': 918193, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-09-04 10:46:34,992 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -39dBm
+2026-09-04 10:46:34,993 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-04 10:46:34,993 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [1]
+2026-09-04 10:46:34,993 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_1.gcode, subtask: x2toolbox_v2(2)

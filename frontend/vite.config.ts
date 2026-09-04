@@ -22,6 +22,14 @@ export default defineConfig({
     outDir: '../static',
     emptyOutDir: true,
     chunkSizeWarningLimit: 3000,
+    // Support floor is Safari 16.0 / iOS 16.0 (see
+    // scripts/check-browser-baseline.mjs, #2971). Without an explicit target
+    // the bundler keeps newer syntax verbatim — pdf.js ships class static
+    // initialisation blocks (Safari 16.4+), which would parse-fail the whole
+    // chunk on iOS 16.0-16.3 (#2976). This lowers such syntax at build time;
+    // regex features are NOT lowered, which is why the baseline check script
+    // still exists alongside this setting.
+    target: 'safari16',
   },
   server: {
     host: '0.0.0.0',

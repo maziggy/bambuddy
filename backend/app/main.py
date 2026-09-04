@@ -4,6 +4,7 @@ import logging
 import math
 import os
 import posixpath
+import re
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -9450,6 +9451,12 @@ def _frame_ancestors(default_value: str) -> str:
     return f"frame-ancestors {default_value};"
 
 
+# The Vite-emitted STEP preview worker chunk (#2976): src/workers/
+# stepPreview.worker.ts becomes /assets/stepPreview.worker-<hash>.js. Matched
+# exactly so the eval-relaxed CSP below can never apply to any other asset.
+_STEP_WORKER_ASSET_RE = re.compile(r"^/assets/stepPreview\.worker-[\w-]+\.js$")
+
+
 @app.middleware("http")
 async def security_headers_middleware(request, call_next):
     """Add standard HTTP security headers to every response."""
@@ -9496,6 +9503,23 @@ async def security_headers_middleware(request, call_next):
             "object-src 'none'; "
             "base-uri 'self'; " + _frame_ancestors("'none'")
         )
+    elif _STEP_WORKER_ASSET_RE.match(request.url.path):
+        # The STEP preview worker (#2976) runs OpenCascade compiled to WASM;
+        # its emscripten/embind glue generates invoker functions with `new
+        # Function(...)`, which needs 'unsafe-eval'. Per CSP3 a dedicated
+        # worker is governed by the policy delivered with the WORKER SCRIPT's
+        # own response — not the document's — so relaxing it here confines
+        # eval to that DOM-less worker context. The document policy below
+        # stays nonce-strict, and this response header has no effect when the
+        # file is merely fetched (a fetch's CSP is enforced against the
+        # requesting document, not the resource's own headers).
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; "
+            "connect-src 'self'; "
+            "object-src 'none'; "
+            "base-uri 'self'; " + _frame_ancestors("'none'")
+        )
     else:
         # The streaming overlay is embedded same-origin by the URL builder's
         # preview in Settings (#1422), so this branch allows 'self'.
@@ -9509,9 +9533,14 @@ async def security_headers_middleware(request, call_next):
         # TRUSTED_FRAME_ORIGINS is for, and _frame_ancestors already folds that
         # allowlist in.
         embeddable_same_origin = request.url.path.startswith("/overlay/")
+        # 'wasm-unsafe-eval' permits WebAssembly compilation ONLY — it does
+        # not allow eval()/Function() for JS, unlike 'unsafe-eval'. Needed by
+        # the STEP preview, which triangulates in the browser via OpenCascade
+        # compiled to WASM (#2976). Browsers that predate the keyword ignore
+        # it and simply keep blocking wasm, so this never widens JS execution.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            f"script-src 'self' 'nonce-{csp_nonce}'; "
+            f"script-src 'self' 'wasm-unsafe-eval' 'nonce-{csp_nonce}'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: blob:; "
             "media-src 'self' blob:; "

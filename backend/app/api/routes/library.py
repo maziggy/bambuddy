@@ -45,6 +45,7 @@ from backend.app.schemas.library import (
     BatchThumbnailResult,
     BulkDeleteRequest,
     BulkDeleteResponse,
+    ClientThumbnailResponse,
     ExternalFolderCreate,
     FileDuplicate,
     FileListResponse,
@@ -801,6 +802,18 @@ def create_image_thumbnail(file_path: Path, thumbnails_dir: Path, max_size: int 
 
 # Supported image extensions for thumbnails
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif"}
+
+# File types whose thumbnails are rendered client-side and uploaded back
+# (#2976). The server has no renderer for these formats — STEP would need
+# OpenCascade, PDF a rasteriser — so the browser posts its first preview
+# render to POST /files/{id}/preview-thumbnail instead. Kept to exactly
+# these types so the endpoint can never overwrite a server-generated
+# STL/3MF/G-code/image thumbnail.
+CLIENT_THUMBNAIL_TYPES = {"step", "stp", "pdf", "csv", "xlsx", "ods"}
+
+# Upper bound for an uploaded client-rendered thumbnail. The FE sends a
+# 256px PNG (a few tens of KB); anything near this limit is not a thumbnail.
+MAX_CLIENT_THUMBNAIL_BYTES = 2 * 1024 * 1024
 
 
 async def _backfill_external_stl_thumbnails(folder_ids: list[int]) -> None:
@@ -1582,6 +1595,12 @@ _SCANNABLE_EXTENSIONS = {
     ".webp",
     ".svg",
     ".md",
+    # Documents that ship alongside a job folder and now have in-app
+    # previews (#2976): drawings/datasheets and part lists.
+    ".pdf",
+    ".csv",
+    ".xlsx",
+    ".ods",
 }
 
 
@@ -5318,6 +5337,80 @@ async def get_thumbnail(
     media_type = media_types.get(thumb_ext, "image/png")
 
     return FastAPIFileResponse(str(abs_thumb_path), media_type=media_type)
+
+
+@router.post("/files/{file_id}/preview-thumbnail", response_model=ClientThumbnailResponse)
+async def upload_preview_thumbnail(
+    file_id: int,
+    thumbnail: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_UPDATE_ALL,
+            Permission.LIBRARY_UPDATE_OWN,
+        )
+    ),
+):
+    """Store a client-rendered preview thumbnail for a file (#2976).
+
+    STEP, PDF and spreadsheet previews are rendered in the browser; the FE
+    posts its first render here so the grid gets a thumbnail without the
+    server needing OpenCascade or a PDF rasteriser. Only file types in
+    ``CLIENT_THUMBNAIL_TYPES`` are accepted, and only while the file has no
+    thumbnail yet — a stored thumbnail is never replaced by this route.
+    """
+    user, can_modify_all = auth_result
+
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
+    file = result.scalar_one_or_none()
+
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Ownership check (same shape as update_file)
+    if not can_modify_all:
+        if file.created_by_id != user.id:
+            raise HTTPException(status_code=403, detail="You can only update your own files")
+
+    if file.file_type not in CLIENT_THUMBNAIL_TYPES:
+        raise HTTPException(status_code=400, detail="File type does not accept client-rendered thumbnails")
+
+    if file.thumbnail_path:
+        return ClientThumbnailResponse(updated=False)
+
+    content = await thumbnail.read(MAX_CLIENT_THUMBNAIL_BYTES + 1)
+    if len(content) > MAX_CLIENT_THUMBNAIL_BYTES:
+        raise HTTPException(status_code=413, detail="Thumbnail too large")
+
+    # Decode and re-encode through PIL: validates the bytes are a real PNG
+    # and strips anything that isn't pixel data before it lands on disk.
+    import io
+
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        with Image.open(io.BytesIO(content)) as img:
+            img.load()
+            if img.format != "PNG":
+                raise HTTPException(status_code=400, detail="Thumbnail must be a PNG image")
+            if img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGBA")
+            # The grid renders at ~256px; cap outliers instead of storing them.
+            if img.width > 512 or img.height > 512:
+                img.thumbnail((512, 512), Image.Resampling.LANCZOS)
+            thumbnails_dir = get_library_thumbnails_dir()
+            thumb_filename = f"{uuid.uuid4().hex}.png"
+            thumb_path = thumbnails_dir / thumb_filename  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
+            img.save(thumb_path, "PNG", optimize=True)
+    except HTTPException:
+        raise
+    except (UnidentifiedImageError, OSError, ValueError) as e:
+        raise HTTPException(status_code=400, detail="Invalid thumbnail image") from e
+
+    file.thumbnail_path = to_relative_path(thumb_path)
+    await db.commit()
+
+    return ClientThumbnailResponse(updated=True)
 
 
 @router.get("/files/{file_id}/gcode")

@@ -289,6 +289,61 @@ async def test_spa_csp_nonce_changes_per_request(async_client: AsyncClient):
     assert len(nonces) == 5, f"nonces should be per-request, got {nonces!r}"
 
 
+# ─── #2976: STEP preview needs WebAssembly, and only WebAssembly ─────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_spa_csp_allows_wasm_but_not_eval(async_client: AsyncClient):
+    """script-src must carry 'wasm-unsafe-eval' but never 'unsafe-eval' (#2976).
+
+    The STEP preview triangulates in the browser via OpenCascade compiled to
+    WASM; without 'wasm-unsafe-eval' the nonce-based CSP blocks
+    WebAssembly.instantiate() and the preview dies with a CompileError.
+    'wasm-unsafe-eval' permits wasm compilation only — JS eval()/Function()
+    stay blocked, which is what the second assertion pins.
+    """
+    resp = await async_client.get("/api/v1/auth/status")
+    csp = resp.headers.get("Content-Security-Policy", "")
+    script_src = next(
+        (d.strip() for d in csp.split(";") if d.strip().startswith("script-src")),
+        "",
+    )
+    assert "'wasm-unsafe-eval'" in script_src, f"script-src must allow wasm compilation: {script_src!r}"
+    # Substring check must not be fooled by 'wasm-unsafe-eval' containing
+    # "unsafe-eval" — compare whole tokens.
+    tokens = script_src.split()
+    assert "'unsafe-eval'" not in tokens, f"script-src must not allow JS eval: {script_src!r}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_step_worker_asset_csp_relaxes_eval_only_for_that_file(async_client: AsyncClient):
+    """Only the STEP worker script's own response may carry 'unsafe-eval' (#2976).
+
+    The occt-import-js embind glue generates invokers with `new Function`,
+    so the dedicated worker needs an eval-permitting policy. Per CSP3 a
+    worker is governed by the policy delivered with its own script response,
+    which confines eval to that DOM-less context. Any other asset — and the
+    SPA document itself — must stay nonce-strict. Both requests 404 in the
+    test checkout; the security middleware stamps headers regardless.
+    """
+
+    def script_src_tokens(resp) -> list[str]:
+        csp = resp.headers.get("Content-Security-Policy", "")
+        directive = next(
+            (d.strip() for d in csp.split(";") if d.strip().startswith("script-src")),
+            "",
+        )
+        return directive.split()
+
+    worker = await async_client.get("/assets/stepPreview.worker-Ck9aB12c.js")
+    assert "'unsafe-eval'" in script_src_tokens(worker), "step worker script must be allowed to eval"
+
+    other = await async_client.get("/assets/index-Ck9aB12c.js")
+    assert "'unsafe-eval'" not in script_src_tokens(other), "ordinary assets must stay eval-free"
+
+
 # ─── #1460: HEAD on PWA bootstrap routes (manifest / sw / sw-register) ───
 
 

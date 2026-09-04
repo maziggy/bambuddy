@@ -406,6 +406,16 @@ class BatchThumbnailResponse(BaseModel):
     results: list[BatchThumbnailResult]
 
 
+class ClientThumbnailResponse(BaseModel):
+    """Schema for the client-rendered preview thumbnail upload response (#2976).
+
+    ``updated`` is false when the file already had a thumbnail — the upload is
+    skipped so a stored thumbnail is never silently replaced.
+    """
+
+    updated: bool
+
+
 # ============ Variant Group Schemas (#671 / #2570) ============
 
 

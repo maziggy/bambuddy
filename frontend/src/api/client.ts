@@ -7396,6 +7396,27 @@ export const api = {
     window.URL.revokeObjectURL(url);
   },
   getLibraryFileThumbnailUrl: (id: number) => withStreamToken(`${API_BASE}/library/files/${id}/thumbnail`),
+  // Client-rendered preview thumbnail upload (#2976). STEP/PDF/spreadsheet
+  // previews render in the browser; the first render is posted back so the
+  // grid gets a thumbnail without a server-side renderer for those formats.
+  uploadLibraryPreviewThumbnail: async (fileId: number, thumbnail: Blob): Promise<{ updated: boolean }> => {
+    const formData = new FormData();
+    formData.append('thumbnail', thumbnail, 'preview.png');
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    const response = await fetch(`${API_BASE}/library/files/${fileId}/preview-thumbnail`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.json();
+  },
   getLibraryFilePlateThumbnail: (id: number, plateIndex: number) =>
     withStreamToken(`${API_BASE}/library/files/${id}/plate-thumbnail/${plateIndex}`),
   getLibraryFileGcodeUrl: (id: number) => `${API_BASE}/library/files/${id}/gcode`,

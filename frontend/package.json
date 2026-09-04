@@ -43,6 +43,9 @@
     "micromark-extension-gfm-strikethrough": "^2.1.0",
     "micromark-extension-gfm-table": "^2.1.1",
     "micromark-extension-gfm-task-list-item": "^2.1.0",
+    "occt-import-js": "^0.0.23",
+    "papaparse": "^5.7.0",
+    "pdfjs-dist": "^6.2.108",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -51,7 +54,8 @@
     "react-router-dom": "7.18.2",
     "react-simple-keyboard": "^3.8.164",
     "recharts": "^3.5.1",
-    "three": "^0.181.2"
+    "three": "^0.181.2",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "overrides": {
     "minimatch": "^10.2.1",
@@ -67,6 +71,7 @@
     "@testing-library/react": "^16.0.0",
     "@testing-library/user-event": "^14.5.0",
     "@types/node": "^24.10.1",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",

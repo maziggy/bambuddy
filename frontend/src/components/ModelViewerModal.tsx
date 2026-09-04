@@ -23,6 +23,9 @@ interface ModelViewerModalProps {
   // externally — so the preview modal's slice action matches the file row's
   // Cog (in-app Bambuddy SliceModal) when the slicer API is enabled.
   onSliceWithBambuddy?: () => void;
+  // Forwarded to ModelViewer: one 256px PNG of the first render, used by the
+  // file manager to persist a STEP thumbnail (#2976).
+  onSnapshot?: (blob: Blob) => void;
 }
 
 interface Capabilities {
@@ -122,7 +125,7 @@ function SlicerSplitButton({ icon, label, dropdownLabel, onPrimary, items }: Sli
   );
 }
 
-export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, onClose, onSliceWithBambuddy }: ModelViewerModalProps) {
+export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, onClose, onSliceWithBambuddy, onSnapshot }: ModelViewerModalProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
@@ -171,7 +174,8 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
       // upload path tags it `3mf`, so we accept both shapes here for
       // the 3D-tab + g-code-tab gating (#1543).
       const isThreeMfFamily = normalizedType === '3mf' || normalizedType === 'gcode.3mf';
-      const hasModel = isThreeMfFamily || normalizedType === 'stl';
+      // STEP joins the 3D tab via the OpenCascade WASM loader in ModelViewer (#2976).
+      const hasModel = isThreeMfFamily || normalizedType === 'stl' || normalizedType === 'step' || normalizedType === 'stp';
       setCapabilities({
         has_model: hasModel,
         has_source: false,
@@ -740,6 +744,7 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
                     filamentColors={capabilities.filament_colors}
                     selectedPlateId={selectedPlateId}
                     className="w-full h-full"
+                    onSnapshot={onSnapshot}
                   />
               </div>
             </div>

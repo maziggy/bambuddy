@@ -15,7 +15,12 @@ export function spoolMatchesQuery(spool: InventorySpool, query: string): boolean
     (spool.subtype?.toLowerCase().includes(q) ?? false) ||
     (spool.note?.toLowerCase().includes(q) ?? false) ||
     (spool.slicer_filament_name?.toLowerCase().includes(q) ?? false) ||
-    (spool.storage_location?.toLowerCase().includes(q) ?? false)
+    (spool.storage_location?.toLowerCase().includes(q) ?? false) ||
+    (spool.suppliers?.some(
+      (link) =>
+        link.supplier_name.toLowerCase().includes(q) ||
+        (link.supplier_article_number?.toLowerCase().includes(q) ?? false)
+    ) ?? false)
   );
 }
 

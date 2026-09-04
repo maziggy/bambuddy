@@ -1,0 +1,200 @@
+2026-09-04 07:41:48,374 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/2, seq_id=15)
+2026-09-04 07:41:48,424 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=2, 0 profiles, matched=True
+2026-09-04 07:41:48,424 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-09-04 07:41:48,425 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-09-04 07:41:48,425 INFO [backend.app.main] [-] [Printer 1] Primed K-profile table for nozzle 0.4: 0 profiles
+2026-09-04 07:43:51,953 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 07:48:51,965 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 07:53:51,977 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 07:58:51,994 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 08:00:00,007 WARNING [backend.app.utils.local_time] [-] Unrecognised TZ env value 'Americas/Toronto', falling back to UTC
+2026-09-04 08:03:52,010 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 08:08:52,026 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 08:13:52,039 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 08:18:52,057 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 08:23:52,072 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 08:28:52,090 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 08:33:52,100 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 08:38:52,112 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 08:43:52,121 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 08:48:52,135 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 08:53:52,149 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 08:58:52,162 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 09:00:00,006 WARNING [backend.app.utils.local_time] [-] Unrecognised TZ env value 'Americas/Toronto', falling back to UTC
+2026-09-04 09:03:52,175 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 09:08:52,193 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 09:13:52,208 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 09:18:52,224 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 09:23:52,237 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 09:28:52,249 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 09:33:52,263 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 09:38:52,277 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 09:43:52,290 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 09:48:52,302 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 09:53:52,315 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 09:58:52,326 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 10:00:00,007 WARNING [backend.app.utils.local_time] [-] Unrecognised TZ env value 'Americas/Toronto', falling back to UTC
+2026-09-04 10:03:52,334 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 10:08:52,349 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 10:13:52,365 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 10:18:52,380 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 10:23:52,401 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 10:28:52,411 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 10:33:52,421 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 10:38:52,436 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 10:43:52,449 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 10:48:52,464 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 10:53:52,478 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 10:58:52,494 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 11:00:00,009 WARNING [backend.app.utils.local_time] [-] Unrecognised TZ env value 'Americas/Toronto', falling back to UTC
+2026-09-04 11:03:52,506 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 11:08:52,523 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 11:13:52,540 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 11:18:52,551 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 11:23:52,564 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 11:28:52,577 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 11:33:52,590 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 11:38:52,602 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 11:43:52,617 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 11:48:52,629 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 11:53:52,646 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 11:58:52,660 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 12:00:00,008 WARNING [backend.app.utils.local_time] [-] Unrecognised TZ env value 'Americas/Toronto', falling back to UTC
+2026-09-04 12:03:52,673 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 12:08:52,687 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 12:13:52,701 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 12:18:52,714 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 12:23:52,727 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 12:28:52,738 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 12:33:52,750 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 12:38:52,764 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 12:43:52,775 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 12:48:52,788 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 12:53:52,800 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 12:58:52,814 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 13:00:00,007 WARNING [backend.app.utils.local_time] [-] Unrecognised TZ env value 'Americas/Toronto', falling back to UTC
+2026-09-04 13:03:52,827 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 13:08:52,839 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 13:13:52,853 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 13:18:52,868 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 13:23:52,881 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 13:28:52,895 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 13:33:52,908 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 13:38:52,920 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 13:43:52,933 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 13:48:52,945 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 13:53:52,961 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 13:58:52,974 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 14:00:00,007 WARNING [backend.app.utils.local_time] [-] Unrecognised TZ env value 'Americas/Toronto', falling back to UTC
+2026-09-04 14:03:52,988 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 14:08:53,005 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 14:13:53,021 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 14:18:53,035 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 14:23:53,052 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 14:28:53,065 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 14:33:53,085 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 14:38:53,108 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 14:43:53,120 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 14:48:53,134 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 14:53:53,146 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 14:58:53,156 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 15:00:00,007 WARNING [backend.app.utils.local_time] [-] Unrecognised TZ env value 'Americas/Toronto', falling back to UTC
+2026-09-04 15:03:53,169 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 15:08:53,184 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 15:13:53,199 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 15:18:53,214 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 15:23:53,231 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 15:28:53,244 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 15:33:53,257 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 15:38:53,280 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 15:43:53,294 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 15:48:53,312 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 15:53:53,325 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 15:58:53,337 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 16:00:00,006 WARNING [backend.app.utils.local_time] [-] Unrecognised TZ env value 'Americas/Toronto', falling back to UTC
+2026-09-04 16:03:53,349 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 16:08:53,366 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 16:13:53,380 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 16:18:53,393 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 16:23:53,406 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 16:28:53,420 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 16:33:53,431 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 16:38:53,445 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 16:43:53,458 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 16:48:53,471 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 16:53:53,488 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 16:58:53,500 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 17:00:00,007 WARNING [backend.app.utils.local_time] [-] Unrecognised TZ env value 'Americas/Toronto', falling back to UTC
+2026-09-04 17:03:53,516 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 17:08:53,531 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 17:13:53,545 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 17:18:53,562 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 17:23:53,578 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 17:28:53,590 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 17:33:53,602 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 17:38:53,616 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 17:43:53,631 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 17:48:53,644 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 17:53:53,656 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 17:58:53,670 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 18:00:00,006 WARNING [backend.app.utils.local_time] [-] Unrecognised TZ env value 'Americas/Toronto', falling back to UTC
+2026-09-04 18:01:47,238 INFO [uvicorn.access] [-] [IP]:43708 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-04 18:01:47,354 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-09-04 18:01:47,357 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-04 18:01:47,358 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-04 18:01:48,314 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-04 18:01:49,791 INFO [uvicorn.access] [-] [IP]:43956 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-09-04 18:01:49,877 INFO [uvicorn.access] [-] [IP]:43968 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-04 18:01:49,979 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-09-04 18:01:50,043 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-04 18:01:50,044 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-04 18:01:50,276 INFO [backend.app.api.routes.cloud] [284181e1] get_filament_info called with 2 IDs: ['GFG99', 'GFL96']
+2026-09-04 18:01:50,529 INFO [uvicorn.access] [-] [IP]:44120 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-09-04 18:01:50,557 INFO [backend.app.services.firmware_check] [d494e999] Got Bambu Lab build ID: 2rugQ0RWEc7vYkyHaaC_g
+2026-09-04 18:02:03,491 INFO [backend.app.api.routes.print_queue] [51fd70b2] Added library file 92 to queue for 1
+2026-09-04 18:02:03,495 INFO [uvicorn.access] [-] [IP]:57888 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-09-04 18:02:13,355 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-04 18:02:20,455 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(45, 1, None, 92)]
+2026-09-04 18:02:20,476 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FAILED, awaiting_plate_clear=True
+2026-09-04 18:02:20,481 INFO [backend.app.services.print_scheduler] [-] Launching 1 upload(s) (pool 0/4 in flight)
+2026-09-04 18:02:20,491 INFO [backend.app.services.print_scheduler] [-] Starting queue item 45
+2026-09-04 18:02:20,748 INFO [backend.app.services.print_scheduler] [-] Queue item 45: Created archive 84 from library file 92
+2026-09-04 18:02:20,754 INFO [backend.app.services.print_scheduler] [-] Queue item 45: preheat starting — bed=80°C chamber_target=0°C (source=filament-map override=inherit model=A1 has_heater=False has_sensor=False) max_wait=900s soak=300s
+2026-09-04 18:03:53,686 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 18:04:59,800 INFO [backend.app.services.print_scheduler] [-] Queue item 45: preheat target reached (bed=78.2 chamber=5.0) — entering soak
+2026-09-04 18:04:59,801 INFO [backend.app.services.print_scheduler] [-] Queue item 45: preheat soak — holding for 300s (of 300s configured; chamber has been above target for ~0s already)
+2026-09-04 18:07:18,603 INFO [uvicorn.access] [-] [IP]:46132 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-04 18:07:18,884 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-09-04 18:07:18,923 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-04 18:07:18,925 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-04 18:07:44,636 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-04 18:07:56,556 INFO [uvicorn.access] [-] [IP]:32778 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-04 18:07:56,703 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-09-04 18:07:56,727 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-04 18:07:56,729 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-04 18:07:59,612 INFO [backend.app.api.routes.cloud] [ccdbe93f] get_filament_info called with 2 IDs: ['GFG99', 'GFL96']
+2026-09-04 18:07:59,876 INFO [uvicorn.access] [-] [IP]:33010 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-09-04 18:08:53,700 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-04 18:09:55,475 INFO [backend.app.api.routes.support] [bb95bb67] Log level changed to DEBUG
+2026-09-04 18:09:55,475 INFO [backend.app.api.routes.bug_report] [bb95bb67] Bug report: enabled debug logging
+2026-09-04 18:09:55,475 DEBUG [backend.app.services.bambu_mqtt] [bb95bb67] [[SERIAL]] Requesting status update (pushall)
+2026-09-04 18:09:55,477 INFO [uvicorn.access] [-] [IP]:49048 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-09-04 18:09:55,590 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-09-04 18:09:55,591 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-09-04 18:09:55,591 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FAILED, gcode_file: , subtask_name: skull_halloween
+2026-09-04 18:09:55,591 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'd', 'tray_is_bbl_bits': 'd', 'tray_tar': '0', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': 'd', 'tray_reading_bits': '0', 'version': 73, 'insert_flag': True, 'power_on_flag': True}
+2026-09-04 18:09:55,591 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 0
+2026-09-04 18:09:55,592 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-09-04 18:09:55,592 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-09-04 18:09:55,592 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-09-04 18:09:55,592 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-09-04 18:09:55,593 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-04 18:09:55,593 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-09-04 18:09:55,593 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-09-04 18:09:55,593 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-09-04 18:09:55,594 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-09-04 18:09:55,594 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-04 18:09:55,594 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-09-04 18:09:55,594 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -42dBm
+2026-09-04 18:09:55,595 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-09-04 18:09:55,595 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FAILED -> FAILED, file: , subtask: skull_halloween

@@ -5,12 +5,14 @@ import secrets
 import zipfile
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
 
+from backend.app.api.routes.cloud import get_stored_token
 from backend.app.core import database
 from backend.app.core.auth import (
     RequireCameraStreamTokenIfAuthEnabled,
@@ -49,6 +51,11 @@ from backend.app.schemas.printer import (
     PrintOptionsResponse,
 )
 from backend.app.services import drying_preflight
+from backend.app.services.bambu_cloud import (
+    BambuCloudAuthError,
+    BambuCloudError,
+    BambuCloudService,
+)
 from backend.app.services.bambu_ftp import (
     cache_3mf_download,
     delete_file_async,
@@ -1234,21 +1241,121 @@ async def get_printer_cover(
     fut: asyncio.Future = asyncio.get_event_loop().create_future()
     _cover_inflight[inflight_key] = fut
     try:
-        image_data = await _produce_cover_image(
-            printer,
-            printer_id,
-            subtask_name,
-            view,
-            view_key,
-            plate_num,
-            cache_key,
-            archive_path=await _running_print_archive_file(printer_id, state),
-        )
+        try:
+            image_data = await _produce_cover_image(
+                printer,
+                printer_id,
+                subtask_name,
+                view,
+                view_key,
+                plate_num,
+                cache_key,
+                archive_path=await _running_print_archive_file(printer_id, state),
+            )
+        except HTTPException as exc:
+            # Only `_produce_cover_image` runs here — every other 404 this route raises comes
+            # earlier — so a 404 caught here always means the image could not be produced.
+            # Runs after the archive-file path above, so only a print with no local copy gets
+            # here. Default view only: the task has one cover, and serving the angled render for
+            # `view=pick` would give the skip-objects modal a picture where it wants a mask.
+            if exc.status_code != 404 or view is not None:
+                raise
+            image_data = await _cloud_task_cover(printer_id, subtask_name)
+            if image_data is None:
+                raise
+            # `_produce_cover_image` wrote the negative cache on its way out; leaving it would
+            # short-circuit the next request to 404 before it reached this fallback.
+            _cover_cache.setdefault(printer_id, {})[cache_key] = image_data
+            if printer_id in _cover_404_cache:
+                _cover_404_cache[printer_id].discard(cache_key)
         return Response(content=image_data, media_type="image/png")
     finally:
         if not fut.done():
             fut.set_result(None)
         _cover_inflight.pop(inflight_key, None)
+
+
+async def _cloud_task_cover(printer_id: int, subtask_name: str) -> bytes | None:
+    """The active print's cover from Bambu Cloud, or None.
+
+    The FTP path searches by 3MF filename, which fails when the file is on internal eMMC
+    (FTPS serves external storage only) and when ``subtask_name`` is a MakerWorld profile
+    title rather than a filename. ``subtask_id`` identifies the job instead, and the task it
+    keys carries the same plate render the 3MF holds.
+
+    Best-effort: every failure returns None so the caller's 404 stands.
+    """
+    state = printer_manager.get_status(printer_id)
+    raw = getattr(state, "subtask_id", None) if state else None
+    # A string: the firmware's "0" means "no job" and passes both `!= 0` and truthiness.
+    subtask_id = str(raw).strip() if raw is not None else ""
+    if subtask_id in ("", "0"):
+        logger.info("Cover: no subtask_id for '%s', cloud fallback skipped", subtask_name)
+        return None
+    return await cloud_cover_bytes(subtask_id)
+
+
+async def cloud_cover_bytes(subtask_id: str) -> bytes | None:
+    """The plate render Bambu Cloud holds for *subtask_id*, or None.
+
+    Split out of :func:`_cloud_task_cover` so the archive path can reuse it: that one
+    has the id on the row already and no live printer state to read it from.
+
+    Best-effort — every failure returns None.
+    """
+    async with database.async_session() as db:
+        token, _email, region = await get_stored_token(db, None)
+        if not token:
+            # This route is authenticated by a camera stream token, so it has no user context.
+            # Ordered by id so a deployment behaves the same way twice. No cross-user leak: the
+            # task endpoint is scoped to the token's own account, so a session that does not own
+            # this job's task gets nothing back. `!= ""` is an emptiness filter, not a credential
+            # (bandit B105), and it matters — an empty token could otherwise win the `limit(1)`.
+            result = await db.execute(
+                select(User)
+                .where(User.cloud_token.isnot(None), User.cloud_token != "")  # nosec B105
+                .order_by(User.id)
+                .limit(1)
+            )
+            owner = result.scalars().first()
+            if owner is not None:
+                token = owner.cloud_token
+                # Inlined rather than importing cloud._normalise_region, which is private.
+                region = owner.cloud_region if owner.cloud_region in ("global", "china") else "global"
+
+    if not token:
+        logger.info("Cover: no stored Bambu Cloud session, cloud fallback skipped")
+        return None
+
+    cloud = BambuCloudService(region=region)
+    cloud.set_token(token)
+    try:
+        task = await cloud.get_task(subtask_id)
+    except (BambuCloudAuthError, BambuCloudError) as e:
+        logger.info("Cover: cloud task %s lookup failed: %s", subtask_id, e)
+        return None
+    finally:
+        await cloud.close()
+
+    cover = (task or {}).get("cover") or ""
+    if not isinstance(cover, str) or not cover.startswith("https://"):
+        logger.info("Cover: cloud task %s carries no usable cover", subtask_id)
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+            response = await client.get(cover)
+    except httpx.RequestError as e:
+        logger.info("Cover: cloud cover download failed: %s", e)
+        return None
+
+    # The CDN needs no credential, so a non-200 means the object is gone, not that we asked wrong.
+    if response.status_code != 200 or not response.content.startswith(b"\x89PNG"):
+        logger.info("Cover: cloud cover was %s, %s bytes", response.status_code, len(response.content))
+        return None
+
+    logger.info("Cover: served from the cloud task %s (%s bytes)", subtask_id, len(response.content))
+    return response.content
 
 
 async def _produce_cover_image(

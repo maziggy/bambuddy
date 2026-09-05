@@ -787,6 +787,19 @@ function FailureAnalysisWidget({ size = 1, dateFrom, dateTo, createdById }: {
         <div className="text-sm text-bambu-gray mt-1">
           {t('stats.failedPrintsCount', { failed: analysis.failed_prints, total: analysis.total_prints })}
         </div>
+        {/* Quality dimension (#1898): completed prints the user rejected.
+            Only rendered once at least one verdict exists — installs without
+            the confirmation workflow see the widget unchanged. */}
+        {(analysis.rejected_prints ?? 0) > 0 && (
+          <div className="text-sm mt-1">
+            <span className="text-status-warning">
+              {t('stats.rejectedPrintsCount', { rejected: analysis.rejected_prints })}
+            </span>
+            <span className="text-bambu-gray ml-2">
+              {t('stats.yieldRate', { rate: (analysis.yield_rate ?? 0).toFixed(1) })}
+            </span>
+          </div>
+        )}
         {/* Trend indicator */}
         {analysis.trend && analysis.trend.length >= 2 && (
           <div className={`${size >= 2 ? 'mt-4' : 'mt-2 pt-2 border-t border-bambu-dark-tertiary'}`}>

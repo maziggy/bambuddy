@@ -397,6 +397,10 @@ class AppSettings(BaseModel):
         default="auto",
         description="Default nozzle offset calibration option for new prints (dual-nozzle printers only)",
     )
+    default_confirm_outcome: bool = Field(
+        default=False,
+        description="Default for asking for a post-print outcome verdict on new prints (#1898)",
+    )
 
     # Staggered batch start for multi-printer jobs
     stagger_group_size: int = Field(
@@ -737,6 +741,7 @@ class AppSettingsUpdate(BaseModel):
     default_layer_inspect: bool | None = None
     default_timelapse: bool | None = None
     default_nozzle_offset_cali: TriState | None = None
+    default_confirm_outcome: bool | None = None
     stagger_group_size: int | None = Field(default=None, ge=1, le=50)
     stagger_interval_minutes: int | None = Field(default=None, ge=1, le=60)
     billing_enabled: bool | None = None

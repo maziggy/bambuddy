@@ -5961,6 +5961,12 @@ class PrintScheduler:
             if archive.plate_id is None and item.plate_id is not None:
                 archive.plate_id = item.plate_id
 
+            # Ask-for-outcome opt-in rides from the queue item to the archive
+            # the same way (#1898); never cleared here so a reprint of an
+            # archive that already asked keeps asking.
+            if item.confirm_outcome:
+                archive.confirm_requested = True
+
             file_path = settings.base_dir / archive.file_path
             filename = archive.filename
 
@@ -6021,6 +6027,8 @@ class PrintScheduler:
                 )
                 if archive:
                     item.archive_id = archive.id
+                    if item.confirm_outcome:
+                        archive.confirm_requested = True  # ask-for-outcome opt-in (#1898)
                     if budget_reservation is not None:
                         budget_reservation.print_archive_id = archive.id
                     if item.cleanup_library_after_dispatch and not library_file.is_external:

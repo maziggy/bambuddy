@@ -1,0 +1,200 @@
+2026-09-05 18:48:53,434 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 18:48:56,887 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:48:56,890 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:49:13,919 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 74987 bytes
+2026-09-05 18:49:26,900 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:49:26,903 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:49:42,656 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 77834 bytes
+2026-09-05 18:49:56,912 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:49:56,915 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:50:03,455 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 18:50:15,596 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 75310 bytes
+2026-09-05 18:50:26,925 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:50:26,928 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:50:44,326 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 76380 bytes
+2026-09-05 18:50:56,938 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:50:56,941 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:51:05,153 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 18:51:13,475 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 75014 bytes
+2026-09-05 18:51:26,951 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:51:26,954 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:51:43,860 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 78009 bytes
+2026-09-05 18:51:56,964 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:51:56,967 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:52:12,479 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 78586 bytes
+2026-09-05 18:52:12,479 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 78586 bytes
+2026-09-05 18:52:26,977 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:52:26,980 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:52:29,251 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-05 18:52:43,184 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 76833 bytes
+2026-09-05 18:52:56,989 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:52:56,992 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:53:13,845 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 79070 bytes
+2026-09-05 18:53:27,003 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:53:27,006 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:53:42,641 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 78381 bytes
+2026-09-05 18:53:57,015 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:53:57,018 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:54:11,299 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 77108 bytes
+2026-09-05 18:54:13,339 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 18:54:27,028 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:54:27,031 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:54:41,905 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 79565 bytes
+2026-09-05 18:54:41,906 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 79565 bytes
+2026-09-05 18:54:57,041 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:54:57,045 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:55:10,592 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 76208 bytes
+2026-09-05 18:55:20,817 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 18:55:27,055 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:55:27,058 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:55:40,982 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 79058 bytes
+2026-09-05 18:55:57,068 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:55:57,071 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:56:09,499 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 78399 bytes
+2026-09-05 18:56:25,683 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 18:56:27,081 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:56:27,084 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:56:39,846 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 76870 bytes
+2026-09-05 18:56:57,095 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:56:57,098 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:57:08,489 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 78932 bytes
+2026-09-05 18:57:27,107 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:57:27,110 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:57:29,255 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-05 18:57:30,968 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 18:57:41,093 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 78847 bytes
+2026-09-05 18:57:57,121 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:57:57,124 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:58:10,318 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 77982 bytes
+2026-09-05 18:58:27,133 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:58:27,136 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:58:34,965 INFO [backend.app.api.routes.cloud] [37e15fe6] get_filament_info called with 2 IDs: ['GFA01', 'GFL03']
+2026-09-05 18:58:34,966 INFO [uvicorn.access] [-] [IP]:64203 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-09-05 18:58:34,969 INFO [uvicorn.access] [-] [IP]:52689 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-09-05 18:58:35,138 INFO [backend.app.api.routes.printers] [c8a8d797] Cover: resolved plate 2 before download (subtask=Order-1246-2)
+2026-09-05 18:58:35,138 INFO [backend.app.api.routes.camera] [1fe67838] Using chamber image protocol for P1S
+2026-09-05 18:58:35,138 INFO [backend.app.api.routes.camera] [1fe67838] Camera viewer attached to printer-1 (subscribers=4)
+2026-09-05 18:58:36,988 INFO [backend.app.api.routes.camera] [fb5f0764] Camera viewer detached from printer-1 (subscribers=3)
+2026-09-05 18:58:39,038 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 77115 bytes
+2026-09-05 18:58:57,146 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:58:57,149 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:59:08,599 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 78400 bytes
+2026-09-05 18:59:27,161 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:59:27,164 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 18:59:33,458 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 18:59:35,578 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 78331 bytes
+2026-09-05 18:59:57,174 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 18:59:57,177 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:00:08,246 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 72871 bytes
+2026-09-05 19:00:27,187 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:00:27,191 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:00:40,735 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 77363 bytes
+2026-09-05 19:00:57,201 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:00:57,204 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:01:09,310 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 76294 bytes
+2026-09-05 19:01:27,214 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:01:27,217 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:01:36,037 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 19:01:38,067 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 71751 bytes
+2026-09-05 19:01:57,227 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:01:57,230 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:02:06,780 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 76155 bytes
+2026-09-05 19:02:06,780 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 76155 bytes
+2026-09-05 19:02:27,240 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:02:27,244 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:02:29,260 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-05 19:02:39,556 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 19:02:39,561 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 74981 bytes
+2026-09-05 19:02:57,254 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:02:57,257 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:03:06,331 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 74867 bytes
+2026-09-05 19:03:27,267 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:03:27,270 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:03:38,991 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 72938 bytes
+2026-09-05 19:03:57,279 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:03:57,282 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:04:07,376 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 71327 bytes
+2026-09-05 19:04:27,292 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:04:27,295 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:04:35,928 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 73364 bytes
+2026-09-05 19:04:37,953 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 70572 bytes
+2026-09-05 19:04:50,051 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 19:04:57,305 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:04:57,308 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:05:06,423 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 71761 bytes
+2026-09-05 19:05:27,317 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:05:27,320 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:05:37,341 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 74780 bytes
+2026-09-05 19:05:49,664 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 19:05:57,330 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:05:57,333 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:06:06,130 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 75111 bytes
+2026-09-05 19:06:27,344 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:06:27,347 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:06:38,045 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 69893 bytes
+2026-09-05 19:06:56,498 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 19:06:57,357 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:06:57,360 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:07:04,891 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 74169 bytes
+2026-09-05 19:07:04,891 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 74169 bytes
+2026-09-05 19:07:27,371 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:07:27,374 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:07:29,265 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-05 19:07:37,133 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 69515 bytes
+2026-09-05 19:07:49,729 INFO [backend.app.api.routes.camera] [1fe67838] Camera viewer detached from printer-1 (subscribers=2)
+2026-09-05 19:07:49,733 INFO [backend.app.api.routes.camera] [beecb393] Skipping force-shutdown for printer 1: 2 subscriber(s) still attached; natural cleanup will tear down when last viewer disconnects
+2026-09-05 19:07:49,733 INFO [uvicorn.access] [-] [IP]:55040 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-09-05 19:07:55,562 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 19:07:57,384 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:07:57,388 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:08:08,218 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 70166 bytes
+2026-09-05 19:08:27,399 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:08:27,402 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:08:36,849 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 72984 bytes
+2026-09-05 19:08:57,412 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:08:57,415 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:09:07,281 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 19:09:07,285 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 65936 bytes
+2026-09-05 19:09:27,425 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:09:27,428 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:09:36,097 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 69788 bytes
+2026-09-05 19:09:57,439 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:09:57,442 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:09:59,829 INFO [backend.app.api.routes.cloud] [3e316cc4] get_filament_info called with 2 IDs: ['GFA01', 'GFL03']
+2026-09-05 19:09:59,834 INFO [uvicorn.access] [-] [IP]:58636 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-09-05 19:10:04,334 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 67654 bytes
+2026-09-05 19:10:08,455 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 19:10:27,452 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:10:27,455 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:10:29,893 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 70568 bytes
+2026-09-05 19:10:57,466 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:10:57,469 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:10:58,435 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 66945 bytes
+2026-09-05 19:11:15,275 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-05 19:11:27,446 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 60777 bytes
+2026-09-05 19:11:27,479 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(10, None, None, 6)]
+2026-09-05 19:11:27,482 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-05 19:11:30,919 INFO [backend.app.api.routes.support] [37de2aad] Log level changed to DEBUG
+2026-09-05 19:11:30,919 INFO [backend.app.api.routes.bug_report] [37de2aad] Bug report: enabled debug logging
+2026-09-05 19:11:30,919 DEBUG [backend.app.services.bambu_mqtt] [37de2aad] [[SERIAL]] Requesting status update (pushall)
+2026-09-05 19:11:30,919 INFO [uvicorn.access] [-] [IP]:60108 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-09-05 19:11:30,969 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: Order-1246-2.3mf, subtask_name: Order-1246-2
+2026-09-05 19:11:30,969 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '0', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 62, 'insert_flag': True, 'power_on_flag': False}
+2026-09-05 19:11:30,969 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 0
+2026-09-05 19:11:30,969 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-09-05 19:11:30,969 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-09-05 19:11:30,969 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-09-05 19:11:30,969 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-09-05 19:11:30,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-05 19:11:30,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-09-05 19:11:30,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-09-05 19:11:30,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-09-05 19:11:30,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-09-05 19:11:30,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-05 19:11:30,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-09-05 19:11:30,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -28dBm
+2026-09-05 19:11:30,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-09-05 19:11:30,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: Order-1246-2.3mf, subtask: Order-1246-2
+2026-09-05 19:11:34,114 DEBUG [backend.app.main] [-] Recorded 3 printer sensor history entries
+2026-09-05 19:11:36,549 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-05 19:11:36,550 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -30dBm

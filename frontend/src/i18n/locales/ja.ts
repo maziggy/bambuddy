@@ -1065,6 +1065,8 @@ export default {
       confirmPendingTitle: 'この印刷は結果の判定を求めています — クリックして回答',
       rejected: '不良',
       rejectedTitle: 'プリンターでは完了しましたが、ユーザーにより不良と判定されました',
+      confirmedGood: '良品',
+      confirmedGoodTitle: 'ユーザーにより良品と確認されました',
       duplicate: '重複',
       duplicateTitle: 'このモデルは以前印刷されています',
       openSource3mf: 'ソース3MFをBambu Studioで開く（右クリックでオプション表示）',
@@ -2320,6 +2322,8 @@ export default {
     defaultTimelapseDesc: 'タイムラプス動画を記録',
     defaultConfirmOutcome: '結果の確認',
     defaultConfirmOutcomeDesc: '印刷完了後に仕上がりの良否を確認',
+    confirmDefaultGoodOnPlateClear: 'プレートクリア時に未回答の結果を良品として記録',
+    confirmDefaultGoodOnPlateClearDescription: 'プレートがクリアされた際（手動またはキューの次の印刷による）、その印刷の結果確認が未回答の場合、自動的に良品として記録します。',
     defaultNozzleOffsetCali: 'ノズルオフセットキャリブレーション',
     defaultNozzleOffsetCaliDesc: 'エクストルーダー間のノズルオフセットを校正',
     tempFanPresetsTitle: '温度・ファンプリセット',
@@ -5417,6 +5421,7 @@ export default {
     rejectAndReprint: 'もう一度印刷',
     alreadyGood: 'すでに良品として確認済みです。',
     alreadyRejected: 'すでに不良として記録済みです。',
+    cardPrompt: '仕上がりはどうでしたか？',
   },
 
   // Edit archive modal

@@ -1066,6 +1066,8 @@ export default {
       confirmPendingTitle: 'Cette impression attend un verdict de résultat — cliquez pour répondre',
       rejected: 'rebuté',
       rejectedTitle: 'Terminée sur l\'imprimante, marquée comme rebut par l\'utilisateur',
+      confirmedGood: 'réussi',
+      confirmedGoodTitle: 'Confirmée comme pièce réussie par l\'utilisateur',
       duplicate: 'doublon',
       duplicateTitle: 'Ce modèle a déjà été imprimé',
       openSource3mf: 'Ouvrir 3MF dans Bambu Studio (clic droit pour plus)',
@@ -2277,6 +2279,8 @@ export default {
     defaultTimelapseDesc: 'Enregistrer une vidéo timelapse',
     defaultConfirmOutcome: 'Demander le résultat',
     defaultConfirmOutcomeDesc: 'Demander si l\'impression est bien sortie une fois terminée',
+    confirmDefaultGoodOnPlateClear: 'Compter les résultats sans réponse comme bons à la libération du plateau',
+    confirmDefaultGoodOnPlateClearDescription: 'Lorsque le plateau est libéré (manuellement ou par l\'impression suivante en file d\'attente) et que la demande de résultat de l\'impression reste sans réponse, l\'enregistrer automatiquement comme bonne pièce.',
     defaultNozzleOffsetCali: 'Calibration du décalage des buses',
     defaultNozzleOffsetCaliDesc: 'Calibrer les décalages entre les buses',
     tempFanPresetsTitle: 'Préréglages de température et de ventilateur',
@@ -5406,6 +5410,7 @@ export default {
     rejectAndReprint: 'Réimprimer',
     alreadyGood: 'Déjà confirmée comme bonne pièce.',
     alreadyRejected: 'Déjà marquée comme rebut.',
+    cardPrompt: 'Comment est-elle sortie ?',
   },
 
   // Edit archive modal

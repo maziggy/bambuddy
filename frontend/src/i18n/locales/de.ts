@@ -1066,6 +1066,8 @@ export default {
       confirmPendingTitle: 'Dieser Druck wartet auf eine Ergebnis-Bewertung — zum Antworten klicken',
       rejected: 'Ausschuss',
       rejectedTitle: 'Auf dem Drucker abgeschlossen, vom Benutzer als Ausschuss markiert',
+      confirmedGood: 'Gutteil',
+      confirmedGoodTitle: 'Vom Benutzer als Gutteil bestätigt',
       duplicate: 'Duplikat',
       duplicateTitle: 'Dieses Modell wurde bereits zuvor gedruckt',
       openSource3mf: 'Quell-3MF in Bambu Studio öffnen (Rechtsklick für mehr Optionen)',
@@ -2321,6 +2323,8 @@ export default {
     defaultTimelapseDesc: 'Zeitraffervideo aufnehmen',
     defaultConfirmOutcome: 'Nach Ergebnis fragen',
     defaultConfirmOutcomeDesc: 'Nach Abschluss fragen, ob der Druck gut geworden ist',
+    confirmDefaultGoodOnPlateClear: 'Unbeantwortete Ergebnisse bei Druckplatten-Freigabe als gut zählen',
+    confirmDefaultGoodOnPlateClearDescription: 'Wenn die Druckplatte freigegeben wird (manuell oder durch den nächsten geplanten Druck) und die Ergebnisabfrage des Drucks noch unbeantwortet ist, wird er automatisch als Gutteil erfasst.',
     defaultNozzleOffsetCali: 'Düsenversatz-Kalibrierung',
     defaultNozzleOffsetCaliDesc: 'Düsenversatz zwischen Extrudern kalibrieren',
     tempFanPresetsTitle: 'Temperatur- und Lüfter-Vorgaben',
@@ -5417,6 +5421,7 @@ export default {
     rejectAndReprint: 'Erneut drucken',
     alreadyGood: 'Bereits als Gutteil bestätigt.',
     alreadyRejected: 'Bereits als Ausschuss markiert.',
+    cardPrompt: 'Wie ist der Druck geworden?',
   },
 
   // Edit archive modal

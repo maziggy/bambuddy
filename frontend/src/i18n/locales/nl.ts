@@ -1071,6 +1071,8 @@ export default {
       confirmPendingTitle: 'Deze afdruk vroeg om een resultaatoordeel — klik om te antwoorden',
       rejected: 'afgekeurd',
       rejectedTitle: 'Voltooid op de printer, door de gebruiker als afkeur gemarkeerd',
+      confirmedGood: 'goedgekeurd',
+      confirmedGoodTitle: 'Door de gebruiker bevestigd als een goed onderdeel',
       duplicate: 'duplicaat',
       duplicateTitle: 'Dit model is eerder afgedrukt',
       openSource3mf: 'Bron-3MF openen in Bambu Studio (klik met rechts voor meer opties)',
@@ -2341,6 +2343,8 @@ export default {
     defaultTimelapseDesc: 'Timelapsevideo opnemen',
     defaultConfirmOutcome: 'Vragen om resultaat',
     defaultConfirmOutcomeDesc: 'Vragen of de afdruk goed is gelukt nadat deze is voltooid',
+    confirmDefaultGoodOnPlateClear: 'Onbeantwoorde resultaten als goed tellen bij plaatvrijgave',
+    confirmDefaultGoodOnPlateClearDescription: 'Wanneer de plaat wordt vrijgegeven (handmatig of door de volgende afdruk in de wachtrij) en de resultaatvraag van de afdruk nog onbeantwoord is, wordt deze automatisch als goed onderdeel geregistreerd.',
     defaultNozzleOffsetCali: 'Nozzle-offsetkalibratie',
     defaultNozzleOffsetCaliDesc: 'Nozzle-offsets tussen extruders kalibreren',
     tempFanPresetsTitle: 'Voorinstellingen temperatuur en ventilator',
@@ -5467,6 +5471,7 @@ export default {
     rejectAndReprint: 'Opnieuw afdrukken',
     alreadyGood: 'Al bevestigd als goed onderdeel.',
     alreadyRejected: 'Al gemarkeerd als afgekeurd.',
+    cardPrompt: 'Hoe is het gelukt?',
   },
 
   // Edit archive modal

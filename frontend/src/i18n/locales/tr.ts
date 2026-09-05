@@ -1066,6 +1066,8 @@ export default {
       confirmPendingTitle: 'Bu baskı için sonuç kararı istendi — yanıtlamak için tıklayın',
       rejected: 'reddedildi',
       rejectedTitle: 'Yazıcıda tamamlandı, kullanıcı tarafından ret olarak işaretlendi',
+      confirmedGood: 'sağlam',
+      confirmedGoodTitle: 'Kullanıcı tarafından sağlam parça olarak onaylandı',
       duplicate: 'tekrar',
       duplicateTitle: 'Bu model daha önce yazdırıldı',
       openSource3mf: "Kaynak 3MF'yi Bambu Studio'da aç (daha fazla seçenek için sağ tıklayın)",
@@ -2325,6 +2327,8 @@ export default {
     defaultTimelapseDesc: 'Zaman atlamalı video kaydet',
     defaultConfirmOutcome: 'Sonucu Sor',
     defaultConfirmOutcomeDesc: 'Baskı tamamlandıktan sonra iyi çıkıp çıkmadığını sor',
+    confirmDefaultGoodOnPlateClear: 'Plaka temizlendiğinde yanıtsız sonuçları iyi olarak say',
+    confirmDefaultGoodOnPlateClearDescription: 'Plaka temizlendi olarak onaylandığında (elle veya kuyruktaki bir sonraki baskıyla) ve baskının sonuç sorusu hâlâ yanıtsızsa, otomatik olarak iyi parça olarak kaydet.',
     defaultNozzleOffsetCali: 'Nozül Ofset Kalibrasyonu',
     defaultNozzleOffsetCaliDesc: 'Ekstrüderler arasındaki nozül ofsetlerini kalibre et',
     tempFanPresetsTitle: 'Sıcaklık ve Fan Ön Ayarları',
@@ -5391,6 +5395,7 @@ export default {
     rejectAndReprint: 'Tekrar yazdır',
     alreadyGood: 'Zaten iyi parça olarak onaylandı.',
     alreadyRejected: 'Zaten reddedildi olarak işaretlendi.',
+    cardPrompt: 'Nasıl çıktı?',
   },
 
   // Arşiv düzenleme modali

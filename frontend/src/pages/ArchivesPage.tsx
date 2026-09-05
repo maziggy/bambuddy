@@ -1028,6 +1028,15 @@ function ArchiveCard({
             {t('archives.card.rejected')}
           </div>
         )}
+        {archive.status === 'completed' && archive.user_verdict === 'good' && (
+          <div
+            className="absolute top-2 left-12 px-2 py-1 rounded text-xs bg-bambu-green/80 text-white flex items-center gap-1"
+            title={t('archives.card.confirmedGoodTitle')}
+          >
+            <ThumbsUp className="w-3 h-3" />
+            {t('archives.card.confirmedGood')}
+          </div>
+        )}
         {/* Duplicate badge */}
         {archive.duplicate_count > 0 && duplicateSequence > 0 && originalArchiveId && (
           <button
@@ -2387,6 +2396,14 @@ function ArchiveListRow({
                 title={t('archives.card.rejectedTitle')}
               >
                 {t('archives.card.rejected')}
+              </span>
+            )}
+            {archive.status === 'completed' && archive.user_verdict === 'good' && (
+              <span
+                className="px-1.5 py-0.5 rounded text-[10px] leading-tight bg-bambu-green/80 text-white flex-shrink-0"
+                title={t('archives.card.confirmedGoodTitle')}
+              >
+                {t('archives.card.confirmedGood')}
               </span>
             )}
             {archive.duplicate_count > 0 && duplicateSequence > 0 && originalArchiveId && (

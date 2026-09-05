@@ -1066,6 +1066,8 @@ export default {
       confirmPendingTitle: 'Questa stampa ha richiesto un verdetto sull\'esito — clicca per rispondere',
       rejected: 'scartato',
       rejectedTitle: 'Completata sulla stampante, contrassegnata come scarto dall\'utente',
+      confirmedGood: 'riuscito',
+      confirmedGoodTitle: 'Confermato come pezzo riuscito dall\'utente',
       duplicate: 'duplicato',
       duplicateTitle: 'Questo modello è stato stampato prima',
       openSource3mf: 'Apri sorgente 3MF in Bambu Studio (clic destro per altre opzioni)',
@@ -2277,6 +2279,8 @@ export default {
     defaultTimelapseDesc: 'Registra un video timelapse',
     defaultConfirmOutcome: 'Chiedi esito',
     defaultConfirmOutcomeDesc: 'Chiedi se la stampa è venuta bene una volta completata',
+    confirmDefaultGoodOnPlateClear: 'Conta gli esiti senza risposta come buoni alla liberazione del piatto',
+    confirmDefaultGoodOnPlateClearDescription: 'Quando il piatto viene liberato (manualmente o dalla stampa successiva in coda) e la richiesta di esito della stampa è ancora senza risposta, registra automaticamente il pezzo come buono.',
     defaultNozzleOffsetCali: 'Calibrazione offset ugelli',
     defaultNozzleOffsetCaliDesc: 'Calibra gli offset tra gli ugelli',
     tempFanPresetsTitle: 'Preset di temperatura e ventola',
@@ -5405,6 +5409,7 @@ export default {
     rejectAndReprint: 'Stampa di nuovo',
     alreadyGood: 'Già confermata come pezzo buono.',
     alreadyRejected: 'Già contrassegnata come scartata.',
+    cardPrompt: 'Com\'è venuta?',
   },
 
   // Edit archive modal

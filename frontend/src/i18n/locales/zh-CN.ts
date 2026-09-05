@@ -1066,6 +1066,8 @@ export default {
       confirmPendingTitle: '此打印请求了成品判定 — 点击回答',
       rejected: '已报废',
       rejectedTitle: '在打印机上已完成，但被用户标记为报废',
+      confirmedGood: '良品',
+      confirmedGoodTitle: '被用户确认为良品',
       duplicate: '重复',
       duplicateTitle: '此模型之前已打印过',
       openSource3mf: '在 Bambu Studio 中打开源 3MF（右键查看更多选项）',
@@ -2322,6 +2324,8 @@ export default {
     defaultTimelapseDesc: '录制延时摄影视频',
     defaultConfirmOutcome: '询问成品结果',
     defaultConfirmOutcomeDesc: '打印完成后询问成品是否良好',
+    confirmDefaultGoodOnPlateClear: '打印板清空时将未回答的结果计为良品',
+    confirmDefaultGoodOnPlateClearDescription: '当打印板被清空（手动或由下一个排队打印触发）而该打印的结果询问仍未回答时，自动将其记录为良品。',
     defaultNozzleOffsetCali: '喷嘴偏移校准',
     defaultNozzleOffsetCaliDesc: '校准两个挤出机之间的喷嘴偏移',
     tempFanPresetsTitle: '温度与风扇预设',
@@ -5405,6 +5409,7 @@ export default {
     rejectAndReprint: '重新打印',
     alreadyGood: '已确认为良品。',
     alreadyRejected: '已标记为报废。',
+    cardPrompt: '打印效果如何？',
   },
 
   // Edit archive modal

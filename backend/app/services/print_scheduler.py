@@ -6493,6 +6493,16 @@ class PrintScheduler:
 
         # Clear the awaiting-plate-clear flag now that we're starting a new print
         printer_manager.set_awaiting_plate_clear(item.printer_id, False)
+
+        # #1898: with the opt-in default-good setting, moving on to the next
+        # print resolves the previous print's unanswered outcome prompt as
+        # "good" — this path also covers the camera-based plate detection,
+        # which releases the gate by allowing dispatch rather than by an
+        # explicit acknowledgment. Rides on the dispatch transaction.
+        if await self._get_bool_setting(db, "confirm_default_good_on_plate_clear", default=False):
+            from backend.app.services.print_confirmation import resolve_pending_confirmation_as_good
+
+            await resolve_pending_confirmation_as_good(db, item.printer_id)
         logger.info("Queue item %s: Status set to 'printing', sending print command...", item.id)
 
         # Capture state before dispatch so the watchdog can detect whether the

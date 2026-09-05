@@ -1071,6 +1071,8 @@ export default {
       confirmPendingTitle: 'This print asked for an outcome verdict — click to answer',
       rejected: 'rejected',
       rejectedTitle: 'Completed on the printer, marked as reject by the user',
+      confirmedGood: 'good',
+      confirmedGoodTitle: 'Confirmed as a good part by the user',
       duplicate: 'duplicate',
       duplicateTitle: 'This model has been printed before',
       openSource3mf: 'Open source 3MF in Bambu Studio (right-click for more options)',
@@ -2341,6 +2343,8 @@ export default {
     defaultTimelapseDesc: 'Record timelapse video',
     defaultConfirmOutcome: 'Ask for Outcome',
     defaultConfirmOutcomeDesc: 'Ask whether the print came out well after it completes',
+    confirmDefaultGoodOnPlateClear: 'Count unanswered outcomes as good on plate release',
+    confirmDefaultGoodOnPlateClearDescription: 'When the plate is released (manually or by the next queued print) and the print\'s outcome prompt is still unanswered, record it as a good part automatically.',
     defaultNozzleOffsetCali: 'Nozzle Offset Calibration',
     defaultNozzleOffsetCaliDesc: 'Calibrate nozzle offsets between extruders',
     tempFanPresetsTitle: 'Temperature & Fan Presets',
@@ -5468,6 +5472,7 @@ export default {
     rejectAndReprint: 'Print again',
     alreadyGood: 'Already confirmed as a good part.',
     alreadyRejected: 'Already marked as rejected.',
+    cardPrompt: 'How did it come out?',
   },
   // Edit archive modal
   // Edit Archive Modal

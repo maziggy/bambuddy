@@ -1066,6 +1066,8 @@ export default {
       confirmPendingTitle: 'Esta impressão pediu um veredito de resultado — clique para responder',
       rejected: 'rejeitado',
       rejectedTitle: 'Concluída na impressora, marcada como rejeitada pelo usuário',
+      confirmedGood: 'boa',
+      confirmedGoodTitle: 'Confirmada como uma peça boa pelo usuário',
       duplicate: 'duplicado',
       duplicateTitle: 'Este modelo já foi impresso antes',
       openSource3mf: 'Abrir source 3MF no Bambu Studio (clique com o botão direito para mais opções)',
@@ -2277,6 +2279,8 @@ export default {
     defaultTimelapseDesc: 'Gravar vídeo timelapse',
     defaultConfirmOutcome: 'Perguntar o Resultado',
     defaultConfirmOutcomeDesc: 'Perguntar se a impressão saiu bem após a conclusão',
+    confirmDefaultGoodOnPlateClear: 'Contar resultados sem resposta como bons ao liberar a placa',
+    confirmDefaultGoodOnPlateClearDescription: 'Quando a placa é liberada (manualmente ou pela próxima impressão na fila) e a pergunta sobre o resultado da impressão ainda não foi respondida, registrá-la automaticamente como peça boa.',
     defaultNozzleOffsetCali: 'Calibração de offset dos bicos',
     defaultNozzleOffsetCaliDesc: 'Calibrar offsets entre extrusores',
     tempFanPresetsTitle: 'Predefinições de temperatura e ventilador',
@@ -5405,6 +5409,7 @@ export default {
     rejectAndReprint: 'Imprimir novamente',
     alreadyGood: 'Já confirmada como peça boa.',
     alreadyRejected: 'Já marcada como rejeitada.',
+    cardPrompt: 'Como ficou a impressão?',
   },
 
   // Edit archive modal

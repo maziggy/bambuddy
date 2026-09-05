@@ -139,7 +139,10 @@ import {
   MonitorPlay,
   ExternalLink,
   PictureInPicture2,
+  ThumbsUp,
+  ThumbsDown,
 } from 'lucide-react';
+import { ConfirmOutcomeDialog } from '../components/ConfirmOutcomeDialog';
 
 // Aliased: lucide-react already exports a `Link` icon into this module.
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
@@ -2654,6 +2657,15 @@ function PrinterCard({
   const lastPrint = lastPrints?.[0];
   const isPrintingOrPaused = status?.state === 'RUNNING' || status?.state === 'PAUSE';
   const needsPlateClear = requirePlateClear && status?.awaiting_plate_clear === true;
+  // Post-print outcome confirmation on the card (#1898): while the plate-clear
+  // gate is up and the just-finished print asked for a verdict, offer
+  // Good/Reject right where the operator releases the plate. Releasing the
+  // plate without answering stays possible — the two are orthogonal (though
+  // the confirm_default_good_on_plate_clear setting can couple them).
+  const pendingConfirmArchive =
+    lastPrint && lastPrint.status === 'completed' && lastPrint.confirm_requested && lastPrint.user_verdict == null
+      ? lastPrint
+      : null;
   // Not gated on `connected`: the plate-clear gate is Bambuddy-side state, and with
   // Auto Power Off the printer is powered down exactly when the operator clears the
   // plate. Hiding the control there left no way to release the gate (#2864).
@@ -2870,24 +2882,73 @@ function PrinterCard({
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
   });
 
+  // Post-print outcome confirmation (#1898): one-tap "good" from the card,
+  // reject goes through the dialog for the optional reason + reprint.
+  const [showConfirmOutcome, setShowConfirmOutcome] = useState(false);
+  const cardVerdictMutation = useMutation({
+    mutationFn: (verdict: 'good' | 'reject') =>
+      api.updateArchive(pendingConfirmArchive!.id, { user_verdict: verdict }),
+    onSuccess: () => {
+      showToast(t('confirmOutcome.savedGood'), 'success');
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
+    },
+    onError: (error: Error) => showToast(error.message || t('confirmOutcome.saveFailed'), 'error'),
+  });
+
   // Rendered from two places: inside the live-status block for a connected printer,
   // and standalone below it for a powered-down one, whose status block isn't rendered
   // at all (#2864). Shared so the two can't drift apart.
   const expandedClearPlateButton = (
-    <button
-      type="button"
-      onClick={() => clearPlateMutation.mutate()}
-      disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
-      className="mt-2 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-300 dark:border-yellow-400/40 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs font-medium disabled:opacity-50"
-      title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
-    >
-      {clearPlateMutation.isPending ? (
-        <Loader2 className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] animate-spin" />
-      ) : (
-        <PlateClearedIcon className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
+    <>
+      {pendingConfirmArchive && (
+        <div className="mt-2 flex items-center gap-1.5">
+          <span
+            className="flex-1 min-w-0 truncate text-xs text-bambu-gray"
+            title={pendingConfirmArchive.print_name || pendingConfirmArchive.filename}
+          >
+            {t('confirmOutcome.cardPrompt')}
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowConfirmOutcome(true)}
+            disabled={cardVerdictMutation.isPending}
+            className="p-1.5 rounded-lg border border-red-500/40 text-red-500 hover:bg-red-500/10 transition-colors"
+            title={t('confirmOutcome.reject')}
+          >
+            <ThumbsDown className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
+          </button>
+          <button
+            type="button"
+            onClick={() => cardVerdictMutation.mutate('good')}
+            disabled={cardVerdictMutation.isPending}
+            className="p-1.5 rounded-lg border border-bambu-green/50 text-bambu-green hover:bg-bambu-green/10 transition-colors"
+            title={t('confirmOutcome.good')}
+          >
+            <ThumbsUp className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
+          </button>
+        </div>
       )}
-      {t('printers.plateStatus.markCleared')}
-    </button>
+      <button
+        type="button"
+        onClick={() => clearPlateMutation.mutate()}
+        disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
+        className="mt-2 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-300 dark:border-yellow-400/40 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs font-medium disabled:opacity-50"
+        title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
+      >
+        {clearPlateMutation.isPending ? (
+          <Loader2 className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] animate-spin" />
+        ) : (
+          <PlateClearedIcon className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
+        )}
+        {t('printers.plateStatus.markCleared')}
+      </button>
+      {showConfirmOutcome && pendingConfirmArchive && (
+        <ConfirmOutcomeDialog
+          archiveId={pendingConfirmArchive.id}
+          onClose={() => setShowConfirmOutcome(false)}
+        />
+      )}
+    </>
   );
 
   const nozzleTemperatureMutation = useMutation({

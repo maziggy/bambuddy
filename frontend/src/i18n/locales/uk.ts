@@ -1070,6 +1070,8 @@ export default {
       confirmPendingTitle: "Цей друк очікує вердикту щодо результату — натисніть, щоб відповісти",
       rejected: "відбраковано",
       rejectedTitle: "Завершено на принтері, позначено користувачем як брак",
+      confirmedGood: "вдалий",
+      confirmedGoodTitle: "Підтверджено користувачем як вдала деталь",
       duplicate: "дублікат",
       duplicateTitle: "Ця модель була надрукована раніше",
       openSource3mf: "Відкрити вихідний файл 3MF у Bambu Studio (клацніть правою кнопкою, щоб переглянути додаткові дії)",
@@ -2340,6 +2342,8 @@ export default {
     defaultTimelapseDesc: "Записувати таймлапс",
     defaultConfirmOutcome: "Запитувати про результат",
     defaultConfirmOutcomeDesc: "Запитувати після завершення друку, чи вдалим він вийшов",
+    confirmDefaultGoodOnPlateClear: "Вважати непідтверджені результати вдалими після очищення пластини",
+    confirmDefaultGoodOnPlateClearDescription: "Якщо пластину очищено (вручну або наступним друком із черги), а запит щодо результату друку залишився без відповіді, автоматично записувати його як придатну деталь.",
     defaultNozzleOffsetCali: "Калібрування зсуву сопла",
     defaultNozzleOffsetCaliDesc: "Калібрувати зміщення сопел між екструдерами",
     tempFanPresetsTitle: "Профілі температури та вентилятора",
@@ -5459,6 +5463,7 @@ export default {
     rejectAndReprint: "Друкувати знову",
     alreadyGood: "Уже підтверджено як придатну деталь.",
     alreadyRejected: "Уже позначено як брак.",
+    cardPrompt: "Як вийшов друк?",
   },
 
   // Edit archive modal

@@ -98,6 +98,48 @@ class TestConfirmTokenEndpoint:
         assert (await async_client.get("/api/v1/archives/confirm/whatever/maybe")).status_code == 400
 
 
+class TestDefaultGoodOnPlateClear:
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_helper_resolves_only_the_latest_pending(self, archive_factory, printer_factory, db_session):
+        """Releasing the plate refers to the print that just came off it: only
+        the LATEST pending archive flips to good; older unanswered prompts and
+        already-answered ones stay untouched. The verdict mirrors to the run."""
+        from backend.app.services.print_confirmation import resolve_pending_confirmation_as_good
+
+        printer = await printer_factory()
+        older = await archive_factory(printer.id, confirm_requested=True)
+        newest_pending = await archive_factory(printer.id, confirm_requested=True, confirm_token="pending-token")
+        answered = await archive_factory(printer.id, confirm_requested=True, user_verdict="reject")
+
+        resolved = await resolve_pending_confirmation_as_good(db_session, printer.id)
+        await db_session.commit()
+
+        assert resolved == newest_pending.id
+        await db_session.refresh(newest_pending)
+        assert newest_pending.user_verdict == "good"
+        assert newest_pending.confirm_token is None
+        await db_session.refresh(older)
+        assert older.user_verdict is None
+        await db_session.refresh(answered)
+        assert answered.user_verdict == "reject"
+
+        entry = await db_session.scalar(
+            select(PrintLogEntry).where(PrintLogEntry.archive_id == newest_pending.id).order_by(PrintLogEntry.id.desc())
+        )
+        assert entry is not None and entry.user_verdict == "good"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_helper_noop_without_pending(self, archive_factory, printer_factory, db_session):
+        from backend.app.services.print_confirmation import resolve_pending_confirmation_as_good
+
+        printer = await printer_factory()
+        await archive_factory(printer.id)  # completed, never asked
+
+        assert await resolve_pending_confirmation_as_good(db_session, printer.id) is None
+
+
 class TestVerdictStatistics:
     @pytest.mark.asyncio
     @pytest.mark.integration

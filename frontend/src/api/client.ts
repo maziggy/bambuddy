@@ -1421,6 +1421,8 @@ export interface AppSettings {
   default_nozzle_offset_cali: CalibrationMode;
   // Default for the per-job "ask for outcome afterwards" toggle (#1898)
   default_confirm_outcome: boolean;
+  // Count unanswered outcome prompts as "good" when the plate is released (#1898)
+  confirm_default_good_on_plate_clear: boolean;
   // Staggered batch start defaults
   stagger_group_size: number;
   stagger_interval_minutes: number;

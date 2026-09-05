@@ -195,6 +195,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "default_layer_inspect",
             "default_timelapse",
             "default_confirm_outcome",
+            "confirm_default_good_on_plate_clear",
             "billing_enabled",
             "printer_kill_switch_enabled",
             "ldap_enabled",

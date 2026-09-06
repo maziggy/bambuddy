@@ -1,0 +1,200 @@
+2026-09-06 09:49:53,040 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:49:53,141 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:49:55,208 INFO [backend.app.services.plug_energy_history] [26e8a980] Plug 1: lifetime counter went backwards (1.071 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:49:58,286 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:49:58,386 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:03,409 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:03,510 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:05,376 INFO [backend.app.services.plug_energy_history] [7af5b9dc] Plug 1: lifetime counter went backwards (1.071 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:50:08,462 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:08,563 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:13,486 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:13,587 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:15,449 INFO [backend.app.services.plug_energy_history] [c91451a6] Plug 1: lifetime counter went backwards (1.071 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:50:18,709 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:18,817 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:23,941 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:24,042 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:25,537 INFO [backend.app.services.plug_energy_history] [8b253983] Plug 1: lifetime counter went backwards (1.071 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:50:29,067 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:29,168 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:34,096 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:34,197 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:35,631 INFO [backend.app.services.plug_energy_history] [c64023ee] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:50:39,340 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:39,441 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:44,563 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:44,664 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:45,733 INFO [backend.app.services.plug_energy_history] [5030d65a] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:50:48,711 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-06 09:50:48,711 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-06 09:50:49,711 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:49,812 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:55,042 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:55,142 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:50:55,835 INFO [backend.app.services.plug_energy_history] [17f1dba0] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:51:00,172 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:00,273 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:01,548 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 118633 bytes
+2026-09-06 09:51:01,549 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 118633 bytes
+2026-09-06 09:51:05,304 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:05,404 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:05,947 INFO [backend.app.services.plug_energy_history] [128e547b] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:51:10,330 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:10,431 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:12,574 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-06 09:51:12,641 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-09-06 09:51:12,642 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-06 09:51:12,643 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-06 09:51:15,458 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:15,559 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:16,131 INFO [backend.app.services.plug_energy_history] [f134c49e] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:51:20,399 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:20,500 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:25,732 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:25,832 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:26,249 INFO [backend.app.services.plug_energy_history] [c41ca59f] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:51:30,756 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:30,856 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:35,881 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:35,982 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:36,338 INFO [backend.app.services.plug_energy_history] [85a1ec43] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:51:40,923 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:41,024 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:45,950 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:46,051 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:46,442 INFO [backend.app.services.plug_energy_history] [5126581e] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:51:50,976 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:51,076 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:52,431 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-06 09:51:56,004 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:56,105 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:51:56,516 INFO [backend.app.services.plug_energy_history] [fe7bad87] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:52:01,330 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:01,430 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:06,354 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:06,455 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:06,626 INFO [backend.app.services.plug_energy_history] [2b85c689] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:52:11,482 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:11,583 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:16,712 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:16,717 INFO [backend.app.services.plug_energy_history] [d66698fe] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:52:16,813 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:21,738 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:21,839 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:26,792 INFO [backend.app.services.plug_energy_history] [3d2c6337] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:52:26,867 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:26,968 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:32,397 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:32,498 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:32,647 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-06 09:52:36,893 INFO [backend.app.services.plug_energy_history] [81ba87ef] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:52:37,424 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:37,525 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:42,548 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:42,649 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:46,987 INFO [backend.app.services.plug_energy_history] [3f6e6af9] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:52:47,780 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:47,881 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:53,012 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:53,114 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:57,067 INFO [backend.app.services.plug_energy_history] [97ea23d4] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:52:58,142 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:52:58,243 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:03,164 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:03,264 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:07,147 INFO [backend.app.services.plug_energy_history] [50cb2fec] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:53:08,188 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:08,289 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:13,614 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:13,714 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:17,285 INFO [backend.app.services.plug_energy_history] [8bc4c15a] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:53:18,753 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:18,861 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:23,989 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:24,090 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:27,371 INFO [backend.app.services.plug_energy_history] [0fd3e47a] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:53:29,213 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:29,314 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:34,442 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:34,544 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:37,467 INFO [backend.app.services.plug_energy_history] [571ad5cd] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:53:39,670 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:39,771 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:44,899 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:45,000 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:47,567 INFO [backend.app.services.plug_energy_history] [a8055a7a] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:53:49,520 INFO [backend.app.main] [-] Recorded 4 AMS sensor history entries
+2026-09-06 09:53:49,944 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:50,045 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:55,070 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:55,170 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:53:57,675 INFO [backend.app.services.plug_energy_history] [aaf69b48] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:54:00,300 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:00,401 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:05,326 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:05,427 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:07,800 INFO [backend.app.services.plug_energy_history] [30fd6abf] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:54:10,353 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:10,454 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:15,376 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:15,477 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:17,898 INFO [backend.app.services.plug_energy_history] [6c462b01] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:54:20,504 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:20,605 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:25,731 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:25,831 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:27,975 INFO [backend.app.services.plug_energy_history] [95cee357] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:54:30,962 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:31,063 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:35,989 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:36,089 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:38,067 INFO [backend.app.services.plug_energy_history] [57f96fb6] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:54:41,012 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:41,113 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:46,038 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:46,139 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:48,138 INFO [backend.app.services.plug_energy_history] [2b2163a5] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:54:51,063 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:51,164 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:56,090 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:56,191 INFO [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP response to [IP] for 'BamBuddy (Proxy)' (Location=[IP], USN=[SERIAL])
+2026-09-06 09:54:56,657 INFO [backend.app.api.routes.support] [0bbef992] Log level changed to DEBUG
+2026-09-06 09:54:56,658 INFO [backend.app.api.routes.bug_report] [0bbef992] Bug report: enabled debug logging
+2026-09-06 09:54:56,658 DEBUG [backend.app.services.bambu_mqtt] [0bbef992] [[SERIAL]] Requesting status update (pushall)
+2026-09-06 09:54:56,658 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-09-06 09:54:57,363 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 5992151, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-06 09:54:57,363 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-06 09:54:57,364 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 5992151 (binary: 0b10110110110111011010111)
+2026-09-06 09:54:57,364 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_13.gcode, subtask_name: Modular_Shelf_for_Wall_Floor_Desk
+2026-09-06 09:54:57,364 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '33', 'ams_exist_bits_raw': '33', 'cali_id': 255, 'cali_stat': 0, 'cfs': [2, 5, 7], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': '5b', 'tray_hall_out_bits': '1', 'tray_is_bbl_bits': '5b', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': '5b', 'tray_reading_bits': '0', 'tray_tar': '0', 'unbind_ams_stat': 0, 'version': 650}
+2026-09-06 09:54:57,364 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 0
+2026-09-06 09:54:57,364 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 4 new units, 4 total
+2026-09-06 09:54:57,364 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x11002E03 -> FTS inlet A
+2026-09-06 09:54:57,364 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 1 info=0x10002E03 -> FTS inlet B
+2026-09-06 09:54:57,364 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 128 info=0x11002E04 -> FTS inlet A
+2026-09-06 09:54:57,364 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 129 info=0x10002E04 -> FTS inlet B
+2026-09-06 09:54:57,365 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-09-06 09:54:57,365 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-06 09:54:57,365 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=33042 (switch_state bits 12-14: 0)
+2026-09-06 09:54:57,365 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 32°C (heater OFF)
+2026-09-06 09:54:57,365 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-09-06 09:54:57,365 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=32.0, heating=False, respect_local=False
+2026-09-06 09:54:57,365 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 32.0, target: 0.0, heating: False
+2026-09-06 09:54:57,365 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-06 09:54:57,365 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_external_free_kb': 4381104, 'tl_external_total_kb': 30047888, 'tl_internal_free_kb': 845821, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-09-06 09:54:57,366 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -40dBm
+2026-09-06 09:54:57,366 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-06 09:54:57,366 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 0]
+2026-09-06 09:54:57,366 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_13.gcode, subtask: Modular_Shelf_for_Wall_Floor_Desk
+2026-09-06 09:54:58,100 DEBUG [backend.app.services.virtual_printer.ssdp_server] [1c9b9da2] Sent SSDP NOTIFY for BamBuddy (Proxy) (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-09-06 09:54:58,240 INFO [backend.app.services.plug_energy_history] [11403383] Plug 1: lifetime counter went backwards (1.088 < 3.661) — device counter was probably reset; reporting no value for today
+2026-09-06 09:54:58,781 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 5992151, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-06 09:54:58,781 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-06 09:54:58,781 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 5992151 (binary: 0b10110110110111011010111)
+2026-09-06 09:54:58,781 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_13.gcode, subtask_name: Modular_Shelf_for_Wall_Floor_Desk
+2026-09-06 09:54:58,781 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-06 09:54:58,782 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-06 09:54:58,782 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-06 09:54:58,782 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 0]
+2026-09-06 09:54:58,782 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_13.gcode, subtask: Modular_Shelf_for_Wall_Floor_Desk

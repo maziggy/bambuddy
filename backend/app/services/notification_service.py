@@ -318,11 +318,13 @@ class NotificationService:
         else:
             return False, f"HTTP {response.status_code}: {response.text[:200]}"
 
-    async def _send_bark(self, config: dict, title: str, message: str) -> tuple[bool, str]:
+    async def _send_bark(self, config: dict, title: str, message: str, url: str | None = None) -> tuple[bool, str]:
         """Send notification via Bark, the self-hostable iOS push service (#1495).
 
         POSTs JSON to {server}/push. Defaults to the official api.day.app
         relay; a self-hosted bark-server works by overriding the server URL.
+        ``url`` opens on tap — the outcome confirmation (#1898) deep-links
+        into the archive's confirmation dialog with it.
         """
         server = (config.get("server") or "https://api.day.app").strip().rstrip("/")
         device_key = (config.get("device_key") or "").strip()
@@ -348,6 +350,8 @@ class NotificationService:
         level = (config.get("level") or "").strip()
         if level in ("active", "timeSensitive", "critical", "passive"):
             payload["level"] = level
+        if url:
+            payload["url"] = url
 
         client = await self._get_client()
         response = await client.post(f"{server}/push", json=payload)
@@ -1049,7 +1053,13 @@ class NotificationService:
             elif provider.provider_type == "homeassistant":
                 return await self._send_homeassistant(config, title, message, db=db)
             elif provider.provider_type == "bark":
-                return await self._send_bark(config, title, message)
+                # Outcome confirmation (#1898): Bark opens one URL on tap —
+                # deep-link into the confirmation dialog, like Pushover.
+                bark_url = None
+                _bark_confirm = (variables or {}).get("confirm_url")
+                if event_type == "print_confirm_request" and _bark_confirm and _bark_confirm.startswith("http"):
+                    bark_url = _bark_confirm
+                return await self._send_bark(config, title, message, url=bark_url)
             else:
                 return False, f"Unknown provider type: {provider.provider_type}"
         except Exception as e:

@@ -528,8 +528,19 @@ class NotificationService:
             except Exception:
                 return False, f"HTTP {response.status_code}: {response.text[:200]}"
 
-    async def _send_telegram(self, config: dict, message: str, image_data: bytes | None = None) -> tuple[bool, str]:
-        """Send notification via Telegram bot."""
+    async def _send_telegram(
+        self,
+        config: dict,
+        message: str,
+        image_data: bytes | None = None,
+        buttons: list[dict] | None = None,
+    ) -> tuple[bool, str]:
+        """Send notification via Telegram bot.
+
+        ``buttons`` is one row of inline URL buttons (``{"text", "url"}``
+        entries), used by the outcome-confirmation event (#1898) to put
+        one-tap Good/Reject under the message.
+        """
         bot_token = config.get("bot_token", "").strip()
         chat_id = config.get("chat_id", "").strip()
 
@@ -566,6 +577,9 @@ class NotificationService:
             form: dict[str, Any] = {"chat_id": chat_id, "caption": message, "parse_mode": "Markdown"}
             if message_thread_id is not None:
                 form["message_thread_id"] = message_thread_id
+            if buttons:
+                # Multipart form fields are strings — reply_markup goes JSON-encoded.
+                form["reply_markup"] = json.dumps({"inline_keyboard": [buttons]})
             response = await client.post(
                 url,
                 data=form,
@@ -580,6 +594,8 @@ class NotificationService:
             }
             if message_thread_id is not None:
                 data["message_thread_id"] = message_thread_id
+            if buttons:
+                data["reply_markup"] = {"inline_keyboard": [buttons]}
             response = await client.post(url, json=data)
 
         if response.status_code == 200:
@@ -996,7 +1012,26 @@ class NotificationService:
                     config, title, message, image_data=image_data, url=supplement_url, url_title=supplement_url_title
                 )
             elif provider.provider_type == "telegram":
-                return await self._send_telegram(config, f"*{title}*\n{message}", image_data=image_data)
+                # Outcome confirmation (#1898): inline URL buttons under the
+                # message — one tap records the verdict via the capability
+                # link. Same absolute-URL requirement as the ntfy actions.
+                tg_buttons = None
+                _tg_good = (variables or {}).get("good_url")
+                _tg_reject = (variables or {}).get("reject_url")
+                if (
+                    event_type == "print_confirm_request"
+                    and _tg_good
+                    and _tg_reject
+                    and _tg_good.startswith("http")
+                    and _tg_reject.startswith("http")
+                ):
+                    tg_buttons = [
+                        {"text": "\U0001f44d Good", "url": _tg_good},
+                        {"text": "\U0001f44e Reject", "url": _tg_reject},
+                    ]
+                return await self._send_telegram(
+                    config, f"*{title}*\n{message}", image_data=image_data, buttons=tg_buttons
+                )
             elif provider.provider_type == "email":
                 # finish_photo_url is pulled from the rendered template variables
                 # so _send_email can detect whether the template referenced the

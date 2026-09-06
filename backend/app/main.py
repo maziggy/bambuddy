@@ -9396,6 +9396,12 @@ PUBLIC_API_PREFIXES = [
     "/api/v1/ws",
     # OIDC authorize redirects — include provider_id in path
     "/api/v1/auth/oidc/authorize/",
+    # One-tap outcome-verdict links from push notifications (#1898). Tapped on
+    # a phone with no session, so no header can carry a JWT — the single-use
+    # capability token in the path IS the credential (same reasoning as the
+    # /dl/ slicer downloads below). The route grants nothing beyond writing
+    # good/reject on the one archive the token was minted for.
+    "/api/v1/archives/confirm/",
 ]
 
 # Route patterns that are public (read-only display data)

@@ -97,6 +97,15 @@ class TestConfirmTokenEndpoint:
         assert (await async_client.get("/api/v1/archives/confirm/no-such-token/good")).status_code == 404
         assert (await async_client.get("/api/v1/archives/confirm/whatever/maybe")).status_code == 400
 
+    def test_confirm_links_exempt_from_auth_middleware(self):
+        """The one-tap links are tapped on a phone with no session, so the
+        global auth middleware must step aside for them — the capability token
+        in the path is the credential. Pins the PUBLIC_API_PREFIXES entry;
+        without it, enabling authentication 401s every verdict link."""
+        from backend.app.main import PUBLIC_API_PREFIXES
+
+        assert "/api/v1/archives/confirm/" in PUBLIC_API_PREFIXES
+
 
 class TestDefaultGoodOnPlateClear:
     @pytest.mark.asyncio

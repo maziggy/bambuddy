@@ -1,0 +1,200 @@
+2026-09-06 21:19:25,120 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:19:37,959 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:19:50,871 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:20:04,644 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:20:16,732 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:20:29,083 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:20:38,377 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-06 21:20:41,647 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:20:53,716 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:21:07,785 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:21:20,678 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:21:33,282 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:21:45,466 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:21:58,448 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:22:11,269 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:22:23,474 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:22:36,189 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:22:48,737 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:23:00,960 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:23:13,302 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:23:25,669 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:23:40,326 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:23:52,394 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:24:06,045 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:24:18,911 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:24:32,118 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:24:45,190 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:24:50,955 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-06 21:24:50,956 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:24:50,960 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-06 21:24:53,435 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 158103 bytes
+2026-09-06 21:24:53,437 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 158103 bytes (no second connection opened)
+2026-09-06 21:24:53,438 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 158103 bytes
+2026-09-06 21:24:55,014 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT COMPLETE detected - state: FINISH, status: completed, file: auto_cali_for_user_param.gcode, subtask: auto_cali_for_user_param.gcode, was_running: True, timelapse_during_print: False
+2026-09-06 21:24:55,015 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] FINISH PHOTO MOMENT (FINISH fallback) — stage-22 never fired; capturing at FINISH-state transition
+2026-09-06 21:24:55,017 INFO [backend.app.main] [-] [FINISH-PHOTO-MOMENT] printer=1 trigger=finish_state timelapse_active=False
+2026-09-06 21:24:55,019 INFO [backend.app.main] [-] [CALLBACK] on_print_complete started for printer 1
+2026-09-06 21:24:55,019 INFO [backend.app.main] [-] [TIMING] WebSocket send_print_complete: 0.001s elapsed
+2026-09-06 21:24:55,020 INFO [backend.app.main] [-] Print complete - filename: auto_cali_for_user_param.gcode, subtask: auto_cali_for_user_param.gcode, status: completed
+2026-09-06 21:24:55,020 INFO [backend.app.main] [-] Looking for archive in _active_prints, keys to try: [(1, 'auto_cali_for_user_param.gcode.3mf'), (1, 'auto_cali_for_user_param.gcode.gcode.3mf'), (1, 'auto_cali_for_user_param.gcode'), (1, 'auto_cali_for_user_param.gcode.3mf'), (1, 'auto_cali_for_user_param.3mf')]...
+2026-09-06 21:24:55,021 INFO [backend.app.main] [-] Current _active_prints: [(1, 'auto_cali_for_user_param.gcode'), (1, 'auto_cali_for_user_param.gcode.3mf')]
+2026-09-06 21:24:55,021 INFO [backend.app.main] [-] Found archive 6 with key (1, 'auto_cali_for_user_param.gcode.3mf')
+2026-09-06 21:24:55,052 INFO [backend.app.main] [-] [PLATE-RESTORE] printer 1: no archive matches 'auto_cali_for_user_param.gcode' — skipping
+2026-09-06 21:24:55,053 INFO [backend.app.main] [-] [PLATE-RESTORE] printer 1: print height unknown — capturing without restore
+2026-09-06 21:24:55,053 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:24:56,171 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-09-06 21:24:57,007 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-09-06 21:24:57,031 INFO [backend.app.main] [-] [TIMING] SD card cleanup: 2.012s elapsed
+2026-09-06 21:24:57,037 INFO [backend.app.main] [-] [TIMING] Queue item update: 2.018s elapsed
+2026-09-06 21:24:57,057 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] on_print_complete: printer=1, archive=6, session=yes, ams_mapping=None
+2026-09-06 21:24:57,058 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT COMPLETE printer 1: mapping=None, tray_now=2, last_loaded_tray=2
+2026-09-06 21:24:57,061 WARNING [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF fallback: archive 6 does not know its plate ('auto_cali_for_user_param.gcode'), so a same-named 3MF can only be matched on its name
+2026-09-06 21:24:57,081 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: no file available for archive 6, skipping
+2026-09-06 21:24:57,081 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] AMS0-T2: no valid remain% at print start, nothing to charge for printer 1
+2026-09-06 21:24:57,082 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] VT254: not in print mapping/tray_change_log — skipping fallback for printer 1
+2026-09-06 21:24:57,093 INFO [backend.app.services.spoolman_tracking] [-] [SPOOLMAN] No tracking data for print (printer=1, archive=6)
+2026-09-06 21:24:57,095 INFO [backend.app.main] [-] [TIMING] Spoolman usage report: 2.076s elapsed
+2026-09-06 21:24:57,095 INFO [backend.app.main] [-] [TIMING] Filament usage tracking: 2.077s elapsed
+2026-09-06 21:24:57,096 INFO [backend.app.main] [-] [TIMING] Archive lookup: 2.077s elapsed
+2026-09-06 21:24:57,096 INFO [backend.app.main] [-] [ARCHIVE] Updating archive 6 status...
+2026-09-06 21:24:57,107 INFO [backend.app.main] [-] [ARCHIVE] Archive 6 status updated to completed, failure_reason=None
+2026-09-06 21:24:57,107 INFO [backend.app.main] [-] [ARCHIVE] WebSocket notification sent for archive 6
+2026-09-06 21:24:57,108 INFO [backend.app.main] [-] [TIMING] Archive status update: 2.090s elapsed
+2026-09-06 21:24:57,119 INFO [backend.app.services.finance_billing] [-] Billing is disabled; skipping print charge for archive ID 6.
+2026-09-06 21:24:57,121 INFO [backend.app.main] [-] [TIMING] Finance charge update: 2.103s elapsed
+2026-09-06 21:24:57,130 INFO [backend.app.main] [-] [PRINT_LOG] Log entry written for archive 6
+2026-09-06 21:24:57,131 INFO [backend.app.main] [-] [TIMING] Print log entry: 2.112s elapsed
+2026-09-06 21:24:57,131 INFO [backend.app.main] [-] [TIMING] Background tasks scheduled (energy, photo): 2.112s elapsed
+2026-09-06 21:24:57,131 INFO [backend.app.main] [-] [TIMING] All background tasks scheduled: 2.113s elapsed
+2026-09-06 21:24:57,132 INFO [backend.app.main] [-] [CALLBACK] on_print_complete finished for printer 1, archive 6
+2026-09-06 21:24:57,132 INFO [backend.app.main] [-] [ENERGY-BG] Starting energy calculation for archive 6
+2026-09-06 21:24:57,134 INFO [backend.app.main] [-] [PHOTO-BG] Starting finish photo capture for archive 6
+2026-09-06 21:24:57,135 INFO [backend.app.main] [-] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-09-06 21:24:57,137 INFO [backend.app.main] [-] [MAINT-BG] Starting maintenance check for printer 1
+2026-09-06 21:24:57,138 INFO [backend.app.main] [-] [LAYER-TL] Stitching layer timelapse for printer 1
+2026-09-06 21:24:57,141 INFO [backend.app.main] [-] [AUTO-OFF-BG] Completed
+2026-09-06 21:24:57,148 INFO [backend.app.main] [-] [ENERGY-BG] No start kWh recorded for archive 6
+2026-09-06 21:24:57,156 WARNING [backend.app.main] [-] [PHOTO-BG] Archive 6 has no file_path, using fallback dir
+2026-09-06 21:24:57,171 INFO [backend.app.main] [-] [MAINT-BG] Completed (no items need attention)
+2026-09-06 21:24:58,826 INFO [backend.app.main] [-] [FINISH-PHOTO-MOMENT] captured RTSP frame (151984 bytes)
+2026-09-06 21:24:58,828 INFO [backend.app.main] [-] [PHOTO-BG] Saved stage-22 pre-captured frame: finish_20260906_212458_8d58adb0.jpg (151984 bytes)
+2026-09-06 21:24:58,836 INFO [backend.app.main] [-] [PHOTO-BG] Saved: finish_20260906_212458_8d58adb0.jpg
+2026-09-06 21:24:58,836 INFO [backend.app.main] [-] [PHOTO-NOTIFY] Photo task returned: finish_20260906_212458_8d58adb0.jpg
+2026-09-06 21:24:58,837 INFO [backend.app.main] [-] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260906_212458_8d58adb0.jpg
+2026-09-06 21:24:58,846 INFO [backend.app.main] [-] [NOTIFY-BG] Loaded finish photo bytes: 151984 bytes
+2026-09-06 21:24:58,846 INFO [backend.app.services.notification_service] [-] on_print_complete called for printer 1 ([PRINTER]), status=completed
+2026-09-06 21:24:58,850 INFO [backend.app.services.notification_service] [-] No notification providers configured for on_print_complete event on printer 1
+2026-09-06 21:24:58,850 INFO [backend.app.main] [-] [NOTIFY-BG] Completed
+2026-09-06 21:25:38,401 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-06 21:26:25,396 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT START detected - file: Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher.gcode.3mf, subtask: Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher, is_new: True, is_file_change: False
+2026-09-06 21:26:25,397 INFO [backend.app.main] [-] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-09-06 21:26:25,405 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Skipped trays with invalid remain% for printer 1: AMS0-T0(remain=-1), AMS0-T1(remain=-1), AMS0-T2(remain=-1), AMS0-T3(remain=-1)
+2026-09-06 21:26:25,406 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping=None, tray_now=2, last_loaded_tray=2
+2026-09-06 21:26:25,406 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping-related keys: {'ams_extruder_map': {'0': 0}}
+2026-09-06 21:26:25,406 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 0: T0(type=ABS, color=00AA00FF, now=?, tar=?), T1(type=PLA, color=006125FF, now=?, tar=?), T2(type=PLA, color=E1E9E9FF, now=?, tar=?), T3(type=PETG, color=A4AAACFF, now=?, tar=?)
+2026-09-06 21:26:25,414 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Snapshotted 3 spool assignments for printer 1: {'0-1': 14, '0-2': 2, '0-3': 6}
+2026-09-06 21:26:25,436 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (1 trays): {'255-0': 0}
+2026-09-06 21:26:25,450 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-09-06 21:26:25,451 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher.gcode.3mf, subtask: Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher
+2026-09-06 21:26:25,455 INFO [backend.app.main] [-] Trying filenames: ['Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher.gcode.3mf', 'Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher.3mf']
+2026-09-06 21:26:26,300 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-09-06 21:26:29,235 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:26:43,900 INFO [backend.app.main] [-] [PHOTO-BG] Timelapse for archive 5 didn't land within 900s; falling back to live camera
+2026-09-06 21:26:43,900 INFO [backend.app.main] [-] [PHOTO-UPGRADE] No timelapse frame for archive 5; keeping the live grab
+2026-09-06 21:26:46,037 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:27:04,701 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:27:17,582 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:27:25,470 INFO [backend.app.services.bambu_ftp] [-] FTP download of /Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher.gcode.3mf passed its 60.0s deadline but the printer reports 3131456 bytes — allowing 62s more rather than declaring a slow transfer dead (#2957)
+2026-09-06 21:27:31,049 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:27:38,577 INFO [backend.app.services.bambu_ftp] [-] Successfully downloaded /Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher.gcode.3mf to /app/data/archive/temp/Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher.gcode.3mf (3131456 bytes)
+2026-09-06 21:27:38,578 INFO [backend.app.services.bambu_ftp] [-] FTP mode cached for [IP]: prot_p
+2026-09-06 21:27:38,585 INFO [backend.app.main] [-] Downloaded: /Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher.gcode.3mf
+2026-09-06 21:27:38,768 INFO [backend.app.main] [-] Created archive 7 for Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher.gcode.3mf
+2026-09-06 21:27:38,769 INFO [backend.app.main] [-] [ENERGY] No smart plug for printer 1 (archive 7)
+2026-09-06 21:27:38,771 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-06 21:27:38,771 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:27:41,115 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 95620 bytes
+2026-09-06 21:27:41,116 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 ([PRINTER])
+2026-09-06 21:27:41,121 INFO [backend.app.services.notification_service] [-] No notification providers configured for print_start event on printer 1
+2026-09-06 21:27:41,126 INFO [backend.app.main] [-] Loaded 1 printable objects for printer 1
+2026-09-06 21:27:41,931 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-09-06 21:27:42,523 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 1 video files for printer 1
+2026-09-06 21:27:45,244 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:27:55,923 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Tray change during print: tray=1 at layer=0
+2026-09-06 21:27:57,688 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:28:10,003 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:28:21,562 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:28:34,267 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:28:46,337 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:28:48,558 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-06 21:28:48,558 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:28:50,053 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 125207 bytes
+2026-09-06 21:28:58,107 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:29:10,836 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:29:23,205 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:29:35,107 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-06 21:29:35,108 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:29:36,989 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 118589 bytes
+2026-09-06 21:29:37,347 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:29:49,354 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:30:01,395 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:30:13,653 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:30:21,589 INFO [backend.app.api.routes.printers] [41dc54ba] Cover using cached 3MF from /app/data/archive/temp/Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher.gcode.3mf (avoided duplicate FTP)
+2026-09-06 21:30:21,590 INFO [backend.app.api.routes.printers] [41dc54ba] Downloaded file size: 3131456 bytes
+2026-09-06 21:30:21,597 INFO [backend.app.api.routes.cloud] [8591e281] get_filament_info called with 4 IDs: ['GFS06', 'GFA00', 'GFG99', 'GFG00']
+2026-09-06 21:30:21,615 INFO [backend.app.api.routes.printers] [41dc54ba] Cover: detected plate 1 from 3MF contents
+2026-09-06 21:30:21,634 INFO [uvicorn.access] [-] [IP]:54032 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-09-06 21:30:26,438 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:30:38,099 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:30:38,425 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-06 21:30:50,019 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:31:02,099 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:31:12,304 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-06 21:31:13,791 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:31:15,411 INFO [uvicorn.access] [-] [IP]:47152 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-09-06 21:31:15,580 INFO [uvicorn.access] [-] [IP]:47152 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-06 21:31:15,610 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-09-06 21:31:15,610 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-06 21:31:15,610 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-06 21:31:15,659 INFO [backend.app.api.routes.cloud] [4866c88a] get_filament_info called with 4 IDs: ['GFS06', 'GFA00', 'GFG99', 'GFG00']
+2026-09-06 21:31:15,661 INFO [uvicorn.access] [-] [IP]:36562 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-09-06 21:31:15,692 INFO [uvicorn.access] [-] [IP]:36554 - "POST /api/v1/sponsor-prompt/dismiss HTTP/1.1" 204
+2026-09-06 21:31:26,109 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:31:38,158 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:31:50,420 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:32:02,847 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:32:14,409 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:32:26,881 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:32:38,503 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:32:50,298 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:33:02,225 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:33:13,888 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:33:25,669 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:33:38,028 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:33:49,736 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:34:01,927 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:34:13,859 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-09-06 21:34:20,700 INFO [backend.app.api.routes.support] [ad033933] Log level changed to DEBUG
+2026-09-06 21:34:20,700 INFO [backend.app.api.routes.bug_report] [ad033933] Bug report: enabled debug logging
+2026-09-06 21:34:20,701 DEBUG [backend.app.services.bambu_mqtt] [ad033933] [[SERIAL]] Requesting status update (pushall)
+2026-09-06 21:34:20,703 INFO [uvicorn.access] [-] [IP]:38228 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-09-06 21:34:20,774 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-09-06 21:34:20,775 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-09-06 21:34:20,775 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher.gcode.3mf, subtask_name: Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher
+2026-09-06 21:34:20,775 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '1', 'tray_now': '1', 'tray_pre': '1', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 50, 'insert_flag': True, 'power_on_flag': True}
+2026-09-06 21:34:20,776 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 1
+2026-09-06 21:34:20,776 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-09-06 21:34:20,777 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-09-06 21:34:20,777 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-09-06 21:34:20,777 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-09-06 21:34:20,778 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-06 21:34:20,778 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-09-06 21:34:20,778 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-09-06 21:34:20,779 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-09-06 21:34:20,780 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-09-06 21:34:20,780 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83887104, 'code': 65604, 'action': 0, 'timestamp': 1784427738}]
+2026-09-06 21:34:20,781 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-09-06 21:34:20,781 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -36dBm
+2026-09-06 21:34:20,781 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-09-06 21:34:20,782 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher.gcode.3mf, subtask: Bambu_Lab_A1_Filament_Waste_&_Poop_Catcher

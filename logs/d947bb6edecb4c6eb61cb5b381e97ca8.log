@@ -1,0 +1,200 @@
+2026-09-05 22:38:49,387 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 0: T0(type=PLA, color=000000FF, now=?, tar=?), T1(type=PLA, color=FFFFFFFF, now=?, tar=?), T2(type=PLA, color=DE4343FF, now=?, tar=?), T3(type=PLA, color=0078BFFF, now=?, tar=?)
+2026-09-05 22:38:49,390 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Snapshotted 5 spool assignments for printer 1: {'0-0': 5, '0-1': 4, '0-2': 17, '0-3': 16, '255-1': 3}
+2026-09-05 22:38:49,400 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (6 trays): {'0-0': 95, '0-1': 82, '0-2': 100, '0-3': 100, '255-0': 0, '255-1': 0}
+2026-09-05 22:38:49,409 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-09-05 22:38:49,409 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: /data/Metadata/plate_1.gcode, subtask: dove
+2026-09-05 22:38:49,410 INFO [backend.app.main] [-] Using expected archive 19 for print (skipping duplicate)
+2026-09-05 22:38:49,486 INFO [backend.app.main] [-] [ENERGY] Recorded starting energy (expected-print) for archive 19 from plug '[PRINTER]': 5.35075555555556 kWh
+2026-09-05 22:38:49,499 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-05 22:38:49,502 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-05 22:38:50,499 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-05 22:38:51,521 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:38:51,641 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:38:51,778 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 304962 bytes
+2026-09-05 22:38:51,780 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 304962 bytes
+2026-09-05 22:38:51,780 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 ([PRINTER])
+2026-09-05 22:38:51,782 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 304962 bytes (no second connection opened)
+2026-09-05 22:38:51,783 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 304962 bytes
+2026-09-05 22:38:51,786 INFO [backend.app.services.notification_service] [-] No notification providers configured for print_start event on printer 1
+2026-09-05 22:38:51,812 INFO [backend.app.main] [-] Loaded 1 printable objects for printer 1
+2026-09-05 22:38:52,646 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=X2D, prot_c=False)
+2026-09-05 22:38:53,506 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=X2D, prot_c=False)
+2026-09-05 22:38:53,509 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /timelapse/video: 550 Failed to change directory.
+2026-09-05 22:38:54,205 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=X2D, prot_c=False)
+2026-09-05 22:38:54,208 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /record: 550 Failed to change directory.
+2026-09-05 22:38:54,926 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=X2D, prot_c=False)
+2026-09-05 22:38:54,930 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /recording: 550 Failed to change directory.
+2026-09-05 22:38:54,946 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 0 video files for printer 1
+2026-09-05 22:38:55,950 INFO [backend.app.services.print_scheduler] [-] Queue check: found 12 pending items: [(44, 1, 24, None), (45, 1, 24, None), (46, 1, 24, None), (47, 1, 24, None), (48, 1, 25, None), (49, 1, 25, None), (50, 1, 25, None), (51, 1, 25, None), (52, 1, 25, None), (53, 1, 25, None), (54, 1, 25, None), (60, 1, 28, None)]
+2026-09-05 22:38:55,958 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 1}
+2026-09-05 22:38:55,959 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=PAUSE, awaiting_plate_clear=False
+2026-09-05 22:38:56,488 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:38:56,589 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:01,530 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:01,631 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:02,396 INFO [backend.app.api.routes.print_queue] [c1b92ce0] Reordered 12 queue items
+2026-09-05 22:39:02,398 INFO [uvicorn.access] [-] [IP]:46062 - "POST /api/v1/queue/reorder HTTP/1.1" 200
+2026-09-05 22:39:06,576 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:06,677 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:11,627 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:11,728 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:16,670 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:16,771 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:21,187 INFO [backend.app.services.virtual_printer.mqtt_server] [11c8fa78] [[PRINTER]-v] 1Hz status push: 60 pushes/min to [IP]:62358
+2026-09-05 22:39:21,717 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:21,819 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:26,021 INFO [backend.app.services.print_scheduler] [-] Queue check: found 12 pending items: [(45, 1, 24, None), (46, 1, 24, None), (47, 1, 24, None), (44, 1, 24, None), (48, 1, 25, None), (49, 1, 25, None), (50, 1, 25, None), (51, 1, 25, None), (52, 1, 25, None), (53, 1, 25, None), (54, 1, 25, None), (60, 1, 28, None)]
+2026-09-05 22:39:26,032 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 1}
+2026-09-05 22:39:26,032 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=PAUSE, awaiting_plate_clear=False
+2026-09-05 22:39:26,764 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:26,865 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:27,248 INFO [backend.app.services.virtual_printer.mqtt_server] [11c8fa78] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20018","version":1}}...
+2026-09-05 22:39:27,249 INFO [backend.app.services.virtual_printer.mqtt_server] [11c8fa78] MQTT pushing command: pushall
+2026-09-05 22:39:27,249 INFO [backend.app.services.virtual_printer.mqtt_server] [11c8fa78] Sending status report in response to pushall
+2026-09-05 22:39:31,812 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:31,920 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:33,326 INFO [backend.app.api.routes.print_queue] [32658584] Reordered 12 queue items
+2026-09-05 22:39:33,328 INFO [uvicorn.access] [-] [IP]:58170 - "POST /api/v1/queue/reorder HTTP/1.1" 200
+2026-09-05 22:39:36,766 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:36,867 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:41,809 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:41,911 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:46,846 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:46,947 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:51,881 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:51,983 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:56,092 INFO [backend.app.services.print_scheduler] [-] Queue check: found 12 pending items: [(45, 1, 24, None), (46, 1, 24, None), (47, 1, 24, None), (44, 1, 24, None), (48, 1, 25, None), (49, 1, 25, None), (51, 1, 25, None), (52, 1, 25, None), (53, 1, 25, None), (54, 1, 25, None), (50, 1, 25, None), (60, 1, 28, None)]
+2026-09-05 22:39:56,100 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 1}
+2026-09-05 22:39:56,100 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=PAUSE, awaiting_plate_clear=False
+2026-09-05 22:39:56,923 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:57,025 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:39:59,425 INFO [uvicorn.access] [-] [IP]:52274 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-05 22:40:01,973 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:02,074 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:06,543 INFO [uvicorn.access] [-] [IP]:36330 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-05 22:40:07,031 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:07,136 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:12,099 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:12,201 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:14,029 INFO [uvicorn.access] [-] [IP]:36330 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-05 22:40:17,050 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:17,152 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:21,441 INFO [backend.app.services.virtual_printer.mqtt_server] [11c8fa78] [[PRINTER]-v] 1Hz status push: 60 pushes/min to [IP]:62358
+2026-09-05 22:40:22,101 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:22,202 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:26,160 INFO [backend.app.services.print_scheduler] [-] Queue check: found 12 pending items: [(54, 1, 25, None), (53, 1, 25, None), (49, 1, 25, None), (48, 1, 25, None), (52, 1, 25, None), (51, 1, 25, None), (45, 1, 24, None), (47, 1, 24, None), (46, 1, 24, None), (50, 1, 25, None), (44, 1, 24, None), (60, 1, 28, None)]
+2026-09-05 22:40:26,168 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 1}
+2026-09-05 22:40:26,168 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=PAUSE, awaiting_plate_clear=False
+2026-09-05 22:40:27,142 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:27,243 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:32,180 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:32,282 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:32,909 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-05 22:40:33,710 INFO [uvicorn.access] [-] [IP]:38730 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-09-05 22:40:33,864 INFO [uvicorn.access] [-] [IP]:38878 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-05 22:40:34,025 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-09-05 22:40:34,091 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-05 22:40:34,136 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-05 22:40:37,274 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:37,376 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:38,615 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-05 22:40:39,823 INFO [uvicorn.access] [-] [IP]:36330 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-05 22:40:42,237 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:42,338 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:47,287 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:47,389 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:51,354 INFO [uvicorn.access] [-] [IP]:33232 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-05 22:40:52,337 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:52,439 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:56,226 INFO [backend.app.services.print_scheduler] [-] Queue check: found 12 pending items: [(54, 1, 25, None), (53, 1, 25, None), (49, 1, 25, None), (48, 1, 25, None), (52, 1, 25, None), (51, 1, 25, None), (45, 1, 24, None), (47, 1, 24, None), (46, 1, 24, None), (50, 1, 25, None), (44, 1, 24, None), (60, 1, 28, None)]
+2026-09-05 22:40:56,233 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 1}
+2026-09-05 22:40:56,233 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=PAUSE, awaiting_plate_clear=False
+2026-09-05 22:40:57,389 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:40:57,490 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:02,441 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:02,542 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:07,392 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:07,493 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:12,436 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:12,537 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:17,479 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:17,580 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:21,728 INFO [backend.app.services.virtual_printer.mqtt_server] [11c8fa78] [[PRINTER]-v] 1Hz status push: 60 pushes/min to [IP]:62358
+2026-09-05 22:41:22,517 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:22,620 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:26,294 INFO [backend.app.services.print_scheduler] [-] Queue check: found 12 pending items: [(54, 1, 25, None), (53, 1, 25, None), (49, 1, 25, None), (48, 1, 25, None), (52, 1, 25, None), (51, 1, 25, None), (45, 1, 24, None), (47, 1, 24, None), (46, 1, 24, None), (50, 1, 25, None), (44, 1, 24, None), (60, 1, 28, None)]
+2026-09-05 22:41:26,301 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 1}
+2026-09-05 22:41:26,301 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=PAUSE, awaiting_plate_clear=False
+2026-09-05 22:41:27,569 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:27,670 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:32,614 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:32,715 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:37,666 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:37,769 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:42,707 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:42,808 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:47,749 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:47,850 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:52,689 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:52,790 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:56,411 INFO [backend.app.services.print_scheduler] [-] Queue check: found 12 pending items: [(54, 1, 25, None), (53, 1, 25, None), (49, 1, 25, None), (48, 1, 25, None), (52, 1, 25, None), (51, 1, 25, None), (45, 1, 24, None), (47, 1, 24, None), (46, 1, 24, None), (50, 1, 25, None), (44, 1, 24, None), (60, 1, 28, None)]
+2026-09-05 22:41:56,419 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 1}
+2026-09-05 22:41:56,419 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=PAUSE, awaiting_plate_clear=False
+2026-09-05 22:41:57,727 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:41:57,828 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:42:02,766 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:42:02,867 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:42:07,814 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:42:07,915 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:42:12,849 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:42:12,953 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:42:17,894 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:42:17,997 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:42:21,994 INFO [backend.app.services.virtual_printer.mqtt_server] [11c8fa78] [[PRINTER]-v] 1Hz status push: 60 pushes/min to [IP]:62358
+2026-09-05 22:42:22,955 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:42:23,056 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-05 22:42:26,478 INFO [backend.app.services.print_scheduler] [-] Queue check: found 12 pending items: [(54, 1, 25, None), (53, 1, 25, None), (49, 1, 25, None), (48, 1, 25, None), (52, 1, 25, None), (51, 1, 25, None), (45, 1, 24, None), (47, 1, 24, None), (46, 1, 24, None), (50, 1, 25, None), (44, 1, 24, None), (60, 1, 28, None)]
+2026-09-05 22:42:26,486 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 1}
+2026-09-05 22:42:26,486 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=PAUSE, awaiting_plate_clear=False
+2026-09-05 22:42:26,625 INFO [backend.app.api.routes.support] [b020248a] Log level changed to DEBUG
+2026-09-05 22:42:26,626 INFO [backend.app.api.routes.bug_report] [b020248a] Bug report: enabled debug logging
+2026-09-05 22:42:26,626 DEBUG [backend.app.services.bambu_mqtt] [b020248a] [[SERIAL]] Requesting status update (pushall)
+2026-09-05 22:42:26,628 INFO [uvicorn.access] [-] [IP]:53766 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-09-05 22:42:26,662 DEBUG [backend.app.api.routes.printers] [43076022] API returning ams_mapping: [], ams_extruder_map: {'0': 1}
+2026-09-05 22:42:26,663 DEBUG [backend.app.api.routes.printers] [43076022] Using tray_now directly as global ID: 3
+2026-09-05 22:42:26,819 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-05 22:42:26,819 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-05 22:42:26,820 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-09-05 22:42:26,820 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: PAUSE, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: dove
+2026-09-05 22:42:26,820 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'cfs': [2, 9, 3, 4, 5, 7], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '8', 'tray_is_bbl_bits': 'f', 'tray_now': '3', 'tray_pre': '3', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '3', 'unbind_ams_stat': 0, 'version': 2284}
+2026-09-05 22:42:26,821 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 3
+2026-09-05 22:42:26,821 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-09-05 22:42:26,821 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x11001103 -> extruder 1
+2026-09-05 22:42:26,821 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1}
+2026-09-05 22:42:26,822 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-09-05 22:42:26,822 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-05 22:42:26,822 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=33042 (switch_state bits 12-14: 0)
+2026-09-05 22:42:26,823 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 31°C (heater OFF)
+2026-09-05 22:42:26,823 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-09-05 22:42:26,823 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=31.0, heating=False, respect_local=False
+2026-09-05 22:42:26,824 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 31.0, target: 0.0, heating: False
+2026-09-05 22:42:26,824 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-05 22:42:26,825 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] print_error: 100565052 (0x05fe803c) -> short_code=05FE_803C
+2026-09-05 22:42:26,825 DEBUG [backend.app.services.bambu_mqtt] [-] [20P, 05FE803C] HMS available actions: ['STOP_PRINTING', 'IGNORE_RESUME'] (job_id=1955911093)
+2026-09-05 22:42:26,825 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_external_free_kb': 36483200, 'tl_external_total_kb': 121353664, 'tl_internal_free_kb': 918193, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-09-05 22:42:26,825 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -39dBm
+2026-09-05 22:42:26,826 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-05 22:42:26,826 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [1]
+2026-09-05 22:42:26,827 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: PAUSE -> PAUSE, file: /data/Metadata/plate_1.gcode, subtask: dove
+2026-09-05 22:42:27,935 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-05 22:42:27,936 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-05 22:42:27,936 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-09-05 22:42:27,937 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: PAUSE, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: dove
+2026-09-05 22:42:27,938 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1}
+2026-09-05 22:42:27,938 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-05 22:42:27,939 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-05 22:42:27,940 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] print_error: 100565052 (0x05fe803c) -> short_code=05FE_803C
+2026-09-05 22:42:27,943 DEBUG [backend.app.services.bambu_mqtt] [-] [20P, 05FE803C] HMS available actions: ['STOP_PRINTING', 'IGNORE_RESUME'] (job_id=1955911093)
+2026-09-05 22:42:27,944 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-05 22:42:27,945 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [1]
+2026-09-05 22:42:27,946 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: PAUSE -> PAUSE, file: /data/Metadata/plate_1.gcode, subtask: dove

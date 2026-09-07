@@ -397,6 +397,17 @@ class AppSettings(BaseModel):
         default="auto",
         description="Default nozzle offset calibration option for new prints (dual-nozzle printers only)",
     )
+    default_confirm_outcome: bool = Field(
+        default=False,
+        description="Default for asking for a post-print outcome verdict on new prints (#1898)",
+    )
+    confirm_default_good_on_plate_clear: bool = Field(
+        default=False,
+        description=(
+            "When the build plate is released (manual acknowledgment or next dispatch) with the "
+            "outcome prompt still unanswered, record the print as a good part (#1898)"
+        ),
+    )
 
     # Staggered batch start for multi-printer jobs
     stagger_group_size: int = Field(
@@ -737,6 +748,8 @@ class AppSettingsUpdate(BaseModel):
     default_layer_inspect: bool | None = None
     default_timelapse: bool | None = None
     default_nozzle_offset_cali: TriState | None = None
+    default_confirm_outcome: bool | None = None
+    confirm_default_good_on_plate_clear: bool | None = None
     stagger_group_size: int | None = Field(default=None, ge=1, le=50)
     stagger_interval_minutes: int | None = Field(default=None, ge=1, le=60)
     billing_enabled: bool | None = None

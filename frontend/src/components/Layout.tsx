@@ -14,6 +14,7 @@ import { useColorCatalogVersion } from '../hooks/useColorCatalogVersion';
 import { useSponsorPrompt } from '../hooks/useSponsorPrompt';
 import { useUnknownTagPrompt } from '../hooks/useUnknownTagPrompt';
 import { UnknownSpoolModal } from './UnknownSpoolModal';
+import { ConfirmOutcomeDialog } from './ConfirmOutcomeDialog';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Card, CardHeader, CardContent } from './Card';
@@ -124,6 +125,9 @@ export function Layout() {
     printer_name: string;
     message: string;
   } | null>(null);
+  // Post-print outcome confirmation (#1898): archive waiting for a verdict,
+  // set by the print_confirm_request WebSocket event.
+  const [confirmOutcomeArchiveId, setConfirmOutcomeArchiveId] = useState<number | null>(null);
 
   // Check for updates
   const { data: versionInfo } = useQuery({
@@ -459,6 +463,20 @@ export function Layout() {
     window.addEventListener('plate-not-empty', handlePlateNotEmpty);
     return () => window.removeEventListener('plate-not-empty', handlePlateNotEmpty);
   }, [hasPermission]);
+
+  // A completed print asked for its outcome verdict (#1898). Same CustomEvent
+  // relay as plate-not-empty; the dialog itself checks nothing permission-wise
+  // beyond what the PATCH route enforces server-side.
+  useEffect(() => {
+    const handleConfirmRequest = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (typeof detail?.archive_id === 'number') {
+        setConfirmOutcomeArchiveId(detail.archive_id);
+      }
+    };
+    window.addEventListener('print-confirm-request', handleConfirmRequest);
+    return () => window.removeEventListener('print-confirm-request', handleConfirmRequest);
+  }, []);
 
   // Global keyboard shortcuts for navigation
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -1019,6 +1037,14 @@ export function Layout() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Post-print outcome confirmation (#1898) */}
+      {confirmOutcomeArchiveId !== null && (
+        <ConfirmOutcomeDialog
+          archiveId={confirmOutcomeArchiveId}
+          onClose={() => setConfirmOutcomeArchiveId(null)}
+        />
       )}
 
       {/* Change Password Modal */}

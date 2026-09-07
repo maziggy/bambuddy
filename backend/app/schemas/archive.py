@@ -28,6 +28,8 @@ class ArchiveUpdate(ArchiveBase):
     project_id: int | None = None
     # Allow changing status (e.g., clearing failed flag)
     status: str | None = None
+    # Post-print quality verdict (#1898): 'good' / 'reject'; null clears it.
+    user_verdict: str | None = Field(default=None, pattern="^(good|reject)$")
     # Editable because a print archived without its 3MF has no figure at all,
     # and nothing else can supply one after the fact -- rescan needs a file
     # this archive does not have (#1820). Bounded because it feeds the filament
@@ -104,6 +106,10 @@ class ArchiveResponse(BaseModel):
     photos: list | None
     failure_reason: str | None
     quantity: int = 1  # Number of items printed
+
+    # Post-print outcome confirmation (#1898)
+    user_verdict: str | None = None
+    confirm_requested: bool = False
 
     # Energy tracking
     energy_kwh: float | None = None

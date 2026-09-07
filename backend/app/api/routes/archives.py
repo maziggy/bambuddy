@@ -7,6 +7,7 @@ import zipfile
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
+from html import escape as html_escape
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -365,6 +366,10 @@ def archive_to_response(
         "cost": archive.cost,
         "photos": archive.photos,
         "failure_reason": archive.failure_reason,
+        # Post-print outcome confirmation (#1898). confirm_token stays
+        # server-side — it is a capability and never belongs in a response.
+        "user_verdict": archive.user_verdict,
+        "confirm_requested": archive.confirm_requested,
         "quantity": archive.quantity,
         "energy_kwh": archive.energy_kwh,
         "energy_cost": archive.energy_cost,
@@ -1756,6 +1761,11 @@ async def update_archive(
     for field, value in update_payload.items():
         setattr(archive, field, value)
 
+    # #1898: a landed verdict retires the one-tap capability token from the
+    # push notification — the links should stop working once someone decided.
+    if update_payload.get("user_verdict") is not None:
+        archive.confirm_token = None
+
     # #1444: Mirror per-run classification fields to the most recent
     # PrintLogEntry for this archive. PrintLogEntry.failure_reason is captured
     # once at print-completion time from archive.failure_reason — which is
@@ -1771,7 +1781,7 @@ async def update_archive(
     # ENTRY's grams, not the archive's, so correcting only the archive would fix
     # the card and leave every aggregate reading the old figure -- or, for a
     # print that archived without its 3MF, no figure at all.
-    mirror_fields = {"failure_reason", "status", "filament_used_grams"}
+    mirror_fields = {"failure_reason", "status", "filament_used_grams", "user_verdict"}
     to_mirror = {k: v for k, v in update_payload.items() if k in mirror_fields}
     if to_mirror:
         from backend.app.models.print_log import PrintLogEntry
@@ -3383,6 +3393,65 @@ async def delete_photo(
     await db.commit()
 
     return {"status": "deleted", "photos": archive.photos}
+
+
+# ============================================
+# Post-print outcome confirmation (#1898)
+# ============================================
+
+
+@router.get("/confirm/{token}/{verdict}")
+async def confirm_outcome_by_token(
+    token: str,
+    verdict: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Record a print-outcome verdict via the capability token from a push notification.
+
+    Deliberately unauthenticated: the token IS the credential. It is minted
+    per archive when the confirmation prompt fires, only ever grants writing
+    good/reject on that one archive, and is retired on first use. GET rather
+    than POST so it works as a plain link in every notification channel and
+    as an ntfy action button. Returns a small HTML page for the phone browser.
+    """
+    from fastapi.responses import HTMLResponse
+
+    if verdict not in ("good", "reject"):
+        raise HTTPException(400, "Verdict must be 'good' or 'reject'")
+
+    result = await db.execute(
+        select(PrintArchive).where(PrintArchive.confirm_token == token, PrintArchive.confirm_token.isnot(None))
+    )
+    archive = result.scalar_one_or_none()
+    if not archive:
+        raise HTTPException(404, "Confirmation link is invalid or was already used")
+
+    archive.user_verdict = verdict
+    archive.confirm_token = None
+
+    # Same mirror as the PATCH route (#1444): verdict-aware statistics read
+    # print_log_entries, so the latest run must carry the verdict too.
+    from backend.app.models.print_log import PrintLogEntry
+
+    latest_entry = await db.scalar(
+        select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id).order_by(PrintLogEntry.id.desc()).limit(1)
+    )
+    if latest_entry is not None:
+        latest_entry.user_verdict = verdict
+
+    await db.commit()
+
+    label = "Good part" if verdict == "good" else "Rejected"
+    name = archive.print_name or archive.filename
+    return HTMLResponse(
+        "<!doctype html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>Bambuddy</title></head>"
+        "<body style='font-family: system-ui, sans-serif; background:#1a1d21; color:#fff; display:flex;"
+        " align-items:center; justify-content:center; min-height:90vh; margin:0'>"
+        f"<div style='text-align:center'><div style='font-size:3rem'>{'&#10003;' if verdict == 'good' else '&#10007;'}"
+        f"</div><h2>{label}</h2><p style='color:#9ca3af'>{html_escape(name)}</p>"
+        "<p style='color:#9ca3af'>Saved &mdash; you can close this page.</p></div></body></html>"
+    )
 
 
 # ============================================

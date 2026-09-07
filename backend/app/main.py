@@ -7545,6 +7545,57 @@ async def on_print_complete(printer_id: int, data: dict):
                 else:
                     logger.info("[NOTIFY-BG] Skipped duplicate kill-switch provider notification")
 
+                # Post-print outcome confirmation (#1898). Runs in this
+                # background task so the finish photo fetched above rides
+                # along with the prompt. Mints the per-archive capability
+                # token the one-tap verdict links carry; URLs fall back to
+                # relative paths when no external_url is configured (the
+                # ntfy action buttons then stay off — they need absolute).
+                if print_status == "completed" and archive_id:
+                    try:
+                        confirm_archive = (
+                            await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+                        ).scalar_one_or_none()
+                        if (
+                            confirm_archive
+                            and confirm_archive.confirm_requested
+                            and confirm_archive.user_verdict is None
+                        ):
+                            import secrets as _secrets
+
+                            if not confirm_archive.confirm_token:
+                                confirm_archive.confirm_token = _secrets.token_urlsafe(32)
+                                await db.commit()
+
+                            from backend.app.api.routes.settings import get_setting
+
+                            _ext = await get_setting(db, "external_url")
+                            _base = _ext.rstrip("/") if _ext else ""
+                            _token = confirm_archive.confirm_token
+                            good_url = f"{_base}/api/v1/archives/confirm/{_token}/good"
+                            reject_url = f"{_base}/api/v1/archives/confirm/{_token}/reject"
+                            confirm_url = f"{_base}/archives?confirm={archive_id}"
+
+                            await ws_manager.send_print_confirm_request(
+                                printer_id,
+                                {
+                                    "archive_id": archive_id,
+                                    "print_name": confirm_archive.print_name or confirm_archive.filename,
+                                },
+                            )
+                            await notification_service.on_print_confirm_request(
+                                printer_id,
+                                printer_name,
+                                data,
+                                db,
+                                archive_data=archive_data,
+                                good_url=good_url,
+                                reject_url=reject_url,
+                                confirm_url=confirm_url,
+                            )
+                    except Exception as e:
+                        logger.error("[NOTIFY-BG] Outcome-confirmation dispatch failed: %s", e, exc_info=True)
+
                 # Send user-specific email notification
                 if archive_data:
                     created_by_id = archive_data.get("created_by_id")
@@ -9345,6 +9396,12 @@ PUBLIC_API_PREFIXES = [
     "/api/v1/ws",
     # OIDC authorize redirects — include provider_id in path
     "/api/v1/auth/oidc/authorize/",
+    # One-tap outcome-verdict links from push notifications (#1898). Tapped on
+    # a phone with no session, so no header can carry a JWT — the single-use
+    # capability token in the path IS the credential (same reasoning as the
+    # /dl/ slicer downloads below). The route grants nothing beyond writing
+    # good/reject on the one archive the token was minted for.
+    "/api/v1/archives/confirm/",
 ]
 
 # Route patterns that are public (read-only display data)

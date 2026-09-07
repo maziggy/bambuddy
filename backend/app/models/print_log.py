@@ -45,6 +45,10 @@ class PrintLogEntry(Base):
     energy_kwh: Mapped[float | None] = mapped_column(Float)
     energy_cost: Mapped[float | None] = mapped_column(Float)
     failure_reason: Mapped[str | None] = mapped_column(String(100))
+    # User quality verdict ('good' / 'reject'), mirrored from the archive on
+    # PATCH exactly like status/failure_reason (#1444 mirror) so verdict-aware
+    # statistics can stay on this table (#1898).
+    user_verdict: Mapped[str | None] = mapped_column(String(10), nullable=True)
     thumbnail_path: Mapped[str | None] = mapped_column(String(500))
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_by_username: Mapped[str | None] = mapped_column(String(100))

@@ -5997,6 +5997,12 @@ class PrintScheduler:
             if archive.plate_id is None and item.plate_id is not None:
                 archive.plate_id = item.plate_id
 
+            # Ask-for-outcome opt-in rides from the queue item to the archive
+            # the same way (#1898); never cleared here so a reprint of an
+            # archive that already asked keeps asking.
+            if item.confirm_outcome:
+                archive.confirm_requested = True
+
             file_path = settings.base_dir / archive.file_path
             filename = archive.filename
 
@@ -6057,6 +6063,8 @@ class PrintScheduler:
                 )
                 if archive:
                     item.archive_id = archive.id
+                    if item.confirm_outcome:
+                        archive.confirm_requested = True  # ask-for-outcome opt-in (#1898)
                     if budget_reservation is not None:
                         budget_reservation.print_archive_id = archive.id
                     if item.cleanup_library_after_dispatch and not library_file.is_external:
@@ -6521,6 +6529,16 @@ class PrintScheduler:
 
         # Clear the awaiting-plate-clear flag now that we're starting a new print
         printer_manager.set_awaiting_plate_clear(item.printer_id, False)
+
+        # #1898: with the opt-in default-good setting, moving on to the next
+        # print resolves the previous print's unanswered outcome prompt as
+        # "good" — this path also covers the camera-based plate detection,
+        # which releases the gate by allowing dispatch rather than by an
+        # explicit acknowledgment. Rides on the dispatch transaction.
+        if await self._get_bool_setting(db, "confirm_default_good_on_plate_clear", default=False):
+            from backend.app.services.print_confirmation import resolve_pending_confirmation_as_good
+
+            await resolve_pending_confirmation_as_good(db, item.printer_id)
         logger.info("Queue item %s: Status set to 'printing', sending print command...", item.id)
 
         # Capture state before dispatch so the watchdog can detect whether the

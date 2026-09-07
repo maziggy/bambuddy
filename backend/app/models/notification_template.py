@@ -56,6 +56,16 @@ DEFAULT_TEMPLATES = [
         "body_template": "{printer}: {filename}\nRemaining: {remaining_time}",
     },
     {
+        # Post-print outcome confirmation (#1898). {good_url} / {reject_url}
+        # are one-tap capability links; ntfy and Pushover render them as
+        # action buttons / a supplementary link, other channels show the URLs
+        # from the body as plain links.
+        "event_type": "print_confirm_request",
+        "name": "Print Outcome Confirmation",
+        "title_template": "How did your print come out?",
+        "body_template": "{printer}: {filename}\nGood: {good_url}\nReject: {reject_url}",
+    },
+    {
         "event_type": "print_missing_spool_assignment",
         "name": "Missing Spool Assignment",
         "title_template": "Missing Spool Assignment",

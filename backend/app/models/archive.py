@@ -106,6 +106,18 @@ class PrintArchive(Base):
     failure_reason: Mapped[str | None] = mapped_column(String(100))  # For failed prints
     quantity: Mapped[int] = mapped_column(Integer, default=1)  # Number of items printed
 
+    # Post-print outcome confirmation (#1898). user_verdict is the USER's
+    # quality judgement ('good' / 'reject'), deliberately orthogonal to the
+    # machine-reported `status`: completed + reject means "printer finished
+    # it, part is scrap". confirm_requested is copied from the queue item's
+    # opt-in flag at dispatch (like plate_id) and drives the prompt + the
+    # "unconfirmed" badge; confirm_token is a per-archive capability for the
+    # one-tap verdict links in push notifications, minted when the prompt
+    # fires and cleared once a verdict lands.
+    user_verdict: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    confirm_requested: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    confirm_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     # Energy tracking
     energy_kwh: Mapped[float | None] = mapped_column(Float)  # Energy consumed in kWh
     energy_cost: Mapped[float | None] = mapped_column(Float)  # Cost of energy consumed

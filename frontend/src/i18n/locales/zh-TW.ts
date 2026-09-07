@@ -4,7 +4,7 @@ export default {
     temperature: "目標溫度 (°C)",
     duration: "保溫時間（分鐘）",
     status: "預熱中",
-    hint: "30–60°C，1–120分鐘。印表機確認加熱器目標溫度後開始計時。",
+    hint: "30–60°C，1–120分鐘。送出加熱指令後開始計時。",
     bedOnly: "!! 此機型沒有腔體加熱器。將僅使用熱床加熱。",
   },
   // Navigation

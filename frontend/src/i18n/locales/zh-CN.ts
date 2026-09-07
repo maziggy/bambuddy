@@ -4,7 +4,7 @@ export default {
     temperature: "目标温度 (°C)",
     duration: "保温时长（分钟）",
     status: "预热中",
-    hint: "30–60°C，1–120分钟。打印机确认加热器目标温度后开始计时。",
+    hint: "30–60°C，1–120分钟。发送加热指令后开始计时。",
     bedOnly: "!! 此机型没有腔体加热器。将仅使用热床加热。",
   },
   // Navigation

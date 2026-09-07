@@ -4,7 +4,7 @@ export default {
     temperature: "Température cible (°C)",
     duration: "Durée (minutes)",
     status: "Préchauffage",
-    hint: "30–60°C, 1–120 minutes. Le minuteur démarre après confirmation des consignes par l’imprimante.",
+    hint: "30–60°C, 1–120 minutes. Le minuteur démarre lorsque la commande de chauffage est envoyée.",
     bedOnly: "!! Chauffage de chambre indisponible sur cette machine. Seul le plateau sera utilisé pour chauffer.",
   },
   // Navigation

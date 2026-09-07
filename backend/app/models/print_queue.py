@@ -43,7 +43,7 @@ class PrintQueueItem(Base):
     # before dispatch. True leaves drying alone and waits for natural completion.
     wait_for_drying_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
-    # Explicit queue-only heat soak. Timer begins after firmware target confirmation.
+    # Explicit queue-only heat soak. Timer begins when heater commands are sent.
     chamber_heat_soak: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     heat_soak_temperature: Mapped[int] = mapped_column(Integer, default=60, server_default="60")
     heat_soak_minutes: Mapped[int] = mapped_column(Integer, default=30, server_default="30")

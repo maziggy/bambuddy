@@ -4,7 +4,7 @@ export default {
     temperature: "Target temperature (°C)",
     duration: "Soak duration (minutes)",
     status: "Preheating",
-    hint: "30–60°C, 1–120 minutes. The timer starts when the printer confirms its heater targets.",
+    hint: "30–60°C, 1–120 minutes. The timer starts when the heating command is sent.",
     bedOnly: "!! Chamber Heater not available on this machine. Heating will be completed using only the bed",
   },
   // Navigation

@@ -4,7 +4,7 @@ export default {
     temperature: "Temperatura obiettivo (°C)",
     duration: "Durata (minuti)",
     status: "Preriscaldamento",
-    hint: "30–60°C, 1–120 minuti. Il timer parte quando la stampante conferma le temperature impostate.",
+    hint: "30–60°C, 1–120 minuti. Il timer parte quando viene inviato il comando di riscaldamento.",
     bedOnly: "!! Riscaldatore della camera non disponibile su questa macchina. Il riscaldamento utilizzerà solo il piano.",
   },
   // Navigation

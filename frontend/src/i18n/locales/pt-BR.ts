@@ -4,7 +4,7 @@ export default {
     temperature: "Temperatura alvo (°C)",
     duration: "Duração (minutos)",
     status: "Pré-aquecendo",
-    hint: "30–60°C, 1–120 minutos. O temporizador começa quando a impressora confirma as temperaturas alvo.",
+    hint: "30–60°C, 1–120 minutos. O temporizador começa quando o comando de aquecimento é enviado.",
     bedOnly: "!! Aquecedor de câmara indisponível nesta máquina. O aquecimento será feito somente pela mesa.",
   },
   // Navigation

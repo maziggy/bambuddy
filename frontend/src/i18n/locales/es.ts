@@ -4,7 +4,7 @@ export default {
     temperature: "Temperatura objetivo (°C)",
     duration: "Duración (minutos)",
     status: "Precalentando",
-    hint: "30–60°C, 1–120 minutos. El temporizador empieza cuando la impresora confirma las temperaturas objetivo.",
+    hint: "30–60°C, 1–120 minutos. El temporizador comienza cuando se envía el comando de calentamiento.",
     bedOnly: "!! Esta máquina no tiene calefactor de cámara. Solo se utilizará la cama para calentar.",
   },
   // Navigation

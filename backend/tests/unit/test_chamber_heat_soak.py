@@ -78,7 +78,7 @@ async def test_supported_controls_and_durable_reservation(soak, model, chamber, 
     assert await soak.service.stage(soak.db, soak.item)
     await soak.db.refresh(soak.item)
     assert soak.item.status == "preheating"
-    assert soak.item.preheat_started_at is None
+    assert soak.item.preheat_started_at is not None
     soak.client.set_bed_temperature.assert_called_once_with(60)
     assert soak.client.set_chamber_temperature.called == chamber
     assert soak.client.set_airduct_mode.called == airduct
@@ -88,20 +88,11 @@ async def test_supported_controls_and_durable_reservation(soak, model, chamber, 
     await soak.db.rollback()
 
 
-async def test_full_timer_starts_only_after_real_firmware_confirmation(soak):
+async def test_full_timer_starts_when_heating_commands_are_sent(soak):
     assert await soak.service.stage(soak.db, soak.item)
-    # Optimistic UI target changes do not constitute acceptance.
-    soak.state.temperatures = {"bed_target": 60, "chamber_target": 60}
-    assert await soak.service.check(soak.db) == []
-    await soak.db.refresh(soak.item)
-    assert soak.item.preheat_started_at is None
-    record_heat_soak_reports(soak.state, {"bed_target_temper": 60})
-    assert await soak.service.check(soak.db) == []
-    assert soak.item.preheat_started_at is None
-    confirm(soak)
-    assert await soak.service.check(soak.db) == []
     await soak.db.refresh(soak.item)
     assert soak.item.preheat_started_at is not None
+    assert soak.item.preheat_started_at <= heat.utcnow()
     soak.item.preheat_started_at = heat.utcnow() - timedelta(seconds=59)
     await soak.db.commit()
     assert await soak.service.check(soak.db) == []
@@ -114,12 +105,10 @@ async def test_full_timer_starts_only_after_real_firmware_confirmation(soak):
     assert await soak.service.check(soak.db) == []
 
 
-async def test_bed_only_confirmation_is_sufficient(soak):
+async def test_bed_only_heating_starts_timer(soak):
     soak.printer.model = "P1S"
     await soak.db.commit()
-    await soak.service.stage(soak.db, soak.item)
-    record_heat_soak_reports(soak.state, {"bed_target_temper": 60})
-    await soak.service.check(soak.db)
+    assert await soak.service.stage(soak.db, soak.item)
     await soak.db.refresh(soak.item)
     assert soak.item.preheat_started_at is not None
 
@@ -132,15 +121,11 @@ async def test_bed_only_confirmation_is_sufficient(soak):
         "external_print",
         "timeout",
         "restart",
-        "targets_changed",
-        "stale_telemetry",
         "disabled",
     ],
 )
 async def test_interruptions_release_item_for_manual_retry_and_shutdown(soak, interruption):
     await soak.service.stage(soak.db, soak.item)
-    confirm(soak)
-    await soak.service.check(soak.db)
     await soak.db.refresh(soak.item)
     if interruption == "disconnect":
         soak.manager.is_connected.return_value = False
@@ -151,18 +136,10 @@ async def test_interruptions_release_item_for_manual_retry_and_shutdown(soak, in
     elif interruption == "disabled":
         soak.printer.is_active = False
     elif interruption == "timeout":
-        soak.item.preheat_started_at = None
-        soak.item.preheat_requested_at = heat.utcnow() - timedelta(seconds=121)
-        soak.state.heat_soak_reports.clear()
+        soak.item.preheat_checked_at = heat.utcnow() - timedelta(seconds=91)
     elif interruption == "restart":
         soak.service = heat.ChamberHeatSoak()
         soak.item.preheat_checked_at = heat.utcnow() - timedelta(seconds=91)
-    elif interruption == "targets_changed":
-        confirm(soak, target=0)
-    else:
-        soak.state.heat_soak_reports = {
-            key: (value[0], time.time() - 61) for key, value in soak.state.heat_soak_reports.items()
-        }
     await soak.db.commit()
     assert await soak.service.check(soak.db) == []
     await soak.db.refresh(soak.item)
@@ -240,7 +217,6 @@ async def test_delete_offline_preserves_cleanup_and_prevents_new_soak_until_off_
 
 async def test_cancel_at_timer_boundary_cannot_dispatch(soak):
     await soak.service.stage(soak.db, soak.item)
-    confirm(soak)
     await soak.service.check(soak.db)
     soak.item.preheat_started_at = heat.utcnow() - timedelta(minutes=2)
     await soak.db.commit()
@@ -349,7 +325,6 @@ async def test_no_upload_or_print_until_soak_then_normal_correlated_dispatch(soa
     upload.assert_not_awaited()
     archiving.assert_not_awaited()
     soak.manager.start_print.assert_not_called()
-    confirm(soak)
     await soak.service.check(soak.db)
     soak.item.preheat_started_at = heat.utcnow() - timedelta(seconds=61)
     await soak.db.commit()
@@ -370,7 +345,6 @@ async def test_cancel_after_soak_before_dispatch_task_does_not_upload(soak, monk
     from backend.app.services import print_scheduler as scheduling
 
     await soak.service.stage(soak.db, soak.item)
-    confirm(soak)
     await soak.service.check(soak.db)
     soak.item.preheat_started_at = heat.utcnow() - timedelta(seconds=61)
     await soak.db.commit()

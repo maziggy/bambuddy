@@ -21,7 +21,6 @@ from backend.app.services.printer_manager import printer_manager, supports_chamb
 
 logger = logging.getLogger(__name__)
 HEARTBEAT_TIMEOUT = 90
-CONFIRMATION_TIMEOUT = 120
 TELEMETRY_TIMEOUT = 60
 
 
@@ -159,6 +158,10 @@ class ChamberHeatSoak:
         ):
             await abort_heat_soak(db, item, "Heat soak could not start: printer unavailable or heater shutdown pending")
             return False
+        # The soak duration is measured from the heater command, not from a
+        # later telemetry update. Target telemetry can lag or be omitted by
+        # firmware, and it should not make the wait unpredictable.
+        heating_started_at = utcnow()
         try:
             accepted = True
             if supports_airduct(printer.model):
@@ -173,6 +176,7 @@ class ChamberHeatSoak:
             logger.exception("Could not start heat soak for queue item %s", item_id)
             await abort_heat_soak(db, item, "Heat-soak heating commands failed; retry required")
             return False
+        item.preheat_started_at = heating_started_at
         await db.commit()
         _show_preheating(printer_id, True)
         self._visible_printers.add(printer_id)
@@ -236,21 +240,10 @@ class ChamberHeatSoak:
                     db, item, "Printer disconnected or became unavailable during heat soak; retry required"
                 )
                 continue
-            temperature = item.heat_soak_temperature
-            confirmed = _reported(state, "bed_target", temperature, requested)
-            if supports_chamber_heater(printer.model):
-                confirmed = confirmed and _reported(state, "chamber_target", temperature, requested)
-            if supports_airduct(printer.model):
-                confirmed = confirmed and _reported(state, "airduct", 1, requested)
-            if not confirmed:
-                if item.preheat_started_at or (now - requested).total_seconds() >= CONFIRMATION_TIMEOUT:
-                    await abort_heat_soak(
-                        db, item, "Heat-soak targets not confirmed or heating was interrupted; retry required"
-                    )
-                    continue
-            elif item.preheat_started_at is None:
-                item.preheat_started_at = now
-            elif (now - item.preheat_started_at).total_seconds() >= item.heat_soak_minutes * 60:
+            if item.preheat_started_at is None:
+                await abort_heat_soak(db, item, "Heat-soak start time missing; retry required")
+                continue
+            if (now - item.preheat_started_at).total_seconds() >= item.heat_soak_minutes * 60:
                 _show_preheating(item.printer_id, False)
                 item.status = "dispatching"
                 item.dispatched_at = now

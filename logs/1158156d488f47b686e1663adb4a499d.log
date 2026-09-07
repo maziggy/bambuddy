@@ -1,0 +1,200 @@
+2026-09-07 16:55:09,823 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:09,862 INFO [backend.app.services.print_scheduler] [-] Queue check: found 37 pending items: [(100, 1, None, 26), (101, 1, None, 26), (102, 1, None, 26), (67, 1, None, 21), (68, 1, None, 22), (69, 1, None, 22), (70, 1, None, 22), (71, 1, None, 22), (72, 1, None, 22), (73, 1, None, 22), (74, 1, None, 22), (75, 1, None, 22), (76, 1, None, 22), (77, 1, None, 22), (78, 1, None, 22), (79, 1, None, 22), (80, 1, None, 22), (81, 1, None, 22), (82, 1, None, 22), (83, 1, None, 22), (84, 1, None, 22), (85, 1, None, 22), (86, 1, None, 22), (87, 1, None, 22), (51, 1, 25, None), (50, 1, 25, None), (46, 1, 24, None), (47, 1, 24, None), (90, 1, 31, None), (91, 1, 32, None), (92, 1, 32, None), (93, 1, None, 13), (94, 1, None, 13), (95, 1, None, 13), (96, 1, None, 13), (97, 1, None, 13), (98, 1, None, 13)]
+2026-09-07 16:55:09,874 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 22, 'scheduled_future': 1}
+2026-09-07 16:55:09,875 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-07 16:55:09,925 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:12,374 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:55:14,502 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 176925 bytes
+2026-09-07 16:55:14,862 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:14,963 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:19,913 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:20,014 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:24,956 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:25,059 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:26,022 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:55:28,184 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 181658 bytes
+2026-09-07 16:55:30,026 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:30,127 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:33,175 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-07 16:55:33,178 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:55:35,026 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:35,128 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:35,476 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 190624 bytes
+2026-09-07 16:55:35,477 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 190624 bytes
+2026-09-07 16:55:39,720 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:55:39,968 INFO [backend.app.services.print_scheduler] [-] Queue check: found 37 pending items: [(100, 1, None, 26), (101, 1, None, 26), (102, 1, None, 26), (67, 1, None, 21), (68, 1, None, 22), (69, 1, None, 22), (70, 1, None, 22), (71, 1, None, 22), (72, 1, None, 22), (73, 1, None, 22), (74, 1, None, 22), (75, 1, None, 22), (76, 1, None, 22), (77, 1, None, 22), (78, 1, None, 22), (79, 1, None, 22), (80, 1, None, 22), (81, 1, None, 22), (82, 1, None, 22), (83, 1, None, 22), (84, 1, None, 22), (85, 1, None, 22), (86, 1, None, 22), (87, 1, None, 22), (51, 1, 25, None), (50, 1, 25, None), (46, 1, 24, None), (47, 1, 24, None), (90, 1, 31, None), (91, 1, 32, None), (92, 1, 32, None), (93, 1, None, 13), (94, 1, None, 13), (95, 1, None, 13), (96, 1, None, 13), (97, 1, None, 13), (98, 1, None, 13)]
+2026-09-07 16:55:39,979 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 22, 'scheduled_future': 1}
+2026-09-07 16:55:39,980 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-07 16:55:40,079 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:40,281 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:42,045 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 185154 bytes
+2026-09-07 16:55:45,115 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:45,216 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:50,152 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:50,253 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:53,522 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:55:55,187 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:55,289 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:55:55,592 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 187279 bytes
+2026-09-07 16:56:00,157 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:00,259 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:05,202 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:05,308 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:07,094 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:56:09,182 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 180410 bytes
+2026-09-07 16:56:10,071 INFO [backend.app.services.print_scheduler] [-] Queue check: found 37 pending items: [(100, 1, None, 26), (101, 1, None, 26), (102, 1, None, 26), (67, 1, None, 21), (68, 1, None, 22), (69, 1, None, 22), (70, 1, None, 22), (71, 1, None, 22), (72, 1, None, 22), (73, 1, None, 22), (74, 1, None, 22), (75, 1, None, 22), (76, 1, None, 22), (77, 1, None, 22), (78, 1, None, 22), (79, 1, None, 22), (80, 1, None, 22), (81, 1, None, 22), (82, 1, None, 22), (83, 1, None, 22), (84, 1, None, 22), (85, 1, None, 22), (86, 1, None, 22), (87, 1, None, 22), (51, 1, 25, None), (50, 1, 25, None), (46, 1, 24, None), (47, 1, 24, None), (90, 1, 31, None), (91, 1, 32, None), (92, 1, 32, None), (93, 1, None, 13), (94, 1, None, 13), (95, 1, None, 13), (96, 1, None, 13), (97, 1, None, 13), (98, 1, None, 13)]
+2026-09-07 16:56:10,079 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 22, 'scheduled_future': 1}
+2026-09-07 16:56:10,080 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-07 16:56:10,282 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:10,389 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:15,341 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:15,443 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:20,290 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:20,392 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:20,725 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:56:23,005 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 177063 bytes
+2026-09-07 16:56:25,362 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:25,464 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:26,588 INFO [uvicorn.access] [-] [IP]:51332 - "DELETE /api/v1/inventory/shopping-list/1 HTTP/1.1" 200
+2026-09-07 16:56:30,405 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:30,507 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:32,442 INFO [uvicorn.access] [-] [IP]:51332 - "PATCH /api/v1/inventory/shopping-list/5/status HTTP/1.1" 200
+2026-09-07 16:56:33,686 INFO [uvicorn.access] [-] [IP]:40262 - "PATCH /api/v1/inventory/shopping-list/5/status HTTP/1.1" 200
+2026-09-07 16:56:34,520 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:56:35,449 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:35,551 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:36,684 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 181721 bytes
+2026-09-07 16:56:40,159 INFO [backend.app.services.print_scheduler] [-] Queue check: found 37 pending items: [(100, 1, None, 26), (101, 1, None, 26), (102, 1, None, 26), (67, 1, None, 21), (68, 1, None, 22), (69, 1, None, 22), (70, 1, None, 22), (71, 1, None, 22), (72, 1, None, 22), (73, 1, None, 22), (74, 1, None, 22), (75, 1, None, 22), (76, 1, None, 22), (77, 1, None, 22), (78, 1, None, 22), (79, 1, None, 22), (80, 1, None, 22), (81, 1, None, 22), (82, 1, None, 22), (83, 1, None, 22), (84, 1, None, 22), (85, 1, None, 22), (86, 1, None, 22), (87, 1, None, 22), (51, 1, 25, None), (50, 1, 25, None), (46, 1, 24, None), (47, 1, 24, None), (90, 1, 31, None), (91, 1, 32, None), (92, 1, 32, None), (93, 1, None, 13), (94, 1, None, 13), (95, 1, None, 13), (96, 1, None, 13), (97, 1, None, 13), (98, 1, None, 13)]
+2026-09-07 16:56:40,168 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 22, 'scheduled_future': 1}
+2026-09-07 16:56:40,169 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-07 16:56:40,507 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:40,608 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:40,984 INFO [uvicorn.access] [-] [IP]:40262 - "DELETE /api/v1/inventory/shopping-list HTTP/1.1" 200
+2026-09-07 16:56:42,628 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-07 16:56:45,476 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:45,577 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:48,244 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:56:50,474 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 177907 bytes
+2026-09-07 16:56:50,531 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:50,632 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:55,585 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:56:55,687 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:00,633 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:00,734 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:01,982 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:57:04,163 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 181977 bytes
+2026-09-07 16:57:05,631 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-07 16:57:05,703 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:05,806 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:10,263 INFO [backend.app.services.print_scheduler] [-] Queue check: found 37 pending items: [(100, 1, None, 26), (101, 1, None, 26), (102, 1, None, 26), (67, 1, None, 21), (68, 1, None, 22), (69, 1, None, 22), (70, 1, None, 22), (71, 1, None, 22), (72, 1, None, 22), (73, 1, None, 22), (74, 1, None, 22), (75, 1, None, 22), (76, 1, None, 22), (77, 1, None, 22), (78, 1, None, 22), (79, 1, None, 22), (80, 1, None, 22), (81, 1, None, 22), (82, 1, None, 22), (83, 1, None, 22), (84, 1, None, 22), (85, 1, None, 22), (86, 1, None, 22), (87, 1, None, 22), (51, 1, 25, None), (50, 1, 25, None), (46, 1, 24, None), (47, 1, 24, None), (90, 1, 31, None), (91, 1, 32, None), (92, 1, 32, None), (93, 1, None, 13), (94, 1, None, 13), (95, 1, None, 13), (96, 1, None, 13), (97, 1, None, 13), (98, 1, None, 13)]
+2026-09-07 16:57:10,271 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 22, 'scheduled_future': 1}
+2026-09-07 16:57:10,272 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-07 16:57:10,647 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:10,748 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:15,671 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:57:15,688 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:15,789 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:17,826 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 182756 bytes
+2026-09-07 16:57:20,733 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:20,835 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:25,260 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-07 16:57:25,264 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:57:25,819 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:25,920 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:27,978 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 181898 bytes
+2026-09-07 16:57:27,979 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 181898 bytes
+2026-09-07 16:57:29,294 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:57:30,857 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:30,959 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:31,395 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 183534 bytes
+2026-09-07 16:57:35,903 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:36,004 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:40,337 INFO [backend.app.services.print_scheduler] [-] Queue check: found 37 pending items: [(100, 1, None, 26), (101, 1, None, 26), (102, 1, None, 26), (67, 1, None, 21), (68, 1, None, 22), (69, 1, None, 22), (70, 1, None, 22), (71, 1, None, 22), (72, 1, None, 22), (73, 1, None, 22), (74, 1, None, 22), (75, 1, None, 22), (76, 1, None, 22), (77, 1, None, 22), (78, 1, None, 22), (79, 1, None, 22), (80, 1, None, 22), (81, 1, None, 22), (82, 1, None, 22), (83, 1, None, 22), (84, 1, None, 22), (85, 1, None, 22), (86, 1, None, 22), (87, 1, None, 22), (51, 1, 25, None), (50, 1, 25, None), (46, 1, 24, None), (47, 1, 24, None), (90, 1, 31, None), (91, 1, 32, None), (92, 1, 32, None), (93, 1, None, 13), (94, 1, None, 13), (95, 1, None, 13), (96, 1, None, 13), (97, 1, None, 13), (98, 1, None, 13)]
+2026-09-07 16:57:40,345 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 22, 'scheduled_future': 1}
+2026-09-07 16:57:40,346 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-07 16:57:40,849 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:40,951 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:42,897 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:57:45,376 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 190383 bytes
+2026-09-07 16:57:45,908 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:46,010 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:50,944 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:51,046 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:55,979 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:56,080 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:57:56,863 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:57:58,954 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 185502 bytes
+2026-09-07 16:58:01,029 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:01,130 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:06,070 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:06,171 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:10,413 INFO [backend.app.services.print_scheduler] [-] Queue check: found 37 pending items: [(100, 1, None, 26), (101, 1, None, 26), (102, 1, None, 26), (67, 1, None, 21), (68, 1, None, 22), (69, 1, None, 22), (70, 1, None, 22), (71, 1, None, 22), (72, 1, None, 22), (73, 1, None, 22), (74, 1, None, 22), (75, 1, None, 22), (76, 1, None, 22), (77, 1, None, 22), (78, 1, None, 22), (79, 1, None, 22), (80, 1, None, 22), (81, 1, None, 22), (82, 1, None, 22), (83, 1, None, 22), (84, 1, None, 22), (85, 1, None, 22), (86, 1, None, 22), (87, 1, None, 22), (51, 1, 25, None), (50, 1, 25, None), (46, 1, 24, None), (47, 1, 24, None), (90, 1, 31, None), (91, 1, 32, None), (92, 1, 32, None), (93, 1, None, 13), (94, 1, None, 13), (95, 1, None, 13), (96, 1, None, 13), (97, 1, None, 13), (98, 1, None, 13)]
+2026-09-07 16:58:10,421 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 22, 'scheduled_future': 1}
+2026-09-07 16:58:10,421 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-07 16:58:10,470 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:58:11,111 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:11,213 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:12,572 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 182280 bytes
+2026-09-07 16:58:16,074 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:16,175 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:21,108 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:21,211 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:24,124 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:58:26,164 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:26,268 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:26,298 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 172121 bytes
+2026-09-07 16:58:31,219 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:31,320 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:36,255 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:36,358 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:37,805 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:58:40,200 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 182262 bytes
+2026-09-07 16:58:40,496 INFO [backend.app.services.print_scheduler] [-] Queue check: found 37 pending items: [(100, 1, None, 26), (101, 1, None, 26), (102, 1, None, 26), (67, 1, None, 21), (68, 1, None, 22), (69, 1, None, 22), (70, 1, None, 22), (71, 1, None, 22), (72, 1, None, 22), (73, 1, None, 22), (74, 1, None, 22), (75, 1, None, 22), (76, 1, None, 22), (77, 1, None, 22), (78, 1, None, 22), (79, 1, None, 22), (80, 1, None, 22), (81, 1, None, 22), (82, 1, None, 22), (83, 1, None, 22), (84, 1, None, 22), (85, 1, None, 22), (86, 1, None, 22), (87, 1, None, 22), (51, 1, 25, None), (50, 1, 25, None), (46, 1, 24, None), (47, 1, 24, None), (90, 1, 31, None), (91, 1, 32, None), (92, 1, 32, None), (93, 1, None, 13), (94, 1, None, 13), (95, 1, None, 13), (96, 1, None, 13), (97, 1, None, 13), (98, 1, None, 13)]
+2026-09-07 16:58:40,503 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 22, 'scheduled_future': 1}
+2026-09-07 16:58:40,504 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-09-07 16:58:41,308 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:41,409 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:46,344 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:46,445 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:51,379 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:51,480 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:51,707 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:58:51,827 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-09-07 16:58:54,032 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 183370 bytes
+2026-09-07 16:58:56,428 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:56,530 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:58:58,878 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-07 16:58:58,881 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-09-07 16:59:01,133 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 184224 bytes
+2026-09-07 16:59:01,134 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 184224 bytes
+2026-09-07 16:59:01,392 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:59:01,494 INFO [backend.app.services.virtual_printer.ssdp_server] [11c8fa78] Sent SSDP response to [IP] for '[PRINTER]-v' (Location=[IP], USN=20P90A391800001)
+2026-09-07 16:59:04,940 INFO [backend.app.api.routes.support] [4c69cd8a] Log level changed to DEBUG
+2026-09-07 16:59:04,940 INFO [backend.app.api.routes.bug_report] [4c69cd8a] Bug report: enabled debug logging
+2026-09-07 16:59:04,941 DEBUG [backend.app.services.bambu_mqtt] [4c69cd8a] [[SERIAL]] Requesting status update (pushall)
+2026-09-07 16:59:04,943 INFO [uvicorn.access] [-] [IP]:45484 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-09-07 16:59:04,958 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-07 16:59:04,959 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-07 16:59:04,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-09-07 16:59:04,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_6.gcode, subtask_name: mechanical_arm
+2026-09-07 16:59:04,961 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'cfs': [2, 9, 3, 4, 5, 7], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '1', 'tray_is_bbl_bits': 'f', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '0', 'unbind_ams_stat': 0, 'version': 202}
+2026-09-07 16:59:04,961 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 0
+2026-09-07 16:59:04,962 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-09-07 16:59:04,962 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x11001103 -> extruder 1
+2026-09-07 16:59:04,963 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1}
+2026-09-07 16:59:04,963 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-09-07 16:59:04,964 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-07 16:59:04,964 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=33042 (switch_state bits 12-14: 0)
+2026-09-07 16:59:04,965 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 32°C (heater OFF)
+2026-09-07 16:59:04,965 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-09-07 16:59:04,965 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=32.0, heating=False, respect_local=False
+2026-09-07 16:59:04,966 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 32.0, target: 0.0, heating: False
+2026-09-07 16:59:04,966 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-07 16:59:04,967 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'enable', 'tl_external_free_kb': 35800960, 'tl_external_total_kb': 121353664, 'tl_internal_free_kb': 918193, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-09-07 16:59:04,968 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Timelapse detected during print (from ipcam)
+2026-09-07 16:59:04,968 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -45dBm
+2026-09-07 16:59:04,969 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-07 16:59:04,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [0, 65535, 65535, 65535, 65280]
+2026-09-07 16:59:04,970 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_6.gcode, subtask: mechanical_arm
+2026-09-07 16:59:05,558 DEBUG [backend.app.services.camera] [-] TLS proxy for [IP]:322 listening on [IP]:45485
+2026-09-07 16:59:05,559 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X2D)

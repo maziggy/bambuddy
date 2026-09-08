@@ -1651,6 +1651,15 @@ export default {
     printActivity: 'Baskı Etkinliği',
     filamentTypes: 'Filament Türleri',
     filamentTrends: 'Filament Trendleri',
+    // Consumption/cost grouped by the internal material number (#2870).
+    materialNumbers: {
+      title: 'Malzeme Numarasına Göre',
+      empty: 'Henüz malzeme numarası atanmadı. Tüketim ve maliyetleri burada gruplamak için envanterdeki makaralara malzeme numarası ekleyin.',
+      spools: 'Makaralar',
+      remaining: 'Kalan',
+      consumed: 'Tüketilen',
+      cost: 'Maliyet',
+    },
     failureAnalysis: 'Başarısızlık Analizi',
     timeAccuracy: 'Süre Doğruluğu',
     successful: 'Başarılı:',
@@ -4717,6 +4726,11 @@ export default {
     storageLocationNone: 'Konum ayarlanmamış',
     lowStockThresholdOverride: 'Düşük stok eşiği (bu makara)',
     lowStockThresholdOverrideHelp: 'Global eşiği kullanmak için boş bırakın (%{{global}}).',
+    // Internal material / article number (#2870)
+    materialNumber: 'Malzeme No.',
+    materialNumberPlaceholder: 'örn. 15',
+    materialNumberHelp: 'Dahili satın alma numarası - bu ürünün tüm makaraları tarafından paylaşılır. Aynı ürünün yeni makaraları bu numarayı devralır.',
+    materialNumberNone: 'Malzeme numarası yok',
     clearRfid: 'RFID Etiketini Temizle',
     rfidCleared: 'RFID etiketi temizlendi',
     archive: 'Arşivle',

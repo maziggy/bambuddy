@@ -26,7 +26,8 @@ type EditableField =
   | 'label_weight'
   | 'core_weight'
   | 'category'
-  | 'low_stock_threshold_pct';
+  | 'low_stock_threshold_pct'
+  | 'material_number';
 
 type FieldSpec = {
   id: EditableField;
@@ -60,6 +61,9 @@ const FIELDS: FieldSpec[] = [
   { id: 'core_weight', type: 'number', labelKey: 'inventory.coreWeight', min: 0, step: 1 },
   { id: 'category', type: 'searchable', labelKey: 'inventory.category' },
   { id: 'low_stock_threshold_pct', type: 'number', labelKey: 'inventory.lowStockThresholdOverride', min: 1, max: 99, step: 1 },
+  // Internal material / article number (#2870) — bulk-assigning it is the
+  // main way existing inventories get numbered.
+  { id: 'material_number', type: 'searchable', labelKey: 'inventory.materialNumber' },
 ];
 
 export interface BulkEditSpoolsModalProps {
@@ -72,6 +76,7 @@ export interface BulkEditSpoolsModalProps {
   availableSubtypes: string[];
   availableBrands: string[];
   availableCategories: string[];
+  availableMaterialNumbers: string[];
   availableSlicerFilaments: string[];
   availableSlicerFilamentNames: string[];
   onClose: () => void;
@@ -210,7 +215,7 @@ function combineUnique(...lists: string[][]): string[] {
 export function BulkEditSpoolsModal({
   isOpen, selectedCount, isPending,
   availableLocations, availableMaterials, availableSubtypes, availableBrands, availableCategories,
-  availableSlicerFilaments, availableSlicerFilamentNames,
+  availableMaterialNumbers, availableSlicerFilaments, availableSlicerFilamentNames,
   onClose, onApply,
 }: BulkEditSpoolsModalProps) {
   const { t } = useTranslation();
@@ -279,6 +284,10 @@ export function BulkEditSpoolsModal({
   const categoryOptions: Option[] = useMemo(
     () => combineUnique(availableCategories).map((m) => ({ value: m, label: m })),
     [availableCategories],
+  );
+  const materialNumberOptions: Option[] = useMemo(
+    () => combineUnique(availableMaterialNumbers).map((m) => ({ value: m, label: m })),
+    [availableMaterialNumbers],
   );
   const slicerFilamentOptions: Option[] = useMemo(() => {
     // value = preset code (what goes into spool.slicer_filament),
@@ -357,6 +366,7 @@ export function BulkEditSpoolsModal({
     if (id === 'subtype') return subtypeOptions;
     if (id === 'brand') return brandOptions;
     if (id === 'category') return categoryOptions;
+    if (id === 'material_number') return materialNumberOptions;
     if (id === 'slicer_filament') return slicerFilamentOptions;
     if (id === 'slicer_filament_name') return slicerFilamentNameOptions;
     if (id === 'location_id') return locationOptions;

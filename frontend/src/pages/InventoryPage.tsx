@@ -97,6 +97,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'printed_total', label: 'Printed Total', visible: false },
   { id: 'printed_since_weight', label: 'Printed Since Weight', visible: false },
   { id: 'note', label: 'Note', visible: false },
+  { id: 'material_number', label: 'Material No.', visible: false },
   { id: 'pa_k', label: 'PA(K)', visible: true },
   { id: 'tag_id', label: 'Tag ID', visible: false },
   { id: 'data_origin', label: 'Data Origin', visible: false },
@@ -226,6 +227,7 @@ const columnHeaders: Record<string, (t: TFn) => string> = {
   printed_total: () => 'Printed Total',
   printed_since_weight: () => 'Printed Since Weight',
   note: (t) => t('inventory.note'),
+  material_number: (t) => t('inventory.materialNumber'),
   pa_k: () => 'PA(K)',
   tag_id: () => 'Tag ID',
   data_origin: () => 'Data Origin',
@@ -365,6 +367,9 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
   ),
   note: ({ spool }) => (
     <span className="text-sm text-bambu-gray max-w-[150px] truncate block" title={spool.note || undefined}>{spool.note || '-'}</span>
+  ),
+  material_number: ({ spool }) => (
+    <span className="text-sm text-bambu-gray">{spool.material_number || '-'}</span>
   ),
   pa_k: ({ spool }) => {
     const count = spool.k_profiles?.length ?? 0;
@@ -512,6 +517,7 @@ const columnSortValues: Record<
   used: (s) => s.weight_used,
   remaining: (s) => s.label_weight > 0 ? Math.max(0, s.label_weight - s.weight_used) / s.label_weight : 0,
   note: (s) => (s.note || '').toLowerCase(),
+  material_number: (s) => (s.material_number || '').toLowerCase(),
   data_origin: (s) => (s.data_origin || '').toLowerCase(),
   tag_type: (s) => (s.tag_type || '').toLowerCase(),
   stock: (s) => s.slicer_filament ? 1 : 0,
@@ -598,6 +604,8 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   const [materialFilter, setMaterialFilter] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  // Filter on the internal material number (#2870), same shape as category.
+  const [materialNumberFilter, setMaterialNumberFilter] = useState('');
   const [spoolFilter, setSpoolFilter] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'stock' | 'configured'>('all');
   const [search, setSearch] = useState('');
@@ -632,7 +640,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   // honest vs. what the user is actually looking at.
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [archiveFilter, usageFilter, materialFilter, brandFilter, categoryFilter, spoolFilter, stockFilter, search]);
+  }, [archiveFilter, usageFilter, materialFilter, brandFilter, categoryFilter, materialNumberFilter, spoolFilter, stockFilter, search]);
 
   // Pagination state (pageSize persisted to localStorage)
   const [pageIndex, setPageIndex] = useState(0);
@@ -1259,6 +1267,16 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
       }
     }
 
+    // Material number dropdown (#2870). `__none__` finds spools that have
+    // no number assigned yet.
+    if (materialNumberFilter) {
+      if (materialNumberFilter === '__none__') {
+        filtered = filtered.filter((s) => !s.material_number?.trim());
+      } else {
+        filtered = filtered.filter((s) => s.material_number === materialNumberFilter);
+      }
+    }
+
     // Spool name dropdown
     if (spoolFilter) {
       const catalogId = Number(spoolFilter);
@@ -1294,7 +1312,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     }
 
     return filtered;
-  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, categoryFilter, spoolFilter, stockFilter, storageLocationFilter, search, lowStockThreshold, storageLocations]);
+  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, categoryFilter, materialNumberFilter, spoolFilter, stockFilter, storageLocationFilter, search, lowStockThreshold, storageLocations]);
 
   // Reset page on filter changes
   const resetPage = () => setPageIndex(0);
@@ -1315,6 +1333,10 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   const uniqueBrands = [...new Set(spools?.map((s) => s.brand).filter(Boolean) || [])].sort() as string[];
   const uniqueCategories = [...new Set(spools?.map((s) => s.category?.trim()).filter(Boolean) as string[] || [])].sort();
   const hasUncategorized = (spools ?? []).some((s) => !s.category);
+  // #2870: distinct material numbers, numeric-aware sort ("2" before "15").
+  const uniqueMaterialNumbers = [...new Set(spools?.map((s) => s.material_number?.trim()).filter(Boolean) as string[] || [])]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const hasUnnumbered = (spools ?? []).some((s) => !s.material_number?.trim());
   const uniqueSpoolCatalogIds = [...new Set(spools?.map((s) => s.core_weight_catalog_id).filter((id): id is number => id != null) || [])].sort((a, b) => {
     const nameA = (catalogMap[a]?.name || '').toLowerCase();
     const nameB = (catalogMap[b]?.name || '').toLowerCase();
@@ -1325,7 +1347,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   const hasUnsetStorageLocation = (spools ?? []).some((s) => !s.location_id && !s.storage_location?.trim());
 
   // Check if any filters are non-default
-  const hasActiveFilters = archiveFilter !== 'active' || usageFilter !== 'all' || !!materialFilter || !!brandFilter || !!categoryFilter || !!spoolFilter || !!storageLocationFilter || stockFilter !== 'all' || !!search;
+  const hasActiveFilters = archiveFilter !== 'active' || usageFilter !== 'all' || !!materialFilter || !!brandFilter || !!categoryFilter || !!materialNumberFilter || !!spoolFilter || !!storageLocationFilter || stockFilter !== 'all' || !!search;
 
   const handleColumnConfigSave = (config: ColumnConfig[]) => {
     setColumnConfig(config);
@@ -1447,6 +1469,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     setMaterialFilter('');
     setBrandFilter('');
     setCategoryFilter('');
+    setMaterialNumberFilter('');
     setSpoolFilter('');
     setStockFilter('all');
     setSearch('');
@@ -1901,6 +1924,28 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
             ))}
             {hasUncategorized && (
               <option value="__none__">{t('inventory.categoryNone')}</option>
+            )}
+          </select>
+        )}
+
+        {/* Material number dropdown chip (#2870) — same render rule as the
+            category chip: hidden until at least one spool carries a number. */}
+        {(uniqueMaterialNumbers.length > 0 || materialNumberFilter) && (
+          <select
+            value={materialNumberFilter}
+            onChange={(e) => { setMaterialNumberFilter(e.target.value); resetPage(); }}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer focus:outline-none ${
+              materialNumberFilter
+                ? 'bg-bambu-green/20 text-bambu-green border-bambu-green/30'
+                : 'bg-transparent text-bambu-gray border-bambu-dark-tertiary hover:bg-bambu-dark-tertiary'
+            }`}
+          >
+            <option value="">{t('inventory.materialNumber')}</option>
+            {uniqueMaterialNumbers.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+            {hasUnnumbered && (
+              <option value="__none__">{t('inventory.materialNumberNone')}</option>
             )}
           </select>
         )}
@@ -2445,6 +2490,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         availableSubtypes={dedupeAndSort((spools ?? []).map((s) => s.subtype))}
         availableBrands={dedupeAndSort((spools ?? []).map((s) => s.brand))}
         availableCategories={dedupeAndSort((spools ?? []).map((s) => s.category))}
+        availableMaterialNumbers={dedupeAndSort((spools ?? []).map((s) => s.material_number))}
         availableSlicerFilaments={dedupeAndSort((spools ?? []).map((s) => s.slicer_filament))}
         availableSlicerFilamentNames={dedupeAndSort((spools ?? []).map((s) => s.slicer_filament_name))}
         onClose={() => setBulkEditOpen(false)}

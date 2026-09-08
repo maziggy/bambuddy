@@ -226,6 +226,18 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
         remain_pct = 100  # Unknown → assume full
     weight_used = round(label_weight * (100 - remain_pct) / 100.0, 1)
 
+    # A new spool of an already-numbered product inherits its material number
+    # (#2870) — an RFID-scanned refill arrives costed, not blank.
+    from backend.app.services.material_number import find_material_number_for_product
+
+    material_number = await find_material_number_for_product(
+        db,
+        material=material,
+        subtype=subtype,
+        brand="Bambu Lab",
+        color_name=color_name,
+    )
+
     spool = Spool(
         material=material,
         subtype=subtype,
@@ -234,6 +246,7 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
         extra_colors=extra_colors,
         effect_type=effect_type,
         brand="Bambu Lab",
+        material_number=material_number,
         label_weight=label_weight,
         core_weight=core_weight,
         core_weight_catalog_id=core_weight_catalog_id,

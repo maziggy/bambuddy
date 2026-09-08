@@ -2680,6 +2680,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         result = await client.sync_ams_tray(
                             tray,
                             printer_name,
+                            db,
                             # Per-print tracking is the only weight writer (#1119).
                             # AMS auto-sync still maintains spool metadata / slot
                             # assignments but no longer touches remaining_weight.

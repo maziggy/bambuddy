@@ -362,6 +362,7 @@ async def sync_printer_ams(
                 sync_result = await client.sync_ams_tray(
                     tray,
                     printer.name,
+                    db,
                     # Per-print tracking owns weight updates (#1119); manual sync
                     # only refreshes spool metadata + slot assignments here.
                     disable_weight_sync=True,
@@ -579,6 +580,7 @@ async def sync_all_printers(
                     sync_result = await client.sync_ams_tray(
                         tray,
                         printer.name,
+                        db,
                         # Per-print tracking owns weight updates (#1119); manual
                         # sync-all only refreshes spool metadata + slot assignments.
                         disable_weight_sync=True,
@@ -1290,6 +1292,7 @@ async def create_spool_from_slot(
     sync_result = await client.sync_ams_tray(
         tray,
         printer.name,
+        db,
         disable_weight_sync=True,
         auto_add_unknown_rfid=True,
     )

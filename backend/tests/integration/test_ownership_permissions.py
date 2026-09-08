@@ -914,6 +914,69 @@ class TestLibraryOwnershipPermissions(TestOwnershipPermissionsSetup):
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_operator_can_export_the_mesh_of_own_library_file(
+        self, async_client: AsyncClient, auth_setup, library_file_factory, tmp_path
+    ):
+        """The mesh route returns file BYTES, so it needs the same gate as every other read."""
+        import struct
+
+        path = tmp_path / "own.stl"
+        a, b, c, d = (0, 0, 0), (10, 0, 0), (5, 9, 0), (5, 3, 8)
+        with path.open("wb") as fh:
+            fh.write(b"\0" * 80)
+            fh.write(struct.pack("<I", 4))
+            for tri in [(a, b, c), (a, b, d), (b, c, d), (c, a, d)]:
+                fh.write(struct.pack("<3f", 0.0, 0.0, 1.0))
+                for vertex in tri:
+                    fh.write(struct.pack("<3f", *vertex))
+                fh.write(struct.pack("<H", 0))
+
+        file = await library_file_factory(
+            created_by_id=auth_setup["operator_user"]["id"],
+            filename="own.stl",
+            file_path=str(path),
+            file_type="stl",
+        )
+
+        response = await async_client.get(
+            f"/api/v1/library/files/{file.id}/mesh",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_export_the_mesh_of_others_library_file(
+        self, async_client: AsyncClient, auth_setup, library_file_factory, tmp_path
+    ):
+        """The one that matters: a library route handing another user's bytes over.
+
+        404 rather than 403, and deliberately so — `_ensure_library_file_visible` answers 404 for
+        a row the caller may not see, to keep the endpoint from confirming which ids exist. The
+        sibling delete/update routes 403 because they gate on the WRITE permission before the row
+        is fetched; a read gates on visibility.
+        """
+        path = tmp_path / "theirs.stl"
+        path.write_bytes(b"\0" * 200)
+
+        file = await library_file_factory(
+            created_by_id=auth_setup["operator2_user"]["id"],
+            filename="theirs.stl",
+            file_path=str(path),
+            file_type="stl",
+        )
+
+        response = await async_client.get(
+            f"/api/v1/library/files/{file.id}/mesh",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 404
+        assert not response.content.startswith(b"solid")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_operator_can_update_own_library_file(
         self, async_client: AsyncClient, auth_setup, library_file_factory
     ):

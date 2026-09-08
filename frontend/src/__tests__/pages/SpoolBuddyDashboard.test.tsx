@@ -33,6 +33,7 @@ vi.mock('../../api/client', () => ({
     getSpoolmanSettings: vi.fn().mockResolvedValue({ spoolman_enabled: 'false', spoolman_url: '', spoolman_sync_mode: 'off', spoolman_disable_weight_sync: 'false', spoolman_report_partial_usage: 'false' }),
     getSpoolmanInventorySpools: vi.fn().mockResolvedValue([]),
     getSpoolmanSlotAssignments: vi.fn().mockResolvedValue([]),
+    getAssignments: vi.fn().mockResolvedValue([]),
     linkTagToSpool: vi.fn().mockResolvedValue({}),
     linkTagToSpoolmanSpool: vi.fn().mockResolvedValue({}),
     createSpool: vi.fn().mockResolvedValue({ id: 4 }),
@@ -256,6 +257,125 @@ describe('SpoolBuddyDashboard', () => {
       await waitFor(() => {
         expect(screen.queryByTestId('plate-clear-button-9')).toBeNull();
       });
+    });
+  });
+
+
+  describe('assign-spool row', () => {
+    const occupiedAmsStatus = {
+      connected: true,
+      awaiting_plate_clear: false,
+      ams: [
+        {
+          id: 0,
+          is_ams_ht: false,
+          tray: [
+            {
+              id: 0,
+              state: 10,
+              tray_type: 'PLA',
+              tray_color: 'FF0000FF',
+              tray_sub_brands: null,
+              tray_id_name: null,
+              tray_info_idx: null,
+              remain: 95,
+              k: null,
+              cali_idx: null,
+              tag_uid: null,
+              tray_uuid: null,
+              nozzle_temp_min: null,
+              nozzle_temp_max: null,
+              drying_temp: null,
+              drying_time: null,
+            },
+          ],
+        },
+      ],
+    };
+
+    it('shows Assign pill for an occupied unassigned slot in internal inventory mode', async () => {
+      const { api } = await import('../../api/client');
+
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'false',
+        spoolman_url: '',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      (api.getPrinters as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+        { id: 1, name: 'A1-A' },
+      ]);
+      (api.getPrinterStatus as ReturnType<typeof vi.fn>).mockResolvedValue(occupiedAmsStatus);
+      (api.getAssignments as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+      renderPage();
+
+      const btn = await waitFor(() => screen.getByTestId('spool-assign-button-1'));
+      expect(btn.textContent).toContain('A1-A');
+      expect(btn.textContent).toContain('Assign 1');
+    });
+
+    it('shows Assign pill for an occupied unassigned slot in Spoolman mode', async () => {
+      const { api } = await import('../../api/client');
+
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      (api.getPrinters as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+        { id: 2, name: 'P1S-A' },
+      ]);
+      (api.getPrinterStatus as ReturnType<typeof vi.fn>).mockResolvedValue(occupiedAmsStatus);
+      (api.getSpoolmanSlotAssignments as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('spool-assign-section')).toBeDefined();
+      });
+      expect(screen.getByText(/Assign\s*1/)).toBeDefined();
+    });
+
+    it('does not show Assign pill when occupied slot already has an inventory assignment', async () => {
+      const { api } = await import('../../api/client');
+
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'false',
+        spoolman_url: '',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      (api.getPrinters as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+        { id: 3, name: 'H2D-A' },
+      ]);
+      (api.getPrinterStatus as ReturnType<typeof vi.fn>).mockResolvedValue(occupiedAmsStatus);
+      (api.getAssignments as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: 99,
+          spool_id: 10,
+          printer_id: 3,
+          printer_name: 'H2D-A',
+          ams_id: 0,
+          tray_id: 0,
+          fingerprint_color: null,
+          fingerprint_type: null,
+          spool: null,
+          configured: true,
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      ]);
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText('H2D-A')).toBeDefined();
+      });
+      expect(screen.queryByTestId('spool-assign-button-3')).toBeNull();
     });
   });
 

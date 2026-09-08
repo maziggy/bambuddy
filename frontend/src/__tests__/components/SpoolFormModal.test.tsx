@@ -47,6 +47,11 @@ vi.mock('../../api/client', () => ({
     getSpoolmanSlotAssignments: vi.fn().mockResolvedValue([]),
     unassignSpool: vi.fn().mockResolvedValue({}),
     unassignSpoolmanSlot: vi.fn().mockResolvedValue({}),
+    // Suppliers (#2988) — the SupplierSection inside the form loads these.
+    getSuppliers: vi.fn().mockResolvedValue([]),
+    createSupplier: vi.fn().mockResolvedValue({ id: 1, name: 'S' }),
+    setSpoolSuppliers: vi.fn().mockResolvedValue([]),
+    setSpoolmanSpoolSuppliers: vi.fn().mockResolvedValue([]),
   },
   ApiError: class ApiError extends Error {
     status: number;

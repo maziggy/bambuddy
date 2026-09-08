@@ -38,6 +38,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { api, type ArchiveSlim } from '../api/client';
 import { PrintCalendar } from '../components/PrintCalendar';
 import { FilamentTrends } from '../components/FilamentTrends';
+import { SupplierStats } from '../components/SupplierStats';
 import { Dashboard, type DashboardWidget } from '../components/Dashboard';
 import { getCurrencySymbol } from '../utils/currency';
 import { formatWeight } from '../utils/weight';
@@ -1176,6 +1177,12 @@ export function StatsPage() {
       title: t('stats.filamentTrends'),
       component: <FilamentTrendsWidget archives={archives || []} currency={currency} dateFrom={effectiveDateRange.dateFrom} dateTo={effectiveDateRange.dateTo} />,
       defaultSize: 4,
+    },
+    {
+      id: 'suppliers',
+      title: t('stats.suppliers.title'),
+      component: <SupplierStats currency={currency} />,
+      defaultSize: 2,
     },
   ];
 

@@ -41,9 +41,11 @@ from backend.app.models.settings import Settings
 from backend.app.models.spool_filament_preset import SpoolmanFilamentPreset
 from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+from backend.app.models.supplier import SpoolmanSpoolSupplier, Supplier
 from backend.app.models.user import User
 from backend.app.schemas.spool import SpoolFilamentPresetBase, SpoolKProfileBase
 from backend.app.schemas.spoolman import SpoolmanFilamentPatch, SpoolmanSlotAssignmentEnriched
+from backend.app.schemas.supplier import SpoolSupplierLinkInput
 from backend.app.services.location_service import (
     enrich_spool_dicts_with_location_id,
     maybe_sync_spoolman_locations,
@@ -470,6 +472,17 @@ async def list_spools(
         for m in mapped:
             m["k_profiles"] = kp_by_spool.get(m["id"], [])
 
+        # Supplier assignments (#2988) live Bambuddy-side even for Spoolman
+        # spools, so the list carries them in both modes identically.
+        link_result = await db.execute(
+            select(SpoolmanSpoolSupplier).where(SpoolmanSpoolSupplier.spoolman_spool_id.in_(spool_ids))
+        )
+        links_by_spool: dict[int, list[dict]] = {}
+        for link in link_result.scalars().all():
+            links_by_spool.setdefault(link.spoolman_spool_id, []).append(_supplier_link_to_dict(link))
+        for m in mapped:
+            m["suppliers"] = links_by_spool.get(m["id"], [])
+
     await enrich_spool_dicts_with_location_id(db, mapped)
     return mapped
 
@@ -492,6 +505,10 @@ async def get_spool(
 
     kp_result = await db.execute(select(SpoolmanKProfile).where(SpoolmanKProfile.spoolman_spool_id == spool_id))
     mapped["k_profiles"] = [_k_profile_to_dict(kp) for kp in kp_result.scalars().all()]
+    link_result = await db.execute(
+        select(SpoolmanSpoolSupplier).where(SpoolmanSpoolSupplier.spoolman_spool_id == spool_id)
+    )
+    mapped["suppliers"] = [_supplier_link_to_dict(link) for link in link_result.scalars().all()]
     await enrich_spool_dicts_with_location_id(db, [mapped])
     return mapped
 
@@ -2109,3 +2126,69 @@ async def save_spoolman_k_profiles(
         await db.refresh(obj)
 
     return [_k_profile_to_dict(p) for p in saved]
+
+
+def _supplier_link_to_dict(link: SpoolmanSpoolSupplier) -> dict:
+    """Same shape as ``SpoolSupplierResponse`` so the frontend renders both
+    inventories with one component."""
+    return {
+        "id": link.id,
+        "supplier_id": link.supplier_id,
+        "supplier_name": link.supplier_name,
+        "supplier_article_number": link.supplier_article_number,
+        "quoted_price_per_kg": link.quoted_price_per_kg,
+        "is_purchase_source": link.is_purchase_source,
+    }
+
+
+@router.get("/spools/{spool_id}/suppliers")
+async def get_spoolman_spool_suppliers(
+    spool_id: int = Path(..., gt=0),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+) -> list[dict]:
+    """Supplier assignments for a Spoolman spool (#2988, Bambuddy-side rows)."""
+    await _get_client(db)
+    result = await db.execute(select(SpoolmanSpoolSupplier).where(SpoolmanSpoolSupplier.spoolman_spool_id == spool_id))
+    return [_supplier_link_to_dict(link) for link in result.scalars().all()]
+
+
+@router.put("/spools/{spool_id}/suppliers")
+async def save_spoolman_spool_suppliers(
+    spool_id: int = Path(..., gt=0),
+    links: list[SpoolSupplierLinkInput] = Body(...),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> list[dict]:
+    """Replace a Spoolman spool's supplier assignments (#2988).
+
+    Mirror of the built-in inventory's replace-all endpoint — Spoolman owns
+    the spool, Bambuddy owns the assignment (``SpoolmanKProfile`` precedent),
+    so the rows are local and the spool is only verified to exist remotely.
+    """
+    client = await _get_client(db)
+    async with _translate_spoolman_errors():
+        await client.get_spool(spool_id)
+
+    supplier_ids = [link.supplier_id for link in links]
+    if len(set(supplier_ids)) != len(supplier_ids):
+        raise HTTPException(400, "Duplicate supplier in assignment list")
+    if sum(1 for link in links if link.is_purchase_source) > 1:
+        raise HTTPException(400, "Only one assignment can be the purchase source")
+    if supplier_ids:
+        found = await db.execute(select(Supplier.id).where(Supplier.id.in_(supplier_ids)))
+        missing = set(supplier_ids) - {row[0] for row in found.all()}
+        if missing:
+            raise HTTPException(404, f"Supplier(s) not found: {sorted(missing)}")
+
+    await db.execute(delete(SpoolmanSpoolSupplier).where(SpoolmanSpoolSupplier.spoolman_spool_id == spool_id))
+    saved: list[SpoolmanSpoolSupplier] = []
+    for link in links:
+        row = SpoolmanSpoolSupplier(spoolman_spool_id=spool_id, **link.model_dump())
+        db.add(row)
+        saved.append(row)
+    await db.commit()
+    for row in saved:
+        await db.refresh(row)
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    return [_supplier_link_to_dict(link) for link in saved]

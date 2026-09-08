@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.spool import Spool
+from backend.app.models.supplier import Supplier
 from backend.app.schemas.spool import SpoolCreate
 
 # Fixed CSV header, in output order. Round-trips cleanly: export writes these
@@ -54,6 +55,16 @@ CSV_COLUMNS = [
     "storage_location",
     "category",
     "low_stock_threshold_pct",
+    # Supplier assignments (#2988): `suppliers` is the "; "-joined names of
+    # all assigned suppliers, `purchase_supplier` the one this spool was
+    # actually bought from (or empty). Import matches names against the
+    # existing supplier list — trimmed, case-insensitive — and NEVER creates
+    # suppliers; an unknown name is a dry-run warning, not a row error, and
+    # that assignment is dropped. Article number and quoted price stay out of
+    # the CSV: they belong to the assignment, not the spool, and would break
+    # the round-trip.
+    "suppliers",
+    "purchase_supplier",
 ]
 
 # Upload ceiling for the import endpoint. A spool inventory CSV is a few KB
@@ -105,6 +116,11 @@ class ImportRowResult(BaseModel):
     # same CSV doesn't silently duplicate the inventory.
     duplicate_of_existing: bool = False
     spool: dict | None = None
+    # Resolved supplier assignments (#2988): ids matched by name from the
+    # `suppliers` / `purchase_supplier` columns. Unknown names are dropped
+    # with a preview warning — the import never creates suppliers.
+    supplier_ids: list[int] = []
+    purchase_supplier_id: int | None = None
 
 
 class ImportPreview(BaseModel):
@@ -191,6 +207,17 @@ def _spool_key(material: str | None, brand: str | None, color_name: str | None) 
         (brand or "").strip().lower(),
         (color_name or "").strip().lower(),
     )
+
+
+async def _load_supplier_map(db: AsyncSession) -> dict[str, int]:
+    """Existing suppliers keyed by trimmed, lower-cased name for CSV matching.
+
+    Import resolves the `suppliers` / `purchase_supplier` columns against
+    this map and never creates suppliers — the master list is curated in the
+    UI, and a typo in a CSV must not silently mint a new supplier.
+    """
+    result = await db.execute(select(Supplier.id, Supplier.name))
+    return {name.strip().lower(): supplier_id for supplier_id, name in result.all()}
 
 
 async def _load_existing_spool_keys(db: AsyncSession) -> set[tuple[str, str, str]]:
@@ -306,6 +333,7 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
     # issuing a SELECT per row.
     catalog = await _load_color_catalog(db)
     existing_keys = await _load_existing_spool_keys(db)
+    supplier_map = await _load_supplier_map(db)
 
     def cell(row: list[str], field: str) -> str:
         idx = col_index.get(field)
@@ -460,6 +488,25 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
             # dict so the ORM object carries it.
             spool_data["last_used"] = last_used
 
+        # Supplier assignments (#2988): match names against the existing list,
+        # never create. Unknown names are warnings, not row errors — the row
+        # imports and the unmatched assignment is dropped. The purchase source
+        # counts as an assignment even when the `suppliers` cell omits it.
+        supplier_ids: list[int] = []
+        purchase_supplier_id: int | None = None
+        names = [n.strip() for n in cell(raw_row, "suppliers").split(";") if n.strip()]
+        purchase_name = cell(raw_row, "purchase_supplier").strip()
+        if purchase_name and purchase_name.lower() not in (n.lower() for n in names):
+            names.append(purchase_name)
+        for name in names:
+            supplier_id = supplier_map.get(name.lower())
+            if supplier_id is None:
+                warnings.append(f"Row {row_number}: unknown supplier '{name}' — assignment dropped")
+            elif supplier_id not in supplier_ids:
+                supplier_ids.append(supplier_id)
+        if purchase_name:
+            purchase_supplier_id = supplier_map.get(purchase_name.lower())
+
         rows.append(
             ImportRowResult(
                 row_number=row_number,
@@ -472,6 +519,8 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
                 cross_material_color=cross_material_color,
                 duplicate_of_existing=_spool_key(material, brand, color_name) in existing_keys,
                 spool=spool_data,
+                supplier_ids=supplier_ids,
+                purchase_supplier_id=purchase_supplier_id,
             )
         )
         valid += 1
@@ -537,6 +586,13 @@ def _cell_value(spool: Spool, col: str) -> str:
     if col == "remaining":
         # Derived for display: label_weight - weight_used, clamped at 0.
         return str(max(0, round((spool.label_weight or 0) - (spool.weight_used or 0))))
+    if col == "suppliers":
+        # Derived (#2988): "; "-joined supplier names, no decoration — the
+        # purchase source has its own column so import can match plain names.
+        # supplier_links is selectin-loaded with the export query.
+        return "; ".join(link.supplier_name for link in spool.supplier_links)
+    if col == "purchase_supplier":
+        return next((link.supplier_name for link in spool.supplier_links if link.is_purchase_source), "")
     value = getattr(spool, col, None)
     if value is None:
         return ""

@@ -20,6 +20,7 @@ import { MATERIALS } from './spool-form/constants';
 import { FilamentSection } from './spool-form/FilamentSection';
 import { ColorSection } from './spool-form/ColorSection';
 import { AdditionalSection } from './spool-form/AdditionalSection';
+import { SupplierSection, type SupplierLinkDraft } from './spool-form/SupplierSection';
 import { SpoolmanFilamentPicker } from './spool-form/SpoolmanFilamentPicker';
 import { PrinterProfilesSection } from './spool-form/PrinterProfilesSection';
 import { normaliseFlow } from '../utils/nozzleFlow';
@@ -76,6 +77,12 @@ export function SpoolFormModal({
   const [activeTab, setActiveTab] = useState<TabId>('filament');
   const [weightTouched, setWeightTouched] = useState(false);
   const [locationIdTouched, setLocationIdTouched] = useState(false);
+  // Supplier assignments (#2988). Held outside SpoolFormData — they are
+  // relational and saved through their own replace-all endpoint. Only sent
+  // when touched, so an untouched create keeps the backend's inherited
+  // assignments instead of wiping them with an empty list.
+  const [supplierLinks, setSupplierLinks] = useState<SupplierLinkDraft[]>([]);
+  const [supplierLinksTouched, setSupplierLinksTouched] = useState(false);
   const [quickAdd, setQuickAdd] = useState(false);
   const [quantity, setQuantity] = useState(1);
 
@@ -442,10 +449,23 @@ export function SpoolFormModal({
         } else {
           setSelectedProfiles(new Map());
         }
+        // Supplier assignments (#2988) — copied on copy: they describe where
+        // the product is bought, which is what a copy shares.
+        setSupplierLinks(
+          (spool.suppliers ?? []).map((link) => ({
+            supplier_id: link.supplier_id,
+            supplier_name: link.supplier_name,
+            supplier_article_number: link.supplier_article_number ?? '',
+            quoted_price_per_kg: link.quoted_price_per_kg,
+            // Where a COPY was bought is unknown — only a real edit keeps it.
+            is_purchase_source: isCopying ? false : link.is_purchase_source,
+          }))
+        );
       } else {
         setFormData(defaultFormData);
         setPresetInputValue('');
         setSelectedProfiles(new Map());
+        setSupplierLinks([]);
       }
       // Reset on every open, not just the create path (#1905). The modal keeps
       // its state while closed, and the Quick Add toggle only renders in create
@@ -463,6 +483,7 @@ export function SpoolFormModal({
       setModelPresets(new Map());
       setWeightTouched(false);
       setLocationIdTouched(false);
+      setSupplierLinksTouched(false);
     }
   }, [isOpen, spool, mode, isCopying]);
 
@@ -573,6 +594,8 @@ export function SpoolFormModal({
       if (newSpool?.id) {
         const ok = await savePrinterProfiles(newSpool.id);
         if (!ok) return;
+        const suppliersOk = await saveSupplierLinks(newSpool.id);
+        if (!suppliersOk) return;
       }
       await refreshSpoolQueries();
       if (onSpoolsCreated) onSpoolsCreated([newSpool]);
@@ -616,6 +639,12 @@ export function SpoolFormModal({
           await savePrinterProfiles(s.id);
         }
       }
+      // Every copy of a bulk add shares the same supplier assignments (#2988).
+      if (supplierLinksTouched) {
+        for (const s of createdSpools) {
+          await saveSupplierLinks(s.id);
+        }
+      }
       await refreshSpoolQueries();
       if (onSpoolsCreated) onSpoolsCreated(createdSpools);
       if (spoolmanResult && spoolmanResult.failed_count > 0) {
@@ -649,6 +678,8 @@ export function SpoolFormModal({
       if (spool?.id) {
         const ok = await savePrinterProfiles(spool.id);
         if (!ok) return;
+        const suppliersOk = await saveSupplierLinks(spool.id);
+        if (!suppliersOk) return;
       }
       await refreshSpoolQueries();
       showToast(t('inventory.spoolUpdated'), 'success');
@@ -768,6 +799,32 @@ export function SpoolFormModal({
   // Save everything the Printers tab holds: one K profile per hotend and the
   // per-printer-model preset overrides. Returns false if either write failed,
   // which keeps the modal open so the user does not lose what they picked.
+  // Supplier assignments (#2988): replace-all save, only when the user
+  // actually touched the control — an untouched create keeps the backend's
+  // inherited assignments instead of wiping them with an empty list.
+  const saveSupplierLinks = async (spoolId: number): Promise<boolean> => {
+    if (!supplierLinksTouched) return true;
+    // Spoolman parity (#2988): the assignment rows live Bambuddy-side either
+    // way; only the endpoint differs (twin table keyed by the remote id).
+    const save = spoolmanMode ? api.setSpoolmanSpoolSuppliers : api.setSpoolSuppliers;
+    try {
+      await save(
+        spoolId,
+        supplierLinks.map((link) => ({
+          supplier_id: link.supplier_id,
+          supplier_article_number: link.supplier_article_number.trim() || null,
+          quoted_price_per_kg: link.quoted_price_per_kg,
+          is_purchase_source: link.is_purchase_source,
+        })),
+      );
+      return true;
+    } catch (err) {
+      console.error('SpoolFormModal.saveSupplierLinks failed:', err);
+      showToast(t('inventory.suppliers.saveFailed'), 'error');
+      return false;
+    }
+  };
+
   const savePrinterProfiles = async (spoolId: number): Promise<boolean> => {
     const saveKApi = spoolmanMode ? api.saveSpoolmanKProfiles : api.saveSpoolKProfiles;
     const savePresetApi = spoolmanMode ? api.saveSpoolmanFilamentPresets : api.saveSpoolFilamentPresets;
@@ -1097,6 +1154,21 @@ export function SpoolFormModal({
                   }}
                   globalLowStockThreshold={globalLowStockThreshold}
                   spoolmanMode={spoolmanMode}
+                />
+              </div>
+
+              {/* Suppliers (#2988) — both inventories: the assignments live
+                  Bambuddy-side either way (Spoolman's vendor is the
+                  manufacturer, not the seller), so the same section renders
+                  in Spoolman mode and saves to the twin endpoint. */}
+              <div>
+                <SupplierSection
+                  links={supplierLinks}
+                  onChange={(next) => {
+                    setSupplierLinks(next);
+                    setSupplierLinksTouched(true);
+                  }}
+                  currencySymbol={currencySymbol}
                 />
               </div>
 

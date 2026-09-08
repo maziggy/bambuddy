@@ -371,6 +371,25 @@ const ES_COGNATES = [
   'Simple',  // slicer settings visibility tier — identical word in Spanish
 ];
 
+// Swedish cognates — technical UI labels that Swedish speakers use verbatim
+// from English (loanwords + acronyms + format strings). Curated, not a shortcut.
+const SV_COGNATES = [
+  'MakerWorld: {{designer}}',
+  'email',
+  '{{printer}}: {{error}}',
+  'Bambu Cloud',
+  'Orca Cloud',
+  '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
+  'EC984C,#6CD4BC,A66EB9,D87694',
+  '({{count}}/8)',
+  '(25%, 50%, 75%)', 'System', 'Filament', 'Status', 'Total budget', 'Budget', 'Offline', 'Problem', 'Diameter', 'Standard',
+  'Live', 'Firmware', '{{filament}} @ {{temp}}°C', 'Standard (100%)', 'Sport (124%)', '{{weight}}g', 'Pipeline', 'Pipelines', 'Position', 'Batch', 'Timelapse', 'Online',
+  'Disk', 'STARTTLS (Port 587)', 'SSL/TLS (Port 465)', 'Start', 'Auto', 'Admin', 'Data', 'Material', 'Hex', 'Accent', 'Neutral', 'Teal', 'Orange', 'Rotation', 'Test',
+  'Port', '(System)', 'Autologin', 'Process', 'Filament {{n}}', 'Region', 'Global', 'Normal', 'Version', 'max {{n}}', 'Expert', 'Filament {{index}} ({{type}})', 'Material:',
+  '(Inv)', 'Original', 'Commit', 'Extruder', 'Gradient', 'Proxy', 'Metadata', '{{count}} filament', 'Temp', 'Min', 'ntfy, Pushover, Discord, etc.', 'Hex: #{{hex}}', 'Designer',
+  'Display', 'Support', 'Prefix', 'Trend', 'max(global {{global}}d, SKU {{sku}}d)',
+];
+
 // Turkish cognates — technical UI labels that Turkish speakers use verbatim
 // from English (loanwords + acronyms + format strings). Curated, not a shortcut.
 const TR_COGNATES = [
@@ -465,6 +484,7 @@ const IDENTICAL_TO_EN_ALLOWED = {
   'pt-BR': new Set(PT_BR_COGNATES),
   'zh-CN': new Set(ZH_CN_COGNATES),
   'zh-TW': new Set(ZH_TW_COGNATES),
+  sv: new Set(SV_COGNATES),
   tr: new Set(TR_COGNATES),
   ru: new Set(RU_COGNATES),
   uk: new Set(UK_COGNATES),

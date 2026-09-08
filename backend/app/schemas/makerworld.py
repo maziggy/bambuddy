@@ -42,6 +42,16 @@ class MakerWorldImportRequest(BaseModel):
         ...,
         description="The MakerWorld design ID (the number in /models/{id}).",
     )
+    source_type: str = Field(
+        default="makerworld",
+        description=(
+            "Which registered model provider owns the resource. Import "
+            "identifies a model by numeric id rather than URL, so there is no "
+            "URL for the provider registry to route on — the caller names the "
+            "provider instead. Defaults to 'makerworld' so existing callers "
+            "stay unchanged."
+        ),
+    )
     profile_id: int | None = Field(
         default=None,
         description=(

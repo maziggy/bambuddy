@@ -9,7 +9,11 @@ The endpoints and header set were reverse-engineered from the
 `kloshi-io/makerworld-api-reverse` TypeScript project (Apache-2.0) and
 cross-validated against live MakerWorld traffic. Authenticated calls reuse
 Bambuddy's existing Bambu Cloud bearer token (same SSO backend — no separate
-OAuth flow needed).
+OAuth flow needed; see ``model_providers/makerworld/auth.py``).
+
+Implements the :class:`ProviderService` interface — the route layer drives it
+through ``resolve`` / ``get_download`` / ``download`` so the same flow can be
+reused for future providers.
 
 Only interoperability — not affiliated with or endorsed by MakerWorld or
 Bambu Lab, and not intended to circumvent any access control.
@@ -19,49 +23,59 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
-import ssl
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from typing import Any
 from urllib.parse import urlparse
 
-import certifi
 import httpx
 
 from backend.app.services.bambu_cloud import is_captcha_challenge, is_expiry_401
+from backend.app.services.model_providers.base import (
+    ProviderDownload,
+    ProviderDownloadInfo,
+    ProviderResolvedModel,
+    ProviderResourceRef,
+    ProviderService,
+    ProviderStatus,
+)
+from backend.app.services.model_providers.makerworld.auth import is_cloud_token_invalid
+from backend.app.services.model_providers.makerworld.errors import (
+    MakerWorldAuthError,
+    MakerWorldForbiddenError,
+    MakerWorldNotFoundError,
+    MakerWorldUnavailableError,
+    MakerWorldUrlError,
+)
+from backend.app.services.model_providers.makerworld.http import (
+    _ALLOWED_DOWNLOAD_SUFFIXES,
+    _CLIENT_HEADERS,
+    _IMAGE_EXT_TO_MIME,
+    _MAX_3MF_BYTES,
+    _MAX_THUMBNAIL_BYTES,
+    _REFUSED_THUMBNAIL_MIMES,
+    MAKERWORLD_API_BASE,
+    MAKERWORLD_CDN_HOSTS,
+    _download_s3_urllib,
+    _extract_upstream_error,
+)
 
 logger = logging.getLogger(__name__)
 
+_shared_http_client: httpx.AsyncClient | None = None
 
-# API base: ``api.bambulab.com/v1/design-service`` — the same Bambu Cloud
-# backend that the MakerWorld web UI talks to, but not behind Cloudflare
-# (the website ``makerworld.com`` is, and plain httpx requests there get
-# fingerprinted as bot traffic and served "Please log in"). Confirmed by
-# Pr0zak/YASTL#51 and verified with direct curl.
-MAKERWORLD_API_BASE = "https://api.bambulab.com/v1/design-service"
-MAKERWORLD_HOST = "makerworld.com"  # Used only for URL parsing (input validation)
-MAKERWORLD_CDN_HOSTS = ("makerworld.bblmw.com", "public-cdn.bblmw.com")
 
-# Hosts that the iot-service download endpoint may return presigned URLs
-# for. Besides MakerWorld's own CDN, Bambu Cloud also issues AWS S3
-# presigned URLs (e.g. ``s3.us-west-2.amazonaws.com``) — confirmed by
-# Pr0zak/YASTL#52. The suffix check matches any regional S3 endpoint.
-_ALLOWED_DOWNLOAD_SUFFIXES = (".amazonaws.com",)
+def set_shared_http_client(client: httpx.AsyncClient | None) -> None:
+    """Register an app-scoped ``httpx.AsyncClient`` for service reuse.
 
-# Client identity sent to MakerWorld / api.bambulab.com. We identify honestly
-# as Bambuddy with a source URL so Bambu can distinguish our traffic from
-# impersonators — the opposite of what the OrcaSlicer fork was called out for
-# in the May 2026 Bambu Lab blog post on cloud access. Verified 2026-05-12 via
-# curl that MakerWorld treats this UA identically to a Firefox UA at the
-# Cloudflare edge (same response shape on /api/v1/design-service/* paths).
-# The Referer is kept because MakerWorld's CSRF / origin-check middleware uses
-# it on some endpoints — that's distinct from client impersonation.
-_CLIENT_HEADERS = {
-    "User-Agent": "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)",
-    "Accept": "text/html,application/json,*/*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://makerworld.com/",
-}
+    Same pattern as ``bambu_cloud.set_shared_http_client`` — lets the FastAPI
+    lifespan share one connection pool across per-request service instances.
+    Must live in the same module as the service class so ``__init__`` reads
+    the live value rather than an import-time snapshot.
+    """
+    global _shared_http_client
+    _shared_http_client = client
+
 
 # Shown whenever Bambu rejects the stored bearer. Bambu's own 401 body is
 # ``{"code":4,"error":"Please login.","message":""}`` and we used to forward that
@@ -75,155 +89,8 @@ _SIGN_IN_EXPIRED_MESSAGE = (
     "Your Bambu Cloud sign-in has expired. Open the Profiles page and sign in to Bambu Cloud again."
 )
 
-_MODEL_ID_RE = re.compile(r"/models/(\d+)")
-_PROFILE_ID_RE = re.compile(r"#profileId[-=](\d+)")
-_MAX_3MF_BYTES = 200 * 1024 * 1024  # 200 MB hard cap
-_MAX_THUMBNAIL_BYTES = 10 * 1024 * 1024  # 10 MB hard cap — MakerWorld's "thumbnails" can be 2–3 MB source images
-_IMAGE_EXT_TO_MIME = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".gif": "image/gif",
-    ".webp": "image/webp",
-    ".bmp": "image/bmp",
-}
-# Content types we refuse even if the URL extension looks image-y — prevents
-# forwarding an upstream error page or JSON blob with image framing.
-_REFUSED_THUMBNAIL_MIMES = ("text/html", "text/plain", "application/json")
 
-_shared_http_client: httpx.AsyncClient | None = None
-
-
-def _s3_ssl_context() -> ssl.SSLContext:
-    """Build the TLS context used for the S3 presigned download (#2562).
-
-    ``urllib.request`` verifies against the *OS* trust store, while httpx —
-    every other network call in Bambuddy — verifies against the bundled
-    ``certifi`` CA bundle. On Windows those two disagree: Python's
-    ``ssl.load_default_certs()`` only enumerates the roots already cached in
-    the Windows ROOT store, and Windows populates that store lazily via
-    CryptoAPI's auto-update, which Python never triggers. If the Amazon root
-    signing the S3 chain isn't cached on that machine yet, verification fails
-    with ``unable to get local issuer certificate`` — even though the
-    api.bambulab.com calls that preceded it (httpx) succeeded.
-
-    Pinning urllib to certifi makes the S3 hop trust exactly what the rest of
-    the app already trusts. Built per call rather than at import so a certifi
-    refresh doesn't require a restart; construction is cheap relative to the
-    download that follows.
-    """
-    return ssl.create_default_context(cafile=certifi.where())
-
-
-def set_shared_http_client(client: httpx.AsyncClient | None) -> None:
-    """Register an app-scoped ``httpx.AsyncClient`` for service reuse.
-
-    Same pattern as ``bambu_cloud.set_shared_http_client`` — lets the FastAPI
-    lifespan share one connection pool across per-request service instances.
-    """
-    global _shared_http_client
-    _shared_http_client = client
-
-
-class MakerWorldError(Exception):
-    """Base exception for MakerWorld API errors."""
-
-
-class MakerWorldAuthError(MakerWorldError):
-    """Raised when the endpoint requires a Bambu Cloud token and we don't have
-    one (or the one we sent was rejected). True auth failure."""
-
-
-class MakerWorldForbiddenError(MakerWorldError):
-    """Raised when MakerWorld refuses access despite valid authentication —
-    content-gated (points required, purchase required, region restricted,
-    early-access, etc.). The message includes MakerWorld's own reason text
-    when provided."""
-
-
-class MakerWorldNotFoundError(MakerWorldError):
-    """Raised when a design / profile / instance doesn't exist."""
-
-
-class MakerWorldUnavailableError(MakerWorldError):
-    """Raised on 5xx, network errors, or malformed payloads."""
-
-
-class MakerWorldUrlError(MakerWorldError):
-    """Raised when a URL isn't a makerworld.com model page."""
-
-
-async def _download_s3_urllib(url: str, filename_fallback: str) -> tuple[bytes, str]:
-    """Fetch an AWS S3 presigned URL without touching the query string.
-
-    ``urllib.request`` passes the URL to the transport verbatim — which is
-    essential for S3 presigned URLs where the signature is computed over
-    the exact query-string bytes. httpx's ``URL`` class and curl_cffi's
-    libcurl layer both normalise encodings and produce
-    ``SignatureDoesNotMatch`` 400s from S3.
-
-    Runs the blocking urllib call in a thread executor so we don't stall
-    the event loop.
-    """
-    from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
-
-    # Don't follow redirects: the host allowlist above is only enforced on
-    # the initial URL. A 302 from S3 to any other host would otherwise
-    # transparently bypass the allowlist — so insist S3 resolve directly.
-    class _NoRedirect(HTTPRedirectHandler):
-        def redirect_request(self, *args, **kwargs):  # type: ignore[override]
-            return None
-
-    # HTTPSHandler swaps only the TLS context — the URL still reaches the
-    # transport verbatim, which is what the S3 signature depends on.
-    opener = build_opener(_NoRedirect, HTTPSHandler(context=_s3_ssl_context()))
-
-    def _blocking_fetch() -> bytes:
-        req = Request(url, headers={"User-Agent": _CLIENT_HEADERS["User-Agent"]})
-        with opener.open(req, timeout=60.0) as resp:
-            if resp.status != 200:
-                raise MakerWorldUnavailableError(f"3MF download returned HTTP {resp.status}")
-            data = b""
-            while True:
-                chunk = resp.read(65536)
-                if not chunk:
-                    break
-                data += chunk
-                if len(data) > _MAX_3MF_BYTES:
-                    raise MakerWorldUnavailableError(f"3MF exceeds {_MAX_3MF_BYTES // (1024 * 1024)} MB cap")
-            return data
-
-    try:
-        data = await asyncio.to_thread(_blocking_fetch)
-    except MakerWorldUnavailableError:
-        raise
-    except Exception as exc:  # noqa: BLE001 — urllib throws a zoo of exceptions
-        raise MakerWorldUnavailableError(f"S3 download failed: {exc}") from exc
-    return data, filename_fallback
-
-
-def _extract_upstream_error(response: httpx.Response) -> str | None:
-    """Pull MakerWorld's own error text out of a 4xx/5xx response body.
-
-    MakerWorld returns ``{"code": N, "error": "text"}`` on auth/perm failures
-    and sometimes ``{"message": "..."}`` on other errors. Returns ``None`` if
-    the body isn't JSON or doesn't have a recognised error field — callers
-    should fall back to a generic message in that case.
-    """
-    try:
-        data = response.json()
-    except ValueError:
-        return None
-    if not isinstance(data, dict):
-        return None
-    for key in ("error", "message", "detail"):
-        value = data.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
-
-
-class MakerWorldService:
+class MakerWorldService(ProviderService):
     """Per-request MakerWorld API client.
 
     Mirrors ``BambuCloudService``'s construction pattern so callers can
@@ -233,15 +100,26 @@ class MakerWorldService:
 
     def __init__(
         self,
+        *,
         client: httpx.AsyncClient | None = None,
         auth_token: str | None = None,
+        user: Any | None = None,
         on_auth_failure: Callable[[], Awaitable[None]] | None = None,
+        thumbnail_hosts: tuple[str, ...] = MAKERWORLD_CDN_HOSTS,
+        download_hosts: tuple[str, ...] = MAKERWORLD_CDN_HOSTS,
     ):
         # Fired when Bambu rejects the stored token (401). MakerWorld runs on the
         # same Bambu Cloud bearer as everything else, so a rejection here means
         # the credential is dead app-wide — see ``build_authenticated_cloud``.
         self._on_auth_failure = on_auth_failure
         self._auth_failure_reported = False
+        # SSRF allowlists for the thumbnail proxy and the 3MF download guard.
+        # Default to MakerWorld's CDN hosts; ``MakerWorldProvider.build_service``
+        # passes ``ModelProvider.thumbnail_hosts()`` / ``download_hosts()`` so
+        # the guards are driven by the provider descriptor rather than enforced
+        # by coincidence (interface contract on ``ProviderService``).
+        self._thumbnail_hosts = tuple(thumbnail_hosts)
+        self._download_hosts = tuple(download_hosts)
         if client is not None:
             self._client = client
             self._owns_client = False
@@ -252,6 +130,7 @@ class MakerWorldService:
             self._client = httpx.AsyncClient(timeout=30.0)
             self._owns_client = True
         self._auth_token = auth_token
+        self._user = user
 
     async def close(self) -> None:
         if self._owns_client:
@@ -282,6 +161,121 @@ class MakerWorldService:
         if self._auth_token:
             headers["Authorization"] = f"Bearer {self._auth_token}"
         return headers
+
+    # ------------------------------------------------------------- interface
+
+    async def get_status(self, db: Any) -> ProviderStatus:
+        """Whether the caller can download: needs a stored, non-rejected Bambu
+        Cloud token. ``credential_rejected`` is the machine-readable expired
+        state; ``auth_error`` names it for humans so the UI can say "your
+        sign-in expired" rather than a bare "sign in"."""
+        has_token = bool(self._auth_token)
+        expired = has_token and await is_cloud_token_invalid(db, self._user)
+        return ProviderStatus(
+            authenticated=has_token,
+            can_download=has_token and not expired,
+            auth_error=_SIGN_IN_EXPIRED_MESSAGE if expired else None,
+            credential_rejected=expired,
+        )
+
+    async def resolve(self, ref: ProviderResourceRef) -> ProviderResolvedModel:
+        """Fetch full model metadata + the plate list, merging per-instance
+        printer compatibility so the frontend can show "sliced for A1 / also
+        compatible with H2D, P1S" before the user picks a plate."""
+        model_id = int(ref.external_id)
+        design = await self.get_design(model_id)
+        instances_envelope = await self.get_design_instances(model_id)
+
+        # MakerWorld's instances payload is ``{"total": N, "hits": [...]}``;
+        # normalise the null case to an empty list so the frontend doesn't
+        # have to handle null vs [] both ways.
+        instances = instances_envelope.get("hits") or []
+        if not isinstance(instances, list):
+            instances = []
+
+        # /instances/hits omits the per-instance printer compatibility info
+        # that /design.instances[].extention.modelInfo carries. Merge it in.
+        design_instances = design.get("instances") or []
+        if isinstance(design_instances, list):
+            compat_by_id = {}
+            for di in design_instances:
+                if not isinstance(di, dict):
+                    continue
+                iid = di.get("id")
+                if iid is None:
+                    continue
+                ext = (di.get("extention") or {}).get("modelInfo") or {}
+                compat_by_id[iid] = {
+                    "compatibility": ext.get("compatibility"),
+                    "otherCompatibility": ext.get("otherCompatibility"),
+                }
+            for inst in instances:
+                if not isinstance(inst, dict):
+                    continue
+                iid = inst.get("id")
+                extra = compat_by_id.get(iid)
+                if extra:
+                    inst["compatibility"] = extra["compatibility"]
+                    inst["otherCompatibility"] = extra["otherCompatibility"]
+
+        return ProviderResolvedModel(ref=ref, design=design, instances=instances)
+
+    async def get_download(self, ref: ProviderResourceRef) -> ProviderDownloadInfo:
+        """Resolve the signed 3MF download for a specific MakerWorld profile.
+
+        Handles the provider-specific dance: the iot-service endpoint needs
+        the *alphanumeric* ``modelId`` (e.g. ``"US2bb73b106683e5"``) from the
+        design, not the integer design id, and picks a default profile when
+        the caller didn't specify one. Enriches ``ref.sub_id`` with the actual
+        profile used so the route can build the per-plate dedupe key.
+        """
+        model_id = int(ref.external_id)
+        design = await self.get_design(model_id)
+
+        alphanumeric_model_id = design.get("modelId")
+        if not isinstance(alphanumeric_model_id, str) or not alphanumeric_model_id:
+            raise MakerWorldUnavailableError("MakerWorld design metadata missing the modelId field")
+
+        profile_id = int(ref.sub_id) if ref.sub_id else None
+        if profile_id is None:
+            for instance in design.get("instances") or []:
+                pid = instance.get("profileId")
+                if isinstance(pid, int) and pid > 0:
+                    profile_id = pid
+                    break
+            if profile_id is None:
+                envelope = await self.get_design_instances(model_id)
+                for hit in envelope.get("hits") or []:
+                    pid = hit.get("profileId")
+                    if isinstance(pid, int) and pid > 0:
+                        profile_id = pid
+                        break
+            if profile_id is None:
+                raise MakerWorldUnavailableError("MakerWorld returned no instances for this model")
+
+        manifest = await self.get_profile_download(profile_id, alphanumeric_model_id)
+
+        signed_url = manifest.get("url")
+        if not signed_url or not isinstance(signed_url, str):
+            raise MakerWorldUnavailableError("MakerWorld did not return a download URL")
+
+        # Raw upstream name — the route layer basenames / percent-decodes it
+        # as defence-in-depth before persisting.
+        raw_name = manifest.get("name")
+        suggested_filename = raw_name if isinstance(raw_name, str) and raw_name.strip() else ""
+
+        return ProviderDownloadInfo(
+            ref=replace(ref, sub_id=str(profile_id)),
+            url=signed_url,
+            suggested_filename=suggested_filename,
+        )
+
+    async def download(self, info: ProviderDownloadInfo) -> ProviderDownload:
+        """Fetch the 3MF bytes for a signed URL, returning ``(bytes, filename)``."""
+        file_bytes, download_filename = await self.download_3mf(info.url)
+        return ProviderDownload(file_bytes=file_bytes, filename=download_filename)
+
+    # ---------------------------------------------------------------- endpoints
 
     async def _get_json(self, path: str) -> dict[str, Any]:
         """GET ``{MAKERWORLD_API_BASE}{path}`` returning the decoded JSON body.
@@ -376,49 +370,6 @@ class MakerWorldService:
             )
         return data
 
-    # ------------------------------------------------------------------ URL parse
-
-    @staticmethod
-    def parse_url(url: str) -> tuple[int, int | None]:
-        """Extract ``(model_id, profile_id_or_None)`` from a MakerWorld URL.
-
-        Accepts any of:
-          - ``https://makerworld.com/en/models/1400373``
-          - ``https://makerworld.com/en/models/1400373-slug-with-dashes``
-          - ``https://makerworld.com/en/models/1400373#profileId-1452154``
-          - ``makerworld.com/models/1400373`` (scheme optional)
-
-        Rejects non-makerworld hosts.
-        """
-        if not url or not isinstance(url, str):
-            raise MakerWorldUrlError("URL is empty or not a string")
-        candidate = url.strip()
-        if "://" not in candidate:
-            candidate = "https://" + candidate
-        try:
-            parsed = urlparse(candidate)
-        except ValueError as exc:
-            raise MakerWorldUrlError(f"Could not parse URL: {exc}") from exc
-
-        host = (parsed.hostname or "").lower()
-        if host != MAKERWORLD_HOST and not host.endswith("." + MAKERWORLD_HOST):
-            raise MakerWorldUrlError(f"Not a MakerWorld URL (host={host!r}); expected makerworld.com")
-
-        model_match = _MODEL_ID_RE.search(parsed.path)
-        if not model_match:
-            raise MakerWorldUrlError("URL does not contain a /models/{id} segment")
-        model_id = int(model_match.group(1))
-
-        profile_id: int | None = None
-        if parsed.fragment:
-            profile_match = _PROFILE_ID_RE.search("#" + parsed.fragment)
-            if profile_match:
-                profile_id = int(profile_match.group(1))
-
-        return model_id, profile_id
-
-    # ---------------------------------------------------------------- endpoints
-
     async def get_design(self, model_id: int) -> dict[str, Any]:
         """Fetch full model metadata. Works anonymously.
 
@@ -510,8 +461,11 @@ class MakerWorldService:
     async def download_3mf(self, signed_url: str) -> tuple[bytes, str]:
         """Fetch the 3MF bytes from a signed MakerWorld CDN URL.
 
-        Validates that the URL's host is one of the known MakerWorld CDN hosts
-        (SSRF guard — pattern matches ``_spoolman_helpers.assert_safe_spoolman_url``).
+        Validates that the URL's host is one of the declared download hosts
+        (SSRF guard — driven by ``ModelProvider.download_hosts()`` via
+        ``build_service``, the symmetric counterpart to the thumbnail
+        allowlist) or a known signed-URL suffix (Bambu's S3 regional
+        endpoints); pattern matches ``_spoolman_helpers.assert_safe_spoolman_url``.
         Enforces a 200 MB cap so a single bad response can't exhaust disk.
 
         Returns ``(file_bytes, suggested_filename)``.
@@ -522,7 +476,7 @@ class MakerWorldService:
             raise MakerWorldUrlError(f"Invalid download URL: {exc}") from exc
 
         host = (parsed.hostname or "").lower()
-        is_allowed = host in MAKERWORLD_CDN_HOSTS or any(host.endswith(suffix) for suffix in _ALLOWED_DOWNLOAD_SUFFIXES)
+        is_allowed = host in self._download_hosts or any(host.endswith(suffix) for suffix in _ALLOWED_DOWNLOAD_SUFFIXES)
         if not is_allowed:
             raise MakerWorldUrlError(f"Refusing to download from non-MakerWorld host: {host!r}")
 
@@ -570,8 +524,9 @@ class MakerWorldService:
         SPA's ``img-src`` CSP and keeps users' IP addresses out of
         MakerWorld's access logs.
 
-        Validates that the URL's host is one of the known MakerWorld CDN
-        hosts (SSRF guard — same allowlist as :meth:`download_3mf`). Caps
+        Validates that the URL's host is one of the declared thumbnail hosts
+        (SSRF guard — symmetric to :meth:`download_3mf`; both allowlists are
+        fed from the provider descriptor by ``build_service``). Caps
         payload at 5 MB. Returns ``(bytes, content_type)``; content type
         defaults to ``image/jpeg`` if the upstream didn't set one.
         """
@@ -581,7 +536,7 @@ class MakerWorldService:
             raise MakerWorldUrlError(f"Invalid thumbnail URL: {exc}") from exc
 
         host = (parsed.hostname or "").lower()
-        if host not in MAKERWORLD_CDN_HOSTS:
+        if host not in self._thumbnail_hosts:
             raise MakerWorldUrlError(f"Refusing to fetch thumbnail from non-MakerWorld host: {host!r}")
 
         # ``follow_redirects=False``: the host allowlist above is only

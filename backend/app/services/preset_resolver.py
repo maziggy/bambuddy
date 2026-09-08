@@ -29,7 +29,6 @@ import logging
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.routes.cloud import get_stored_token
 from backend.app.api.routes.orca_cloud import _build_authenticated_service as _build_orca_service
 from backend.app.core.permissions import Permission
 from backend.app.models.local_preset import LocalPreset
@@ -40,6 +39,7 @@ from backend.app.services.bambu_cloud import (
     BambuCloudError,
     BambuCloudService,
 )
+from backend.app.services.bambu_cloud_credentials import get_stored_token
 from backend.app.services.orca_cloud import OrcaCloudAuthError, OrcaCloudError
 
 logger = logging.getLogger(__name__)

@@ -535,8 +535,8 @@ class GitHubBackupService:
         Both stores are read regardless: a ``Settings`` row survives enabling
         auth later, and dropping it silently would lose that account's presets.
         """
-        from backend.app.api.routes.cloud import get_stored_token
         from backend.app.api.routes.orca_cloud import _load_credentials
+        from backend.app.services.bambu_cloud_credentials import get_stored_token
 
         bambu: list = []
         orca: list = []

@@ -369,9 +369,11 @@ class ObicoDetectionService:
 
         if verdict == "failure" and not self._action_fired.get(printer_id):
             self._action_fired[printer_id] = True
-            await self._dispatch_action(printer_id, settings["action"], task_name, score)
+            await self._dispatch_action(printer_id, settings["action"], task_name, score, frame)
 
-    async def _dispatch_action(self, printer_id: int, action: str, task_name: str, score: float):
+    async def _dispatch_action(
+        self, printer_id: int, action: str, task_name: str, score: float, frame: bytes | None = None
+    ):
         from backend.app.services.obico_actions import execute_action
 
         logger.warning(
@@ -382,7 +384,9 @@ class ObicoDetectionService:
             action,
         )
         try:
-            await execute_action(printer_id, action, task_name, score)
+            # Same frame the ML model flagged, not a fresh capture — the
+            # printer's moved on by the time this fires.
+            await execute_action(printer_id, action, task_name, score, frame)
         except Exception as e:
             self._last_error = f"Action dispatch failed: {e or type(e).__name__}"
             logger.error(self._last_error)

@@ -4957,6 +4957,10 @@ async def run_migrations(conn):
     # Spoolman and the location sync then imported as storage locations.
     await _migrate_drop_ams_slot_locations(conn)
 
+    # Migration: per-provider photo attachment opt-out. Defaults TRUE so
+    # existing providers keep attaching snapshots exactly as before.
+    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN attach_photo BOOLEAN DEFAULT TRUE")
+
 
 async def _migrate_rename_ha_sensor_alert_template(conn) -> None:
     """Rename the ha_sensor_alert template to "Printer Sensor Alert" (#2824).

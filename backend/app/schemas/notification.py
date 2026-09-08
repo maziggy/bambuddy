@@ -29,6 +29,9 @@ class NotificationProviderBase(BaseModel):
     provider_type: ProviderType = Field(..., description="Type of notification provider")
     enabled: bool = Field(default=True, description="Whether notifications are enabled")
     config: dict[str, Any] = Field(..., description="Provider-specific configuration")
+    attach_photo: bool = Field(
+        default=True, description="Attach a camera snapshot to this provider's notifications when one is available"
+    )
 
     # Event triggers - print lifecycle
     on_print_start: bool = Field(default=False, description="Notify on print start")
@@ -152,6 +155,7 @@ class NotificationProviderUpdate(BaseModel):
     provider_type: ProviderType | None = None
     enabled: bool | None = None
     config: dict[str, Any] | None = None
+    attach_photo: bool | None = None
 
     # Event triggers - print lifecycle
     on_print_start: bool | None = None
@@ -275,6 +279,9 @@ class NotificationTestRequest(BaseModel):
 
     provider_type: ProviderType
     config: dict[str, Any]
+    attach_photo: bool = Field(
+        default=True, description="Include a sample photo in the test, mirroring the provider's own toggle"
+    )
 
 
 class NotificationTestResponse(BaseModel):

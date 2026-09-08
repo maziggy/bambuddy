@@ -22,6 +22,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
   const [name, setName] = useState(provider?.name || '');
   const [providerType, setProviderType] = useState<ProviderType>(provider?.provider_type || 'email');
   const [printerId, setPrinterId] = useState<number | null>(provider?.printer_id || null);
+  const [attachPhoto, setAttachPhoto] = useState(provider?.attach_photo ?? true);
   const [quietHoursEnabled, setQuietHoursEnabled] = useState(provider?.quiet_hours_enabled || false);
   const [quietHoursStart, setQuietHoursStart] = useState(provider?.quiet_hours_start || '22:00');
   const [quietHoursEnd, setQuietHoursEnd] = useState(provider?.quiet_hours_end || '07:00');
@@ -98,7 +99,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
 
   // Test configuration mutation
   const testMutation = useMutation({
-    mutationFn: () => api.testNotificationConfig({ provider_type: providerType, config }),
+    mutationFn: () => api.testNotificationConfig({ provider_type: providerType, config, attach_photo: attachPhoto }),
     onSuccess: (result) => {
       setTestResult(result);
       setError(null);
@@ -184,6 +185,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       provider_type: providerType,
       config: finalConfig,
       printer_id: printerId,
+      attach_photo: attachPhoto,
       quiet_hours_enabled: quietHoursEnabled,
       quiet_hours_start: quietHoursEnabled ? quietHoursStart : null,
       quiet_hours_end: quietHoursEnabled ? quietHoursEnd : null,
@@ -308,7 +310,14 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
         ];
       case 'homeassistant':
         return [
-          { key: 'service', label: 'Home Assistant Service', placeholder: 'notify.mobile_app_myphone', type: 'text', required: false },
+          {
+            key: 'service',
+            label: 'Home Assistant Service',
+            placeholder: 'notify.mobile_app_myphone',
+            type: 'text',
+            required: false,
+            help: t('notifications.haServiceHelp'),
+          },
           { key: 'data', label: 'Data (JSON, optional)', placeholder: '{"priority": "high", "ttl": 0, "channel": "3D Printing"}', type: 'textarea', required: false },
         ];
       case 'bark':
@@ -517,6 +526,18 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
             <p className="text-xs text-bambu-gray mt-1">
               {t('notifications.onlyFromPrinter')}
             </p>
+          </div>
+
+          {/* Attach Photo */}
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm text-white">{t('notifications.attachPhotoLabel')}</label>
+              <p className="text-xs text-bambu-gray">{t('notifications.attachPhotoDescription')}</p>
+            </div>
+            <Toggle
+              checked={attachPhoto}
+              onChange={setAttachPhoto}
+            />
           </div>
 
           {/* Quiet Hours */}

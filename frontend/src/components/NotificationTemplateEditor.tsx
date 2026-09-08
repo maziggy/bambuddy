@@ -227,6 +227,22 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
                       <span className="text-xs text-bambu-gray">{t('notifications.bodyPreview')}</span>
                       <div className="text-white whitespace-pre-wrap text-sm">{preview.body}</div>
                     </div>
+                    {eventVariables?.supports_photo && (
+                      <div className="pt-2 mt-2 border-t border-bambu-dark-tertiary/60 flex items-center gap-3">
+                        <img
+                          src="/img/screenshot-desktop.png"
+                          alt={t('notifications.photoPreview')}
+                          className="w-24 h-14 object-cover rounded border border-bambu-dark-tertiary shrink-0"
+                        />
+                        <p className="text-xs text-bambu-gray">
+                          {template.event_type.startsWith('user_')
+                            ? t('notifications.photoPreviewNoteEmailOnly')
+                            : eventVariables.variables.includes('finish_photo_url')
+                              ? t('notifications.photoPreviewNoteWithEmail')
+                              : t('notifications.photoPreviewNote')}
+                        </p>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="text-bambu-gray text-sm">

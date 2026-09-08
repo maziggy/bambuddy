@@ -9,6 +9,7 @@ opening plate 2 on a file whose first plate is plate 1.
 
 from backend.app.utils.threemf_tools import (
     default_plate_gcode_name,
+    default_plate_number,
     select_plate_gcode_name,
 )
 
@@ -40,6 +41,40 @@ class TestDefaultPlateGcodeName:
 
     def test_returns_none_for_an_unsliced_file(self):
         assert default_plate_gcode_name(["3D/3dmodel.model"]) is None
+
+
+class TestDefaultPlateNumber:
+    """The integer a dispatch caller needs when no ``plate_id`` was asked for
+    (#2947). Composes ``default_plate_gcode_name`` with the numeric index its
+    chosen member encodes.
+    """
+
+    def test_picks_the_lowest_plate_not_the_first_member(self):
+        assert default_plate_number(REVERSED_ORDER) == 1
+
+    def test_single_plate_file_numbered_two_resolves_to_two(self):
+        # The exact shape of a plate cut out of a multi-plate project: one
+        # G-code member, keeping its ORIGINAL (non-1) plate number. Dispatch
+        # hardcoding a plate-1 fallback here is #2947.
+        assert default_plate_number(["Metadata/plate_2.gcode"]) == 2
+
+    def test_a_gcode_md5_sidecar_is_not_mistaken_for_the_toolpath(self):
+        names = ["Metadata/plate_1.gcode.md5", "Metadata/plate_2.gcode", "Metadata/plate_1.gcode"]
+        assert default_plate_number(names) == 1
+
+    def test_double_digit_plates_sort_numerically_not_lexically(self):
+        names = ["Metadata/plate_10.gcode", "Metadata/plate_2.gcode"]
+        assert default_plate_number(names) == 2
+
+    def test_returns_none_for_an_unsliced_file(self):
+        assert default_plate_number(["3D/3dmodel.model"]) is None
+
+    def test_returns_none_when_the_default_member_has_no_plate_number(self):
+        # default_plate_gcode_name falls back to the first .gcode member for
+        # a slicer that doesn't use the plate_N convention; that member
+        # carries no parseable number, and this must not invent one — the
+        # dispatch caller is the one that falls back to plate 1.
+        assert default_plate_number(["out.gcode", "other.gcode"]) is None
 
 
 class TestSelectPlateGcodeName:

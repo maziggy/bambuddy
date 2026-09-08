@@ -405,6 +405,7 @@ class SpoolmanClient:
         lot_nr: str | None = None,
         comment: str | None = None,
         extra: dict | None = None,
+        spool_weight: float | None = None,
     ) -> dict:
         """Create a new spool in Spoolman."""
         data: dict = {"filament_id": filament_id}
@@ -416,6 +417,11 @@ class SpoolmanClient:
             data["lot_nr"] = lot_nr
         if comment:
             data["comment"] = comment
+        # `is not None`, not truthiness: 0 g is a legitimate tare (a spool-less
+        # coil), and it is not the same answer as "inherit from the filament",
+        # which is what leaving the field off means to Spoolman.
+        if spool_weight is not None:
+            data["spool_weight"] = spool_weight
         if extra:
             data["extra"] = extra
             await self._ensure_extra_fields(extra)

@@ -665,3 +665,43 @@ class TestRenameLocationBulkAndFallback:
             pytest.raises(httpx.HTTPStatusError),
         ):
             await client.rename_location("Drybox 1", "Drybox 2")
+
+
+class TestCreateSpoolTare:
+    """create_spool carries the per-spool tare, and tells 0 apart from absent (#2908).
+
+    Leaving `spool_weight` off the payload is meaningful to Spoolman -- it means
+    the spool inherits its filament's value -- so the two cases have to stay
+    distinguishable all the way down to the request body.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_tare_is_sent(self, client):
+        mock_http = AsyncMock()
+        mock_http.post = AsyncMock(return_value=_make_response(SAMPLE_SPOOL))
+        with patch.object(client, "_get_client", AsyncMock(return_value=mock_http)):
+            await client.create_spool(filament_id=7, spool_weight=180)
+
+        assert mock_http.post.call_args.kwargs["json"]["spool_weight"] == 180
+
+    @pytest.mark.asyncio
+    async def test_a_zero_tare_is_sent_rather_than_dropped(self, client):
+        """A guard on truthiness would silently turn 0 g into "inherit", which
+        resolves to 250 g -- a 250 g error on every weigh-in for a bare coil."""
+        mock_http = AsyncMock()
+        mock_http.post = AsyncMock(return_value=_make_response(SAMPLE_SPOOL))
+        with patch.object(client, "_get_client", AsyncMock(return_value=mock_http)):
+            await client.create_spool(filament_id=7, spool_weight=0)
+
+        assert mock_http.post.call_args.kwargs["json"]["spool_weight"] == 0
+
+    @pytest.mark.asyncio
+    async def test_no_tare_leaves_the_key_off_entirely(self, client):
+        """Sending an explicit null would pin the spool to "no inheritance",
+        which is not the same as not having been told."""
+        mock_http = AsyncMock()
+        mock_http.post = AsyncMock(return_value=_make_response(SAMPLE_SPOOL))
+        with patch.object(client, "_get_client", AsyncMock(return_value=mock_http)):
+            await client.create_spool(filament_id=7)
+
+        assert "spool_weight" not in mock_http.post.call_args.kwargs["json"]

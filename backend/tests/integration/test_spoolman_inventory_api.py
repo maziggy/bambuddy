@@ -2813,3 +2813,129 @@ class TestGetAllSlotAssignmentsEnriched:
         assert data[0]["printer_id"] == 1
         assert data[0]["printer_name"] == "P1"
         assert data[0]["spoolman_spool_id"] == 201
+
+
+class TestPerSpoolCoreWeight:
+    """The per-spool tare reaches Spoolman now (#2908).
+
+    `core_weight` was declared on both write schemas and dropped after
+    validation, with a comment saying so. The read path never showed it: it
+    derives the value from ``spool.spool_weight ?? filament.spool_weight ?? 250``
+    (_spoolman_helpers.py), so an edit that went nowhere came back as the
+    inherited value and looked like it had simply not changed.
+
+    It is not cosmetic, because the same resolution is the tare the weigh
+    endpoint subtracts. A spool whose real empty weight differs from its
+    filament's produced a wrong remaining weight on every weigh-in -- 70 g for
+    the reporter's third-party spools against Bambu's 250 g reusable ones.
+
+    Spoolman already has the field and already gives it priority. Only the
+    write was missing.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_edited_tare_is_written_to_the_spools_own_field(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json={"core_weight": 180})
+
+        assert response.status_code == 200
+        assert mock_spoolman_client.update_spool_full.call_args.kwargs["spool_weight"] == 180
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_edit_that_does_not_mention_the_tare_leaves_it_inheriting(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """The reason this keys off model_fields_set rather than the value.
+
+        `core_weight` carries a default, so a PATCH that never mentions it still
+        arrives at the handler holding one. Writing that would stamp an explicit
+        tare on every spool the user edits for any reason, silently detaching it
+        from its filament -- a worse bug than the one being fixed, and an
+        invisible one, since the number displayed would not change.
+        """
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json={"note": "just a note"})
+
+        assert response.status_code == 200
+        assert mock_spoolman_client.update_spool_full.call_args.kwargs["spool_weight"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_tare_given_at_creation_is_written(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        response = await async_client.post(
+            "/api/v1/spoolman/inventory/spools",
+            json={"material": "PLA", "label_weight": 1000, "core_weight": 180},
+        )
+
+        assert response.status_code == 200
+        assert mock_spoolman_client.create_spool.call_args.kwargs["spool_weight"] == 180
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_creation_that_omits_the_tare_leaves_the_spool_inheriting(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """Same defaulting hazard as the update, and the commoner path: the
+        form posts without a tare far more often than with one."""
+        response = await async_client.post(
+            "/api/v1/spoolman/inventory/spools",
+            json={"material": "PLA", "label_weight": 1000},
+        )
+
+        assert response.status_code == 200
+        assert mock_spoolman_client.create_spool.call_args.kwargs["spool_weight"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_creation_persists_the_tare_on_every_spool(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """Bulk create takes the same schema, so it dropped the field the same way."""
+        response = await async_client.post(
+            "/api/v1/spoolman/inventory/spools/bulk",
+            json={"spool": {"material": "PLA", "label_weight": 1000, "core_weight": 180}, "quantity": 3},
+        )
+
+        assert response.status_code in (200, 201)
+        assert mock_spoolman_client.create_spool.await_count == 3
+        assert all(c.kwargs["spool_weight"] == 180 for c in mock_spoolman_client.create_spool.await_args_list)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_zero_tare_is_a_value_not_an_absence(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """0 g is a real answer -- a coil with no spool -- and the schema allows
+        it (``ge=0``). Guarding the write on truthiness rather than ``is not
+        None`` would silently turn it into "inherit", which resolves to 250."""
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json={"core_weight": 0})
+
+        assert response.status_code == 200
+        assert mock_spoolman_client.update_spool_full.call_args.kwargs["spool_weight"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_written_tare_is_the_one_the_weigh_endpoint_subtracts(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """What the fix is actually for.
+
+        The weigh endpoint resolves the tare exactly as the read path does, so
+        once the per-spool value is stored it is the number a measured gross
+        weight is reduced by. With a 180 g spool inheriting the filament's 250 g
+        this same weigh-in would have recorded 550 g remaining instead of 620 --
+        the 70 g error from the report, on every weigh-in.
+        """
+        mock_spoolman_client.get_spool.return_value = {
+            **SAMPLE_SPOOLMAN_SPOOL,
+            "spool_weight": 180.0,
+        }
+
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42/weight", json={"weight_grams": 800.0})
+
+        assert response.status_code == 200
+        assert mock_spoolman_client.update_spool_full.call_args.kwargs["remaining_weight"] == 620.0

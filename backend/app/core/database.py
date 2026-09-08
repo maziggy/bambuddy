@@ -41,12 +41,34 @@ def _resolve_pool_kwargs() -> dict:
         server-dropped connections instead of erroring the request) and
         ``pool_recycle`` 1800s. The old hard-coded 10 + 20 exhausted on large
         farms while printer callbacks held connections.
-      - SQLite: pool_size 20 + max_overflow 200 (unchanged); no pre-ping /
-        recycle — the connection is a local file, not a server socket.
+      - SQLite: pool_size 10 + max_overflow 20 (lowered from 20 + 200, #2883:
+        WAL parks one main-db fd per closed overflow connection, so the old
+        ceiling could strand ~220 fds against a 1024 nofile default); no
+        pre-ping / recycle — the connection is a local file, not a server
+        socket.
     """
     if is_sqlite():
-        pool_size = settings.db_pool_size if settings.db_pool_size is not None else 20
-        max_overflow = settings.db_max_overflow if settings.db_max_overflow is not None else 200
+        # SQLite + WAL parks one main-db file descriptor per *closed* overflow
+        # connection: as long as any pooled connection stays open (it always
+        # does), SQLite's unix VFS moves the fd of every closing connection to
+        # its per-inode "unused fd" list instead of close(2)-ing it, to avoid
+        # the POSIX close-drops-advisory-locks trap. Those fds are reused by
+        # later connections but only released when the LAST connection to the
+        # file closes — i.e. effectively never in a running server. The
+        # steady-state fd bill is therefore bounded by the historical PEAK of
+        # concurrent connections: pool_size + max_overflow. At the previous
+        # 20+200 that is up to ~220 parked db fds plus wal/shm fds of live
+        # connections — enough to breach Docker's default 1024 soft nofile
+        # under load. Once EMFILE hits, every new connection fails with
+        # "disk I/O error" (the WAL/shm open in the connect-time PRAGMAs) and
+        # a long-running process in that state has been observed to end in
+        # "database disk image is malformed" (see issue: fd-exhaustion →
+        # 44h of failed opens alongside live writers → page corruption).
+        # 10+20 keeps SQLite honest for a single-file DB while capping the
+        # parked-fd bound at ~30; farms needing more concurrency should be
+        # on PostgreSQL anyway (#2641). Both knobs stay env-overridable.
+        pool_size = settings.db_pool_size if settings.db_pool_size is not None else 10
+        max_overflow = settings.db_max_overflow if settings.db_max_overflow is not None else 20
         kwargs = {"pool_size": pool_size, "max_overflow": max_overflow}
     else:
         pool_size = settings.db_pool_size if settings.db_pool_size is not None else 20

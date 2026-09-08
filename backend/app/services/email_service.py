@@ -9,6 +9,7 @@ import secrets
 import smtplib
 import string
 from datetime import datetime, timezone
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
@@ -179,6 +180,8 @@ def send_email(
     subject: str,
     body_text: str,
     body_html: str | None = None,
+    image_data: bytes | None = None,
+    image_cid: str = "bambuddy-inline-photo",
 ) -> None:
     """Send an email using SMTP.
 
@@ -188,21 +191,43 @@ def send_email(
         subject: Email subject
         body_text: Plain text body
         body_html: Optional HTML body
+        image_data: Optional JPEG bytes to embed inline. The caller is
+            responsible for putting a matching ``<img src="cid:{image_cid}">``
+            in body_html — this just attaches the bytes under that Content-ID.
+        image_cid: Content-ID the embedded image is referenced by in body_html.
 
     Raises:
         Exception: If email sending fails
     """
-    msg = MIMEMultipart("alternative")
-    msg["From"] = f"{smtp_settings.smtp_from_name} <{smtp_settings.smtp_from_email}>"
-    msg["To"] = to_email
-    msg["Subject"] = subject
+    if image_data and body_html:
+        # multipart/related wraps multipart/alternative so the inline image
+        # travels with the HTML part without becoming a visible attachment.
+        msg = MIMEMultipart("related")
+        msg["From"] = f"{smtp_settings.smtp_from_name} <{smtp_settings.smtp_from_email}>"
+        msg["To"] = to_email
+        msg["Subject"] = subject
 
-    # Attach plain text part
-    msg.attach(MIMEText(body_text, "plain"))
+        alt = MIMEMultipart("alternative")
+        alt.attach(MIMEText(body_text, "plain"))
+        alt.attach(MIMEText(body_html, "html"))
+        msg.attach(alt)
 
-    # Attach HTML part if provided
-    if body_html:
-        msg.attach(MIMEText(body_html, "html"))
+        img = MIMEImage(image_data, _subtype="jpeg")
+        img.add_header("Content-ID", f"<{image_cid}>")
+        img.add_header("Content-Disposition", "inline", filename="photo.jpg")
+        msg.attach(img)
+    else:
+        msg = MIMEMultipart("alternative")
+        msg["From"] = f"{smtp_settings.smtp_from_name} <{smtp_settings.smtp_from_email}>"
+        msg["To"] = to_email
+        msg["Subject"] = subject
+
+        # Attach plain text part
+        msg.attach(MIMEText(body_text, "plain"))
+
+        # Attach HTML part if provided
+        if body_html:
+            msg.attach(MIMEText(body_html, "html"))
 
     # Send email
     try:
@@ -580,6 +605,7 @@ async def send_user_print_notification(
     user_email: str,
     username: str,
     variables: dict,
+    image_data: bytes | None = None,
 ) -> None:
     """Send a print notification email to a user using Advanced Auth SMTP settings.
 
@@ -589,6 +615,10 @@ async def send_user_print_notification(
         user_email: Recipient email address
         username: Username of the recipient
         variables: Template variables (printer, filename, etc.)
+        image_data: Camera snapshot bytes, if one was captured for the event.
+            Inlined only when the template explicitly references
+            {finish_photo_url} — same opt-in as the provider-based email path
+            (#1792), so a user who never asked for a photo never gets one.
     """
     # Check that advanced auth is enabled (SMTP settings must be configured)
     smtp_settings = await get_smtp_settings(db)
@@ -613,8 +643,20 @@ async def send_user_print_notification(
     subject = render_template(template.title_template, all_variables)
     text_body = render_template(template.body_template, all_variables)
 
+    finish_photo_url = variables.get("finish_photo_url")
+    inline_photo = bool(image_data and finish_photo_url and finish_photo_url in text_body)
+
     # Build HTML body — content comes entirely from the database template
     escaped_text_body = html.escape(text_body).replace("\n", "<br>\n")
+    if inline_photo:
+        escaped_url = html.escape(finish_photo_url)
+        img_tag = (
+            '<img src="cid:bambuddy-user-print-photo" '
+            'alt="Printer camera snapshot" '
+            'style="max-width:100%;height:auto;border:1px solid #ddd;border-radius:4px;">'
+        )
+        escaped_text_body = escaped_text_body.replace(escaped_url, img_tag)
+
     html_body = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -633,7 +675,15 @@ async def send_user_print_notification(
 """
 
     try:
-        send_email(smtp_settings, user_email, subject, text_body, html_body)
+        send_email(
+            smtp_settings,
+            user_email,
+            subject,
+            text_body,
+            html_body,
+            image_data=image_data if inline_photo else None,
+            image_cid="bambuddy-user-print-photo",
+        )
         logger.info("Sent %s notification email to %s", event_type, user_email)
     except Exception as e:
         logger.error("Failed to send %s notification to %s: %s", event_type, user_email, e)

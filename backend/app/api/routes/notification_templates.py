@@ -11,6 +11,7 @@ from backend.app.models.notification_template import DEFAULT_TEMPLATES, Notifica
 from backend.app.models.user import User
 from backend.app.schemas.notification_template import (
     EVENT_VARIABLES,
+    PHOTO_CAPABLE_EVENTS,
     SAMPLE_DATA,
     EventVariablesResponse,
     NotificationTemplateResponse,
@@ -33,8 +34,12 @@ EVENT_NAMES = {
     "billing_charge_failed": "Billing Charge Failed",
     "printer_offline": "Printer Offline",
     "printer_error": "Printer Error",
+    "ai_failure_detection": "AI Failure Detection",
+    "plate_not_empty": "Plate Not Empty",
+    "plate_clear_required": "Plate Clear Required",
     "filament_low": "Filament Low",
     "maintenance_due": "Maintenance Due",
+    "first_layer_complete": "First Layer Complete",
     "test": "Test Notification",
     # Queue notifications
     "queue_job_added": "Queue Job Added",
@@ -44,6 +49,9 @@ EVENT_NAMES = {
     "queue_job_skipped": "Queue Job Skipped",
     "queue_job_failed": "Queue Job Failed",
     "queue_completed": "Queue Completed",
+    # Inventory stock alerts
+    "stock_reorder_alert": "Stock Reorder Alert",
+    "stock_break_alert": "Stock Break Alert",
     # User management
     "user_created": "Welcome Email",
     "password_reset": "Password Reset",
@@ -76,6 +84,7 @@ async def get_variables(
             event_type=event_type,
             event_name=EVENT_NAMES.get(event_type, event_type),
             variables=variables,
+            supports_photo=event_type in PHOTO_CAPABLE_EVENTS,
         )
         for event_type, variables in EVENT_VARIABLES.items()
     ]

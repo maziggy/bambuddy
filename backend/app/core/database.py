@@ -5180,6 +5180,16 @@ async def run_migrations(conn):
     # keep showing their English error_message.
     await _safe_execute(conn, "ALTER TABLE scheduled_dryings ADD COLUMN error_code VARCHAR(32)")
 
+    # Migration: per-provider photo attachment opt-out. Defaults TRUE so
+    # existing providers keep attaching snapshots exactly as before. The
+    # backfill covers a table create_all() already gave the column (the ALTER
+    # is then swallowed and existing rows keep NULL, which reads as off).
+    await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN attach_photo BOOLEAN DEFAULT TRUE")
+    async with conn.begin_nested():
+        await conn.execute(
+            text("UPDATE notification_providers SET attach_photo = :on WHERE attach_photo IS NULL"), {"on": True}
+        )
+
 
 async def _migrate_confirm_prompt_body_template(conn) -> None:
     """Replace the one-tap verdict URLs in the outcome prompt's body (#1898).

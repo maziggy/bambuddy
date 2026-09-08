@@ -59,6 +59,11 @@ class NotificationProvider(Base):
     # Provider-specific configuration stored as JSON string
     config = Column(Text, nullable=False)
 
+    # Attach a camera snapshot when one was captured for the event. Defaults
+    # True so ntfy/Pushover/Telegram/Discord keep behaving as they always
+    # did; this is the opt-out for whoever doesn't want it.
+    attach_photo = Column(Boolean, default=True)
+
     # Event triggers - print lifecycle
     on_print_start = Column(Boolean, default=False)
     on_print_complete = Column(Boolean, default=True)

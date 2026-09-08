@@ -2998,6 +2998,7 @@ export interface NotificationProvider {
   provider_type: ProviderType;
   enabled: boolean;
   config: Record<string, unknown>;
+  attach_photo: boolean;
   // Print lifecycle events
   on_print_start: boolean;
   on_print_complete: boolean;
@@ -3066,6 +3067,7 @@ export interface NotificationProviderCreate {
   provider_type: ProviderType;
   enabled?: boolean;
   config: Record<string, unknown>;
+  attach_photo?: boolean;
   // Print lifecycle events
   on_print_start?: boolean;
   on_print_complete?: boolean;
@@ -3127,6 +3129,7 @@ export interface NotificationProviderUpdate {
   provider_type?: ProviderType;
   enabled?: boolean;
   config?: Record<string, unknown>;
+  attach_photo?: boolean;
   // Print lifecycle events
   on_print_start?: boolean;
   on_print_complete?: boolean;
@@ -3440,6 +3443,7 @@ export interface GitHubBackupTriggerResponse {
 export interface NotificationTestRequest {
   provider_type: ProviderType;
   config: Record<string, unknown>;
+  attach_photo?: boolean;
 }
 
 export interface NotificationTestResponse {
@@ -3501,6 +3505,7 @@ export interface EventVariablesResponse {
   event_type: string;
   event_name: string;
   variables: string[];
+  supports_photo: boolean;
 }
 
 export interface TemplatePreviewRequest {

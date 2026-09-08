@@ -3323,6 +3323,8 @@ async def _dispatch_user_print_email(
     printer_name: str,
     filename: str,
     db,
+    image_data: bytes | None = None,
+    finish_photo_url: str | None = None,
 ) -> None:
     """Send a user-specific print-completion email based on print status.
 
@@ -3349,6 +3351,8 @@ async def _dispatch_user_print_email(
         printer_name=printer_name,
         filename=filename,
         db=db,
+        image_data=image_data,
+        finish_photo_url=finish_photo_url,
     )
 
 
@@ -4028,11 +4032,6 @@ async def on_print_start(printer_id: int, data: dict):
                     external_camera_snapshot_url=printer.external_camera_snapshot_url,
                 )
 
-                # Restore chamber light to original state
-                if light_was_off and client:
-                    logger.info("[PLATE CHECK] Restoring chamber light to off for printer %s", printer_id)
-                    client.set_chamber_light(False)
-
                 if not plate_result.needs_calibration and not plate_result.is_empty:
                     # Objects detected - pause the print!
                     logger.warning(
@@ -4043,6 +4042,16 @@ async def on_print_start(printer_id: int, data: dict):
                     if client:
                         client.pause_print()
                         logger.info("[PLATE CHECK] Print paused for printer %s", printer_id)
+
+                    # Snapshot while the light's still on — restoring it first
+                    # would leave the notification with a dark photo.
+                    plate_photo_data = None
+                    try:
+                        plate_photo_data = await _capture_snapshot_for_notification(printer_id, printer, logger)
+                    except Exception as snap_err:
+                        logger.warning(
+                            "[PLATE CHECK] Failed to capture snapshot for printer %s: %s", printer_id, snap_err
+                        )
 
                     # Send notification about plate not empty
                     await ws_manager.broadcast(
@@ -4061,11 +4070,17 @@ async def on_print_start(printer_id: int, data: dict):
                             printer_name=printer.name,
                             db=db,
                             difference_percent=plate_result.difference_percent,
+                            image_data=plate_photo_data,
                         )
                     except Exception as notif_err:
                         logger.warning("[PLATE CHECK] Failed to send notification: %s", notif_err)
                 else:
                     logger.info("[PLATE CHECK] Plate is empty for printer %s, proceeding with print", printer_id)
+
+                # Restore chamber light to original state
+                if light_was_off and client:
+                    logger.info("[PLATE CHECK] Restoring chamber light to off for printer %s", printer_id)
+                    client.set_chamber_light(False)
             except Exception as plate_err:
                 # Don't block print on plate detection errors
                 logger.warning("[PLATE CHECK] Plate detection failed for printer %s: %s", printer_id, plate_err)
@@ -8236,6 +8251,8 @@ async def on_print_complete(printer_id: int, data: dict):
                         printer_name,
                         raw_filename,
                         db,
+                        image_data=archive_data.get("image_data"),
+                        finish_photo_url=archive_data.get("finish_photo_url"),
                     )
 
                 logger.info("[NOTIFY-BG] Completed")

@@ -1,0 +1,200 @@
+2026-09-09 02:13:31,812 WARNING [backend.app.services.bambu_ftp] [-] Failed to delete /SW_Neuron_20260904_reprint_2.gcode: 550 Delete operation failed.
+2026-09-09 02:13:34,079 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-09-09 02:13:34,082 WARNING [backend.app.services.bambu_ftp] [-] Failed to delete /SW_Neuron_20260904_reprint_2.gcode: 550 Delete operation failed.
+2026-09-09 02:13:36,274 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-09-09 02:13:36,277 WARNING [backend.app.services.bambu_ftp] [-] Failed to delete /SW_Neuron_20260904_reprint_2.gcode: 550 Delete operation failed.
+2026-09-09 02:13:36,282 WARNING [backend.app.main] [-] SD card cleanup failed after 3 attempts for /SW_Neuron_20260904_reprint_2.gcode (file may linger on SD card)
+2026-09-09 02:13:36,282 INFO [backend.app.main] [-] [TIMING] SD card cleanup: 5.713s elapsed
+2026-09-09 02:13:36,400 INFO [backend.app.main] [-] [TIMING] Queue item update: 5.831s elapsed
+2026-09-09 02:13:36,593 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] on_print_complete: printer=1, archive=239, session=yes, ams_mapping=[-1, 1]
+2026-09-09 02:13:36,594 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT COMPLETE printer 1: mapping=[65535, 1], tray_now=255, last_loaded_tray=1
+2026-09-09 02:13:36,949 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: archive 239, filament_usage=[{'slot_id': 2, 'used_g': 171.12, 'type': 'PLA', 'color': '#F4EE2A'}]
+2026-09-09 02:13:36,949 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: slot_to_tray=[-1, 1] (source: print_cmd)
+2026-09-09 02:13:36,949 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: slot_id=2 -> global_tray=1 -> AMS0-T1 (used_g=171.1, tray_now_override=None)
+2026-09-09 02:13:37,178 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Spool 52 consumed 171.1g (3MF, print_cmd_map) on printer 1 AMS0-T1 (completed)
+2026-09-09 02:13:37,620 INFO [backend.app.main] [-] [TIMING] Usage tracker: 7.052s elapsed
+2026-09-09 02:13:37,717 INFO [backend.app.services.spoolman_tracking] [-] [SPOOLMAN] No tracking data for print (printer=1, archive=239)
+2026-09-09 02:13:37,727 INFO [backend.app.main] [-] [TIMING] Spoolman usage report: 7.158s elapsed
+2026-09-09 02:13:37,727 INFO [backend.app.main] [-] [TIMING] Filament usage tracking: 7.159s elapsed
+2026-09-09 02:13:37,727 INFO [backend.app.main] [-] [TIMING] Archive lookup: 7.159s elapsed
+2026-09-09 02:13:37,727 INFO [backend.app.main] [-] [ARCHIVE] Updating archive 239 status...
+2026-09-09 02:13:37,988 INFO [backend.app.main] [-] [ARCHIVE] Archive 239 status updated to completed, failure_reason=None
+2026-09-09 02:13:37,989 INFO [backend.app.main] [-] [ARCHIVE] WebSocket notification sent for archive 239
+2026-09-09 02:13:37,989 INFO [backend.app.main] [-] [TIMING] Archive status update: 7.421s elapsed
+2026-09-09 02:13:38,392 INFO [backend.app.main] [-] [PRINT_LOG] Log entry written for archive 239
+2026-09-09 02:13:38,392 INFO [backend.app.main] [-] [TIMING] Print log entry: 7.824s elapsed
+2026-09-09 02:13:38,404 INFO [backend.app.main] [-] [TIMING] Background tasks scheduled (energy, photo): 7.835s elapsed
+2026-09-09 02:13:38,412 INFO [backend.app.main] [-] [TIMING] All background tasks scheduled: 7.843s elapsed
+2026-09-09 02:13:38,412 INFO [backend.app.main] [-] [TIMELAPSE] Timelapse was active during print, scheduling auto-scan for archive 239
+2026-09-09 02:13:38,412 INFO [backend.app.main] [-] [TIMING] Timelapse scan scheduled: 7.844s elapsed
+2026-09-09 02:13:38,413 INFO [backend.app.main] [-] [CALLBACK] on_print_complete finished for printer 1, archive 239
+2026-09-09 02:13:38,413 INFO [backend.app.main] [-] [ENERGY-BG] Starting energy calculation for archive 239
+2026-09-09 02:13:38,414 INFO [backend.app.main] [-] [PHOTO-BG] Starting finish photo capture for archive 239
+2026-09-09 02:13:38,415 INFO [backend.app.main] [-] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-09-09 02:13:38,423 INFO [backend.app.main] [-] [MAINT-BG] Starting maintenance check for printer 1
+2026-09-09 02:13:38,424 INFO [backend.app.main] [-] [LAYER-TL] Stitching layer timelapse for printer 1
+2026-09-09 02:13:38,454 INFO [backend.app.main] [-] [AUTO-OFF-BG] Completed
+2026-09-09 02:13:38,512 INFO [backend.app.main] [-] [ENERGY-BG] No start kWh recorded for archive 239
+2026-09-09 02:13:38,644 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-09-09 02:13:38,977 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-09-09 02:13:39,509 INFO [backend.app.main] [-] [TIMELAPSE] Baseline snapshot (fallback): 215 existing video files for archive 239
+2026-09-09 02:13:39,523 INFO [backend.app.main] [-] [TIMELAPSE] Attempt 1/4: waiting 5s before scanning for archive 239
+2026-09-09 02:13:39,567 INFO [backend.app.services.notification_service] [-] No notification providers configured for maintenance_due event on printer 1
+2026-09-09 02:13:39,568 INFO [backend.app.main] [-] [MAINT-BG] Sent notification: 6 items need attention
+2026-09-09 02:13:43,101 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 224829 bytes
+2026-09-09 02:13:43,102 INFO [backend.app.services.camera] [-] Saved camera frame to: /app/data/archive/1/20260908_215050_SW Neuron 20260904 reprint 2/photos/finish_20260909_021338_8cb188e5.jpg
+2026-09-09 02:13:43,102 INFO [backend.app.services.camera] [-] Finish photo saved: finish_20260909_021338_8cb188e5.jpg
+2026-09-09 02:13:43,251 INFO [backend.app.main] [-] [PHOTO-BG] Saved: finish_20260909_021338_8cb188e5.jpg
+2026-09-09 02:13:43,252 INFO [backend.app.main] [-] [PHOTO-NOTIFY] Photo task returned: finish_20260909_021338_8cb188e5.jpg
+2026-09-09 02:13:43,252 INFO [backend.app.main] [-] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260909_021338_8cb188e5.jpg
+2026-09-09 02:13:43,397 INFO [backend.app.main] [-] [NOTIFY-BG] Loaded finish photo bytes: 224829 bytes
+2026-09-09 02:13:43,410 INFO [backend.app.services.notification_service] [-] on_print_complete called for printer 1 ([PRINTER]), status=completed
+2026-09-09 02:13:43,469 INFO [backend.app.services.notification_service] [-] Found 1 providers for on_print_complete: ['Email Notifications']
+2026-09-09 02:13:55,746 INFO [backend.app.services.notification_service] [-] Sent notification via Email Notifications
+2026-09-09 02:13:55,747 INFO [backend.app.main] [-] [NOTIFY-BG] Completed
+2026-09-09 02:13:55,918 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-09-09 02:13:56,005 INFO [backend.app.main] [-] [TIMELAPSE] Attempt 1: Found 215 video files in /timelapse
+2026-09-09 02:13:56,005 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-02_06-17-37.mp4
+2026-09-09 02:13:56,005 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-02_12-00-42.mp4
+2026-09-09 02:13:56,005 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-03_11-08-06.mp4
+2026-09-09 02:13:56,006 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-03_22-52-06.mp4
+2026-09-09 02:13:56,006 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-05-01_01-29-20.mp4
+2026-09-09 02:13:56,013 INFO [backend.app.main] [-] [TIMELAPSE] Attempt 1: No new files since baseline, will retry
+2026-09-09 02:13:56,014 INFO [backend.app.main] [-] [TIMELAPSE] Attempt 2/4: waiting 10s before scanning for archive 239
+2026-09-09 02:14:06,180 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-09-09 02:14:06,240 INFO [backend.app.main] [-] [TIMELAPSE] Attempt 2: Found 215 video files in /timelapse
+2026-09-09 02:14:06,240 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-02_06-17-37.mp4
+2026-09-09 02:14:06,240 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-02_12-00-42.mp4
+2026-09-09 02:14:06,240 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-03_11-08-06.mp4
+2026-09-09 02:14:06,241 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-03_22-52-06.mp4
+2026-09-09 02:14:06,241 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-05-01_01-29-20.mp4
+2026-09-09 02:14:06,241 INFO [backend.app.main] [-] [TIMELAPSE] Attempt 2: No new files since baseline, will retry
+2026-09-09 02:14:06,242 INFO [backend.app.main] [-] [TIMELAPSE] Attempt 3/4: waiting 20s before scanning for archive 239
+2026-09-09 02:14:26,430 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-09-09 02:14:26,510 INFO [backend.app.main] [-] [TIMELAPSE] Attempt 3: Found 215 video files in /timelapse
+2026-09-09 02:14:26,510 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-02_06-17-37.mp4
+2026-09-09 02:14:26,510 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-02_12-00-42.mp4
+2026-09-09 02:14:26,510 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-03_11-08-06.mp4
+2026-09-09 02:14:26,511 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-03_22-52-06.mp4
+2026-09-09 02:14:26,511 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-05-01_01-29-20.mp4
+2026-09-09 02:14:26,511 INFO [backend.app.main] [-] [TIMELAPSE] Attempt 3: No new files since baseline, will retry
+2026-09-09 02:14:26,512 INFO [backend.app.main] [-] [TIMELAPSE] Attempt 4/4: waiting 30s before scanning for archive 239
+2026-09-09 02:14:29,431 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-09-09 02:14:56,658 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-09-09 02:14:56,742 INFO [backend.app.main] [-] [TIMELAPSE] Attempt 4: Found 215 video files in /timelapse
+2026-09-09 02:14:56,742 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-02_06-17-37.mp4
+2026-09-09 02:14:56,742 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-02_12-00-42.mp4
+2026-09-09 02:14:56,743 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-03_11-08-06.mp4
+2026-09-09 02:14:56,743 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-04-03_22-52-06.mp4
+2026-09-09 02:14:56,743 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-05-01_01-29-20.mp4
+2026-09-09 02:14:56,743 INFO [backend.app.main] [-] [TIMELAPSE] Attempt 4: No new files since baseline, will retry
+2026-09-09 02:14:56,744 INFO [backend.app.main] [-] [TIMELAPSE] Retries exhausted, trying name-match fallback for 'SW Neuron 20260904 reprint 2'
+2026-09-09 02:14:56,911 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-09-09 02:14:56,982 WARNING [backend.app.main] [-] [TIMELAPSE] All attempts exhausted for archive 239, giving up
+2026-09-09 02:15:14,240 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-09 02:16:53,712 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting...
+2026-09-09 02:16:53,713 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-09 02:16:53,750 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-09-09 02:17:30,558 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT START detected - file: /data/Metadata/plate_14.gcode, subtask: SW_Neuron_20260904_262%_Segments, is_new: True, is_file_change: False
+2026-09-09 02:17:30,570 INFO [backend.app.main] [-] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-09-09 02:17:30,862 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Skipped trays with invalid remain% for printer 1: AMS0-T0(remain=-1), AMS0-T1(remain=-1), AMS0-T2(remain=-1), AMS0-T3(remain=-1)
+2026-09-09 02:17:30,862 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping=[65535, 0, 2], tray_now=255, last_loaded_tray=1
+2026-09-09 02:17:30,863 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping-related keys: {'mapping': [65535, 0, 2], 'ams_extruder_map': {'0': 0}}
+2026-09-09 02:17:30,863 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 0: T0(type=PLA, color=00FFFFFF, now=?, tar=?), T1(type=PLA, color=FF74B5FF, now=?, tar=?), T2(type=PLA, color=C8C7BFFF, now=?, tar=?), T3(type=PLA, color=00FF00FF, now=?, tar=?)
+2026-09-09 02:17:30,909 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Snapshotted 4 spool assignments for printer 1: {'0-0': 47, '0-1': 52, '0-2': 57, '0-3': 58}
+2026-09-09 02:17:30,919 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (1 trays): {'255-0': 0}
+2026-09-09 02:17:30,936 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-09-09 02:17:30,936 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: /data/Metadata/plate_14.gcode, subtask: SW_Neuron_20260904_262%_Segments
+2026-09-09 02:17:31,170 INFO [backend.app.main] [-] Trying filenames: ['SW_Neuron_20260904_262%_Segments.gcode.3mf', 'SW_Neuron_20260904_262%_Segments.3mf', 'plate_14.gcode.3mf', 'plate_14.3mf']
+2026-09-09 02:17:31,387 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-09-09 02:17:31,423 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /SW_Neuron_20260904_262%_Segments.gcode.3mf: 550 Failed to open file. (not on printer)
+2026-09-09 02:17:31,620 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-09-09 02:17:49,671 INFO [backend.app.services.bambu_ftp] [-] Successfully downloaded /cache/SW_Neuron_20260904_262%_Segments.gcode.3mf to /app/data/archive/temp/SW_Neuron_20260904_262%_Segments.gcode.3mf (29155667 bytes)
+2026-09-09 02:17:49,671 INFO [backend.app.services.bambu_ftp] [-] FTP mode cached for [IP]: prot_p
+2026-09-09 02:17:49,689 INFO [backend.app.main] [-] Downloaded: /cache/SW_Neuron_20260904_262%_Segments.gcode.3mf
+2026-09-09 02:17:50,841 INFO [backend.app.main] [-] Created archive 240 for SW_Neuron_20260904_262%_Segments.gcode.3mf
+2026-09-09 02:17:50,971 INFO [backend.app.main] [-] [ENERGY] No smart plug for printer 1 (archive 240)
+2026-09-09 02:17:50,979 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-09 02:17:50,981 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-09-09 02:17:53,096 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 388903 bytes
+2026-09-09 02:17:53,097 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 388903 bytes
+2026-09-09 02:17:53,111 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 ([PRINTER])
+2026-09-09 02:17:53,162 INFO [backend.app.services.notification_service] [-] No notification providers configured for print_start event on printer 1
+2026-09-09 02:17:53,466 INFO [backend.app.main] [-] Loaded 11 printable objects for printer 1
+2026-09-09 02:17:53,635 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-09-09 02:17:53,704 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 215 video files for printer 1
+2026-09-09 02:18:10,923 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-09-09 02:18:10,925 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-09-09 02:18:12,536 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 251347 bytes
+2026-09-09 02:18:12,537 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 251347 bytes
+2026-09-09 02:18:46,499 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Tray change during print: tray=2 at layer=0
+2026-09-09 02:19:17,607 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 748983, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 02:19:17,622 INFO [backend.app.api.routes.support] [1840cd6f] Log level changed to DEBUG
+2026-09-09 02:19:17,622 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 02:19:17,623 INFO [backend.app.api.routes.bug_report] [1840cd6f] Bug report: enabled debug logging
+2026-09-09 02:19:17,623 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 748983 (binary: 0b10110110110110110111)
+2026-09-09 02:19:17,637 DEBUG [backend.app.services.bambu_mqtt] [1840cd6f] [[SERIAL]] Requesting status update (pushall)
+2026-09-09 02:19:17,637 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_14.gcode, subtask_name: SW_Neuron_20260904_262%_Segments
+2026-09-09 02:19:17,661 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'insert_flag': True, 'power_on_flag': True, 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_now': '2', 'tray_pre': '2', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '2', 'unbind_ams_stat': 0, 'version': 97837}
+2026-09-09 02:19:17,687 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 2
+2026-09-09 02:19:17,711 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-09-09 02:19:17,712 INFO [uvicorn.access] [-] [IP]:58902 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-09-09 02:19:17,712 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1003 -> extruder 0
+2026-09-09 02:19:17,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-09-09 02:19:17,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 263 (main=1, sub=7)
+2026-09-09 02:19:17,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 02:19:17,714 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=524289 (switch_state bits 12-14: 0)
+2026-09-09 02:19:17,714 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 35°C (heater OFF)
+2026-09-09 02:19:17,714 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-09-09 02:19:17,714 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=35.0, heating=False, respect_local=False
+2026-09-09 02:19:17,715 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 35.0, target: 0.0, heating: False
+2026-09-09 02:19:17,715 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83886592, 'code': 196618}]
+2026-09-09 02:19:17,715 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-09-09 02:19:17,715 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -28dBm
+2026-09-09 02:19:17,715 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-09 02:19:17,716 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 0, 2]
+2026-09-09 02:19:17,716 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_14.gcode, subtask: SW_Neuron_20260904_262%_Segments
+2026-09-09 02:19:18,542 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 748983, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 02:19:18,542 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 02:19:18,542 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 748983 (binary: 0b10110110110110110111)
+2026-09-09 02:19:18,543 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_14.gcode, subtask_name: SW_Neuron_20260904_262%_Segments
+2026-09-09 02:19:18,543 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'insert_flag': True, 'power_on_flag': True, 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_now': '2', 'tray_pre': '2', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '2', 'unbind_ams_stat': 0, 'version': 97837}
+2026-09-09 02:19:18,543 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 2
+2026-09-09 02:19:18,543 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-09-09 02:19:18,543 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1003 -> extruder 0
+2026-09-09 02:19:18,543 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-09-09 02:19:18,544 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 263 (main=1, sub=7)
+2026-09-09 02:19:18,544 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 02:19:18,544 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=524289 (switch_state bits 12-14: 0)
+2026-09-09 02:19:18,544 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 35°C (heater OFF)
+2026-09-09 02:19:18,544 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-09-09 02:19:18,545 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=35.0, heating=False, respect_local=False
+2026-09-09 02:19:18,545 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 35.0, target: 0.0, heating: False
+2026-09-09 02:19:18,545 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83886592, 'code': 196618}]
+2026-09-09 02:19:18,545 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-09-09 02:19:18,545 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -28dBm
+2026-09-09 02:19:18,545 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-09 02:19:18,546 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 0, 2]
+2026-09-09 02:19:18,546 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_14.gcode, subtask: SW_Neuron_20260904_262%_Segments
+2026-09-09 02:19:19,817 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 748983, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 02:19:19,817 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 02:19:19,818 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 748983 (binary: 0b10110110110110110111)
+2026-09-09 02:19:19,818 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_14.gcode, subtask_name: SW_Neuron_20260904_262%_Segments
+2026-09-09 02:19:19,818 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'insert_flag': True, 'power_on_flag': True, 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_now': '2', 'tray_pre': '2', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '2', 'unbind_ams_stat': 0, 'version': 97837}
+2026-09-09 02:19:19,818 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 2
+2026-09-09 02:19:19,818 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-09-09 02:19:19,818 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1003 -> extruder 0
+2026-09-09 02:19:19,818 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-09-09 02:19:19,819 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 263 (main=1, sub=7)
+2026-09-09 02:19:19,819 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 02:19:19,819 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=524289 (switch_state bits 12-14: 0)
+2026-09-09 02:19:19,819 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 35°C (heater OFF)
+2026-09-09 02:19:19,819 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-09-09 02:19:19,819 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=35.0, heating=False, respect_local=False
+2026-09-09 02:19:19,820 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 35.0, target: 0.0, heating: False
+2026-09-09 02:19:19,820 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83886592, 'code': 196618}]
+2026-09-09 02:19:19,820 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-09-09 02:19:19,820 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -28dBm
+2026-09-09 02:19:19,820 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-09-09 02:19:19,821 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 0, 2]
+2026-09-09 02:19:19,821 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_14.gcode, subtask: SW_Neuron_20260904_262%_Segments

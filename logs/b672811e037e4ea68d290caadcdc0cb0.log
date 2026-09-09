@@ -1,0 +1,200 @@
+2026-09-09 23:27:44,428 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Mexican_Red_Knee_Spider
+2026-09-09 23:27:44,429 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '13', 'ams_exist_bits_raw': '13', 'cali_id': 255, 'cali_stat': 0, 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': '100ff', 'tray_hall_out_bits': '0', 'tray_is_bbl_bits': '100ff', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': '100ff', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 4488}
+2026-09-09 23:27:44,430 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-09-09 23:27:44,431 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 3 new units, 3 total
+2026-09-09 23:27:44,432 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x10001103 -> extruder 1
+2026-09-09 23:27:44,433 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 1 info=0x10001003 -> extruder 0
+2026-09-09 23:27:44,434 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 128 info=0x10002004 -> extruder 0
+2026-09-09 23:27:44,434 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:27:44,436 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-09-09 23:27:44,436 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 23:27:44,437 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=33042 (switch_state bits 12-14: 0)
+2026-09-09 23:27:44,438 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 27°C (heater OFF)
+2026-09-09 23:27:44,439 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-09-09 23:27:44,440 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=27.0, heating=False, respect_local=False
+2026-09-09 23:27:44,441 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 27.0, target: 0.0, heating: False
+2026-09-09 23:27:44,442 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-09 23:27:44,443 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 5, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-09-09 23:27:44,444 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm
+2026-09-09 23:27:44,444 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-09-09 23:27:44,446 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:27:44,446 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: Mexican_Red_Knee_Spider
+2026-09-09 23:27:46,130 DEBUG [backend.app.api.routes.printers] [1adc016f] API returning ams_mapping: [], ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:27:46,131 DEBUG [backend.app.api.routes.printers] [1adc016f] Using tray_now directly as global ID: 255
+2026-09-09 23:27:46,648 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1797559, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 23:27:46,649 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 23:27:46,650 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797559 (binary: 0b110110110110110110111)
+2026-09-09 23:27:46,651 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Mexican_Red_Knee_Spider
+2026-09-09 23:27:46,653 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:27:46,654 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 23:27:46,655 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-09 23:27:46,657 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-09-09 23:27:46,659 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:27:46,660 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: Mexican_Red_Knee_Spider
+2026-09-09 23:27:48,333 INFO [backend.app.api.routes.cloud] [6178befa] get_filament_info called with 5 IDs: ['GFL01', 'GFL99', 'GFA01', 'GFA00', 'GFB99']
+2026-09-09 23:27:48,346 DEBUG [backend.app.api.routes.printers] [4cda7a0b] API returning ams_mapping: [], ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:27:48,347 DEBUG [backend.app.api.routes.printers] [4cda7a0b] Using tray_now directly as global ID: 255
+2026-09-09 23:27:48,711 DEBUG [backend.app.api.routes.cloud] [6178befa] Failed to get cloud preset GFL01 (API ID: GFSL01): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-09-09 23:27:48,860 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1797559, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 23:27:48,862 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 23:27:48,870 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797559 (binary: 0b110110110110110110111)
+2026-09-09 23:27:48,871 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Mexican_Red_Knee_Spider
+2026-09-09 23:27:48,872 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:27:48,874 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 23:27:48,877 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-09 23:27:48,878 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-09-09 23:27:48,886 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:27:48,892 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: Mexican_Red_Knee_Spider
+2026-09-09 23:27:49,264 DEBUG [backend.app.main] [-] Recorded 4 printer sensor history entries
+2026-09-09 23:27:49,564 INFO [uvicorn.access] [-] [IP]:55397 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-09-09 23:27:50,905 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1797559, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 23:27:50,906 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 23:27:50,907 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797559 (binary: 0b110110110110110110111)
+2026-09-09 23:27:50,908 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Mexican_Red_Knee_Spider
+2026-09-09 23:27:50,910 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:27:50,912 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 23:27:50,914 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-09 23:27:50,915 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-09-09 23:27:50,917 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:27:50,919 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: Mexican_Red_Knee_Spider
+2026-09-09 23:27:53,157 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1797559, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 23:27:53,158 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 23:27:53,159 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797559 (binary: 0b110110110110110110111)
+2026-09-09 23:27:53,160 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Mexican_Red_Knee_Spider
+2026-09-09 23:27:53,162 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:27:53,164 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 23:27:53,166 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-09 23:27:53,168 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-09-09 23:27:53,169 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:27:53,170 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: Mexican_Red_Knee_Spider
+2026-09-09 23:27:53,357 INFO [backend.app.services.bambu_mqtt] [d6b7a7a1] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3, seq_id=22)
+2026-09-09 23:27:53,358 DEBUG [backend.app.services.bambu_mqtt] [d6b7a7a1] [[SERIAL]] K-profile request JSON: {"print": {"command": "extrusion_cali_get", "filament_id": "", "nozzle_diameter": "0.4", "sequence_id": "22"}}
+2026-09-09 23:27:53,484 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_get
+2026-09-09 23:27:53,486 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=22, 1 profiles, matched=True
+2026-09-09 23:27:53,488 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 1 K-profiles for nozzle=0.4
+2026-09-09 23:27:53,494 INFO [backend.app.services.bambu_mqtt] [d6b7a7a1] [[SERIAL]] Got 1 K-profiles for nozzle=0.4 on attempt 1
+2026-09-09 23:27:55,344 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1797559, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 23:27:55,345 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 23:27:55,345 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797559 (binary: 0b110110110110110110111)
+2026-09-09 23:27:55,346 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Mexican_Red_Knee_Spider
+2026-09-09 23:27:55,348 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:27:55,349 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 23:27:55,351 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-09 23:27:55,352 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-09-09 23:27:55,354 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:27:55,354 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: Mexican_Red_Knee_Spider
+2026-09-09 23:27:57,720 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1797559, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 23:27:57,721 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 23:27:57,724 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797559 (binary: 0b110110110110110110111)
+2026-09-09 23:27:57,724 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Mexican_Red_Knee_Spider
+2026-09-09 23:27:57,726 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:27:57,727 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 23:27:57,728 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-09 23:27:57,730 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-09-09 23:27:57,731 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:27:57,732 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: Mexican_Red_Knee_Spider
+2026-09-09 23:27:59,880 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1797559, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 23:27:59,881 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 23:27:59,882 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797559 (binary: 0b110110110110110110111)
+2026-09-09 23:27:59,883 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Mexican_Red_Knee_Spider
+2026-09-09 23:27:59,885 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:27:59,886 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 23:27:59,888 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-09 23:27:59,889 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-09-09 23:27:59,892 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:27:59,894 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: Mexican_Red_Knee_Spider
+2026-09-09 23:28:02,385 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1797559, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 23:28:02,386 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 23:28:02,387 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797559 (binary: 0b110110110110110110111)
+2026-09-09 23:28:02,388 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Mexican_Red_Knee_Spider
+2026-09-09 23:28:02,390 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:28:02,391 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 23:28:02,393 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-09 23:28:02,394 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-09-09 23:28:02,396 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:28:02,396 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: Mexican_Red_Knee_Spider
+2026-09-09 23:28:04,454 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1797559, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 23:28:04,455 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 23:28:04,456 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797559 (binary: 0b110110110110110110111)
+2026-09-09 23:28:04,457 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Mexican_Red_Knee_Spider
+2026-09-09 23:28:04,459 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:28:04,460 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 23:28:04,462 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-09 23:28:04,463 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-09-09 23:28:04,465 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:28:04,465 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: Mexican_Red_Knee_Spider
+2026-09-09 23:28:06,611 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1797559, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 23:28:06,612 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 23:28:06,613 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797559 (binary: 0b110110110110110110111)
+2026-09-09 23:28:06,614 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Mexican_Red_Knee_Spider
+2026-09-09 23:28:06,616 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:28:06,618 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 23:28:06,619 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-09 23:28:06,621 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-09-09 23:28:06,622 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:28:06,623 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: Mexican_Red_Knee_Spider
+2026-09-09 23:28:08,913 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1797559, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 23:28:08,914 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 23:28:08,920 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797559 (binary: 0b110110110110110110111)
+2026-09-09 23:28:08,921 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Mexican_Red_Knee_Spider
+2026-09-09 23:28:08,924 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:28:08,925 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 23:28:08,928 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-09 23:28:08,931 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-09-09 23:28:08,932 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:28:08,934 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: Mexican_Red_Knee_Spider
+2026-09-09 23:28:09,050 INFO [backend.app.api.routes.printers] [e125f931] [configure_ams_slot] printer_id=1, ams_id=0, tray_id=3
+2026-09-09 23:28:09,051 INFO [backend.app.api.routes.printers] [e125f931] [configure_ams_slot] tray_info_idx='PFUS2cc370924e095d', tray_type='PLA', tray_sub_brands='Elegoo PLA Matte'
+2026-09-09 23:28:09,052 INFO [backend.app.api.routes.printers] [e125f931] [configure_ams_slot] setting_id='PFUS2cc370924e095d', kprofile_filament_id='GFL99', kprofile_setting_id=''
+2026-09-09 23:28:09,052 INFO [backend.app.api.routes.printers] [e125f931] [configure_ams_slot] realigning slot filament context to kp: tray_info_idx 'PFUS2cc370924e095d' → 'GFL99', setting_id 'PFUS2cc370924e095d' → 'PFUS2cc370924e095d'
+2026-09-09 23:28:09,053 INFO [backend.app.services.bambu_mqtt] [e125f931] [[SERIAL]] Publishing ams_filament_setting: AMS 0, tray 3, tray_info_idx=GFL99, setting_id=PFUS2cc370924e095d
+2026-09-09 23:28:09,054 DEBUG [backend.app.services.bambu_mqtt] [e125f931] [[SERIAL]] ams_filament_setting command: {"print": {"command": "ams_filament_setting", "ams_id": 0, "tray_id": 3, "slot_id": 3, "tray_info_idx": "GFL99", "tray_type": "PLA", "tray_sub_brands": "Elegoo PLA Matte", "tray_color": "282929FF", "nozzle_temp_min": 190, "nozzle_temp_max": 230, "sequence_id": "0", "setting_id": "PFUS2cc370924e095d"}}
+2026-09-09 23:28:09,055 INFO [backend.app.services.bambu_mqtt] [e125f931] [[SERIAL]] Publishing extrusion_cali_sel: AMS 0, tray 3, cali_idx=0
+2026-09-09 23:28:09,056 DEBUG [backend.app.services.bambu_mqtt] [e125f931] [[SERIAL]] extrusion_cali_sel command: {"print": {"command": "extrusion_cali_sel", "cali_idx": 0, "filament_id": "GFL99", "nozzle_diameter": "0.4", "ams_id": 0, "tray_id": 3, "slot_id": 3, "sequence_id": "0"}}
+2026-09-09 23:28:09,078 INFO [backend.app.api.routes.printers] [e125f931] [configure_ams_slot] Persisted Spoolman K-profile spool=64 printer=1 ams=0 tray=3 cali_idx=0
+2026-09-09 23:28:09,078 INFO [backend.app.api.routes.printers] [e125f931] [configure_ams_slot] Requesting status update from printer
+2026-09-09 23:28:09,079 DEBUG [backend.app.services.bambu_mqtt] [e125f931] [[SERIAL]] Requesting status update (pushall)
+2026-09-09 23:28:09,080 INFO [backend.app.api.routes.printers] [e125f931] [configure_ams_slot] Status update request result: True
+2026-09-09 23:28:09,084 INFO [uvicorn.access] [-] [IP]:55386 - "POST /api/v1/printers/1/slots/0/3/configure?tray_info_idx=PFUS2cc370924e095d&tray_type=PLA&tray_sub_brands=Elegoo+PLA+Matte&tray_color=282929FF&nozzle_temp_min=190&nozzle_temp_max=230&cali_idx=0&nozzle_diameter=0.4&setting_id=PFUS2cc370924e095d&kprofile_filament_id=GFL99&k_value=0.02 HTTP/1.1" 200
+2026-09-09 23:28:09,135 INFO [uvicorn.access] [-] [IP]:55386 - "PUT /api/v1/printers/1/slot-presets/0/3?preset_id=PFUS2cc370924e095d&preset_name=Elegoo%20PLA%20Matte&preset_source=cloud HTTP/1.1" 200
+2026-09-09 23:28:09,193 DEBUG [backend.app.api.routes.printers] [066b5379] API returning ams_mapping: [], ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:28:09,194 DEBUG [backend.app.api.routes.printers] [066b5379] Using tray_now directly as global ID: 255
+2026-09-09 23:28:09,706 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: ams_filament_setting
+2026-09-09 23:28:09,707 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_filament_setting response: {'ams_id': 0, 'command': 'ams_filament_setting', 'is_from_mqtt': True, 'nozzle_temp_max': 230, 'nozzle_temp_min': 190, 'result': 'success', 'sequence_id': '0', 'setting_id': 'PFUS2cc370924e095d', 'slot_id': 3, 'tray_color': '282929FF', 'tray_id': 3, 'tray_info_idx': 'GFL99', 'tray_sub_brands': 'Elegoo PLA Matte', 'tray_type': 'PLA'}
+2026-09-09 23:28:09,709 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:28:09,728 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_sel
+2026-09-09 23:28:09,728 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] extrusion_cali_sel response: {'ams_id': 0, 'cali_idx': 0, 'command': 'extrusion_cali_sel', 'filament_id': 'GFL99', 'is_from_mqtt': True, 'nozzle_diameter': '0.4', 'reason': '', 'result': 'success', 'sequence_id': '0', 'slot_id': 3, 'tray_id': 3}
+2026-09-09 23:28:09,730 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:28:11,081 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1797559, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 23:28:11,081 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 23:28:11,082 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797559 (binary: 0b110110110110110110111)
+2026-09-09 23:28:11,083 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Mexican_Red_Knee_Spider
+2026-09-09 23:28:11,084 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '13', 'ams_exist_bits_raw': '13', 'cali_id': 255, 'cali_stat': 0, 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': '100ff', 'tray_hall_out_bits': '0', 'tray_is_bbl_bits': '100ff', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': '100ff', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 4489}
+2026-09-09 23:28:11,085 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:28:11,086 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Assignment verified: AMS0-T3 now reports GFL99 (kprofile_applied=True)
+2026-09-09 23:28:11,087 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 23:28:11,090 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-09 23:28:11,091 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-09-09 23:28:11,093 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:28:11,094 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: Mexican_Red_Knee_Spider
+2026-09-09 23:28:13,470 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1797559, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 23:28:13,471 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 23:28:13,472 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797559 (binary: 0b110110110110110110111)
+2026-09-09 23:28:13,473 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Mexican_Red_Knee_Spider
+2026-09-09 23:28:13,474 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '13', 'ams_exist_bits_raw': '13', 'cali_id': 255, 'cali_stat': 0, 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': '100ff', 'tray_hall_out_bits': '0', 'tray_is_bbl_bits': '100ff', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': '100ff', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 4490}
+2026-09-09 23:28:13,476 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:28:13,477 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 23:28:13,478 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-09 23:28:13,480 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-09-09 23:28:13,481 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:28:13,482 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: Mexican_Red_Knee_Spider
+2026-09-09 23:28:15,764 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1797559, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-09-09 23:28:15,765 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-09-09 23:28:15,766 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797559 (binary: 0b110110110110110110111)
+2026-09-09 23:28:15,767 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Mexican_Red_Knee_Spider
+2026-09-09 23:28:15,769 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1, '1': 0, '128': 0}
+2026-09-09 23:28:15,770 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-09-09 23:28:15,771 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-09-09 23:28:15,773 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-09-09 23:28:15,774 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 3, 256]
+2026-09-09 23:28:15,775 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_1.gcode, subtask: Mexican_Red_Knee_Spider

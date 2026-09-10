@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, Box, CheckSquare, Loader2, Maximize2, Square, X } from 'lucide-react';
-import { api, withStreamToken } from '../api/client';
+import { api, withMediaToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { pickObjectIdAt, plateClickToMaskPoint } from '../utils/skipObjects';
@@ -60,10 +60,10 @@ export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModa
 
   const hasObjects = (objectsData?.objects.length ?? 0) > 0;
   const topViewUrl = hasObjects && status?.cover_url
-    ? withStreamToken(`${status.cover_url}?view=top`)
+    ? withMediaToken(`${status.cover_url}?view=top`)
     : null;
   const pickViewUrl = hasObjects && status?.cover_url
-    ? withStreamToken(`${status.cover_url}?view=pick`)
+    ? withMediaToken(`${status.cover_url}?view=pick`)
     : null;
 
   const activeObjects = useMemo(

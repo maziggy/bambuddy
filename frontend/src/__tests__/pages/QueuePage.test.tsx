@@ -457,6 +457,29 @@ describe('QueuePage', () => {
       ).not.toBeInTheDocument();
     });
 
+    it('tells an unscheduled item when it runs, without naming a dispatch mode', async () => {
+      // ASAP and Queue differ only in where the item is inserted; neither is
+      // stored on it, so this column cannot tell them apart. Labelling every
+      // unscheduled item "ASAP" made a Queue choice look overridden, which is
+      // what both #2557 and #3018 opened on.
+      server.use(
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json([
+            { ...mockQueueItems[0], archive_name: 'Queued Print', scheduled_time: null },
+          ]);
+        }),
+      );
+
+      render(<QueuePage />);
+
+      const name = await screen.findByText('Queued Print');
+      const row = name.closest('.group') as HTMLElement;
+
+      expect(row).not.toBeNull();
+      expect(within(row).getByText('When a printer is free')).toBeInTheDocument();
+      expect(within(row).queryByText('ASAP')).not.toBeInTheDocument();
+    });
+
     it('does not render a dangling ETA for an invalid duration', async () => {
       server.use(
         http.get('/api/v1/queue/', () => {

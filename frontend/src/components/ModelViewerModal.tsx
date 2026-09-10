@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { X, ExternalLink, Box, Cog, Loader2, Layers, Check, Maximize2, Minimize2, ChevronDown } from 'lucide-react';
 import { ModelViewer } from './ModelViewer';
 import { Button } from './Button';
-import { api, withStreamToken } from '../api/client';
+import { api, withMediaToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { isApiSliceableFileType, isSliceableFileType, openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import type { ArchivePlatesResponse, LibraryFilePlatesResponse, PlateMetadata } from '../types/plates';
@@ -44,6 +44,11 @@ interface SlicerSplitButtonProps {
 // opens a dropdown with the other slicer options. Outside click or Escape
 // (non-propagating) closes the dropdown. The split only renders when the
 // action is already possible, so there is no disabled state to express.
+//
+// With nothing to put in the dropdown it collapses to a plain button rather
+// than offering a chevron onto an empty menu. That is reachable since #3029:
+// an STL has exactly one slicer that will take it, so there is no alternative
+// to offer once that one is the primary action.
 function SlicerSplitButton({ icon, label, dropdownLabel, onPrimary, items }: SlicerSplitButtonProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -68,6 +73,15 @@ function SlicerSplitButton({ icon, label, dropdownLabel, onPrimary, items }: Sli
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [open]);
+
+  if (items.length === 0) {
+    return (
+      <Button variant="secondary" size="sm" onClick={onPrimary}>
+        {icon}
+        {label}
+      </Button>
+    );
+  }
 
   return (
     <div className="relative inline-flex" ref={containerRef}>
@@ -367,12 +381,20 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
     };
   }, [isDraggingDivider, dividerHeight, minPlateHeight, minViewerPx, minViewerRatio]);
 
-  // Which file types can be handed to a desktop slicer via the URL protocol
-  // handler. Shares its list with `isSliceableFilename()`, which the File
+  // Which desktop slicers this file can actually be handed to, configured one
+  // first. Shares its lists with `isSliceableFilename()`, which the File
   // Manager's card menu and list row use, so a file's "Slice" action and its
   // 3D-preview slicer button can no longer disagree about the same file.
-  const slicerReadyType = isSliceableFileType(fileType);
-  const canOpenInSlicer = isLibrary ? slicerReadyType : true;
+  //
+  // Per-slicer rather than one list, because Bambu Studio's protocol handler
+  // takes 3MF only while OrcaSlicer's takes STL and STEP too (#3029). Archive
+  // previews always hand over a 3MF, which both accept.
+  const desktopSlicerOrder: SlicerType[] =
+    preferredSlicer === 'orcaslicer' ? ['orcaslicer', 'bambu_studio'] : ['bambu_studio', 'orcaslicer'];
+  const usableSlicers = isLibrary
+    ? desktopSlicerOrder.filter((slicer) => isSliceableFileType(fileType, slicer))
+    : desktopSlicerOrder;
+  const canOpenInSlicer = usableSlicers.length > 0;
   // The sidecar's list is narrower: its CLI cannot load STEP even though the
   // desktop GUI opens one fine, so in-app slicing is gated separately.
   const apiSlicerReadyType = isApiSliceableFileType(fileType);
@@ -415,9 +437,10 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
     }
   };
 
-  const slicerDropdownTypes: SlicerType[] = useBambuddySlicer
-    ? ['bambu_studio', 'orcaslicer']
-    : [preferredSlicer === 'orcaslicer' ? 'bambu_studio' : 'orcaslicer'];
+  // With the sidecar as the primary action every usable slicer is an
+  // alternative; without it the first one is the primary, so the dropdown holds
+  // the rest.
+  const slicerDropdownTypes: SlicerType[] = useBambuddySlicer ? usableSlicers : usableSlicers.slice(1);
   const slicerName = (slicer: SlicerType) =>
     slicer === 'orcaslicer' ? t('settings.slicerOrcaSlicer') : t('settings.slicerBambuStudio');
   const slicerDropdownItems = slicerDropdownTypes.map((slicer) => ({
@@ -459,9 +482,18 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
             ) : canOpenInSlicer ? (
               <SlicerSplitButton
                 icon={<ExternalLink className="w-4 h-4" />}
-                label={t('modelViewer.openInSlicer')}
+                // Name the slicer when it is not the configured one. That happens
+                // when the configured slicer cannot take this format — an STL with
+                // Bambu Studio selected — and silently handing the file to the
+                // other one without saying so would be worse than the failure it
+                // replaces.
+                label={
+                  usableSlicers[0] === preferredSlicer
+                    ? t('modelViewer.openInSlicer')
+                    : t('modelViewer.openInSlicerWith', { slicer: slicerName(usableSlicers[0]) })
+                }
                 dropdownLabel={t('modelViewer.moreSlicerOptions')}
-                onPrimary={() => handleOpenInSlicer(preferredSlicer)}
+                onPrimary={() => handleOpenInSlicer(usableSlicers[0])}
                 items={slicerDropdownItems}
               />
             ) : (
@@ -578,7 +610,7 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
                           >
                             {plate.has_thumbnail && plate.thumbnail_url ? (
                               <img
-                                src={withStreamToken(plate.thumbnail_url)}
+                                src={withMediaToken(plate.thumbnail_url)}
                                 alt={`Plate ${plate.index}`}
                                 className={`${splitFullscreen ? 'w-8 h-8' : 'w-10 h-10'} rounded object-cover bg-bambu-dark-tertiary`}
                               />

@@ -2867,29 +2867,35 @@ export function ArchivesPage() {
     setNo3MFWarningDismissed(true);
   };
   // Why the 3MF was missing decides what to tell the user, and the original
-  // single wording is wrong for three of the four cases: it sends H2-series and
+  // single wording is wrong for four of the five cases: it sends H2-series and
   // P2S owners to switch on a setting that is already on and would not have
   // helped, it blames the slicer when the real answer is an empty card slot
-  // (#2780), and it blames a slicer that was never involved when the print was
-  // started from a file already on the printer (#1820). An unknown/absent
-  // reason keeps the original text.
+  // (#2780), it blames a slicer that was never involved when the print was
+  // started from a file already on the printer (#1820), and it blames the
+  // slicer again when the printer's own file service refused the TLS handshake
+  // and no lookup was ever attempted (#2957, surfaced by #2780). An
+  // unknown/absent reason keeps the original text.
   const no3MFVariant =
-    no3MFWarning?.reason === 'internal_storage'
-      ? 'InternalStorage'
-      : no3MFWarning?.reason === 'no_external_storage'
-        ? 'NoExternalStorage'
-        : no3MFWarning?.reason === 'internal_history'
-          ? 'InternalHistory'
-          : '';
+    no3MFWarning?.reason === 'ftps_cooloff'
+      ? 'FtpsCooloff'
+      : no3MFWarning?.reason === 'internal_storage'
+        ? 'InternalStorage'
+        : no3MFWarning?.reason === 'no_external_storage'
+          ? 'NoExternalStorage'
+          : no3MFWarning?.reason === 'internal_history'
+            ? 'InternalHistory'
+            : '';
   // Nothing to link for the empty-slot case — "put a card in" is the whole fix.
   const no3MFDocsHref =
-    no3MFWarning?.reason === 'internal_storage'
-      ? 'https://wiki.bambuddy.cool/reference/troubleshooting/#archive-card-has-only-a-name'
-      : no3MFWarning?.reason === 'no_external_storage'
-        ? null
-        : no3MFWarning?.reason === 'internal_history'
-          ? 'https://wiki.bambuddy.cool/reference/troubleshooting/#print-started-on-the-printer-has-no-thumbnail'
-          : 'https://wiki.bambuddy.cool/getting-started/#step-4-enable-store-sent-files-on-external-storage';
+    no3MFWarning?.reason === 'ftps_cooloff'
+      ? 'https://wiki.bambuddy.cool/reference/troubleshooting/#ftps-tls-failure'
+      : no3MFWarning?.reason === 'internal_storage'
+        ? 'https://wiki.bambuddy.cool/reference/troubleshooting/#archive-card-has-only-a-name'
+        : no3MFWarning?.reason === 'no_external_storage'
+          ? null
+          : no3MFWarning?.reason === 'internal_history'
+            ? 'https://wiki.bambuddy.cool/reference/troubleshooting/#print-started-on-the-printer-has-no-thumbnail'
+            : 'https://wiki.bambuddy.cool/getting-started/#step-4-enable-store-sent-files-on-external-storage';
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [showBatchTag, setShowBatchTag] = useState(false);
@@ -3720,7 +3726,8 @@ export function ArchivesPage() {
                   >
                     {t(
                       no3MFWarning?.reason === 'internal_storage' ||
-                        no3MFWarning?.reason === 'internal_history'
+                        no3MFWarning?.reason === 'internal_history' ||
+                        no3MFWarning?.reason === 'ftps_cooloff'
                         ? 'archives.no3mfBanner.docsLinkInternalStorage'
                         : 'archives.no3mfBanner.docsLink',
                     )}

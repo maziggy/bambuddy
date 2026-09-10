@@ -9375,6 +9375,11 @@ PUBLIC_API_PATTERNS = [
     # orcaslicer://) cannot send auth headers. These endpoints validate a short-lived
     # download token in the URL path instead.
     "/dl/",  # /archives/{id}/dl/{token}/{filename}, /library/files/{id}/dl/{token}/{filename}
+    # Same family, but the segment is "source-dl" — which does NOT contain "/dl/",
+    # and these patterns match by substring. Without its own entry the middleware
+    # 401s the slicer's header-less request before the route's token check runs,
+    # so "Open source 3MF in slicer" failed whenever auth was enabled (#3029).
+    "/source-dl/",  # /archives/{id}/source-dl/{token}/{filename}
     # Obico ML API fetches JPEG frames by one-shot nonce (issue #172 follow-up).
     # The nonce itself is the credential: 32-byte random, single-use, ~30s TTL.
     "/obico/cached-frame/",  # /obico/cached-frame/{nonce}

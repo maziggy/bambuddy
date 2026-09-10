@@ -671,14 +671,20 @@ async def resolve_session_max_minutes(db: AsyncSession) -> int:
 
 
 # --- Slicer download tokens ---
-# Short-lived, single-use tokens for slicer protocol handlers that can't send
-# auth headers.  Stored in AuthEphemeralToken (token_type=TokenType.SLICER_DOWNLOAD)
-# so they survive server restarts and work in multi-worker deployments (M-3).
+# Short-lived, resource-bound tokens for slicer protocol handlers and browser
+# downloads that can't send auth headers.  Stored in AuthEphemeralToken
+# (token_type=TokenType.SLICER_DOWNLOAD) so they survive server restarts and
+# work in multi-worker deployments (M-3).
+#
+# Whether redemption consumes the token is the *caller's* choice, made at
+# verify time -- see ``verify_slicer_download_token``.  The row is identical
+# either way, so a token is never "the reusable kind"; the endpoint it is
+# presented to decides.
 SLICER_TOKEN_EXPIRE_MINUTES = 5
 
 
 async def create_slicer_download_token(resource_type: str, resource_id: int) -> str:
-    """Create a short-lived, single-use download token for slicer protocol handlers."""
+    """Create a short-lived download token for slicer protocol handlers."""
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(minutes=SLICER_TOKEN_EXPIRE_MINUTES)
     token = secrets.token_urlsafe(24)
@@ -703,30 +709,49 @@ async def create_slicer_download_token(resource_type: str, resource_id: int) -> 
     return token
 
 
-async def verify_slicer_download_token(token: str, resource_type: str, resource_id: int) -> bool:
-    """Verify and atomically consume a slicer download token.
+async def verify_slicer_download_token(
+    token: str,
+    resource_type: str,
+    resource_id: int,
+    *,
+    single_use: bool = True,
+) -> bool:
+    """Verify a slicer download token, consuming it unless ``single_use`` is False.
 
     Returns True only if the token is valid, unexpired, and bound to the given resource.
-    DELETE...RETURNING ensures the token is single-use even under concurrent requests.
 
-    M-NEW-1 fix: nonce (resource key) is included in the WHERE clause so the DELETE
+    With ``single_use=True`` (the default) redemption is a DELETE...RETURNING, which
+    keeps the token one-shot even under concurrent requests.  Use it wherever the
+    thing being downloaded is itself consumed -- the prepared printer bundle is
+    deleted once streamed, so a second redemption could only ever 404.
+
+    With ``single_use=False`` the token stays valid for the rest of its five-minute
+    TTL.  Use it for the URLs handed to an external slicer over a protocol handler:
+    we do not control that process, and one-shot redemption breaks the moment
+    anything fetches the URL twice -- a retry after a transient failure (Bambu
+    Studio retries three times), a resumed transfer, a redirect follow, an
+    on-access scanner.  The first fetch would win and the slicer would be left
+    with a 403 (#3029).  Resource binding and expiry are unchanged; only the
+    number of redemptions inside the TTL differs.
+
+    M-NEW-1 fix: nonce (resource key) is included in the WHERE clause so redemption
     only succeeds when the token is presented to the *correct* resource endpoint.
     Previously the token was consumed (committed) even when stored_key != expected_key,
     permanently invalidating it while returning False to the caller.
     """
     expected_key = f"{resource_type}:{resource_id}"
     now = datetime.now(timezone.utc)
+    bound = (
+        AuthEphemeralToken.token == token,
+        AuthEphemeralToken.token_type == TokenType.SLICER_DOWNLOAD,
+        AuthEphemeralToken.nonce == expected_key,
+        AuthEphemeralToken.expires_at > now,
+    )
     async with async_session() as db:
-        result = await db.execute(
-            delete(AuthEphemeralToken)
-            .where(
-                AuthEphemeralToken.token == token,
-                AuthEphemeralToken.token_type == TokenType.SLICER_DOWNLOAD,
-                AuthEphemeralToken.nonce == expected_key,
-                AuthEphemeralToken.expires_at > now,
-            )
-            .returning(AuthEphemeralToken.id)
-        )
+        if not single_use:
+            result = await db.execute(select(AuthEphemeralToken.id).where(*bound))
+            return result.scalar_one_or_none() is not None
+        result = await db.execute(delete(AuthEphemeralToken).where(*bound).returning(AuthEphemeralToken.id))
         if result.one_or_none() is None:
             return False
         await db.commit()
@@ -738,6 +763,11 @@ async def verify_slicer_download_token(token: str, resource_type: str, resource_
 # tags (these cannot send Authorization headers).  Unlike slicer tokens they are
 # NOT single-use — streams reconnect on errors.  Stored in AuthEphemeralToken
 # (token_type="camera_stream") for multi-worker compatibility (M-3).
+#
+# Anonymous by design: the row records no username, so a route guarded by this
+# token knows only "some camera viewer", never which one.  That is fine for a
+# live stream, which is per-printer and not per-user, and is precisely why
+# non-camera media moved to the identified media token in #3025.
 CAMERA_STREAM_TOKEN_EXPIRE_MINUTES = 60
 
 
@@ -891,6 +921,89 @@ async def verify_overlay_token(token: str) -> bool:
 
         record = await verify_long_lived(db, token, scope="overlay")
         return record is not None
+
+
+# --- Media tokens (#3025) ---
+# Browsers cannot attach ``Authorization`` headers to ``<img src>`` / ``<video
+# src>``, so image routes need a credential that fits in a query parameter.
+# Until #3025 they borrowed the *camera stream* token for that, which had two
+# costs: minting one requires ``camera:view``, so a user could not see a
+# library thumbnail without also being handed the live camera pointed at the
+# operator's room; and a camera-stream token records no principal at all, so
+# the thirteen non-camera routes had no identity to check ownership against
+# and returned any row to any holder.
+#
+# A media token fixes both by following the *websocket* token instead: it
+# stores the username, so ``require_media_token_*`` can resolve the real user
+# and apply the same per-row visibility gate the header-authenticated sibling
+# routes already use. Like the websocket token it is not consumed (a page of
+# thumbnails is many requests) and it outlives a password change by up to its
+# TTL -- acceptable for read-only media at 60 minutes, and identical to the
+# guarantee ``/api/v1/ws`` has made since GHSA-r2qv.
+MEDIA_TOKEN_EXPIRE_MINUTES = 60
+
+
+async def create_media_token(username: str | None) -> str:
+    """Create a reusable token for media (thumbnail / preview / icon) routes.
+
+    Records the issuing principal in ``username`` exactly as
+    :func:`create_websocket_token` does. API-keyed callers reach this with
+    ``None`` and get the empty string, which :func:`verify_media_token`
+    reports back and the dependencies then reject while auth is enabled --
+    an API key has no per-row ownership identity, and it does not need one
+    here because the media routes accept ``X-API-Key`` directly.
+    """
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=MEDIA_TOKEN_EXPIRE_MINUTES)
+    token = secrets.token_urlsafe(24)
+    async with async_session() as db:
+        # Prune expired tokens opportunistically (same shape as camera/websocket).
+        await db.execute(
+            delete(AuthEphemeralToken).where(
+                AuthEphemeralToken.token_type == "media",
+                AuthEphemeralToken.expires_at < now,
+            )
+        )
+        db.add(
+            AuthEphemeralToken(
+                token=token,
+                token_type="media",
+                username=username or "",
+                expires_at=expires_at,
+            )
+        )
+        await db.commit()
+    return token
+
+
+async def verify_media_token(token: str) -> str | None:
+    """Verify a media token, returning the username it was minted for.
+
+    Returns ``""`` for a token minted by an API key (no per-row identity) and
+    ``None`` when the token is missing / expired / unknown. Not consumed --
+    one token serves every image on a page.
+
+    Deliberately narrower than :func:`verify_camera_stream_token`: no
+    long-lived scope passes here. ``camera_stream`` / ``camwall`` / ``overlay``
+    tokens are handed to kiosks, walls and Home Assistant to display *video*,
+    and are anonymous by construction, so accepting one would reinstate the
+    unowned read this token type exists to close (#3025). The inverse also
+    holds -- see :func:`verify_camwall_token`, which refuses a camera-stream
+    token for the same reason in the other direction.
+    """
+    now = datetime.now(timezone.utc)
+    async with async_session() as db:
+        result = await db.execute(
+            select(AuthEphemeralToken).where(
+                AuthEphemeralToken.token == token,
+                AuthEphemeralToken.token_type == "media",
+                AuthEphemeralToken.expires_at > now,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        return row.username or ""
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -2037,6 +2150,12 @@ def require_camera_stream_token_if_auth_enabled():
     Used for camera stream/snapshot endpoints that are loaded via <img> tags
     which cannot send Authorization headers. The frontend obtains a token from
     POST /printers/camera/stream-token and appends it as ?token=xxx.
+
+    Camera routes only. Non-camera media (thumbnails, plate previews,
+    timelapses, cover images, icons) takes ``require_media_token_*``: minting a
+    camera-stream token costs ``camera:view``, which no thumbnail should
+    require, and the token names no principal, so a route guarded by it cannot
+    tell one user's rows from another's (#3025).
     """
 
     async def checker(token: str | None = None) -> None:
@@ -2228,5 +2347,137 @@ def require_ownership_permission(
                 detail="Authentication required",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+
+    return checker
+
+
+async def _user_from_media_token(token: str) -> User:
+    """Resolve the ``User`` a media token was minted for, or raise 401 (#3025).
+
+    Fail-closed on every miss: an unknown/expired token, a token minted by an
+    API key (empty username -- see :func:`create_media_token`), a username no
+    longer in the table, and a deactivated account all raise rather than fall
+    through to an anonymous read. The 401 detail names the mint endpoint so a
+    stale tab knows how to recover, and the frontend's error handler refreshes
+    the token on the first failed <img> load.
+    """
+    unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Valid media token required. Obtain one from POST /api/v1/auth/media-token",
+    )
+    username = await verify_media_token(token)
+    if not username:
+        raise unauthorized
+    async with async_session() as db:
+        user = await get_user_by_username(db, username)
+    if user is None or not user.is_active:
+        raise unauthorized
+    return user
+
+
+def require_media_token_permission(*permissions: str | Permission):
+    """Media-route dependency for resources with no per-row ownership (#3025).
+
+    Accepts either a ``?token=`` media token (the ``<img>`` case) or the
+    ordinary ``Authorization`` / ``X-API-Key`` headers, so a ``fetch()`` or an
+    API-keyed integration authenticates here exactly as it does on the
+    resource's sibling routes. Requires ALL of ``permissions``, matching
+    :func:`require_permission_if_auth_enabled`.
+
+    Returns the resolved ``User``, or ``None`` when auth is disabled or the
+    caller is an API key -- the same ``User | None`` contract the header-only
+    dependency has, so handlers need no new branch.
+    """
+    perm_strings = [p.value if isinstance(p, Permission) else p for p in permissions]
+    header_checker = require_permission_if_auth_enabled(*permissions)
+
+    async def checker(
+        token: str | None = None,
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+        x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    ) -> User | None:
+        async with async_session() as db:
+            if not await is_auth_enabled(db):
+                return None  # Auth disabled, allow access
+        if token:
+            user = await _user_from_media_token(token)
+            missing = [p for p in perm_strings if not user.has_permission(p)]
+            if missing:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Missing required permissions: {', '.join(missing)}",
+                )
+            return user
+        return await header_checker(credentials=credentials, x_api_key=x_api_key)
+
+    return checker
+
+
+def require_media_token_ownership(
+    all_permission: str | Permission,
+    own_permission: str | Permission,
+):
+    """Media-route dependency for ownership-scoped resources (#3025).
+
+    The ownership counterpart of :func:`require_media_token_permission`, and
+    the reason media tokens carry a principal at all: it returns the same
+    ``(user, can_read_all)`` pair as :func:`require_ownership_permission`, so a
+    thumbnail route can hand it straight to the ``_ensure_*_visible`` gate its
+    header-authenticated siblings already use instead of serving any row to any
+    token holder.
+
+    Header callers are delegated to :func:`require_ownership_permission`
+    unchanged -- including its API-key rule, where a key satisfying the ALL
+    permission's scope flag gets ``can_read_all=True`` because keys have no
+    per-row identity.
+    """
+    all_perm = all_permission.value if isinstance(all_permission, Permission) else all_permission
+    own_perm = own_permission.value if isinstance(own_permission, Permission) else own_permission
+    header_checker = require_ownership_permission(all_permission, own_permission)
+
+    async def checker(
+        token: str | None = None,
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+        x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    ) -> tuple[User | None, bool]:
+        async with async_session() as db:
+            if not await is_auth_enabled(db):
+                return None, True  # Auth disabled, allow all
+        if token:
+            user = await _user_from_media_token(token)
+            if user.has_permission(all_perm):
+                return user, True
+            if user.has_permission(own_perm):
+                return user, False
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing permission: {own_perm} or {all_perm}",
+            )
+        return await header_checker(credentials=credentials, x_api_key=x_api_key)
+
+    return checker
+
+
+def require_media_token_printer_permission(permission: str | Permission):
+    """Media-route dependency for per-printer resources (#3025).
+
+    :func:`require_media_token_permission` plus the API key's per-printer
+    allowlist, mirroring :func:`require_printer_permission_if_auth_enabled`.
+    Only the header path can present an API key -- a media token resolves to a
+    real user or to nothing -- so the allowlist check applies there alone.
+    """
+    media_checker = require_media_token_permission(permission)
+
+    async def checker(
+        printer_id: int,
+        token: str | None = None,
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+        x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    ) -> User | None:
+        user = await media_checker(token=token, credentials=credentials, x_api_key=x_api_key)
+        api_key = await validated_api_key_from_request(credentials, x_api_key)
+        if api_key is not None:
+            check_printer_access(api_key, printer_id)
+        return user
 
     return checker

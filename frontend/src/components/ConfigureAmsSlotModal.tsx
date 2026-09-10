@@ -115,20 +115,38 @@ function kProfileOptionValue(profile: KProfile): string {
 }
 
 /**
+ * Does the printer file its calibration table per hotend?
+ *
+ * It is not a property of the machine but of the table it sent. When the
+ * slot's own hotend appears in it, an index means "entry N of *that* hotend's
+ * table" and the tagging is load-bearing. When the hotend appears nowhere, the
+ * tagging says nothing about this slot and scoping by it only hides profiles
+ * the slot really does use.
+ */
+function tableNamesThisHotend(profiles: KProfile[], extruderId: number | undefined): boolean {
+  if (extruderId === undefined) return false;
+  return profiles.some(p => (p.extruder_id ?? 0) === extruderId);
+}
+
+/**
  * The profile a slot's `cali_idx` points at.
  *
- * An index is only meaningful together with a nozzle: the printer numbers its
- * calibration table per hotend, so entry 16 exists on both and means a
- * different profile on each. On the maintainer's H2C, index 16 is the left
- * hotend's black PLA at K=0.018 and index 15 is the right's at K=0.020.
- * Matching on the index alone returns whichever the printer listed first.
+ * Scoped to the slot's own hotend where the table names it: on the
+ * maintainer's H2C, index 16 is the left hotend's black PLA at K=0.018 and
+ * index 15 is the right's at K=0.020, so a right-hand slot bound to 16 must
+ * come up empty rather than follow the index into the left's table.
+ *
+ * Where the table does not name the hotend, the printer is filing one profile
+ * per filament instead — an X2D's second AMS points at the same entries as its
+ * first — and demanding a match found nothing at all, leaving every slot on
+ * that AMS unconfigured with no error (#3044). There the index stands alone.
  */
 function findProfileByCaliIdx(
   profiles: KProfile[],
   caliIdx: number,
   extruderId: number | undefined
 ): KProfile | undefined {
-  if (extruderId !== undefined) {
+  if (tableNamesThisHotend(profiles, extruderId)) {
     return profiles.find(p => p.slot_id === caliIdx && (p.extruder_id ?? 0) === extruderId);
   }
   return profiles.find(p => p.slot_id === caliIdx);
@@ -469,16 +487,40 @@ export function ConfigureAmsSlotModal({
           || '';
         settingId = '';
       } else if (isOrca) {
-        // Orca Cloud presets have a UUID setting_id that Bambu printers can't
-        // resolve; treat them like local imports — derive a generic tray_info
-        // _idx from the parsed material, leave settingId empty so the slicer
-        // doesn't get a foreign cloud ID it can't look up.
-        const material = (MATERIAL_TYPES.includes(parsedMat) ? parsedMat : parsed.material || '').toUpperCase();
-        trayInfoIdx = GENERIC_IDS[material]
-          || GENERIC_IDS[material.replace(/[-\s]?CF$/, '')]
-          || GENERIC_IDS[material.replace(/\+$/, '')]
-          || GENERIC_IDS[material.split(/[-\s]/)[0]]
-          || '';
+        // An Orca Cloud profile's setting_id is a UUID the printer cannot hold,
+        // so this used to skip straight to a generic — which meant every Orca
+        // custom filament reached the slicer as "Generic <material>", without
+        // ever asking whether the profile had a usable id (#3003).
+        //
+        // It usually does. The profile's slicer JSON carries its own
+        // filament_id, the same 8-character "P…" the printer stores for a
+        // Bambu custom preset, and OrcaProfileDetail deliberately exposes that
+        // JSON under `setting` in the shape SlicerSettingDetail uses. So the
+        // lookup is the same one the Bambu Cloud branch does below.
+        //
+        // settingId stays empty either way: it is the UUID that is foreign to
+        // the slicer, not the filament id.
+        let orcaFilamentId = '';
+        try {
+          const orcaDetail = await api.orcaCloudGetProfile(orcaSettingId);
+          const fromProfile = orcaDetail.setting?.filament_id;
+          if (typeof fromProfile === 'string' && fromProfile) {
+            orcaFilamentId = fromProfile;
+          }
+        } catch (e) {
+          console.warn('Failed to fetch Orca Cloud profile for filament_id:', e);
+        }
+        trayInfoIdx = orcaFilamentId;
+        if (!trayInfoIdx) {
+          // No id of its own — fall back to the generic for the material, the
+          // same last resort every other source ends at.
+          const material = (MATERIAL_TYPES.includes(parsedMat) ? parsedMat : parsed.material || '').toUpperCase();
+          trayInfoIdx = GENERIC_IDS[material]
+            || GENERIC_IDS[material.replace(/[-\s]?CF$/, '')]
+            || GENERIC_IDS[material.replace(/\+$/, '')]
+            || GENERIC_IDS[material.split(/[-\s]/)[0]]
+            || '';
+        }
         settingId = '';
       } else if (isBuiltin) {
         // Built-in presets use the filament_id directly as tray_info_idx
@@ -495,12 +537,37 @@ export function ConfigureAmsSlotModal({
         if (!selectedPresetId.startsWith('GFS')) {
           try {
             const detail = await api.getCloudSettingDetail(selectedPresetId);
-            if (detail.filament_id) {
-              trayInfoIdx = detail.filament_id;
+            // The preset's own filament_id is what puts it in the slot as
+            // itself — the printer stores that id and the slicer matches its
+            // presets against it. Bambu Cloud normally returns it on the
+            // envelope; the `setting` fallback covers a response that carries
+            // it in the preset JSON instead. A preset created in Orca has none
+            // in either place (#1053), and legitimately falls through.
+            const nested = detail.setting?.filament_id;
+            const ownFilamentId = detail.filament_id || (typeof nested === 'string' ? nested : '');
+            if (ownFilamentId) {
+              trayInfoIdx = ownFilamentId;
             }
           } catch (e) {
             console.warn('Failed to fetch preset detail for filament_id:', e);
           }
+        }
+
+        // Last resort: neither place had one, so trayInfoIdx is still the
+        // cloud setting_id — and sending one is worse than sending nothing
+        // (#3003). tray_info_idx is 8 characters on the printer; an
+        // 18-character PFUS is stored truncated and acknowledged as a success,
+        // so the slot ends up holding an id that resolves nowhere — the slicer
+        // shows "Generic", and the calibration table, keyed by this field,
+        // loses the slot too. Blank means the backend picks the slot's
+        // existing filament id or a generic for the material; settingId still
+        // carries the preset.
+        if (/^(PFUS|PFSP|PFCN)/.test(trayInfoIdx)) {
+          console.warn(
+            `Cloud preset ${selectedPresetId} carries no filament_id in either place; ` +
+            'sending no tray_info_idx so the printer keeps a resolvable one.'
+          );
+          trayInfoIdx = '';
         }
       }
 
@@ -943,13 +1010,18 @@ export function ConfigureAmsSlotModal({
       return false;
     });
 
-    // Scope to the slot's own nozzle when it is known: a K-profile calibrated on
-    // the other hotend is not a match for this slot, and offering it as one is
-    // how the wrong K got bound. Those profiles are still reachable below under
-    // "Other", where the option label names the hotend.
-    const onThisNozzle = slotInfo.extruderId === undefined
-      ? filtered
-      : filtered.filter(p => (p.extruder_id ?? 0) === slotInfo.extruderId);
+    // Scope to the slot's own nozzle where the table names it: a K-profile
+    // calibrated on the other hotend is not a match for this slot, and offering
+    // it as one is how the wrong K got bound. Those profiles are still
+    // reachable below under "Other", where the option label names the hotend.
+    //
+    // Where the table names no profile on this hotend at all, scoping emptied
+    // the list instead — the X2D case in #3044, where the second AMS's slots
+    // point at the first's entries — so the tagging is ignored rather than
+    // enforced.
+    const onThisNozzle = tableNamesThisHotend(kprofilesData.profiles, slotInfo.extruderId)
+      ? filtered.filter(p => (p.extruder_id ?? 0) === slotInfo.extruderId)
+      : filtered;
 
     // Deduplicate genuine duplicates — same nozzle, same name, same K.
     const seen = new Map<string, KProfile>();
@@ -1325,14 +1397,14 @@ export function ConfigureAmsSlotModal({
                         <option value="">{t('configureAmsSlot.noKProfile')}</option>
                         {matchingKProfiles.map((profile) => (
                           <option key={kProfileOptionValue(profile)} value={kProfileOptionValue(profile)}>
-                            {profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}{kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
+                            {profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
                           </option>
                         ))}
                         {otherKProfiles.length > 0 && (
                           <optgroup label={t('configureAmsSlot.otherKProfiles')}>
                             {otherKProfiles.map((profile) => (
                               <option key={kProfileOptionValue(profile)} value={kProfileOptionValue(profile)}>
-                                {profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}{kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}{kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
+                                {profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
                               </option>
                             ))}
                           </optgroup>
@@ -1577,7 +1649,7 @@ export function ConfigureAmsSlotModal({
                         <optgroup label={t('configureAmsSlot.otherKProfiles')}>
                           {otherKProfiles.map((profile) => (
                             <option key={kProfileOptionValue(profile)} value={kProfileOptionValue(profile)}>
-                              {profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}{kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}{kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
+                              {profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
                             </option>
                           ))}
                         </optgroup>

@@ -12,6 +12,12 @@
  * screen, where no slicer was involved at all and both of the wordings above
  * describe a step the operator never took.
  *
+ * And a fourth, which is why this file grew again: a printer whose file service
+ * refused the TLS handshake, so no lookup ever ran. #2957 recorded that cause
+ * and nothing surfaced it, so those installs fell to the generic wording and
+ * were told to switch on a setting that was already on, about a file they could
+ * see sitting on the stick.
+ *
  * So these assert the wording actually shown, not just that a banner rendered.
  */
 
@@ -92,6 +98,21 @@ describe('ArchivesPage no-3MF banner', () => {
     expect(screen.queryByText('Why this happens')).not.toBeInTheDocument();
   });
 
+  it('reports a refused handshake as the printer, not as the slicer', async () => {
+    mockWarning({ has_fallback: true, reason: 'ftps_cooloff' });
+
+    render(<ArchivesPage />);
+
+    expect(
+      await screen.findByText(/refused the file connection/i),
+    ).toBeInTheDocument();
+    // The whole point: nothing here may read as a slicer setting the user
+    // should go and change, because there is nothing they can change.
+    expect(screen.queryByText('See install step 4')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Store sent files on external storage/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Why this happens')).toBeInTheDocument();
+  });
+
   it('shows nothing at all when no print fell back', async () => {
     mockWarning({ has_fallback: false, reason: null });
 
@@ -107,7 +128,7 @@ describe('ArchivesPage no-3MF banner', () => {
     // The variant suffix is built by string concatenation, so a typo in one
     // locale key surfaces as a raw "archives.no3mfBanner.titleX" on screen
     // instead of failing anything.
-    for (const reason of [null, 'internal_storage', 'no_external_storage', 'internal_history']) {
+    for (const reason of [null, 'internal_storage', 'no_external_storage', 'internal_history', 'ftps_cooloff']) {
       localStorage.clear();
       mockWarning({ has_fallback: true, reason });
 

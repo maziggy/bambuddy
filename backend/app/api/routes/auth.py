@@ -25,12 +25,14 @@ from backend.app.core.auth import (
     authenticate_user,
     authenticate_user_by_email,
     create_access_token,
+    create_media_token,
     create_websocket_token,
     get_current_active_user,
     get_password_hash,
     get_user_by_email,
     get_user_by_username,
     is_jti_revoked,
+    require_auth_if_enabled,
     resolve_apikey_owner,
     resolve_session_max_minutes,
     revoke_jti,
@@ -657,6 +659,30 @@ async def mint_websocket_token(
     """
     username = current_user.username if current_user is not None else None
     return {"token": await create_websocket_token(username)}
+
+
+@router.post("/media-token")
+async def mint_media_token(
+    current_user: User | None = Depends(require_auth_if_enabled),
+):
+    """Mint a short-lived token for ``<img>`` / ``<video>`` media routes (#3025).
+
+    Thumbnails, plate previews, timelapses, cover images and sidebar icons are
+    loaded by the browser as element ``src`` URLs, which cannot carry an
+    ``Authorization`` header. Those routes used to accept the *camera stream*
+    token instead, which made ``camera:view`` a prerequisite for seeing a
+    library thumbnail -- on a home install, handing someone the live feed of
+    the room the printer is in just so their own files render.
+
+    So this mints behind plain authentication: any signed-in user may ask, and
+    what the token can actually reach is decided per request by the same
+    permission and ownership rules as the resource's other routes. It is not a
+    camera credential and does not open the camera routes.
+
+    Returns ``{"token": <opaque string>}``, valid for 60 minutes.
+    """
+    username = current_user.username if current_user is not None else None
+    return {"token": await create_media_token(username)}
 
 
 @router.get("/me", response_model=UserResponse)

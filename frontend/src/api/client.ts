@@ -64,9 +64,21 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
-// Stream token for image/video URLs loaded via <img>/<video> tags
-// (these can't send Authorization headers, so a query param token is used)
+// Query-param tokens for <img>/<video> src URLs, which can't carry an
+// Authorization header. There are two, and which one a URL takes is decided
+// by what the URL points at, not by convenience:
+//
+//   streamToken — live camera only. Minting one costs camera:view.
+//   mediaToken  — thumbnails, previews, timelapses, covers, icons. Minted by
+//                 any signed-in user and carries their identity, so those
+//                 routes can apply the same ownership rules as everywhere else.
+//
+// Before #3025 the stream token served both, which meant a user could not see
+// a library thumbnail without also being granted the live feed of the room the
+// printer sits in — and, because a stream token names nobody, those routes had
+// no identity to scope by and served any row to any holder.
 let streamToken: string | null = null;
+let mediaToken: string | null = null;
 
 export function setStreamToken(token: string | null) {
   streamToken = token;
@@ -76,11 +88,26 @@ export function getStreamToken(): string | null {
   return streamToken;
 }
 
-/** Append the stream token to a URL if available (for <img>/<video> src). */
+export function setMediaToken(token: string | null) {
+  mediaToken = token;
+}
+
+export function getMediaToken(): string | null {
+  return mediaToken;
+}
+
+/** Append the camera stream token to a URL if available (live camera only). */
 export function withStreamToken(url: string): string {
   if (!streamToken) return url;
   const sep = url.includes('?') ? '&' : '?';
   return `${url}${sep}token=${encodeURIComponent(streamToken)}`;
+}
+
+/** Append the media token to a URL if available (for <img>/<video> src). */
+export function withMediaToken(url: string): string {
+  if (!mediaToken) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}token=${encodeURIComponent(mediaToken)}`;
 }
 
 function parseContentDispositionFilename(header: string | null): string | null {
@@ -4890,7 +4917,7 @@ export const api = {
       is_multi_plate: boolean;
     }>(`/printers/${printerId}/files/plates?path=${encodeURIComponent(path)}`),
   getPrinterFilePlateThumbnail: (printerId: number, plateIndex: number, path: string) =>
-    withStreamToken(`${API_BASE}/printers/${printerId}/files/plate-thumbnail/${plateIndex}?path=${encodeURIComponent(path)}`),
+    withMediaToken(`${API_BASE}/printers/${printerId}/files/plate-thumbnail/${plateIndex}?path=${encodeURIComponent(path)}`),
   downloadPrinterFilesAsZip: async (
     printerId: number,
     paths: string[],
@@ -5024,7 +5051,7 @@ export const api = {
   getNo3MFWarning: () =>
     request<{
       has_fallback: boolean;
-      reason: 'internal_storage' | 'no_external_storage' | 'internal_history' | null;
+      reason: 'ftps_cooloff' | 'internal_storage' | 'no_external_storage' | 'internal_history' | null;
     }>(
       '/archives/no-3mf-warning',
     ),
@@ -5193,9 +5220,9 @@ export const api = {
     request<{ updated: number; errors: Array<{ id: number; error: string }> }>('/archives/backfill-hashes', {
       method: 'POST',
     }),
-  getArchiveThumbnail: (id: number) => withStreamToken(`${API_BASE}/archives/${id}/thumbnail?v=${Date.now()}`),
+  getArchiveThumbnail: (id: number) => withMediaToken(`${API_BASE}/archives/${id}/thumbnail?v=${Date.now()}`),
   getArchivePlateThumbnail: (id: number, plateIndex: number) =>
-    withStreamToken(`${API_BASE}/archives/${id}/plate-thumbnail/${plateIndex}`),
+    withMediaToken(`${API_BASE}/archives/${id}/plate-thumbnail/${plateIndex}`),
   getArchiveDownload: (id: number) => `${API_BASE}/archives/${id}/download`,
   downloadArchive: async (id: number, filename?: string): Promise<void> => {
     const headers: Record<string, string> = {};
@@ -5220,8 +5247,8 @@ export const api = {
     window.URL.revokeObjectURL(url);
   },
   getArchiveGcode: (id: number) => `${API_BASE}/archives/${id}/gcode`,
-  getArchivePlatePreview: (id: number) => withStreamToken(`${API_BASE}/archives/${id}/plate-preview`),
-  getArchiveTimelapse: (id: number) => withStreamToken(`${API_BASE}/archives/${id}/timelapse?v=${Date.now()}`),
+  getArchivePlatePreview: (id: number) => withMediaToken(`${API_BASE}/archives/${id}/plate-preview`),
+  getArchiveTimelapse: (id: number) => withMediaToken(`${API_BASE}/archives/${id}/timelapse?v=${Date.now()}`),
   downloadArchiveTimelapse: async (id: number, filename: string): Promise<void> => {
     const prepared = await request<{ token: string; filename: string }>(
       `/archives/${id}/media-download-token`,
@@ -5329,7 +5356,7 @@ export const api = {
   },
   // Photos
   getArchivePhotoUrl: (archiveId: number, filename: string) =>
-    withStreamToken(`${API_BASE}/archives/${archiveId}/photos/${encodeURIComponent(filename)}`),
+    withMediaToken(`${API_BASE}/archives/${archiveId}/photos/${encodeURIComponent(filename)}`),
   uploadArchivePhoto: async (archiveId: number, file: File): Promise<{ status: string; filename: string; photos: string[] }> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -5460,7 +5487,7 @@ export const api = {
 
   // QR Code
   getArchiveQRCodeUrl: (archiveId: number, size = 200) =>
-    withStreamToken(`${API_BASE}/archives/${archiveId}/qrcode?size=${size}`),
+    withMediaToken(`${API_BASE}/archives/${archiveId}/qrcode?size=${size}`),
   getArchiveCapabilities: (id: number) =>
     request<{
       has_model: boolean;
@@ -5507,7 +5534,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getArchiveProjectImageUrl: (archiveId: number, imagePath: string) =>
-    withStreamToken(`${API_BASE}/archives/${archiveId}/project-image/${encodeURIComponent(imagePath)}`),
+    withMediaToken(`${API_BASE}/archives/${archiveId}/project-image/${encodeURIComponent(imagePath)}`),
   getArchiveForSlicer: (id: number, filename: string) => {
     const safe = filename.replace(/[/\\?#]/g, '_');
     return `${API_BASE}/archives/${id}/file/${encodeURIComponent(safe.endsWith('.3mf') ? safe : safe + '.3mf')}`;
@@ -5620,7 +5647,7 @@ export const api = {
     if (params?.sortDir) searchParams.set('sort_dir', params.sortDir);
     return request<PrintLogResponse>(`/print-log/?${searchParams}`);
   },
-  getPrintLogThumbnail: (id: number) => withStreamToken(`${API_BASE}/print-log/${id}/thumbnail`),
+  getPrintLogThumbnail: (id: number) => withMediaToken(`${API_BASE}/print-log/${id}/thumbnail`),
   clearPrintLog: () =>
     request<{ deleted: number }>('/print-log/', { method: 'DELETE' }),
   deletePrintLogEntry: (id: number) =>
@@ -5664,6 +5691,20 @@ export const api = {
       chamber_temp_presets?: string;
       fan_speed_presets?: string;
     }>('/settings/ui-preferences'),
+  // Install configuration the app shell needs, for any signed-in user. Separate
+  // from getUiPreferences: that endpoint is public because its fields are
+  // defaults shipped with the app, while these describe how this deployment is
+  // configured. Neither requires settings:read -- which is the point, since a
+  // non-admin reading GET /settings gets a 403 and every gate that consults it
+  // silently takes its fallback (#3023). Keep in sync with _UI_FLAG_FIELDS in
+  // backend/app/api/routes/settings.py.
+  getUiFlags: () =>
+    request<{
+      billing_enabled?: boolean;
+      user_notifications_enabled?: boolean;
+      currency?: string;
+      check_updates?: boolean;
+    }>('/settings/ui-flags'),
   updateSettings: (data: AppSettingsUpdate) =>
     request<AppSettings>('/settings/', {
       method: 'PUT',
@@ -6773,6 +6814,12 @@ export const api = {
   getCameraStreamToken: () =>
     request<{ token: string }>('/printers/camera/stream-token', { method: 'POST' }),
 
+  // Media token (#3025) — the credential for thumbnails, plate previews,
+  // timelapses, cover images and link icons. Minted behind plain auth rather
+  // than camera:view, and identified, so those routes gate on the resource's
+  // own permission and ownership instead of on the camera.
+  getMediaToken: () => request<{ token: string }>('/auth/media-token', { method: 'POST' }),
+
   // WebSocket auth (GHSA-r2qv follow-up) — mint a short-lived token for
   // the /ws connection. Browsers can't attach Authorization headers to a
   // WebSocket handshake, so the token rides in the ?token= query param.
@@ -6933,7 +6980,7 @@ export const api = {
   },
   deleteExternalLinkIcon: (id: number) =>
     request<ExternalLink>(`/external-links/${id}/icon`, { method: 'DELETE' }),
-  getExternalLinkIconUrl: (id: number) => withStreamToken(`${API_BASE}/external-links/${id}/icon`),
+  getExternalLinkIconUrl: (id: number) => withMediaToken(`${API_BASE}/external-links/${id}/icon`),
 
   // Projects
   getProjects: (status?: string) => {
@@ -7010,8 +7057,16 @@ export const api = {
   // #1155: Cover image
   // Browsers can't attach `Authorization: Bearer ...` to `<img src>`, so we
   // append the stream-token query string the same way archive thumbnails do.
-  getProjectCoverImageUrl: (projectId: number) =>
-    withStreamToken(`${API_BASE}/projects/${projectId}/cover-image`),
+  // `version` cache-busts the browser copy after a re-upload. It has to go on
+  // before the token does: callers used to append their own `?v=` to the
+  // returned URL, which already ended in `?token=…`, so the second `?` landed
+  // inside the token value and the image 401'd whenever auth was enabled.
+  getProjectCoverImageUrl: (projectId: number, version?: string | number) =>
+    withMediaToken(
+      `${API_BASE}/projects/${projectId}/cover-image${
+        version === undefined ? '' : `?v=${encodeURIComponent(String(version))}`
+      }`
+    ),
   uploadProjectCoverImage: async (
     projectId: number,
     file: File
@@ -7395,9 +7450,9 @@ export const api = {
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
   },
-  getLibraryFileThumbnailUrl: (id: number) => withStreamToken(`${API_BASE}/library/files/${id}/thumbnail`),
+  getLibraryFileThumbnailUrl: (id: number) => withMediaToken(`${API_BASE}/library/files/${id}/thumbnail`),
   getLibraryFilePlateThumbnail: (id: number, plateIndex: number) =>
-    withStreamToken(`${API_BASE}/library/files/${id}/plate-thumbnail/${plateIndex}`),
+    withMediaToken(`${API_BASE}/library/files/${id}/plate-thumbnail/${plateIndex}`),
   getLibraryFileGcodeUrl: (id: number) => `${API_BASE}/library/files/${id}/gcode`,
   moveLibraryFiles: (fileIds: number[], folderId: number | null) =>
     request<{ status: string; moved: number }>('/library/files/move', {

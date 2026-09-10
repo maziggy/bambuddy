@@ -495,3 +495,139 @@ class TestPreviewRetriesUnparsableGcode:
         assert len(stub.calls) == 2
         # A failed retry must not be cached — the sidecar may be upgraded.
         assert not slice_preview._preview_cache
+
+
+class _RecordingService:
+    """Succeeds every slice, recording the bytes it was handed."""
+
+    def __init__(self, response_bytes: bytes) -> None:
+        self.response_bytes = response_bytes
+        self.calls: list[bytes] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def slice_without_profiles(self, **kw):
+        self.calls.append(kw["model_bytes"])
+        return SliceResult(
+            content=self.response_bytes,
+            print_time_seconds=0,
+            filament_used_g=0.0,
+            filament_used_mm=0.0,
+        )
+
+
+class TestPreviewSanitisesSentinels:
+    """The preview slices on the file's own embedded settings, so there is no
+    ``--load-settings`` pass to supply a replacement for a field the CLI's
+    range validator has already rejected. Until #3030 this path handed the
+    sidecar raw bytes, so a MakerWorld 3MF carrying Bambu's inherit markers
+    failed before producing any slice_info and the modal fell back to its
+    painted-face heuristic for a file the slicer could have answered exactly.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_slicer_is_handed_sanitised_bytes(self):
+        original = _make_project_3mf(
+            {
+                "wall_filament": "0",
+                "raft_first_layer_expansion": "-1",
+                "layer_height": "0.2",
+            }
+        )
+        body = _make_sliced_3mf(plate_id=1, filaments=[{"id": "1", "type": "PLA", "color": "#000"}])
+        stub = _RecordingService(body)
+        with patch.object(slice_preview, "SlicerApiService", lambda **kw: stub):
+            result = await get_preview_filaments(
+                kind="library_file",
+                source_id=1,
+                plate_id=1,
+                file_bytes=original,
+                file_name="x.3mf",
+                api_url="http://sidecar",
+            )
+        assert result is not None
+        sent = _settings_of(stub.calls[0])
+        assert "wall_filament" not in sent
+        assert "raft_first_layer_expansion" not in sent
+        # Everything the user actually configured still reaches the slicer.
+        assert sent["layer_height"] == "0.2"
+
+    @pytest.mark.asyncio
+    async def test_a_file_without_sentinels_is_forwarded_untouched(self):
+        original = _make_project_3mf({"layer_height": "0.2", "wall_filament": "2"})
+        body = _make_sliced_3mf(plate_id=1, filaments=[{"id": "1", "type": "PLA", "color": "#000"}])
+        stub = _RecordingService(body)
+        with patch.object(slice_preview, "SlicerApiService", lambda **kw: stub):
+            await get_preview_filaments(
+                kind="library_file",
+                source_id=1,
+                plate_id=1,
+                file_bytes=original,
+                file_name="x.3mf",
+                api_url="http://sidecar",
+            )
+        # Not merely equal: the sanitiser returns the input object when it has
+        # nothing to do, so the common case never pays for a zip rebuild.
+        assert stub.calls[0] is original
+
+    @pytest.mark.asyncio
+    async def test_the_gcode_retry_keeps_the_sanitisation(self):
+        # Both faults at once. The retry derives from the sanitised bytes, so
+        # it must not reintroduce the sentinel while blanking the template --
+        # otherwise the retry trades one CLI rejection for the other.
+        original = _make_project_3mf(
+            {
+                "time_lapse_gcode": "{if timelapse_inline_photo}",
+                "wall_filament": "0",
+                "layer_height": "0.2",
+            }
+        )
+        body = _make_sliced_3mf(plate_id=1, filaments=[{"id": "1", "type": "PLA", "color": "#000"}])
+        stub = _FailThenSucceedService(SlicerApiServerError(_TIMELAPSE_PARSE_ERROR), body)
+        with patch.object(slice_preview, "SlicerApiService", lambda **kw: stub):
+            result = await get_preview_filaments(
+                kind="library_file",
+                source_id=1,
+                plate_id=1,
+                file_bytes=original,
+                file_name="x.3mf",
+                api_url="http://sidecar",
+            )
+        assert result is not None
+        assert len(stub.calls) == 2
+        for sent in stub.calls:
+            assert "wall_filament" not in _settings_of(sent)
+        assert _settings_of(stub.calls[1])["time_lapse_gcode"] == ""
+        assert _settings_of(stub.calls[1])["layer_height"] == "0.2"
+
+    @pytest.mark.asyncio
+    async def test_the_cache_key_still_follows_the_source_file(self):
+        # Sanitising is deterministic, so the key stays the hash of what the
+        # caller read off disk -- a second open of the same file is a hit, not
+        # a second 30-second slice.
+        original = _make_project_3mf({"wall_filament": "0"})
+        body = _make_sliced_3mf(plate_id=1, filaments=[{"id": "1", "type": "PLA", "color": "#000"}])
+        stub = _RecordingService(body)
+        with patch.object(slice_preview, "SlicerApiService", lambda **kw: stub):
+            first = await get_preview_filaments(
+                kind="library_file",
+                source_id=1,
+                plate_id=1,
+                file_bytes=original,
+                file_name="x.3mf",
+                api_url="http://sidecar",
+            )
+            second = await get_preview_filaments(
+                kind="library_file",
+                source_id=1,
+                plate_id=1,
+                file_bytes=original,
+                file_name="x.3mf",
+                api_url="http://sidecar",
+            )
+        assert second == first
+        assert len(stub.calls) == 1

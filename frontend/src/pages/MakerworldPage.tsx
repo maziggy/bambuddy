@@ -382,9 +382,11 @@ export function MakerworldPage() {
     slicer: 'bambu_studio' | 'orcaslicer',
   ) => {
     // Slicer protocol handlers can't send Authorization headers, so we mint a
-    // short-lived single-use path-embedded token and hand the slicer that URL
+    // short-lived, file-bound path-embedded token and hand the slicer that URL
     // instead of the auth-gated /download endpoint. Mirrors ArchivesPage's
-    // ``openInSlicerWithToken`` pattern.
+    // ``openInSlicerWithToken`` pattern. The token stays valid for its whole
+    // TTL rather than for one fetch -- the slicer is a separate process and
+    // may request the URL more than once (#3029).
     try {
       const { token } = await api.createLibrarySlicerToken(fileId);
       const path = api.getLibrarySlicerDownloadUrl(fileId, token, filename);

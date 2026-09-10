@@ -1,11 +1,14 @@
 """Which nozzle an AMS slot feeds, with or without a Filament Track Switch.
 
-K-profiles are per-nozzle, and the printer's calibration tables are numbered
-per-nozzle too: ``cali_idx: 16`` means "entry 16 of whichever nozzle feeds this
-tray". Without a switch that is unambiguous, because each AMS is wired to one
-extruder and says so in its ``info`` bits. With a switch installed every AMS
-reports 0xE instead and is bound to a switch *inlet*, so the answer has to come
-from the inlet binding.
+K-profiles are per-nozzle: a calibration run belongs to the hotend it ran on,
+and ``cali_idx: 16`` can name a different profile on each. (It need not — one
+profile can also be what both extruders' slots point at, which is why the K
+lookup in ``kprofile_lookup`` treats the extruder as a preference rather than a
+filter — but the routing question below is the same either way.) Without a
+switch the answer is unambiguous, because each AMS is wired to one extruder and
+says so in its ``info`` bits. With a switch installed every AMS reports 0xE
+instead and is bound to a switch *inlet*, so the answer has to come from the
+inlet binding.
 
 Every caller that resolves a slot to an extruder should go through
 ``slot_extruder`` here. Three separate copies of that logic used to end in

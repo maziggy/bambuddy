@@ -133,14 +133,21 @@ export function Layout() {
     staleTime: Infinity,
   });
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
+  // GET /settings requires settings:read, so for every non-admin this query
+  // 403'd and each of the four gates below silently took its fallback: Finance
+  // vanished from the sidebar for the users cost_centers:read_own exists for,
+  // a disabled user_notifications setting stopped applying to them, the sponsor
+  // prompt showed EUR whatever the install uses, and the update check ran where
+  // it had been switched off. Two of those were invisible to an administrator
+  // testing it, because an administrator can read /settings (#3023).
+  const { data: uiFlags } = useQuery({
+    queryKey: ['ui-flags'],
+    queryFn: api.getUiFlags,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   // Sponsor-prompt toast — fires once per session post-auth if a milestone is eligible.
-  useSponsorPrompt(settings?.currency ?? 'EUR');
+  useSponsorPrompt(uiFlags?.currency ?? 'EUR');
 
   // Unknown-spool prompt — surfaces a confirmation modal when the AMS reports a
   // tag with no inventory match (only when `auto_add_unknown_rfid` is off).
@@ -197,7 +204,7 @@ export function Layout() {
   const { data: updateCheck } = useQuery({
     queryKey: ['updateCheck'],
     queryFn: api.checkForUpdates,
-    enabled: settings?.check_updates !== false,
+    enabled: uiFlags?.check_updates !== false,
     staleTime: 60 * 60 * 1000, // 1 hour
     refetchInterval: 60 * 60 * 1000, // Check every hour
   });
@@ -342,12 +349,15 @@ export function Layout() {
         if (!granted) return true;
       }
       // notifications nav item also requires advanced auth to be enabled and user_notifications_enabled setting
-      if (id === 'notifications' && (!authEnabled || !advancedAuthStatus?.advanced_auth_enabled || (settings?.user_notifications_enabled === false))) return true;
+      if (id === 'notifications' && (!authEnabled || !advancedAuthStatus?.advanced_auth_enabled || (uiFlags?.user_notifications_enabled === false))) return true;
       // Finance is off by default and the page is meaningless without it, so it
       // stays hidden until billing is explicitly on. Tested for `true` rather
-      // than `!== false` on purpose: settings are undefined on the first render,
-      // and a nav entry that appears and then vanishes reads as a glitch.
-      if (id === 'finance' && settings?.billing_enabled !== true) return true;
+      // than `!== false` on purpose: the flags are undefined on the first
+      // render, and a nav entry that appears and then vanishes reads as a
+      // glitch. That polarity is also why reading this from /settings hid the
+      // entry outright for anyone without settings:read, rather than failing
+      // open the way the notifications gate two lines up did (#3023).
+      if (id === 'finance' && uiFlags?.billing_enabled !== true) return true;
       return false;
     };
 

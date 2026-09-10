@@ -11,7 +11,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, caller_is_api_key, require_energy_cost_update
+from backend.app.core.auth import (
+    RequirePermissionIfAuthEnabled,
+    caller_is_api_key,
+    require_auth_if_enabled,
+    require_energy_cost_update,
+)
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -488,6 +493,57 @@ async def get_ui_preferences(db: AsyncSession = Depends(get_db)):
     full = await _build_settings_response(db, is_api_key=False)
     dumped = full.model_dump()
     return {key: dumped[key] for key in _UI_PREFERENCE_FIELDS if key in dumped}
+
+
+# Install configuration the app shell reads before it can render correctly.
+#
+# Deliberately a second list rather than more entries in _UI_PREFERENCE_FIELDS.
+# That one is served to anyone at all, on the recorded grounds that its contents
+# are "public defaults that ship with the app" (test_route_auth_coverage.py), and
+# its field set is pinned by a test written to make anyone adding to it stop and
+# think. These fields are not defaults -- they are facts about how this
+# particular deployment is configured -- so they get their own endpoint at their
+# own trust level instead of stretching that charter to fit them.
+_UI_FLAG_FIELDS: tuple[str, ...] = (
+    # The sidebar hides Finance unless billing is on. Layout read this from
+    # GET /settings, which requires SETTINGS_READ, so for a non-admin the query
+    # 403'd, the value arrived undefined, `undefined !== true` held, and the
+    # entry was hidden from exactly the users cost_centers:read_own exists to
+    # serve. The page itself was reachable by URL the whole time (#3023).
+    "billing_enabled",
+    # Same 403, opposite outcome. That gate tests `=== false`, which undefined
+    # never satisfies, so an administrator who turned user notifications off
+    # still left the entry showing -- to precisely the non-admins it governs.
+    "user_notifications_enabled",
+    # Not gates, but read by the shell and equally undefined for a non-admin:
+    # the sponsor prompt fell back to EUR whatever the install uses, and the
+    # update check ran even where it had been switched off.
+    "currency",
+    "check_updates",
+)
+
+
+@router.get("/ui-flags")
+async def get_ui_flags(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_auth_if_enabled),
+):
+    """Install configuration the app shell needs, for any signed-in user.
+
+    Gated on being authenticated rather than on ``SETTINGS_READ``. The sidebar
+    has to know whether billing is enabled before it can decide whether to offer
+    Finance, and ``SETTINGS_READ`` cannot be the price of knowing that -- it also
+    grants sight of the SMTP, LDAP and MQTT credentials.
+
+    ``require_auth_if_enabled`` returns ``None`` when auth is switched off
+    entirely, which is the case /ui-preferences was left ungated for. That is the
+    distinction the two endpoints draw: "works when there is no auth" is not the
+    same statement as "readable by anyone", and conflating them is what put a
+    settings read in front of a permission that was never meant to require one.
+    """
+    full = await _build_settings_response(db, is_api_key=False)
+    dumped = full.model_dump()
+    return {key: dumped[key] for key in _UI_FLAG_FIELDS if key in dumped}
 
 
 @router.get("/check-ffmpeg")

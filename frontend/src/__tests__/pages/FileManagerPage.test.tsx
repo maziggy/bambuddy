@@ -1178,6 +1178,13 @@ describe('FileManagerPage', () => {
       vi.mocked(openInSlicer).mockClear();
       server.use(
         http.post('/api/v1/library/files/:id/slicer-token', () => HttpResponse.json({ token: 'test-token' })),
+        // The only sliceable fixture is an STL, and since #3029 the desktop
+        // handoff is only offered to a slicer whose protocol handler will
+        // actually load one -- Bambu Studio's takes 3MF only. These tests are
+        // about the handoff mechanics and the permission gate, not about which
+        // slicer, so they run against OrcaSlicer. The Bambu Studio side is
+        // covered by its own tests below.
+        http.get('/api/v1/settings/', () => HttpResponse.json({ preferred_slicer: 'orcaslicer' })),
       );
     });
 
@@ -1209,7 +1216,7 @@ describe('FileManagerPage', () => {
       await waitFor(() => {
         expect(openInSlicer).toHaveBeenCalledWith(
           expect.stringContaining('/library/files/2/dl/test-token/'),
-          'bambu_studio',
+          'orcaslicer',
         );
       });
     });
@@ -1253,6 +1260,64 @@ describe('FileManagerPage', () => {
       expect(within(menu as HTMLElement).getAllByRole('button')[0]).toHaveTextContent('Slice');
       // And the card itself no longer clips what its children draw.
       expect(card.className).not.toContain('overflow-hidden');
+    });
+
+    // #3029: Bambu Studio's protocol handler refuses anything that is not a
+    // 3MF before it even fetches the URL -- "Download failed, unknown file
+    // format." Offering the handoff anyway put an action on an STL card that
+    // could only fail, with an error that blamed the file.
+    it('hides the desktop handoff for an STL when the target is Bambu Studio', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json({ preferred_slicer: 'bambu_studio' })),
+      );
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => expect(screen.getByText('bracket.stl')).toBeInTheDocument());
+
+      const card = await openMenu(user, 'bracket.stl');
+      expect(within(card).queryByText('Slice')).not.toBeInTheDocument();
+    });
+
+    it('honours the open_in_slicer override over the preferred slicer', async () => {
+      // The desktop target is its own setting (#1329), so it -- not
+      // preferred_slicer, which drives the sidecar -- decides whether an STL
+      // can be handed over at all.
+      server.use(
+        http.get('/api/v1/settings/', () =>
+          HttpResponse.json({ preferred_slicer: 'bambu_studio', open_in_slicer: 'orcaslicer' }),
+        ),
+      );
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => expect(screen.getByText('bracket.stl')).toBeInTheDocument());
+
+      const card = await openMenu(user, 'bracket.stl');
+      await user.click(within(card).getByText('Slice'));
+
+      await waitFor(() => {
+        expect(openInSlicer).toHaveBeenCalledWith(expect.any(String), 'orcaslicer');
+      });
+    });
+
+    it('still offers an STL to the in-app slicer with Bambu Studio as the desktop target', async () => {
+      // The restriction is on the URL handoff, not on the file: the sidecar
+      // slices an STL regardless of which desktop slicer is configured.
+      server.use(
+        http.get('/api/v1/settings/', () =>
+          HttpResponse.json({ use_slicer_api: true, preferred_slicer: 'bambu_studio' }),
+        ),
+      );
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => expect(screen.getByText('bracket.stl')).toBeInTheDocument());
+
+      const card = await openMenu(user, 'bracket.stl');
+      await user.click(within(card).getByText('Slice'));
+
+      expect(await screen.findByTestId('slice-modal')).toBeInTheDocument();
     });
 
     it('hides the slice item for already-sliced files', async () => {
@@ -1384,7 +1449,7 @@ describe('FileManagerPage', () => {
       await waitFor(() => {
         expect(openInSlicer).toHaveBeenCalledWith(
           expect.stringContaining('/library/files/2/dl/test-token/'),
-          'bambu_studio',
+          'orcaslicer',
         );
       });
     });

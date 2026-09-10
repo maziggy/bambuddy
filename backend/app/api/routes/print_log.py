@@ -7,8 +7,8 @@ from sqlalchemy import delete, func, nullslast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import (
-    RequireCameraStreamTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
+    require_media_token_ownership,
     require_ownership_permission,
 )
 from backend.app.core.config import settings
@@ -136,11 +136,19 @@ async def get_print_log(
 async def get_print_log_thumbnail(
     entry_id: int,
     db: AsyncSession = Depends(get_db),
-    _: None = RequireCameraStreamTokenIfAuthEnabled,
+    auth_result: tuple[User | None, bool] = Depends(
+        require_media_token_ownership(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Get the thumbnail for a print log entry.
 
-    Requires a stream token query param (?token=xxx) when auth is enabled.
+    Requires a media token query param (?token=xxx) when auth is enabled, and
+    is scoped to the rows the caller can see in the log itself (#3025) -- the
+    same ``created_by_id`` filter ``get_print_log`` applies, including its
+    treatment of an ownerless entry as not-yours.
 
     Self-heals stale entries: when thumbnail_path points to a file that no
     longer exists on disk (archive was deleted, or print failed before the
@@ -149,8 +157,11 @@ async def get_print_log_thumbnail(
     gated on entry.thumbnail_path being truthy, so the next fetch of the
     log list will simply not request this thumbnail again.
     """
+    user, can_read_all = auth_result
     entry = await db.get(PrintLogEntry, entry_id)
     if not entry or not entry.thumbnail_path:
+        raise HTTPException(404, "Thumbnail not found")
+    if not can_read_all and (user is None or entry.created_by_id != user.id):
         raise HTTPException(404, "Thumbnail not found")
 
     thumb_path = settings.base_dir / entry.thumbnail_path

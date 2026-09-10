@@ -13,11 +13,12 @@ from starlette.background import BackgroundTask
 
 from backend.app.core import database
 from backend.app.core.auth import (
-    RequireCameraStreamTokenIfAuthEnabled,
     RequireOverlayTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
     RequirePrinterPermissionIfAuthEnabled,
     is_auth_enabled,
+    require_media_token_permission,
+    require_media_token_printer_permission,
 )
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
@@ -87,9 +88,10 @@ from backend.app.services.printer_media import (
     remove_printer_files_zip,
     start_printer_files_job,
 )
+from backend.app.services.slicer_filament_resolver import _ORCA_PROFILE_ID
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.utils.filament_ids import filament_id_to_setting_id
-from backend.app.utils.filament_types import printer_filament_type
+from backend.app.utils.filament_types import is_material_name, printer_filament_type
 from backend.app.utils.fts_routing import slot_extruder
 from backend.app.utils.http import build_content_disposition, download_error_response, safe_download_filename
 from backend.app.utils.kprofile_lookup import build_slot_k_resolver
@@ -526,13 +528,14 @@ async def get_printer_status(
     ams_exists = False
     raw_data = state.raw_data or {}
 
-    # K value for a slot's bound profile, resolved against its own nozzle.
+    # K value for a slot's bound profile, preferring the slot's own nozzle.
     #
-    # Keyed on more than cali_idx: the printer numbers its calibration table
-    # per nozzle, so entry 16 exists on each and means a different profile on
-    # each. A cali_idx-only map let whichever profile the printer happened to
-    # list last overwrite the other, and the slot then displayed the wrong
-    # nozzle's K — on the maintainer's H2C, 0.018 and 0.020 for the same spool.
+    # cali_idx alone is not enough: two profiles can share an index and differ
+    # by extruder, and a cali_idx-only map let whichever the printer listed
+    # last overwrite the other — on the maintainer's H2C, 0.018 and 0.020 for
+    # the same spool. Nor is the extruder a requirement: one profile can be
+    # what both extruders' slots point at, and demanding a match blanked every
+    # slot on a second AMS (#3044). The resolver does both in order.
     _kprofile_k = build_slot_k_resolver(state)
 
     # Cached active-cycle drying params (filament + target temp) we sent
@@ -1146,9 +1149,15 @@ async def _running_print_archive_file(printer_id: int, state) -> Path | None:
 async def get_printer_cover(
     printer_id: int,
     view: str | None = None,
-    _: None = RequireCameraStreamTokenIfAuthEnabled,
+    _: User | None = Depends(require_media_token_permission(Permission.PRINTERS_READ)),
 ):
     """Get the cover image for the current print job.
+
+    Requires a media token query param (?token=xxx) when auth is enabled, plus
+    ``printers:read`` -- the permission that governs every other read of this
+    printer. It used to require ``camera:view`` by way of the camera-stream
+    token, which is a different question from "may this user see what is on the
+    plate" (#3025).
 
     Args:
         view: Optional view type. Use "top" for the top-down build plate view or
@@ -1970,7 +1979,7 @@ async def get_printer_file_plate_thumbnail(
     printer_id: int,
     plate_index: int,
     path: str = Query(..., description="Full path to the 3MF file on the printer"),
-    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_FILES),
+    _=Depends(require_media_token_printer_permission(Permission.PRINTERS_FILES)),
 ):
     """Get a plate thumbnail image from a printer-stored 3MF file."""
     import io
@@ -2849,10 +2858,49 @@ async def configure_ams_slot(
     if not client:
         raise HTTPException(status_code=400, detail="Printer not connected")
 
+    # Discard a tray_info_idx the printer cannot store (#3003).
+    #
+    # The field is 8 characters wide. A local preset id ("P" + 7 hex) is
+    # exactly 8, which is presumably why nobody noticed -- but a cloud
+    # *setting* id is 18, and the firmware keeps the first 8 and reports
+    # success. Measured on @marivo's A1 in the #3003 bundle:
+    #
+    #   sent      tray_info_idx=PFUS9ddc938fe3ab8f
+    #   printer   Assignment NOT confirmed: tray shows PFUS9DDC
+    #
+    # `PFUS9ddc` resolves to nothing anywhere, so the slot came out of the
+    # Configure modal as "Generic <material>" in the slicer -- strictly worse
+    # than the base filament it would have got from the fallback below, and it
+    # also breaks the calibration table, which is keyed by this field.
+    #
+    # Blanking it here is what hands the slot to the reuse / generic branch.
+    # The preset reference is not lost: it stays in setting_id, the field that
+    # does accept a PFUS. Same four rejected shapes, and the same reasoning, as
+    # `slicer_filament_resolver`'s closing guard -- which the assignment path
+    # has run since #1815 while Configure had none. The Orca profile UUID is on
+    # the list for the same reason as the rest: the modal no longer sends one,
+    # but this route is public API and 36 characters is the worst of the four
+    # against an 8-character field.
+    if tray_info_idx and (
+        tray_info_idx.startswith("PFUS")
+        or tray_info_idx.startswith("PFCN")
+        or _ORCA_PROFILE_ID.fullmatch(tray_info_idx)
+        or is_material_name(tray_info_idx)
+    ):
+        logger.info(
+            "[configure_ams_slot] tray_info_idx %r is not storable as a filament id — "
+            "falling back to slot reuse / generic (kept as setting_id %r)",
+            tray_info_idx,
+            setting_id or tray_info_idx,
+        )
+        if not setting_id and (tray_info_idx.startswith("PFUS") or tray_info_idx.startswith("PFCN")):
+            setting_id = tray_info_idx
+        tray_info_idx = ""
+
     # Resolve tray_info_idx for the MQTT command.
     # Priority:
-    #   1. Use the provided tray_info_idx if set (including cloud-synced
-    #      custom presets like PFUS* / P*).
+    #   1. Use the provided tray_info_idx if set, once the guard above has had
+    #      its say (so: a GF* official or P* local id, never a PFUS/PFCN one).
     #   2. Reuse the slot's existing tray_info_idx if it's a specific
     #      (non-generic) preset for the same material.
     #   3. Fall back to a generic Bambu filament ID.

@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.library import get_library_dir
-from backend.app.core.auth import RequireCameraStreamTokenIfAuthEnabled, RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_media_token_permission
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -1412,13 +1412,19 @@ async def upload_project_cover_image(
 async def get_project_cover_image(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    _: None = RequireCameraStreamTokenIfAuthEnabled,
+    _: User | None = Depends(require_media_token_permission(Permission.PROJECTS_READ)),
 ):
     """Stream the project's cover image (#1155).
 
     Browsers can't attach `Authorization: Bearer ...` to `<img src>` requests,
-    so this route accepts the same `?token=` stream-credential as
-    /archives/{id}/thumbnail. The frontend wraps URLs with `withStreamToken`."""
+    so this route accepts a `?token=` media credential, the same one
+    /archives/{id}/thumbnail takes. The frontend wraps URLs with `withMediaToken`.
+
+    Gated on ``projects:read`` like every other project route. It used to take
+    the camera-stream token, which required ``camera:view`` instead -- an
+    unrelated permission that a user could hold without any project access, and
+    that a project reader could easily lack (#3025). Projects carry no
+    ``created_by_id``, so there is no per-row owner to check beyond that."""
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project:

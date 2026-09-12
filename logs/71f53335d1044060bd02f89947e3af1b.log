@@ -1,0 +1,200 @@
+2026-09-12 09:44:35,344 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-09-12 09:44:35,345 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-09-12 09:44:43,342 INFO [backend.app.core.encryption] [-] Generated new MFA encryption key and saved to /app/data/.mfa_encryption_key
+2026-09-12 09:44:43,928 INFO [backend.app.core.database] [-] Created default group: Administrators
+2026-09-12 09:44:43,929 INFO [backend.app.core.database] [-] Created default group: Operators
+2026-09-12 09:44:43,929 INFO [backend.app.core.database] [-] Created default group: Viewers
+2026-09-12 09:44:44,102 INFO [backend.app.core.database] [-] Seeded 91 default spool catalog entries
+2026-09-12 09:44:44,650 INFO [backend.app.core.database] [-] Seeded 638 default color catalog entries
+2026-09-12 09:44:44,805 INFO [backend.app.services.mqtt_relay] [-] MQTT relay disabled
+2026-09-12 09:44:44,821 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-09-12 09:44:44,822 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-09-12 09:44:44,822 INFO [backend.app.services.ha_sensor_manager] [-] Home Assistant sensor poller started
+2026-09-12 09:44:44,822 INFO [backend.app.services.location_ha_sensor_manager] [-] Home Assistant location-sensor poller started
+2026-09-12 09:44:44,835 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-09-12 09:44:44,848 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-09-12 09:44:44,848 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-09-12 09:44:44,848 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-09-12 09:44:44,858 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-09-12 09:44:44,859 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-09-12 09:44:44,859 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-09-12 09:44:44,860 INFO [backend.app.main] [-] AMS history recording started
+2026-09-12 09:44:44,860 INFO [backend.app.main] [-] Printer sensor history recording started
+2026-09-12 09:44:44,860 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-09-12 09:44:44,861 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-09-12 09:44:44,862 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-09-12 09:44:44,862 INFO [backend.app.main] [-] Printer connection watchdog started
+2026-09-12 09:44:45,123 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-09-12 09:44:45,124 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-09-12 09:44:45,125 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-09-12 09:44:45,147 INFO [root] [-] Virtual printer manager synced from database
+2026-09-12 09:47:21,664 INFO [uvicorn.access] [-] [IP]:58101 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-09-12 09:47:22,371 INFO [uvicorn.access] [-] [IP]:63659 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-12 09:47:22,484 INFO [uvicorn.access] [-] [IP]:52781 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-09-12 09:47:32,325 INFO [backend.app.api.routes.auth] [00aeed7f] Setup completed: auth_enabled=False, admin_created=False
+2026-09-12 09:47:32,329 INFO [uvicorn.access] [-] [IP]:54868 - "POST /api/v1/auth/setup HTTP/1.1" 200
+2026-09-12 09:47:32,708 INFO [uvicorn.access] [-] [IP]:54868 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-12 09:47:32,752 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-09-12 09:47:32,754 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-12 09:47:32,754 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 0 printers
+2026-09-12 09:48:00,654 INFO [backend.app.services.discovery] [d6aa4934] Starting subnet scan of [IP]/24 (254 hosts)
+2026-09-12 09:48:00,683 INFO [uvicorn.access] [-] [IP]:57433 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-09-12 09:48:03,796 INFO [backend.app.services.discovery] [d6aa4934] Found potential Bambu printer at [IP]
+2026-09-12 09:48:06,812 INFO [backend.app.services.discovery] [d6aa4934] Subnet scan complete. Found 1 printers.
+2026-09-12 09:55:12,457 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 09:55:12,460 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 09:55:14,235 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 09:55:14,235 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 09:55:17,002 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 09:55:17,003 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 09:55:20,015 INFO [uvicorn.access] [-] [IP]:49283 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-09-12 09:58:55,316 INFO [uvicorn.access] [-] [IP]:62956 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-09-12 09:58:55,320 INFO [uvicorn.access] [-] [IP]:64378 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-09-12 10:05:12,796 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-12 10:05:56,208 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-09-12 10:05:56,209 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-12 10:05:56,209 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 0 printers
+2026-09-12 10:05:56,798 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:05:56,798 INFO [backend.app.services.bambu_mqtt] [-] [0P00C492100616] Disconnected shortly after request topic subscription (1/2). Retrying it on the next connection before giving up.
+2026-09-12 10:05:58,565 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:05:58,565 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] Disconnected shortly after request topic subscription 2 times. Disabling request topic for this printer — ams_mapping capture from slicer-initiated prints is unavailable, and their filament will be attributed from the printer's own tray reporting instead.
+2026-09-12 10:06:00,342 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:06:02,130 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:06:03,905 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:06:04,913 INFO [uvicorn.access] [-] [IP]:59594 - "POST /api/v1/printers/ HTTP/1.1" 400
+2026-09-12 10:06:35,093 INFO [backend.app.services.discovery] [3ce8962f] Starting subnet scan of [IP]/24 (254 hosts)
+2026-09-12 10:06:35,107 INFO [uvicorn.access] [-] [IP]:60142 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-09-12 10:06:35,945 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:06:37,707 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:06:38,182 INFO [backend.app.services.discovery] [3ce8962f] Found potential Bambu printer at [IP]
+2026-09-12 10:06:39,474 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:06:41,197 INFO [backend.app.services.discovery] [3ce8962f] Subnet scan complete. Found 1 printers.
+2026-09-12 10:06:41,245 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:06:43,021 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Normal disconnection, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:06:43,035 INFO [uvicorn.access] [-] [IP]:63237 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-09-12 10:06:43,946 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:06:45,718 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:06:47,930 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:06:49,709 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:06:51,486 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:06:51,493 INFO [uvicorn.access] [-] [IP]:63237 - "POST /api/v1/printers/ HTTP/1.1" 400
+2026-09-12 10:07:18,062 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:07:19,834 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:07:21,601 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:07:23,374 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:07:25,145 WARNING [backend.app.services.bambu_mqtt] [-] [0P00C492100616] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-09-12 10:07:26,158 INFO [uvicorn.access] [-] [IP]:60142 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-09-12 10:08:30,451 INFO [uvicorn.access] [-] [IP]:56576 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-09-12 10:08:30,452 INFO [uvicorn.access] [-] [IP]:63931 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-09-12 10:10:36,147 INFO [uvicorn.access] [-] [IP]:63037 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-09-12 10:10:36,148 INFO [uvicorn.access] [-] [IP]:54156 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-09-12 10:10:50,357 INFO [backend.app.services.camera] [e255a3bb] Found ffmpeg at: /usr/bin/ffmpeg
+2026-09-12 10:10:51,693 INFO [backend.app.services.mqtt_relay] [ccc0c2cc] MQTT relay disabled
+2026-09-12 10:10:51,707 INFO [uvicorn.access] [-] [IP]:58375 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-12 10:11:02,855 INFO [backend.app.services.mqtt_relay] [6066d1aa] MQTT relay disabled
+2026-09-12 10:11:02,868 INFO [uvicorn.access] [-] [IP]:58375 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-12 10:11:05,071 INFO [backend.app.services.mqtt_relay] [e96b35a7] MQTT relay disabled
+2026-09-12 10:11:05,090 INFO [uvicorn.access] [-] [IP]:58375 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-12 10:11:17,767 INFO [backend.app.services.virtual_printer.certificate] [66984f73] Generating new Virtual Printer CA certificate...
+2026-09-12 10:11:18,201 INFO [backend.app.services.virtual_printer.certificate] [66984f73] Saved new CA certificate
+2026-09-12 10:12:33,750 INFO [backend.app.services.mqtt_relay] [8e2de1d0] MQTT relay disabled
+2026-09-12 10:12:33,766 INFO [uvicorn.access] [-] [IP]:50658 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-12 10:12:41,271 INFO [backend.app.services.mqtt_relay] [e8ec8117] MQTT relay disabled
+2026-09-12 10:12:41,285 INFO [uvicorn.access] [-] [IP]:60375 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-12 10:12:42,946 INFO [backend.app.services.mqtt_relay] [5b8cad1f] MQTT relay disabled
+2026-09-12 10:12:42,961 INFO [uvicorn.access] [-] [IP]:60375 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-12 10:12:43,736 INFO [backend.app.services.mqtt_relay] [4a3ec933] MQTT relay disabled
+2026-09-12 10:12:43,749 INFO [uvicorn.access] [-] [IP]:60375 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-12 10:13:17,740 INFO [backend.app.services.discovery] [87b3e79d] Starting subnet scan of [IP]/24 (254 hosts)
+2026-09-12 10:13:17,772 INFO [uvicorn.access] [-] [IP]:49164 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-09-12 10:13:20,875 INFO [backend.app.services.discovery] [87b3e79d] Found potential Bambu printer at [IP]
+2026-09-12 10:13:23,892 INFO [backend.app.services.discovery] [87b3e79d] Subnet scan complete. Found 1 printers.
+2026-09-12 10:13:26,086 INFO [uvicorn.access] [-] [IP]:49164 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-09-12 10:13:26,098 INFO [uvicorn.access] [-] [IP]:58013 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-09-12 10:13:35,941 INFO [backend.app.services.discovery] [29809f09] Starting subnet scan of [IP]/24 (254 hosts)
+2026-09-12 10:13:35,977 INFO [uvicorn.access] [-] [IP]:58013 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-09-12 10:13:39,043 INFO [backend.app.services.discovery] [29809f09] Found potential Bambu printer at [IP]
+2026-09-12 10:13:42,072 INFO [backend.app.services.discovery] [29809f09] Subnet scan complete. Found 1 printers.
+2026-09-12 10:15:26,555 INFO [uvicorn.access] [-] [IP]:51296 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-09-12 10:15:26,566 INFO [uvicorn.access] [-] [IP]:59570 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-09-12 10:15:29,883 INFO [backend.app.services.discovery] [0c0e0645] Starting subnet scan of [IP]/24 (254 hosts)
+2026-09-12 10:15:29,898 INFO [uvicorn.access] [-] [IP]:59570 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-09-12 10:15:35,979 INFO [backend.app.services.discovery] [0c0e0645] Subnet scan complete. Found 0 printers.
+2026-09-12 10:15:37,759 INFO [backend.app.services.discovery] [18d16eeb] Starting subnet scan of [IP]/24 (254 hosts)
+2026-09-12 10:15:37,797 INFO [uvicorn.access] [-] [IP]:59570 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-09-12 10:15:38,612 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:15:38,613 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:15:40,379 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:15:40,380 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:15:40,870 INFO [backend.app.services.discovery] [18d16eeb] Found potential Bambu printer at [IP]
+2026-09-12 10:15:43,156 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:15:43,157 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:15:43,895 INFO [backend.app.services.discovery] [18d16eeb] Subnet scan complete. Found 1 printers.
+2026-09-12 10:15:46,162 INFO [uvicorn.access] [-] [IP]:54791 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-09-12 10:17:20,521 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:17:20,522 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:17:22,276 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:17:22,277 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:17:25,045 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:17:25,046 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:17:28,055 INFO [uvicorn.access] [-] [IP]:54791 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-09-12 10:25:13,655 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:25:13,657 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:25:15,429 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:25:15,431 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:25:18,201 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:25:18,203 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:25:21,215 INFO [uvicorn.access] [-] [IP]:56510 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-09-12 10:25:32,583 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:25:32,584 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:25:34,690 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:25:34,691 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:25:34,742 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:25:34,743 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:25:35,959 INFO [uvicorn.access] [-] [IP]:56238 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-09-12 10:25:35,969 INFO [uvicorn.access] [-] [IP]:51286 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-09-12 10:25:36,456 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:25:36,457 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:25:37,507 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:25:37,509 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:25:39,223 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:25:39,224 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:25:40,516 INFO [uvicorn.access] [-] [IP]:56510 - "POST /api/v1/printers/ HTTP/1.1" 400
+2026-09-12 10:25:42,236 INFO [uvicorn.access] [-] [IP]:55350 - "POST /api/v1/printers/ HTTP/1.1" 400
+2026-09-12 10:27:25,813 INFO [uvicorn.access] [-] [IP]:50061 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-09-12 10:29:23,661 INFO [uvicorn.access] [-] [IP]:57803 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-09-12 10:29:26,098 INFO [uvicorn.access] [-] [IP]:57803 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-09-12 10:29:30,160 INFO [uvicorn.access] [-] [IP]:50490 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-09-12 10:29:32,401 INFO [uvicorn.access] [-] [IP]:55528 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-09-12 10:29:32,402 INFO [uvicorn.access] [-] [IP]:50490 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-09-12 10:29:37,628 INFO [backend.app.services.discovery] [13142d1d] Starting subnet scan of [IP]/24 (254 hosts)
+2026-09-12 10:29:37,643 INFO [uvicorn.access] [-] [IP]:55528 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-09-12 10:29:40,749 INFO [backend.app.services.discovery] [13142d1d] Found potential Bambu printer at [IP]
+2026-09-12 10:29:43,774 INFO [backend.app.services.discovery] [13142d1d] Subnet scan complete. Found 1 printers.
+2026-09-12 10:35:06,137 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:35:06,138 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:35:07,895 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:35:07,896 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:35:10,665 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:35:10,667 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:35:13,680 INFO [uvicorn.access] [-] [IP]:53681 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-09-12 10:36:26,979 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:36:26,980 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:36:28,752 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:36:28,753 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:36:31,521 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:36:31,523 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:36:34,535 INFO [uvicorn.access] [-] [IP]:63009 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-09-12 10:37:22,724 INFO [uvicorn.access] [-] [IP]:65265 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-09-12 10:39:57,465 INFO [uvicorn.access] [-] [IP]:55622 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-09-12 10:39:57,467 INFO [uvicorn.access] [-] [IP]:53616 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-09-12 10:46:46,418 INFO [backend.app.api.routes.support] [03e3b96b] Log level changed to DEBUG
+2026-09-12 10:46:46,419 INFO [backend.app.api.routes.bug_report] [03e3b96b] Bug report: enabled debug logging
+2026-09-12 10:46:46,420 INFO [uvicorn.access] [-] [IP]:59500 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-09-12 10:49:44,388 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:49:44,389 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:49:46,148 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:49:46,149 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:49:48,917 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT connection refused by the printer: Not authorized (code 135). The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-read it from the printer's screen.
+2026-09-12 10:49:48,919 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False) (last connection attempt was refused: Not authorized)
+2026-09-12 10:49:51,925 INFO [uvicorn.access] [-] [IP]:57326 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200

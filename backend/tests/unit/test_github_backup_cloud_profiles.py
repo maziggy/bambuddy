@@ -83,7 +83,7 @@ class TestCloudAccountEnumeration:
         Settings table and the account is keyed ``global``."""
         with (
             patch(
-                "backend.app.api.routes.cloud.get_stored_token",
+                "backend.app.services.bambu_cloud_credentials.get_stored_token",
                 new_callable=AsyncMock,
                 return_value=("bambu-token", "a@b.c", "global"),
             ),
@@ -113,7 +113,7 @@ class TestCloudAccountEnumeration:
 
         with (
             patch(
-                "backend.app.api.routes.cloud.get_stored_token",
+                "backend.app.services.bambu_cloud_credentials.get_stored_token",
                 new_callable=AsyncMock,
                 return_value=(None, None, "global"),
             ),
@@ -137,7 +137,7 @@ class TestCloudAccountEnumeration:
 
         with (
             patch(
-                "backend.app.api.routes.cloud.get_stored_token",
+                "backend.app.services.bambu_cloud_credentials.get_stored_token",
                 new_callable=AsyncMock,
                 return_value=("legacy-global", None, "global"),
             ),
@@ -405,7 +405,7 @@ class TestCollectorAndMetadata:
         files: dict = {}
         with (
             patch(
-                "backend.app.api.routes.cloud.get_stored_token",
+                "backend.app.services.bambu_cloud_credentials.get_stored_token",
                 new_callable=AsyncMock,
                 return_value=(None, None, "global"),
             ),
@@ -435,7 +435,7 @@ class TestCollectorAndMetadata:
         files: dict = {}
         with (
             patch(
-                "backend.app.api.routes.cloud.get_stored_token",
+                "backend.app.services.bambu_cloud_credentials.get_stored_token",
                 new_callable=AsyncMock,
                 return_value=(None, None, "global"),
             ),
@@ -500,7 +500,7 @@ class TestSettingsFallbackIsStillHonoured:
         await db_session.commit()
 
         with patch(
-            "backend.app.api.routes.cloud.get_stored_token",
+            "backend.app.services.bambu_cloud_credentials.get_stored_token",
             new_callable=AsyncMock,
             return_value=(None, None, "global"),
         ):

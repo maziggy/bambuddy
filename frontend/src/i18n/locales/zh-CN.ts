@@ -680,6 +680,8 @@ export default {
       hours: '小时',
       timeRemaining: '剩余 {{time}}',
       active: '干燥中',
+      notStarted: '干燥未启动',
+      notStartedHint: '打印机已接受干燥命令，但 AMS 尚未开始该周期——可能在等待供电或当前打印。',
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: '不支持干燥',
       powerRequired: '连接AMS电源适配器以启用干燥',

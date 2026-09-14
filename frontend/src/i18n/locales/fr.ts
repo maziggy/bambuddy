@@ -680,6 +680,8 @@ export default {
       hours: 'heures',
       timeRemaining: '{{time}} restant',
       active: 'Séchage',
+      notStarted: 'Séchage non démarré',
+      notStartedHint: 'L\'imprimante a accepté la commande de séchage mais l\'AMS n\'a pas commencé le cycle — il attend peut-être l\'alimentation ou l\'impression en cours.',
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Séchage non pris en charge',
       powerRequired: 'Brancher l\'adaptateur secteur AMS pour activer le séchage',

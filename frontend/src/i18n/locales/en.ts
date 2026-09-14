@@ -683,6 +683,8 @@ export default {
       hours: 'hours',
       timeRemaining: '{{time}} left',
       active: 'Drying',
+      notStarted: 'Drying not started',
+      notStartedHint: 'The printer accepted the drying command but the AMS has not begun the cycle — it may be waiting on power or the current print.',
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Drying not supported',
       powerRequired: 'Connect AMS power adapter to enable drying',

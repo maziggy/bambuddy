@@ -680,6 +680,8 @@ export default {
       hours: 'saat',
       timeRemaining: '{{time}} kaldı',
       active: 'Kurutuluyor',
+      notStarted: 'Kurutma başlatılmadı',
+      notStartedHint: 'Yazıcı kurutma komutunu kabul etti ancak AMS döngüyü başlatmadı — güç veya devam eden baskıyı bekliyor olabilir.',
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Kurutma desteklenmiyor',
       powerRequired: 'Kurutmayı etkinleştirmek için AMS güç adaptörünü bağlayın',

@@ -638,6 +638,7 @@ async def get_printer_status(
                     sw_ver=str(ams_data.get("sw_ver") or ""),
                     # Drying: dry_time > 0 means drying is active (minutes remaining)
                     dry_time=int(ams_data.get("dry_time") or 0),
+                    dry_countdown_stalled=bool(ams_data.get("dry_countdown_stalled") or False),
                     dry_target_temp=dry_target_temp,
                     dry_filament=dry_filament,
                     module_type=str(ams_data.get("module_type") or ""),

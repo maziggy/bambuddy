@@ -647,6 +647,8 @@ export default {
       hours: "ч",
       timeRemaining: "осталось {{time}}",
       active: "Сушка",
+      notStarted: "Сушка не запущена",
+      notStartedHint: "Принтер принял команду сушки, но AMS не начал цикл — возможно, он ждёт питания или завершения текущей печати.",
       targetSummary: "{{filament}} при {{temp}} °C",
       notSupported: "Сушка не поддерживается",
       powerRequired: "Подключите адаптер питания AMS, чтобы включить сушку",

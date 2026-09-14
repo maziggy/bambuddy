@@ -683,6 +683,8 @@ export default {
       hours: "години",
       timeRemaining: "Залишилося {{time}}",
       active: "Сушіння",
+      notStarted: "Сушіння не запущено",
+      notStartedHint: "Принтер прийняв команду сушіння, але AMS не розпочав цикл — можливо, він очікує живлення або завершення поточного друку.",
       targetSummary: "{{filament}} при {{temp}}°C",
       notSupported: "Сушіння не підтримується",
       powerRequired: "Підключіть адаптер живлення AMS, щоб увімкнути сушіння",

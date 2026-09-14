@@ -893,7 +893,7 @@ async def get_overlay_status(
 
     A token-authenticated sibling of ``get_printer_status`` for embeds with no
     login session — OBS loads ``/overlay/{id}?token=...`` and this feeds it.
-    Deliberately flat and minimal (name, camera rotation, live print state, and
+    Deliberately flat and minimal (name, model, camera rotation, live print state, and
     the one setting the overlay reads) rather than the full ``PrinterStatus``:
     a token holder gets exactly the fields the overlay renders, nothing more.
 
@@ -917,6 +917,7 @@ async def get_overlay_status(
         return {
             "id": printer_id,
             "name": printer.name,
+            "model": printer.model,
             "camera_rotation": printer.camera_rotation or 0,
             "connected": False,
             "state": None,
@@ -934,6 +935,7 @@ async def get_overlay_status(
     return {
         "id": printer_id,
         "name": printer.name,
+        "model": printer.model,
         "camera_rotation": printer.camera_rotation or 0,
         "connected": state.connected,
         "state": state.state,

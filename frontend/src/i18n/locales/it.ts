@@ -3523,6 +3523,7 @@ export default {
       tokenWarning: 'Questo URL contiene un token: chi riesce a leggerlo può vedere lo streaming e il nome del file. Revoca il token per interrompere l\'accesso.',
       fields: 'Campi da mostrare',
       fieldPrinter: 'Nome stampante',
+      fieldModel: 'Modello stampante',
       fieldFilename: 'Nome file',
       fieldStatus: 'Stato',
       fieldProgress: 'Barra di avanzamento',

@@ -3359,6 +3359,7 @@ export default {
       tokenWarning: '이 URL에는 토큰이 들어 있습니다. URL을 읽을 수 있는 사람은 누구나 영상과 파일 이름을 볼 수 있습니다. 접근을 끊으려면 토큰을 폐기하세요.',
       fields: '표시할 항목',
       fieldPrinter: '프린터 이름',
+      fieldModel: '프린터 모델',
       fieldFilename: '파일 이름',
       fieldStatus: '상태',
       fieldProgress: '진행률 막대',

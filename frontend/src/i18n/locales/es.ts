@@ -3537,6 +3537,7 @@ export default {
       tokenWarning: 'Esta URL contiene un token: cualquiera que pueda leerla verá la emisión y el nombre del archivo. Revoca el token para cortar el acceso.',
       fields: 'Campos que mostrar',
       fieldPrinter: 'Nombre de la impresora',
+      fieldModel: 'Modelo de impresora',
       fieldFilename: 'Nombre del archivo',
       fieldStatus: 'Estado',
       fieldProgress: 'Barra de progreso',

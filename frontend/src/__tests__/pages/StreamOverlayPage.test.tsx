@@ -134,6 +134,47 @@ describe('StreamOverlayPage', () => {
     });
   });
 
+  describe('printer model', () => {
+    it.each(['', '?show=printer', '?show='])('hides the model unless selected (%s)', async (query) => {
+      renderOverlayPage(1, query);
+      await screen.findByText('Printer is idle');
+      expect(screen.queryByText(/X1C/)).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ['?show=model', 'X1C'],
+      ['?show=printer,model', 'X1 Carbon · X1C'],
+    ])('shows the selected printer identity (%s)', async (query, identity) => {
+      renderOverlayPage(1, query);
+      expect(await screen.findByText(identity)).toBeInTheDocument();
+      if (query === '?show=model') expect(screen.queryByText(/X1 Carbon/)).not.toBeInTheDocument();
+    });
+
+    it.each([null, ''])('omits a missing model without adding a separator (%s)', async (model) => {
+      server.use(http.get('/api/v1/printers/:id', () => HttpResponse.json({ ...mockPrinter, model })));
+      renderOverlayPage(1, '?show=printer,model');
+      expect(await screen.findByText('X1 Carbon')).toBeInTheDocument();
+      expect(screen.queryByText(/·/)).not.toBeInTheDocument();
+    });
+
+    it('reads the model from the OBS token feed without requesting printer details', async () => {
+      let printerHit = false;
+      server.use(
+        http.get('/api/v1/printers/:id/overlay-status', () => HttpResponse.json({
+          ...mockStatusIdle, name: 'Workshop', model: 'H2D', camera_rotation: 0,
+          gcode_file: null, temperatures: {}, time_format: 'system',
+        })),
+        http.get('/api/v1/printers/:id', () => {
+          printerHit = true;
+          return new HttpResponse(null, { status: 401 });
+        }),
+      );
+      renderOverlayPage(1, '?token=obs-tok&show=printer,model');
+      expect(await screen.findByText('Workshop · H2D')).toBeInTheDocument();
+      expect(printerHit).toBe(false);
+    });
+  });
+
   describe('printing state', () => {
     beforeEach(() => {
       server.use(

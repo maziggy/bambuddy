@@ -358,6 +358,7 @@ export interface CamWallPrinter {
 export interface OverlayStatus {
   id: number;
   name: string;
+  model: string | null;
   camera_rotation: number;
   connected: boolean;
   state: string | null;

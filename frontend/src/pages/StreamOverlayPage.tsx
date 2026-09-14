@@ -20,6 +20,7 @@ interface OverlayConfig {
   showFilename: boolean;
   showStatus: boolean;
   showPrinter: boolean;
+  showModel: boolean;
   showNozzle: boolean;
   showBed: boolean;
   showChamber: boolean;
@@ -59,6 +60,7 @@ function parseConfig(params: URLSearchParams): OverlayConfig {
     showFilename: show.includes('filename'),
     showStatus: show.includes('status'),
     showPrinter: show.includes('printer'),
+    showModel: show.includes('model'),
     showNozzle: show.includes('nozzle'),
     showBed: show.includes('bed'),
     showChamber: show.includes('chamber'),
@@ -209,10 +211,14 @@ export function StreamOverlayPage() {
   const printer = useMemo(
     () =>
       kiosk
-        ? overlay && { name: overlay.name, camera_rotation: overlay.camera_rotation }
+        ? overlay && { name: overlay.name, model: overlay.model, camera_rotation: overlay.camera_rotation }
         : printerData,
     [kiosk, overlay, printerData],
   );
+  const printerIdentity = [
+    config.showPrinter ? printer?.name : null,
+    config.showModel ? printer?.model : null,
+  ].filter(Boolean).join(' · ');
   const status = kiosk ? overlay : statusData;
   const timeFormat: TimeFormat = (kiosk ? overlay?.time_format : settings?.time_format) || 'system';
 
@@ -404,11 +410,11 @@ export function StreamOverlayPage() {
       {/* Status overlay - bottom */}
       <div className="absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black/80 via-black/60 to-transparent">
         <div className={`${sizes.container}`}>
-          {/* Printer name */}
-          {config.showPrinter && printer && (
+          {/* Printer name and model can each be selected independently. */}
+          {printerIdentity && (
             <div className={`flex items-center ${sizes.gap} mb-2`}>
               <Printer className={`${sizes.icon} text-white/70`} />
-              <span className={`${sizes.text} text-white font-medium`}>{printer.name}</span>
+              <span className={`${sizes.text} text-white font-medium`}>{printerIdentity}</span>
             </div>
           )}
 

@@ -3523,6 +3523,7 @@ export default {
       tokenWarning: '此网址包含令牌：任何能看到它的人都可以观看画面并看到文件名。撤销令牌即可切断访问。',
       fields: '要显示的字段',
       fieldPrinter: '打印机名称',
+      fieldModel: '打印机型号',
       fieldFilename: '文件名',
       fieldStatus: '状态',
       fieldProgress: '进度条',

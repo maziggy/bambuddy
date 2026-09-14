@@ -3565,6 +3565,7 @@ export default {
       tokenWarning: 'This URL contains a token — anyone who can read it can watch the stream and see the file name. Revoke the token to cut it off.',
       fields: 'Fields to show',
       fieldPrinter: 'Printer name',
+      fieldModel: 'Printer model',
       fieldFilename: 'File name',
       fieldStatus: 'Status',
       fieldProgress: 'Progress bar',

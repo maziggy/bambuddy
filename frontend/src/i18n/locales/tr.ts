@@ -3538,6 +3538,7 @@ export default {
       tokenWarning: 'Bu URL bir belirteç içerir: okuyabilen herkes yayını izleyebilir ve dosya adını görebilir. Erişimi kesmek için belirteci iptal edin.',
       fields: 'Gösterilecek alanlar',
       fieldPrinter: 'Yazıcı adı',
+      fieldModel: 'Yazıcı modeli',
       fieldFilename: 'Dosya adı',
       fieldStatus: 'Durum',
       fieldProgress: 'İlerleme çubuğu',

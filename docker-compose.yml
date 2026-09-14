@@ -6,6 +6,16 @@ services:
     #   docker compose up -d          → pulls pre-built image from ghcr.io
     #   docker compose up -d --build  → builds locally from source
     container_name: bambuddy
+    # Headroom above Docker's default 1024 soft nofile. SQLite in WAL mode
+    # parks one db fd per closed pool-overflow connection (released only when
+    # the last connection closes), so a busy instance's fd usage is bounded by
+    # its peak connection concurrency — 1024 is reachable and, once breached,
+    # new DB connections fail with "disk I/O error" and can end in a corrupted
+    # database. Cheap insurance; see backend/app/core/database.py.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     # File ownership inside the data and logs volumes is normalised by the
     # entrypoint at startup (chowns to PUID:PGID and drops privileges via
     # gosu before running the app). Override PUID / PGID below to match

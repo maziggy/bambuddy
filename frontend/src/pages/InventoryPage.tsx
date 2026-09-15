@@ -7,7 +7,7 @@ import {
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   TrendingDown, Layers, Printer, AlertTriangle, X, Clock, LayoutGrid, TableProperties, Columns,
   ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw, TrendingUp, Lock, Copy, Eraser, MapPin,
-  Upload, Download,
+  Upload, Download, QrCode,
 } from 'lucide-react';
 import { ForecastPanel } from '../components/ForecastPanel';
 import { api, spoolbuddyApi, ApiError } from '../api/client';
@@ -17,6 +17,7 @@ import { FilamentSwatch } from '../components/FilamentSwatch';
 import { describeHASensorReading, iconForHASensor } from '../utils/haSensorDisplay';
 import { buildFilamentBackground } from '../components/filamentSwatchHelpers';
 import {SpoolFormModal, type SpoolFormMode} from '../components/SpoolFormModal';
+import { QrAssignTargetModal } from '../components/QrAssignTargetModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
 import { LabelTemplatePickerModal } from '../components/LabelTemplatePickerModal';
@@ -580,6 +581,9 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   const [searchParams, setSearchParams] = useSearchParams();
   const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null; mode: SpoolFormMode } | null>(null);
   const deepLinkHandled = useRef(false);
+  // Scan-to-location (#1574): pick a target (AMS slot or storage), then scan a
+  // spool's QR with the in-page camera — handled entirely inside the modal.
+  const [qrTargetModalOpen, setQrTargetModalOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<
     | { type: 'delete' | 'archive' | 'reset-consumed-counter'; spoolId: number }
     | { type: 'reset-all-consumed-counters' }
@@ -1516,12 +1520,24 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
             <Printer className="w-4 h-4" />
             {t('inventory.labels.printLabels', 'Print labels…')}
           </Button>
+          <Button variant="secondary" onClick={() => setQrTargetModalOpen(true)}>
+            <QrCode className="w-4 h-4" />
+            {t('inventory.qrAssign.button')}
+          </Button>
           <Button onClick={() => setFormModal({ spool: null, mode: 'create' })}>
             <Plus className="w-4 h-4" />
             {t('inventory.addSpool')}
           </Button>
         </div>
       </div>
+
+      {qrTargetModalOpen && (
+        <QrAssignTargetModal
+          isOpen={qrTargetModalOpen}
+          onClose={() => setQrTargetModalOpen(false)}
+          spoolmanMode={spoolmanMode}
+        />
+      )}
 
       {/* Stats Bar */}
       {stats && !isLoading && (

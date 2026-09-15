@@ -5,8 +5,17 @@ import type { InventorySpool } from '../api/client';
  * Case-insensitive. Empty query always returns true.
  */
 export function spoolMatchesQuery(spool: InventorySpool, query: string): boolean {
-  if (!query) return true;
-  const q = query.toLowerCase();
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+
+  // A hash-prefixed number is an explicit spool ID lookup. Keep plain numeric
+  // searches backwards-compatible ("3" can still match #3, #13, #30, ...),
+  // while "#3" selects only the physical spool whose label says #3.
+  const exactIdQuery = q.match(/^#(\d+)$/);
+  if (exactIdQuery) {
+    return spool.id === Number(exactIdQuery[1]);
+  }
+
   return (
     String(spool.id).includes(q) ||
     spool.material.toLowerCase().includes(q) ||

@@ -1,7 +1,9 @@
 """Spoolman integration service for syncing AMS filament data."""
 
 import asyncio
+import json
 import logging
+import math
 import weakref
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -14,6 +16,11 @@ from backend.app.utils.color_utils import color_match_key, spoolman_color_hex
 logger = logging.getLogger(__name__)
 
 BAMBU_RFID_TAG_LENGTH = 32
+
+# Spool.extra key holding the consumed-counter baseline. Defined here rather
+# than imported from the routes package so the client does not depend on it;
+# _spoolman_helpers declares the same name for the read side (#2906).
+BAMBU_WEIGHT_USED_BASELINE_KEY = "bambu_weight_used_baseline"
 
 
 @dataclass
@@ -672,20 +679,50 @@ class SpoolmanClient:
         )
         return response.json()
 
-    async def reset_spool_usage(self, spool_id: int) -> dict:
-        """Reset a spool's used_weight to 0 in Spoolman.
+    async def reset_spool_consumed_counter(self, spool_id: int) -> dict:
+        """Zero the displayed consumed counter by recording a baseline in spool.extra.
 
-        Used by the per-spool / bulk "Reset usage to 0" actions on the
-        Inventory page so the Total Consumed stat can be cleared without
-        touching the rest of the spool's data.
+        This used to PATCH ``used_weight = 0``, which is not a baseline: Spoolman
+        recomputes ``remaining_weight`` as initial minus used, so zeroing used
+        weight put the spool back to full and threw away the measured remaining
+        filament. The confirmation copy promised the opposite in all thirteen
+        locales (#2906).
+
+        Writing the baseline into ``extra`` instead touches no native Spoolman
+        field -- initial, remaining and used all survive -- and is the same
+        mechanism internal mode has always used for its ``weight_used_baseline``
+        column, which is what #1644 asked the two modes to share rather than
+        approximate. ``_map_spoolman_spool`` folds the stored value back into the
+        baseline it reports.
+
+        Serialised on the same per-spool lock as ``merge_spool_extra`` so a
+        concurrent tag or colour write cannot read the extra dict between this
+        method's fetch and its PATCH and put the old one back.
         """
-        response = await self._request_spool(
-            "PATCH",
-            spool_id,
-            json_body={"used_weight": 0},
-            operation="reset-usage",
-        )
-        return response.json()
+        async with self.extra_lock(spool_id):
+            current = await self.get_spool(spool_id)  # raises on error
+            used_weight = current.get("used_weight")
+            try:
+                baseline = float(used_weight) if used_weight is not None else 0.0
+            except (TypeError, ValueError):
+                baseline = 0.0
+            if not math.isfinite(baseline) or baseline < 0:
+                baseline = 0.0
+            merged = {
+                **(current.get("extra") or {}),
+                # Stored as a JSON *string*, not a JSON number. Spoolman
+                # registers an unseen extra key as field_type "text" on first
+                # write, and its validate_extra_field_value then requires the
+                # value to decode to a str -- a bare 263.0 is rejected with
+                # "Value is not a string." and the PATCH 400s, so the reset
+                # would never land. It has to be right the first time:
+                # add_or_update_extra_field refuses to change a field's type
+                # afterwards, so one numeric write would pin the key to text on
+                # that install permanently. tag, bambu_color_name and both
+                # slicer keys already store the string form for this reason.
+                BAMBU_WEIGHT_USED_BASELINE_KEY: json.dumps(str(baseline)),
+            }
+            return await self.update_spool_full(spool_id=spool_id, extra=merged)
 
     async def update_spool_full(
         self,
@@ -1275,8 +1312,6 @@ class SpoolmanClient:
             if not filament_id:
                 logger.error("Failed to find or create filament for %s", tray.tray_sub_brands)
                 return None
-
-            import json
 
             return await self.create_spool(
                 filament_id=filament_id,

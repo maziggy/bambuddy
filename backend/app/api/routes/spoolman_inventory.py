@@ -949,18 +949,21 @@ async def reset_spool_consumed_counter(
 ) -> dict:
     """Zero the displayed "Total Consumed" counter for a Spoolman spool.
 
-    Spoolman doesn't have a native "baseline" field, so the implementation
-    reaches for the closest equivalent: PATCH `used_weight=0` upstream.
-    The read mapping in ``_map_spoolman_spool`` then derives Bambuddy's
-    `weight_used = label - remaining_weight` and `baseline = weight_used -
-    real_used_weight`, so the Inventory page's `weight_used - baseline`
-    display lands at 0 while remaining (= label - weight_used) is preserved
-    — parity with the internal-mode endpoint (#1390, see also
+    Spoolman has no native baseline field, so the baseline lives in
+    ``spool.extra`` — the same mechanism internal mode uses for its
+    ``weight_used_baseline`` column. ``_map_spoolman_spool`` folds it back in,
+    so the Inventory page's ``weight_used - baseline`` reads 0 while every
+    native Spoolman field is left exactly as it was.
+
+    It used to PATCH ``used_weight = 0`` upstream, which is not the same thing:
+    Spoolman recomputes ``remaining_weight`` from initial minus used, so the
+    spool jumped back to full and the measured remaining filament was gone
+    (#2906). Parity with the internal-mode endpoint (#1644, #1390, see also
     ``backend/app/api/routes/inventory.py::reset_spool_consumed_counter``).
     """
     client = await _get_client(db)
     async with _translate_spoolman_errors():
-        spool = await client.reset_spool_usage(spool_id)
+        spool = await client.reset_spool_consumed_counter(spool_id)
     try:
         mapped = _map_spoolman_spool(spool)
     except ValueError as exc:
@@ -1111,7 +1114,7 @@ async def bulk_reset_spool_consumed_counter(
     for spool_id in spool_ids:
         try:
             async with _translate_spoolman_errors():
-                await client.reset_spool_usage(spool_id)
+                await client.reset_spool_consumed_counter(spool_id)
             reset_count += 1
         except HTTPException as exc:
             logger.warning("Spoolman reset-consumed-counter failed for spool %s: %s", spool_id, exc.detail)

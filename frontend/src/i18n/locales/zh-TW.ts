@@ -680,6 +680,8 @@ export default {
       hours: '小時',
       timeRemaining: '剩餘 {{time}}',
       active: '乾燥中',
+      notStarted: '乾燥未啟動',
+      notStartedHint: '印表機已接受乾燥指令，但 AMS 尚未開始該週期——可能在等待供電或目前的列印。',
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: '不支援乾燥',
       powerRequired: '連線AMS電源介面卡以啟用乾燥',

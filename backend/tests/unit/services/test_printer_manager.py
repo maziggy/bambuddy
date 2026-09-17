@@ -1104,6 +1104,34 @@ class TestPrinterStateToDict:
         assert ht_tray["exists"] is False
         assert reg_tray["exists"] is True
 
+    def test_dry_countdown_stalled_is_serialized_for_websocket(self, mock_state):
+        """The WS status payload must carry ``dry_countdown_stalled`` — the REST
+        serializer already does (routes/printers.py). The frontend merges a WS
+        frame over the cached status with a top-level shallow spread, so the ~1/s
+        frame replaces the REST-seeded ``ams`` array wholesale. Omit the flag here
+        and it reads undefined a second after load, the card falls back to the
+        amber "Drying - 45m left" badge, and the neutral "Drying not started"
+        state is unreachable in the live UI. Same failure mode as `exists`/#2670.
+        """
+        mock_state.raw_data = {
+            "ams": [
+                # Parked command: timer set, countdown never ticked.
+                {"id": 0, "dry_time": 720, "dry_countdown_stalled": True, "tray": []},
+                # Genuinely running cycle.
+                {"id": 1, "dry_time": 45, "dry_countdown_stalled": False, "tray": []},
+                # Pre-flag raw_data (a unit the MQTT layer has not stamped yet)
+                # must serialize False, never None/absent — the REST shape is a
+                # non-optional bool and the two surfaces must not disagree.
+                {"id": 2, "dry_time": 0, "tray": []},
+            ]
+        }
+
+        result = printer_state_to_dict(mock_state)
+
+        assert result["ams"][0]["dry_countdown_stalled"] is True
+        assert result["ams"][1]["dry_countdown_stalled"] is False
+        assert result["ams"][2]["dry_countdown_stalled"] is False
+
     def test_vt_tray_parsing(self, mock_state):
         """Verify virtual tray is parsed correctly as a list."""
         mock_state.raw_data = {

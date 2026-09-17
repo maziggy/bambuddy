@@ -6410,6 +6410,74 @@ class TestAmsFilamentSettingExternalSpoolEncoding:
         assert cmd["slot_id"] == 0
 
 
+class TestDryCountdownStall:
+    """A ``dry_time`` the firmware set but whose countdown never ticks is a
+    parked command, not a running cycle — ``dry_countdown_stalled`` is how the
+    UI stops showing an active-drying badge for it. Live countdowns decrement
+    once a minute; the stall threshold (150 s) is two missed ticks plus jitter.
+    Found on an H2D mid-print: two AMS-HT cycles running, the third unit's
+    timer frozen at its full 720 while the AMS never heated."""
+
+    @pytest.fixture
+    def mqtt_client(self, monkeypatch):
+        from backend.app.services import bambu_mqtt as mod
+
+        clock = {"now": 1000.0}
+        monkeypatch.setattr(mod.time, "monotonic", lambda: clock["now"])
+        client = mod.BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST-STALL",
+            access_code="12345678",
+        )
+        client._test_clock = clock  # Expose for tests to advance
+        return client
+
+    def _unit(self, mqtt_client, ams_id=0):
+        for u in mqtt_client.state.raw_data["ams"]:
+            if int(u["id"]) == ams_id:
+                return u
+        raise AssertionError(f"AMS {ams_id} not in raw_data")
+
+    def test_frozen_countdown_flags_stalled(self, mqtt_client):
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 720, "tray": []}]})
+        assert self._unit(mqtt_client)["dry_countdown_stalled"] is False
+        mqtt_client._test_clock["now"] += 151
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 720, "tray": []}]})
+        assert self._unit(mqtt_client)["dry_countdown_stalled"] is True
+
+    def test_ticking_countdown_never_flags(self, mqtt_client):
+        """A live cycle decrements every minute; repeats of the same value
+        inside the minute must not flag either."""
+        for dt, value in ((0, 720), (60, 719), (100, 719), (120, 718)):
+            mqtt_client._test_clock["now"] = 1000.0 + dt
+            mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": value, "tray": []}]})
+            assert self._unit(mqtt_client)["dry_countdown_stalled"] is False, dt
+
+    def test_active_dry_status_vouches_for_frozen_countdown(self, mqtt_client):
+        """When the firmware's own info phase says Drying, a frozen countdown
+        is trusted as live — the phase field outranks the tick heuristic."""
+        # info bits 4-7 = 2 (Drying) -> 0x20
+        frame = {"ams": [{"id": "0", "dry_time": 720, "info": "20", "tray": []}]}
+        mqtt_client._handle_ams_data(frame)
+        mqtt_client._test_clock["now"] += 300
+        mqtt_client._handle_ams_data(frame)
+        assert self._unit(mqtt_client)["dry_countdown_stalled"] is False
+
+    def test_fresh_start_gets_grace_before_flagging(self, mqtt_client):
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        mqtt_client._test_clock["now"] += 30
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 720, "tray": []}]})
+        mqtt_client._test_clock["now"] += 30
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 720, "tray": []}]})
+        assert self._unit(mqtt_client)["dry_countdown_stalled"] is False
+
+    def test_finished_cycle_never_reads_stalled(self, mqtt_client):
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 1, "tray": []}]})
+        mqtt_client._test_clock["now"] += 200
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        assert self._unit(mqtt_client)["dry_countdown_stalled"] is False
+
+
 class TestDryingCompleteCallback:
     """#1349 — fires ``on_drying_complete(ams_id)`` on a dry_time falling edge."""
 

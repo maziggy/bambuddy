@@ -680,6 +680,8 @@ export default {
       hours: 'ore',
       timeRemaining: '{{time}} rimanente',
       active: 'Essiccazione',
+      notStarted: 'Essiccazione non avviata',
+      notStartedHint: 'La stampante ha accettato il comando di essiccazione ma l\'AMS non ha avviato il ciclo — potrebbe essere in attesa dell\'alimentazione o della stampa in corso.',
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Essiccazione non supportata',
       powerRequired: 'Collegare l\'alimentatore AMS per abilitare l\'asciugatura',

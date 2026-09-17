@@ -680,6 +680,8 @@ export default {
       hours: 'horas',
       timeRemaining: '{{time}} restante',
       active: 'Secagem',
+      notStarted: 'Secagem não iniciada',
+      notStartedHint: 'A impressora aceitou o comando de secagem, mas o AMS não iniciou o ciclo — pode estar aguardando energia ou a impressão em andamento.',
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Secagem não suportada',
       powerRequired: 'Conecte o adaptador de energia AMS para ativar a secagem',

@@ -23,7 +23,7 @@ import paho.mqtt.client as mqtt
 
 from backend.app.services.hms_actions import HMSAction, get_actions_for_error_code
 from backend.app.services.hms_errors import describe_fault
-from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES
+from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES, DRY_COUNTDOWN_STALL_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -1275,6 +1275,15 @@ class BambuMQTTClient:
         # Per-AMS previous dry_time, used to detect the falling edge above.
         # Seeded lazily as we observe each AMS unit.
         self._previous_dry_times: dict[int, int] = {}
+        # Per-AMS monotonic stamp of the last time dry_time CHANGED value.
+        # A live cycle's countdown ticks once a minute; a command the firmware
+        # accepted but never actually started (observed on an H2D mid-print
+        # with two AMS-HT cycles already running: the third unit's timer sat
+        # frozen at its full duration) never ticks. dry_time > 0 with no tick
+        # for DRY_COUNTDOWN_STALL_SECONDS and no active dry_status phase is
+        # reported as dry_countdown_stalled so the UI can stop claiming an
+        # active cycle that is not running.
+        self._dry_time_changed_at: dict[int, float] = {}
         # Per-AMS active-cycle target params (filament + temp) we sent on the
         # last start. Bambu does not echo these back in the per-tick AMS push
         # — only the dry_time countdown — so we cache what we sent to drive
@@ -3625,6 +3634,18 @@ class BambuMQTTClient:
                 continue
             previous = self._previous_dry_times.get(ams_id, 0)
             self._previous_dry_times[ams_id] = current
+            # Stall detection: stamp value CHANGES only — a live countdown
+            # decrements once a minute, so repeats of the same value within
+            # the minute must not refresh the stamp, and a frame without a
+            # dry_time never reaches here (the absent-value skip above).
+            now_mono = time.monotonic()
+            if current != previous or ams_id not in self._dry_time_changed_at:
+                self._dry_time_changed_at[ams_id] = now_mono
+            ams_unit["dry_countdown_stalled"] = bool(
+                current > 0
+                and ams_unit.get("dry_status") not in ACTIVE_DRY_STATUSES
+                and now_mono - self._dry_time_changed_at[ams_id] > DRY_COUNTDOWN_STALL_SECONDS
+            )
             if previous > 0 and current == 0:
                 self._log_drying_cycle_end(ams_id, previous, ams_unit, self._drying_targets.pop(ams_id, None))
                 if self.on_drying_complete:

@@ -680,6 +680,8 @@ export default {
       hours: 'Stunden',
       timeRemaining: '{{time}} verbleibend',
       active: 'Trocknung',
+      notStarted: 'Trocknung nicht gestartet',
+      notStartedHint: 'Der Drucker hat den Trocknungsbefehl angenommen, aber das AMS hat den Zyklus nicht begonnen — möglicherweise wartet es auf Strom oder den laufenden Druck.',
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Trocknung nicht unterstützt',
       powerRequired: 'AMS-Netzteil anschließen, um Trocknung zu aktivieren',

@@ -213,6 +213,10 @@ class AMSUnit(BaseModel):
     serial_number: str = ""  # AMS unit serial number (sn from MQTT)
     sw_ver: str = ""  # AMS firmware version (from get_version info.module)
     dry_time: int = 0  # Minutes remaining (0 = not drying, >0 = drying active)
+    # True when dry_time > 0 but the countdown has not ticked for over
+    # DRY_COUNTDOWN_STALL_SECONDS with no active dry_status phase: the firmware
+    # accepted a drying command and set the timer but never started the cycle.
+    dry_countdown_stalled: bool = False
     dry_status: int = 0  # 0=Off, 1=Checking, 2=Drying, 3=Cooling, 4=Stopping, 5=Error
     dry_sub_status: int = 0  # 0=Off, 1=Heating, 2=Dehumidify
     dry_sf_reason: list[int] = []  # Cannot-dry reasons from firmware (see CannotDryReason)

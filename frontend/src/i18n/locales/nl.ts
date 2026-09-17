@@ -683,6 +683,8 @@ export default {
       hours: 'uren',
       timeRemaining: '{{time}} resterend',
       active: 'Drogen',
+      notStarted: 'Drogen niet gestart',
+      notStartedHint: 'De printer heeft de droogopdracht geaccepteerd, maar de AMS is nog niet met de cyclus begonnen — mogelijk wacht hij op stroom of op de lopende print.',
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Drogen niet ondersteund',
       powerRequired: 'Sluit de AMS-voedingsadapter aan om drogen in te schakelen',

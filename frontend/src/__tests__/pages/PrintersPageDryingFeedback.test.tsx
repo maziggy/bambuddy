@@ -63,7 +63,7 @@ const baseTray = {
 
 /** AMS 2 Pro (n3f) on an idle printer that accepts remote drying commands. */
 function makeStatus(
-  dry: { dry_time: number; dry_status: number },
+  dry: { dry_time: number; dry_status: number; dry_countdown_stalled?: boolean },
   caps: { supports_drying?: boolean; drying_screen_only?: boolean } = {},
 ) {
   return {
@@ -105,6 +105,8 @@ function makeStatus(
 
 const IDLE = makeStatus({ dry_time: 0, dry_status: 0 });
 const DRYING = makeStatus({ dry_time: 720, dry_status: 2 });
+/** Timer set by an accepted command, but the countdown never started ticking. */
+const STALLED = makeStatus({ dry_time: 720, dry_status: 0, dry_countdown_stalled: true });
 
 /** A P1: the AMS dries, but only from the printer's own screen. */
 const SCREEN_ONLY = makeStatus(
@@ -262,5 +264,34 @@ describe('PrintersPage - screen-only AMS drying (#2533)', () => {
     expect((await screen.findAllByText(/12h 0m/)).length).toBeGreaterThan(0);
     // Stop is a command, and a P1 ignores it exactly as it ignores start.
     expect(screen.queryByTitle('Stop Drying')).not.toBeInTheDocument();
+  });
+});
+
+describe('PrintersPage - parked drying command is not shown as an active cycle', () => {
+  beforeEach(() => {
+    mockShowToast.mockClear();
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([mockPrinter])),
+      http.get('/api/v1/queue/', () => HttpResponse.json([])),
+    );
+  });
+
+  it('shows "Drying not started" instead of the active badge when the countdown is stalled', async () => {
+    server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json(STALLED)));
+
+    render(<PrintersPage />);
+
+    expect((await screen.findAllByText('Drying not started')).length).toBeGreaterThan(0);
+    // The active-cycle claims are gone: no "Drying" badge text, no countdown.
+    expect(screen.queryByText('12h 0m left')).not.toBeInTheDocument();
+  });
+
+  it('keeps the amber active badge for a countdown that is really ticking', async () => {
+    server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json(DRYING)));
+
+    render(<PrintersPage />);
+
+    expect((await screen.findAllByText(/12h 0m/)).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Drying not started')).not.toBeInTheDocument();
   });
 });

@@ -21,6 +21,14 @@ from typing import Any
 # should still reach the user, so it must never read as "expected heat".
 ACTIVE_DRY_STATUSES = frozenset({1, 2, 3})  # Checking, Drying, Cooling
 
+# A live drying countdown ticks down once per minute. A ``dry_time`` that has
+# not changed for this long — with no active ``dry_status`` phase vouching for
+# the cycle — is a timer the firmware set but never started running (seen on an
+# H2D mid-print with two AMS-HT cycles already active: the third unit's timer
+# froze at its full duration and no heating ever began). 150 s allows two full
+# missed ticks plus jitter before the countdown is called stalled.
+DRY_COUNTDOWN_STALL_SECONDS = 150
+
 
 def is_drying_active(ams_data: Any) -> bool:
     """True when this AMS unit reports a drying cycle in progress.

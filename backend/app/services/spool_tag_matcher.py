@@ -255,8 +255,16 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     # when creating SpoolAssignment runs synchronously outside the greenlet.
     spool.k_profiles = []
     spool.assignments = []
+    spool.supplier_links = []
     db.add(spool)
     await db.flush()
+
+    # A new spool of a product that already carries supplier assignments
+    # inherits the source list (#2988) — a scanned refill arrives knowing
+    # where it can be bought.
+    from backend.app.services.supplier_links import apply_supplier_inheritance
+
+    await apply_supplier_inheritance(db, spool)
 
     logger.info(
         "Auto-created spool %d from AMS tray data: %s %s %s (tag=%s uuid=%s)",

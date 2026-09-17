@@ -57,6 +57,14 @@ class Spool(Base):
     # spools with a lower one without changing the global default.
     low_stock_threshold_pct: Mapped[int | None] = mapped_column(Integer)
 
+    # Internal material / article number (#2870): the identifier a business
+    # purchases and costs by (e.g. "15" = Bambu Lab PLA Basic), distinct from
+    # `category` (production grouping) and `note` (free text). Free text, no
+    # uniqueness — several spools of the same product share the number, which
+    # is exactly what makes it a sort/filter/statistics key. New spools of a
+    # matching product inherit it on creation (see prepare_internal_spool_payload).
+    material_number: Mapped[str | None] = mapped_column(String(64))
+
     # Cost tracking
     cost_per_kg: Mapped[float | None] = mapped_column(Float)  # Cost per kilogram
 

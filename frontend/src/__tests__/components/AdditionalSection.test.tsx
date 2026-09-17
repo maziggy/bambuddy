@@ -17,6 +17,7 @@ const baseProps = {
   spoolCatalog: [],
   currencySymbol: '$',
   availableCategories: [],
+  availableMaterialNumbers: [],
   globalLowStockThreshold: 20,
 };
 
@@ -41,5 +42,18 @@ describe('AdditionalSection', () => {
     render(<AdditionalSection {...baseProps} />);
     // SpoolWeightPicker present by default
     expect(screen.getByText('inventory.coreWeight')).toBeTruthy();
+  });
+
+  it('renders the material number field in internal mode (#2870)', () => {
+    render(<AdditionalSection {...baseProps} spoolmanMode={false} />);
+    expect(screen.getByText('inventory.materialNumber')).toBeTruthy();
+  });
+
+  it('hides the material number field in Spoolman mode (#2870)', () => {
+    // In Spoolman mode the number is the filament-level article_number,
+    // maintained in Spoolman itself — the form must not offer an input
+    // whose value would be silently dropped.
+    render(<AdditionalSection {...baseProps} spoolmanMode={true} />);
+    expect(screen.queryByText('inventory.materialNumber')).toBeNull();
   });
 });

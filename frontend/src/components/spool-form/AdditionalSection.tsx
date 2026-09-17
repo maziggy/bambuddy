@@ -174,6 +174,7 @@ export function AdditionalSection({
   spoolCatalog,
   currencySymbol,
   availableCategories,
+  availableMaterialNumbers,
   availableLocations = [],
   onCreateLocation,
   globalLowStockThreshold,
@@ -320,6 +321,33 @@ export function AdditionalSection({
           </div>
         </div>
       </div>
+
+      {/* Material number (#2870). Hidden in Spoolman mode: there the number
+          is Spoolman's filament-level article_number, maintained in Spoolman
+          itself and surfaced read-only in the list. */}
+      {!spoolmanMode && (
+      <div>
+        <label className="block text-sm font-medium text-bambu-gray mb-1" htmlFor="spool-material-number">
+          {t('inventory.materialNumber')}
+        </label>
+        <input
+          id="spool-material-number"
+          type="text"
+          list="spool-material-number-options"
+          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+          placeholder={t('inventory.materialNumberPlaceholder')}
+          value={formData.material_number}
+          maxLength={64}
+          onChange={(e) => updateField('material_number', e.target.value)}
+        />
+        {availableMaterialNumbers.length > 0 && (
+          <datalist id="spool-material-number-options">
+            {availableMaterialNumbers.map((n) => <option key={n} value={n} />)}
+          </datalist>
+        )}
+        <p className="text-xs text-bambu-gray mt-1">{t('inventory.materialNumberHelp')}</p>
+      </div>
+      )}
 
       {/* Category (#729) */}
       <div>

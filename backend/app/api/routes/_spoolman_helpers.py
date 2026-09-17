@@ -54,6 +54,10 @@ class MappedSpoolFields(TypedDict):
     created_at: str | None  # None when Spoolman spool has no registered timestamp
     updated_at: str | None
     cost_per_kg: float | None
+    # Spoolman's native filament.article_number, surfaced as the internal
+    # material number (#2870). Read-only in Spoolman mode — the number is
+    # filament-level there and maintained in Spoolman itself.
+    material_number: str | None
     storage_location: str | None
     location_id: int | None
     k_profiles: list[Any]
@@ -340,6 +344,9 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         # Spoolman has no updated_at field; use registered timestamp as best available proxy
         "updated_at": created_at,
         "cost_per_kg": _safe_optional_float(spool.get("price")),
+        # Spoolman's filament.article_number maps 1:1 onto the internal
+        # material number (#2870): both identify the purchasable product.
+        "material_number": (filament.get("article_number") or None),
         "storage_location": spool.get("location") or None,
         "location_id": None,
         "k_profiles": [],

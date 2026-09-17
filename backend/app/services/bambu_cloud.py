@@ -788,6 +788,29 @@ class BambuCloudService:
         except httpx.RequestError as e:
             raise BambuCloudError(f"Request failed: {e}")
 
+    async def get_task(self, task_id: str | int) -> dict:
+        """One print task, by the ``subtask_id`` the printer reports over MQTT.
+
+        Carries ``cover`` — the sliced plate render — plus ``designTitle``, ``designId``,
+        ``profileId`` and ``plateIndex``. The lookup needs the session; the CDN URL it
+        returns is public.
+        """
+        if not self.is_authenticated:
+            raise BambuCloudAuthError("Not authenticated")
+
+        try:
+            response = await self._client.get(
+                f"{self.base_url}/v1/user-service/my/task/{task_id}", headers=self._get_headers()
+            )
+
+            if response.status_code == 200:
+                return response.json()
+
+            raise BambuCloudError(f"Failed to get task {task_id}: {response.status_code}")
+
+        except httpx.RequestError as e:
+            raise BambuCloudError(f"Request failed: {e}")
+
     async def get_slicer_settings(self, version: str = _SLICER_API_VERSION) -> dict:
         """
         Get all slicer settings (filament, printer, process presets).

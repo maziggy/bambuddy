@@ -170,8 +170,21 @@ function SpoolSlot({ tray, slotIndex, isActive, fillOverride, spoolmanFill, onCl
 
   return (
     <div
-      className={`relative flex flex-col items-center p-2.5 rounded-lg transition-all ${isActive ? 'ring-2 ring-bambu-green' : ''} ${onClick ? 'cursor-pointer hover:bg-white/5' : ''}`}
+      className={`relative flex flex-col items-center p-2.5 rounded-lg border transition-all ${
+        isActive
+          ? 'ring-2 ring-bambu-green border-bambu-green bg-bambu-green/10'
+          : 'border-transparent'
+      } ${onClick ? 'cursor-pointer hover:border-bambu-gray hover:bg-bambu-dark-tertiary' : ''}`}
       onClick={onClick}
+      onKeyDown={onClick ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick();
+        }
+      } : undefined}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-pressed={onClick ? isActive : undefined}
       title={onClick ? `AMS Slot ${slotIndex + 1}` : undefined}
     >
       {/* Spool visualization */}
@@ -196,7 +209,7 @@ function SpoolSlot({ tray, slotIndex, isActive, fillOverride, spoolmanFill, onCl
 
       {/* Material type */}
       <span
-        className="text-sm text-white/70 truncate max-w-full"
+        className="text-sm text-bambu-gray-light truncate max-w-full"
         title={emptyKind === 'reset' ? 'Spool loaded — slot not configured' : undefined}
       >
         {isEmpty ? (emptyKind === 'reset' ? '?' : 'Empty') : tray.tray_type || 'Unknown'}
@@ -216,7 +229,9 @@ function SpoolSlot({ tray, slotIndex, isActive, fillOverride, spoolmanFill, onCl
       )}
 
       {/* Slot number */}
-      <span className="absolute top-1 right-1 text-xs text-white/30">{slotIndex + 1}</span>
+      <span className="absolute top-1 right-1 rounded bg-bambu-dark-tertiary px-1.5 py-0.5 text-[10px] font-semibold text-bambu-gray-light">
+        {slotIndex + 1}
+      </span>
     </div>
   );
 }
@@ -245,7 +260,7 @@ export function AmsUnitCard({ unit, activeSlot, onConfigureSlot, isDualNozzle, n
   const slotCount = isHt ? 1 : 4;
 
   return (
-    <div className="bg-bambu-dark-secondary rounded-lg p-3">
+    <div className="bg-bambu-dark-secondary rounded-xl border border-[var(--border-color)] p-3 shadow-sm">
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5">

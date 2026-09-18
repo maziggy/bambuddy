@@ -47,15 +47,16 @@ function ProviderForm({
   const { t } = useTranslation();
   const [form, setForm] = useState<OIDCProviderCreate>(initial);
   const [secretChanged, setSecretChanged] = useState(false);
-  // #3107 — the mapping is edited as JSON text (same interaction as the LDAP
-  // group mapping) and parsed on save; bad JSON is surfaced inline instead of
-  // round-tripping through the API's 422.
-  const [mappingText, setMappingText] = useState(() =>
-    initial.group_mapping && Object.keys(initial.group_mapping).length > 0
-      ? JSON.stringify(initial.group_mapping, null, 2)
-      : ''
+  // #3107 — each row is an { idpGroup -> bambuddyGroup } pair, edited directly
+  // instead of as JSON. The Bambuddy side is a <select> sourced from `groups`,
+  // so an invalid group name can't be entered in the first place.
+  const [mappingRows, setMappingRows] = useState<{ idpGroup: string; bambuddyGroup: string }[]>(() =>
+    Object.entries(initial.group_mapping ?? {}).map(([idpGroup, bambuddyGroup]) => ({ idpGroup, bambuddyGroup }))
   );
-  const [mappingError, setMappingError] = useState<string | null>(null);
+  const addMappingRow = () => setMappingRows((prev) => [...prev, { idpGroup: '', bambuddyGroup: '' }]);
+  const removeMappingRow = (i: number) => setMappingRows((prev) => prev.filter((_, idx) => idx !== i));
+  const updateMappingRow = (i: number, patch: Partial<{ idpGroup: string; bambuddyGroup: string }>) =>
+    setMappingRows((prev) => prev.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
   const set = (key: keyof OIDCProviderCreate, value: unknown) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
@@ -68,38 +69,22 @@ function ProviderForm({
     if (isEdit && !secretChanged) {
       delete (payload as Partial<OIDCProviderCreate>).client_secret;
     }
-    // #3107 — parse the mapping JSON on save. Blank means "no mapping" (sync
-    // off); anything else must be a flat { "IdP group": "Bambuddy group" }
-    // object. Values are checked against the group list locally so a typo is
-    // caught before the request, with the API's 422 as the backstop.
-    const trimmed = mappingText.trim();
-    if (trimmed === '') {
-      payload.group_mapping = {};
-      setMappingError(null);
-    } else {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(trimmed);
-      } catch {
-        setMappingError(t('settings.oidc.form.groupMappingInvalidJson'));
-        return;
+    // #3107 — blank IdP-group name or unselected Bambuddy group means the row
+    // isn't finished yet; drop it rather than saving a half-filled mapping.
+    const mapping: Record<string, string> = {};
+    for (const row of mappingRows) {
+      const idpGroup = row.idpGroup.trim();
+      if (idpGroup && row.bambuddyGroup) {
+        mapping[idpGroup] = row.bambuddyGroup;
       }
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        setMappingError(t('settings.oidc.form.groupMappingInvalidJson'));
-        return;
-      }
-      const mapping = parsed as Record<string, string>;
-      const groupNames = new Set(groups.map((g) => g.name));
-      const unknownGroups = Object.values(mapping).filter((v) => !groupNames.has(v));
-      if (unknownGroups.length > 0) {
-        setMappingError(t('settings.oidc.form.groupMappingUnknownGroups', { groups: unknownGroups.join(', ') }));
-        return;
-      }
-      payload.group_mapping = mapping;
-      setMappingError(null);
     }
+    payload.group_mapping = mapping;
     onSave(payload);
   };
+
+  const scopeTokens = form.scopes.toLowerCase().split(/\s+/).filter(Boolean);
+  const emailClaimInScopes = scopeTokens.includes((form.email_claim || 'email').toLowerCase());
+  const groupClaimInScopes = scopeTokens.includes((form.group_claim || 'groups').toLowerCase());
 
   const autoLinkOn = form.auto_link_existing_accounts === true;
   const emailVerifiedOn = form.require_email_verified ?? true;
@@ -212,6 +197,11 @@ function ProviderForm({
         {autoLinkOn && form.email_claim !== 'email' && (
           <p className="text-yellow-700 dark:text-yellow-400 text-xs mt-1">{t('settings.oidc.form.emailClaimCustomClaimAutoLinkWarning')}</p>
         )}
+        {!emailClaimInScopes && (
+          <p className="text-yellow-700 dark:text-yellow-400 text-xs mt-1">
+            {t('settings.oidc.form.claimNotInScopesWarning', { claim: form.email_claim || 'email' })}
+          </p>
+        )}
       </div>
 
       <div>
@@ -238,26 +228,46 @@ function ProviderForm({
           placeholder="groups"
         />
         <p className="text-bambu-gray text-xs mt-1">{t('settings.oidc.form.groupClaimDesc')}</p>
+        {!groupClaimInScopes && (
+          <p className="text-yellow-700 dark:text-yellow-400 text-xs mt-1">
+            {t('settings.oidc.form.claimNotInScopesWarning', { claim: form.group_claim || 'groups' })}
+          </p>
+        )}
       </div>
 
       <div>
         <label className={labelCls}>{t('settings.oidc.form.groupMapping')}</label>
-        <textarea
-          className={`${inputCls} font-mono text-xs`}
-          rows={4}
-          value={mappingText}
-          onChange={(e) => {
-            setMappingText(e.target.value);
-            setMappingError(null);
-          }}
-          placeholder={'{\n  "fablab-staff": "Operators",\n  "students": "Viewers"\n}'}
-        />
-        <p className="text-bambu-gray text-xs mt-1">
-          {t('settings.oidc.form.groupMappingHint')}
-          {groups.length > 0 && ` ${groups.map((g) => g.name).join(', ')}`}
-        </p>
+        <div className="space-y-2">
+          {mappingRows.map((row, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                className={inputCls}
+                value={row.idpGroup}
+                onChange={(e) => updateMappingRow(i, { idpGroup: e.target.value })}
+                placeholder={t('settings.oidc.form.groupMappingIdpGroupPlaceholder')}
+              />
+              <span className="text-bambu-gray text-sm shrink-0">&rarr;</span>
+              <select
+                className={inputCls}
+                value={row.bambuddyGroup}
+                onChange={(e) => updateMappingRow(i, { bambuddyGroup: e.target.value })}
+              >
+                <option value="">{t('settings.oidc.form.groupMappingSelectGroup')}</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.name}>{g.name}</option>
+                ))}
+              </select>
+              <Button variant="secondary" size="sm" onClick={() => removeMappingRow(i)} title={t('common.remove')}>
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          ))}
+          <Button variant="secondary" size="sm" onClick={addMappingRow} className="inline-flex items-center gap-2">
+            <Plus className="w-4 h-4" />
+            {t('settings.oidc.form.groupMappingAddRow')}
+          </Button>
+        </div>
         <p className="text-bambu-gray text-xs mt-1">{t('settings.oidc.form.groupMappingDesc')}</p>
-        {mappingError && <p className="text-red-700 dark:text-red-400 text-xs mt-1">{mappingError}</p>}
       </div>
 
       <div className="flex gap-3 pt-2">

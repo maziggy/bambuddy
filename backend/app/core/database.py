@@ -1772,6 +1772,14 @@ async def run_migrations(conn):
     # Migration: Add is_favorite column to print_archives
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN is_favorite BOOLEAN DEFAULT 0")
 
+    # Migration: Add OIDC group sync columns (#3107). group_claim defaults to
+    # 'groups'; group_mapping defaults to '{}' (empty JSON object = sync off,
+    # the pre-#3107 behaviour). Both nullable-free with defaults so the
+    # existing rows from create_all-less installs (PostgreSQL upgrades) come
+    # back with sane values. JSON on PostgreSQL resolves to its JSON type.
+    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN group_claim VARCHAR(64) DEFAULT 'groups'")
+    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN group_mapping JSON DEFAULT '{}'")
+
     # Migration: Add wallet_charge_skipped column to print_archives so deleted print charges stay deleted
     if is_sqlite():
         await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN wallet_charge_skipped BOOLEAN DEFAULT 0")

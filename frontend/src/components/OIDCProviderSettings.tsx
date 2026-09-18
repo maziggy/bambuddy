@@ -21,6 +21,8 @@ const EMPTY_FORM: OIDCProviderCreate = {
   auto_link_existing_accounts: false,
   email_claim: 'email',
   require_email_verified: true,
+  group_claim: 'groups',
+  group_mapping: {},
   icon_url: undefined,
   default_group_id: null,
   is_autologin: false,
@@ -45,6 +47,15 @@ function ProviderForm({
   const { t } = useTranslation();
   const [form, setForm] = useState<OIDCProviderCreate>(initial);
   const [secretChanged, setSecretChanged] = useState(false);
+  // #3107 — the mapping is edited as JSON text (same interaction as the LDAP
+  // group mapping) and parsed on save; bad JSON is surfaced inline instead of
+  // round-tripping through the API's 422.
+  const [mappingText, setMappingText] = useState(() =>
+    initial.group_mapping && Object.keys(initial.group_mapping).length > 0
+      ? JSON.stringify(initial.group_mapping, null, 2)
+      : ''
+  );
+  const [mappingError, setMappingError] = useState<string | null>(null);
   const set = (key: keyof OIDCProviderCreate, value: unknown) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
@@ -56,6 +67,36 @@ function ProviderForm({
     const payload = { ...form };
     if (isEdit && !secretChanged) {
       delete (payload as Partial<OIDCProviderCreate>).client_secret;
+    }
+    // #3107 — parse the mapping JSON on save. Blank means "no mapping" (sync
+    // off); anything else must be a flat { "IdP group": "Bambuddy group" }
+    // object. Values are checked against the group list locally so a typo is
+    // caught before the request, with the API's 422 as the backstop.
+    const trimmed = mappingText.trim();
+    if (trimmed === '') {
+      payload.group_mapping = {};
+      setMappingError(null);
+    } else {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        setMappingError(t('settings.oidc.form.groupMappingInvalidJson'));
+        return;
+      }
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        setMappingError(t('settings.oidc.form.groupMappingInvalidJson'));
+        return;
+      }
+      const mapping = parsed as Record<string, string>;
+      const groupNames = new Set(groups.map((g) => g.name));
+      const unknownGroups = Object.values(mapping).filter((v) => !groupNames.has(v));
+      if (unknownGroups.length > 0) {
+        setMappingError(t('settings.oidc.form.groupMappingUnknownGroups', { groups: unknownGroups.join(', ') }));
+        return;
+      }
+      payload.group_mapping = mapping;
+      setMappingError(null);
     }
     onSave(payload);
   };
@@ -186,6 +227,37 @@ function ProviderForm({
           ))}
         </select>
         <p className="text-bambu-gray text-xs mt-1">{t('settings.oidc.form.defaultGroupDesc')}</p>
+      </div>
+
+      <div>
+        <label className={labelCls}>{t('settings.oidc.form.groupClaim')}</label>
+        <input
+          className={inputCls}
+          value={form.group_claim ?? 'groups'}
+          onChange={(e) => set('group_claim', e.target.value || 'groups')}
+          placeholder="groups"
+        />
+        <p className="text-bambu-gray text-xs mt-1">{t('settings.oidc.form.groupClaimDesc')}</p>
+      </div>
+
+      <div>
+        <label className={labelCls}>{t('settings.oidc.form.groupMapping')}</label>
+        <textarea
+          className={`${inputCls} font-mono text-xs`}
+          rows={4}
+          value={mappingText}
+          onChange={(e) => {
+            setMappingText(e.target.value);
+            setMappingError(null);
+          }}
+          placeholder={'{\n  "fablab-staff": "Operators",\n  "students": "Viewers"\n}'}
+        />
+        <p className="text-bambu-gray text-xs mt-1">
+          {t('settings.oidc.form.groupMappingHint')}
+          {groups.length > 0 && ` ${groups.map((g) => g.name).join(', ')}`}
+        </p>
+        <p className="text-bambu-gray text-xs mt-1">{t('settings.oidc.form.groupMappingDesc')}</p>
+        {mappingError && <p className="text-red-700 dark:text-red-400 text-xs mt-1">{mappingError}</p>}
       </div>
 
       <div className="flex gap-3 pt-2">
@@ -472,6 +544,8 @@ export function OIDCProviderSettings() {
                     auto_link_existing_accounts: provider.auto_link_existing_accounts,
                     email_claim: provider.email_claim,
                     require_email_verified: provider.require_email_verified,
+                    group_claim: provider.group_claim ?? 'groups',
+                    group_mapping: provider.group_mapping ?? {},
                     icon_url: provider.icon_url ?? undefined,
                     default_group_id: provider.default_group_id ?? null,
                     is_autologin: provider.is_autologin,
@@ -523,6 +597,14 @@ export function OIDCProviderSettings() {
                     {provider.default_group_id
                       ? (groups.find((g) => g.id === provider.default_group_id)?.name ?? t('settings.oidc.form.defaultGroupViewersFallback'))
                       : t('settings.oidc.form.defaultGroupViewersFallback')}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-bambu-gray">{t('settings.oidc.form.groupSync')}</dt>
+                  <dd className="text-white">
+                    {provider.group_mapping && Object.keys(provider.group_mapping).length > 0
+                      ? `${t('settings.oidc.form.groupSyncOn')} (${provider.group_claim ?? 'groups'})`
+                      : t('common.off')}
                   </dd>
                 </div>
               </dl>

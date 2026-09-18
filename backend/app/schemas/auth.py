@@ -343,6 +343,36 @@ def _validate_email_claim_name(v: str) -> str:
     return v
 
 
+def _validate_group_mapping(v: dict[str, str]) -> dict[str, str]:
+    """#3107 — normalise and bound an IdP-group -> Bambuddy-group mapping.
+
+    Values must reference Bambuddy group names; existence is checked against
+    the database in the route handlers (same split as default_group_id), since
+    the schema layer has no session. Keys are left as-is apart from stripping:
+    IdP group values are opaque strings (DNs, UUIDs, names) and must match the
+    claim byte-for-byte, so any normalisation beyond whitespace would silently
+    break the lookup. Case sensitivity matches the LDAP mapping, which compares
+    the directory side case-insensitively; here the IdP side keeps its case
+    because two IdP groups differing only by case mapping to one Bambuddy group
+    is a legitimate configuration, while the reverse would be ambiguous.
+    """
+    if not isinstance(v, dict):
+        raise ValueError("group_mapping must be a JSON object")
+    if len(v) > 100:
+        raise ValueError("group_mapping must have at most 100 entries")
+    cleaned: dict[str, str] = {}
+    for key, value in v.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError("group_mapping keys must be non-empty strings")
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("group_mapping values must be non-empty group names")
+        cleaned[key.strip()] = value.strip()
+    # Two keys differing only by case folding to the same group is fine (both
+    # IdP spellings grant it); the reverse — one key spelling two groups — is
+    # impossible by construction because dict keys are unique.
+    return cleaned
+
+
 def _validate_icon_url(v: str | None) -> str | None:
     """Reject non-HTTPS icon URLs and SSRF-unsafe hosts.
 
@@ -436,6 +466,9 @@ class OIDCProviderCreate(BaseModel):
     auto_link_existing_accounts: bool = False  # M-2: conservative default, opt-in only
     email_claim: str = Field(default="email", max_length=64)
     require_email_verified: bool = True
+    # #3107 — group sync config. group_mapping empty (default) = no sync.
+    group_claim: str = Field(default="groups", max_length=64)
+    group_mapping: dict[str, str] = Field(default_factory=dict)
     icon_url: str | None = None
     default_group_id: int | None = None
     is_autologin: bool = False  # #1589 — at most one provider may carry this
@@ -460,6 +493,17 @@ class OIDCProviderCreate(BaseModel):
     @classmethod
     def validate_email_claim(cls, v: str) -> str:
         return _validate_email_claim_name(v)
+
+    @field_validator("group_claim")
+    @classmethod
+    def validate_group_claim(cls, v: str) -> str:
+        # Same character rules as email_claim: a claim name is a claim name.
+        return _validate_email_claim_name(v)
+
+    @field_validator("group_mapping")
+    @classmethod
+    def validate_group_mapping(cls, v: dict[str, str]) -> dict[str, str]:
+        return _validate_group_mapping(v)
 
     @field_validator("icon_url")
     @classmethod
@@ -493,6 +537,10 @@ class OIDCProviderUpdate(BaseModel):
     auto_link_existing_accounts: bool | None = None
     email_claim: str | None = Field(default=None, max_length=64)
     require_email_verified: bool | None = None
+    # #3107 — group sync config. None = leave unchanged, same as every other
+    # optional field here; an explicit {} clears the mapping and disables sync.
+    group_claim: str | None = Field(default=None, max_length=64)
+    group_mapping: dict[str, str] | None = None
     icon_url: str | None = None
     default_group_id: int | None = None
     is_autologin: bool | None = None  # #1589
@@ -508,6 +556,20 @@ class OIDCProviderUpdate(BaseModel):
         if v is None:
             return None
         return _validate_email_claim_name(v)
+
+    @field_validator("group_claim")
+    @classmethod
+    def validate_group_claim(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return _validate_email_claim_name(v)
+
+    @field_validator("group_mapping")
+    @classmethod
+    def validate_group_mapping(cls, v: dict[str, str] | None) -> dict[str, str] | None:
+        if v is None:
+            return None
+        return _validate_group_mapping(v)
 
     @field_validator("icon_url")
     @classmethod
@@ -540,6 +602,9 @@ class OIDCProviderResponse(BaseModel):
     auto_link_existing_accounts: bool = False
     email_claim: str = "email"
     require_email_verified: bool = True
+    # #3107 — group sync config, echoed back so the settings UI can render it.
+    group_claim: str = "groups"
+    group_mapping: dict[str, str] = {}
     icon_url: str | None = None
     default_group_id: int | None = None
     is_autologin: bool = False  # #1589

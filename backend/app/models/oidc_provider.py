@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -103,6 +104,18 @@ class OIDCProvider(Base):
     default_group_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("groups.id", ondelete="SET NULL"), nullable=True, default=None
     )
+    # #3107 — JWT claim name the group sync reads IdP groups from. Defaults to
+    # "groups". Providers put groups in different claims (Keycloak: "groups"
+    # as a JSON array after a client mapper; Authentik: "groups" as an array,
+    # but some setups ship "roles" or a custom claim), so it is configurable
+    # like email_claim. Same character rules enforced by _validate_email_claim_name.
+    group_claim: Mapped[str] = mapped_column(String(64), default="groups", server_default="groups")
+    # #3107 — mapping of IdP group value -> Bambuddy group name. Empty dict
+    # (the default) disables group sync entirely: the provider behaves exactly
+    # as it did before the column existed. Only groups named in the values are
+    # managed by the sync; everything else on the user is a manual assignment
+    # and survives logins (#1292 semantics, same as the LDAP sync).
+    group_mapping: Mapped[dict[str, str]] = mapped_column(JSON, default=dict, server_default="{}")
     # Optional icon URL the admin entered. The actual image bytes are fetched
     # server-side and cached in icon_data — the SPA never hotlinks this URL
     # (would require loosening img-src CSP; see PR #1333 / issue #1333).

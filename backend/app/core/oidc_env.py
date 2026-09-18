@@ -10,6 +10,7 @@ check the UI enforces.
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import os
 
@@ -31,6 +32,27 @@ _REQUIRED = (
 
 _TRUTHY = {"true", "1", "yes"}
 _FALSY = {"false", "0", "no"}
+
+
+def _env_group_mapping() -> dict[str, str]:
+    """#3107 — parse BAMBUDDY_OIDC_GROUP_MAPPING as a JSON object.
+
+    Unset or blank -> {} (sync off). Invalid JSON or a non-object raises
+    EnvOIDCConfigError so the config is refused loudly at boot instead of
+    silently running without the mapping the operator thought they set —
+    same disposition as a bad boolean. Key/value contents are validated by
+    the OIDCProviderCreate schema like every other field.
+    """
+    raw = (os.environ.get("BAMBUDDY_OIDC_GROUP_MAPPING") or "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise EnvOIDCConfigError(f"BAMBUDDY_OIDC_GROUP_MAPPING is not valid JSON ({exc.lineno}:{exc.colno})") from exc
+    if not isinstance(parsed, dict):
+        raise EnvOIDCConfigError("BAMBUDDY_OIDC_GROUP_MAPPING must be a JSON object")
+    return parsed
 
 
 class EnvOIDCConfigError(Exception):
@@ -89,6 +111,12 @@ def read_env_oidc_config() -> dict | None:
         "auto_link_existing_accounts": env_bool("BAMBUDDY_OIDC_AUTO_LINK_EXISTING", False),
         "email_claim": (os.environ.get("BAMBUDDY_OIDC_EMAIL_CLAIM") or "").strip() or "email",
         "require_email_verified": env_bool("BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED", True),
+        # #3107 — group sync. The mapping is JSON: {"IdP group": "Bambuddy group"}.
+        # Blank/unset means "no mapping", which leaves sync off — the same
+        # default the UI path has. Values are group *names* (not ids), resolved
+        # against the database below alongside DEFAULT_GROUP.
+        "group_claim": (os.environ.get("BAMBUDDY_OIDC_GROUP_CLAIM") or "").strip() or "groups",
+        "group_mapping": _env_group_mapping(),
         "icon_url": (os.environ.get("BAMBUDDY_OIDC_ICON_URL") or "").strip() or None,
         "is_autologin": env_bool("BAMBUDDY_OIDC_AUTOLOGIN", False),
         # A name, not an id: ids are assigned per install, so the same compose
@@ -111,6 +139,11 @@ _APPLIED_FIELDS = (
     "auto_link_existing_accounts",
     "email_claim",
     "require_email_verified",
+    # #3107 — written on every boot like the rest, so removing the env vars
+    # disables group sync rather than leaving a stale mapping behind (the
+    # environment is the whole truth for this row).
+    "group_claim",
+    "group_mapping",
     "icon_url",
     "is_autologin",
     # Written on every boot, so a group that is no longer declared is cleared:
@@ -214,6 +247,28 @@ async def _apply_env_oidc_provider(db: AsyncSession) -> None:
             )
             return
         config["default_group_id"] = group.id
+
+    # #3107 — mapping values are Bambuddy group *names* (the sync resolves them
+    # per login, same as the LDAP mapping stores names). Names, not ids, for the
+    # same reason as DEFAULT_GROUP: ids differ per install, so a shared compose
+    # file would point somewhere else on every deployment. Every value must
+    # resolve here, or the provider is not applied: a half-resolved mapping
+    # would grant exactly the groups whose names happened to match and silently
+    # drop the rest, which is the least diagnosable failure mode available.
+    env_mapping = config.get("group_mapping") or {}
+    if env_mapping:
+        missing = []
+        for target in env_mapping.values():
+            found = (await db.execute(select(Group.id).where(Group.name == target))).scalar_one_or_none()
+            if found is None:
+                missing.append(target)
+        if missing:
+            logger.error(
+                "BAMBUDDY_OIDC_GROUP_MAPPING values match no group (%s), provider not applied (%s).",
+                ", ".join(sorted(set(missing))),
+                "previous config left running" if existing is not None else "no provider created",
+            )
+            return
 
     try:
         # The same schema the API uses, so env config cannot reach a state the

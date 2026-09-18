@@ -82,7 +82,7 @@ function ProviderForm({
     onSave(payload);
   };
 
-  const scopeTokens = form.scopes.toLowerCase().split(/\s+/).filter(Boolean);
+  const scopeTokens = (form.scopes ?? '').toLowerCase().split(/\s+/).filter(Boolean);
   const emailClaimInScopes = scopeTokens.includes((form.email_claim || 'email').toLowerCase());
   const groupClaimInScopes = scopeTokens.includes((form.group_claim || 'groups').toLowerCase());
 

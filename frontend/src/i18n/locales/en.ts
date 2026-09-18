@@ -2932,6 +2932,8 @@ export default {
         groupMappingIdpGroupPlaceholder: 'Identity provider group name',
         groupMappingSelectGroup: 'Select Bambuddy group…',
         groupMappingAddRow: 'Add Mapping',
+        groupMappingDeletedGroupOption: '{{group}} (deleted)',
+        groupMappingDeletedGroupWarning: 'This Bambuddy group has been deleted. Pick a replacement or remove this mapping.',
         groupSync: 'Group Sync',
         groupSyncOn: 'On',
         claimNotInScopesWarning: "The '{{claim}}' claim won't be returned by your identity provider unless '{{claim}}' is included in Scopes.",

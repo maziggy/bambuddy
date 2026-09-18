@@ -82,6 +82,8 @@ function ProviderForm({
     onSave(payload);
   };
 
+  const groupNames = new Set(groups.map((g) => g.name));
+
   const scopeTokens = (form.scopes ?? '').toLowerCase().split(/\s+/).filter(Boolean);
   const emailClaimInScopes = scopeTokens.includes((form.email_claim || 'email').toLowerCase());
   const groupClaimInScopes = scopeTokens.includes((form.group_claim || 'groups').toLowerCase());
@@ -238,30 +240,53 @@ function ProviderForm({
       <div>
         <label className={labelCls}>{t('settings.oidc.form.groupMapping')}</label>
         <div className="space-y-2">
-          {mappingRows.map((row, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <input
-                className={inputCls}
-                value={row.idpGroup}
-                onChange={(e) => updateMappingRow(i, { idpGroup: e.target.value })}
-                placeholder={t('settings.oidc.form.groupMappingIdpGroupPlaceholder')}
-              />
-              <span className="text-bambu-gray text-sm shrink-0">&rarr;</span>
-              <select
-                className={inputCls}
-                value={row.bambuddyGroup}
-                onChange={(e) => updateMappingRow(i, { bambuddyGroup: e.target.value })}
-              >
-                <option value="">{t('settings.oidc.form.groupMappingSelectGroup')}</option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.name}>{g.name}</option>
-                ))}
-              </select>
-              <Button variant="secondary" size="sm" onClick={() => removeMappingRow(i)} title={t('common.remove')}>
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </div>
-          ))}
+          {mappingRows.map((row, i) => {
+            // A row can point at a group name that's since been deleted
+            // (deleting a group doesn't touch any provider's mapping — see
+            // #3107 follow-up). Left alone, that value doesn't match any
+            // <option> and the select just renders as if nothing were
+            // chosen, so the broken row looks identical to an unset one.
+            // Injecting the stale name as its own (disabled) option keeps it
+            // visibly selected, and the row is flagged red until the admin
+            // repoints it or removes it.
+            const isOrphaned = row.bambuddyGroup !== '' && !groupNames.has(row.bambuddyGroup);
+            return (
+              <div key={i}>
+                <div className="flex items-center gap-2">
+                  <input
+                    className={inputCls}
+                    value={row.idpGroup}
+                    onChange={(e) => updateMappingRow(i, { idpGroup: e.target.value })}
+                    placeholder={t('settings.oidc.form.groupMappingIdpGroupPlaceholder')}
+                  />
+                  <span className="text-bambu-gray text-sm shrink-0">&rarr;</span>
+                  <select
+                    className={`${inputCls} ${isOrphaned ? 'border-red-700 dark:border-red-400 text-red-700 dark:text-red-400' : ''}`}
+                    value={row.bambuddyGroup}
+                    onChange={(e) => updateMappingRow(i, { bambuddyGroup: e.target.value })}
+                  >
+                    <option value="">{t('settings.oidc.form.groupMappingSelectGroup')}</option>
+                    {isOrphaned && (
+                      <option value={row.bambuddyGroup}>
+                        {t('settings.oidc.form.groupMappingDeletedGroupOption', { group: row.bambuddyGroup })}
+                      </option>
+                    )}
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.name}>{g.name}</option>
+                    ))}
+                  </select>
+                  <Button variant="secondary" size="sm" onClick={() => removeMappingRow(i)} title={t('common.remove')}>
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+                {isOrphaned && (
+                  <p className="text-red-700 dark:text-red-400 text-xs mt-1">
+                    {t('settings.oidc.form.groupMappingDeletedGroupWarning')}
+                  </p>
+                )}
+              </div>
+            );
+          })}
           <Button variant="secondary" size="sm" onClick={addMappingRow} className="inline-flex items-center gap-2">
             <Plus className="w-4 h-4" />
             {t('settings.oidc.form.groupMappingAddRow')}

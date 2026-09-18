@@ -621,6 +621,10 @@ export function OIDCProviderSettings() {
                   <dd className="text-white font-mono">{provider.email_claim}</dd>
                 </div>
                 <div>
+                  <dt className="text-bambu-gray">{t('settings.oidc.form.groupClaim')}</dt>
+                  <dd className="text-white font-mono">{provider.group_claim ?? 'groups'}</dd>
+                </div>
+                <div>
                   <dt className="text-bambu-gray">{t('settings.oidc.form.requireEmailVerified')}</dt>
                   <dd className={provider.require_email_verified ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
                     {provider.require_email_verified ? t('common.yes') : t('common.no')}
@@ -636,9 +640,9 @@ export function OIDCProviderSettings() {
                 </div>
                 <div>
                   <dt className="text-bambu-gray">{t('settings.oidc.form.groupSync')}</dt>
-                  <dd className="text-white">
+                  <dd className={provider.group_mapping && Object.keys(provider.group_mapping).length > 0 ? 'text-green-700 dark:text-green-400' : 'text-bambu-gray'}>
                     {provider.group_mapping && Object.keys(provider.group_mapping).length > 0
-                      ? `${t('settings.oidc.form.groupSyncOn')} (${provider.group_claim ?? 'groups'})`
+                      ? t('settings.oidc.form.groupSyncOn')
                       : t('common.off')}
                   </dd>
                 </div>

@@ -365,6 +365,7 @@ describe('FileManagerPage', () => {
       // Verify files are still displayed after toggling
       expect(screen.getByText('Benchy')).toBeInTheDocument();
     });
+
   });
 
   describe('search and filter', () => {
@@ -890,6 +891,19 @@ describe('FileManagerPage', () => {
 
       // Username should be displayed in the column
       expect(screen.getByText('testuser')).toBeInTheDocument();
+
+      // #3105: the authenticated grid has enough fixed-width columns to
+      // squeeze a bare 1fr filename track to zero. Header and rows must share
+      // the same minimum width and a non-collapsible filename track so the
+      // existing overflow wrapper scrolls instead.
+      const header = screen.getByTestId('file-list-grid-header');
+      const rows = screen.getAllByTestId('file-list-grid-row');
+      expect(header).toHaveClass('min-w-[1120px]');
+      expect(header.className).toContain('grid-cols-[auto_minmax(240px,1fr)_120px');
+      for (const row of rows) {
+        expect(row).toHaveClass('min-w-[1120px]');
+        expect(row.className).toContain('grid-cols-[auto_minmax(240px,1fr)_120px');
+      }
     });
   });
 

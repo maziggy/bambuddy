@@ -293,6 +293,7 @@ export function SpoolBuddyDashboard() {
       material: m.material,
       subtype: m.subtype,
       color_name: m.color_name,
+      color_name_is_synthesized: m.color_name_is_synthesized,
       rgba: m.rgba,
       brand: m.brand,
       label_weight: m.label_weight,
@@ -362,8 +363,22 @@ export function SpoolBuddyDashboard() {
           showToast(t('spoolman.linkFailed'), 'error');
           return;
         }
-        const { id, material, subtype, color_name, rgba, brand, label_weight, core_weight, weight_used } = updated;
-        setJustLinkedSpool({ id, material, subtype, color_name, rgba, brand, label_weight, core_weight, weight_used });
+        const { id, material, subtype, color_name, color_name_is_synthesized, rgba, brand, label_weight, core_weight, weight_used } =
+          updated;
+        // color_name_is_synthesized travels with color_name or the card
+        // shows "Silk+" where the catalog knows the colour (#3090).
+        setJustLinkedSpool({
+          id,
+          material,
+          subtype,
+          color_name,
+          color_name_is_synthesized,
+          rgba,
+          brand,
+          label_weight,
+          core_weight,
+          weight_used,
+        });
         showToast(t('spoolman.linkSuccess'), 'success');
       } else {
         await api.linkTagToSpool(spool.id, {
@@ -619,6 +634,7 @@ export function SpoolBuddyDashboard() {
                       material: s.material,
                       subtype: s.subtype,
                       color_name: s.color_name,
+                      color_name_is_synthesized: s.color_name_is_synthesized,
                       rgba: s.rgba,
                       brand: s.brand,
                       label_weight: s.label_weight,

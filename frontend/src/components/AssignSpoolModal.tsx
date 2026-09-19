@@ -8,7 +8,7 @@ import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
 import { filterSpoolsByQuery } from '../utils/inventorySearch';
-import { getSwatchStyle } from '../utils/colors';
+import { getSwatchStyle, resolveSpoolColorName } from '../utils/colors';
 
 interface AssignSpoolModalProps {
   isOpen: boolean;
@@ -431,7 +431,9 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                           style={getSwatchStyle(spool.rgba)}
                         />
                       )}
-                      <span className="text-xs text-bambu-gray truncate">{spool.color_name || ''}</span>
+                      <span className="text-xs text-bambu-gray truncate">
+                        {resolveSpoolColorName(spool.color_name, spool.rgba, spool.color_name_is_synthesized) || ''}
+                      </span>
                     </div>
                     {spool.label_weight && (
                       <p className="text-xs text-bambu-gray mt-1">
@@ -511,7 +513,9 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                                   style={getSwatchStyle(spool.rgba)}
                                 />
                               )}
-                              <span className="text-xs text-bambu-gray truncate">{spool.color_name || ''}</span>
+                              <span className="text-xs text-bambu-gray truncate">
+                                {resolveSpoolColorName(spool.color_name, spool.rgba, spool.color_name_is_synthesized) || ''}
+                              </span>
                             </div>
                             {spool.label_weight && (
                               <p className="text-xs text-bambu-gray mt-1">

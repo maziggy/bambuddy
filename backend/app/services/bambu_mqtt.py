@@ -24,6 +24,7 @@ import paho.mqtt.client as mqtt
 from backend.app.services.hms_actions import HMSAction, get_actions_for_error_code
 from backend.app.services.hms_errors import describe_fault
 from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES
+from backend.app.utils.paho_teardown import retire_paho_client
 
 logger = logging.getLogger(__name__)
 
@@ -1610,15 +1611,14 @@ class BambuMQTTClient:
         #     reconnect, mixing stale commands into the next dispatch and
         #     triggering 0500_4003 SD R/W on the printer.
         #
-        # Paho-network-thread callers (line ~2604/~2623 — dev-mode probe and
-        # ams_filament_setting zombie detection inside `_update_state`)
-        #   → socket-close fallback. Calling `loop_stop()` from inside the
-        #     network thread would self-join and deadlock; the safe pattern is
-        #     to close the socket and let paho's own loop detect the broken
-        #     connection and auto-reconnect (same instance, same client_id —
-        #     queue replay is theoretically possible here but those paths have
-        #     always done socket-close and #1136 was specifically triggered
-        #     from the dispatch path).
+        # Paho-network-thread callers (dev-mode probe and ams_filament_setting
+        # zombie detection, both inside `_update_state`)
+        #   → socket-close fallback. There is no running loop on that thread to
+        #     hand the rebuilt client, so close the socket and let paho's own
+        #     loop detect the broken connection and auto-reconnect (same
+        #     instance, same client_id — queue replay is theoretically possible
+        #     here but those paths have always done socket-close and #1136 was
+        #     specifically triggered from the dispatch path).
         logger.warning("[%s] Forcing MQTT reconnect: %s", self.serial_number, reason)
         self._stale_reconnecting = True
         self.state.connected = False
@@ -1629,11 +1629,11 @@ class BambuMQTTClient:
     def _reset_client_for_reconnect(self) -> None:
         """Route between hard-reset and socket-close based on caller thread.
 
-        Hard-reset (preferred) requires we're not running on paho's network
-        thread, since `loop_stop()` on the same thread deadlocks. Detect via
-        ``asyncio.get_running_loop()`` — paho's callback thread has no loop;
-        every legitimate hard-reset caller (FastAPI handlers, background
-        async tasks) does."""
+        Hard-reset (preferred) rebuilds the client, and the rebuild needs a
+        running loop to hand to ``connect()``. ``asyncio.get_running_loop()``
+        answers that and identifies the caller in one go — paho's callback
+        thread has no loop; every legitimate hard-reset caller (FastAPI
+        handlers, background async tasks) does."""
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -1650,18 +1650,15 @@ class BambuMQTTClient:
         client_id, so the broker drops the old session and paho's local
         QoS 1 queue is gone. Must NOT be called from paho's network thread.
         Caller is responsible for setting ``_stale_reconnecting`` and
-        broadcasting the disconnected state."""
+        broadcasting the disconnected state.
+
+        Returns as fast as it can build a client: the old one's teardown is
+        handed off rather than waited on, because waiting on it is what
+        stopped the event loop in #3068. See ``retire_paho_client``."""
         old_client = self._client
         self._client = None
         if old_client is not None:
-            try:
-                old_client.disconnect()  # MQTT DISCONNECT — broker drops session
-            except Exception:
-                pass
-            try:
-                old_client.loop_stop()  # blocks briefly until the network thread exits
-            except Exception:
-                pass
+            retire_paho_client(old_client, self.serial_number)
         # Skip reconnect if no asyncio loop is available (test environment or
         # pre-init). The next initial connect() call from PrinterManager will
         # set up the client fresh.
@@ -6384,14 +6381,32 @@ class BambuMQTTClient:
         return True
 
     def disconnect(self, timeout: float = 0):
-        """Disconnect from the printer."""
+        """Disconnect from the printer.
+
+        Waits up to *timeout* for paho to report the disconnect, then lets the
+        client go without joining its network thread — the callers are route
+        handlers (printer edited, deleted, disconnected by hand) running on the
+        asyncio thread, and that join has no bound (#3068)."""
         if self._client:
+            old_client = self._client
             self._disconnection_event = threading.Event()
-            self._client.disconnect()
+            old_client.disconnect()
+            # The callback that sets this fires on paho's thread, so it has to
+            # be given its window before retire_paho_client detaches it.
             self._disconnection_event.wait(timeout=timeout)
-            self._client.loop_stop()
             self._client = None
+            retire_paho_client(old_client, self.serial_number)
             self.state.connected = False
+            # Deliberately no on_state_change here. paho's disconnect callback
+            # used to land during the join, but `_on_disconnect` suppresses
+            # itself for a clean disconnect of a printer that reported within
+            # the last 10s -- which is every healthy printer -- so a
+            # hand-disconnected printer never broadcast one. Announcing it now
+            # would fire the connected→disconnected edge in
+            # `on_printer_status_change` and notify the user their printer went
+            # offline a minute after they disconnected it on purpose (#1752).
+            # The callers drop the client from the manager anyway, so the next
+            # status read already shows it gone.
 
     def send_command(self, command: dict):
         """Send a command to the printer."""

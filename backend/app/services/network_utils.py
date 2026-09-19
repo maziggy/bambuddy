@@ -98,8 +98,14 @@ def _get_network_interfaces_psutil() -> list[dict]:
     return interfaces
 
 
-def get_network_interfaces() -> list[dict]:
+def get_network_interfaces(include_excluded: bool = False) -> list[dict]:
     """Get all network interfaces with their IPs and subnets.
+
+    Args:
+        include_excluded: keep the interfaces ``EXCLUDED_INTERFACE_PREFIXES``
+            normally hides. That list exists to keep docker0 and friends out
+            of the Virtual Printer's bind dropdown; a caller asking about an
+            address the kernel has already chosen needs the real answer.
 
     Returns:
         List of dicts with name, ip, netmask, subnet, broadcast
@@ -121,7 +127,7 @@ def get_network_interfaces() -> list[dict]:
             name = iface[1]
 
             # Skip excluded interfaces
-            if _is_excluded(name):
+            if not include_excluded and _is_excluded(name):
                 continue
 
             try:
@@ -171,18 +177,21 @@ def get_network_interfaces() -> list[dict]:
     return interfaces
 
 
-def get_all_interface_ips() -> list[dict]:
-    """Get all IPs (primary + aliases) for all non-excluded interfaces.
+def get_all_interface_ips(include_excluded: bool = False) -> list[dict]:
+    """Get all IPs (primary + aliases) for every interface, minus the excluded ones.
 
     Uses `ip -j addr show` to see secondary/alias IPs that ioctl misses.
     Falls back to ioctl-based get_network_interfaces() if `ip` is unavailable.
+
+    Args:
+        include_excluded: see :func:`get_network_interfaces`.
 
     Returns:
         List of dicts with name, ip, netmask, subnet, is_alias, label
     """
     if not _IP_CMD:
         logger.debug("ip command not found, using ioctl fallback")
-        return _fallback_get_all_ips()
+        return _fallback_get_all_ips(include_excluded)
 
     try:
         result = subprocess.run(
@@ -193,17 +202,17 @@ def get_all_interface_ips() -> list[dict]:
         )
         if result.returncode != 0:
             logger.warning("ip addr show failed: %s", result.stderr)
-            return _fallback_get_all_ips()
+            return _fallback_get_all_ips(include_excluded)
 
         interfaces_data = json.loads(result.stdout)
     except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
         logger.warning("Failed to run ip -j addr show: %s", e)
-        return _fallback_get_all_ips()
+        return _fallback_get_all_ips(include_excluded)
 
     entries = []
     for iface in interfaces_data:
         ifname = iface.get("ifname", "")
-        if _is_excluded(ifname):
+        if not include_excluded and _is_excluded(ifname):
             continue
 
         ipv4_count = 0
@@ -241,7 +250,7 @@ def get_all_interface_ips() -> list[dict]:
     return entries
 
 
-def _fallback_get_all_ips() -> list[dict]:
+def _fallback_get_all_ips(include_excluded: bool = False) -> list[dict]:
     """Fallback: wrap get_network_interfaces() result with alias fields."""
     return [
         {
@@ -249,8 +258,37 @@ def _fallback_get_all_ips() -> list[dict]:
             "is_alias": False,
             "label": iface["name"],
         }
-        for iface in get_network_interfaces()
+        for iface in get_network_interfaces(include_excluded)
     ]
+
+
+def find_local_ipv4_network(local_ip: str) -> ipaddress.IPv4Network | None:
+    """The IPv4 network configured on the local interface holding ``local_ip``.
+
+    An IPv4 address carries no prefix length, so the only way to know how far
+    a LAN reaches is to read the prefix off the interface that owns the
+    address. ``None`` means no local interface claims it, which is the honest
+    answer whenever the platform gives us no interface data at all.
+
+    Nothing is filtered: ``local_ip`` is an address the kernel already picked
+    as a route source, so answering "unknown" because it happens to sit on a
+    bridge named ``br-something`` would be a worse answer than the truth.
+    """
+    try:
+        address = ipaddress.IPv4Address(local_ip)
+    except ValueError:
+        return None
+
+    for iface in get_all_interface_ips(include_excluded=True):
+        if iface.get("ip") != str(address):
+            continue
+        try:
+            return ipaddress.IPv4Network(iface["subnet"], strict=False)
+        except (KeyError, TypeError, ValueError):
+            logger.debug("Interface %s has an unusable subnet %r", iface.get("name"), iface.get("subnet"))
+            return None
+
+    return None
 
 
 def find_interface_for_ip(target_ip: str) -> dict | None:

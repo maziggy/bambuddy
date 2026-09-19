@@ -1,5 +1,6 @@
 """API routes for File Manager (Library) functionality."""
 
+import asyncio
 import base64
 import binascii
 import contextlib
@@ -21,6 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
+from backend.app.api.routes.library_variants import normalize_model_name, resolve_variant_model
+from backend.app.api.routes.print_queue import _extract_filament_types_from_3mf
 from backend.app.core.auth import (
     require_media_token_ownership,
     require_ownership_permission,
@@ -33,6 +36,7 @@ from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryFolder
 from backend.app.models.print_queue import PrintQueueItem
+from backend.app.models.printer import Printer
 from backend.app.models.project import Project
 from backend.app.models.user import User
 from backend.app.schemas.library import (
@@ -86,6 +90,7 @@ from backend.app.utils.filename import (
     safe_path_component,
     validate_print_filename,
 )
+from backend.app.utils.printer_models import is_gcode_compatible
 from backend.app.utils.safe_path import PathTraversalError, assert_under, safe_join_under
 from backend.app.utils.threemf_tools import (
     carries_gcode,
@@ -2833,13 +2838,60 @@ async def add_files_to_queue(
 
     Only sliced files (.gcode or .gcode.3mf) can be added to the queue.
     The archive will be created automatically when the print starts.
+
+    A caller may name a printer or a target model for the whole batch; with
+    neither, each file is aimed at the model it says it was sliced for. The
+    gates are the ones ``POST /queue/`` applies to a single item, because an
+    item that reaches the scheduler through this route has to be as printable
+    as one that reaches it through that one (#3112).
     """
     added: list[AddToQueueResult] = []
     errors: list[AddToQueueError] = []
 
+    # Batch-level targeting. Rejected outright rather than per file: the whole
+    # request names one destination, so a bad one is not a property of any
+    # single file and reporting it fourteen times would say nothing extra.
+    target_model_norm = normalize_model_name(request.target_model)
+    if request.printer_id is not None and target_model_norm:
+        raise HTTPException(400, "Cannot specify both printer_id and target_model")
+
+    if request.printer_id is not None:
+        printer_row = (await db.execute(select(Printer).where(Printer.id == request.printer_id))).scalar_one_or_none()
+        if not printer_row:
+            raise HTTPException(400, "Printer not found")
+
+    # Active printers of every model, read once, and only when the batch has no
+    # printer of its own -- with one named, neither the check below nor the
+    # inference in the loop consults it. The explicit target is validated for
+    # the same reason POST /queue/ validates: a model nobody owns is a queue
+    # item that waits forever. The inferred target reads the same set and
+    # silently declines when it finds nothing, because there, owning no such
+    # printer is the user's situation rather than their mistake -- the file
+    # still queues, as the unassigned row it has always been.
+    active_models: set[str] = set()
+    if request.printer_id is None:
+        active_models = {
+            model
+            for (model,) in (
+                await db.execute(select(Printer.model).where(Printer.is_active == True).distinct())  # noqa: E712
+            ).all()
+            if model
+        }
+        if target_model_norm and target_model_norm not in active_models:
+            raise HTTPException(400, f"No active printers for model: {target_model_norm}")
+
     # Get all requested files
     result = await db.execute(LibraryFile.active().where(LibraryFile.id.in_(request.file_ids)))
     files = {f.id: f for f in result.scalars().all()}
+
+    # Ownership-scoped reads apply here as everywhere else in this module: a
+    # file the caller may not read is a file they may not print. Dropped from
+    # the map rather than refused by name, so the per-file error below is the
+    # same "File not found" an unknown id gets and the response says nothing
+    # about which ids exist. Ownerless rows need LIBRARY_READ_ALL, matching
+    # _ensure_library_file_visible.
+    if current_user is not None and not current_user.has_permission(Permission.LIBRARY_READ_ALL.value):
+        files = {fid: f for fid, f in files.items() if f.created_by_id == current_user.id}
 
     # Project attribution (#1897): a file queued from a project-linked folder
     # inherits that project, so the resulting archive counts toward the
@@ -2884,10 +2936,66 @@ async def add_files_to_queue(
                 )
                 continue
 
+            # The Bambu SD card is FAT32/exFAT, so an illegal character 553s at
+            # upload time. POST /queue/ rejects those at queue time (#1540) and
+            # this route did not, which turned a nameable mistake into a print
+            # that failed hours later.
+            try:
+                validate_print_filename(lib_file.filename)
+            except InvalidFilenameError as e:
+                errors.append(AddToQueueError(file_id=file_id, filename=lib_file.filename, error=str(e)))
+                continue
+
+            # Where this file is aimed. An explicit printer wins; an explicit
+            # model applies to every file and has to be one this file can
+            # legally run on; with neither, the file's own declaration is used
+            # when some active printer answers to it.
+            item_printer_id = request.printer_id
+            item_target_model: str | None = None
+            if item_printer_id is None:
+                if target_model_norm:
+                    sliced_for = (lib_file.file_metadata or {}).get("sliced_for_model")
+                    if not is_gcode_compatible(sliced_for, target_model_norm):
+                        errors.append(
+                            AddToQueueError(
+                                file_id=file_id,
+                                filename=lib_file.filename,
+                                error=(
+                                    f"File was sliced for {sliced_for} and cannot be dispatched to "
+                                    f"{target_model_norm} printers"
+                                ),
+                            )
+                        )
+                        continue
+                    item_target_model = target_model_norm
+                else:
+                    inferred = resolve_variant_model(lib_file)
+                    item_target_model = inferred if inferred in active_models else None
+
+            # Filament the scheduler must match before handing a model-based
+            # item to hardware. Without it the item goes to whichever printer
+            # of that model is idle, whatever is loaded in it.
+            required_filament_types = None
+            if item_target_model:
+                # POST /queue/'s own extractor, borrowed rather than
+                # reimplemented: a second copy of this rule is a second thing
+                # to keep in step.
+                #
+                # Off the loop, unlike there: that route parses one 3MF per
+                # request and this one parses every file in the batch, so on a
+                # bulk add of a few hundred -- especially from an external
+                # folder on a NAS -- the zip reads add up to a stall the whole
+                # event loop takes, status ingest included.
+                filament_types = await asyncio.to_thread(_extract_filament_types_from_3mf, file_path)
+                if filament_types:
+                    required_filament_types = json.dumps(filament_types)
+
             # Create queue item referencing library file (archive created at print start)
             max_position += 1
             queue_item = PrintQueueItem(
-                printer_id=None,  # Unassigned
+                printer_id=item_printer_id,
+                target_model=item_target_model,
+                required_filament_types=required_filament_types,
                 library_file_id=file_id,
                 project_id=lib_file.project_id
                 or (folder_projects.get(lib_file.folder_id) if lib_file.folder_id is not None else None),
@@ -2913,6 +3021,20 @@ async def add_files_to_queue(
         except Exception as e:
             logger.exception("Error adding file %s to queue", file_id)
             errors.append(AddToQueueError(file_id=file_id, filename=lib_file.filename, error=str(e)))
+
+    # Nothing queued and something to say about why. Returning 200 here is what
+    # made this look like a working call that quietly did nothing: a client that
+    # checks the status code sees success, and the reasons sit in a body it had
+    # no cause to read (#3112). Partial success stays 200 -- items really were
+    # created, and the per-file errors belong with them.
+    if not added and errors:
+        raise HTTPException(
+            400,
+            detail={
+                "message": "No files could be added to the queue.",
+                "errors": [e.model_dump() for e in errors],
+            },
+        )
 
     await db.commit()
 

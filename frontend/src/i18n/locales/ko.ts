@@ -503,6 +503,8 @@ export default {
       step: '이동 거리 (mm)',
       up: '플레이트 위로',
       down: '플레이트 아래로',
+      toolheadUp: '툴헤드 위로',
+      toolheadDown: '툴헤드 아래로',
       disabledWhilePrinting: '인쇄 중 비활성화됨',
       notHomedTitle: '프린터 홈 설정 필요',
       notHomedMessage: '마지막 인쇄 이후 홈 설정이 되지 않았습니다. 안전한 위치 지정을 위해 자동 홈 설정을 먼저 실행하거나, 그냥 이동하세요 — 소프트 엔드스톱이 무시됩니다.',
@@ -864,6 +866,8 @@ export default {
       bodyInternalHistory: '해당 출력물은 프린터 자체 라이브러리에서 실행되었습니다 — 화면에서의 재출력, Handy에서의 시작, 또는 이전에 보내 두고 나중에 출력한 파일입니다. Bambuddy는 출력 파일을 FTP로 읽는데 FTP는 카드나 USB만 제공하고, 프린터는 그 라이브러리를 FTP가 닿지 않는 영역에 보관하므로 읽을 3MF가 없었습니다. 이 출력물들은 아무것도 전송되지 않았으므로 슬라이서 설정으로는 해결되지 않습니다. 이름과 시간과 함께 계속 보관되며, "아카이브 편집"에서 사용된 필라멘트를 직접 입력할 수 있습니다. 온전한 보관을 원하면 Bambuddy나 슬라이서에서 출력을 시작하세요.',
       titleFtpsCooloff: '최근 일부 출력물을 보관하지 못했습니다 — 프린터가 파일 연결을 거부했습니다',
       bodyFtpsCooloff: 'Bambuddy가 프린터의 파일 전송 포트(FTPS 990)를 열었으나 프린터가 TLS가 아닌 것으로 응답해 아무것도 읽을 수 없었습니다. 해당 출력물은 이름과 시간과 함께 보관되지만 미리보기와 슬라이서 메타데이터는 없습니다. 이는 슬라이서 설정 문제도, 사용자가 바꾼 것도 아닙니다. 같은 모델과 같은 펌웨어가 다른 설치 환경에서는 정상 동작하며, 문제가 생긴 프린터도 대개 나중에 저절로 다시 동작합니다. 이런 실패 후 Bambuddy는 해당 프린터로의 전송을 5분간 멈추고, 그 후 파일을 다시 가지러 갑니다. 짧은 문제라면 스스로 채워지고, 카드가 계속 비어 있다면 거부가 재시도보다 오래 지속되었다는 뜻입니다. 무엇이 원인인지는 아직 밝혀지지 않았습니다. 반복된다면 시스템 페이지에서 디버그 로깅을 켠 뒤 지원 번들을 보고에 첨부해 주세요.',
+      titleFtpTransferFailed: '최근 일부 출력을 보관하지 못했습니다 — 파일 전송이 시간 내에 끝나지 않았습니다',
+      bodyFtpTransferFailed: '슬라이싱된 파일은 프린터 카드에 있었고 프린터도 실제로 전송을 시작했지만, 허용된 시간 안에 전송이 끝나지 않았습니다. 출력 시작 시점의 프린터는 카메라와 상태 메시지, 작업 업로드까지 함께 처리하고 있어서 큰 3MF 파일은 그 사이를 통과하지 못할 때가 있습니다. 해당 출력은 이름과 시간과 함께 보관되어 있고, 썸네일과 슬라이서 정보만 없습니다. 슬라이서 설정 문제도 아니고 사용자가 바꾼 것 때문도 아닙니다. Bambuddy가 이후 10분 동안 파일을 세 번 더 가지러 가므로 대부분은 저절로 채워집니다. 카드가 계속 비어 있다면 그 시도들도 모두 시간 내에 끝나지 않았다는 뜻입니다. 계속 발생하면 설정 > 네트워크 > FTP 재시도 의 연결 제한 시간을 늘리세요.',
       dismissLabel: '이 알림 닫기'
     },
     searchPlaceholder: '아카이브 검색...',
@@ -1440,6 +1444,7 @@ export default {
       staged: '준비됨 (수동 시작)',
       autoPowerOff: '인쇄 후 자동 전원 끄기',
       requirePrevious: '이전 성공 필요',
+      gcodeInjection: 'G코드 삽입',
       printOptions: '인쇄 옵션',
       bedLevelling: '베드 레벨링',
       flowCalibration: '유량 캘리브레이션',
@@ -5154,7 +5159,7 @@ export default {
     project: '프로젝트',
     noProject: '프로젝트 없음',
     itemsPrinted: '인쇄된 항목',
-    itemsPrintedHelp: '이 인쇄 작업에서 생산된 항목 수',
+    itemsPrintedHelp: '이 인쇄 작업에서 생산된 항목 수. 플레이트 전체를 버린 경우 0을 입력하세요.',
     filamentUsed: '사용된 필라멘트 (g)',
     filamentUsedPlaceholder: '예: 46.16',
     filamentUsedHelp: '3MF 없이 보관된 인쇄는 직접 입력하면 필라멘트 합계에 반영됩니다. 3MF가 있는 보관 항목을 다시 스캔하면 이 값은 파일에서 다시 읽어옵니다.',
@@ -6443,7 +6448,8 @@ export default {
       labelWeight: '라벨',
       scaleWeight: '저울',
       netWeight: '순 무게',
-      lastUsed: '마지막 사용'
+      lastUsed: '마지막 사용',
+      unknownColor: '알 수 없는 색상'
     },
     ams: {
       noData: 'AMS가 감지되지 않음',
@@ -7083,11 +7089,20 @@ export default {
         pass: '연결 가능 — 카메라 스트림이 작동합니다.',
         warn: '포트 {{port}}에 연결할 수 없습니다. 라이브 카메라 보기가 작동하지 않습니다. 인쇄에는 영향을 주지 않습니다.'
       },
+      macos_local_network: {
+        title: 'macOS 로컬 네트워크 권한',
+        pass: 'macOS가 Bambuddy의 로컬 네트워크 접근을 허용하고 있습니다.',
+        warn_unsigned: 'Bambuddy를 실행하는 Python에 코드 서명이 없어 macOS가 로컬 네트워크 권한을 연결할 대상을 찾지 못하고, 프린터로 향하는 모든 연결을 오류도 확인 창도 없이 조용히 차단합니다. 서명을 수행하는 Bambuddy 업데이트 스크립트(install/update_macos.sh)를 실행한 다음 Bambuddy를 재시작하십시오. 인터프리터: {{executable}}',
+        warn_permission: '프린터가 켜져 있고 이 주소로 연결할 수 있다면 시스템 설정 > 개인 정보 보호 및 보안 > 로컬 네트워크를 열어 Bambuddy의 Python이 활성화되어 있는지 확인하십시오. 활성화되어 있지 않으면 macOS는 로컬 연결을 조용히 차단하며, Python을 업데이트하면 이전 권한이 남지 않을 수 있습니다.',
+      },
       network_mode: {
-        title: 'Docker 네트워크 모드',
-        pass: '호스트 네트워크 모드로 실행 중입니다.',
-        warn: 'Bambuddy가 Docker 브리지 네트워킹으로 실행 중입니다. 프린터 검색과 가상 프린터에는 호스트 네트워크 모드가 필요합니다 — "network_mode: host"로 컨테이너를 재생성하세요.',
-        skip: 'Docker에서 실행 중이 아닙니다 — 해당 없음.'
+        title: '컨테이너 네트워크 모드',
+        genericRuntime: '컨테이너',
+        pass: '{{runtime}}에서 호스트 네트워크로 실행 중입니다.',
+        warn: 'Bambuddy가 {{runtime}}에서 브리지 네트워크로 실행 중입니다. 프린터 검색과 가상 프린터에는 호스트 네트워크가 필요합니다 — 호스트 네트워크로 컨테이너를 재생성하세요(docker-compose에서는 "network_mode: host", Podman에서는 "--network=host").',
+        skip: '컨테이너에서 실행 중이 아닙니다 — 해당 없음.',
+        skip_unknown: 'Bambuddy가 {{runtime}}에서 실행 중이지만 네트워크 모드를 확인할 수 없습니다. 프린터 검색이나 가상 프린터가 작동하지 않으면 호스트 네트워크로 컨테이너를 재생성하세요.',
+        skip_system_container: 'Bambuddy가 {{runtime}} 시스템 컨테이너에서 실행 중이며, 가상 머신처럼 LAN에 연결되어 있습니다 — 해당 없음.'
       },
       subnet: {
         title: '네트워크 서브넷',

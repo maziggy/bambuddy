@@ -1907,3 +1907,98 @@ class TestSliceOwnershipPermissions(TestOwnershipPermissionsSetup):
         )
         assert resp.status_code == 404
         assert resp.json()["detail"] == "File not found"
+
+
+class TestLibraryAddToQueueOwnership(TestOwnershipPermissionsSetup):
+    """The bulk add-to-queue path must scope reads the way its siblings do.
+
+    ``POST /library/files/add-to-queue`` resolved its files by raw id and gated
+    only on QUEUE_CREATE, so a READ_OWN operator could queue -- and therefore
+    print, and then hold the archive of -- a file a direct GET on the same id
+    answers 404 for. Same shape as the slice path above.
+
+    An invisible row is dropped before the loop, so it reports as the plain
+    "File not found" an unknown id gets: the response must not say which ids
+    exist. With nothing added the route now answers 400, so the assertions read
+    the reasons out of ``detail``.
+    """
+
+    @pytest.fixture
+    async def library_file_factory(self, db_session):
+        _counter = [0]
+
+        async def _create_file(**kwargs):
+            from backend.app.models.library import LibraryFile
+
+            _counter[0] += 1
+            defaults = {
+                "filename": f"queue_src_{_counter[0]}.gcode.3mf",
+                "file_path": f"library/queue_src_{_counter[0]}.gcode.3mf",
+                "file_type": "3mf",
+                "file_size": 1024,
+            }
+            defaults.update(kwargs)
+            row = LibraryFile(**defaults)
+            db_session.add(row)
+            await db_session.commit()
+            await db_session.refresh(row)
+            return row
+
+        return _create_file
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_queue_others_library_file(
+        self, async_client: AsyncClient, auth_setup, library_file_factory
+    ):
+        file = await library_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+        resp = await async_client.post(
+            "/api/v1/library/files/add-to-queue",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json={"file_ids": [file.id]},
+        )
+        assert resp.status_code == 400
+        errors = resp.json()["detail"]["errors"]
+        assert [e["error"] for e in errors] == ["File not found"]
+        # Indistinguishable from an id that was never there.
+        assert errors[0]["filename"] == "(not found)"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_can_queue_own_library_file(
+        self, async_client: AsyncClient, auth_setup, library_file_factory
+    ):
+        """Control: the gate lets the owner through to the on-disk check."""
+        file = await library_file_factory(created_by_id=auth_setup["operator_user"]["id"])
+        resp = await async_client.post(
+            "/api/v1/library/files/add-to-queue",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json={"file_ids": [file.id]},
+        )
+        assert resp.status_code == 400
+        errors = resp.json()["detail"]["errors"]
+        assert [e["error"] for e in errors] == ["File not found on disk"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ownerless_file_needs_read_all(self, async_client: AsyncClient, auth_setup, library_file_factory):
+        """A row with no owner is not everyone's row -- fail closed.
+
+        Matches _ensure_library_file_visible, which the read routes use.
+        """
+        file = await library_file_factory(created_by_id=None)
+        resp = await async_client.post(
+            "/api/v1/library/files/add-to-queue",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json={"file_ids": [file.id]},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["errors"][0]["error"] == "File not found"
+
+        admin = await async_client.post(
+            "/api/v1/library/files/add-to-queue",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+            json={"file_ids": [file.id]},
+        )
+        # READ_ALL sees it and reaches the on-disk check.
+        assert admin.json()["detail"]["errors"][0]["error"] == "File not found on disk"

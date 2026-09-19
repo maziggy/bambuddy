@@ -14,7 +14,7 @@ recognises a destination however it is written, and a real camera — which
 usually means an authenticated one — still works.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -25,6 +25,7 @@ from backend.app.services.external_camera import (
     _sanitize_camera_url,
     _stream_rtsp,
 )
+from backend.tests._fixtures.external_camera import fake_ffmpeg, spawn_spy
 
 RTSP_SCHEMES = ("rtsp", "rtsps")
 HTTP_SCHEMES = ("http", "https")
@@ -155,31 +156,6 @@ class TestSchemeAllowlist:
         assert _sanitize_camera_url(url, RTSP_SCHEMES) is None
 
 
-def _fake_ffmpeg():
-    return patch("backend.app.services.external_camera.get_ffmpeg_path", return_value="/usr/bin/ffmpeg")
-
-
-def _spawn_spy(returncode: int | None = 0, stdout: bytes = b"\xff\xd8" + b"\x00" * 200):
-    """Stand in for the ffmpeg subprocess, recording the argv it was handed.
-
-    The streaming path reads until EOF, so stdout.read returns b"" and the
-    generator finishes immediately — these tests are about whether ffmpeg was
-    launched and with what, not about frame extraction.
-    """
-    process = MagicMock()
-    process.returncode = returncode
-    process.communicate = AsyncMock(return_value=(stdout, b""))
-    process.stdout.read = AsyncMock(return_value=b"")
-    process.stderr.read = AsyncMock(return_value=b"")
-    process.wait = AsyncMock(return_value=returncode)
-    process.kill = MagicMock()
-    process.terminate = MagicMock()
-    return patch(
-        "backend.app.services.external_camera.asyncio.create_subprocess_exec",
-        new=AsyncMock(return_value=process),
-    )
-
-
 class TestRtspCaptureRefusesUnsafeUrls:
     """`_capture_rtsp_frame` — the one-shot path behind the test-connection
     endpoint, which takes url and camera_type straight off the query string."""
@@ -197,13 +173,13 @@ class TestRtspCaptureRefusesUnsafeUrls:
         ],
     )
     async def test_no_process_is_spawned(self, url):
-        with _fake_ffmpeg(), _spawn_spy() as spawn:
+        with fake_ffmpeg(), spawn_spy() as spawn:
             assert await _capture_rtsp_frame(url, timeout=5) is None
         spawn.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_a_real_camera_still_captures(self):
-        with _fake_ffmpeg(), _spawn_spy() as spawn:
+        with fake_ffmpeg(), spawn_spy() as spawn:
             frame = await _capture_rtsp_frame("rtsp://admin:hunter2@192.168.1.50:554/live", timeout=5)
 
         assert frame is not None
@@ -216,7 +192,7 @@ class TestRtspCaptureRefusesUnsafeUrls:
     async def test_ffmpeg_is_confined_to_rtsp_protocols(self):
         """Belt and braces behind the scheme check: a stream that references
         something outside itself must not be able to pull it in."""
-        with _fake_ffmpeg(), _spawn_spy() as spawn:
+        with fake_ffmpeg(), spawn_spy() as spawn:
             await _capture_rtsp_frame("rtsp://192.168.1.50:554/live", timeout=5)
 
         cmd = spawn.await_args.args
@@ -240,7 +216,7 @@ class TestRtspStreamRefusesUnsafeUrls:
         ],
     )
     async def test_no_process_is_spawned(self, url):
-        with _fake_ffmpeg(), _spawn_spy() as spawn:
+        with fake_ffmpeg(), spawn_spy() as spawn:
             frames = [frame async for frame in _stream_rtsp(url, fps=5)]
 
         assert frames == []
@@ -248,7 +224,7 @@ class TestRtspStreamRefusesUnsafeUrls:
 
     @pytest.mark.asyncio
     async def test_a_real_camera_still_reaches_ffmpeg(self):
-        with _fake_ffmpeg(), _spawn_spy(returncode=None) as spawn:
+        with fake_ffmpeg(), spawn_spy(returncode=None) as spawn:
             [frame async for frame in _stream_rtsp("rtsp://admin:hunter2@192.168.1.50:554/live", fps=5)]
 
         spawn.assert_awaited_once()

@@ -1365,6 +1365,17 @@ async def create_oidc_provider(
                 detail="default_group_id references a non-existent group",
             )
 
+    # #3107 — every mapping value must reference an existing Bambuddy group,
+    # same answer default_group_id gets. Checked as a set: a mapping with three
+    # entries naming the same group is one lookup, not three.
+    if body.group_mapping:
+        missing_groups = await _missing_group_names(db, set(body.group_mapping.values()))
+        if missing_groups:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"group_mapping references non-existent groups: {', '.join(sorted(missing_groups))}",
+            )
+
     # Fetch the icon BEFORE creating the row so a failure leaves the DB clean.
     icon_data: bytes | None = None
     icon_content_type: str | None = None
@@ -1383,6 +1394,8 @@ async def create_oidc_provider(
         auto_link_existing_accounts=body.auto_link_existing_accounts,
         email_claim=body.email_claim,
         require_email_verified=body.require_email_verified,
+        group_claim=body.group_claim,
+        group_mapping=body.group_mapping,
         icon_url=body.icon_url,
         icon_data=icon_data,
         icon_content_type=icon_content_type,
@@ -1416,6 +1429,24 @@ def _refuse_if_env_managed(provider: OIDCProvider) -> None:
         )
 
 
+async def _missing_group_names(db: AsyncSession, names: set[str]) -> set[str]:
+    """#3107 — names from a group_mapping with no matching Bambuddy group.
+
+    Compared case-insensitively: Group.name is unique but its collation does
+    not guarantee case-insensitive uniqueness across backends, and the sync
+    itself matches Group.name exactly, so a mapping value differing only in
+    case from the stored group name would silently never resolve. Treating a
+    case-only mismatch as found would be wrong (the sync's select is exact),
+    so both the exact name and its case-insensitive cohort are accepted here
+    and the caller's message reports the submitted spelling.
+    """
+    if not names:
+        return set()
+    exact = (await db.execute(select(Group.name).where(Group.name.in_(names)))).scalars().all()
+    found_ci = {n.lower() for n in exact}
+    return {n for n in names if n not in exact and n.lower() not in found_ci}
+
+
 @router.put("/oidc/providers/{provider_id}", response_model=OIDCProviderResponse)
 async def update_oidc_provider(
     provider_id: int,
@@ -1446,6 +1477,17 @@ async def update_oidc_provider(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="default_group_id references a non-existent group",
+            )
+
+    # #3107 — same existence check as the create route, on the submitted
+    # mapping only. A null group_mapping (field absent) leaves the stored one
+    # alone; an explicit {} empties it, and emptiness needs no group lookup.
+    if body.group_mapping:
+        missing_groups = await _missing_group_names(db, set(body.group_mapping.values()))
+        if missing_groups:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"group_mapping references non-existent groups: {', '.join(sorted(missing_groups))}",
             )
 
     dumped = body.model_dump(exclude_none=True)
@@ -2059,6 +2101,28 @@ async def oidc_callback(
 
             if not user or not user.is_active:
                 return RedirectResponse(url=f"{frontend_error_url}account_inactive", status_code=302)
+
+            # #3107 — apply the provider's group mapping on every login, not
+            # just at account creation. Same managed-slice contract as the
+            # LDAP sync (#1292): only groups named in group_mapping values are
+            # touched, manual assignments elsewhere survive. Runs after the
+            # user is resolved but before tokens are minted, so the exchange
+            # JWT that follows reflects post-sync authority. A sync failure is
+            # logged inside and never blocks the login.
+            if getattr(user, "groups", None) is not None:
+                from backend.app.services.oidc_group_sync import sync_oidc_user_groups
+
+                await sync_oidc_user_groups(
+                    db,
+                    user,
+                    group_claim=provider.group_claim,
+                    group_mapping=provider.group_mapping or {},
+                    claims=claims,
+                )
+                # The sync may have committed new group rows onto the user;
+                # refresh so the permissions baked into the login below see
+                # the post-sync state rather than the pre-login snapshot.
+                await db.refresh(user, attribute_names=["groups"])
 
             # Issue an OIDC exchange token (short-lived, single-use) stored in DB.
             # I7: Opportunistically prune expired exchange tokens to keep the table small.

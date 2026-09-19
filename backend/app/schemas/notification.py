@@ -82,6 +82,12 @@ class NotificationProviderBase(BaseModel):
         default=False, description="Notify when a finished print is waiting for plate-clear confirmation"
     )
 
+    # Event triggers - Post-print outcome confirmation (#1898)
+    on_print_confirm_request: bool = Field(
+        default=True,
+        description="Notify with one-tap verdict links when a print that opted in asks for its outcome",
+    )
+
     # Event triggers - Bed cooled
     on_bed_cooled: bool = Field(default=False, description="Notify when bed cools after print")
 
@@ -187,6 +193,9 @@ class NotificationProviderUpdate(BaseModel):
     # Event triggers - Build plate detection
     on_plate_not_empty: bool | None = None
     on_plate_clear_required: bool | None = None
+
+    # Event triggers - Post-print outcome confirmation (#1898)
+    on_print_confirm_request: bool | None = None
 
     # Event triggers - Bed cooled
     on_bed_cooled: bool | None = None

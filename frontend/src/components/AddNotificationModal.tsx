@@ -45,6 +45,9 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
   const [onStockReorderAlert, setOnStockReorderAlert] = useState(provider?.on_stock_reorder_alert ?? false);
   const [onStockBreakAlert, setOnStockBreakAlert] = useState(provider?.on_stock_break_alert ?? false);
   const [onPlateClearRequired, setOnPlateClearRequired] = useState(provider?.on_plate_clear_required ?? false);
+  // Post-print outcome confirmation (#1898). Defaults ON — it only fires for
+  // prints that opted in per-job, so the toggle exists to mute a channel.
+  const [onPrintConfirmRequest, setOnPrintConfirmRequest] = useState(provider?.on_print_confirm_request ?? true);
   const [onBedCooled, setOnBedCooled] = useState(provider?.on_bed_cooled ?? false);
   const [onHaSensorAlert, setOnHaSensorAlert] = useState(provider?.on_ha_sensor_alert ?? false);
   const [onLocationHaSensorAlert, setOnLocationHaSensorAlert] = useState(
@@ -205,6 +208,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       on_stock_reorder_alert: onStockReorderAlert,
       on_stock_break_alert: onStockBreakAlert,
       on_plate_clear_required: onPlateClearRequired,
+      on_print_confirm_request: onPrintConfirmRequest,
       on_bed_cooled: onBedCooled,
       on_ha_sensor_alert: onHaSensorAlert,
       on_location_ha_sensor_alert: onLocationHaSensorAlert,
@@ -627,6 +631,13 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                 </div>
                 <div className="flex items-center justify-between col-span-2">
                   <div>
+                    <span className="text-sm text-white">{t('notifications.printConfirmRequest')}</span>
+                    <span className="text-xs text-bambu-gray ml-1">{t('notifications.printConfirmRequestDescription')}</span>
+                  </div>
+                  <Toggle checked={onPrintConfirmRequest} onChange={setOnPrintConfirmRequest} />
+                </div>
+                <div className="flex items-center justify-between col-span-2">
+                  <div>
                     <span className="text-sm text-white">{t('notifications.bedCooled')}</span>
                     <span className="text-xs text-bambu-gray ml-1">{t('notifications.bedCooledAfterPrint')}</span>
                   </div>
@@ -714,6 +725,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               if (onPrintProgress) enabledEvents.push({ key: 'on_print_progress', label: t('notifications.progress') });
               if (onBillingChargeFailed) enabledEvents.push({ key: 'on_billing_charge_failed', label: t('notifications.billingChargeFailedLabel') });
               if (onPlateClearRequired) enabledEvents.push({ key: 'on_plate_clear_required', label: t('notifications.plateClearRequired') });
+              if (onPrintConfirmRequest) enabledEvents.push({ key: 'on_print_confirm_request', label: t('notifications.printConfirmRequest') });
               if (onBedCooled) enabledEvents.push({ key: 'on_bed_cooled', label: t('notifications.bedCooled') });
               if (onFirstLayerComplete) enabledEvents.push({ key: 'on_first_layer_complete', label: t('notifications.firstLayerCompleteLabel') });
               if (onPrinterOffline) enabledEvents.push({ key: 'on_printer_offline', label: t('notifications.offline') });

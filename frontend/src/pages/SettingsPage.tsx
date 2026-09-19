@@ -1194,6 +1194,8 @@ export function SettingsPage() {
       (baseline.default_layer_inspect ?? false) !== (localSettings.default_layer_inspect ?? false) ||
       (baseline.default_timelapse ?? false) !== (localSettings.default_timelapse ?? false) ||
       (baseline.default_nozzle_offset_cali ?? 'auto') !== (localSettings.default_nozzle_offset_cali ?? 'auto') ||
+      (baseline.default_confirm_outcome ?? false) !== (localSettings.default_confirm_outcome ?? false) ||
+      (baseline.confirm_default_good_on_plate_clear ?? false) !== (localSettings.confirm_default_good_on_plate_clear ?? false) ||
       (baseline.stagger_group_size ?? 2) !== (localSettings.stagger_group_size ?? 2) ||
       (baseline.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
       (baseline.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
@@ -1306,6 +1308,8 @@ export function SettingsPage() {
         default_layer_inspect: localSettings.default_layer_inspect,
         default_timelapse: localSettings.default_timelapse,
         default_nozzle_offset_cali: localSettings.default_nozzle_offset_cali,
+        default_confirm_outcome: localSettings.default_confirm_outcome,
+        confirm_default_good_on_plate_clear: localSettings.confirm_default_good_on_plate_clear,
         stagger_group_size: localSettings.stagger_group_size,
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
@@ -4917,6 +4921,7 @@ export function SettingsPage() {
                 { key: 'default_layer_inspect' as const, label: t('settings.defaultLayerInspect', 'First Layer Inspection'), desc: t('settings.defaultLayerInspectDesc', 'AI inspection of first layer'), fallback: false, dualNozzleOnly: false, tristate: false },
                 { key: 'default_timelapse' as const, label: t('settings.defaultTimelapse', 'Timelapse'), desc: t('settings.defaultTimelapseDesc', 'Record timelapse video'), fallback: false, dualNozzleOnly: false, tristate: false },
                 { key: 'default_nozzle_offset_cali' as const, label: t('settings.defaultNozzleOffsetCali', 'Nozzle Offset Calibration'), desc: t('settings.defaultNozzleOffsetCaliDesc', 'Calibrate nozzle offsets between extruders'), fallback: true, dualNozzleOnly: true, tristate: true },
+                { key: 'default_confirm_outcome' as const, label: t('settings.defaultConfirmOutcome', 'Ask for Outcome'), desc: t('settings.defaultConfirmOutcomeDesc', 'Ask whether the print came out well after it completes'), fallback: false, dualNozzleOnly: false, tristate: false },
               ]
               .filter(({ dualNozzleOnly }) => !dualNozzleOnly || (printers || []).some(p => p.nozzle_count === 2))
               .map(({ key, label, desc, fallback, tristate }) => (
@@ -4994,6 +4999,27 @@ export function SettingsPage() {
                     type="checkbox"
                     checked={localSettings.require_plate_clear ?? false}
                     onChange={(e) => updateSetting('require_plate_clear', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+              {/* Post-print outcome confirmation (#1898): default unanswered
+                  prompts to "good" the moment the plate is released. */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1 mr-4">
+                  <p className="text-sm text-white">
+                    {t('settings.confirmDefaultGoodOnPlateClear', 'Count unanswered outcomes as good on plate release')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.confirmDefaultGoodOnPlateClearDescription', 'When the plate is released (manually or by the next queued print) and the print\'s outcome prompt is still unanswered, record it as a good part automatically.')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.confirm_default_good_on_plate_clear ?? false}
+                    onChange={(e) => updateSetting('confirm_default_good_on_plate_clear', e.target.checked)}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>

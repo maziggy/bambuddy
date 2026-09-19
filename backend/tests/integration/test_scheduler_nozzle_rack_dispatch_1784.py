@@ -47,7 +47,13 @@ _FILAMENTS = (
 _NOZZLES = '<nozzle id="0" extruder_id="1"/><nozzle id="1" extruder_id="2"/><nozzle id="2" extruder_id="2"/>'
 
 
-def _write_3mf(path: Path) -> None:
+def _write_3mf(path: Path, gcode_members: tuple[str, ...] = ()) -> None:
+    """The rack cases need no G-code member and carry none, which is why
+    ``gcode_members`` defaults to empty. #2947 does need one: the plate a
+    dispatch resolves to when the queue item names none is read out of the
+    archive's G-code member names, and with none present the resolution has
+    nothing to answer from and falls back to 1 regardless.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w") as zf:
         zf.writestr(
@@ -64,6 +70,8 @@ def _write_3mf(path: Path) -> None:
             "Metadata/slice_info.config",
             f'<config><plate><metadata key="index" value="1"/>{_FILAMENTS}{_NOZZLES}</plate></config>',
         )
+        for name in gcode_members:
+            zf.writestr(name, "")
 
 
 def _rack(present=(1, 2, 3, 4, 5, 6)):
@@ -84,7 +92,15 @@ async def rack_case(tmp_path):
     archive_rel = Path("archives") / "benchy.gcode.3mf"
     _write_3mf(base_dir / archive_rel)
 
-    async def _build(model: str, choice: dict | None):
+    async def _build(
+        model: str,
+        choice: dict | None,
+        *,
+        plate_id: int | None = 1,
+        gcode_members: tuple[str, ...] = (),
+    ):
+        if gcode_members:
+            _write_3mf(base_dir / archive_rel, gcode_members)
         async with session_maker() as db:
             printer = Printer(
                 name="H2C-1",
@@ -107,7 +123,7 @@ async def rack_case(tmp_path):
             item = PrintQueueItem(
                 printer_id=printer.id,
                 archive_id=archive.id,
-                plate_id=1,
+                plate_id=plate_id,
                 status="pending",
                 nozzle_rack_choice=json.dumps(choice) if choice else None,
             )
@@ -231,6 +247,42 @@ class TestAPickThatNoLongerFits:
         _, delete_file, _ = await _dispatch(rack_case, ids, _rack(present=(1, 2)))
 
         delete_file.assert_awaited()
+
+
+class TestThePlateThatGetsDispatched:
+    """#2947: a queue item with no plate of its own used to dispatch a bare 1.
+
+    Driven on an X1C so the rack machinery is out of the way entirely (see
+    ``test_a_non_rack_printer_is_left_entirely_alone``): the only thing under
+    test here is which plate number leaves ``_start_print``.
+
+    The archive is the shape that wedged a real printer: a single-plate export
+    cut out of a two-plate project, so its one G-code member is
+    ``plate_2.gcode`` and there is no ``plate_1.gcode`` for the firmware to
+    find.
+    """
+
+    async def test_the_print_command_names_the_plate_the_archive_holds(self, rack_case):
+        ids = await rack_case.build("X1C", None, plate_id=None, gcode_members=("Metadata/plate_2.gcode",))
+        start_print, _, item = await _dispatch(rack_case, ids, [])
+
+        assert start_print.call_count == 1
+        assert start_print.call_args.kwargs["plate_id"] == 2
+        assert item.status == "printing"
+
+    async def test_usage_tracking_is_registered_for_that_same_plate(self, rack_case):
+        """Imported inside ``_start_print``, so it patches on its own module.
+
+        Without this the archive says plate 2 printed while the usage tracker
+        was told nothing, and a None there books every filament in the file
+        instead of the plate that ran.
+        """
+        ids = await rack_case.build("X1C", None, plate_id=None, gcode_members=("Metadata/plate_2.gcode",))
+        with patch("backend.app.main.register_expected_print") as register:
+            start_print, _, _ = await _dispatch(rack_case, ids, [])
+
+        assert start_print.call_count == 1
+        assert register.call_args.kwargs["plate_id"] == 2
 
 
 class TestOtherModels:

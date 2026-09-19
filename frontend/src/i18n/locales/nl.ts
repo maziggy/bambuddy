@@ -3570,6 +3570,7 @@ export default {
       tokenWarning: 'Deze URL bevat een token — iedereen die hem kan lezen kan de stream bekijken en de bestandsnaam zien. Trek het token in om de toegang te stoppen.',
       fields: 'Velden om te tonen',
       fieldPrinter: 'Printernaam',
+      fieldModel: 'Printermodel',
       fieldFilename: 'Bestandsnaam',
       fieldStatus: 'Status',
       fieldProgress: 'Voortgangsbalk',

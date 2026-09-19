@@ -3528,6 +3528,7 @@ export default {
       tokenWarning: '此網址包含權杖：任何能看到它的人都可以觀看畫面並看到檔案名稱。撤銷權杖即可中止存取。',
       fields: '要顯示的欄位',
       fieldPrinter: '印表機名稱',
+      fieldModel: '印表機型號',
       fieldFilename: '檔案名稱',
       fieldStatus: '狀態',
       fieldProgress: '進度列',

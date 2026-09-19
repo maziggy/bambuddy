@@ -3529,6 +3529,7 @@ export default {
       tokenWarning: 'Cette URL contient un jeton — quiconque peut la lire peut voir le flux et le nom du fichier. Révoquez le jeton pour couper l\'accès.',
       fields: 'Champs à afficher',
       fieldPrinter: 'Nom de l\'imprimante',
+      fieldModel: 'Modèle d’imprimante',
       fieldFilename: 'Nom du fichier',
       fieldStatus: 'Statut',
       fieldProgress: 'Barre de progression',

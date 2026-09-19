@@ -523,6 +523,12 @@ class PrinterManager:
         except Exception as e:
             logger.warning("Failed to publish plate-clear state for printer %d: %s", printer_id, e)
 
+        state = self.get_status(printer_id)
+        if state:
+            from backend.app.services.wled import wled_manager
+
+            wled_manager.handle_status(printer_id, state, awaiting_plate_clear=awaiting)
+
         # Only the rising edge is worth a notification — "the bed is now free"
         # is not an action item, and the queue clears the gate by itself.
         if not awaiting:

@@ -1866,6 +1866,13 @@ export default {
   },
 
   // Settings page
+  wled: {
+    connectionSection: 'Підключення', mappingSection: 'Зіставлення станів', testConnection: 'Перевірити підключення', notTested: 'Не перевірено', connected: 'Підключено до WLED{{name}}{{version}}', notReachable: 'Не вдалося підключитися до WLED.', testPreset: 'Тест', presetTested: 'Пресет активовано', presetTestFailed: 'Не вдалося активувати пресет', mappingSummary: 'Налаштовано станів: {{configured}} · Вимкнено станів: {{disabled}}',
+    title: "WLED", description: "Кольори, ефекти й пресети керуються безпосередньо у WLED. Bambuddy лише зіставляє стани принтера з наявними пресетами.",
+    printer: "Принтер", enabled: "Увімкнути інтеграцію WLED", baseUrl: "URL WLED", loadPresets: "Завантажити пресети", online: "Завантажено пресетів: {{count}}", offlineHint: "WLED недоступний. Збережені ID пресетів залишаться.", noPrinters: "Принтери не налаштовані.", noPreset: "Вимкнено — без пресету", savedUnavailable: "Збережений пресет {{id}} — недоступний", finishedTimeout: "Тайм-аут завершення (секунди)", finishedTimeoutHint: "Після цього перейти з пресету Завершено до Очікування. 0 вимикає тайм-аут.", saved: "Налаштування WLED збережено", saveError: "Не вдалося зберегти налаштування WLED",
+    status: { idle: "Очікування", prepare: "Підготовка", printing: "Друк", paused: "Призупинено", finished: "Завершено", error: "Збій / Помилка", queue_waiting: "Очікування звільнення платформи", filament_problem: "Проблема з філаментом", hms_error: "Помилка HMS", offline: "Не в мережі" },
+  },
+
   settings: {
     sliceEngine: 'Рушій нарізання',
     sliceEngineSidecar: 'Серверний sidecar',
@@ -1885,6 +1892,7 @@ export default {
       queuePipelines: "Конвеєри",
       filament: "Філамент",
       network: "Мережа",
+      wled: "WLED",
       apiKeys: "Ключі API",
       virtualPrinter: "Віртуальний принтер",
       spoolbuddy: "SpoolBuddy",

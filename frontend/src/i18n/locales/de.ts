@@ -1849,6 +1849,13 @@ export default {
   },
 
   // Settings page
+  wled: {
+    connectionSection: 'Verbindung', mappingSection: 'Statuszuordnung', testConnection: 'Verbindung testen', notTested: 'Nicht getestet', connected: 'Mit WLED verbunden{{name}}{{version}}', notReachable: 'WLED ist nicht erreichbar.', testPreset: 'Testen', presetTested: 'Preset aktiviert', presetTestFailed: 'Preset konnte nicht aktiviert werden', mappingSummary: 'Konfigurierte Zustände: {{configured}} · Deaktivierte Zustände: {{disabled}}',
+    title: 'WLED', description: 'Farben, Effekte und Presets werden direkt in WLED verwaltet. Bambuddy ordnet Druckerzustände lediglich vorhandenen Presets zu.',
+    printer: 'Drucker', enabled: 'WLED-Integration aktivieren', baseUrl: 'WLED-URL', loadPresets: 'Presets laden', online: '{{count}} Presets geladen', offlineHint: 'WLED ist nicht erreichbar. Gespeicherte Preset-IDs bleiben erhalten.', noPrinters: 'Keine Drucker konfiguriert.', noPreset: 'Deaktiviert – kein Preset', savedUnavailable: 'Gespeichertes Preset {{id}} – derzeit nicht verfügbar', finishedTimeout: 'Finished-Timeout (Sekunden)', finishedTimeoutHint: 'Danach vom Finished-Preset zum Idle-Preset wechseln. 0 deaktiviert den Timeout.', saved: 'WLED-Einstellungen gespeichert', saveError: 'WLED-Einstellungen konnten nicht gespeichert werden',
+    status: { idle: 'Bereit', prepare: 'Vorbereitung', printing: 'Druckt', paused: 'Pausiert', finished: 'Fertig', error: 'Fehlgeschlagen / Fehler', queue_waiting: 'Wartet auf freie Druckplatte', filament_problem: 'Filamentproblem', hms_error: 'HMS-Fehler', offline: 'Offline' },
+  },
+
   settings: {
     sliceEngine: 'Slice-Engine',
     sliceEngineSidecar: 'Server-Sidecar',
@@ -1868,6 +1875,7 @@ export default {
       queuePipelines: 'Pipelines',
       filament: 'Filament',
       network: 'Netzwerk',
+      wled: 'WLED',
       apiKeys: 'API-Schlüssel',
       virtualPrinter: 'Virtueller Drucker',
       spoolbuddy: 'SpoolBuddy',

@@ -1849,6 +1849,13 @@ export default {
   },
 
   // Settings page
+  wled: {
+    connectionSection: '连接', mappingSection: '状态映射', testConnection: '测试连接', notTested: '未测试', connected: '已连接到 WLED{{name}}{{version}}', notReachable: '无法连接到 WLED。', testPreset: '测试', presetTested: '预设已激活', presetTestFailed: '无法激活预设', mappingSummary: '已配置状态: {{configured}} · 已禁用状态: {{disabled}}',
+    title: 'WLED', description: '颜色、效果和预设均直接在 WLED 中管理。Bambuddy 仅将打印机状态映射到现有预设。',
+    printer: '打印机', enabled: '启用 WLED 集成', baseUrl: 'WLED 地址', loadPresets: '加载预设', online: '已加载 {{count}} 个预设', offlineHint: 'WLED 不可用。已保存的预设 ID 将保留。', noPrinters: '尚未配置打印机。', noPreset: '已禁用 — 无预设', savedUnavailable: '已保存预设 {{id}} — 当前不可用', finishedTimeout: '完成超时（秒）', finishedTimeoutHint: '到时后从完成预设切换到空闲预设。设为 0 可禁用。', saved: 'WLED 设置已保存', saveError: '无法保存 WLED 设置',
+    status: { idle: '空闲', prepare: '准备中', printing: '打印中', paused: '已暂停', finished: '已完成', error: '失败 / 错误', queue_waiting: '等待清理打印板', filament_problem: '耗材问题', hms_error: 'HMS 错误', offline: '离线' },
+  },
+
   settings: {
     sliceEngine: '切片引擎',
     sliceEngineSidecar: '服务器 sidecar',
@@ -1868,6 +1875,7 @@ export default {
       queuePipelines: '流水线',
       filament: '耗材',
       network: '网络',
+      wled: 'WLED',
       apiKeys: 'API 密钥',
       virtualPrinter: '虚拟打印机',
       spoolbuddy: 'SpoolBuddy',

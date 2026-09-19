@@ -1763,6 +1763,13 @@ export default {
     noPermissionEditIntervals: '간격을 편집할 권한이 없습니다',
     configureSettings: '유지보수 유형 및 간격 설정'
   },
+  wled: {
+    connectionSection: '연결', mappingSection: '상태 매핑', testConnection: '연결 테스트', notTested: '테스트하지 않음', connected: 'WLED에 연결됨{{name}}{{version}}', notReachable: 'WLED에 연결할 수 없습니다.', testPreset: '테스트', presetTested: '프리셋이 활성화되었습니다', presetTestFailed: '프리셋을 활성화할 수 없습니다', mappingSummary: '설정된 상태: {{configured}} · 비활성 상태: {{disabled}}',
+    title: 'WLED', description: '색상, 효과 및 프리셋은 WLED에서 직접 관리합니다. Bambuddy는 프린터 상태를 기존 프리셋에 연결만 합니다.',
+    printer: '프린터', enabled: 'WLED 연동 활성화', baseUrl: 'WLED 주소', loadPresets: '프리셋 불러오기', online: '프리셋 {{count}}개를 불러왔습니다', offlineHint: 'WLED에 연결할 수 없습니다. 저장된 프리셋 ID는 유지됩니다.', noPrinters: '설정된 프린터가 없습니다.', noPreset: '비활성화 — 프리셋 없음', savedUnavailable: '저장된 프리셋 {{id}} — 현재 사용 불가', finishedTimeout: '완료 타임아웃(초)', finishedTimeoutHint: '이 시간이 지나면 완료에서 유휴 프리셋으로 전환합니다. 0은 비활성화입니다.', saved: 'WLED 설정을 저장했습니다', saveError: 'WLED 설정을 저장할 수 없습니다',
+    status: { idle: '유휴', prepare: '준비 중', printing: '인쇄 중', paused: '일시 중지', finished: '완료', error: '실패 / 오류', queue_waiting: '플레이트 제거 대기', filament_problem: '필라멘트 문제', hms_error: 'HMS 오류', offline: '오프라인' },
+  },
+
   settings: {
     sliceEngine: '슬라이스 엔진',
     sliceEngineSidecar: '서버 사이드카',
@@ -1781,6 +1788,7 @@ export default {
       queuePipelines: '파이프라인',
       filament: '필라멘트',
       network: '네트워크',
+      wled: 'WLED',
       apiKeys: 'API 키',
       virtualPrinter: '가상 프린터',
       spoolbuddy: 'SpoolBuddy',

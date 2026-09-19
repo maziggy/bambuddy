@@ -1851,6 +1851,13 @@ export default {
   },
 
   // Ayarlar sayfası
+  wled: {
+    connectionSection: 'Bağlantı', mappingSection: 'Durum eşleme', testConnection: 'Bağlantıyı test et', notTested: 'Test edilmedi', connected: 'WLED\'e bağlandı{{name}}{{version}}', notReachable: 'WLED\'e bağlanılamıyor.', testPreset: 'Test', presetTested: 'Ön ayar etkinleştirildi', presetTestFailed: 'Ön ayar etkinleştirilemedi', mappingSummary: 'Yapılandırılmış durumlar: {{configured}} · Devre dışı durumlar: {{disabled}}',
+    title: 'WLED', description: 'Renkler, efektler ve ön ayarlar doğrudan WLED içinde yönetilir. Bambuddy yalnızca yazıcı durumlarını mevcut ön ayarlarla eşleştirir.',
+    printer: 'Yazıcı', enabled: 'WLED entegrasyonunu etkinleştir', baseUrl: 'WLED URL’si', loadPresets: 'Ön ayarları yükle', online: '{{count}} ön ayar yüklendi', offlineHint: 'WLED kullanılamıyor. Kayıtlı ön ayar kimlikleri korunur.', noPrinters: 'Yapılandırılmış yazıcı yok.', noPreset: 'Devre dışı — ön ayar yok', savedUnavailable: 'Kayıtlı ön ayar {{id}} — kullanılamıyor', finishedTimeout: 'Bitiş zaman aşımı (saniye)', finishedTimeoutHint: 'Bu süreden sonra Bitti ön ayarından Boşta ön ayarına geçer. 0 devre dışı bırakır.', saved: 'WLED ayarları kaydedildi', saveError: 'WLED ayarları kaydedilemedi',
+    status: { idle: 'Boşta', prepare: 'Hazırlanıyor', printing: 'Yazdırılıyor', paused: 'Duraklatıldı', finished: 'Bitti', error: 'Başarısız / Hata', queue_waiting: 'Tablanın boşaltılması bekleniyor', filament_problem: 'Filament sorunu', hms_error: 'HMS hatası', offline: 'Çevrimdışı' },
+  },
+
   settings: {
     sliceEngine: 'Dilimleme motoru',
     sliceEngineSidecar: 'Sunucu sidecar',
@@ -1870,6 +1877,7 @@ export default {
       queuePipelines: 'Pipeline\'lar',
       filament: 'Filament',
       network: 'Ağ',
+      wled: 'WLED',
       apiKeys: 'API Anahtarları',
       virtualPrinter: 'Sanal Yazıcı',
       spoolbuddy: 'SpoolBuddy',

@@ -20,13 +20,13 @@ services:
       - NET_BIND_SERVICE
     #
     # LINUX: Use host mode for printer discovery and camera streaming
-    network_mode: host
+    # network_mode: host
     #
     # macOS/WINDOWS: Docker Desktop doesn't support host mode.
     # Comment out "network_mode: host" above and uncomment "ports:" below.
     # Note: Printer discovery won't work - add printers manually by IP.
-    #ports:
-    #  - "${PORT:-8000}:8000"
+    ports:
+      - "${PORT:-8000}:8000"
     #  - "3000:3000"                  # Virtual printer bind/detect
     #  - "3002:3002"                  # Virtual printer bind/detect
     #  - "8883:8883"                  # Virtual printer MQTT

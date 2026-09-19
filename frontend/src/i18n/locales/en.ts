@@ -1867,6 +1867,13 @@ export default {
   },
 
   // Settings page
+  wled: {
+    connectionSection: 'Connection', mappingSection: 'Status mapping', testConnection: 'Test connection', notTested: 'Not tested', connected: 'Connected to WLED{{name}}{{version}}', notReachable: 'Unable to connect to WLED.', testPreset: 'Test', presetTested: 'Preset activated', presetTestFailed: 'Could not activate preset', mappingSummary: 'Configured states: {{configured}} · Disabled states: {{disabled}}',
+    title: 'WLED', description: 'Colours, effects and presets are managed directly in WLED. Bambuddy only maps printer states to existing presets.',
+    printer: 'Printer', enabled: 'Enable WLED integration', baseUrl: 'WLED URL', loadPresets: 'Load presets', online: '{{count}} presets loaded', offlineHint: 'WLED is unavailable. Saved preset IDs are kept.', noPrinters: 'No printers configured.', noPreset: 'Disabled — no preset', savedUnavailable: 'Saved preset {{id}} — currently unavailable', finishedTimeout: 'Finished timeout (seconds)', finishedTimeoutHint: 'After this time, switch from Finished to the Idle preset. Set 0 to disable.', saved: 'WLED settings saved', saveError: 'Could not save WLED settings',
+    status: { idle: 'Idle', prepare: 'Preparing', printing: 'Printing', paused: 'Paused', finished: 'Finished', error: 'Failed / Error', queue_waiting: 'Awaiting plate clear', filament_problem: 'Filament problem', hms_error: 'HMS error', offline: 'Offline' },
+  },
+
   settings: {
     sliceEngine: 'Slice engine',
     sliceEngineSidecar: 'Server sidecar',
@@ -1886,6 +1893,7 @@ export default {
       queuePipelines: 'Pipelines',
       filament: 'Filament',
       network: 'Network',
+      wled: 'WLED',
       apiKeys: 'API Keys',
       virtualPrinter: 'Virtual Printer',
       spoolbuddy: 'SpoolBuddy',

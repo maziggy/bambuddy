@@ -1760,6 +1760,13 @@ export default {
     noPermissionEditIntervals: "У вас нет разрешения изменять интервалы",
     configureSettings: "Настроить виды обслуживания и интервалы",
   },
+  wled: {
+    connectionSection: 'Подключение', mappingSection: 'Сопоставление состояний', testConnection: 'Проверить подключение', notTested: 'Не проверено', connected: 'Подключено к WLED{{name}}{{version}}', notReachable: 'Не удалось подключиться к WLED.', testPreset: 'Тест', presetTested: 'Пресет активирован', presetTestFailed: 'Не удалось активировать пресет', mappingSummary: 'Настроено состояний: {{configured}} · Отключено состояний: {{disabled}}',
+    title: "WLED", description: "Цвета, эффекты и пресеты управляются непосредственно в WLED. Bambuddy только сопоставляет состояния принтера с существующими пресетами.",
+    printer: "Принтер", enabled: "Включить интеграцию WLED", baseUrl: "URL WLED", loadPresets: "Загрузить пресеты", online: "Загружено пресетов: {{count}}", offlineHint: "WLED недоступен. Сохранённые ID пресетов останутся.", noPrinters: "Принтеры не настроены.", noPreset: "Отключено — без пресета", savedUnavailable: "Сохранённый пресет {{id}} — недоступен", finishedTimeout: "Тайм-аут завершения (секунды)", finishedTimeoutHint: "Затем переключить пресет Завершено на Ожидание. 0 отключает тайм-аут.", saved: "Настройки WLED сохранены", saveError: "Не удалось сохранить настройки WLED",
+    status: { idle: "Ожидание", prepare: "Подготовка", printing: "Печать", paused: "Пауза", finished: "Завершено", error: "Сбой / Ошибка", queue_waiting: "Ожидание освобождения стола", filament_problem: "Проблема с филаментом", hms_error: "Ошибка HMS", offline: "Не в сети" },
+  },
+
   settings: {
     sliceEngine: 'Движок нарезки',
     sliceEngineSidecar: 'Серверный sidecar',
@@ -1778,6 +1785,7 @@ export default {
       queuePipelines: "Конвейеры",
       filament: "Филамент",
       network: "Сеть",
+      wled: "WLED",
       apiKeys: "Ключи API",
       virtualPrinter: "Виртуальный принтер",
       spoolbuddy: "SpoolBuddy",

@@ -84,6 +84,18 @@ REASON_INTERNAL_HISTORY = "internal_history"
 # retry is worth scheduling (#2957).
 REASON_FTPS_COOLOFF = "ftps_cooloff"
 
+# Also not a storage verdict, and the file's location was never in question
+# here either: the print went to external storage, FTPS served it, and the
+# transfer still did not finish inside its budget. At print start the printer is
+# also handling MQTT, the camera and the job upload, and a large 3MF does not
+# reliably complete against that -- #3063's reporter watched the same 19MB file
+# download successfully three times in the two minutes after the archive flow
+# gave up on it. Like the cool-off above and unlike the three storage verdicts,
+# this one is temporary and worth a retry; unlike the cool-off, nothing has to
+# expire first. Stamped by the print-start handler, which is the only place that
+# knows an attempt was made and failed in transit rather than answering 550.
+REASON_FTP_TRANSFER_FAILED = "ftp_transfer_failed"
+
 # Where a sliced file has ever been found over FTPS, in the order the sweep in
 # `main.py` tries them -- root first, which is where A1/P1-series uploads land
 # (#972), then `/cache`, which is where the H2D keeps its copy of an eMMC job

@@ -115,6 +115,7 @@ from backend.app.services.obico_detection import obico_detection_service
 from backend.app.services.print_cost_estimate import plate_scoped_run_estimate as _plate_scoped_run_estimate
 from backend.app.services.print_scheduler import scheduler as print_scheduler
 from backend.app.services.print_storage import (
+    REASON_FTP_TRANSFER_FAILED,
     REASON_FTPS_COOLOFF,
     external_storage_present,
     ftp_probe_paths,
@@ -2021,6 +2022,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
             from backend.app.api.routes.inventory import _find_tray_in_ams_data
             from backend.app.models.spool import Spool as _Spool
             from backend.app.models.spool_assignment import SpoolAssignment as SA
+            from backend.app.services.ams_slot_presence import spool_present
             from backend.app.services.inventory_mode import spoolman_owns_assignments
 
             # Built-in assignments only. Since #2812 they survive a switch to
@@ -2137,7 +2139,18 @@ async def on_ams_change(printer_id: int, ams_data: list):
                     # (#1322). The state ∉ {9,10} guard keeps the firmware's
                     # explicit "empty" signals authoritative over any stale
                     # tray_type that might survive the relay's auto-clearing.
-                    loaded = cur_state == 11 or (cur_state not in (9, 10) and cur_type.strip())
+                    #
+                    # tray_exist_bits comes first because that guard cannot tell
+                    # a firmware "empty" from Bambuddy's own: apply_tray_exist_bits
+                    # writes state=9 when the bit is 0 and leaves it there when the
+                    # bit returns. A non-RFID spool inserted into a pre-assigned
+                    # slot brings no tray_type with it, so the stale 9 made this
+                    # expression false forever and the deferred config never fired
+                    # — the deadlock #1322 removed from the assign path, still in
+                    # place here (#3084, #3100).
+                    loaded = spool_present(current_tray) is True or (
+                        cur_state == 11 or (cur_state not in (9, 10) and cur_type.strip())
+                    )
                     if not fp_type.strip() and loaded and assignment.spool:
                         try:
                             from backend.app.api.routes.inventory import (
@@ -2182,6 +2195,23 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             logger.info(
                                 "Auto-unlink skipped: spool %d AMS%d-T%d — tray data cleared during a running print "
                                 "(runout?)",
+                                assignment.spool_id,
+                                assignment.ams_id,
+                                assignment.tray_id,
+                            )
+                            continue
+                        # Same reasoning off the print, on firmware's own say-so:
+                        # a blank tray report from a slot whose tray_exist_bits
+                        # bit is set describes a spool the AMS cannot identify —
+                        # a non-RFID one, or one whose slot was reset — not a
+                        # spool that was taken out. Deleting the assignment there
+                        # threw away the identity the user had supplied, which is
+                        # the only place it existed (#3100). A slot the bit calls
+                        # empty, or one that carries no bit at all, still unlinks.
+                        if spool_present(current_tray) is True and not cur_color.strip() and not cur_type.strip():
+                            logger.info(
+                                "Auto-unlink skipped: spool %d AMS%d-T%d — slot still occupied, "
+                                "tray reports no filament data yet",
                                 assignment.spool_id,
                                 assignment.ams_id,
                                 assignment.tray_id,
@@ -2593,6 +2623,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
 
             from backend.app.models.spool_assignment import SpoolAssignment
             from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+            from backend.app.services.ams_slot_presence import spool_present
             from backend.app.services.inventory_mode import spoolman_owns_assignments
 
             # Built-in remaining weight, used by sync_ams_tray only when the
@@ -2661,7 +2692,16 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         # completion (#1459), so deleting the row mid-print
                         # loses the runout segment's usage — the same failure
                         # the internal inventory's auto-unlink had.
-                        if not printing_now:
+                        #
+                        # Nor when firmware's presence bit says the slot is
+                        # occupied. parse_ams_tray calls a tray with no type or
+                        # no colour empty, and a spool the AMS cannot read has
+                        # neither until something configures it — so a tag-less
+                        # spool assigned through the UI had its row deleted by
+                        # the first idle push after it was inserted. Same
+                        # deletion as the internal inventory's in #3100, same
+                        # answer, so the two modes stay in step.
+                        if not printing_now and spool_present(tray_data) is not True:
                             empty_slots.append((ams_id, tray_id_raw))
                         _clear_unknown_tag_dedup(printer_id, ams_id, tray_id_raw)
                         continue
@@ -3092,6 +3132,14 @@ async def _restore_printable_objects(printer_id: int, state, db, logger) -> None
 # armed a fresh one. Module-level so tests can shrink them.
 _FALLBACK_3MF_RETRY_DELAYS_SECONDS: tuple[float, ...] = (310.0, 620.0)
 
+# Retry ladder for the other temporary give-up: the file service answered and
+# the transfer still did not finish, which at print start is usually the printer
+# serving MQTT, the camera and a job upload at the same time (#3063). Nothing has
+# to expire here, so the first attempt comes early -- #3063's reporter had the
+# same 19MB file complete 48 seconds after the download budget ran out. The later
+# two cover a printer that stays busy well into the print.
+_FALLBACK_3MF_TRANSFER_RETRY_DELAYS_SECONDS: tuple[float, ...] = (60.0, 240.0, 600.0)
+
 # printer_id -> the in-flight retry task, so print completion can cancel it.
 _fallback_3mf_retry_tasks: dict[int, asyncio.Task] = {}
 
@@ -3225,16 +3273,36 @@ async def try_recover_fallback_archive(printer_id: int, name: str, path: Path) -
         return False
 
 
-def _schedule_fallback_3mf_retry(printer_id: int, archive_id: int, filenames: list[str]) -> None:
-    """Re-attempt the 3MF download after the printer's FTPS cool-off clears."""
+def _schedule_fallback_3mf_retry(
+    printer_id: int,
+    archive_id: int,
+    filenames: list[str],
+    delays: tuple[float, ...] | None = None,
+    reason: str = REASON_FTPS_COOLOFF,
+) -> None:
+    """Re-attempt the 3MF download after a temporary give-up.
+
+    ``reason`` says which give-up this is, and picks the default ladder: an
+    FTPS cool-off has to be waited out, while a transfer that timed out under
+    contention is worth asking about again straight away (#3063). It is only
+    read for the ladder and the log line -- the retry itself is identical, since
+    in both cases the file is on the printer and the last attempt at it failed
+    for a reason that does not last.
+    """
 
     logger = logging.getLogger(__name__)
+    if delays is None:
+        delays = (
+            _FALLBACK_3MF_TRANSFER_RETRY_DELAYS_SECONDS
+            if reason == REASON_FTP_TRANSFER_FAILED
+            else _FALLBACK_3MF_RETRY_DELAYS_SECONDS
+        )
 
     async def _retry() -> None:
         from backend.app.models.archive import PrintArchive
         from backend.app.models.printer import Printer
 
-        for delay in _FALLBACK_3MF_RETRY_DELAYS_SECONDS:
+        for delay in delays:
             await asyncio.sleep(delay)
 
             async with async_session() as db:
@@ -3318,9 +3386,11 @@ def _schedule_fallback_3mf_retry(printer_id: int, archive_id: int, filenames: li
     task = asyncio.create_task(_guarded())
     _fallback_3mf_retry_tasks[printer_id] = task
     logger.info(
-        "[RECOVER] Archive %s has no 3MF because printer %s was in its FTPS cool-off; will retry",
+        "[RECOVER] Archive %s has no 3MF (%s) and the file should still be on printer %s; will retry in %s",
         archive_id,
+        reason,
         printer_id,
+        ", ".join(f"{d:g}s" for d in delays),
     )
 
 
@@ -4020,6 +4090,14 @@ async def on_print_start(printer_id: int, data: dict):
         # in minutes with the file still sitting on the printer.
         blocked_by_ftps_cooloff = False
 
+        # Set when a probe reached the printer and still came back without the
+        # file -- a timeout mid-transfer, a refused connection, anything that is
+        # not a clean "not here". A 550 raises FileNotOnPrinterError and is
+        # caught by name below, so a file that genuinely is not on the card
+        # leaves this False and schedules nothing. Anything else means the
+        # transfer, not the file, is what failed, and that does not last (#3063).
+        ftp_transfer_failed = False
+
         # Get FTP retry settings
         ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
 
@@ -4159,11 +4237,17 @@ async def on_print_start(printer_id: int, data: dict):
                         # runs next) doesn't refetch the same 36MB over FTP.
                         cache_3mf_download(printer_id, try_filename, temp_path)
                         break
+                    # with_ftp_retry returns None once it has spent its budget,
+                    # and download_file_async returns False on a timeout, so an
+                    # exhausted transfer arrives here rather than as an
+                    # exception (#3063).
+                    ftp_transfer_failed = True
                 except FileNotOnPrinterError:
                     # 550 — file isn't at this path. Advance to next candidate
                     # without burning the retry budget.
                     logger.debug("3MF not at %s (550), trying next path", remote_path)
                 except Exception as e:
+                    ftp_transfer_failed = True
                     logger.debug("FTP download failed for %s: %s", remote_path, e)
 
             if downloaded_filename or ftps_handshake_blocked(printer.ip_address):
@@ -4236,6 +4320,9 @@ async def on_print_start(printer_id: int, data: dict):
                                 logger.info("Found and downloaded from %s: %s", search_dir, fname)
                                 cache_3mf_download(printer_id, fname, temp_path)
                                 break
+                            # The listing named the file, so it is on the card;
+                            # only the transfer failed (#3063).
+                            ftp_transfer_failed = True
                 except Exception as e:
                     logger.debug("Failed to list %s: %s", search_dir, e)
 
@@ -4340,6 +4427,15 @@ async def on_print_start(printer_id: int, data: dict):
                         pass
                     temp_path = None
                     downloaded_filename = None
+                    # Whatever the sweep's transport did earlier, it is not why
+                    # this archive ends up empty: a 3MF downloaded fine, it was
+                    # just the wrong plate. Retrying would re-fetch that same
+                    # contradicted file under the same stale names and hand it
+                    # to _recover_fallback_archive, which checks that a
+                    # candidate is a readable 3MF but not which plate it is --
+                    # so the row would be filled in with another plate's
+                    # filament and cost, the exact swap #2957 removed (#3063).
+                    ftp_transfer_failed = False
                     # Override the stale subtask_name so the fallback archive's
                     # print_name reflects the correct plate. Prefer the swapped
                     # name when we have one; otherwise let filename win.
@@ -4354,6 +4450,20 @@ async def on_print_start(printer_id: int, data: dict):
             # This commonly happens with P1S/A1 printers where FTP has file size limitations
             try:
                 from backend.app.models.archive import PrintArchive
+
+                # Why the card is empty. The two temporary causes outrank the
+                # storage verdict because they say the sweep never got a fair
+                # answer: a cool-off skipped it at the transport, and a failed
+                # transfer reached the printer but never finished. Either way
+                # the file is still on the card, so reporting where the printer
+                # files its jobs would describe a setting that is not the
+                # problem (#2957, #3063).
+                if blocked_by_ftps_cooloff:
+                    no_3mf_reason = REASON_FTPS_COOLOFF
+                elif storage.reachable and ftp_transfer_failed:
+                    no_3mf_reason = REASON_FTP_TRANSFER_FAILED
+                else:
+                    no_3mf_reason = storage.reason
 
                 # Derive print name from subtask_name or filename
                 print_name = subtask_name or filename
@@ -4397,14 +4507,11 @@ async def on_print_start(printer_id: int, data: dict):
                     filament_color=mqtt_filament_meta.get("filament_color"),
                     extra_data={
                         "no_3mf_available": True,
-                        # Why the card is empty, when we know. The banner reads
-                        # this to stop telling H2/P2 owners to switch on a
-                        # setting that is already on and would not help (#2780).
-                        # A cool-off outranks the storage verdict: the sweep was
-                        # skipped at the transport, so the verdict never got to
-                        # be tested, and reporting it would blame the SD card
-                        # for a TLS handshake (#2957).
-                        "no_3mf_reason": REASON_FTPS_COOLOFF if blocked_by_ftps_cooloff else storage.reason,
+                        # Why the card is empty, when we know -- see above. The
+                        # banner reads this to stop telling H2/P2 owners to
+                        # switch on a setting that is already on and would not
+                        # have helped (#2780).
+                        "no_3mf_reason": no_3mf_reason,
                         "original_subtask": subtask_name,
                         "_print_data": data,
                     },
@@ -4465,13 +4572,15 @@ async def on_print_start(printer_id: int, data: dict):
                 except Exception as e:
                     logger.debug("[SPOOLMAN] Could not store tracking for fallback archive: %s", e)
 
-                # A cool-off give-up is temporary and the file is on the
-                # printer — come back for it once the handshake block clears
-                # (#2957). Deliberately not scheduled for a storage verdict:
-                # a file on internal eMMC will not appear at any FTPS path
-                # however long we wait, and retrying it is exactly the sweep
-                # #2780 removed.
-                if blocked_by_ftps_cooloff and possible_names:
+                # Both temporary give-ups are worth coming back for, and for
+                # the same reason: the file is on the printer and the last look
+                # failed at the transport rather than finding nothing. One waits
+                # out the handshake block (#2957), the other waits for the
+                # printer to stop being busy (#3063). Deliberately not scheduled
+                # for a storage verdict: a file on internal eMMC will not appear
+                # at any FTPS path however long we wait, and retrying it is
+                # exactly the sweep #2780 removed.
+                if no_3mf_reason in (REASON_FTPS_COOLOFF, REASON_FTP_TRANSFER_FAILED) and possible_names:
                     # `possible_names`, not the raw MQTT strings: it is the exact
                     # list this flow just tried, already stripped of any path
                     # (`filename` arrives as "/data/Metadata/plate_1.gcode" on
@@ -4480,6 +4589,7 @@ async def on_print_start(printer_id: int, data: dict):
                         printer_id=printer_id,
                         archive_id=fallback_archive.id,
                         filenames=list(possible_names),
+                        reason=no_3mf_reason,
                     )
 
                 # Send notification without archive data (file not found)
@@ -8815,7 +8925,7 @@ async def lifespan(app: FastAPI):
     import httpx as _httpx
 
     from backend.app.services.bambu_cloud import set_shared_http_client
-    from backend.app.services.makerworld import (
+    from backend.app.services.model_providers.makerworld.service import (
         set_shared_http_client as set_shared_makerworld_http_client,
     )
     from backend.app.services.orca_cloud import (
@@ -9375,6 +9485,11 @@ PUBLIC_API_PATTERNS = [
     # orcaslicer://) cannot send auth headers. These endpoints validate a short-lived
     # download token in the URL path instead.
     "/dl/",  # /archives/{id}/dl/{token}/{filename}, /library/files/{id}/dl/{token}/{filename}
+    # Same family, but the segment is "source-dl" — which does NOT contain "/dl/",
+    # and these patterns match by substring. Without its own entry the middleware
+    # 401s the slicer's header-less request before the route's token check runs,
+    # so "Open source 3MF in slicer" failed whenever auth was enabled (#3029).
+    "/source-dl/",  # /archives/{id}/source-dl/{token}/{filename}
     # Obico ML API fetches JPEG frames by one-shot nonce (issue #172 follow-up).
     # The nonce itself is the credential: 32-byte random, single-use, ~30s TTL.
     "/obico/cached-frame/",  # /obico/cached-frame/{nonce}

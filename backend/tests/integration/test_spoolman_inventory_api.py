@@ -2083,6 +2083,119 @@ class TestLinkTagDuplicate:
         detail = resp.json()["detail"]
         assert "42" in str(detail)
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_409_is_the_same_structured_detail_as_the_built_in_route(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """#3110: one shape for both inventory modes, not two prose sentences.
+
+        The built-in route said "already linked to another active spool" and
+        named nobody; this one named the spool but only inside a sentence. A
+        client had to parse prose, and a different sentence per mode.
+        """
+        resp = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/99/tag",
+            json={"tray_uuid": "AABBCCDDEEFF0011AABBCCDDEEFF0011"},
+        )
+
+        assert resp.status_code == 409
+        detail = resp.json()["detail"]
+        assert detail["code"] == "tag_already_linked"
+        assert detail["spool_id"] == 42
+        assert detail["field"] == "tray_uuid"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_field_follows_the_precedence_the_tag_itself_uses(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """tray_uuid wins over tag_uid when both are sent, so `field` says so."""
+        mock_spoolman_client.get_all_spools.return_value = [
+            {**SAMPLE_SPOOLMAN_SPOOL, "id": 42, "extra": {"tag": '"AABBCCDDEEFF0011"'}}
+        ]
+
+        resp = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/99/tag",
+            json={"tag_uid": "AABBCCDDEEFF0011"},
+        )
+
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["field"] == "tag_uid"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_duplicate_holders_yield_the_lowest_id(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """Spoolman has no unique constraint on extra.tag either.
+
+        Whichever row the scan reached first was an arbitrary answer; the
+        built-in route names the lowest id, so this one does too.
+        """
+        tag = '"AABBCCDDEEFF0011AABBCCDDEEFF0011"'
+        mock_spoolman_client.get_all_spools.return_value = [
+            {**SAMPLE_SPOOLMAN_SPOOL, "id": 77, "extra": {"tag": tag}},
+            {**SAMPLE_SPOOLMAN_SPOOL, "id": 42, "extra": {"tag": tag}},
+        ]
+
+        resp = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/99/tag",
+            json={"tray_uuid": "AABBCCDDEEFF0011AABBCCDDEEFF0011"},
+        )
+
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["spool_id"] == 42
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_malformed_row_after_the_holder_does_not_sink_the_request(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """extra is free-form and edited outside Bambuddy.
+
+        Naming the lowest id means reading every row, where the old loop
+        stopped at its first match -- so a row whose extra.tag is a JSON null
+        (which .get("tag", "") hands back as None, not the default) sits
+        between the caller and their 409 in a way it never used to.
+        """
+        tag = '"AABBCCDDEEFF0011AABBCCDDEEFF0011"'
+        mock_spoolman_client.get_all_spools.return_value = [
+            {**SAMPLE_SPOOLMAN_SPOOL, "id": 42, "extra": {"tag": tag}},
+            {**SAMPLE_SPOOLMAN_SPOOL, "id": 55, "extra": {"tag": None}},
+            {**SAMPLE_SPOOLMAN_SPOOL, "id": 56, "extra": {"tag": 12345}},
+            {**SAMPLE_SPOOLMAN_SPOOL, "id": 57, "extra": None},
+            {**SAMPLE_SPOOLMAN_SPOOL, "id": 58, "extra": []},
+        ]
+
+        resp = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/99/tag",
+            json={"tray_uuid": "AABBCCDDEEFF0011AABBCCDDEEFF0011"},
+        )
+
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["spool_id"] == 42
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_malformed_row_is_not_itself_read_as_a_holder(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """A link with no real conflict still succeeds past those rows."""
+        mock_spoolman_client.get_all_spools.return_value = [
+            {**SAMPLE_SPOOLMAN_SPOOL, "id": 55, "extra": {"tag": None}},
+            {**SAMPLE_SPOOLMAN_SPOOL, "id": 56, "extra": {"tag": 12345}},
+            {**SAMPLE_SPOOLMAN_SPOOL, "id": 57, "extra": None},
+        ]
+
+        resp = await async_client.patch(
+            "/api/v1/spoolman/inventory/spools/42/tag",
+            json={"tag_uid": "AABBCCDD112233"},
+        )
+
+        assert resp.status_code == 200
+        mock_spoolman_client.update_spool_full.assert_called_once()
+
 
 class TestSpoolmanInventoryUpdateCoreWeight:
     """core_weight is accepted for schema parity but not persisted — any value should be accepted."""

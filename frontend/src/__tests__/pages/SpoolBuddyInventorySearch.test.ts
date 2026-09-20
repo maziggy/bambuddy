@@ -6,9 +6,10 @@
  * fields.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import type { InventorySpool } from '../../api/client';
 import { filterSpoolsByQuery } from '../../utils/inventorySearch';
+import { setColorCatalog, __resetColorCatalogForTests } from '../../utils/colors';
 
 function makeSpool(overrides: Partial<InventorySpool> & { id: number }): InventorySpool {
   return {
@@ -84,5 +85,35 @@ describe('SpoolBuddyInventoryPage search filter (#1738)', () => {
     ];
     expect(filterSpoolsByQuery(spools, 'IKEA').map((s) => s.id)).toEqual([1]);
     expect(filterSpoolsByQuery(spools, 'Matte').map((s) => s.id)).toEqual([2]);
+  });
+
+  // #3090 — the list shows a name resolved from the swatch's hex whenever the
+  // spool carries none of its own. Searching only the stored column meant
+  // typing what was plainly on screen returned nothing.
+  describe('the name on screen is the name you can search for (#3090)', () => {
+    beforeEach(() => {
+      __resetColorCatalogForTests();
+      setColorCatalog({ d02727: 'Candy Red' });
+    });
+
+    it('matches a catalog name the spool does not store', () => {
+      const spools = [
+        makeSpool({ id: 1, color_name: null, rgba: 'D02727FF' }),
+        makeSpool({ id: 2, color_name: null, rgba: '123456FF' }),
+      ];
+      expect(filterSpoolsByQuery(spools, 'candy').map((s) => s.id)).toEqual([1]);
+    });
+
+    it('matches a catalog name over a subtype Spoolman put in its place', () => {
+      const spools = [
+        makeSpool({ id: 1, color_name: 'Silk+', color_name_is_synthesized: true, rgba: 'D02727FF' }),
+      ];
+      expect(filterSpoolsByQuery(spools, 'candy red').map((s) => s.id)).toEqual([1]);
+    });
+
+    it('still matches the stored value, for anyone who knows the tag codes', () => {
+      const spools = [makeSpool({ id: 1, color_name: 'A06-D0', rgba: 'D02727FF' })];
+      expect(filterSpoolsByQuery(spools, 'a06-d0').map((s) => s.id)).toEqual([1]);
+    });
   });
 });

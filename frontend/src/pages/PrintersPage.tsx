@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } fr
 import { createPortal } from 'react-dom';
 import { compareFwVersions } from '../utils/firmwareVersion';
 import { formatPrintName } from '../utils/printName';
+import { isBedSlinger } from '../utils/bedSlinger';
 import { computePopoverPosition, type PopoverPosition } from '../utils/popoverPosition';
 import {
   openCameraWindow,
@@ -143,7 +144,7 @@ import {
 
 // Aliased: lucide-react already exports a `Link` icon into this module.
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
-import { api, discoveryApi, firmwareApi, withStreamToken, ApiError } from '../api/client';
+import { api, discoveryApi, firmwareApi, withMediaToken, ApiError } from '../api/client';
 import { formatDateOnly, formatDateTime, formatETA, formatDuration, formatDurationFromHours, parseUTCDate } from '../utils/date';
 import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
 import { Card, CardContent } from '../components/Card';
@@ -1109,7 +1110,7 @@ export function CoverImage({
   const cacheBustedUrl = useMemo(() => {
     if (!url) return null;
     const sep = url.includes('?') ? '&' : '?';
-    return withStreamToken(`${url}${sep}v=${encodeURIComponent(printName || Date.now().toString())}`);
+    return withMediaToken(`${url}${sep}v=${encodeURIComponent(printName || Date.now().toString())}`);
   }, [url, printName]);
 
   // Re-evaluate load state when the image URL changes, and ask the element
@@ -4924,14 +4925,20 @@ function PrinterCard({
                       {(() => {
                         const canControl = hasPermission('printers:control');
                         const disabled = isPrinting || !canControl;
-                        const bambuIsPlateBelow = true; // positive Z moves plate away from nozzle
                         const jogButtonClass = 'flex h-8 w-8 items-center justify-center rounded bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 transition-colors hover:bg-indigo-200 dark:hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50';
-                        const requestZJog = (direction: 1 | -1) => {
-                          const signed = direction * bedJogStep * (bambuIsPlateBelow ? 1 : -1);
-                          // The jog never disables the soft endstops (#2579), so it's always
-                          // safe: the firmware clamps the move at the travel limit, or refuses
-                          // it if the printer isn't homed. No not-homed bypass to gate.
-                          bedJogMutation.mutate({ distance: signed });
+                        // Which part the Z axis moves (#1334). The endpoint takes a signed
+                        // nozzle-bed gap that means the same thing on every printer, so the
+                        // arrows are ours to interpret: on a bed-slinger "up" lifts the
+                        // toolhead and opens the gap, on a bed-on-Z printer it raises the
+                        // plate toward the nozzle and closes it.
+                        const zMovesToolhead = isBedSlinger(printer.model);
+                        const requestZJog = (arrow: 'up' | 'down') => {
+                          const opensGap = zMovesToolhead ? arrow === 'up' : arrow === 'down';
+                          // No not-homed gate here, and no endstop bypass to gate either:
+                          // since #2579 the jog is a bare move that never touches M211. That
+                          // does not make it clamped — the firmware ignores soft endstops on
+                          // MQTT G-code entirely, which is what the banner above warns about.
+                          bedJogMutation.mutate({ distance: opensGap ? bedJogStep : -bedJogStep });
                         };
                         const requestXyJog = (x: number, y: number) => {
                           xyJogMutation.mutate({ x, y });
@@ -5023,10 +5030,10 @@ function PrinterCard({
                                     </div>
                                     <div className="flex flex-col items-center gap-1">
                                       <button
-                                        onClick={() => requestZJog(-1)}
+                                        onClick={() => requestZJog('up')}
                                         disabled={bedJogMutation.isPending}
                                         className={jogButtonClass}
-                                        aria-label={t('printers.bedJog.up')}
+                                        aria-label={t(zMovesToolhead ? 'printers.bedJog.toolheadUp' : 'printers.bedJog.up')}
                                       >
                                         <ArrowUp className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
                                       </button>
@@ -5034,10 +5041,10 @@ function PrinterCard({
                                         <Layers className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
                                       </div>
                                       <button
-                                        onClick={() => requestZJog(1)}
+                                        onClick={() => requestZJog('down')}
                                         disabled={bedJogMutation.isPending}
                                         className={jogButtonClass}
-                                        aria-label={t('printers.bedJog.down')}
+                                        aria-label={t(zMovesToolhead ? 'printers.bedJog.toolheadDown' : 'printers.bedJog.down')}
                                       >
                                         <ArrowDown className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
                                       </button>
@@ -5651,6 +5658,7 @@ function PrinterCard({
                                                 subtype: spoolmanSpool.subtype,
                                                 brand: spoolmanSpool.brand ?? null,
                                                 color_name: spoolmanSpool.color_name ?? null,
+                                                color_name_is_synthesized: spoolmanSpool.color_name_is_synthesized,
                                                 // The spool's own swatch (#2967). Spoolman carries the
                                                 // extra stops but has no effect field at all, so those
                                                 // rolls gradient and never shimmer.
@@ -6057,6 +6065,7 @@ function PrinterCard({
                                             subtype: spoolmanSpool.subtype,
                                             brand: spoolmanSpool.brand ?? null,
                                             color_name: spoolmanSpool.color_name ?? null,
+                                            color_name_is_synthesized: spoolmanSpool.color_name_is_synthesized,
                                             // The spool's own swatch (#2967). Spoolman carries the
                                             // extra stops but has no effect field at all, so those
                                             // rolls gradient and never shimmer.
@@ -6348,6 +6357,7 @@ function PrinterCard({
                                               subtype: spoolmanSpool.subtype,
                                               brand: spoolmanSpool.brand ?? null,
                                               color_name: spoolmanSpool.color_name ?? null,
+                                              color_name_is_synthesized: spoolmanSpool.color_name_is_synthesized,
                                               // The spool's own swatch (#2967). Spoolman carries the
                                               // extra stops but has no effect field at all, so those
                                               // rolls gradient and never shimmer.

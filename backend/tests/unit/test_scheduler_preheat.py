@@ -751,14 +751,15 @@ async def test_a_filled_variant_preheats_like_its_base_material(monkeypatch):
     from backend.app.services.print_scheduler import PrintScheduler
 
     s = PrintScheduler()
-    targets = PrintScheduler.DEFAULT_PREHEAT_FILAMENT_TARGETS
+    # The map as every read of it sees it: upper-cased, so "DEFAULT" is the
+    # catch-all key rather than the lowercase one the Settings editor writes.
+    targets = PrintScheduler._bundled_preheat_targets()
 
+    # Deliberately the production method rather than a copy of its rule. This
+    # test used to reimplement the lookup inline, which meant it went on passing
+    # whatever _target_for_tray_type did (#3067).
     def target_for(tray_type: str) -> int:
-        normalised = s._normalize_filament_type(tray_type)
-        value = targets.get(normalised)
-        if value is None:
-            value = targets.get(normalised.split("-")[0], targets.get("DEFAULT", 0))
-        return value
+        return s._target_for_tray_type(tray_type, targets)
 
     assert target_for("ASA-GF") == targets["ASA"]
     assert target_for("ASA-AERO") == targets["ASA"]
@@ -768,3 +769,15 @@ async def test_a_filled_variant_preheats_like_its_base_material(monkeypatch):
     assert target_for("PA-CF") == 55
     # And a plain type is untouched.
     assert target_for("PLA") == 0
+    # The polyamide spellings reach PA's row too, now that this shares the
+    # drying lookup's alias map (#3067). Stripping the suffix alone left PA6
+    # and PAHT on the catch-all, so those prints preheated to nothing.
+    assert target_for("PA6-CF") == targets["PA"]
+    assert target_for("PA12-CF") == targets["PA"]
+    assert target_for("PAHT-CF") == targets["PA"]
+    assert target_for("Nylon") == targets["PA"]
+    # An empty tray is not an unknown material: it reports no type at all and
+    # contributes no chamber target, where an unrecognised one takes the
+    # catch-all.
+    assert target_for("") == 0
+    assert target_for("   ") == 0

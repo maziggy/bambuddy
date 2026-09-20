@@ -520,4 +520,72 @@ describe('EditArchiveModal', () => {
       await waitFor(() => expect(seen.body?.project_id).toBe(2));
     });
   });
+  describe('items printed (#3051)', () => {
+    // A plate that jammed and came off ruined produced nothing, even when the
+    // printer called the job a success. The project's completed-items count
+    // sums this column, so 0 has to be typeable.
+
+    function patchSpy() {
+      const seen: { body?: Record<string, unknown> } = {};
+      server.use(
+        http.patch('/api/v1/archives/:id', async ({ request }) => {
+          seen.body = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...mockArchive, ...seen.body });
+        }),
+      );
+      return seen;
+    }
+
+    it('sends 0 for a plate that produced nothing', async () => {
+      const user = userEvent.setup();
+      const seen = patchSpy();
+
+      render(
+        <EditArchiveModal
+          archive={{ ...mockArchive, quantity: 4 }}
+          onClose={mockOnClose}
+          onSave={mockOnSave}
+        />,
+      );
+      const field = screen.getByLabelText(/items printed/i) as HTMLInputElement;
+      await user.clear(field);
+      await user.type(field, '0');
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => expect(seen.body?.quantity).toBe(0));
+    });
+
+    it('does not floor a cleared field back to 1', async () => {
+      const user = userEvent.setup();
+
+      render(
+        <EditArchiveModal
+          archive={{ ...mockArchive, quantity: 4 }}
+          onClose={mockOnClose}
+          onSave={mockOnSave}
+        />,
+      );
+      const field = screen.getByLabelText(/items printed/i) as HTMLInputElement;
+      await user.clear(field);
+
+      expect(field.value).toBe('0');
+    });
+
+    it('still refuses a negative count', async () => {
+      const user = userEvent.setup();
+
+      render(
+        <EditArchiveModal
+          archive={{ ...mockArchive, quantity: 4 }}
+          onClose={mockOnClose}
+          onSave={mockOnSave}
+        />,
+      );
+      const field = screen.getByLabelText(/items printed/i) as HTMLInputElement;
+      await user.clear(field);
+      await user.type(field, '-3');
+
+      expect(Number(field.value)).toBeGreaterThanOrEqual(0);
+    });
+  });
 });

@@ -27,7 +27,6 @@ class TestFinanceDefaults:
         wallet = await db_session.scalar(select(UserWallet).where(UserWallet.user_id == user.id))
         assert wallet is not None
         assert wallet.balance == 0.0
-        assert wallet.currency == "USD"
 
         center = await db_session.scalar(
             select(CostCenter).where(CostCenter.owner_user_id == user.id, CostCenter.is_private.is_(True))

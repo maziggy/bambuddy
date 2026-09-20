@@ -146,7 +146,7 @@ export function Layout() {
   });
 
   // Sponsor-prompt toast — fires once per session post-auth if a milestone is eligible.
-  useSponsorPrompt(uiFlags?.currency ?? 'EUR');
+  useSponsorPrompt(uiFlags?.currency ?? 'USD');
 
   // Unknown-spool prompt — surfaces a confirmation modal when the AMS reports a
   // tag with no inventory match (only when `auto_add_unknown_rfid` is off).

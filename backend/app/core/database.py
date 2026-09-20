@@ -1297,7 +1297,6 @@ async def _migrate_create_finance_tables(conn) -> None:
                 id INTEGER PRIMARY KEY,
                 user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
                 balance NUMERIC(14,2) NOT NULL DEFAULT 0.0,
-                currency VARCHAR(3) NOT NULL DEFAULT 'EUR',
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """,
@@ -1366,7 +1365,6 @@ async def _migrate_create_finance_tables(conn) -> None:
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
                 balance NUMERIC(14,2) NOT NULL DEFAULT 0.0,
-                currency VARCHAR(3) NOT NULL DEFAULT 'EUR',
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """,
@@ -1469,6 +1467,35 @@ async def _migrate_finance_money_to_numeric(conn) -> None:
                 f"ALTER TABLE {table_name} ALTER COLUMN {column_name} "
                 f"TYPE NUMERIC(14,2) USING ROUND({column_name}::numeric, 2)",
             )
+
+
+async def _migrate_drop_wallet_currency(conn) -> None:
+    """Remove ``user_wallets.currency`` (#3123).
+
+    An install has one currency, held in the ``currency`` app setting. The
+    column stored whatever was configured when a wallet row happened to be
+    created -- and three of its four writers hardcoded "EUR" -- so it could
+    only ever disagree with the setting. Everything reads the setting now, so
+    the column would otherwise sit here unread -- a trap for the next person
+    who finds it and assumes it means something.
+
+    Skipped on SQLite older than 3.35, which has no DROP COLUMN. Leaving the
+    column in place there costs nothing: no code references it and it carries
+    a DEFAULT, so inserts that omit it still succeed.
+    """
+    if is_sqlite():
+        import sqlite3
+
+        if sqlite3.sqlite_version_info < (3, 35, 0):
+            logger.info(
+                "SQLite %s has no ALTER TABLE DROP COLUMN; leaving the unused user_wallets.currency in place",
+                sqlite3.sqlite_version,
+            )
+            return
+        await _safe_execute(conn, "ALTER TABLE user_wallets DROP COLUMN currency")
+        return
+
+    await _safe_execute(conn, "ALTER TABLE user_wallets DROP COLUMN IF EXISTS currency")
 
 
 async def _migrate_add_print_archive_cost_center(conn) -> None:
@@ -1867,6 +1894,10 @@ async def run_migrations(conn):
     # Delay indexes until every legacy column they reference has been added.
     await _migrate_finance_money_to_numeric(conn)
     await _migrate_create_finance_indexes(conn)
+
+    # Runs after the CREATE TABLE above, which used to re-add the column on an
+    # install whose finance tables predate the ORM (#3123).
+    await _migrate_drop_wallet_currency(conn)
 
     # Migration: Add missing-spool-assignment print-start notification toggle
     try:

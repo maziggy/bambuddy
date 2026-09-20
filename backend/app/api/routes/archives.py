@@ -40,6 +40,7 @@ from backend.app.services.bambu_ftp import ftps_handshake_blocked, list_files_re
 from backend.app.services.design_settings import overrides_from_config
 from backend.app.services.filament_requirements import annotate_rack_groups
 from backend.app.services.print_storage import (
+    REASON_FTP_TRANSFER_FAILED,
     REASON_FTPS_COOLOFF,
     REASON_INTERNAL_HISTORY,
     REASON_INTERNAL_STORAGE,
@@ -598,6 +599,13 @@ async def no_3mf_warning(
     # lands, so a row still carrying this slug is one where the retry failed too
     # -- a printer whose file service is still refusing, days later.
     #
+    # REASON_FTP_TRANSFER_FAILED sits second for the same reasons and one more:
+    # it is the only slug here whose remedy is a Bambuddy setting rather than a
+    # slicer one or a card. It ranks below the cool-off because a printer that
+    # will not complete a TLS handshake is the worse fault of the two, and its
+    # own retry (#3063) clears the row the same way, so a row still carrying
+    # this slug is one where three later attempts also ran out of time.
+    #
     # REASON_INTERNAL_HISTORY comes last on purpose, even though it is the
     # narrowest: it is the one cause with no remedy at all -- the file was
     # already on the printer, in an area port 990 does not serve. The two ahead
@@ -605,6 +613,7 @@ async def no_3mf_warning(
     # both, the actionable explanation is the one worth the banner (#1820).
     for candidate in (
         REASON_FTPS_COOLOFF,
+        REASON_FTP_TRANSFER_FAILED,
         REASON_INTERNAL_STORAGE,
         REASON_NO_EXTERNAL_STORAGE,
         REASON_INTERNAL_HISTORY,

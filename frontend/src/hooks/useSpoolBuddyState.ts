@@ -6,6 +6,9 @@ export interface MatchedSpool {
   material: string;
   subtype: string | null;
   color_name: string | null;
+  // True when the backend had no stored colour name and put the subtype there
+  // instead — Spoolman-backed inventory only, which has no such field (#3090).
+  color_name_is_synthesized?: boolean;
   rgba: string | null;
   brand: string | null;
   label_weight: number;
@@ -122,6 +125,7 @@ export function useSpoolBuddyState() {
           material: spool.material ?? '',
           subtype: spool.subtype ?? null,
           color_name: spool.color_name ?? null,
+          color_name_is_synthesized: spool.color_name_is_synthesized ?? false,
           rgba: spool.rgba ?? null,
           brand: spool.brand ?? null,
           label_weight: spool.label_weight ?? 0,

@@ -17,7 +17,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 
 ## Sustaining Sponsors ($150/mo+)
 
-*None yet.*
+- [@simplytoast1](https://github.com/simplytoast1)
 
 ## Patrons ($35/mo+)
 
@@ -41,6 +41,8 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@shosier01](https://github.com/shosier01)
 - [@freifunk-bamberg](https://github.com/freifunk-bamberg)
 - [@davisgoodmanv](https://github.com/davisgoodman)
+- [@Heidelberger2000](https://github.com/Heidelberger2000)
+- [@Xethm81](https://github.com/Xethm81)
 
 ## Backers ($5/mo+)
 
@@ -55,7 +57,6 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@Geoff-S](https://github.com/Geoff-S)
 - [@andyspinball](https://github.com/andyspinball
 - [@avandeputte](https://github.com/avandeputte)
-- [@joeferrante](https://github.com/joeferrante)
 - [@GPop61](https://github.com)
 - [@CooleyMcCoolson](https://github.com/CooleyMcCoolson)
 - [@mikeloveridge](https://github.com/mikeloveridge)
@@ -70,7 +71,6 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@iljur](https://github.com/iljur)
 - [@bhamiltoncx](https://github.com/bhamiltoncx)
 - [@g7ufo](https://github.com/g7ufo)
-- [@Heidelberger2000](https://github.com/Heidelberger2000)
 - [@MorganMLGman](https://github.com/MorganMLGman)
 - [@NeighborGeek](https://github.com/NeighborGeek)
 

@@ -293,14 +293,32 @@ export function disambiguateColorNames(
 
 /**
  * Resolve a spool's display color name.
- * Tries: stored color_name (if it's a readable name) → runtime catalog via rgba → null.
- * Detects Bambu internal codes (e.g. "A06-D0") and ignores them in favor of hex lookup
- * because the same code is not globally unique across material families (#857).
+ *
+ * Tries: stored color_name (if it is a readable name the user can be said to
+ * have chosen) → runtime catalog via rgba → the stored name after all → null.
+ *
+ * Two kinds of stored name are not answers, and both defer to the hex:
+ *
+ * - A Bambu internal code ("A06-D0"), which is what some RFID tags carry in
+ *   place of a name. The same code is not unique across material families, so
+ *   it cannot be translated on its own (#857).
+ * - A name Bambuddy synthesised from the spool's subtype because the inventory
+ *   backend had none. Spoolman has no `color_name` field at all, so every
+ *   Spoolman-backed spool arrives carrying its subtype as a stand-in, and
+ *   "Silk+" is not a colour (#3090). `colorNameIsSynthesized` is the flag the
+ *   backend already sets for exactly this; it is a weaker answer than the
+ *   catalog, not a wrong one, so it is still used when the hex resolves to
+ *   nothing.
  */
-export function resolveSpoolColorName(colorName: string | null, rgba: string | null): string | null {
-  // If color_name looks like a readable name (no pattern like "X00-Y0"), use it directly
-  if (colorName && !/^[A-Z]\d+-[A-Z]\d+$/.test(colorName)) {
-    return colorName;
+export function resolveSpoolColorName(
+  colorName: string | null,
+  rgba: string | null,
+  colorNameIsSynthesized = false,
+): string | null {
+  // A readable name the user (or their tag) actually set wins outright.
+  const readable = colorName && !/^[A-Z]\d+-[A-Z]\d+$/.test(colorName) ? colorName : null;
+  if (readable && !colorNameIsSynthesized) {
+    return readable;
   }
   if (rgba && rgba.length >= 6) {
     const clean = rgba.replace('#', '').toLowerCase();
@@ -311,6 +329,9 @@ export function resolveSpoolColorName(colorName: string | null, rgba: string | n
     const mapped = runtimeColorCatalog[hex];
     if (mapped) return mapped;
   }
+  // A synthesised subtype is a poor colour name and a fine last resort — it at
+  // least says what the spool is. A bare code never is.
+  if (readable) return readable;
   // Return null (displayed as "-") — better than showing a code
   return null;
 }

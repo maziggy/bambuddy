@@ -7,7 +7,7 @@ import { ConfirmModal } from '../ConfirmModal';
 import { AmsUnitCard, NozzleBadge } from './AmsUnitCard';
 import type { AmsThresholds } from './AmsUnitCard';
 import { getFillBarColor } from '../../utils/amsHelpers';
-import { getSwatchStyle } from '../../utils/colors';
+import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
 
 function getAmsName(id: number): string {
   if (id <= 3) return `AMS ${String.fromCharCode(65 + id)}`;
@@ -379,7 +379,9 @@ export function AssignToAmsModal({ isOpen, onClose, spool, printerId, spoolmanMo
             <h2 className="text-sm font-semibold text-zinc-100 truncate">
               {t('spoolbuddy.modal.assignToAmsTitle', 'Assign to AMS')}
               <span className="font-normal text-zinc-500 ml-2">
-                {spool.color_name || 'Unknown'} &bull; {spool.brand} {spool.material}{spool.subtype && ` ${spool.subtype}`}
+                {resolveSpoolColorName(spool.color_name, spool.rgba, spool.color_name_is_synthesized) ||
+                  t('spoolbuddy.spool.unknownColor')}{' '}
+                &bull; {spool.brand} {spool.material}{spool.subtype && ` ${spool.subtype}`}
               </span>
               <span className="text-[10px] font-mono text-zinc-500 ml-2 shrink-0">#{spool.id}</span>
             </h2>

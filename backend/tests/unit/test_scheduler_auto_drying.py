@@ -101,6 +101,143 @@ class TestConservativeDryingParams:
         assert result == (50, 6, "PLA")
 
 
+class TestCompositesResolveToTheirBaseMaterial:
+    """#3067: a composite spool was skipped by auto-drying entirely.
+
+    The preset key came from ``tray_type.split()[0].upper()``, which splits on
+    spaces only -- so "PA6-CF" stayed "PA6-CF", found no row in an 8-key table,
+    and the tray contributed nothing. Every caller reads "no row" as "nothing to
+    dry here", so the AMS was passed over on every scheduler pass, silently.
+
+    It was never only PA. Of the 41 types a printer can report, 33 had no row
+    under that rule and 20 of them have a base material sitting right there:
+    every -CF, -GF and -AERO variant of PLA, PETG, ABS, ASA, PC and PA.
+
+    The reporter could still dry the same spool by hand, because the drying
+    popover has resolved composites since #2774 -- these tests pin the two ends
+    to the same answer.
+    """
+
+    @pytest.fixture
+    def scheduler(self):
+        return PrintScheduler()
+
+    @pytest.mark.parametrize(
+        ("tray_type", "expected_key"),
+        [
+            # The reported spool, and the rest of the polyamide spellings. Bambu
+            # labels nylon "PA" and spells its own composites out, so none of
+            # these match a PA row without the alias map.
+            ("PA6-CF", "PA"),
+            ("PA6-GF", "PA"),
+            ("PA12-CF", "PA"),
+            ("PAHT-CF", "PA"),
+            ("PA-CF", "PA"),
+            ("Nylon", "PA"),
+            # Polyphthalamide is a distinct polymer, not a nylon grade, so this
+            # one is a judgement: an aromatic polyamide that takes up moisture
+            # the same way, dried on the hottest row the table has.
+            ("PPA-CF", "PA"),
+            ("PPA-GF", "PA"),
+            # ...and the variants of everything else, which were equally skipped.
+            ("PLA-CF", "PLA"),
+            ("PLA-GF", "PLA"),
+            ("PLA-AERO", "PLA"),
+            ("PLA-S", "PLA"),
+            ("PETG-CF", "PETG"),
+            ("ABS-GF", "ABS"),
+            ("ASA-CF", "ASA"),
+            ("ASA-AERO", "ASA"),
+            ("PC-CF", "PC"),
+            # Already worked, and must keep working.
+            ("PLA", "PLA"),
+            ("PLA Basic", "PLA"),
+            ("TPU for AMS", "TPU"),
+        ],
+    )
+    def test_the_tray_reaches_its_base_materials_preset(self, scheduler, tray_type, expected_key):
+        result = scheduler._get_conservative_drying_params(
+            [{"tray_type": tray_type}], "n3s", PrintScheduler.DEFAULT_DRYING_PRESETS
+        )
+        assert result is not None, f"{tray_type} is still skipped by auto-drying"
+        assert result[2] == expected_key
+        assert result[0] == PrintScheduler.DEFAULT_DRYING_PRESETS[expected_key]["n3s"]
+
+    def test_the_reported_spool_gets_nylons_temperature(self, scheduler):
+        """The whole point of resolving it rather than defaulting: PA6-CF wants
+        PA's 85C on an AMS-HT. Landing on PLA's 45 would run a cycle that dries
+        nothing, which is worse than the skip it replaces -- it looks like it
+        worked."""
+        result = scheduler._get_conservative_drying_params(
+            [{"tray_type": "PA6-CF"}], "n3s", PrintScheduler.DEFAULT_DRYING_PRESETS
+        )
+        assert result == (85, 12, "PA")
+
+    @pytest.mark.parametrize("tray_type", ["PPS-CF", "PET-CF", "PEEK", "PP", "PE", "wildly unknown"])
+    def test_a_material_with_no_base_row_is_still_skipped(self, scheduler, tray_type):
+        """Nothing here invents a drying profile. A material with no row and no
+        alias keeps the behaviour it has today rather than being dried at a
+        number nobody chose.
+
+        This is deliberately where the backend parts company with the drying
+        popover, which falls back to PLA because a dropdown has to show
+        something. A scheduler does not.
+        """
+        result = scheduler._get_conservative_drying_params(
+            [{"tray_type": tray_type}], "n3s", PrintScheduler.DEFAULT_DRYING_PRESETS
+        )
+        assert result is None
+
+    def test_a_user_row_for_the_exact_type_wins_over_the_base(self, scheduler):
+        """Someone who has added PA6-CF to their own table meant it."""
+        custom = {
+            **PrintScheduler.DEFAULT_DRYING_PRESETS,
+            "PA6-CF": {"n3f": 70, "n3s": 90, "n3f_hours": 10, "n3s_hours": 10},
+        }
+        result = scheduler._get_conservative_drying_params([{"tray_type": "PA6-CF"}], "n3s", custom)
+        assert result == (90, 10, "PA6-CF")
+
+    def test_a_mixed_load_still_takes_the_coolest_row(self, scheduler):
+        """Resolving more types must not disturb the conservative choice: a
+        PA6-CF spool sharing the unit with PLA still gets PLA's 45C, because
+        85 would deform the PLA."""
+        result = scheduler._get_conservative_drying_params(
+            [{"tray_type": "PA6-CF"}, {"tray_type": "PLA"}], "n3s", PrintScheduler.DEFAULT_DRYING_PRESETS
+        )
+        assert result[0] == 45
+
+    def test_an_empty_preset_row_still_means_skip(self, scheduler):
+        """The table is user-editable JSON and nothing validates a row, so one
+        can be present and empty. Resolving the key is not the same as having a
+        preset: the temp/hours reads each fall back to 55C/12h, which would dry
+        a PLA spool at 55 degrees because somebody left a row blank."""
+        custom = {**PrintScheduler.DEFAULT_DRYING_PRESETS, "PLA": {}}
+        assert scheduler._get_conservative_drying_params([{"tray_type": "PLA"}], "n3s", custom) is None
+        # And it does not quietly fall through to some other row either.
+        assert scheduler._get_conservative_drying_params([{"tray_type": "PLA-CF"}], "n3s", custom) is None
+
+    def test_a_zero_valued_row_is_a_row(self, scheduler):
+        """The resolver tests key presence, not truthiness. It is shared with the
+        chamber-preheat map, where 0 is the correct target for PLA, PETG, TPU and
+        PVA -- reading those as "no row" would send every one of them to the
+        catch-all."""
+        targets = PrintScheduler._bundled_preheat_targets()
+        assert targets["PLA"] == 0
+        assert PrintScheduler._resolve_filament_key("PLA", targets) == "PLA"
+        assert scheduler._target_for_tray_type("PLA", targets) == 0
+        assert scheduler._target_for_tray_type("PLA-CF", targets) == 0
+
+    def test_a_whitespace_only_tray_type_is_not_a_material(self, scheduler):
+        """Truthy, and splits to nothing. The old normaliser indexed the split
+        after testing the string, so this raised IndexError rather than reading
+        as an empty tray."""
+        assert PrintScheduler._normalize_filament_type("   ") == ""
+        result = scheduler._get_conservative_drying_params(
+            [{"tray_type": "   "}], "n3s", PrintScheduler.DEFAULT_DRYING_PRESETS
+        )
+        assert result is None
+
+
 class TestDryingPresets:
     """Test _get_drying_presets — loads user presets from DB or falls back to defaults."""
 
@@ -1067,6 +1204,26 @@ class TestResolveHumidityThreshold:
             60,
         )
         assert result == 50
+
+    def test_a_composite_takes_its_base_materials_threshold(self):
+        """Same lookup, same gap (#3067): a PA6-CF spool read as an unknown type
+        and took the default, so the override the user set for nylon -- the
+        material most worth a low threshold -- never applied to the spool they
+        set it for."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": "PA6-CF"}],
+            {"default": 60, "PA": 20},
+            60,
+        )
+        assert result == 20
+
+    def test_a_composite_with_its_own_threshold_row_keeps_it(self):
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": "PETG-CF"}],
+            {"default": 60, "PETG": 55, "PETG-CF": 40},
+            60,
+        )
+        assert result == 40
 
     def test_mixed_load_picks_lowest(self):
         """Mixed PLA (60) + Nylon (20) → most restrictive = 20."""

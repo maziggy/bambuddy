@@ -353,15 +353,19 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
 
           {/* Quantity - number of items printed */}
           <div>
-            <label className="block text-sm text-bambu-gray mb-1">
+            <label className="block text-sm text-bambu-gray mb-1" htmlFor="archive-items-printed">
               <Hash className="w-4 h-4 inline mr-1" />
               {t('editArchive.itemsPrinted')}
             </label>
             <input
+              id="archive-items-printed"
               type="number"
-              min={1}
+              min={0}
               value={quantity}
-              onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+              // 0 is a real answer, not an empty field: a plate that jammed and
+              // came off ruined produced nothing, and the project's completed
+              // count has to be able to say so (#3051).
+              onChange={(e) => setQuantity(Math.max(0, parseInt(e.target.value) || 0))}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
               placeholder="1"
             />

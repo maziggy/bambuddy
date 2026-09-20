@@ -421,6 +421,11 @@ async def nfc_tag_scanned(
                             "material": mapped["material"],
                             "subtype": mapped["subtype"],
                             "color_name": mapped["color_name"],
+                            # Spoolman stores no colour name, so `color_name`
+                            # here is usually the spool's subtype standing in
+                            # for one. The kiosk needs to know that to prefer
+                            # the colour catalog over "Silk+" (#3090).
+                            "color_name_is_synthesized": mapped["color_name_is_synthesized"],
                             "rgba": mapped["rgba"],
                             "brand": mapped["brand"],
                             "label_weight": mapped["label_weight"],
@@ -485,6 +490,9 @@ async def nfc_tag_scanned(
                         "material": spool.material,
                         "subtype": spool.subtype,
                         "color_name": spool.color_name,
+                        # Local inventory stores what the user or their tag
+                        # set, and nothing else — never a stand-in (#3090).
+                        "color_name_is_synthesized": False,
                         "rgba": spool.rgba,
                         "brand": spool.brand,
                         "label_weight": spool.label_weight,

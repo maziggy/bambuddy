@@ -457,6 +457,29 @@ describe('QueuePage', () => {
       ).not.toBeInTheDocument();
     });
 
+    it('tells an unscheduled item when it runs, without naming a dispatch mode', async () => {
+      // ASAP and Queue differ only in where the item is inserted; neither is
+      // stored on it, so this column cannot tell them apart. Labelling every
+      // unscheduled item "ASAP" made a Queue choice look overridden, which is
+      // what both #2557 and #3018 opened on.
+      server.use(
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json([
+            { ...mockQueueItems[0], archive_name: 'Queued Print', scheduled_time: null },
+          ]);
+        }),
+      );
+
+      render(<QueuePage />);
+
+      const name = await screen.findByText('Queued Print');
+      const row = name.closest('.group') as HTMLElement;
+
+      expect(row).not.toBeNull();
+      expect(within(row).getByText('When a printer is free')).toBeInTheDocument();
+      expect(within(row).queryByText('ASAP')).not.toBeInTheDocument();
+    });
+
     it('does not render a dangling ETA for an invalid duration', async () => {
       server.use(
         http.get('/api/v1/queue/', () => {
@@ -925,6 +948,86 @@ describe('QueuePage', () => {
       // Rows render top-to-bottom in position order.
       expect(screen.getAllByTitle('Move Up')[0]).toBeDisabled();
       expect(screen.getAllByTitle('Move Down')[2]).toBeDisabled();
+    });
+  });
+  describe('bulk edit G-code injection (#3058)', () => {
+    /**
+     * gcode_injection is a per-item column the single-item edit modal has
+     * always exposed, and PATCH /queue/bulk has always accepted — only the
+     * bulk dialog left it out, so turning injection on for a whole queue
+     * meant opening every item.
+     */
+    const settingsWithSnippets = {
+      auto_archive: true,
+      gcode_snippets: '{"X1C":{"start_gcode":"","end_gcode":"M400"}}',
+    };
+
+    /** Select the one pending row and open the bulk edit dialog. */
+    const openBulkEdit = async () => {
+      render(<QueuePage />);
+      await waitFor(() => expect(screen.getByText('Test Print 1')).toBeInTheDocument());
+      await userEvent.click(screen.getByText('Select All'));
+      await userEvent.click(await screen.findByTitle('Edit Selected'));
+      return screen.getByText('Edit 1 Item').closest('div')!.parentElement!;
+    };
+
+    it('offers the toggle when a G-code snippet is configured', async () => {
+      server.use(http.get('/api/v1/settings/', () => HttpResponse.json(settingsWithSnippets)));
+
+      await openBulkEdit();
+
+      expect(await screen.findByText('Inject G-code')).toBeInTheDocument();
+    });
+
+    it('hides the toggle when no snippet is configured', async () => {
+      await openBulkEdit();
+
+      // The dialog is open — other queue options are there, injection is not.
+      expect(screen.getByText('Staged (manual start)')).toBeInTheDocument();
+      expect(screen.queryByText('Inject G-code')).not.toBeInTheDocument();
+    });
+
+    it('sends gcode_injection with the bulk PATCH once toggled on', async () => {
+      let patchBody: Record<string, unknown> | null = null;
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json(settingsWithSnippets)),
+        http.patch('/api/v1/queue/bulk', async ({ request }) => {
+          patchBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ updated_count: 1, skipped_count: 0, message: 'Updated 1 items' });
+        }),
+      );
+
+      const dialog = await openBulkEdit();
+
+      const row = (await screen.findByText('Inject G-code')).closest('div')!;
+      await userEvent.click(within(row).getByText('On'));
+      await userEvent.click(within(dialog).getByText('Apply Changes'));
+
+      await waitFor(() => expect(patchBody).not.toBeNull());
+      expect(patchBody!.item_ids).toEqual([1]);
+      expect(patchBody!.gcode_injection).toBe(true);
+    });
+
+    it('leaves gcode_injection out of the PATCH while it stays on "no change"', async () => {
+      let patchBody: Record<string, unknown> | null = null;
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json(settingsWithSnippets)),
+        http.patch('/api/v1/queue/bulk', async ({ request }) => {
+          patchBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ updated_count: 1, skipped_count: 0, message: 'Updated 1 items' });
+        }),
+      );
+
+      const dialog = await openBulkEdit();
+
+      // Change something else entirely; injection must not ride along as false.
+      const stagedRow = screen.getByText('Staged (manual start)').closest('div')!;
+      await userEvent.click(within(stagedRow).getByText('On'));
+      await userEvent.click(within(dialog).getByText('Apply Changes'));
+
+      await waitFor(() => expect(patchBody).not.toBeNull());
+      expect(patchBody!.manual_start).toBe(true);
+      expect('gcode_injection' in patchBody!).toBe(false);
     });
   });
 });

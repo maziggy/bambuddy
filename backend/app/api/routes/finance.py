@@ -41,6 +41,7 @@ from backend.app.services.finance_balance import (
     calculate_personal_balance,
     is_personal_transaction,
     personal_balance_condition,
+    resolve_configured_currency,
     sync_personal_wallet_balance,
 )
 from backend.app.services.finance_budget import get_cost_center_reserved_map
@@ -251,7 +252,7 @@ async def _get_or_create_wallet(db: AsyncSession, user_id: int) -> UserWallet:
     if wallet:
         return wallet
 
-    wallet = UserWallet(user_id=user_id, balance=0.0, currency="EUR")
+    wallet = UserWallet(user_id=user_id, balance=0.0)
     db.add(wallet)
     await db.flush()
     await db.refresh(wallet)
@@ -276,24 +277,31 @@ async def _get_cost_center_or_404(db: AsyncSession, cost_center_id: int) -> Cost
     return center
 
 
-def _to_balance_response(wallet: UserWallet) -> WalletBalanceResponse:
+def _to_balance_response(wallet: UserWallet, currency: str) -> WalletBalanceResponse:
+    """Serialize a wallet, reporting the install's configured currency.
+
+    The wallet row holds no currency of its own: an install has exactly one,
+    and an admin who changes it expects every balance to follow, the way the
+    rest of the app does (#3123).
+    """
     return WalletBalanceResponse(
         user_id=wallet.user_id,
         balance=wallet.balance,
-        currency=wallet.currency,
+        currency=currency,
         updated_at=wallet.updated_at,
     )
 
 
 async def _get_wallet_balance_read_only(db: AsyncSession, user_id: int) -> WalletBalanceResponse:
     """Return a balance without creating a wallet row from a GET request."""
+    currency = await resolve_configured_currency(db)
     wallet = await db.scalar(select(UserWallet).where(UserWallet.user_id == user_id))
     if wallet is not None:
-        return _to_balance_response(wallet)
+        return _to_balance_response(wallet, currency)
     return WalletBalanceResponse(
         user_id=user_id,
         balance=await calculate_personal_balance(db, user_id),
-        currency="EUR",
+        currency=currency,
         updated_at=None,
     )
 
@@ -386,15 +394,16 @@ async def _create_wallet_adjustment(
     await db.refresh(tx)
 
     # Return appropriate balance based on transaction type
+    currency = await resolve_configured_currency(db)
     if affects_personal_wallet:
         # Personal transaction: return user wallet balance
-        response_balance = _to_balance_response(wallet)
+        response_balance = _to_balance_response(wallet, currency)
     else:
         # Cost-center transaction: return cost-center balance as if it were a wallet
         response_balance = WalletBalanceResponse(
             user_id=target_user_id,
             balance=balance_after,
-            currency=wallet.currency,
+            currency=currency,
             updated_at=tx.created_at,
         )
 

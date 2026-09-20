@@ -82,13 +82,21 @@ def _state(current_project_url, sdcard=True, sdcard_reported=True):
     )
 
 
-async def _run_print_start(state, added, probe_hit=None):
+async def _run_print_start(state, added, probe_hit=None, download_fails_in_transit=False):
     """Drive on_print_start for a print with no matching archive, capturing
     whatever rows it adds and whether it reached the FTP layer.
 
     ``probe_hit`` is the path the bounded internal-storage probe serves the
     file from (#2856), or None for the #2780 case where the file really is out
     of reach.
+
+    ``download_fails_in_transit`` picks which kind of empty-handed sweep to
+    model. The default is the honest "the file is not on this card": the FTP
+    server answers 550 and the client raises FileNotOnPrinterError. True instead
+    returns falsy from every attempt, which is what a timeout looks like from
+    here -- the printer had the file and the transfer ran out of time (#3063).
+    The two now lead to different reasons on the archive, so a test that means
+    one must not mock the other.
     """
     printer = _printer()
 
@@ -114,8 +122,14 @@ async def _run_print_start(state, added, probe_hit=None):
     session.refresh = AsyncMock()
     session.add = MagicMock(side_effect=added.append)
 
-    download = AsyncMock(return_value=False)
+    from backend.app.services.bambu_ftp import FileNotOnPrinterError
+
+    if download_fails_in_transit:
+        download = AsyncMock(return_value=False)
+    else:
+        download = AsyncMock(side_effect=FileNotOnPrinterError("550"))
     probe = AsyncMock(return_value=probe_hit)
+    schedule = MagicMock()
 
     with (
         patch("backend.app.main.async_session") as session_maker,
@@ -138,12 +152,18 @@ async def _run_print_start(state, added, probe_hit=None):
         patch("backend.app.main._send_print_start_notification", new_callable=AsyncMock),
         patch("backend.app.main._maybe_start_layer_timelapse"),
         patch("backend.app.main._capture_timelapse_baseline_at_start", new_callable=AsyncMock),
+        # Real, it would spawn a task that sleeps a minute past the end of the
+        # test; what each test cares about is whether it was called at all.
+        patch("backend.app.main._schedule_fallback_3mf_retry", new=schedule),
     ):
         session_maker.return_value = session
         notif.on_print_start = AsyncMock()
         plug.on_print_start = AsyncMock()
         ws.send_print_start = AsyncMock()
         ws.send_archive_updated = AsyncMock()
+        # Awaited after the fallback row is added, so without it the handler
+        # raises there and never reaches what follows.
+        ws.send_archive_created = AsyncMock()
         relay.on_print_start = AsyncMock()
         pm.get_status = MagicMock(return_value=state)
         pm.get_printer = MagicMock(return_value=MagicMock(serial_number="TEST2780"))
@@ -155,7 +175,7 @@ async def _run_print_start(state, added, probe_hit=None):
             {"filename": "/data/Metadata/plate_1.gcode", "subtask_name": "Halterung"},
         )
 
-    return download, retry, probe
+    return download, retry, probe, schedule
 
 
 def _fallback(added):
@@ -174,7 +194,7 @@ async def test_a_print_on_internal_storage_probes_once_instead_of_sweeping():
     against the sweep's ~110 that cannot succeed."""
     added = []
 
-    download, retry, probe = await _run_print_start(_state("brtc://emmc/Halterung.gcode.3mf"), added)
+    download, retry, probe, _schedule = await _run_print_start(_state("brtc://emmc/Halterung.gcode.3mf"), added)
 
     probe.assert_awaited_once()
     assert probe.await_args.args[2] == [
@@ -198,7 +218,7 @@ async def test_an_empty_slot_never_touches_ftp():
     one stays a pure short-circuit."""
     added = []
 
-    download, retry, probe = await _run_print_start(_state(None, sdcard=False, sdcard_reported=True), added)
+    download, retry, probe, _schedule = await _run_print_start(_state(None, sdcard=False, sdcard_reported=True), added)
 
     download.assert_not_called()
     retry.assert_not_called()
@@ -212,7 +232,7 @@ async def test_a_print_on_external_storage_still_sweeps():
     the download exactly as it did before the gate existed."""
     added = []
 
-    download, _retry, _probe = await _run_print_start(_state("ftp://Halterung.gcode.3mf"), added)
+    download, _retry, _probe, _schedule = await _run_print_start(_state("ftp://Halterung.gcode.3mf"), added)
 
     download.assert_called()
 
@@ -224,7 +244,9 @@ async def test_a_printer_that_said_nothing_still_sweeps():
     either -- that install must behave exactly as before."""
     added = []
 
-    download, _retry, _probe = await _run_print_start(_state(None, sdcard=False, sdcard_reported=False), added)
+    download, _retry, _probe, _schedule = await _run_print_start(
+        _state(None, sdcard=False, sdcard_reported=False), added
+    )
 
     download.assert_called()
 
@@ -233,9 +255,14 @@ async def test_a_printer_that_said_nothing_still_sweeps():
 async def test_a_sweep_that_simply_found_nothing_records_no_reason():
     """The original cause -- the slicer left no file on a card that is present
     and working -- is still reported with the original wording, because that
-    advice is right for it."""
+    advice is right for it.
+
+    Every path answered 550, which is the printer saying the file is not there.
+    Nothing about that improves with time, so no retry is scheduled (#3063).
+    """
     added = []
 
-    await _run_print_start(_state("ftp://Halterung.gcode.3mf"), added)
+    _download, _retry, _probe, schedule = await _run_print_start(_state("ftp://Halterung.gcode.3mf"), added)
 
     assert _fallback(added).extra_data["no_3mf_reason"] is None
+    schedule.assert_not_called()

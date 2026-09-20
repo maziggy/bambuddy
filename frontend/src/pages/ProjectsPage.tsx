@@ -242,7 +242,7 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
                 <div className="w-20 h-20 rounded bg-bambu-dark border border-bambu-dark-tertiary overflow-hidden flex items-center justify-center flex-shrink-0">
                   {coverImageFilename ? (
                     <img
-                      src={`${api.getProjectCoverImageUrl(project.id)}?v=${coverCacheKey}`}
+                      src={api.getProjectCoverImageUrl(project.id, coverCacheKey)}
                       alt={t('projects.coverImageAlt')}
                       className="w-full h-full object-cover"
                     />

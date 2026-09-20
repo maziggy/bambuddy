@@ -260,3 +260,226 @@ class TestThePresetsOwnType:
                 material="PETG",
             )
         assert type_override is None
+
+
+class TestACustomPresetsOwnFilamentId:
+    """Where the id that carries a custom preset into an AMS slot comes from.
+
+    The slot holds one filament reference and the printer truncates it to 8
+    characters, so a custom preset reaches the slicer as itself only when its
+    own filament_id ("P" + 7 hex) goes into ``tray_info_idx``. 92 trays across
+    eight models in the support archive do exactly that, so the mechanism
+    works -- what #3003 found is that we only ever read one of the two places
+    Bambu Cloud returns that id from.
+    """
+
+    @pytest.mark.asyncio
+    async def test_filament_id_is_read_from_inside_the_preset_json(self):
+        """The envelope has none, the preset JSON does -- and it wins over base_id.
+
+        Before #3003 this fell through to the base_id branch and the slot came
+        out as the Bambu profile the custom preset inherits from.
+        """
+        db = MagicMock()
+        cloud = MagicMock()
+        cloud.is_authenticated = True
+        cloud.get_setting_detail = AsyncMock(
+            return_value={
+                "name": "SUNLU PLA Transparent @BBL A1",
+                "base_id": "GFSNLS03",
+                "setting": {"filament_id": "P4d64437", "filament_type": ["PLA"]},
+            }
+        )
+        cloud.close = AsyncMock()
+        with patch(
+            "backend.app.api.routes.cloud.build_authenticated_cloud",
+            AsyncMock(return_value=cloud),
+        ):
+            idx, sid, brand, _type = await resolve_slicer_filament(
+                db=db,
+                current_user=None,
+                slicer_filament="PFUSfb87cd50b76616",
+                slicer_filament_name=None,
+                material="PLA",
+            )
+        assert idx == "P4d64437"
+        assert sid == "PFUSfb87cd50b76616"
+        assert brand == "SUNLU PLA Transparent"
+
+    @pytest.mark.asyncio
+    async def test_the_envelope_still_wins_when_it_has_one(self):
+        """Unchanged behaviour for the presets that already resolved."""
+        db = MagicMock()
+        cloud = MagicMock()
+        cloud.is_authenticated = True
+        cloud.get_setting_detail = AsyncMock(
+            return_value={
+                "filament_id": "P285e239",
+                "name": "Jayo PETG HF @P1S",
+                "base_id": "GFSG02",
+                "setting": {"filament_id": "P999aaaa"},
+            }
+        )
+        cloud.close = AsyncMock()
+        with patch(
+            "backend.app.api.routes.cloud.build_authenticated_cloud",
+            AsyncMock(return_value=cloud),
+        ):
+            idx, _sid, _brand, _type = await resolve_slicer_filament(
+                db=db,
+                current_user=None,
+                slicer_filament="PFUS992454068158eb",
+                slicer_filament_name=None,
+                material="PETG",
+            )
+        assert idx == "P285e239"
+
+    @pytest.mark.asyncio
+    async def test_base_id_is_still_the_fallback_when_neither_place_has_one(self):
+        """A preset with no filament_id of its own genuinely is its base, and
+        the base id is storable, so it is the right answer -- just not one to
+        reach for while the preset's own id is sitting under ``setting``."""
+        db = MagicMock()
+        cloud = MagicMock()
+        cloud.is_authenticated = True
+        cloud.get_setting_detail = AsyncMock(
+            return_value={"name": "My PLA @BBL A1", "base_id": "GFSNLS03", "setting": {}}
+        )
+        cloud.close = AsyncMock()
+        with patch(
+            "backend.app.api.routes.cloud.build_authenticated_cloud",
+            AsyncMock(return_value=cloud),
+        ):
+            idx, sid, _brand, _type = await resolve_slicer_filament(
+                db=db,
+                current_user=None,
+                slicer_filament="PFUSfb87cd50b76616",
+                slicer_filament_name=None,
+                material="PLA",
+            )
+        assert idx == "GFNLS03"
+        assert sid == "PFUSfb87cd50b76616"
+
+
+class TestOrcaCloudIsTheFirstSource:
+    """Source order is Orca Cloud, Bambu Cloud, local import, generic.
+
+    Orca was absent from the resolver entirely: a spool referencing an Orca
+    profile stores the bare UUID, which matched no branch and fell through
+    ``normalize_slicer_filament`` -- a function that passes anything it does
+    not recognise straight through. The UUID reached tray_info_idx, a field
+    the printer truncates to 8 characters (#3003).
+    """
+
+    ORCA_ID = "3f2a9c1e-4b7d-4a02-9f61-8c5e2d1a7b30"
+
+    @staticmethod
+    def _svc(profile):
+        svc = MagicMock()
+        svc.get_profile = AsyncMock(return_value=profile)
+        svc.close = AsyncMock()
+        return svc
+
+    @pytest.mark.asyncio
+    async def test_the_profiles_own_filament_id_is_used(self):
+        db = MagicMock()
+        svc = self._svc(
+            {
+                "id": self.ORCA_ID,
+                "name": "Overture Matte PLA @Orca",
+                "content": {"filament_id": "P56e1be0", "filament_type": ["PLA"]},
+            }
+        )
+        with patch(
+            "backend.app.api.routes.orca_cloud._build_authenticated_service",
+            AsyncMock(return_value=svc),
+        ):
+            idx, sid, brand, type_override = await resolve_slicer_filament(
+                db=db,
+                current_user=None,
+                slicer_filament=self.ORCA_ID,
+                slicer_filament_name=None,
+                material="PLA",
+            )
+        assert idx == "P56e1be0"
+        # The UUID is foreign to the slicer in either field, so nothing carries it.
+        assert sid == ""
+        assert brand == "Overture Matte PLA"
+        assert type_override == "PLA"
+        svc.close.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_profile_with_no_filament_id_leaves_the_caller_its_fallback(self):
+        db = MagicMock()
+        svc = self._svc({"id": self.ORCA_ID, "name": "My PLA", "content": {"filament_type": ["PLA"]}})
+        with patch(
+            "backend.app.api.routes.orca_cloud._build_authenticated_service",
+            AsyncMock(return_value=svc),
+        ):
+            idx, sid, _brand, _type = await resolve_slicer_filament(
+                db=db,
+                current_user=None,
+                slicer_filament=self.ORCA_ID,
+                slicer_filament_name=None,
+                material="PLA",
+            )
+        assert idx == ""
+        assert sid == ""
+
+    @pytest.mark.asyncio
+    async def test_an_unreachable_orca_never_leaks_the_uuid(self):
+        """No pairing, dead token, Orca down -- all the same answer. The UUID
+        must not reach tray_info_idx, which is what happened before the branch
+        existed at all."""
+        db = MagicMock()
+        with patch(
+            "backend.app.api.routes.orca_cloud._build_authenticated_service",
+            AsyncMock(side_effect=RuntimeError("Orca Cloud is not connected")),
+        ):
+            idx, sid, _brand, _type = await resolve_slicer_filament(
+                db=db,
+                current_user=None,
+                slicer_filament=self.ORCA_ID,
+                slicer_filament_name=None,
+                material="PLA",
+            )
+        assert idx == ""
+        assert sid == ""
+
+    @pytest.mark.asyncio
+    async def test_a_caller_without_the_permission_skips_the_lookup(self):
+        db = MagicMock()
+        user = MagicMock()
+        user.has_permission = MagicMock(return_value=False)
+        with patch(
+            "backend.app.api.routes.orca_cloud._build_authenticated_service",
+            AsyncMock(side_effect=AssertionError("must not be called")),
+        ):
+            idx, _sid, _brand, _type = await resolve_slicer_filament(
+                db=db,
+                current_user=user,
+                slicer_filament=self.ORCA_ID,
+                slicer_filament_name=None,
+                material="PLA",
+            )
+        assert idx == ""
+
+    @pytest.mark.asyncio
+    async def test_a_uuid_is_refused_as_tray_info_idx_by_the_closing_guard(self):
+        """Belt and braces: a profile whose content names itself by UUID still
+        does not put one in the field."""
+        db = MagicMock()
+        svc = self._svc({"id": self.ORCA_ID, "name": "Odd", "content": {"filament_id": self.ORCA_ID}})
+        with patch(
+            "backend.app.api.routes.orca_cloud._build_authenticated_service",
+            AsyncMock(return_value=svc),
+        ):
+            idx, sid, _brand, _type = await resolve_slicer_filament(
+                db=db,
+                current_user=None,
+                slicer_filament=self.ORCA_ID,
+                slicer_filament_name=None,
+                material="PLA",
+            )
+        assert idx == ""
+        assert sid == ""

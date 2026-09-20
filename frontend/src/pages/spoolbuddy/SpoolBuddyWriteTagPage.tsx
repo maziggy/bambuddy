@@ -14,7 +14,26 @@ import {
   type SpoolCatalogEntry,
 } from '../../api/client';
 import { getCurrencySymbol } from '../../utils/currency';
-import { getSwatchStyle } from '../../utils/colors';
+import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
+import { useColorCatalogVersion } from '../../hooks/useColorCatalogVersion';
+
+/**
+ * The colour name to show for a spool, which is not the one it stores.
+ *
+ * A Bambu tag often carries no colour name, or an internal code, and Spoolman
+ * has no field for one at all — so `color_name` is regularly empty or the
+ * subtype standing in for it, and the catalog resolves the swatch's hex
+ * instead (#3090, #857). The edit form below deliberately does NOT go through
+ * here: what it offers for editing has to be what is stored, or the user saves
+ * a name we made up as though they had typed it.
+ */
+function displayColorName(spool: {
+  color_name: string | null;
+  rgba: string | null;
+  color_name_is_synthesized?: boolean;
+}): string | null {
+  return resolveSpoolColorName(spool.color_name, spool.rgba, spool.color_name_is_synthesized);
+}
 import { FilamentSection } from '../../components/spool-form/FilamentSection';
 import { ColorSection } from '../../components/spool-form/ColorSection';
 import { AdditionalSection } from '../../components/spool-form/AdditionalSection';
@@ -40,6 +59,9 @@ const SIMPLE_COMMON_MATERIALS = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PA', 'PC',
 
 export function SpoolBuddyWriteTagPage() {
   const { t } = useTranslation();
+  // The search below resolves colour names through the catalog, so its memo
+  // has to recompute when the catalog finishes loading (#3090).
+  const colorCatalogVersion = useColorCatalogVersion();
   const { showToast } = useToast();
   const { sbState } = useOutletContext<SpoolBuddyOutletContext>();
 
@@ -95,6 +117,11 @@ export function SpoolBuddyWriteTagPage() {
 
   // Filter spools based on tab
   const filteredSpools = useMemo(() => {
+    // Named here so the memo actually depends on it: the search below resolves
+    // colour names through the catalog, which `displayColorName` reads from
+    // module state the linter cannot follow. Without this the list keeps the
+    // names it resolved before the catalog finished loading (#3090).
+    void colorCatalogVersion;
     let list: InventorySpool[];
     if (activeTab === 'existing') {
       list = spools.filter(s => !s.tag_uid && !s.archived_at);
@@ -108,6 +135,9 @@ export function SpoolBuddyWriteTagPage() {
       const q = searchQuery.toLowerCase();
       list = list.filter(s =>
         (s.material?.toLowerCase().includes(q)) ||
+        // Both: the resolved name is what the list shows, the stored one is
+        // what a user who knows Bambu's internal codes might type (#3090).
+        (displayColorName(s)?.toLowerCase().includes(q)) ||
         (s.color_name?.toLowerCase().includes(q)) ||
         (s.brand?.toLowerCase().includes(q)) ||
         (s.subtype?.toLowerCase().includes(q))
@@ -115,7 +145,7 @@ export function SpoolBuddyWriteTagPage() {
     }
 
     return list;
-  }, [spools, activeTab, searchQuery]);
+  }, [spools, activeTab, searchQuery, colorCatalogVersion]);
 
   // Listen for tag events
   const handleUnknownTag = useCallback((e: Event) => {
@@ -394,7 +424,7 @@ function SpoolListItem({ spool, selected, showTag, onClick }: {
           <span className="text-[10px] font-mono text-zinc-500 shrink-0">#{spool.id}</span>
         </div>
         <div className="flex items-center gap-2 text-xs text-zinc-400">
-          {spool.color_name && <span>{spool.color_name}</span>}
+          {displayColorName(spool) && <span>{displayColorName(spool)}</span>}
           <span>{remaining}g / {spool.label_weight}g ({pct}%)</span>
         </div>
         {showTag && spool.tag_uid && (
@@ -805,7 +835,9 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
             <p className="text-white font-medium">
               {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
             </p>
-            {selectedSpool.color_name && <p className="text-zinc-400 text-sm">{selectedSpool.color_name}</p>}
+            {displayColorName(selectedSpool) && (
+              <p className="text-zinc-400 text-sm">{displayColorName(selectedSpool)}</p>
+            )}
             <p className="text-zinc-500 text-xs mt-1">{selectedSpool.label_weight}g</p>
             <p className="text-bambu-green text-sm mt-4">{t('spoolbuddy.writeTag.spoolCreated', 'Spool created! Ready to write.')}</p>
           </div>
@@ -996,7 +1028,9 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
           <p className="text-white font-medium">
             {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
           </p>
-          {selectedSpool.color_name && <p className="text-zinc-400 text-sm">{selectedSpool.color_name}</p>}
+          {displayColorName(selectedSpool) && (
+            <p className="text-zinc-400 text-sm">{displayColorName(selectedSpool)}</p>
+          )}
           <p className="text-zinc-500 text-xs mt-1">{selectedSpool.label_weight}g</p>
           <p className="text-bambu-green text-sm mt-4">{t('spoolbuddy.writeTag.spoolCreated', 'Spool created! Ready to write.')}</p>
         </div>
@@ -1037,7 +1071,7 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
           <p className="text-zinc-400 text-sm">
             {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
             {selectedSpool.subtype ? ` ${selectedSpool.subtype}` : ''}
-            {selectedSpool.color_name ? ` - ${selectedSpool.color_name}` : ''}
+            {displayColorName(selectedSpool) ? ` - ${displayColorName(selectedSpool)}` : ''}
           </p>
         )}
       </div>
@@ -1150,7 +1184,9 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
             <p className="text-white text-sm font-medium truncate">
               {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
             </p>
-            {selectedSpool.color_name && <p className="text-zinc-400 text-xs">{selectedSpool.color_name}</p>}
+            {displayColorName(selectedSpool) && (
+              <p className="text-zinc-400 text-xs">{displayColorName(selectedSpool)}</p>
+            )}
           </div>
         </div>
         <div className="text-xs text-zinc-500">{selectedSpool.label_weight}g</div>

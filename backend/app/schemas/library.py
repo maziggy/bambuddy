@@ -325,6 +325,13 @@ class AddToQueueRequest(BaseModel):
     """Schema for adding library files to the print queue."""
 
     file_ids: list[int] = Field(..., min_length=1)
+    # Where the items should go. Mutually exclusive, both optional. With
+    # neither, each file's own declared model is used when a printer of that
+    # model is active: an item carrying no printer and no target model matches
+    # neither branch of the scheduler's dispatch, so it is one nothing can ever
+    # pick up (#3112).
+    printer_id: int | None = None
+    target_model: str | None = None
 
 
 class AddToQueueResult(BaseModel):

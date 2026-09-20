@@ -4,7 +4,7 @@ import { Check, AlertTriangle, RefreshCw, Unlink } from 'lucide-react';
 import type { MatchedSpool } from '../../hooks/useSpoolBuddyState';
 import { spoolbuddyApi } from '../../api/client';
 import { SpoolIcon } from './SpoolIcon';
-import { spoolColorString } from '../../utils/colors';
+import { resolveSpoolColorName, spoolColorString } from '../../utils/colors';
 
 // Storage key for default core weight
 const DEFAULT_CORE_WEIGHT_KEY = 'spoolbuddy-default-core-weight';
@@ -38,6 +38,10 @@ export function SpoolInfoCard({ spool, scaleWeight, onClose, onSyncWeight, onAss
   const [synced, setSynced] = useState(false);
 
   const colorHex = spoolColorString(spool.rgba);
+  // The stored name is not the displayed one: Bambu tags often carry no
+  // colour name at all, or an internal code, and Spoolman has no field for
+  // one — the catalog resolves the swatch's hex instead (#3090, #857).
+  const colorName = resolveSpoolColorName(spool.color_name, spool.rgba, spool.color_name_is_synthesized);
 
   // Use spool's core_weight if set, otherwise fall back to default
   const coreWeight = (spool.core_weight && spool.core_weight > 0)
@@ -104,7 +108,7 @@ export function SpoolInfoCard({ spool, scaleWeight, onClose, onSyncWeight, onAss
         <div className="flex-1 min-w-0 pt-1">
           <div className="flex items-center gap-2">
             <h3 className="text-lg font-semibold text-zinc-100">
-              {spool.color_name || 'Unknown color'}
+              {colorName || t('spoolbuddy.spool.unknownColor')}
             </h3>
             <span className="text-xs font-mono text-zinc-500 shrink-0">#{spool.id}</span>
           </div>

@@ -114,3 +114,60 @@ describe('QueueTimelineView job ordering', () => {
     expect(barsLeftToRight()).toEqual(['Running now', 'Long job', 'Short job']);
   });
 });
+
+describe('QueueTimelineView and the scheduler waiting reasons (#3074)', () => {
+  /** The scheduler now puts a reason on a pinned item too, and the commonest
+   *  one by far -- "Busy: <printer>" -- describes the very chain this view
+   *  forecasts. Dropping every item that has a reason would empty the timeline
+   *  for anyone whose queue is pinned to specific printers. */
+  function renderWith(items: PrintQueueItem[]) {
+    render(
+      <QueueTimelineView
+        queueItems={items}
+        printers={printers}
+        printerStatuses={{ 1: { progress: 50, remaining_time: 30, state: 'RUNNING' } }}
+        sjfEnabled={false}
+        onItemClick={() => {}}
+        t={(key: string) => key}
+      />,
+    );
+  }
+
+  it('still forecasts an item that is only waiting its turn', () => {
+    renderWith([
+      running,
+      pending(1, 'Long job', 1, 2 * HOUR, { waiting_reason: 'Busy: X1C-01' }),
+      pending(2, 'Medium job', 2, HOUR, { waiting_reason: 'Busy: X1C-01' }),
+    ]);
+    expect(barsLeftToRight()).toEqual(['Running now', 'Long job', 'Medium job']);
+  });
+
+  it('still forecasts one held behind a drying cycle', () => {
+    renderWith([running, pending(1, 'Long job', 1, 2 * HOUR, { waiting_reason: 'Busy: X1C-01 (drying)' })]);
+    expect(barsLeftToRight()).toEqual(['Running now', 'Long job']);
+  });
+
+  it('drops one that is waiting for the user', () => {
+    // These do not start on their own, so a bar would be a promise the queue
+    // cannot keep.
+    for (const reason of [
+      'Waiting for plate confirmation: X1C-01',
+      'Offline, no Auto On smart plug: X1C-01',
+      'Waiting on Enclosure Door',
+      'Waiting for filament: X1C-01 (needs PETG)',
+    ]) {
+      const { unmount } = render(
+        <QueueTimelineView
+          queueItems={[running, pending(1, 'Long job', 1, 2 * HOUR, { waiting_reason: reason })]}
+          printers={printers}
+          printerStatuses={{ 1: { progress: 50, remaining_time: 30, state: 'RUNNING' } }}
+          sjfEnabled={false}
+          onItemClick={() => {}}
+          t={(key: string) => key}
+        />,
+      );
+      expect(barsLeftToRight()).toEqual(['Running now']);
+      unmount();
+    }
+  });
+});

@@ -3852,10 +3852,12 @@ async def bed_jog(
     distance: float = Query(
         ...,
         description=(
-            "Signed nozzle-bed gap adjustment in mm. Negative = decrease gap "
-            '("up" arrow in the UI: bed up on bed-on-Z models, toolhead down '
-            "on A1 bed-slingers). Positive = increase gap. The backend "
-            "translates this into the right G-code Z sign per printer model."
+            "Signed nozzle-bed gap adjustment in mm, identical on every model: "
+            "positive opens the gap (more clearance), negative closes it. Sent "
+            "to the printer as the G-code Z value unchanged — G-code Z is the "
+            "nozzle-to-bed distance whether the bed moves (X1 / P1 / H2) or the "
+            "toolhead does (A1 / A2L), so no per-model sign translation exists "
+            "or is needed."
         ),
     ),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
@@ -3865,31 +3867,49 @@ async def bed_jog(
 
     Emits a short G-code sequence via MQTT.
 
-    Soft-endstop policy (#2579). The printer's software travel limits are the
-    only thing between a jog button and a bed crash — on Bambu machines the
-    physical endstops are homing-only (there is no runtime limit switch in the
-    travel path), so once they are disabled nothing stops the move. The old
-    code disabled them (``M211 S0``) around every forced jog, and the UI sent
-    ``force`` on every jog, so the limits were off on every bed move — that is
-    what let a jog drive the nozzle into the bed on all models (#2579). This
-    endpoint now emits a **bare relative move and never touches ``M211`` at
-    all** — byte-for-byte what the printer's own touchscreen jog sends, which
-    stops at the travel limit. Bambuddy no longer disables the firmware's soft
-    endstops, and it no longer sends ``M211 S1`` either: that was an unverified
-    attempt to re-enable a printer left disabled by an older build, and on real
-    hardware the jog moved past the limit *with* it. If a printer still jogs
-    past its limits, its endstops were disabled at the firmware level by the old
-    build — power-cycle it once to restore them; from then on Bambuddy leaves
-    them alone.
+    Soft-endstop policy (#2579). **Nothing clamps this move.** Bambu's firmware
+    does not enforce its soft endstops on G-code arriving over MQTT — measured
+    by logging the exact bytes to an H2D sitting at its Z limit: a clean
+    ``G91 / G1 Z-1.00 F600 / G90`` with no ``M211`` ran straight past, while the
+    printer's own touchscreen refuses the identical move, because the
+    touchscreen goes through the motion planner and ``gcode_line`` does not.
+    Push-status carries no axis position either, so there is nothing to clamp
+    against on this side. Treat every jog as unguarded; the jog popover says so
+    to the user, and a dead-reckoning clamp (track Z from a home, refuse
+    out-of-range moves) is the only real fix and is not built.
 
-    Direction handling: on bed-on-Z printers (X1 / P1 / H2 family) the bed
-    is the Z-axis, and Bambu's home convention puts Z=0 at the top with
-    Z+ moving the bed down — so a frontend "Up" (decrease gap) maps
-    naturally to ``G1 Z-``. On bed-slingers (A1 / A1 Mini) the Z-axis is
-    the *toolhead*, and ``G1 Z-`` instead drives the nozzle DOWN into the
-    bed (#1334 reported exactly that crash). For those models we invert
-    the sign before emitting the G-code, so the UI semantics stay the
-    same regardless of which part physically moves.
+    What Bambuddy stopped doing is making it worse. The old code wrapped every
+    move in ``M211 S0`` / ``M211 S1`` and the UI sent ``force`` on every jog, so
+    the limits came off on every bed move — and ``M211 S0`` disables them
+    *globally*, which broke the touchscreen's protection too until the printer
+    was power-cycled. That is the one genuine Bambuddy bug in #2579. This
+    endpoint now emits a bare relative move and never touches ``M211`` at all,
+    which leaves the touchscreen protected. It does not send ``M211 S1``
+    either: that was an unverified attempt to re-enable a printer an older
+    build had disabled, and on real hardware the jog moved past the limit
+    *with* it. A printer left in that state is recovered with one power cycle.
+
+    Direction (#1334, and the API half of it reported by @AQU4R1U5). ``Z``
+    is the nozzle-to-bed gap on every Bambu model, by definition of the
+    coordinate system rather than by convention: ``G1 Z+`` opens the gap
+    whether the bed drops away (X1 / P1 / H2, where Bambu's end G-code
+    parks with ``G1 Z{max_layer_z + 100}``) or the toolhead rises
+    (A1 / A1 Mini / A2L). The finish-photo plate restore relies on exactly
+    that and needs no model branch — see ``_restore_plate_for_finish_photo``.
+
+    So ``distance`` goes onto the wire unchanged, and one API call means one
+    physical thing on every printer: positive is always the safe direction.
+    This endpoint used to invert the sign on A1 models, which made a
+    documented model-independent parameter mean the opposite thing there —
+    ``distance=5``, asking for clearance, drove the toolhead at the plate.
+
+    What #1334 actually reported is a *label* problem, and it belongs to the
+    UI: the arrow says "move the plate up", and on a bed-slinger the plate
+    does not move in Z at all, so closing the gap shows up as the toolhead
+    diving. Which way an arrow points is a question about the machine in
+    front of the user, not about the G-code, so the printer card decides it
+    (``isBedSlinger`` in ``frontend/src/utils/bedSlinger.ts``) and sends the
+    gap it wants. Nothing here needs to know the model.
     """
     if distance == 0 or abs(distance) > 200:
         raise HTTPException(400, "Distance must be non-zero and ≤ 200 mm")
@@ -3903,14 +3923,10 @@ async def bed_jog(
     if not client:
         raise HTTPException(400, "Printer not connected")
 
-    from backend.app.services.printer_manager import is_bed_slinger
-
-    gcode_distance = -distance if is_bed_slinger(printer.model) else distance
-
-    # Bare relative move — exactly what the touchscreen sends. Never touch M211
-    # (#2579): the firmware keeps its soft endstops on by default and clamps the
-    # move at the travel limit.
-    lines = ["G91", f"G1 Z{gcode_distance:.2f} F600", "G90"]
+    # Bare relative move, never M211 (#2579). Not because a bare move is safe —
+    # the firmware ignores soft endstops on MQTT G-code either way — but because
+    # M211 S0 disabled them globally, taking the touchscreen's limits with it.
+    lines = ["G91", f"G1 Z{distance:.2f} F600", "G90"]
 
     if not client.send_gcode("\n".join(lines)):
         raise HTTPException(500, "Failed to send bed-jog command")
@@ -3945,9 +3961,9 @@ async def xy_jog(
     if y:
         axes.append(f"Y{y:.2f}")
 
-    # Bare relative move — never touch M211 (#2579). The firmware keeps its soft
-    # endstops on by default and clamps the move at the travel limit; a printer
-    # left disabled by an older build is recovered with a power cycle.
+    # Bare relative move, never M211 (#2579) — see the bed-jog docstring. The
+    # firmware does not enforce soft endstops on MQTT G-code, so this move is
+    # unguarded; M211 S0 only widened that to the touchscreen as well.
     if not client.send_gcode("\n".join(["G91", f"G1 {' '.join(axes)} F6000", "G90"])):
         raise HTTPException(500, "Failed to send XY jog command")
 

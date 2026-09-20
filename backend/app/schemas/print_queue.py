@@ -187,7 +187,7 @@ class PrintQueueItemResponse(BaseModel):
     target_location: str | None = None  # Target location filter for model-based assignment
     required_filament_types: list[str] | None = None  # Required filament types for model-based assignment
     filament_overrides: list[dict] | None = None  # Filament overrides for model-based assignment
-    waiting_reason: str | None = None  # Why a model-based job hasn't started yet
+    waiting_reason: str | None = None  # Why this job hasn't started yet (empty once it can)
     archive_id: int | None  # None if library_file_id is set (archive created at print start)
     library_file_id: int | None  # For queue items from library files
     cost_center_id: int | None = None

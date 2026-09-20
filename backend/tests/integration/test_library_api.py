@@ -7,6 +7,16 @@ from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+
+from backend.app.core.config import settings as app_settings
+from backend.app.models.print_queue import PrintQueueItem
+
+
+async def _read_queue_item(db_session, item_id: int) -> PrintQueueItem:
+    """Re-read a queue row the route just committed through its own session."""
+    db_session.expire_all()
+    return (await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))).scalar_one()
 
 
 class TestLibraryFoldersAPI:
@@ -679,19 +689,43 @@ class TestLibraryAddToQueueAPI:
 
         return _create_library_file
 
+    @pytest.fixture
+    async def on_disk_file_factory(self, library_file_factory):
+        """A library file whose bytes exist, so the route gets past its disk check."""
+        written: list[Path] = []
+
+        async def _create(**kwargs):
+            counter = len(written) + 1
+            rel_path = kwargs.pop("file_path", f"archive/library/files/queue_probe_{counter}.gcode.3mf")
+            abs_path = Path(app_settings.base_dir) / rel_path
+            abs_path.parent.mkdir(parents=True, exist_ok=True)
+            abs_path.write_bytes(b"probe")
+            written.append(abs_path)
+            kwargs.setdefault("filename", f"queue_probe_{counter}.gcode.3mf")
+            return await library_file_factory(file_path=rel_path, **kwargs)
+
+        yield _create
+
+        for path in written:
+            path.unlink(missing_ok=True)
+
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_add_to_queue_file_not_found(self, async_client: AsyncClient, printer_factory, db_session):
-        """Verify error for non-existent file."""
+        """Nothing queued is not a success (#3112).
+
+        This used to assert 200: the caller got an OK for a call that created
+        nothing, with the reason in a body it had no cause to read. The reason
+        is still reported, now where a failed call puts it.
+        """
         await printer_factory()
 
         data = {"file_ids": [9999]}
         response = await async_client.post("/api/v1/library/files/add-to-queue", json=data)
-        assert response.status_code == 200
-        result = response.json()
-        assert len(result["added"]) == 0
-        assert len(result["errors"]) == 1
-        assert result["errors"][0]["file_id"] == 9999
+        assert response.status_code == 400
+        errors = response.json()["detail"]["errors"]
+        assert len(errors) == 1
+        assert errors[0]["file_id"] == 9999
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -708,11 +742,172 @@ class TestLibraryAddToQueueAPI:
 
         data = {"file_ids": [lib_file.id]}
         response = await async_client.post("/api/v1/library/files/add-to-queue", json=data)
+        assert response.status_code == 400
+        errors = response.json()["detail"]["errors"]
+        assert len(errors) == 1
+        assert "sliced" in errors[0]["error"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_partial_success_still_returns_200(
+        self, async_client: AsyncClient, printer_factory, library_file_factory, on_disk_file_factory, db_session
+    ):
+        """Items really were created, so the call succeeded (#3112).
+
+        The per-file errors ride along with them, which is the whole point of a
+        bulk endpoint. Only a call that produced nothing is a failed call.
+        """
+        await printer_factory()
+        good = await on_disk_file_factory()
+        bad = await library_file_factory(filename="model.stl", file_path="/test/path/model.stl", file_type="stl")
+
+        response = await async_client.post("/api/v1/library/files/add-to-queue", json={"file_ids": [good.id, bad.id]})
         assert response.status_code == 200
         result = response.json()
-        assert len(result["added"]) == 0
-        assert len(result["errors"]) == 1
-        assert "sliced" in result["errors"][0]["error"].lower()
+        assert [a["file_id"] for a in result["added"]] == [good.id]
+        assert [e["file_id"] for e in result["errors"]] == [bad.id]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_target_model_is_inferred_so_the_item_can_be_dispatched(
+        self, async_client: AsyncClient, printer_factory, on_disk_file_factory, db_session
+    ):
+        """#3112: an item with no printer and no target model is inert.
+
+        The scheduler dispatches on `item.printer_id` or on
+        `item.target_model or item.variants`; a row with neither matches no
+        branch and waits forever. With an active X1C present, a file that says
+        it was sliced for one is aimed at it.
+        """
+        await printer_factory(model="X1C")
+        lib_file = await on_disk_file_factory(file_metadata={"sliced_for_model": "X1C"})
+
+        response = await async_client.post("/api/v1/library/files/add-to-queue", json={"file_ids": [lib_file.id]})
+        assert response.status_code == 200
+        item = await _read_queue_item(db_session, response.json()["added"][0]["queue_item_id"])
+        assert item.printer_id is None
+        assert item.target_model == "X1C"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_no_printer_of_that_model_leaves_the_item_unassigned(
+        self, async_client: AsyncClient, printer_factory, on_disk_file_factory, db_session
+    ):
+        """Aiming an item at hardware nobody owns would only look like progress.
+
+        Having no H2D is the user's situation, not their mistake, so the file
+        is still queued -- as the unassigned row it has always been.
+        """
+        await printer_factory(model="X1C")
+        lib_file = await on_disk_file_factory(file_metadata={"sliced_for_model": "H2D"})
+
+        response = await async_client.post("/api/v1/library/files/add-to-queue", json={"file_ids": [lib_file.id]})
+        assert response.status_code == 200
+        item = await _read_queue_item(db_session, response.json()["added"][0]["queue_item_id"])
+        assert item.printer_id is None
+        assert item.target_model is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_explicit_printer_wins_over_the_files_own_model(
+        self, async_client: AsyncClient, printer_factory, on_disk_file_factory, db_session
+    ):
+        printer = await printer_factory(model="X1C")
+        # Read before the queue row is re-read: that expires the session, and
+        # a lazy refresh of this row would then happen outside the greenlet.
+        printer_id = printer.id
+        lib_file = await on_disk_file_factory(file_metadata={"sliced_for_model": "X1C"})
+
+        response = await async_client.post(
+            "/api/v1/library/files/add-to-queue",
+            json={"file_ids": [lib_file.id], "printer_id": printer_id},
+        )
+        assert response.status_code == 200
+        item = await _read_queue_item(db_session, response.json()["added"][0]["queue_item_id"])
+        assert item.printer_id == printer_id
+        assert item.target_model is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_incompatible_target_model_is_refused_per_file(
+        self, async_client: AsyncClient, printer_factory, on_disk_file_factory, db_session
+    ):
+        """The same cross-model gate POST /queue/ applies (#2578).
+
+        The scheduler hands model-based items to hardware with no human in the
+        loop, so a file sliced for one model must not be aimed at another.
+        """
+        await printer_factory(model="A1")
+        lib_file = await on_disk_file_factory(file_metadata={"sliced_for_model": "X1C"})
+
+        response = await async_client.post(
+            "/api/v1/library/files/add-to-queue",
+            json={"file_ids": [lib_file.id], "target_model": "A1"},
+        )
+        assert response.status_code == 400
+        assert "cannot be dispatched" in response.json()["detail"]["errors"][0]["error"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_target_model_without_an_active_printer_is_refused(
+        self, async_client: AsyncClient, printer_factory, on_disk_file_factory, db_session
+    ):
+        await printer_factory(model="X1C")
+        lib_file = await on_disk_file_factory(file_metadata={"sliced_for_model": "H2D"})
+
+        response = await async_client.post(
+            "/api/v1/library/files/add-to-queue",
+            json={"file_ids": [lib_file.id], "target_model": "H2D"},
+        )
+        assert response.status_code == 400
+        assert "No active printers" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_printer_and_target_model_together_are_refused(
+        self, async_client: AsyncClient, printer_factory, on_disk_file_factory, db_session
+    ):
+        printer = await printer_factory(model="X1C")
+        lib_file = await on_disk_file_factory()
+
+        response = await async_client.post(
+            "/api/v1/library/files/add-to-queue",
+            json={"file_ids": [lib_file.id], "printer_id": printer.id, "target_model": "X1C"},
+        )
+        assert response.status_code == 400
+        assert "both" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unknown_printer_is_refused(
+        self, async_client: AsyncClient, printer_factory, on_disk_file_factory, db_session
+    ):
+        await printer_factory(model="X1C")
+        lib_file = await on_disk_file_factory()
+
+        response = await async_client.post(
+            "/api/v1/library/files/add-to-queue",
+            json={"file_ids": [lib_file.id], "printer_id": 999999},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Printer not found"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_filename_the_printer_cannot_store_is_refused(
+        self, async_client: AsyncClient, printer_factory, on_disk_file_factory, db_session
+    ):
+        """The Bambu SD card is FAT32; an illegal character 553s at upload.
+
+        POST /queue/ has rejected these at queue time since #1540. This route
+        did not, so the mistake surfaced as a print that failed later.
+        """
+        await printer_factory(model="X1C")
+        lib_file = await on_disk_file_factory(filename="bad:name?.gcode.3mf")
+
+        response = await async_client.post("/api/v1/library/files/add-to-queue", json={"file_ids": [lib_file.id]})
+        assert response.status_code == 400
+        assert response.json()["detail"]["errors"][0]["file_id"] == lib_file.id
 
 
 class TestLibraryZipExtractAPI:

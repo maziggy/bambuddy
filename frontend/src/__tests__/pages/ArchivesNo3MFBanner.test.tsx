@@ -113,6 +113,21 @@ describe('ArchivesPage no-3MF banner', () => {
     expect(screen.getByText('Why this happens')).toBeInTheDocument();
   });
 
+  it('reports a transfer that ran out of time as the transfer, not as the slicer', async () => {
+    // #3063: the card had the file and the printer served it three times in the
+    // two minutes after Bambuddy gave up. Telling that owner to switch on
+    // "Store sent files on external storage" describes a setting that was
+    // already on and had already worked.
+    mockWarning({ has_fallback: true, reason: 'ftp_transfer_failed' });
+
+    render(<ArchivesPage />);
+
+    expect(await screen.findByText(/file transfer ran out of time/i)).toBeInTheDocument();
+    expect(screen.queryByText('See install step 4')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Store sent files on external storage/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Why this happens')).toBeInTheDocument();
+  });
+
   it('shows nothing at all when no print fell back', async () => {
     mockWarning({ has_fallback: false, reason: null });
 
@@ -128,7 +143,14 @@ describe('ArchivesPage no-3MF banner', () => {
     // The variant suffix is built by string concatenation, so a typo in one
     // locale key surfaces as a raw "archives.no3mfBanner.titleX" on screen
     // instead of failing anything.
-    for (const reason of [null, 'internal_storage', 'no_external_storage', 'internal_history', 'ftps_cooloff']) {
+    for (const reason of [
+      null,
+      'internal_storage',
+      'no_external_storage',
+      'internal_history',
+      'ftps_cooloff',
+      'ftp_transfer_failed',
+    ]) {
       localStorage.clear();
       mockWarning({ has_fallback: true, reason });
 

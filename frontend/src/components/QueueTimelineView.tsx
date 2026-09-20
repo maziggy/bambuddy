@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Clock, Layers, Printer as PrinterIcon } from 'lucide-react';
 import { formatDuration, parseUTCDate } from '../utils/date';
 import { compareQueueOrder, queueLaneKey } from '../utils/queueOrder';
+import { isBusyOnlyWaitingReason } from '../utils/waitingReason';
 import type { PrintQueueItem, Printer } from '../api/client';
 import { api } from '../api/client';
 import { Button } from './Button';
@@ -91,8 +92,11 @@ export function QueueTimelineView({
   //  • pending with explicit scheduled_time → at that time
   //  • pending ASAP that chain behind a print actually running on the same
   //    lane → forecast
-  // Staged (manual_start) and waiting (waiting_reason) items are not on the
-  // timeline because they won't auto-dispatch — they'd be misleading bars.
+  // Staged (manual_start) and blocked items are not on the timeline because
+  // they won't auto-dispatch — they'd be misleading bars. "Blocked" is not the
+  // same as "has a waiting_reason": since #3074 an item queued behind a running
+  // print carries one too ("Busy: X1C-01"), and that is the chain this view
+  // exists to forecast. Only a reason that needs the user takes an item off.
   // Idle-printer ASAP queues also stay off until something starts on them.
   const events = useMemo<ScheduleEvent[]>(() => {
     const result: ScheduleEvent[] = [];
@@ -128,10 +132,12 @@ export function QueueTimelineView({
         lanesWithActive.add(lk);
         chainEndByLane.set(lk, Math.max(chainEndByLane.get(lk) ?? nowMs, endTime.getTime()));
       } else if (item.status === 'pending') {
-        // Skip un-committed pending shapes — staged items and waiting items
-        // won't auto-dispatch, so a bar would lie.
+        // Skip un-committed pending shapes — staged items and blocked items
+        // won't auto-dispatch, so a bar would lie. An item merely waiting its
+        // turn behind a print does auto-dispatch, and is the whole point of the
+        // chain forecast below.
         if (item.manual_start) continue;
-        if (item.waiting_reason) continue;
+        if (item.waiting_reason && !isBusyOnlyWaitingReason(item.waiting_reason)) continue;
         const lk = queueLaneKey(item);
         if (!pendingByLaneKey.has(lk)) pendingByLaneKey.set(lk, []);
         pendingByLaneKey.get(lk)!.push(item);

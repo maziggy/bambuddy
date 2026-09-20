@@ -22,7 +22,6 @@ class TestMakerWorldProviderDescriptor:
         assert makerworld_provider.source_type == "makerworld"
         assert makerworld_provider.display_name == "MakerWorld"
         assert makerworld_provider.host_patterns == ("makerworld.com",)
-        assert makerworld_provider.can_download is True
         assert makerworld_provider.default_folder_name == "MakerWorld"
 
     def test_permissions(self):

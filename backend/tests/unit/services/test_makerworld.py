@@ -611,6 +611,23 @@ class TestDownload3MF:
             await svc.download_3mf("https://makerworld.bblmw.com/makerworld/model/X/Y/foo.3mf?exp=1&key=k")
 
     @pytest.mark.asyncio
+    async def test_s3_suffix_family_is_allowed_regardless_of_injected_hosts(self):
+        """``_ALLOWED_DOWNLOAD_SUFFIXES`` is deliberately outside the
+        ``download_hosts()`` seam: Bambu's presigned S3 endpoints are this
+        provider's own signed-URL family, not an exact-host allowlist a
+        provider declares. Pinned so narrowing the injected hosts can never
+        silently take the S3 download path with it."""
+        svc = MakerWorldService(client=MagicMock(spec=httpx.AsyncClient), download_hosts=("cdn.example.com",))
+        with patch(
+            "backend.app.services.model_providers.makerworld.service._download_s3_urllib",
+            AsyncMock(return_value=(b"PK\x03\x04", "plate.3mf")),
+        ) as s3:
+            payload, name = await svc.download_3mf("https://s3.us-west-2.amazonaws.com/bucket/plate.3mf?sig=1")
+        assert payload == b"PK\x03\x04"
+        assert name == "plate.3mf"
+        assert s3.await_count == 1
+
+    @pytest.mark.asyncio
     async def test_s3_host_delegates_to_urllib_path(self):
         svc = MakerWorldService(client=MagicMock(spec=httpx.AsyncClient))
         with patch(

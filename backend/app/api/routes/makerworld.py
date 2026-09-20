@@ -23,15 +23,22 @@ import logging
 import os
 from urllib.parse import unquote
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import Response
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
 from backend.app.api.routes.library import save_3mf_bytes_to_library
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import (
+    RequirePermissionIfAuthEnabled,
+    require_auth_if_enabled,
+    require_permission_if_auth_enabled,
+    security,
+)
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.user import User
 from backend.app.schemas.makerworld import (
@@ -88,6 +95,41 @@ def _provider_for_source(source_type: str) -> ModelProvider:
     except KeyError as exc:
         msg = f"No model provider registered for source_type {source_type!r}"
         raise HTTPException(status_code=400, detail=msg) from exc
+
+
+async def _authorize_for_provider(
+    provider: ModelProvider,
+    permission: Permission | None,
+    credentials: HTTPAuthorizationCredentials | None,
+    x_api_key: str | None,
+) -> User | None:
+    """Apply *provider*'s own permission to a request that named it.
+
+    This cannot live in the route signature. FastAPI resolves dependencies
+    before the body exists, so a dependency can only ever bake in one
+    provider's permission — MakerWorld's — while the provider actually being
+    used comes from the request (``source_type`` on import, the pasted URL on
+    resolve). Importing from a second provider would then be gated on
+    ``makerworld:import``, which is nobody's intent.
+
+    The check runs through the same ``require_permission_if_auth_enabled``
+    the decorator would have built, so JWT users, API keys (scope gate plus
+    the owner-outranks-key rule) and auth-disabled installs behave exactly as
+    before. The routes keep a permission-free ``require_auth_if_enabled``
+    dependency so an anonymous caller is still refused before the body is
+    read.
+
+    A provider that declares no permission is refused rather than waved
+    through: the descriptor's permission fields are optional, and "unset"
+    must not read as "unrestricted".
+    """
+    if permission is None:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Model provider {provider.source_type!r} declares no permission for this operation",
+        )
+    checker = require_permission_if_auth_enabled(permission)
+    return await checker(credentials=credentials, x_api_key=x_api_key)
 
 
 async def _build_service(
@@ -193,11 +235,19 @@ async def get_status(
     )
 
 
-@router.post("/resolve", response_model=MakerWorldResolvedModel)
+@router.post(
+    "/resolve",
+    response_model=MakerWorldResolvedModel,
+    # Authentication only — the permission belongs to whichever provider the
+    # pasted URL routes to, which is not known until the body is parsed (see
+    # ``_authorize_for_provider``).
+    dependencies=[Depends(require_auth_if_enabled)],
+)
 async def resolve_url(
     body: MakerWorldResolveRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(makerworld_provider.view_permission),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
 ):
     """Resolve a MakerWorld URL to full model metadata + plate list.
@@ -207,7 +257,11 @@ async def resolve_url(
     badge and skip a redundant download.
     """
     # Strategy pattern: select provider based on URL instead of hardcoding.
+    # Routing runs before the permission check because the permission *is* the
+    # provider's; all an unpermitted caller learns from the ordering is which
+    # hosts Bambuddy supports, which the UI states anyway.
     provider = _provider_for_url(body.url)
+    current_user = await _authorize_for_provider(provider, provider.view_permission, credentials, x_api_key)
     try:
         ref = provider.parse_url(body.url)
     except ProviderError as exc:
@@ -244,11 +298,18 @@ async def resolve_url(
     )
 
 
-@router.post("/import", response_model=MakerWorldImportResponse)
+@router.post(
+    "/import",
+    response_model=MakerWorldImportResponse,
+    # Authentication only — the permission belongs to the provider named by
+    # ``source_type`` (see ``_authorize_for_provider``).
+    dependencies=[Depends(require_auth_if_enabled)],
+)
 async def import_instance(
     body: MakerWorldImportRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(makerworld_provider.import_permission),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
 ):
     """Download a specific MakerWorld instance (plate configuration) and save
@@ -259,8 +320,13 @@ async def import_instance(
     no new download happens.
     """
     # Resolve the provider first: an unknown ``source_type`` must 400 before
-    # the default-destination folder gets auto-created as a side effect.
+    # the default-destination folder gets auto-created as a side effect — and
+    # the permission that applies is the resolved provider's, not MakerWorld's,
+    # so it cannot be checked any earlier. All that costs is telling an
+    # authenticated-but-unpermitted caller which source types are registered,
+    # which the UI lists anyway; anonymous callers never get this far.
     provider = _provider_for_source(body.source_type)
+    current_user = await _authorize_for_provider(provider, provider.import_permission, credentials, x_api_key)
 
     if body.folder_id is not None:
         folder_q = await db.execute(select(LibraryFolder).where(LibraryFolder.id == body.folder_id))

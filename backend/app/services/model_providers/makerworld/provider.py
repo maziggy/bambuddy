@@ -45,7 +45,6 @@ class MakerWorldProvider(ModelProvider):
     source_type = "makerworld"
     display_name = "MakerWorld"
     host_patterns = ("makerworld.com",)
-    can_download = True
     auth = ProviderAuthConfig(
         auth_type=ProviderAuthType.BAMBU_CLOUD_BEARER,
         display_label="Bambu Cloud sign-in",

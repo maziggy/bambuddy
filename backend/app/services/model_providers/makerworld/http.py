@@ -26,10 +26,16 @@ from backend.app.services.model_providers.makerworld.errors import MakerWorldUna
 # fingerprinted as bot traffic and served "Please log in").
 MAKERWORLD_API_BASE = "https://api.bambulab.com/v1/design-service"
 
-# Hosts that the iot-service download endpoint may return presigned URLs
-# for. Besides MakerWorld's own CDN, Bambu Cloud also issues AWS S3
-# presigned URLs (e.g. ``s3.us-west-2.amazonaws.com``). The suffix check
-# matches any regional S3 endpoint.
+# Besides MakerWorld's own CDN, Bambu Cloud also issues AWS S3 presigned
+# URLs (e.g. ``s3.us-west-2.amazonaws.com``) from the iot-service download
+# endpoint. The suffix check matches any regional S3 endpoint.
+#
+# Deliberately NOT part of the ``download_hosts()`` seam: that seam is an
+# exact-host allowlist a provider declares, and this is a suffix family
+# belonging to Bambu's signed-URL infrastructure specifically. It stays a
+# constant of *this* provider's transport: ``download_3mf`` accepts the
+# injected hosts or an S3 endpoint, while a second provider brings its own
+# service and declares its own ``download_hosts()``.
 _ALLOWED_DOWNLOAD_SUFFIXES = (".amazonaws.com",)
 
 # The shared default SSRF allowlist for MakerWorld CDN traffic. The thumbnail

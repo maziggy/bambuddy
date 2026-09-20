@@ -14,6 +14,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from backend.app.api.routes import makerworld as makerworld_routes
+from backend.app.core.permissions import Permission
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.services.model_providers.base import (
     ModelProvider,
@@ -57,24 +59,49 @@ class _DummyProvider(ModelProvider):
     """Stand-in for a second registered model provider.
 
     Lets the route tests exercise behaviour that differs from the MakerWorld
-    singleton — a provider-specific default folder name, or none at all —
-    without registering anything in the app-wide registry.
+    singleton — a provider-specific default folder name (or none at all), and
+    its own permissions — without registering anything in the app-wide
+    registry. The permissions deliberately are *not* the MakerWorld ones: the
+    routes must gate on whichever provider the request resolved to.
     """
 
     source_type = "dummy"
     display_name = "Dummy"
 
-    def __init__(self, default_folder_name: str | None = "Dummy Imports"):
+    def __init__(
+        self,
+        default_folder_name: str | None = "Dummy Imports",
+        view_permission: Permission | None = Permission.LIBRARY_READ,
+        import_permission: Permission | None = Permission.LIBRARY_UPLOAD,
+    ):
         self.default_folder_name = default_folder_name
+        self.view_permission = view_permission
+        self.import_permission = import_permission
 
     async def build_service(self, *, db, user, api_key_owner=None, client=None):
         raise NotImplementedError
 
     def parse_url(self, url):
-        raise NotImplementedError
+        return ProviderResourceRef(source_type=self.source_type, external_id="1400373", original_url=url)
 
     def canonical_url(self, ref):
         return f"https://dummy.example.com/models/{ref.external_id}"
+
+
+def _permission_spy():
+    """Record which permission the route hands the shared gate.
+
+    The gate itself still runs — the spy delegates to the real factory — so a
+    test using it proves the wiring without loosening the check.
+    """
+    seen: list = []
+    real = makerworld_routes.require_permission_if_auth_enabled
+
+    def factory(*permissions):
+        seen.extend(permissions)
+        return real(*permissions)
+
+    return seen, factory
 
 
 class TestThumbnail:
@@ -282,6 +309,33 @@ class TestResolve:
         assert resp.status_code == 200, resp.text
         assert sorted(resp.json()["already_imported_library_ids"]) == sorted([model_row.id, plate_row.id])
 
+    @pytest.mark.asyncio
+    async def test_gate_uses_the_permission_of_the_provider_the_url_routes_to(self, async_client):
+        """Same rule as import, keyed off the pasted URL instead of
+        ``source_type``: a link that routes to another provider is gated on
+        that provider's view permission, not ``makerworld:view``."""
+        seen, factory = _permission_spy()
+        dummy = _DummyProvider()
+        svc = _fake_service(
+            resolve=ProviderResolvedModel(
+                ref=ProviderResourceRef(source_type="dummy", external_id="1400373"),
+                design={"id": 1400373},
+                instances=[],
+            )
+        )
+
+        with (
+            patch("backend.app.api.routes.makerworld.require_permission_if_auth_enabled", factory),
+            patch("backend.app.api.routes.makerworld._provider_for_url", return_value=dummy),
+            patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)),
+        ):
+            resp = await async_client.post(
+                "/api/v1/makerworld/resolve",
+                json={"url": "https://dummy.example.com/models/1400373"},
+            )
+        assert resp.status_code == 200, resp.text
+        assert seen == [Permission.LIBRARY_READ]
+
 
 class TestImport:
     """End-to-end of POST /makerworld/import — mocks the service but exercises
@@ -447,6 +501,79 @@ class TestImport:
 
         result = await db_session.execute(select(LibraryFolder))
         assert result.scalars().all() == []
+
+    @pytest.mark.asyncio
+    async def test_gate_uses_the_makerworld_permission_for_makerworld(self, async_client):
+        """Control for the test below: the default ``source_type`` still gates
+        on ``makerworld:import``, exactly as the route decorator used to."""
+        seen, factory = _permission_spy()
+        svc = _fake_service(
+            get_download=_download_info(),
+            download=ProviderDownload(file_bytes=self._FAKE_3MF_BYTES, filename="benchy.3mf"),
+        )
+
+        with (
+            patch("backend.app.api.routes.makerworld.require_permission_if_auth_enabled", factory),
+            patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)),
+        ):
+            resp = await async_client.post(
+                "/api/v1/makerworld/import",
+                json={"model_id": 1400373, "profile_id": 298919107},
+            )
+        assert resp.status_code == 200, resp.text
+        assert seen == [Permission.MAKERWORLD_IMPORT]
+
+    @pytest.mark.asyncio
+    async def test_gate_uses_the_resolved_providers_permission(self, async_client):
+        """The permission is the resolved provider's, not the MakerWorld
+        singleton's. It cannot be a route dependency — FastAPI resolves those
+        before the body exists, so the decorator could only ever name one
+        provider, and importing from a second one would be gated on
+        ``makerworld:import``."""
+        seen, factory = _permission_spy()
+        dummy = _DummyProvider()
+        svc = _fake_service(
+            get_download=_download_info(),
+            download=ProviderDownload(file_bytes=self._FAKE_3MF_BYTES, filename="benchy.3mf"),
+        )
+
+        with (
+            patch("backend.app.api.routes.makerworld.require_permission_if_auth_enabled", factory),
+            patch("backend.app.api.routes.makerworld._provider_for_source", return_value=dummy),
+            patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)),
+        ):
+            resp = await async_client.post(
+                "/api/v1/makerworld/import",
+                json={"model_id": 1400373, "profile_id": 298919107, "source_type": "dummy"},
+            )
+        assert resp.status_code == 200, resp.text
+        assert seen == [Permission.LIBRARY_UPLOAD]
+        assert Permission.MAKERWORLD_IMPORT not in seen
+
+    @pytest.mark.asyncio
+    async def test_provider_without_a_permission_is_refused_not_waved_through(self, async_client, db_session):
+        """``import_permission`` is optional on the descriptor, so "unset" must
+        fail closed rather than read as "unrestricted"."""
+        dummy = _DummyProvider(import_permission=None)
+        svc = _fake_service(
+            get_download=_download_info(),
+            download=ProviderDownload(file_bytes=self._FAKE_3MF_BYTES, filename="benchy.3mf"),
+        )
+
+        with (
+            patch("backend.app.api.routes.makerworld._provider_for_source", return_value=dummy),
+            patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)),
+        ):
+            resp = await async_client.post(
+                "/api/v1/makerworld/import",
+                json={"model_id": 1400373, "profile_id": 298919107, "source_type": "dummy"},
+            )
+        assert resp.status_code == 500
+        assert "declares no permission" in resp.json()["detail"]
+
+        from sqlalchemy import select
+
+        assert (await db_session.execute(select(LibraryFile))).scalars().all() == []
 
     @pytest.mark.asyncio
     async def test_uses_existing_folder_when_folder_id_provided(self, async_client, db_session):

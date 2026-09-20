@@ -464,8 +464,10 @@ class MakerWorldService(ProviderService):
         Validates that the URL's host is one of the declared download hosts
         (SSRF guard — driven by ``ModelProvider.download_hosts()`` via
         ``build_service``, the symmetric counterpart to the thumbnail
-        allowlist) or a known signed-URL suffix (Bambu's S3 regional
-        endpoints); pattern matches ``_spoolman_helpers.assert_safe_spoolman_url``.
+        allowlist) *or* matches ``_ALLOWED_DOWNLOAD_SUFFIXES``, Bambu's S3
+        regional endpoints, which are this provider's own signed-URL family
+        rather than part of the injectable seam; pattern matches
+        ``_spoolman_helpers.assert_safe_spoolman_url``.
         Enforces a 200 MB cap so a single bad response can't exhaust disk.
 
         Returns ``(file_bytes, suggested_filename)``.

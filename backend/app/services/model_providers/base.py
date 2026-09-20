@@ -185,9 +185,15 @@ class ModelProvider(ABC):
     source_type: str
     display_name: str
     host_patterns: tuple[str, ...] = ()
-    can_download: bool = True
     auth: ProviderAuthConfig | None = None
+    #: Top-level library folder imports land in when the caller names no
+    #: folder. ``None`` imports into the library root — the route will not
+    #: mint a folder without a name.
     default_folder_name: str | None = None
+    #: The permissions the routes enforce for this provider's read and import
+    #: operations. Optional only so the base class has a default: a provider
+    #: that leaves them unset is refused at the gate rather than treated as
+    #: unrestricted (see ``makerworld._authorize_for_provider``).
     view_permission: Permission | None = None
     import_permission: Permission | None = None
 

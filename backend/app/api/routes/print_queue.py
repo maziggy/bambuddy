@@ -971,6 +971,15 @@ async def add_to_queue(
                 batch_name_base = library_file.file_metadata.get("print_name") or library_file.filename
             else:
                 batch_name_base = library_file.filename
+        elif variant_specs:
+            # A cross-model job carries neither archive_id nor library_file_id --
+            # the candidates are the files (#671) -- so both branches above miss
+            # and every such batch was named "Batch". Unreachable until the print
+            # dialog could ask for more than one copy of one (#3101). Name it
+            # after the first candidate, which is what the dialog names the job
+            # after and what the resolver prefers when both printers are free.
+            first_file = variant_specs[0][1]
+            batch_name_base = (first_file.file_metadata or {}).get("print_name") or first_file.filename or "Batch"
         batch_name_base = batch_name_base.replace(".gcode.3mf", "").replace(".3mf", "")
 
         batch = PrintBatch(

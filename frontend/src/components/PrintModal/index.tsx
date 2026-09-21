@@ -673,6 +673,18 @@ export function PrintModal({
     }
   }, [platesData, selectedPlates.size]);
 
+  // Cross-model: the candidate list owns plate choice, and `platesData` is the
+  // primary file's. `selectedPlate` still keys the filament-requirements query,
+  // so it has to follow that file's dropdown — otherwise the override panel
+  // describes plate 1 while the job runs plate 3 (#3101). An untouched dropdown
+  // renders its first plate, which is what the auto-select above already set.
+  useEffect(() => {
+    if (!isCrossModel || !libraryFileId) return;
+    const chosen = candidatePlates[libraryFileId];
+    if (chosen == null) return;
+    setSelectedPlates((prev) => (prev.size === 1 && prev.has(chosen) ? prev : new Set([chosen])));
+  }, [isCrossModel, libraryFileId, candidatePlates]);
+
   // Auto-select first printer when only one available
   useEffect(() => {
     // Skip auto-select for edit mode (already initialized from queueItem)
@@ -1414,7 +1426,11 @@ export function PrintModal({
   // global field is hidden (#342) — the reporter's case is "plate 1 once,
   // plate 2 twice", which one shared number cannot express. Single-plate
   // files, and edit mode, keep the single field exactly as before.
-  const usePerPlateQuantities = mode === 'create' && isMultiPlate && plates.length > 1;
+  // Cross-model is excluded: its plate choice is per candidate and lives in
+  // VariantCandidates, so there are no per-plate steppers to own the number
+  // and the global Quantity field below is the only one there is (#3101).
+  const usePerPlateQuantities =
+    mode === 'create' && !isCrossModel && isMultiPlate && plates.length > 1;
 
   /** Runs to queue for one plate. `null` = the single-plate / whole-file case. */
   const quantityForPlate = (plateIndex: number | null): number => {
@@ -1572,37 +1588,43 @@ export function PrintModal({
               );
             })()}
 
-            {/* Plate selection - first so users know filament requirements before selecting printers */}
-            <PlateSelector
-              plates={plates}
-              isMultiPlate={isMultiPlate}
-              selectedPlates={selectedPlates}
-              onToggle={(plateIndex) => {
-                setSelectedPlates(prev => {
-                  const next = new Set(prev);
-                  if (!isEditing) {
-                    // Multi-select: toggle the plate
-                    if (next.has(plateIndex)) {
-                      next.delete(plateIndex);
+            {/* Plate selection - first so users know filament requirements before
+                selecting printers. Cross-model has no use for it: the plate is
+                chosen per candidate in the list below, and this selector's own
+                choice never reached the request — it only decided which plate
+                the filament panel described (#3101). */}
+            {!isCrossModel && (
+              <PlateSelector
+                plates={plates}
+                isMultiPlate={isMultiPlate}
+                selectedPlates={selectedPlates}
+                onToggle={(plateIndex) => {
+                  setSelectedPlates(prev => {
+                    const next = new Set(prev);
+                    if (!isEditing) {
+                      // Multi-select: toggle the plate
+                      if (next.has(plateIndex)) {
+                        next.delete(plateIndex);
+                      } else {
+                        next.add(plateIndex);
+                      }
                     } else {
+                      // Single-select: replace selection
+                      next.clear();
                       next.add(plateIndex);
                     }
-                  } else {
-                    // Single-select: replace selection
-                    next.clear();
-                    next.add(plateIndex);
-                  }
-                  return next;
-                });
-              }}
-              onSelectAll={!isEditing ? () => setSelectedPlates(new Set(plates.map(p => p.index))) : undefined}
-              onDeselectAll={!isEditing ? () => setSelectedPlates(new Set()) : undefined}
-              multiSelect={!isEditing}
-              quantities={usePerPlateQuantities ? plateQuantities : undefined}
-              onQuantityChange={usePerPlateQuantities
-                ? (plateIndex, value) => setPlateQuantities(prev => ({ ...prev, [plateIndex]: value }))
-                : undefined}
-            />
+                    return next;
+                  });
+                }}
+                onSelectAll={!isEditing ? () => setSelectedPlates(new Set(plates.map(p => p.index))) : undefined}
+                onDeselectAll={!isEditing ? () => setSelectedPlates(new Set()) : undefined}
+                multiSelect={!isEditing}
+                quantities={usePerPlateQuantities ? plateQuantities : undefined}
+                onQuantityChange={usePerPlateQuantities
+                  ? (plateIndex, value) => setPlateQuantities(prev => ({ ...prev, [plateIndex]: value }))
+                  : undefined}
+              />
+            )}
 
             {/* Cross-model alternatives (#671) replace the printer picker entirely:
                 the user already answered "which printer" by choosing these files,

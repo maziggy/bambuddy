@@ -2929,7 +2929,7 @@ export default {
         autologinDesc: 'Stuur niet-geauthenticeerde bezoekers rechtstreeks door naar deze provider. Slechts één provider kan deze vlag hebben.',
         groupClaim: 'Groepsclaim',
         groupClaimDesc: 'JWT-claim met de groepen van de gebruiker bij de identiteitsprovider. De meeste providers gebruiken \'groups\'; de waarde kan een JSON-array of een string zijn.',
-        groupMapping: 'Groepskoppeling (JSON)',
+        groupMapping: 'Groepskoppeling',
         groupMappingDesc: 'Gekoppelde groepen worden bij elke login gesynchroniseerd. Groepen die hier niet genoemd worden blijven ongewijzigd, zodat handmatige toewijzingen behouden blijven. Laat leeg om groepssynchronisatie uit te schakelen.',
         groupSync: 'Groepsynchronisatie',
         groupSyncOn: 'Aan',
@@ -2938,7 +2938,6 @@ export default {
         groupMappingAddRow: 'Koppeling toevoegen',
         groupMappingDeletedGroupOption: '{{group}} (verwijderd)',
         groupMappingDeletedGroupWarning: 'Deze Bambuddy-groep is verwijderd. Kies een vervanging of verwijder deze koppeling.',
-        claimNotInScopesWarning: 'De identiteitsprovider geeft de claim \'{{claim}}\' alleen terug als \'{{claim}}\' in de Scopes is opgenomen.',
       },
     },
 

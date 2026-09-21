@@ -343,6 +343,25 @@ def _validate_email_claim_name(v: str) -> str:
     return v
 
 
+def _validate_group_claim_name(v: str) -> str:
+    """#3107 — like _validate_email_claim_name, but also allows one slash.
+
+    Auth0 (and Auth0-compatible providers) only expose custom claims under a
+    non-reserved namespace, e.g. ``https://example.com/roles`` or ``app/roles``,
+    so the email-claim charset would refuse every valid Auth0 group claim.
+    The slash is structurally safe here: the value never reaches a URL, a
+    path or SQL — it is only a JWT claim lookup key inside ``claims.get`` —
+    so the wider charset does not widen any injection surface. The 64-char
+    cap and the "starts with a letter" rule are kept. The full-URL form of
+    an Auth0 namespace exceeds 64 chars, but that is Auth0's documented
+    short-namespace territory; the limit matches email_claim and keeps the
+    column bound meaningful.
+    """
+    if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_\-/]{0,63}", v):
+        raise ValueError("Invalid claim name")
+    return v
+
+
 def _validate_group_mapping(v: dict[str, str]) -> dict[str, str]:
     """#3107 — normalise and bound an IdP-group -> Bambuddy-group mapping.
 
@@ -497,8 +516,8 @@ class OIDCProviderCreate(BaseModel):
     @field_validator("group_claim")
     @classmethod
     def validate_group_claim(cls, v: str) -> str:
-        # Same character rules as email_claim: a claim name is a claim name.
-        return _validate_email_claim_name(v)
+        # Namespaced claims allowed here (Auth0 et al) — see _validate_group_claim_name.
+        return _validate_group_claim_name(v)
 
     @field_validator("group_mapping")
     @classmethod
@@ -562,7 +581,7 @@ class OIDCProviderUpdate(BaseModel):
     def validate_group_claim(cls, v: str | None) -> str | None:
         if v is None:
             return None
-        return _validate_email_claim_name(v)
+        return _validate_group_claim_name(v)
 
     @field_validator("group_mapping")
     @classmethod
@@ -617,6 +636,27 @@ class OIDCProviderResponse(BaseModel):
     # Required (no default) so Pydantic fails loudly if any code path skips
     # `_build_provider_response` and tries `model_validate(provider)` directly.
     has_icon: bool
+
+    class Config:
+        from_attributes = True
+
+
+class OIDCProviderPublicResponse(BaseModel):
+    """#3107 — what the unauthenticated login page is allowed to see.
+
+    GET /oidc/providers is public so the login page can render the SSO
+    buttons, and it needs exactly four fields: id + name for the button,
+    has_icon for the avatar, is_autologin for the redirect-on-mount (#1589).
+    The full OIDCProviderResponse carries group_claim / group_mapping —
+    which IdP group name maps to which Bambuddy group, including
+    Administrators — and leaking that to anonymous visitors would tell
+    anyone who can reach the login page exactly which IdP group to aim for.
+    """
+
+    id: int
+    name: str
+    has_icon: bool
+    is_autologin: bool = False
 
     class Config:
         from_attributes = True

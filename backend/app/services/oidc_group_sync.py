@@ -52,16 +52,18 @@ def extract_idp_groups(claim_value: object) -> list[str]:
     (dicts, numbers) are dropped rather than rejected: a provider adding an
     unexpected claim shape must not lock users out of their mapped groups.
     Duplicates are removed while preserving order (first occurrence wins).
+    The result is bounded by _MAX_CLAIM_ITEMS for both shapes — a string
+    claim splits into arbitrarily many fragments, so the slice applies after
+    splitting, not only on the list path.
     """
     if claim_value is None:
         return []
-    raw_items: list[str]
     if isinstance(claim_value, list):
         raw_items = [item for item in claim_value[:_MAX_CLAIM_ITEMS] if isinstance(item, str)]
     elif isinstance(claim_value, str):
         # Space-separated is the OIDC convention (scope-style); commas are a
         # pragmatic extra since some IdPs stringify arrays that way.
-        raw_items = claim_value.replace(",", " ").split(" ")
+        raw_items = claim_value.replace(",", " ").split(" ")[:_MAX_CLAIM_ITEMS]
     else:
         return []
     seen: set[str] = set()

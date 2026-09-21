@@ -71,6 +71,7 @@ from backend.app.schemas.auth import (
     OIDCExchangeRequest,
     OIDCLinkResponse,
     OIDCProviderCreate,
+    OIDCProviderPublicResponse,
     OIDCProviderResponse,
     OIDCProviderUpdate,
     TOTPDisableRequest,
@@ -1320,18 +1321,24 @@ async def admin_disable_2fa(
 # ===========================================================================
 
 
-@router.get("/oidc/providers", response_model=list[OIDCProviderResponse])
+@router.get("/oidc/providers", response_model=list[OIDCProviderPublicResponse])
 async def list_oidc_providers(
     db: AsyncSession = Depends(get_db),
-) -> list[OIDCProviderResponse]:
+) -> list[OIDCProviderPublicResponse]:
     """List all enabled OIDC providers (public).
 
     The login page renders icons via /oidc/providers/{id}/icon — `icon_data`
     stays deferred so this list query never pulls the BLOB.
+
+    #3107: returns the slim public shape only. The login page needs id, name,
+    has_icon and is_autologin; the full response (scopes, claims, and now
+    group_claim / group_mapping) is served by the permission-gated
+    /oidc/providers/all below, so an unauthenticated caller cannot learn
+    which IdP group name maps to which Bambuddy group.
     """
     result = await db.execute(select(OIDCProvider).where(OIDCProvider.is_enabled.is_(True)))
     providers = result.scalars().all()
-    return [_build_provider_response(p) for p in providers]
+    return [OIDCProviderPublicResponse.model_validate(p) for p in providers]
 
 
 @router.get("/oidc/providers/all", response_model=list[OIDCProviderResponse])
@@ -1432,19 +1439,16 @@ def _refuse_if_env_managed(provider: OIDCProvider) -> None:
 async def _missing_group_names(db: AsyncSession, names: set[str]) -> set[str]:
     """#3107 — names from a group_mapping with no matching Bambuddy group.
 
-    Compared case-insensitively: Group.name is unique but its collation does
-    not guarantee case-insensitive uniqueness across backends, and the sync
-    itself matches Group.name exactly, so a mapping value differing only in
-    case from the stored group name would silently never resolve. Treating a
-    case-only mismatch as found would be wrong (the sync's select is exact),
-    so both the exact name and its case-insensitive cohort are accepted here
-    and the caller's message reports the submitted spelling.
+    Exact match only, same as the sync's own ``Group.name.in_()`` lookup and
+    the env path's ``Group.name == target``: the sync resolves names exactly,
+    so admitting a case-variant here would pass validation only to have the
+    sync silently never grant it — the exact failure this check exists to
+    catch at save time, in front of the admin, instead of at login time.
     """
     if not names:
         return set()
-    exact = (await db.execute(select(Group.name).where(Group.name.in_(names)))).scalars().all()
-    found_ci = {n.lower() for n in exact}
-    return {n for n in names if n not in exact and n.lower() not in found_ci}
+    exact = set((await db.execute(select(Group.name).where(Group.name.in_(names)))).scalars().all())
+    return names - exact
 
 
 @router.put("/oidc/providers/{provider_id}", response_model=OIDCProviderResponse)
@@ -2105,23 +2109,25 @@ async def oidc_callback(
             # #3107 — apply the provider's group mapping on every login, not
             # just at account creation. Same managed-slice contract as the
             # LDAP sync (#1292): only groups named in group_mapping values are
-            # touched, manual assignments elsewhere survive. Runs after the
-            # user is resolved but before tokens are minted, so the exchange
-            # JWT that follows reflects post-sync authority. A sync failure is
+            # touched, manual assignments elsewhere survive. A sync failure is
             # logged inside and never blocks the login.
-            if getattr(user, "groups", None) is not None:
+            if provider.group_mapping:
                 from backend.app.services.oidc_group_sync import sync_oidc_user_groups
 
                 await sync_oidc_user_groups(
                     db,
                     user,
                     group_claim=provider.group_claim,
-                    group_mapping=provider.group_mapping or {},
+                    group_mapping=provider.group_mapping,
                     claims=claims,
                 )
-                # The sync may have committed new group rows onto the user;
-                # refresh so the permissions baked into the login below see
-                # the post-sync state rather than the pre-login snapshot.
+                # Post-rollback guard, not token freshness: nothing below reads
+                # user.groups (the callback only puts the username on the exchange
+                # token; /oidc/exchange re-selects the user with selectinload). The
+                # refresh exists so a sync that raised and rolled back leaves the
+                # in-memory user.groups holding database truth instead of the
+                # pre-rollback mutation. Inside the mapping branch so sync-off
+                # installs do not pay two extra queries per login.
                 await db.refresh(user, attribute_names=["groups"])
 
             # Issue an OIDC exchange token (short-lived, single-use) stored in DB.

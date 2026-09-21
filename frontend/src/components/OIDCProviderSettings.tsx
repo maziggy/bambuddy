@@ -84,10 +84,6 @@ function ProviderForm({
 
   const groupNames = new Set(groups.map((g) => g.name));
 
-  const scopeTokens = (form.scopes ?? '').toLowerCase().split(/\s+/).filter(Boolean);
-  const emailClaimInScopes = scopeTokens.includes((form.email_claim || 'email').toLowerCase());
-  const groupClaimInScopes = scopeTokens.includes((form.group_claim || 'groups').toLowerCase());
-
   const autoLinkOn = form.auto_link_existing_accounts === true;
   const emailVerifiedOn = form.require_email_verified ?? true;
   let requireEmailVerifiedDesc: ReactNode;
@@ -199,11 +195,6 @@ function ProviderForm({
         {autoLinkOn && form.email_claim !== 'email' && (
           <p className="text-yellow-700 dark:text-yellow-400 text-xs mt-1">{t('settings.oidc.form.emailClaimCustomClaimAutoLinkWarning')}</p>
         )}
-        {!emailClaimInScopes && (
-          <p className="text-yellow-700 dark:text-yellow-400 text-xs mt-1">
-            {t('settings.oidc.form.claimNotInScopesWarning', { claim: form.email_claim || 'email' })}
-          </p>
-        )}
       </div>
 
       <div>
@@ -230,11 +221,6 @@ function ProviderForm({
           placeholder="groups"
         />
         <p className="text-bambu-gray text-xs mt-1">{t('settings.oidc.form.groupClaimDesc')}</p>
-        {!groupClaimInScopes && (
-          <p className="text-yellow-700 dark:text-yellow-400 text-xs mt-1">
-            {t('settings.oidc.form.claimNotInScopesWarning', { claim: form.group_claim || 'groups' })}
-          </p>
-        )}
       </div>
 
       <div>

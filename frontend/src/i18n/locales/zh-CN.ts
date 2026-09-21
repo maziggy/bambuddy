@@ -2895,7 +2895,7 @@ export default {
         autologinDesc: '将未认证的访问者直接重定向到该提供商。只有一个提供商可以携带此标志。',
         groupClaim: '组 Claim',
         groupClaimDesc: '包含用户在身份提供者处所属组的 JWT 声明。大多数提供者使用 \'groups\'；值可以是 JSON 数组或字符串。',
-        groupMapping: '组映射（JSON）',
+        groupMapping: '组映射',
         groupMappingDesc: '映射的组会在每次登录时同步。此处未列出的组不会被更改，因此手动分配会保留。留空可禁用组同步。',
         groupSync: '组同步',
         groupSyncOn: '开启',
@@ -2904,7 +2904,6 @@ export default {
         groupMappingAddRow: '添加映射',
         groupMappingDeletedGroupOption: '{{group}}（已删除）',
         groupMappingDeletedGroupWarning: '此 Bambuddy 组已被删除。请选择替代组或移除此映射。',
-        claimNotInScopesWarning: '除非在 Scopes 中包含“{{claim}}”，否则身份提供者不会返回“{{claim}}”声明。',
       },
     },
 

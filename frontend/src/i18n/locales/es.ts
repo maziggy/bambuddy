@@ -1956,7 +1956,7 @@ export default {
       defaultGroupNone: '— Ninguno (sin alternativa) —',
       defaultGroupHint: 'Grupo alternativo asignado cuando un usuario LDAP se autentica pero no figura en ningún grupo LDAP asignado. Déjelo vacío para dejar a los usuarios sin asignar sin permisos.',
       groupMapping: 'Asignación de grupos (JSON)',
-      groupMappingHint: 'Mapear DNs de grupos LDAP a grupos de BamBuddy. Grupos disponibles: ',
+      groupMappingHint: 'Asignar los DN de grupos LDAP a los grupos de Bambuddy. Grupos disponibles: ',
       testConnection: 'Probar conexión',
       settingsSaved: 'Ajustes de LDAP guardados',
       errors: {
@@ -2910,7 +2910,7 @@ export default {
         autologinDesc: 'Redirigir a los visitantes no autenticados directamente a este proveedor. Solo un proveedor puede llevar esta marca.',
         groupClaim: 'Claim de grupos',
         groupClaimDesc: 'Claim JWT que contiene los grupos del usuario en el proveedor de identidad. La mayoría usa \'groups\'; el valor puede ser un array JSON o una cadena.',
-        groupMapping: 'Mapeo de grupos (JSON)',
+        groupMapping: 'Mapeo de grupos',
         groupMappingDesc: 'Los grupos mapeados se sincronizan en cada inicio de sesión. Los grupos que no aparezcan aquí no se tocan, de modo que las asignaciones manuales se conservan. Déjalo vacío para desactivar la sincronización de grupos.',
         groupSync: 'Sincronización de grupos',
         groupSyncOn: 'Activa',
@@ -2919,7 +2919,6 @@ export default {
         groupMappingAddRow: 'Añadir mapeo',
         groupMappingDeletedGroupOption: '{{group}} (eliminado)',
         groupMappingDeletedGroupWarning: 'Este grupo de Bambuddy ha sido eliminado. Elige un reemplazo o quita este mapeo.',
-        claimNotInScopesWarning: 'El proveedor de identidad no devolverá el claim \'{{claim}}\' a menos que \'{{claim}}\' esté incluido en los Scopes.',
       },
     },
 

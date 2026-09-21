@@ -1953,7 +1953,7 @@ export default {
       defaultGroupNone: '— Keine (kein Fallback) —',
       defaultGroupHint: 'Fallback-Gruppe, die zugewiesen wird, wenn sich ein LDAP-Benutzer authentifiziert, aber in keiner zugeordneten LDAP-Gruppe enthalten ist. Leer lassen, um nicht zugeordnete Benutzer ohne Berechtigungen zu belassen.',
       groupMapping: 'Gruppenzuordnung (JSON)',
-      groupMappingHint: 'LDAP-Gruppen-DNs auf BamBuddy-Gruppen abbilden. Verfügbare Gruppen: ',
+      groupMappingHint: 'LDAP-Gruppen-DNs BamBuddy-Gruppen zuordnen. Verfügbare Gruppen: ',
       testConnection: 'Verbindung testen',
       settingsSaved: 'LDAP-Einstellungen gespeichert',
       errors: {
@@ -2908,7 +2908,7 @@ export default {
         autologinDesc: 'Nicht angemeldete Besucher direkt zu diesem Anbieter weiterleiten. Diese Option kann nur für einen Anbieter aktiv sein.',
         groupClaim: 'Gruppen-Claim',
         groupClaimDesc: 'JWT-Claim, der die Gruppen des Benutzers beim Identitätsanbieter enthält. Die meisten Anbieter verwenden \'groups\'; der Wert kann ein JSON-Array oder ein String sein.',
-        groupMapping: 'Gruppen-Mapping (JSON)',
+        groupMapping: 'Gruppen-Mapping',
         groupMappingDesc: 'Gemappte Gruppen werden bei jeder Anmeldung synchronisiert. Gruppen, die hier nicht genannt sind, bleiben unangetastet, damit manuelle Zuweisungen erhalten bleiben. Leer lassen, um die Gruppensynchronisierung zu deaktivieren.',
         groupSync: 'Gruppen-Sync',
         groupSyncOn: 'Aktiv',
@@ -2917,7 +2917,6 @@ export default {
         groupMappingAddRow: 'Zuordnung hinzufügen',
         groupMappingDeletedGroupOption: '{{group}} (gelöscht)',
         groupMappingDeletedGroupWarning: 'Diese Bambuddy-Gruppe wurde gelöscht. Wählen Sie einen Ersatz oder entfernen Sie diese Zuordnung.',
-        claimNotInScopesWarning: 'Der Claim \'{{claim}}\' wird vom Identitätsanbieter nur zurückgegeben, wenn \'{{claim}}\' in den Scopes enthalten ist.',
       },
     },
 

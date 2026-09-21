@@ -1952,7 +1952,7 @@ export default {
       defaultGroupNone: '— なし（フォールバックなし）—',
       defaultGroupHint: 'LDAPユーザーが認証されたがマッピングされたLDAPグループに属していない場合に割り当てられるフォールバックグループ。空欄の場合、マッピングされていないユーザーは権限なしのままになります。',
       groupMapping: 'グループマッピング（JSON）',
-      groupMappingHint: 'LDAP グループ DN を BamBuddy グループに関連付けます。利用可能なグループ：',
+      groupMappingHint: 'LDAPグループDNをBamBuddyグループにマッピング。利用可能なグループ: ',
       testConnection: '接続テスト',
       settingsSaved: 'LDAP設定を保存しました',
       errors: {
@@ -2907,7 +2907,7 @@ export default {
         autologinDesc: '未認証の訪問者をこのプロバイダーに直接リダイレクトします。このフラグを付けられるプロバイダーは1つだけです。',
         groupClaim: 'グループClaim',
         groupClaimDesc: 'IdP でのユーザーのグループを含む JWT クレーム。ほとんどのプロバイダーは \'groups\' を使用します。値は JSON 配列または文字列です。',
-        groupMapping: 'グループマッピング（JSON）',
+        groupMapping: 'グループマッピング',
         groupMappingDesc: 'マッピングされたグループはログインのたびに同期されます。ここに記載のないグループは変更されないため、手動割り当ては保持されます。空欄にするとグループ同期は無効になります。',
         groupSync: 'グループ同期',
         groupSyncOn: 'オン',
@@ -2916,7 +2916,6 @@ export default {
         groupMappingAddRow: 'マッピングを追加',
         groupMappingDeletedGroupOption: '{{group}}（削除済み）',
         groupMappingDeletedGroupWarning: 'この Bambuddy グループは削除されました。代替を選ぶか、このマッピングを削除してください。',
-        claimNotInScopesWarning: '\'{{claim}}\' が Scopes に含まれていない場合、IdP は \'{{claim}}\' クレームを返しません。',
       },
     },
 

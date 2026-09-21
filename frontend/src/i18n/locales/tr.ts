@@ -1957,7 +1957,7 @@ export default {
       defaultGroupNone: '— Hiçbiri (yedek yok) —',
       defaultGroupHint: 'Bir LDAP kullanıcısı kimlik doğruladığında ancak eşlenmiş herhangi bir LDAP grubunda listelenmediğinde atanan yedek grup. Eşlenmemiş kullanıcıları izinsiz bırakmak için boş bırakın.',
       groupMapping: 'Grup Eşleme (JSON)',
-      groupMappingHint: 'LDAP grup DN\'lerini BamBuddy gruplarına eşleyin. Kullanılabilir gruplar: ',
+      groupMappingHint: 'LDAP grup DN\'lerini BamBuddy gruplarına eşle. Kullanılabilir gruplar: ',
       testConnection: 'Bağlantıyı Test Et',
       settingsSaved: 'LDAP ayarları kaydedildi',
       errors: {
@@ -2911,7 +2911,7 @@ export default {
         autologinDesc: 'Kimlik doğrulaması yapılmamış ziyaretçileri doğrudan bu sağlayıcıya yönlendir. Bu işareti yalnızca bir sağlayıcı taşıyabilir.',
         groupClaim: 'Grup talebi',
         groupClaimDesc: 'Kimlik sağlayıcıdaki kullanıcının gruplarını içeren JWT talebi. Çoğu sağlayıcı \'groups\' kullanır; değer bir JSON dizisi veya dize olabilir.',
-        groupMapping: 'Grup Eşlemesi (JSON)',
+        groupMapping: 'Grup Eşlemesi',
         groupMappingDesc: 'Eşlenen gruplar her oturum açmada senkronize edilir. Burada adı geçmeyen gruplara dokunulmaz, böylece manuel atamalar korunur. Grup senkronizasyonunu devre dışı bırakmak için boş bırakın.',
         groupSync: 'Grup senkronizasyonu',
         groupSyncOn: 'Açık',
@@ -2920,7 +2920,6 @@ export default {
         groupMappingAddRow: 'Eşleme ekle',
         groupMappingDeletedGroupOption: '{{group}} (silindi)',
         groupMappingDeletedGroupWarning: 'Bu Bambuddy grubu silinmiş. Bir yenisini seçin veya bu eşlemeyi kaldırın.',
-        claimNotInScopesWarning: 'Kimlik sağlayıcı, \'{{claim}}\' Scopes içinde yer almadığı sürece \'{{claim}}\' talebini döndürmez.',
       },
     },
 

@@ -2938,7 +2938,6 @@ export default {
         groupMappingDeletedGroupWarning: 'This Bambuddy group has been deleted. Pick a replacement or remove this mapping.',
         groupSync: 'Group Sync',
         groupSyncOn: 'On',
-        claimNotInScopesWarning: "The '{{claim}}' claim won't be returned by your identity provider unless '{{claim}}' is included in Scopes.",
       },
     },
 

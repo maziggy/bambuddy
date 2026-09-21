@@ -1909,7 +1909,7 @@ export default {
       defaultGroupNone: '— Nessuno (nessun fallback) —',
       defaultGroupHint: 'Gruppo di fallback assegnato quando un utente LDAP si autentica ma non è presente in nessun gruppo LDAP mappato. Lascia vuoto per lasciare gli utenti non mappati senza autorizzazioni.',
       groupMapping: 'Mappatura gruppi (JSON)',
-      groupMappingHint: 'Mappa i DN dei gruppi LDAP sui gruppi BamBuddy. Gruppi disponibili: ',
+      groupMappingHint: 'Mappa i DN dei gruppi LDAP ai gruppi BamBuddy. Gruppi disponibili: ',
       testConnection: 'Test connessione',
       settingsSaved: 'Impostazioni LDAP salvate',
       errors: {
@@ -2850,7 +2850,7 @@ export default {
         autologinDesc: 'Reindirizza i visitatori non autenticati direttamente a questo provider. Solo un provider può avere questo flag.',
         groupClaim: 'Claim dei gruppi',
         groupClaimDesc: 'Claim JWT che contiene i gruppi dell\'utente presso il provider di identità. La maggior parte usa \'groups\'; il valore può essere un array JSON o una stringa.',
-        groupMapping: 'Mappatura gruppi (JSON)',
+        groupMapping: 'Mappatura gruppi',
         groupMappingDesc: 'I gruppi mappati vengono sincronizzati a ogni accesso. I gruppi non elencati qui restano invariati, così le assegnazioni manuali vengono preservate. Lascia vuoto per disattivare la sincronizzazione dei gruppi.',
         groupSync: 'Sincronizzazione gruppi',
         groupSyncOn: 'Attiva',
@@ -2859,7 +2859,6 @@ export default {
         groupMappingAddRow: 'Aggiungi mappatura',
         groupMappingDeletedGroupOption: '{{group}} (eliminato)',
         groupMappingDeletedGroupWarning: 'Questo gruppo Bambuddy è stato eliminato. Scegli un sostituto o rimuovi questa mappatura.',
-        claimNotInScopesWarning: 'Il claim \'{{claim}}\' non verrà restituito dal provider di identità a meno che \'{{claim}}\' non sia incluso negli Scopes.',
       },
     },
 

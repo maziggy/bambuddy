@@ -12,15 +12,21 @@ creation (routes/mfa.py) and never re-asserted, so promoting an auto-created
 user out of Viewers is a manual action that sticks.
 """
 
+import logging
+from typing import NoReturn
+
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from backend.app.models.group import Group
 from backend.app.models.oidc_provider import OIDCProvider
 from backend.app.models.user import User
 from backend.app.schemas.auth import OIDCProviderCreate
 from backend.app.services.oidc_group_sync import (
+    _MAX_CLAIM_ITEMS,
     extract_idp_groups,
     resolve_oidc_group_mapping,
     sync_oidc_user_groups,
@@ -77,6 +83,33 @@ class TestExtractIdpGroups:
         assert extract_idp_groups(42) == []
         assert extract_idp_groups({"odd": "shape"}) == []
         assert extract_idp_groups(["ok", 7, None, ""]) == ["ok"]
+
+    def test_list_claim_is_bounded(self):
+        # Review on #3122: the bound is the only defence against a hostile
+        # oversized token, and it must hold for every accepted shape, not
+        # just the list one.
+        oversized = [f"g{i}" for i in range(_MAX_CLAIM_ITEMS + 100)]
+        result = extract_idp_groups(oversized)
+        assert len(result) == _MAX_CLAIM_ITEMS
+        assert result[0] == "g0"
+        assert result[-1] == f"g{_MAX_CLAIM_ITEMS - 1}"
+
+    def test_space_separated_claim_is_bounded(self):
+        # The shape the original bound missed: a string claim splits into
+        # arbitrarily many fragments, so the slice has to apply after
+        # splitting, not only on the list path.
+        oversized = " ".join(f"g{i}" for i in range(_MAX_CLAIM_ITEMS + 100))
+        result = extract_idp_groups(oversized)
+        assert len(result) == _MAX_CLAIM_ITEMS
+        assert result[-1] == f"g{_MAX_CLAIM_ITEMS - 1}"
+
+    def test_comma_separated_claim_is_bounded(self):
+        # No spaces around the commas: the split happens on raw fragments,
+        # so ", "-joined input would spend half the budget on empty
+        # fragments. The contract being pinned is the upper bound.
+        oversized = ",".join(f"g{i}" for i in range(_MAX_CLAIM_ITEMS + 100))
+        result = extract_idp_groups(oversized)
+        assert len(result) == _MAX_CLAIM_ITEMS
 
 
 class TestResolveMapping:
@@ -251,6 +284,41 @@ class TestSyncOidcUserGroups:
         )
         await db_session.refresh(user, attribute_names=["groups"])
         assert {g.id for g in user.groups} == {operators.id}
+
+    @pytest.mark.asyncio
+    async def test_sync_failure_never_blocks_login(self, db_session: AsyncSession, monkeypatch, caplog):
+        """The service's contract with oidc_callback: never raise. A failure
+        mid-sync is logged and the user keeps the groups they had — the login
+        already authenticated, so the sync must not take it down with it.
+
+        The commit is the interesting failure point: by then the user object
+        is dirty, so the except path's rollback has real work to do and the
+        in-memory relationship is post-rollback state. Database truth is
+        re-selected rather than read off the expired instance."""
+        admins = await _make_group(db_session, "Administrators")
+        await _make_group(db_session, "Operators")
+        user = await _make_user(db_session, "ivan", [admins])
+        user_id = user.id  # captured pre-sync: the rollback expires the whole instance, PK included
+
+        async def _failing_commit() -> NoReturn:
+            raise RuntimeError("simulated commit failure")
+
+        monkeypatch.setattr(db_session, "commit", _failing_commit)
+
+        with caplog.at_level(logging.ERROR):
+            await sync_oidc_user_groups(  # must not raise
+                db_session,
+                user,
+                group_claim="groups",
+                group_mapping={"idp-staff": "Operators"},
+                claims={"groups": ["idp-staff"]},
+            )
+
+        fresh = (
+            await db_session.execute(select(User).where(User.id == user_id).options(selectinload(User.groups)))
+        ).scalar_one()
+        assert {g.name for g in fresh.groups} == {"Administrators"}
+        assert "OIDC group sync failed for user ivan" in caplog.text
 
 
 # ─── schema validation ────────────────────────────────────────────────────────

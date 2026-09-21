@@ -202,7 +202,7 @@ async def test_cost_center_without_budget_is_unlimited_regardless_of_wallet_bala
         center = await db.get(CostCenter, billing_dispatch_case.ids.cost_center_id)
         center.monthly_budget = None
         center.total_budget = None
-        wallet = UserWallet(user_id=user.id, balance=-100.0, currency="EUR")
+        wallet = UserWallet(user_id=user.id, balance=-100.0)
         db.add(wallet)
         await db.commit()
 

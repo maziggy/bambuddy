@@ -26,6 +26,7 @@ import { BulkEditSpoolsModal } from '../components/BulkEditSpoolsModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { colorSortKey, resolveSpoolColorName } from '../utils/colors';
+import { useColorCatalogVersion } from '../hooks/useColorCatalogVersion';
 import { getCurrencySymbol } from '../utils/currency';
 import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
 import { formatSlotLabel } from '../utils/amsHelpers';
@@ -269,7 +270,7 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
     <span className="text-sm text-bambu-gray">{spool.subtype || '-'}</span>
   ),
   color_name: ({ spool }) => (
-    <span className="text-sm text-bambu-gray">{resolveSpoolColorName(spool.color_name, spool.rgba) || '-'}</span>
+    <span className="text-sm text-bambu-gray">{resolveSpoolColorName(spool.color_name, spool.rgba, spool.color_name_is_synthesized) || '-'}</span>
   ),
   brand: ({ spool }) => (
     <span className="text-sm text-bambu-gray">{spool.brand || '-'}</span>
@@ -573,6 +574,9 @@ export default function InventoryPageRouter() {
 
 function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spoolmanMode?: boolean; spoolmanModeReady?: boolean }) {
   const { t } = useTranslation();
+  // The spool filter below resolves colour names through the catalog; its
+  // memo has to recompute when the catalog finishes loading (#3090).
+  const colorCatalogVersion = useColorCatalogVersion();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission, loading: authLoading } = useAuth();
@@ -1029,7 +1033,13 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         await spoolbuddyApi.updateSpoolWeight(spool.id, spool.last_scale_weight);
       }
       queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
-      const spoolName = [spool.brand, spool.material, spool.color_name].filter(Boolean).join(' ');
+      const spoolName = [
+        spool.brand,
+        spool.material,
+        resolveSpoolColorName(spool.color_name, spool.rgba, spool.color_name_is_synthesized),
+      ]
+        .filter(Boolean)
+        .join(' ');
       showToast(`Synced "${spoolName}" to scale weight`, 'success');
     } catch (e) {
       const is404 = e instanceof ApiError && e.status === 404;
@@ -1217,6 +1227,11 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
 
   // Filtering pipeline
   const filteredSpools = useMemo(() => {
+    // Named so this memo depends on it: the global search below resolves
+    // colour names through the catalog, which `resolveSpoolColorName` reads
+    // from module state the linter cannot follow. Without it a query typed
+    // before the catalog loads keeps its empty result (#3090).
+    void colorCatalogVersion;
     let filtered = spools || [];
 
     // Archive filter
@@ -1294,7 +1309,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     }
 
     return filtered;
-  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, categoryFilter, spoolFilter, stockFilter, storageLocationFilter, search, lowStockThreshold, storageLocations]);
+  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, categoryFilter, spoolFilter, stockFilter, storageLocationFilter, search, lowStockThreshold, storageLocations, colorCatalogVersion]);
 
   // Reset page on filter changes
   const resetPage = () => setPageIndex(0);
@@ -2056,7 +2071,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
                       >
                         <div className="h-10 flex items-center px-4 gap-3" style={groupBannerStyle}>
                           <span className="bg-white/90 text-gray-800 px-3 py-0.5 rounded-full text-sm font-medium">
-                            {resolveSpoolColorName(rep.color_name, rep.rgba) || '-'}
+                            {resolveSpoolColorName(rep.color_name, rep.rgba, rep.color_name_is_synthesized) || '-'}
                           </span>
                         </div>
                         <div className="px-4 py-3 flex items-center justify-between">
@@ -2617,7 +2632,7 @@ function SpoolCard({
     >
       <div className="h-14 flex items-center justify-center" style={bannerStyle}>
         <span className="bg-white/90 text-gray-800 px-3 py-0.5 rounded-full text-sm font-medium">
-          {resolveSpoolColorName(spool.color_name, spool.rgba) || '-'}
+          {resolveSpoolColorName(spool.color_name, spool.rgba, spool.color_name_is_synthesized) || '-'}
         </span>
         {onCopy && (
           <button

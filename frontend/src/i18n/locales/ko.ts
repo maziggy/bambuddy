@@ -503,6 +503,8 @@ export default {
       step: '이동 거리 (mm)',
       up: '플레이트 위로',
       down: '플레이트 아래로',
+      toolheadUp: '툴헤드 위로',
+      toolheadDown: '툴헤드 아래로',
       disabledWhilePrinting: '인쇄 중 비활성화됨',
       notHomedTitle: '프린터 홈 설정 필요',
       notHomedMessage: '마지막 인쇄 이후 홈 설정이 되지 않았습니다. 안전한 위치 지정을 위해 자동 홈 설정을 먼저 실행하거나, 그냥 이동하세요 — 소프트 엔드스톱이 무시됩니다.',
@@ -857,7 +859,7 @@ export default {
       docsLink: '설치 단계 4 보기',
       docsLinkInternalStorage: '왜 이런 일이 생기나요',
       titleInternalStorage: '최근 일부 출력물이 프린터 내부 저장소에 남았습니다',
-      bodyInternalStorage: '슬라이싱된 파일을 Bambu Studio가 카드가 아니라 프린터 내부 저장소에 저장해서 Bambuddy가 FTP로 읽을 것이 없었습니다. H2 시리즈와 P2S에서는 «인쇄» 버튼이 항상 그렇게 동작하며, 선택할 수 있는 것은 «보내기»뿐인데 그것도 기본값이 «캐시»입니다. 해당 출력물은 이름과 시간과 함께 계속 보관되지만 썸네일과 슬라이서 메타데이터는 없습니다. 완전한 기록을 남기려면 Bambuddy에서 출력을 시작하거나 OrcaSlicer로 슬라이싱하세요. Bambu Studio를 쓴다면 «보내기»에서 «외부 저장소»를 고른 뒤 출력을 시작하면 됩니다. 모두 프린터에 카드나 USB 메모리가 필요합니다.',
+      bodyInternalStorage: '슬라이싱된 파일을 Bambu Studio가 카드가 아니라 프린터 내부 저장소에 저장해서 Bambuddy가 FTP로 읽을 것이 없었습니다. H2 시리즈, P2S, X2D에서는 «인쇄» 버튼이 항상 그렇게 동작하며, 선택할 수 있는 것은 «보내기»뿐인데 그것도 기본값이 «캐시»입니다. 해당 출력물은 이름과 시간과 함께 계속 보관되지만 썸네일과 슬라이서 메타데이터는 없습니다. 완전한 기록을 남기려면 Bambuddy에서 출력을 시작하거나 OrcaSlicer로 슬라이싱하세요. Bambu Studio를 쓴다면 «보내기»에서 «외부 저장소»를 고른 뒤 출력을 시작하면 됩니다. 모두 프린터에 카드나 USB 메모리가 필요합니다.',
       titleNoExternalStorage: '최근 일부 출력물을 보관하지 못했습니다 — 프린터에 저장소가 없습니다',
       bodyNoExternalStorage: '프린터 슬롯에 카드도 USB도 감지되지 않아 슬라이싱된 파일이 저장될 곳이 없었고 Bambuddy가 읽을 것도 없었습니다. 하나 넣으면 다음 출력물은 온전히 보관됩니다.',
       titleInternalHistory: '최근 일부 출력물은 이미 프린터에 있던 파일에서 시작되었습니다',
@@ -4700,7 +4702,7 @@ export default {
     linkToSpool: '스풀에 연결',
     tagLinked: '태그가 스풀에 연결됨',
     tagLinkFailed: '태그 연결 실패',
-    tagAlreadyLinked: '태그가 이미 다른 스풀에 연결됨',
+    tagAlreadyLinked: '태그가 이미 스풀 #{{id}}에 연결됨',
     unknownTag: '알 수 없는 RFID 태그 감지됨',
     usageHistory: '사용 기록',
     noUsageHistory: '사용 기록 없음',
@@ -6458,7 +6460,8 @@ export default {
       labelWeight: '라벨',
       scaleWeight: '저울',
       netWeight: '순 무게',
-      lastUsed: '마지막 사용'
+      lastUsed: '마지막 사용',
+      unknownColor: '알 수 없는 색상'
     },
     ams: {
       noData: 'AMS가 감지되지 않음',
@@ -7090,7 +7093,7 @@ export default {
         skip: '확인되지 않음 — 활성 MQTT 연결이 필요합니다. 이 설정이 슬라이서에만 존재하는 이전 슬라이서에서는 프린터가 보고하지 않으므로, 옵션이 꺼져 있어도 이 검사는 통과합니다 — 설치 단계 4를 수동으로 확인하세요.',
         skip_unsupported_model: '이 모델에는 SD 슬롯이 있지만 옵션을 켤 방법이 없습니다 — 현재 P1 시리즈 펌웨어는 Bambu Studio에 토글을 표시하지 않으며 프린터에 화면도 없습니다. 여기서 고칠 것은 없습니다. Bambu Lab이 펌웨어로 지원할 때까지 보관된 출력물에는 썸네일과 슬라이서 메타데이터가 없을 수 있습니다.',
         fail_no_media: '옵션은 켜져 있지만 프린터 슬롯에 카드도 USB도 감지되지 않아 보낸 파일이 갈 곳이 없습니다. 하나 넣고 다시 출력하세요. 그전까지는 보관되는 모든 출력물에 썸네일과 슬라이서 메타데이터가 없습니다.',
-        warn_internal_storage: '옵션이 켜져 있고 저장소도 있지만 마지막 출력물은 Bambuddy가 읽을 수 없는 프린터 내부 저장소에 저장되었습니다. H2 시리즈와 P2S에서는 이 설정과 관계없이 Bambu Studio의 «인쇄» 버튼이 항상 그쪽으로 보냅니다. 출력물은 이름과 시간과 함께 보관되지만 썸네일과 슬라이서 메타데이터는 없습니다. 완전한 기록을 남기려면 Bambuddy에서 출력을 시작하거나, OrcaSlicer로 슬라이싱하거나, Bambu Studio에서 «보내기»로 «외부 저장소»를 고른 뒤 출력을 시작하세요.',
+        warn_internal_storage: '옵션이 켜져 있고 저장소도 있지만 마지막 출력물은 Bambuddy가 읽을 수 없는 프린터 내부 저장소에 저장되었습니다. H2 시리즈, P2S, X2D에서는 이 설정과 관계없이 Bambu Studio의 «인쇄» 버튼이 항상 그쪽으로 보냅니다. 출력물은 이름과 시간과 함께 보관되지만 썸네일과 슬라이서 메타데이터는 없습니다. 완전한 기록을 남기려면 Bambuddy에서 출력을 시작하거나, OrcaSlicer로 슬라이싱하거나, Bambu Studio에서 «보내기»로 «외부 저장소»를 고른 뒤 출력을 시작하세요.',
         warn_internal_history: '옵션은 켜져 있고 저장소도 있지만, 마지막 출력은 이미 프린터에 있던 파일에서 실행되었습니다 — 화면에서의 재출력, Handy에서의 시작, 또는 이전에 보낸 파일입니다. 그 라이브러리는 Bambuddy가 읽을 수 없는 내부 저장소에 있으며, 그 출력에서는 아무것도 전송되지 않았으므로 어떤 설정으로도 바뀌지 않습니다. 이름과 시간과 함께 보관되기는 하지만 썸네일과 슬라이서 메타데이터는 없습니다. 온전한 보관을 원하면 Bambuddy에서 출력을 시작하거나 슬라이서에서 전송하세요.',
       },
       port_rtsps: {
@@ -7098,11 +7101,20 @@ export default {
         pass: '연결 가능 — 카메라 스트림이 작동합니다.',
         warn: '포트 {{port}}에 연결할 수 없습니다. 라이브 카메라 보기가 작동하지 않습니다. 인쇄에는 영향을 주지 않습니다.'
       },
+      macos_local_network: {
+        title: 'macOS 로컬 네트워크 권한',
+        pass: 'macOS가 Bambuddy의 로컬 네트워크 접근을 허용하고 있습니다.',
+        warn_unsigned: 'Bambuddy를 실행하는 Python에 코드 서명이 없어 macOS가 로컬 네트워크 권한을 연결할 대상을 찾지 못하고, 프린터로 향하는 모든 연결을 오류도 확인 창도 없이 조용히 차단합니다. 서명을 수행하는 Bambuddy 업데이트 스크립트(install/update_macos.sh)를 실행한 다음 Bambuddy를 재시작하십시오. 인터프리터: {{executable}}',
+        warn_permission: '프린터가 켜져 있고 이 주소로 연결할 수 있다면 시스템 설정 > 개인 정보 보호 및 보안 > 로컬 네트워크를 열어 Bambuddy의 Python이 활성화되어 있는지 확인하십시오. 활성화되어 있지 않으면 macOS는 로컬 연결을 조용히 차단하며, Python을 업데이트하면 이전 권한이 남지 않을 수 있습니다.',
+      },
       network_mode: {
-        title: 'Docker 네트워크 모드',
-        pass: '호스트 네트워크 모드로 실행 중입니다.',
-        warn: 'Bambuddy가 Docker 브리지 네트워킹으로 실행 중입니다. 프린터 검색과 가상 프린터에는 호스트 네트워크 모드가 필요합니다 — "network_mode: host"로 컨테이너를 재생성하세요.',
-        skip: 'Docker에서 실행 중이 아닙니다 — 해당 없음.'
+        title: '컨테이너 네트워크 모드',
+        genericRuntime: '컨테이너',
+        pass: '{{runtime}}에서 호스트 네트워크로 실행 중입니다.',
+        warn: 'Bambuddy가 {{runtime}}에서 브리지 네트워크로 실행 중입니다. 프린터 검색과 가상 프린터에는 호스트 네트워크가 필요합니다 — 호스트 네트워크로 컨테이너를 재생성하세요(docker-compose에서는 "network_mode: host", Podman에서는 "--network=host").',
+        skip: '컨테이너에서 실행 중이 아닙니다 — 해당 없음.',
+        skip_unknown: 'Bambuddy가 {{runtime}}에서 실행 중이지만 네트워크 모드를 확인할 수 없습니다. 프린터 검색이나 가상 프린터가 작동하지 않으면 호스트 네트워크로 컨테이너를 재생성하세요.',
+        skip_system_container: 'Bambuddy가 {{runtime}} 시스템 컨테이너에서 실행 중이며, 가상 머신처럼 LAN에 연결되어 있습니다 — 해당 없음.'
       },
       subnet: {
         title: '네트워크 서브넷',

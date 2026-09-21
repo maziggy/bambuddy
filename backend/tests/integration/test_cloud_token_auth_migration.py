@@ -20,16 +20,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes import cloud as cloud_routes
-from backend.app.api.routes.cloud import (
+from backend.app.core.auth import get_password_hash
+from backend.app.models.settings import Settings
+from backend.app.models.user import User
+from backend.app.services.bambu_cloud import BambuCloudError
+from backend.app.services.bambu_cloud_credentials import (
     CLOUD_EMAIL_KEY,
     CLOUD_REGION_KEY,
     CLOUD_TOKEN_KEY,
     get_stored_token,
 )
-from backend.app.core.auth import get_password_hash
-from backend.app.models.settings import Settings
-from backend.app.models.user import User
-from backend.app.services.bambu_cloud import BambuCloudError
 
 
 async def _seed_global_token(db: AsyncSession, token: str = "tok-global", region: str = "china") -> None:

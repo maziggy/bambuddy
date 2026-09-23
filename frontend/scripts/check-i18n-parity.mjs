@@ -384,10 +384,10 @@ const SV_COGNATES = [
   '({{count}}/8)',
   '(25%, 50%, 75%)', 'System', 'Filament', 'Status', 'Total budget', 'Budget', 'Offline', 'Problem', 'Diameter', 'Standard',
   'Live', 'Firmware', '{{filament}} @ {{temp}}°C', 'Standard (100%)', 'Sport (124%)', '{{weight}}g', 'Pipeline', 'Pipelines', 'Position', 'Batch', 'Timelapse', 'Online',
-  'Disk', 'STARTTLS (Port 587)', 'SSL/TLS (Port 465)', 'Start', 'Auto', 'Admin', 'Data', 'Material', 'Hex', 'Accent', 'Neutral', 'Teal', 'Orange', 'Rotation', 'Test',
+  'Disk', 'STARTTLS (Port 587)', 'SSL/TLS (Port 465)', 'Start', 'Auto', 'Admin', 'Data', 'Material', 'Hex', 'Accent', 'Neutral', 'Orange', 'Rotation', 'Test',
   'Port', '(System)', 'Autologin', 'Process', 'Filament {{n}}', 'Region', 'Global', 'Normal', 'Version', 'max {{n}}', 'Expert', 'Filament {{index}} ({{type}})', 'Material:',
   '(Inv)', 'Original', 'Commit', 'Extruder', 'Gradient', 'Proxy', 'Metadata', '{{count}} filament', 'Temp', 'Min', 'ntfy, Pushover, Discord, etc.', 'Hex: #{{hex}}', 'Designer',
-  'Display', 'Support', 'Prefix', 'Trend', 'max(global {{global}}d, SKU {{sku}}d)',
+  'Prefix', 'Trend', 'max(global {{global}}d, SKU {{sku}}d)', 'Slicer',
 ];
 
 // Turkish cognates — technical UI labels that Turkish speakers use verbatim

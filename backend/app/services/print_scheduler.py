@@ -59,6 +59,7 @@ from backend.app.services.printer_manager import (
     supports_drying_while_printing,
 )
 from backend.app.services.smart_plug_manager import smart_plug_manager
+from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.color_utils import perceptual_color_distance
 from backend.app.utils.filament_types import canonical_filament_type
 from backend.app.utils.filename import derive_remote_filename
@@ -4297,21 +4298,12 @@ class PrintScheduler:
 
                 dry_time = int(ams_data.get("dry_time") or 0)
 
-                # Read humidity — prefer humidity_raw (actual %) over humidity (index 1-5)
-                humidity = None
-                h_raw = ams_data.get("humidity_raw")
-                if h_raw is not None:
-                    try:
-                        humidity = int(h_raw)
-                    except (ValueError, TypeError):
-                        pass
-                if humidity is None:
-                    h_idx = ams_data.get("humidity")
-                    if h_idx is not None:
-                        try:
-                            humidity = int(h_idx)
-                        except (ValueError, TypeError):
-                            pass
+                # Read humidity as a percentage. The 1-5 index is never
+                # substituted: it is inverted, and being unable to exceed any
+                # threshold it would read as "dry" forever (#3140). ``None``
+                # already means "skip this unit" everywhere below.
+                humidity_pct = ams_humidity_percent(ams_data)
+                humidity = int(round(humidity_pct)) if humidity_pct is not None else None
                 unit_key = (pid, ams_id)
                 unit_state = self._auto_dry_units.get(unit_key)
 

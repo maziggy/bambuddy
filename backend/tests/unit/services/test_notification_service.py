@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from backend.app.models.notification import NotificationProvider
 from backend.app.services.notification_service import NotificationService
 
 
@@ -757,7 +758,15 @@ class TestDiscordProvider:
 
 
 class TestNtfyPriority:
-    """Per-event ntfy Priority header (#990)."""
+    """Per-event ntfy Priority header (#990).
+
+    The map is stored under the provider's toggle columns ("on_print_failed"),
+    which is what the dialog builds its rows from, but every sender is called
+    with the bare event name ("print_failed"). These tests use the bare form on
+    purpose: the feature shipped broken because they used to pass the prefixed
+    name straight into ``_send_ntfy``, the one spelling production never
+    produces, so the lookup hit here and missed everywhere else (issue #3139).
+    """
 
     @pytest.fixture
     def service(self):
@@ -783,11 +792,24 @@ class TestNtfyPriority:
         mock_client = self._mock_client(service)
         with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_client
-            success, _ = await service._send_ntfy(config, "Title", "Body", event_type="on_print_failed")
+            success, _ = await service._send_ntfy(config, "Title", "Body", event_type="print_failed")
 
         assert success is True
         headers = mock_client.post.call_args.kwargs["headers"]
         assert headers.get("Priority") == "5"
+
+    @pytest.mark.asyncio
+    async def test_priority_header_set_for_bare_key(self, service):
+        """A map keyed by the bare event name resolves too, so a config written
+        by hand (or by any future caller that drops the prefix) still works."""
+        config = {"topic": "bambuddy", "event_priorities": {"print_failed": 4}}
+        mock_client = self._mock_client(service)
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_client
+            await service._send_ntfy(config, "Title", "Body", event_type="print_failed")
+
+        headers = mock_client.post.call_args.kwargs["headers"]
+        assert headers.get("Priority") == "4"
 
     @pytest.mark.asyncio
     async def test_priority_header_omitted_for_unmapped_event(self, service):
@@ -799,7 +821,7 @@ class TestNtfyPriority:
         mock_client = self._mock_client(service)
         with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_client
-            await service._send_ntfy(config, "Title", "Body", event_type="on_print_complete")
+            await service._send_ntfy(config, "Title", "Body", event_type="print_complete")
 
         headers = mock_client.post.call_args.kwargs["headers"]
         assert "Priority" not in headers
@@ -811,7 +833,7 @@ class TestNtfyPriority:
         mock_client = self._mock_client(service)
         with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_client
-            await service._send_ntfy(config, "Title", "Body", event_type="on_print_failed")
+            await service._send_ntfy(config, "Title", "Body", event_type="print_failed")
 
         headers = mock_client.post.call_args.kwargs["headers"]
         assert "Priority" not in headers
@@ -842,7 +864,7 @@ class TestNtfyPriority:
             mock_client = self._mock_client(service)
             with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get:
                 mock_get.return_value = mock_client
-                await service._send_ntfy(config, "Title", "Body", event_type="on_print_failed")
+                await service._send_ntfy(config, "Title", "Body", event_type="print_failed")
 
             headers = mock_client.post.call_args.kwargs["headers"]
             assert "Priority" not in headers, f"unexpected header for bad value {bad!r}"
@@ -862,11 +884,49 @@ class TestNtfyPriority:
                 "Title",
                 "Body",
                 image_data=b"\xff\xd8\xff\xe0fake-jpeg",
-                event_type="on_first_layer_complete",
+                event_type="first_layer_complete",
             )
 
         headers = mock_client.put.call_args.kwargs["headers"]
         assert headers.get("Priority") == "4"
+
+    @pytest.mark.asyncio
+    async def test_priority_reaches_ntfy_from_a_real_event(self, service):
+        """The wiring, end to end: a finished print, a provider configured the
+        way the dialog writes it, and the header on the request that leaves.
+
+        Everything above calls ``_send_ntfy`` directly, so none of it can see a
+        caller passing a key shape the lookup does not understand -- which is
+        exactly how #3139 shipped green.
+        """
+        provider = NotificationProvider(
+            id=1,
+            name="ntfy",
+            provider_type="ntfy",
+            enabled=True,
+            config=json.dumps({"topic": "bambuddy", "event_priorities": {"on_print_complete": 5}}),
+            quiet_hours_enabled=False,
+            daily_digest_enabled=False,
+        )
+        mock_client = self._mock_client(service)
+        mock_db = AsyncMock()
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_providers,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_template,
+            patch.object(service, "_update_provider_status", new_callable=AsyncMock),
+            patch.object(service, "_log_notification", new_callable=AsyncMock),
+        ):
+            mock_get.return_value = mock_client
+            mock_providers.return_value = [provider]
+            mock_template.return_value = ("Print complete", "Benchy finished")
+
+            await service.on_print_complete(1, "X1C", "completed", {"filename": "benchy.3mf"}, mock_db)
+
+        mock_client.post.assert_called_once()
+        headers = mock_client.post.call_args.kwargs["headers"]
+        assert headers.get("Priority") == "5"
 
 
 class TestHomeAssistantProvider:

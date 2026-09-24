@@ -539,8 +539,8 @@ async def no_3mf_warning(
     single-cause wording sent people the wrong way. Historically the only
     known cause was install step 4 ("Store sent files on external storage")
     being off in the slicer, so the banner said so unconditionally. On
-    H2-series and P2S that advice is actively wrong: the setting is already on
-    and turning it on again changes nothing, because the printer keeps the
+    H2-series, P2S and X2D that advice is actively wrong: the setting is already
+    on and turning it on again changes nothing, because the printer keeps the
     sliced file on internal storage that FTPS does not serve at all (#2780).
 
     ``reason`` is the slug from :mod:`print_storage` when we recorded one,

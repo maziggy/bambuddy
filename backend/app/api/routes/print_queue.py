@@ -906,29 +906,34 @@ async def add_to_queue(
     # Extract filament types for model-based assignment (used by scheduler for validation)
     required_filament_types = None
     file_path = None
+    # Get file path from archive or library file
+    if archive:
+        file_path = settings.base_dir / archive.file_path
+    elif library_file:
+        lib_path = Path(library_file.file_path)
+        file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
     if target_model_norm:
-        # Get file path from archive or library file
-        if archive:
-            file_path = settings.base_dir / archive.file_path
-        elif library_file:
-            lib_path = Path(library_file.file_path)
-            file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
-
         if file_path and file_path.exists():
             filament_types = _extract_filament_types_from_3mf(file_path, data.plate_id)
             if filament_types:
                 required_filament_types = json.dumps(filament_types)
                 logger.info("Extracted filament types for model-based queue: %s", filament_types)
 
-    # If filament overrides are provided, update required_filament_types to match override types
+    # If filament overrides are provided, update required_filament_types to match override types.
+    # A specific-printer job keeps its overrides too (#3133): an override chosen for
+    # "Any P2S" survives the switch to one P2S in the print dialog, and when the
+    # dialog could not resolve every tray the scheduler recomputes the mapping at
+    # dispatch — against the 3MF's filament, unless the row still says otherwise.
+    # The type list below stays model-only; it gates which printer of a model is
+    # eligible, which a printer-targeted job has already settled.
     filament_overrides_json = None
-    if data.filament_overrides and target_model_norm:
+    if data.filament_overrides and (target_model_norm or data.printer_id is not None):
         plate_overrides = overrides_for_plate(data.filament_overrides, file_path, data.plate_id)
         if plate_overrides:
             filament_overrides_json = json.dumps(plate_overrides)
             # Update required_filament_types from overrides so scheduler validates against overridden types
             override_types = sorted({o["type"] for o in plate_overrides if "type" in o})
-            if override_types:
+            if override_types and target_model_norm:
                 # Merge with existing types (overrides may only cover some slots)
                 existing_types = set(json.loads(required_filament_types)) if required_filament_types else set()
                 # Replace types for overridden slots, keep others
@@ -971,6 +976,15 @@ async def add_to_queue(
                 batch_name_base = library_file.file_metadata.get("print_name") or library_file.filename
             else:
                 batch_name_base = library_file.filename
+        elif variant_specs:
+            # A cross-model job carries neither archive_id nor library_file_id --
+            # the candidates are the files (#671) -- so both branches above miss
+            # and every such batch was named "Batch". Unreachable until the print
+            # dialog could ask for more than one copy of one (#3101). Name it
+            # after the first candidate, which is what the dialog names the job
+            # after and what the resolver prefers when both printers are free.
+            first_file = variant_specs[0][1]
+            batch_name_base = (first_file.file_metadata or {}).get("print_name") or first_file.filename or "Batch"
         batch_name_base = batch_name_base.replace(".gcode.3mf", "").replace(".3mf", "")
 
         batch = PrintBatch(

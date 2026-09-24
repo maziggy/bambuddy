@@ -2682,7 +2682,7 @@ export interface PrintQueueItemCreate {
   printer_id?: number | null;  // null = unassigned
   target_model?: string | null;  // Target printer model (mutually exclusive with printer_id)
   target_location?: string | null;  // Target location filter (only used with target_model)
-  filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;
+  filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;
   archive_id?: number | null;
   library_file_id?: number | null;
   scheduled_time?: string | null;
@@ -2737,7 +2737,7 @@ export interface QueueVariantCreate {
   plate_id?: number | null;
   ams_mapping?: number[] | null;
   nozzle_mapping?: number[] | null;
-  filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;
+  filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;
 }
 
 export interface PrintBatchCreate {
@@ -2776,7 +2776,7 @@ export interface PrintQueueItemUpdate {
   printer_id?: number | null;  // null = unassign
   target_model?: string | null;  // Target printer model (mutually exclusive with printer_id)
   target_location?: string | null;  // Target location filter (only used with target_model)
-  filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;
+  filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;
   position?: number;
   scheduled_time?: string | null;
   require_previous_success?: boolean;
@@ -5759,10 +5759,23 @@ export const api = {
       headers,
       body: formData,
     });
-    return response.json() as Promise<{
+    const data = (await response.json().catch(() => null)) as {
+      success?: boolean;
+      message?: string;
+      detail?: string;
+    } | null;
+    // A refused restore is an HTTPException, so the body is {detail}, not
+    // {success, message}. Returning it unmapped made `success` undefined and
+    // `message` undefined too — the modal then raised an empty error toast,
+    // which is the one case where the reason matters most (e.g. a backup this
+    // version cannot import names the columns and both versions).
+    if (!response.ok) {
+      return { success: false, message: data?.detail ?? data?.message ?? '' };
+    }
+    return (data ?? { success: false, message: '' }) as {
       success: boolean;
       message: string;
-    }>;
+    };
   },
   checkFfmpeg: () =>
     request<{ installed: boolean; path: string | null }>('/settings/check-ffmpeg'),

@@ -24,6 +24,7 @@ import paho.mqtt.client as mqtt
 from backend.app.services.hms_actions import HMSAction, get_actions_for_error_code
 from backend.app.services.hms_errors import describe_fault
 from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES
+from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.paho_teardown import retire_paho_client
 
 logger = logging.getLogger(__name__)
@@ -3696,7 +3697,7 @@ class BambuMQTTClient:
         cycle ending at 63 degC with the reading still above the threshold is
         the whole shape of the re-arm loop.
         """
-        box = f"temp={ams_unit.get('temp')} humidity={ams_unit.get('humidity_raw', ams_unit.get('humidity'))}"
+        box = f"temp={ams_unit.get('temp')} humidity={ams_humidity_percent(ams_unit)}"
         if ams_id in self._drying_stops_sent:
             self._drying_stops_sent.discard(ams_id)
             logger.info(

@@ -1767,3 +1767,125 @@ def extract_plate_extruder_set_from_3mf(zf: zipfile.ZipFile, plate_id: int) -> s
                     used.update(_scan_paint(path))
         break
     return used
+
+
+# Keys in ``Metadata/project_settings.config`` that Bambu Studio writes an
+# "inherit / unset" marker into, mapped to the marker it uses for that key.
+# The slicer CLI's ``StaticPrintConfig`` validator runs against the embedded
+# settings *before* ``--load-settings`` overrides apply, so a marker the CLI's
+# own range check rejects makes it exit non-zero before our profile triplet is
+# ever consulted.
+#
+# There are two markers because there are two conventions, and which one a
+# given CLI rejects depends on the build:
+#
+#   "-1" -- inherit from the parent process preset (#1201, MakerWorld P2S
+#   3MFs). ``raft_first_layer_expansion`` and ``tree_support_wall_count`` are
+#   min 0 in every OrcaSlicer to date, so those still fail on the current
+#   sidecar; ``prime_tower_brim_width`` gained min -1 in Orca 2.4.2 and now
+#   passes there, but not on older builds.
+#
+#   "0" -- "use the active object/part filament", the default Bambu Studio
+#   writes for the three feature-filament indices (#3030). Bambu Studio and
+#   OrcaSlicer 2.4.0+ both define these min 0, so 0 is legal there; OrcaSlicer
+#   2.3.x and earlier still used the 1-based scheme (min 1, default 1) and
+#   reject it with ``0 not in range [1.000000,...]``. Sidecar images are
+#   version-tagged, so an install can be pinned to one of those.
+#
+# Removing the key rather than rewriting it is what makes this safe on every
+# build: the CLI then falls back to its own compiled default, which is 0 on
+# the builds where 0 was legal (so nothing changes) and 1 on the older ones,
+# which is what "the active filament" means under that scheme.
+#
+# Allowlisted (rather than "strip every marker-shaped value") because some
+# fields legitimately take the marker value -- z_offset, translations, and any
+# feature index a user really did set to a first filament -- and a blanket
+# strip would silently corrupt those.
+#
+# Add new entries as reports surface: the slicer names the offending field
+# directly, e.g. ``<field>: <value> not in range [...]``.
+PROJECT_SETTINGS_SENTINELS: dict[str, str] = {
+    # Reported in #1201 (MakerWorld P2S 3MFs).
+    "raft_first_layer_expansion": "-1",
+    "tree_support_wall_count": "-1",
+    # Known sentinel case from earlier reports, cited in #1201.
+    "prime_tower_brim_width": "-1",
+    # Reported in #3030 (MakerWorld 3MF, OrcaSlicer sidecar).
+    "wall_filament": "0",
+    "sparse_infill_filament": "0",
+    "solid_infill_filament": "0",
+}
+
+PROJECT_SETTINGS_PATH = "Metadata/project_settings.config"
+
+
+def _is_sentinel(value: object, sentinel: str) -> bool:
+    """Does ``value`` carry ``sentinel``, whether stored as text or a number?
+
+    Bambu Studio writes every ``project_settings.config`` value as a string,
+    but a 3MF that has been round-tripped through another tool can carry the
+    same field as a JSON number. ``bool`` is excluded explicitly: it is an
+    ``int`` subclass in Python, and ``str(False)`` would otherwise never match
+    anyway -- the exclusion is there so a future numeric sentinel like ``0``
+    cannot be matched by ``False``.
+    """
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (str, int)):
+        return str(value) == sentinel
+    return False
+
+
+def sanitize_project_settings_sentinels(zip_bytes: bytes) -> bytes:
+    """Strip inherit/unset sentinels from a 3MF's ``project_settings.config``
+    so the slicer CLI's range validator accepts the file (#1201, #3030).
+
+    Removes only allowlisted keys (see ``PROJECT_SETTINGS_SENTINELS``) and only
+    when the value is exactly that key's sentinel. The rest of the config --
+    and every other entry in the zip -- is preserved byte-for-byte. Unlike a
+    whole-file strip this leaves ``StaticPrintConfig`` initialisation intact:
+    the file is still present, still parses, and the slicer falls back to the
+    supplied ``--load-settings`` value, or to its own default, for the removed
+    key.
+
+    Returns the original bytes unchanged when no sanitisation is needed (input
+    isn't a valid zip, no ``project_settings.config``, no allowlisted sentinels
+    present, or any other parse failure) so the caller can pass the result on
+    without further checks.
+    """
+    from io import BytesIO
+
+    try:
+        with zipfile.ZipFile(BytesIO(zip_bytes), "r") as zin:
+            if PROJECT_SETTINGS_PATH not in zin.namelist():
+                return zip_bytes
+            try:
+                config = json.loads(zin.read(PROJECT_SETTINGS_PATH).decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return zip_bytes
+            if not isinstance(config, dict):
+                return zip_bytes
+            removed = {
+                key: sentinel
+                for key, sentinel in PROJECT_SETTINGS_SENTINELS.items()
+                if _is_sentinel(config.get(key), sentinel)
+            }
+            if not removed:
+                return zip_bytes
+            for key in removed:
+                config.pop(key, None)
+            patched = json.dumps(config)
+            logger.info(
+                "3MF sanitiser: removed inherit sentinels %s - slicer will use its defaults for those keys",
+                sorted(f"{key}={sentinel}" for key, sentinel in removed.items()),
+            )
+            dst = BytesIO()
+            with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    if item.filename == PROJECT_SETTINGS_PATH:
+                        zout.writestr(item, patched)
+                    else:
+                        zout.writestr(item, zin.read(item.filename))
+            return dst.getvalue()
+    except (zipfile.BadZipFile, OSError):
+        return zip_bytes

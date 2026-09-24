@@ -24,6 +24,8 @@ import paho.mqtt.client as mqtt
 from backend.app.services.hms_actions import HMSAction, get_actions_for_error_code
 from backend.app.services.hms_errors import describe_fault
 from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES
+from backend.app.utils.ams_humidity import ams_humidity_percent
+from backend.app.utils.paho_teardown import retire_paho_client
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +84,20 @@ def parse_ams_filament_backup_from_cfg(cfg_raw: object) -> bool | None:
         return bool((int(cfg_raw, 16) >> 18) & 1)
     except ValueError:
         return None
+
+
+def is_printer_status_frame(print_data: dict) -> bool:
+    """True when a ``print`` payload is the printer reporting its own state.
+
+    Bambu firmware echoes a command's fields back in its acknowledgement, so a
+    `project_file` ack carries whatever Bambuddy put on the wire — including
+    the `cfg` bitmask and the per-job `timelapse` flag. Ingesting those as
+    telemetry means reading our own request back as the printer's state
+    (#3040). Only `push_status` (and the odd firmware that omits `command`
+    entirely on a status frame) describes the printer.
+    """
+    command = print_data.get("command")
+    return command is None or command == "push_status"
 
 
 # ── A2L "AMS Lite" unit-id normalisation (issue capture 2026-07-20) ──────────
@@ -1596,15 +1612,14 @@ class BambuMQTTClient:
         #     reconnect, mixing stale commands into the next dispatch and
         #     triggering 0500_4003 SD R/W on the printer.
         #
-        # Paho-network-thread callers (line ~2604/~2623 — dev-mode probe and
-        # ams_filament_setting zombie detection inside `_update_state`)
-        #   → socket-close fallback. Calling `loop_stop()` from inside the
-        #     network thread would self-join and deadlock; the safe pattern is
-        #     to close the socket and let paho's own loop detect the broken
-        #     connection and auto-reconnect (same instance, same client_id —
-        #     queue replay is theoretically possible here but those paths have
-        #     always done socket-close and #1136 was specifically triggered
-        #     from the dispatch path).
+        # Paho-network-thread callers (dev-mode probe and ams_filament_setting
+        # zombie detection, both inside `_update_state`)
+        #   → socket-close fallback. There is no running loop on that thread to
+        #     hand the rebuilt client, so close the socket and let paho's own
+        #     loop detect the broken connection and auto-reconnect (same
+        #     instance, same client_id — queue replay is theoretically possible
+        #     here but those paths have always done socket-close and #1136 was
+        #     specifically triggered from the dispatch path).
         logger.warning("[%s] Forcing MQTT reconnect: %s", self.serial_number, reason)
         self._stale_reconnecting = True
         self.state.connected = False
@@ -1615,11 +1630,11 @@ class BambuMQTTClient:
     def _reset_client_for_reconnect(self) -> None:
         """Route between hard-reset and socket-close based on caller thread.
 
-        Hard-reset (preferred) requires we're not running on paho's network
-        thread, since `loop_stop()` on the same thread deadlocks. Detect via
-        ``asyncio.get_running_loop()`` — paho's callback thread has no loop;
-        every legitimate hard-reset caller (FastAPI handlers, background
-        async tasks) does."""
+        Hard-reset (preferred) rebuilds the client, and the rebuild needs a
+        running loop to hand to ``connect()``. ``asyncio.get_running_loop()``
+        answers that and identifies the caller in one go — paho's callback
+        thread has no loop; every legitimate hard-reset caller (FastAPI
+        handlers, background async tasks) does."""
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -1636,18 +1651,15 @@ class BambuMQTTClient:
         client_id, so the broker drops the old session and paho's local
         QoS 1 queue is gone. Must NOT be called from paho's network thread.
         Caller is responsible for setting ``_stale_reconnecting`` and
-        broadcasting the disconnected state."""
+        broadcasting the disconnected state.
+
+        Returns as fast as it can build a client: the old one's teardown is
+        handed off rather than waited on, because waiting on it is what
+        stopped the event loop in #3068. See ``retire_paho_client``."""
         old_client = self._client
         self._client = None
         if old_client is not None:
-            try:
-                old_client.disconnect()  # MQTT DISCONNECT — broker drops session
-            except Exception:
-                pass
-            try:
-                old_client.loop_stop()  # blocks briefly until the network thread exits
-            except Exception:
-                pass
+            retire_paho_client(old_client, self.serial_number)
         # Skip reconnect if no asyncio loop is available (test environment or
         # pre-init). The next initial connect() call from PrinterManager will
         # set up the client fresh.
@@ -2200,7 +2212,15 @@ class BambuMQTTClient:
             # next 1-2 push_status frames may still carry the printer's OLD cfg
             # for ~3 s before the firmware reflects the change. Without this
             # gate the UI would flicker ON→OFF→ON. Same pattern xcam uses.
-            new_backup = parse_ams_filament_backup_from_cfg(print_data.get("cfg"))
+            # Only from a status frame: a project_file ack echoes our own
+            # `"cfg": "0"` back, which read as "printer says backup is OFF" and
+            # stuck on every family that doesn't repeat `cfg` in its periodic
+            # frames — P1S, A1, A1 Mini, A2L (#3040).
+            new_backup = (
+                parse_ams_filament_backup_from_cfg(print_data.get("cfg"))
+                if is_printer_status_frame(print_data)
+                else None
+            )
             if new_backup is not None and new_backup != self.state.ams_filament_backup:
                 hold_start = self._xcam_hold_start.get("print_option_auto_switch_filament")
                 if hold_start is not None and (time.time() - hold_start) <= self._xcam_hold_time:
@@ -3677,7 +3697,7 @@ class BambuMQTTClient:
         cycle ending at 63 degC with the reading still above the threshold is
         the whole shape of the re-arm loop.
         """
-        box = f"temp={ams_unit.get('temp')} humidity={ams_unit.get('humidity_raw', ams_unit.get('humidity'))}"
+        box = f"temp={ams_unit.get('temp')} humidity={ams_humidity_percent(ams_unit)}"
         if ams_id in self._drying_stops_sent:
             self._drying_stops_sent.discard(ams_id)
             logger.info(
@@ -4947,8 +4967,10 @@ class BambuMQTTClient:
             except (ValueError, TypeError):
                 logger.debug("[%s] could not parse stat field: %r", self.serial_number, data["stat"])
 
-        # Parse timelapse status (recording active during print)
-        if "timelapse" in data:
+        # Parse timelapse status (recording active during print). Status frames
+        # only — the project_file ack echoes back the per-job timelapse flag we
+        # asked for, which is a request, not the recorder's state (#3040).
+        if "timelapse" in data and is_printer_status_frame(data):
             logger.debug("[%s] timelapse field: %s", self.serial_number, data["timelapse"])
             self.state.timelapse = data["timelapse"] is True
             # Track if timelapse was ever active during this print
@@ -6001,7 +6023,11 @@ class BambuMQTTClient:
                     "vibration_cali": vibration_cali,
                     "layer_inspect": layer_inspect,
                     "use_ams": use_ams,
-                    "cfg": "0",
+                    # No "cfg": it is the printer's device-config bitmask
+                    # (auto-refill, detect-on-insert, chamber light, ...), not a
+                    # per-job field — BambuStudio's PrintParams has no such
+                    # member. We used to send "0"; firmware ignores it, but it
+                    # comes straight back in the project_file ack (#3040).
                     # extrude_cali_flag gates flow-dynamics calibration:
                     # 0 = never, 1 = force every print, 2 = auto (run only if the
                     # filament wasn't calibrated recently). #1721 saw stage 8
@@ -6356,14 +6382,32 @@ class BambuMQTTClient:
         return True
 
     def disconnect(self, timeout: float = 0):
-        """Disconnect from the printer."""
+        """Disconnect from the printer.
+
+        Waits up to *timeout* for paho to report the disconnect, then lets the
+        client go without joining its network thread — the callers are route
+        handlers (printer edited, deleted, disconnected by hand) running on the
+        asyncio thread, and that join has no bound (#3068)."""
         if self._client:
+            old_client = self._client
             self._disconnection_event = threading.Event()
-            self._client.disconnect()
+            old_client.disconnect()
+            # The callback that sets this fires on paho's thread, so it has to
+            # be given its window before retire_paho_client detaches it.
             self._disconnection_event.wait(timeout=timeout)
-            self._client.loop_stop()
             self._client = None
+            retire_paho_client(old_client, self.serial_number)
             self.state.connected = False
+            # Deliberately no on_state_change here. paho's disconnect callback
+            # used to land during the join, but `_on_disconnect` suppresses
+            # itself for a clean disconnect of a printer that reported within
+            # the last 10s -- which is every healthy printer -- so a
+            # hand-disconnected printer never broadcast one. Announcing it now
+            # would fire the connected→disconnected edge in
+            # `on_printer_status_change` and notify the user their printer went
+            # offline a minute after they disconnected it on purpose (#1752).
+            # The callers drop the client from the manager anyway, so the next
+            # status read already shows it gone.
 
     def send_command(self, command: dict):
         """Send a command to the printer."""

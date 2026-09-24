@@ -1,5 +1,6 @@
 """API routes for File Manager (Library) functionality."""
 
+import asyncio
 import base64
 import binascii
 import contextlib
@@ -21,8 +22,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
+from backend.app.api.routes.library_variants import normalize_model_name, resolve_variant_model
+from backend.app.api.routes.print_queue import _extract_filament_types_from_3mf
 from backend.app.core.auth import (
-    RequireCameraStreamTokenIfAuthEnabled,
+    require_media_token_ownership,
     require_ownership_permission,
     require_permission_if_auth_enabled,
 )
@@ -33,6 +36,7 @@ from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryFolder
 from backend.app.models.print_queue import PrintQueueItem
+from backend.app.models.printer import Printer
 from backend.app.models.project import Project
 from backend.app.models.user import User
 from backend.app.schemas.library import (
@@ -86,6 +90,7 @@ from backend.app.utils.filename import (
     safe_path_component,
     validate_print_filename,
 )
+from backend.app.utils.printer_models import is_gcode_compatible
 from backend.app.utils.safe_path import PathTraversalError, assert_under, safe_join_under
 from backend.app.utils.threemf_tools import (
     carries_gcode,
@@ -94,6 +99,7 @@ from backend.app.utils.threemf_tools import (
     extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
+    sanitize_project_settings_sentinels,
     select_plate_gcode_name,
     supports_enabled_in_config,
 )
@@ -2832,13 +2838,60 @@ async def add_files_to_queue(
 
     Only sliced files (.gcode or .gcode.3mf) can be added to the queue.
     The archive will be created automatically when the print starts.
+
+    A caller may name a printer or a target model for the whole batch; with
+    neither, each file is aimed at the model it says it was sliced for. The
+    gates are the ones ``POST /queue/`` applies to a single item, because an
+    item that reaches the scheduler through this route has to be as printable
+    as one that reaches it through that one (#3112).
     """
     added: list[AddToQueueResult] = []
     errors: list[AddToQueueError] = []
 
+    # Batch-level targeting. Rejected outright rather than per file: the whole
+    # request names one destination, so a bad one is not a property of any
+    # single file and reporting it fourteen times would say nothing extra.
+    target_model_norm = normalize_model_name(request.target_model)
+    if request.printer_id is not None and target_model_norm:
+        raise HTTPException(400, "Cannot specify both printer_id and target_model")
+
+    if request.printer_id is not None:
+        printer_row = (await db.execute(select(Printer).where(Printer.id == request.printer_id))).scalar_one_or_none()
+        if not printer_row:
+            raise HTTPException(400, "Printer not found")
+
+    # Active printers of every model, read once, and only when the batch has no
+    # printer of its own -- with one named, neither the check below nor the
+    # inference in the loop consults it. The explicit target is validated for
+    # the same reason POST /queue/ validates: a model nobody owns is a queue
+    # item that waits forever. The inferred target reads the same set and
+    # silently declines when it finds nothing, because there, owning no such
+    # printer is the user's situation rather than their mistake -- the file
+    # still queues, as the unassigned row it has always been.
+    active_models: set[str] = set()
+    if request.printer_id is None:
+        active_models = {
+            model
+            for (model,) in (
+                await db.execute(select(Printer.model).where(Printer.is_active == True).distinct())  # noqa: E712
+            ).all()
+            if model
+        }
+        if target_model_norm and target_model_norm not in active_models:
+            raise HTTPException(400, f"No active printers for model: {target_model_norm}")
+
     # Get all requested files
     result = await db.execute(LibraryFile.active().where(LibraryFile.id.in_(request.file_ids)))
     files = {f.id: f for f in result.scalars().all()}
+
+    # Ownership-scoped reads apply here as everywhere else in this module: a
+    # file the caller may not read is a file they may not print. Dropped from
+    # the map rather than refused by name, so the per-file error below is the
+    # same "File not found" an unknown id gets and the response says nothing
+    # about which ids exist. Ownerless rows need LIBRARY_READ_ALL, matching
+    # _ensure_library_file_visible.
+    if current_user is not None and not current_user.has_permission(Permission.LIBRARY_READ_ALL.value):
+        files = {fid: f for fid, f in files.items() if f.created_by_id == current_user.id}
 
     # Project attribution (#1897): a file queued from a project-linked folder
     # inherits that project, so the resulting archive counts toward the
@@ -2883,10 +2936,66 @@ async def add_files_to_queue(
                 )
                 continue
 
+            # The Bambu SD card is FAT32/exFAT, so an illegal character 553s at
+            # upload time. POST /queue/ rejects those at queue time (#1540) and
+            # this route did not, which turned a nameable mistake into a print
+            # that failed hours later.
+            try:
+                validate_print_filename(lib_file.filename)
+            except InvalidFilenameError as e:
+                errors.append(AddToQueueError(file_id=file_id, filename=lib_file.filename, error=str(e)))
+                continue
+
+            # Where this file is aimed. An explicit printer wins; an explicit
+            # model applies to every file and has to be one this file can
+            # legally run on; with neither, the file's own declaration is used
+            # when some active printer answers to it.
+            item_printer_id = request.printer_id
+            item_target_model: str | None = None
+            if item_printer_id is None:
+                if target_model_norm:
+                    sliced_for = (lib_file.file_metadata or {}).get("sliced_for_model")
+                    if not is_gcode_compatible(sliced_for, target_model_norm):
+                        errors.append(
+                            AddToQueueError(
+                                file_id=file_id,
+                                filename=lib_file.filename,
+                                error=(
+                                    f"File was sliced for {sliced_for} and cannot be dispatched to "
+                                    f"{target_model_norm} printers"
+                                ),
+                            )
+                        )
+                        continue
+                    item_target_model = target_model_norm
+                else:
+                    inferred = resolve_variant_model(lib_file)
+                    item_target_model = inferred if inferred in active_models else None
+
+            # Filament the scheduler must match before handing a model-based
+            # item to hardware. Without it the item goes to whichever printer
+            # of that model is idle, whatever is loaded in it.
+            required_filament_types = None
+            if item_target_model:
+                # POST /queue/'s own extractor, borrowed rather than
+                # reimplemented: a second copy of this rule is a second thing
+                # to keep in step.
+                #
+                # Off the loop, unlike there: that route parses one 3MF per
+                # request and this one parses every file in the batch, so on a
+                # bulk add of a few hundred -- especially from an external
+                # folder on a NAS -- the zip reads add up to a stall the whole
+                # event loop takes, status ingest included.
+                filament_types = await asyncio.to_thread(_extract_filament_types_from_3mf, file_path)
+                if filament_types:
+                    required_filament_types = json.dumps(filament_types)
+
             # Create queue item referencing library file (archive created at print start)
             max_position += 1
             queue_item = PrintQueueItem(
-                printer_id=None,  # Unassigned
+                printer_id=item_printer_id,
+                target_model=item_target_model,
+                required_filament_types=required_filament_types,
                 library_file_id=file_id,
                 project_id=lib_file.project_id
                 or (folder_projects.get(lib_file.folder_id) if lib_file.folder_id is not None else None),
@@ -2912,6 +3021,20 @@ async def add_files_to_queue(
         except Exception as e:
             logger.exception("Error adding file %s to queue", file_id)
             errors.append(AddToQueueError(file_id=file_id, filename=lib_file.filename, error=str(e)))
+
+    # Nothing queued and something to say about why. Returning 200 here is what
+    # made this look like a working call that quietly did nothing: a client that
+    # checks the status code sees success, and the reasons sit in a body it had
+    # no cause to read (#3112). Partial success stays 200 -- items really were
+    # created, and the per-file errors belong with them.
+    if not added and errors:
+        raise HTTPException(
+            400,
+            detail={
+                "message": "No files could be added to the queue.",
+                "errors": [e.model_dump() for e in errors],
+            },
+        )
 
     await db.commit()
 
@@ -3213,16 +3336,22 @@ async def get_library_file_plate_thumbnail(
     file_id: int,
     plate_index: int,
     db: AsyncSession = Depends(get_db),
-    _: None = RequireCameraStreamTokenIfAuthEnabled,
+    auth_result: tuple[User | None, bool] = Depends(
+        require_media_token_ownership(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
-    """Get the thumbnail image for a specific plate from a library file."""
+    """Get the thumbnail image for a specific plate from a library file.
+
+    Ownership-gated on the same terms as the file itself (#3025).
+    """
     from starlette.responses import Response
 
+    user, can_read_all = auth_result
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    lib_file = result.scalar_one_or_none()
-
-    if not lib_file:
-        raise HTTPException(status_code=404, detail="File not found")
+    lib_file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     file_path = Path(app_settings.base_dir) / lib_file.file_path
     if not file_path.exists():
@@ -3484,142 +3613,6 @@ async def get_library_file_filament_requirements(
         "plate_id": plate_id,
         "filaments": filaments,
     }
-
-
-_STRIPPABLE_3MF_CONFIGS = frozenset(
-    {
-        # Settings dump used by --load-settings validation; the CLI tries to
-        # match its sentinel values (`prime_tower_brim_width: -1`, empty
-        # arrays) against the supplied profile and rejects out-of-range.
-        "Metadata/project_settings.config",
-        # Per-object settings overrides referencing the source plate's
-        # filament IDs / printer IDs. When the user picks a different
-        # printer / filament triplet, the IDs no longer resolve and the
-        # CLI exits non-zero on input validation.
-        "Metadata/model_settings.config",
-        # Slicer-version + plate-config + filament-mapping snapshot from
-        # the original slice. Includes the original printer model and
-        # filament references; mismatches against `--load-settings`
-        # consistently surfaced as `Slicer CLI failed (500)` for every
-        # 3MF in production. Removing it lets the CLI build a fresh slice
-        # plan from the supplied profile triplet.
-        "Metadata/slice_info.config",
-        # Multi-part / split-mesh metadata referencing object IDs from the
-        # original slice. Strip for the same reason — preserves the geometry
-        # in `3D/3dmodel.model` while dropping the orphan references.
-        "Metadata/cut_information.xml",
-    }
-)
-
-
-def _strip_3mf_embedded_settings(zip_bytes: bytes) -> bytes:
-    """Remove embedded slicer-config metadata from a 3MF.
-
-    Bambuddy supplies the slicer profile triplet via the sidecar's
-    ``--load-settings`` path; the 3MF's embedded settings would otherwise be
-    validated by the CLI first and can fail with sentinel-value range
-    checks (`prime_tower_brim_width: -1 not in range`, etc.) regardless of
-    what we pass via ``--load-settings``. Stripping the embedded configs
-    forces the CLI to use the supplied profiles only. Geometry
-    (``3D/3dmodel.model``), thumbnails, color, and multi-part data inside
-    the 3MF are preserved.
-
-    The set of strippable filenames is centralised in
-    ``_STRIPPABLE_3MF_CONFIGS`` — see that constant for the per-file
-    rationale. Project-settings alone wasn't enough: real-world Bambu
-    Studio 3MFs cross-reference printer / filament IDs from the other
-    metadata configs, and any single leftover triggered the validation
-    failure that made every profile-driven slice fall back to embedded
-    settings.
-    """
-    from io import BytesIO
-
-    src = BytesIO(zip_bytes)
-    dst = BytesIO()
-    with zipfile.ZipFile(src, "r") as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
-        for item in zin.infolist():
-            if item.filename in _STRIPPABLE_3MF_CONFIGS:
-                continue
-            zout.writestr(item, zin.read(item.filename))
-    return dst.getvalue()
-
-
-# Keys in ``Metadata/project_settings.config`` that BambuStudio writes ``"-1"``
-# to when the user wants the value inherited from the parent process preset.
-# The CLI's ``StaticPrintConfig`` validator runs against the embedded settings
-# *before* ``--load-settings`` overrides apply, so a sentinel ``"-1"`` trips
-# the field's lower-bound range check and the CLI exits non-zero before our
-# profile triplet is ever consulted (#1201 — MakerWorld P2S models).
-#
-# Allowlisted (rather than "strip every '-1' value") because some fields
-# legitimately accept negative numbers (z_offset, translation values, etc.)
-# and a blanket strip would silently corrupt those.
-#
-# Add new entries here as more reports surface — the slicer's error message
-# names the offending field directly (`<field>: -1 not in range [...]`).
-_PROJECT_SETTINGS_SENTINEL_KEYS = frozenset(
-    {
-        # Reported in #1201 (MakerWorld P2S 3MFs).
-        "raft_first_layer_expansion",
-        "tree_support_wall_count",
-        # Cited in the strip-experiment comment block above as a known sentinel
-        # case from earlier reports.
-        "prime_tower_brim_width",
-    }
-)
-
-
-def _sanitize_project_settings_sentinels(zip_bytes: bytes) -> bytes:
-    """Strip ``"-1"`` inherit-from-parent sentinels from the 3MF's
-    ``Metadata/project_settings.config`` so the slicer CLI's range validator
-    accepts the file (#1201).
-
-    Removes only allowlisted keys (see ``_PROJECT_SETTINGS_SENTINEL_KEYS``)
-    when their value is exactly ``"-1"``. The rest of the config — and every
-    other entry in the zip — is preserved byte-for-byte. Unlike the earlier
-    full-strip experiment (see ``_strip_3mf_embedded_settings`` and the
-    cautionary comment in ``_run_slicer_with_fallback``) this leaves
-    ``StaticPrintConfig`` initialisation intact: the file is still present,
-    still parses, and the slicer falls back to the supplied
-    ``--load-settings`` value for the removed key.
-
-    Returns the original bytes unchanged when no sanitisation is needed
-    (input isn't a valid zip, no ``project_settings.config``, no allowlisted
-    sentinels present, or any other parse failure) so the caller can pass
-    the result on without further checks.
-    """
-    from io import BytesIO
-
-    try:
-        with zipfile.ZipFile(BytesIO(zip_bytes), "r") as zin:
-            if "Metadata/project_settings.config" not in zin.namelist():
-                return zip_bytes
-            try:
-                config = json.loads(zin.read("Metadata/project_settings.config").decode("utf-8"))
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                return zip_bytes
-            if not isinstance(config, dict):
-                return zip_bytes
-            removed = [key for key in _PROJECT_SETTINGS_SENTINEL_KEYS if config.get(key) == "-1"]
-            if not removed:
-                return zip_bytes
-            for key in removed:
-                config.pop(key, None)
-            patched = json.dumps(config)
-            logger.info(
-                "3MF sanitiser: removed sentinel '-1' for keys %s — slicer will use --load-settings defaults",
-                sorted(removed),
-            )
-            dst = BytesIO()
-            with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
-                for item in zin.infolist():
-                    if item.filename == "Metadata/project_settings.config":
-                        zout.writestr(item, patched)
-                    else:
-                        zout.writestr(item, zin.read(item.filename))
-            return dst.getvalue()
-    except (zipfile.BadZipFile, OSError):
-        return zip_bytes
 
 
 def _patch_process_bed_type(process_json: str, bed_type: str) -> str:
@@ -4016,13 +4009,14 @@ async def _run_slicer_with_fallback(
     is_3mf = model_filename.lower().endswith(".3mf")
     primary_bytes = model_bytes
     if is_3mf:
-        # Strip "-1" inherit-from-parent sentinels from
-        # Metadata/project_settings.config so the CLI's StaticPrintConfig
-        # range validator accepts the file (#1201). Surgical — keeps the
-        # config present, just removes the offending keys; the supplied
-        # --load-settings (and the fallback's embedded values for keys we
-        # didn't touch) still drive the slice.
-        primary_bytes = _sanitize_project_settings_sentinels(primary_bytes)
+        # Strip inherit/unset sentinels from Metadata/project_settings.config
+        # so the CLI's StaticPrintConfig range validator accepts the file
+        # (#1201, #3030). Surgical — keeps the config present, just removes
+        # the offending keys; the supplied --load-settings (and the fallback's
+        # embedded values for keys we didn't touch) still drive the slice.
+        # The preview-slice path applies the same sanitiser in
+        # ``slice_preview.get_preview_filaments``.
+        primary_bytes = sanitize_project_settings_sentinels(primary_bytes)
 
         # #2622: the process settings the file's designer moved off the stock
         # preset. Read once — the support patch below needs to know which of
@@ -4549,8 +4543,10 @@ async def slice_and_persist(
     # BS/Orca CLIs skip plate_N.png in headless --export-3mf — render +
     # inject server-side so the library card has a thumbnail. Best-effort:
     # no-op when the slicer did embed thumbs (desktop Studio path), and
-    # falls through to the unmodified bytes on any render error.
-    result = result._replace(content=inject_plate_thumbnails_if_missing(result.content))
+    # falls through to the unmodified bytes on any render error. In a thread:
+    # a large plate renders for seconds, and on the event loop that stalled
+    # every request and printer connection for as long (#3135).
+    result = result._replace(content=await asyncio.to_thread(inject_plate_thumbnails_if_missing, result.content))
     out_path.write_bytes(result.content)
 
     # Extract thumbnail from the produced 3MF so the library card shows a
@@ -4697,8 +4693,9 @@ async def slice_and_persist_as_archive(
     # See library-slice path: BS/Orca sidecar CLIs don't embed plate_N.png
     # in headless --export-3mf, so the produced 3MF often has no thumbnail
     # at all. Server-side render fills the gap; no-op when the slicer did
-    # embed (desktop Studio path) and best-effort on any render error.
-    result = result._replace(content=inject_plate_thumbnails_if_missing(result.content))
+    # embed (desktop Studio path) and best-effort on any render error. Off the
+    # event loop, like the library-slice path (#3135).
+    result = result._replace(content=await asyncio.to_thread(inject_plate_thumbnails_if_missing, result.content))
     out_path.write_bytes(result.content)
 
     # Extract a thumbnail for the new archive card. Priority order:
@@ -5264,13 +5261,15 @@ async def download_library_file_for_slicer(
 ):
     """Download a library file using a slicer download token.
 
-    Token-authenticated (no auth headers needed). The token is short-lived
-    and single-use, created by POST /files/{file_id}/slicer-token.
+    Token-authenticated (no auth headers needed). The token is short-lived and
+    file-bound, created by POST /files/{file_id}/slicer-token, and redeemable
+    for the rest of its TTL rather than exactly once -- the slicer is a separate
+    process that may fetch the URL more than once (#3029).
     Filename is at the end of the URL so slicers can detect the file format.
     """
     from backend.app.core.auth import verify_slicer_download_token
 
-    if not await verify_slicer_download_token(token, "library", file_id):
+    if not await verify_slicer_download_token(token, "library", file_id, single_use=False):
         raise HTTPException(status_code=403, detail="Invalid or expired download token")
 
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
@@ -5293,14 +5292,23 @@ async def download_library_file_for_slicer(
 async def get_thumbnail(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: None = RequireCameraStreamTokenIfAuthEnabled,
+    auth_result: tuple[User | None, bool] = Depends(
+        require_media_token_ownership(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
-    """Get a file's thumbnail."""
-    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    file = result.scalar_one_or_none()
+    """Get a file's thumbnail.
 
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    Accepts a media token in ``?token=`` because <img> cannot send headers.
+    Ownership is enforced here rather than assumed from the credential: until
+    #3025 this route took the anonymous camera-stream token, which carried no
+    principal, so any holder could read any user's thumbnail by walking IDs.
+    """
+    user, can_read_all = auth_result
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
+    file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     abs_thumb_path = to_absolute_path(file.thumbnail_path)
     if not abs_thumb_path or not abs_thumb_path.exists():

@@ -301,9 +301,11 @@ class NtfyConfig(BaseModel):
     event_priorities: dict[str, int] | None = Field(
         default=None,
         description=(
-            "Per-event priority override. Keys are event names (e.g. 'on_print_failed'); "
-            "values are ntfy priorities 1-5 (1=min, 2=low, 3=default, 4=high, 5=urgent). "
-            "Events without an entry use ntfy's server-side default."
+            "Per-event priority override. Keys are event names, either the provider's "
+            "toggle column ('on_print_failed', what the UI writes) or the bare event "
+            "name ('print_failed'); both are accepted. Values are ntfy priorities 1-5 "
+            "(1=min, 2=low, 3=default, 4=high, 5=urgent). Events without an entry use "
+            "ntfy's server-side default."
         ),
     )
 

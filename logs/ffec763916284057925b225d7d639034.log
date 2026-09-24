@@ -1,0 +1,125 @@
+2026-09-24 13:37:42,785 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-09-24 13:37:42,785 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-09-24 13:37:45,128 INFO [backend.app.core.encryption] [-] Generated new MFA encryption key and saved to /app/data/.mfa_encryption_key
+2026-09-24 13:37:45,285 INFO [backend.app.core.database] [-] Created default group: Administrators
+2026-09-24 13:37:45,285 INFO [backend.app.core.database] [-] Created default group: Operators
+2026-09-24 13:37:45,285 INFO [backend.app.core.database] [-] Created default group: Viewers
+2026-09-24 13:37:45,332 INFO [backend.app.core.database] [-] Seeded 91 default spool catalog entries
+2026-09-24 13:37:45,472 INFO [backend.app.core.database] [-] Seeded 638 default color catalog entries
+2026-09-24 13:37:45,522 INFO [backend.app.services.mqtt_relay] [-] MQTT relay disabled
+2026-09-24 13:37:45,526 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-09-24 13:37:45,526 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-09-24 13:37:45,526 INFO [backend.app.services.ha_sensor_manager] [-] Home Assistant sensor poller started
+2026-09-24 13:37:45,526 INFO [backend.app.services.location_ha_sensor_manager] [-] Home Assistant location-sensor poller started
+2026-09-24 13:37:45,530 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-09-24 13:37:45,534 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-09-24 13:37:45,534 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-09-24 13:37:45,534 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-09-24 13:37:45,537 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-09-24 13:37:45,538 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-09-24 13:37:45,538 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-09-24 13:37:45,538 INFO [backend.app.main] [-] AMS history recording started
+2026-09-24 13:37:45,538 INFO [backend.app.main] [-] Printer sensor history recording started
+2026-09-24 13:37:45,538 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-09-24 13:37:45,538 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-09-24 13:37:45,538 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-09-24 13:37:45,538 INFO [backend.app.main] [-] Printer connection watchdog started
+2026-09-24 13:37:45,625 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-09-24 13:37:45,625 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-09-24 13:37:45,626 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-09-24 13:37:45,634 INFO [root] [-] Virtual printer manager synced from database
+2026-09-24 13:40:32,048 INFO [backend.app.services.print_scheduler] [-] Print scheduler stopped
+2026-09-24 13:40:32,048 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler stopped
+2026-09-24 13:40:32,049 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop stopped
+2026-09-24 13:40:32,049 INFO [backend.app.services.ha_sensor_manager] [-] Home Assistant sensor poller stopped
+2026-09-24 13:40:32,049 INFO [backend.app.services.location_ha_sensor_manager] [-] Home Assistant location-sensor poller stopped
+2026-09-24 13:40:32,049 INFO [backend.app.services.notification_service] [-] Notification digest scheduler stopped
+2026-09-24 13:40:32,049 INFO [backend.app.services.github_backup] [-] Stopped GitHub backup scheduler
+2026-09-24 13:40:32,049 INFO [backend.app.services.local_backup] [-] Stopped local backup scheduler
+2026-09-24 13:40:32,049 INFO [backend.app.services.library_trash] [-] Stopped library trash sweeper
+2026-09-24 13:40:32,049 INFO [backend.app.services.archive_purge] [-] Stopped archive auto-purge sweeper
+2026-09-24 13:40:32,050 INFO [backend.app.services.obico_detection] [-] Stopped Obico detection service
+2026-09-24 13:40:32,050 INFO [backend.app.main] [-] AMS history recording stopped
+2026-09-24 13:40:32,050 INFO [backend.app.main] [-] Printer sensor history recording stopped
+2026-09-24 13:40:32,050 INFO [backend.app.main] [-] Printer runtime tracking stopped
+2026-09-24 13:40:32,050 INFO [backend.app.main] [-] SpoolBuddy watchdog stopped
+2026-09-24 13:40:32,050 INFO [backend.app.main] [-] Camera stream cleanup stopped
+2026-09-24 13:40:32,050 INFO [backend.app.main] [-] Printer connection watchdog stopped
+2026-09-24 13:40:32,051 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog stopped
+2026-09-24 13:40:32,051 INFO [backend.app.main] [-] Expected prints cleanup stopped
+2026-09-24 13:40:32,051 INFO [backend.app.main] [-] Auth periodic cleanup stopped
+2026-09-24 13:40:32,052 INFO [backend.app.services.virtual_printer.manager] [-] Stopping all virtual printer services...
+2026-09-24 13:40:32,052 INFO [backend.app.services.virtual_printer.manager] [-] All virtual printer services stopped
+2026-09-24 13:40:32,076 INFO [root] [-] WAL checkpoint completed
+2026-09-24 13:40:39,952 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-09-24 13:40:39,952 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-09-24 13:40:42,271 INFO [backend.app.services.mqtt_relay] [-] MQTT relay disabled
+2026-09-24 13:40:42,276 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-09-24 13:40:42,276 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-09-24 13:40:42,276 INFO [backend.app.services.ha_sensor_manager] [-] Home Assistant sensor poller started
+2026-09-24 13:40:42,276 INFO [backend.app.services.location_ha_sensor_manager] [-] Home Assistant location-sensor poller started
+2026-09-24 13:40:42,280 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-09-24 13:40:42,285 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-09-24 13:40:42,285 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-09-24 13:40:42,285 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-09-24 13:40:42,288 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-09-24 13:40:42,288 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-09-24 13:40:42,288 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-09-24 13:40:42,288 INFO [backend.app.main] [-] AMS history recording started
+2026-09-24 13:40:42,288 INFO [backend.app.main] [-] Printer sensor history recording started
+2026-09-24 13:40:42,289 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-09-24 13:40:42,289 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-09-24 13:40:42,289 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-09-24 13:40:42,289 INFO [backend.app.main] [-] Printer connection watchdog started
+2026-09-24 13:40:42,368 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-09-24 13:40:42,368 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-09-24 13:40:42,368 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-09-24 13:40:42,376 INFO [root] [-] Virtual printer manager synced from database
+2026-09-24 13:40:50,937 INFO [uvicorn.access] [-] [IP]:50653 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-09-24 13:40:51,037 INFO [uvicorn.access] [-] [IP]:59097 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-09-24 13:40:54,928 INFO [backend.app.api.routes.auth] [93e4369b] Setup completed: auth_enabled=False, admin_created=False
+2026-09-24 13:40:54,928 INFO [uvicorn.access] [-] [IP]:64996 - "POST /api/v1/auth/setup HTTP/1.1" 200
+2026-09-24 13:40:55,070 INFO [uvicorn.access] [-] [IP]:52212 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-24 13:40:55,084 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-09-24 13:40:55,085 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-24 13:40:55,085 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 0 printers
+2026-09-24 13:40:58,353 INFO [backend.app.services.camera] [ba6a9b84] Found ffmpeg at: /usr/bin/ffmpeg
+2026-09-24 13:40:59,035 INFO [backend.app.services.mqtt_relay] [00ab5621] MQTT relay disabled
+2026-09-24 13:40:59,039 INFO [uvicorn.access] [-] [IP]:59097 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-24 13:43:55,899 ERROR [backend.app.services.discovery] [efd68207] Invalid subnet format: '' does not appear to be an IPv4 or IPv6 network
+2026-09-24 13:43:55,900 INFO [uvicorn.access] [-] [IP]:49734 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-09-24 13:44:04,830 INFO [backend.app.services.discovery] [2fce6a2e] Starting subnet scan of [IP]/24 (254 hosts)
+2026-09-24 13:44:04,878 INFO [uvicorn.access] [-] [IP]:49612 - "POST /api/v1/discovery/scan HTTP/1.1" 200
+2026-09-24 13:44:06,933 INFO [backend.app.services.discovery] [2fce6a2e] Found potential Bambu printer at [IP]
+2026-09-24 13:44:10,943 INFO [backend.app.services.discovery] [2fce6a2e] Subnet scan complete. Found 1 printers.
+2026-09-24 13:44:12,944 INFO [uvicorn.access] [-] [IP]:51425 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-09-24 13:44:12,946 INFO [uvicorn.access] [-] [IP]:64964 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-09-24 13:44:44,011 INFO [uvicorn.access] [-] [IP]:59981 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-24 13:44:45,018 INFO [uvicorn.access] [-] [IP]:59981 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-24 13:44:47,859 INFO [uvicorn.access] [-] [IP]:59981 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-24 13:44:48,911 INFO [uvicorn.access] [-] [IP]:59981 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-24 13:44:50,210 INFO [uvicorn.access] [-] [IP]:59981 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-24 13:44:52,588 INFO [uvicorn.access] [-] [IP]:57342 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-24 13:44:54,021 INFO [uvicorn.access] [-] [IP]:57342 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-24 13:44:55,027 INFO [uvicorn.access] [-] [IP]:59981 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-24 13:44:59,112 INFO [uvicorn.access] [-] [IP]:57342 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-24 13:45:02,129 INFO [uvicorn.access] [-] [IP]:53365 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-24 13:45:03,681 INFO [uvicorn.access] [-] [IP]:53365 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-24 13:45:05,904 INFO [uvicorn.access] [-] [IP]:53365 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-24 13:45:07,433 INFO [uvicorn.access] [-] [IP]:52549 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-24 13:45:08,404 INFO [uvicorn.access] [-] [IP]:52549 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-09-24 13:46:03,192 INFO [backend.app.services.virtual_printer.certificate] [349e1f76] Generating new Virtual Printer CA certificate...
+2026-09-24 13:46:03,257 INFO [backend.app.services.virtual_printer.certificate] [349e1f76] Saved new CA certificate
+2026-09-24 13:48:13,943 INFO [uvicorn.access] [-] [IP]:50721 - "POST /api/v1/inventory/spools HTTP/1.1" 200
+2026-09-24 13:48:13,957 INFO [uvicorn.access] [-] [IP]:50721 - "PUT /api/v1/inventory/spools/1/k-profiles HTTP/1.1" 200
+2026-09-24 13:48:13,972 INFO [uvicorn.access] [-] [IP]:50721 - "PUT /api/v1/inventory/spools/1/filament-presets HTTP/1.1" 200
+2026-09-24 13:48:32,892 INFO [uvicorn.access] [-] [IP]:59325 - "DELETE /api/v1/inventory/spools/1 HTTP/1.1" 200
+2026-09-24 13:50:02,829 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-09-24 13:51:05,048 INFO [uvicorn.access] [-] [IP]:64475 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-09-24 13:51:05,159 INFO [uvicorn.access] [-] [IP]:56127 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-09-24 13:51:05,176 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-09-24 13:51:05,176 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-09-24 13:51:05,176 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 0 printers
+2026-09-24 13:55:28,969 INFO [backend.app.api.routes.support] [5357b2c2] Log level changed to DEBUG
+2026-09-24 13:55:28,969 INFO [backend.app.api.routes.bug_report] [5357b2c2] Bug report: enabled debug logging
+2026-09-24 13:55:28,970 INFO [uvicorn.access] [-] [IP]:54715 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200

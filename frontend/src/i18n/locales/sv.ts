@@ -4702,7 +4702,7 @@ errors: {
       exportButton: 'Exportera CSV',
       modalTitle: 'Importera rullar från CSV',
       selectFile: 'Välj en CSV-fil eller dra den hit',
-      dragHint: 'Rubrik: material (required), brand, subtype, color_name, rgba, …',
+      dragHint: 'Rubrik: material (obligatoriskt), brand, subtype, color_name, rgba, …',
       parsing: 'Läser fil…',
       previewError: 'Kunde inte läsa CSV-filen',
       validCount: '{{count}} giltiga',

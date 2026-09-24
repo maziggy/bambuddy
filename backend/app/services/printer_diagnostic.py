@@ -2,7 +2,7 @@
 
 Runs the checks a maintainer performs by hand when triaging a
 "printer won't connect / won't print" report — port reachability, LAN
-developer mode, Docker network mode, subnet match, and MQTT credentials —
+developer mode, container network mode, subnet match, and MQTT credentials —
 so users can self-diagnose setup problems instead of opening an issue.
 
 See the 2026-05-21 issue-triage analysis: ~1/3 of closed issues were
@@ -12,16 +12,21 @@ user-side setup errors clustered on exactly these causes.
 import asyncio
 import ipaddress
 import logging
+import os
 import socket
 import ssl
+import subprocess
+import sys
+from pathlib import Path
 
 from backend.app.models.printer import Printer
 from backend.app.schemas.printer import DiagnosticCheck, PrinterDiagnosticResult
 from backend.app.services.bambu_ftp import find_remote_file_async
 from backend.app.services.bambu_mqtt import CONNECT_ERROR_AUTH_REJECTED
 from backend.app.services.camera import get_camera_port
-from backend.app.services.discovery import is_running_in_docker
+from backend.app.services.discovery import OCI_RUNTIMES, detect_container_runtime
 from backend.app.services.ftp_profiles import get_ftp_profile
+from backend.app.services.network_utils import find_local_ipv4_network
 from backend.app.services.print_storage import (
     REASON_INTERNAL_STORAGE,
     StorageVerdict,
@@ -203,48 +208,202 @@ def _camera_port_for_printer(printer: Printer | None) -> tuple[int, str]:
     return camera_port, "RTSPS"
 
 
-def _detect_docker_network_mode() -> str:
-    """Detect Docker network mode.
+# Interfaces a container engine creates on the *host*. Seeing one of them
+# means we are in the host's network namespace.
+_HOST_INFRA_PREFIXES = ("docker", "br-", "veth", "virbr", "podman", "cni-", "cni_")
 
-    In host mode the container shares the host network namespace, so Docker
-    infrastructure interfaces (docker0, br-*, veth*) are visible. In bridge
-    mode the container only sees its own eth0.
+
+def _has_native_interface() -> bool:
+    """True if some interface here was created in this network namespace.
+
+    A NAT-networked container is handed one end of a veth pair per attached
+    network, and a veth's ``iflink`` points at its peer's index in the *other*
+    namespace, so it never equals its own ``ifindex``. An interface where the
+    two agree was made here — a physical NIC, a bridge, a VLAN — which a
+    container with its own namespace does not get.
+
+    tun/tap devices are skipped: a container can legitimately run its own
+    WireGuard or Tailscale client, and that tun would otherwise read as
+    evidence of a namespace it is not evidence of.
+    """
+    try:
+        entries = [(idx, name) for idx, name in socket.if_nameindex() if name != "lo"]
+    except Exception:
+        return False
+
+    for index, name in entries:
+        # Never user input: the kernel's own interface table, and never a path.
+        iface = Path("/sys/class/net") / name  # SEC-PATH-OK: name from socket.if_nameindex()
+        if (iface / "tun_flags").exists():
+            continue
+        try:
+            ifindex = (iface / "ifindex").read_text().strip()
+            iflink = (iface / "iflink").read_text().strip()
+        except (OSError, ValueError):
+            continue
+        # sysfs is tagged by network namespace, but a container given a bind
+        # mount of the host's /sys sees the host's interfaces under names that
+        # may collide with its own. Reading a different interface's numbers
+        # would be reading another namespace's answer, so require that the
+        # entry found here is the one the kernel just named.
+        if ifindex != str(index):
+            continue
+        if ifindex == iflink:
+            return True
+    return False
+
+
+def _detect_container_network_mode(runtime: str | None) -> str | None:
+    """Return "host", "bridge", or None when it genuinely cannot be told.
+
+    The first rule is the original Docker one and is kept exactly: a Docker
+    *host* always has a docker0, so a container that can see it shares the
+    host's namespace. It says nothing about Podman, which on a host running
+    no bridge containers creates no such interface at all — which is how a
+    host-networked Podman container came to be told it was on bridge
+    networking (#3092).
+
+    The second rule is the general form of the same idea and is what answers
+    for Podman. The third is the fallback the first rule always implied: an
+    OCI container that can see neither is isolated, which is what bridge
+    networking means.
     """
     try:
         for _idx, name in socket.if_nameindex():
-            if name.startswith(("docker", "br-", "veth", "virbr")):
+            if name.startswith(_HOST_INFRA_PREFIXES):
                 return "host"
     except Exception:
         pass
-    return "bridge"
+    if _has_native_interface():
+        return "host"
+    if runtime in OCI_RUNTIMES:
+        return "bridge"
+    return None
 
 
-def _get_host_ip() -> str | None:
-    """Best-effort IPv4 address the Bambuddy host routes from."""
+def _host_source_ip(destination_ip: str) -> str | None:
+    """The local IPv4 address Bambuddy would send from toward ``destination_ip``.
+
+    Asking about the printer's own address rather than a fixed far-away one
+    matters on any host with more than one NIC: the source for a route to the
+    internet is simply not the source for a route to the printer, and
+    comparing the printer against the wrong interface is a warning about
+    nothing (#3092).
+
+    Literals only. ``connect()`` on a name would resolve it, and this runs on
+    the event loop; ``_same_subnet`` rejects names anyway, so nothing is lost.
+    """
+    try:
+        if ipaddress.ip_address(destination_ip).version != 4:
+            return None
+    except ValueError:
+        return None
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             # No packets are sent; this just picks the routing-table source IP.
-            s.connect(("10.255.255.255", 1))
+            s.connect((destination_ip, 1))
             return s.getsockname()[0]
         finally:
             s.close()
     except Exception:
+        # Fail soft: this is a diagnostic, and an unroutable address or an
+        # exhausted fd table must leave the check skipped, not 500 the page.
         return None
 
 
-def _same_subnet(ip_a: str, ip_b: str) -> bool | None:
-    """True/False if both are IPv4 literals in the same /24; None if undeterminable."""
+def _same_subnet(printer_ip: str, host_ip: str) -> bool | None:
+    """Is ``printer_ip`` inside the network configured on Bambuddy's ``host_ip``?
+
+    None means undeterminable — a name instead of an IPv4 literal, or no
+    local interface claiming ``host_ip``.
+
+    An address does not carry its prefix, and this used to supply ``/24`` for
+    both sides. That is the most common LAN and not the only one: on the
+    reporter's ``192.168.96.0/22`` it declared a printer four hundred
+    addresses away to be on a different network and told him to go configure
+    routing between two halves of one subnet (#3092). The prefix is read off
+    the interface that owns the source address instead.
+    """
     try:
-        addr_a = ipaddress.ip_address(ip_a)
-        addr_b = ipaddress.ip_address(ip_b)
+        printer_addr = ipaddress.ip_address(printer_ip)
+        host_addr = ipaddress.ip_address(host_ip)
     except ValueError:
         return None
-    if addr_a.version != 4 or addr_b.version != 4:
+    if printer_addr.version != 4 or host_addr.version != 4:
         return None
-    net_a = ipaddress.ip_network(f"{addr_a}/24", strict=False)
-    net_b = ipaddress.ip_network(f"{addr_b}/24", strict=False)
-    return net_a == net_b
+
+    network = find_local_ipv4_network(str(host_addr))
+    if network is None:
+        return None
+    return printer_addr in network
+
+
+# macOS attributes Local Network permission (TCC) to a process's code
+# signature, and judges a launchd-spawned process on its own instead of
+# letting it inherit the grant of the Terminal that started it. Homebrew's
+# Python is unsigned on Intel, so there is no identity for a grant to attach
+# to: every connection to a LAN address is dropped, with no error the
+# application can log and no permission prompt. All three printer ports read
+# as unreachable while the subnet check passes (#3114).
+_CODESIGN = "/usr/bin/codesign"
+# Reading a local file's signature takes milliseconds, so this is a guard
+# rather than a budget -- and it is deliberately short. The support bundle
+# gives each printer 15s total (_PER_DIAGNOSTIC_TIMEOUT_SECONDS) and drops
+# the whole connection diagnostic on overrun, so a codesign that hangs (the
+# stub that offers to install the command line tools is the plausible way)
+# must not be able to cost the bundle the rest of its checks.
+_CODESIGN_TIMEOUT = 2.0
+
+
+def _base_interpreter_path() -> str:
+    """The interpreter macOS judges, as both the probe and the message see it.
+
+    ``sys._base_executable`` rather than ``sys.executable``: inside a venv the
+    latter is a symlink in the venv's own bin directory, and what macOS judges
+    is the real interpreter it resolves to. Resolved once, here, so the path
+    reported to the user is the same one whose signature was read.
+    """
+    return os.path.realpath(getattr(sys, "_base_executable", None) or sys.executable)
+
+
+def _interpreter_is_signed() -> bool | None:
+    """Does the interpreter Bambuddy runs under carry a code signature?
+
+    None when it cannot be told: no usable ``codesign`` because the Xcode
+    command line tools are absent, or the probe failed some other way. That
+    is deliberately not folded into False. The advice for "no identity" names
+    a repair that rewrites a file inside the user's Python installation, and
+    offering that on a guess is worse than giving the generic answer.
+
+    On an Apple Silicon Homebrew install the interpreter resolves to the
+    framework's ``bin/pythonX.Y`` (measured, inside and outside a venv alike)
+    -- not the ``Python.app`` stub, which is a separate binary in the same
+    framework. The reporter's TCC log names the same ``bin/pythonX.Y`` on
+    Intel.
+    """
+    executable = _base_interpreter_path()
+    if not executable:
+        return None
+    try:
+        result = subprocess.run(
+            [_CODESIGN, "-d", executable],
+            capture_output=True,
+            text=True,
+            timeout=_CODESIGN_TIMEOUT,
+        )
+    except Exception:
+        # Fail soft, as everywhere else in this module: a diagnostic that
+        # raises is worse than one that declines to answer.
+        logger.debug("codesign probe failed", exc_info=True)
+        return None
+    if result.returncode == 0:
+        return True
+    # codesign writes this to stderr and exits non-zero. It is the one
+    # outcome that separates "no identity at all" from "the probe never ran".
+    if "not signed at all" in result.stderr:
+        return False
+    return None
 
 
 async def run_connection_diagnostic(
@@ -292,19 +451,67 @@ async def run_connection_diagnostic(
         )
     )
 
-    # --- Docker network mode ---
+    # --- macOS Local Network permission ---
+    # Appended on macOS only. Everywhere else there is nothing to say, and a
+    # permanently dimmed "skipped" row would be noise for the users who make
+    # up nearly all of them.
+    #
+    # Both outcomes are reported as warn rather than fail, and only when the
+    # control port is already unreachable -- so this can never be the check
+    # that turns an otherwise healthy result red. A printer that is simply
+    # switched off produces the same all-ports-dead pattern, which is why the
+    # signature probe, not the pattern, is what earns the specific advice.
+    if sys.platform == "darwin":
+        if mqtt_ok:
+            # The control port answered, so LAN access demonstrably works.
+            checks.append(DiagnosticCheck(id="macos_local_network", status="pass"))
+        else:
+            signed = await asyncio.to_thread(_interpreter_is_signed)
+            if signed is False:
+                checks.append(
+                    DiagnosticCheck(
+                        id="macos_local_network",
+                        status="warn",
+                        params={"reason": "unsigned", "executable": _base_interpreter_path()},
+                    )
+                )
+            else:
+                # Signed, or undeterminable. An ad-hoc signature -- which is
+                # what every arm64 binary carries, because the linker adds one
+                # -- identifies itself by a hash of the binary, so a Python
+                # upgrade presents macOS with a new application and leaves the
+                # old grant behind. That is repairable in System Settings,
+                # unlike the unsigned case, so point there instead.
+                checks.append(DiagnosticCheck(id="macos_local_network", status="warn", params={"reason": "permission"}))
+
+    # --- Container network mode ---
+    # Not Docker-only: Podman runs Bambuddy in exactly the same two shapes and
+    # its users were told "Not running in Docker", which reads as "you are on
+    # bare metal" and sent them looking for the problem somewhere else (#3092).
+    runtime = detect_container_runtime()
     network_mode: str | None = None
-    if is_running_in_docker():
-        network_mode = _detect_docker_network_mode()
+    if runtime is None:
+        checks.append(DiagnosticCheck(id="network_mode", status="skip"))
+    elif runtime not in OCI_RUNTIMES:
+        # An LXC/LXD system container is bridged onto the LAN like a small VM.
+        # There is no network mode to recommend, so don't imply there is one.
         checks.append(
-            DiagnosticCheck(
-                id="network_mode",
-                status="pass" if network_mode == "host" else "warn",
-                params={"mode": network_mode},
-            )
+            DiagnosticCheck(id="network_mode", status="skip", params={"reason": "system_container", "runtime": runtime})
         )
     else:
-        checks.append(DiagnosticCheck(id="network_mode", status="skip"))
+        network_mode = _detect_container_network_mode(runtime)
+        if network_mode is None:
+            checks.append(
+                DiagnosticCheck(id="network_mode", status="skip", params={"reason": "unknown", "runtime": runtime})
+            )
+        else:
+            checks.append(
+                DiagnosticCheck(
+                    id="network_mode",
+                    status="pass" if network_mode == "host" else "warn",
+                    params={"mode": network_mode, "runtime": runtime},
+                )
+            )
 
     # --- Subnet match ---
     # Skipped in bridge mode: the container IP is the bridge IP, not the host's,
@@ -312,8 +519,9 @@ async def run_connection_diagnostic(
     if network_mode == "bridge":
         checks.append(DiagnosticCheck(id="subnet", status="skip"))
     else:
-        host_ip = _get_host_ip()
-        same = _same_subnet(ip_address, host_ip) if host_ip else None
+        host_ip = _host_source_ip(ip_address)
+        # Off the loop: resolving the prefix shells out to `ip -j addr show`.
+        same = await asyncio.to_thread(_same_subnet, ip_address, host_ip) if host_ip else None
         if same is None:
             checks.append(DiagnosticCheck(id="subnet", status="skip"))
         else:
@@ -393,7 +601,7 @@ async def run_connection_diagnostic(
     ):
         # The toggle is on, a card is in, the printer said the last print's file
         # is on internal storage — and a probe confirmed it really is out of
-        # reach. That is what H2-series and P2S firmware does, and no setting
+        # reach. That is what H2-series, P2S and X2D firmware does, and no setting
         # here changes it (#2762 tracks reading that storage). A pass here would
         # be a lie; a fail would be unresolvable.
         #

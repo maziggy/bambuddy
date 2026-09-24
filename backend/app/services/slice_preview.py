@@ -14,10 +14,13 @@ we don't need to thread the user's profile triplet through here. That choice
 also protects the numbers — overriding the process preset drops the project's
 own support configuration, which loses whole slots from the answer.
 
-The one thing that can defeat those embedded settings is a custom G-code
-template written by a Studio newer than the sidecar, which fails to parse
-before any slice_info exists. That case gets one retry with the offending
-template blanked; see ``_blank_custom_gcode``.
+Two things can defeat those embedded settings. A custom G-code template
+written by a Studio newer than the sidecar fails to parse before any
+slice_info exists; that case gets one retry with the offending template
+blanked, see ``_blank_custom_gcode``. And Bambu Studio writes inherit/unset
+markers into ``project_settings.config`` that some slicer builds' range
+validator rejects outright, so the same sanitiser the real slice runs is
+applied here too, see ``sanitize_project_settings_sentinels``.
 
 Results are cached by ``(kind, source_id, plate_id, content_hash)`` so
 repeat opens on the same plate are instant. LRU eviction keeps the cache
@@ -42,6 +45,7 @@ from backend.app.services.slicer_api import (
     SlicerApiError,
     SlicerApiService,
 )
+from backend.app.utils.threemf_tools import sanitize_project_settings_sentinels
 
 logger = logging.getLogger(__name__)
 
@@ -203,13 +207,17 @@ async def get_preview_filaments(
 
     Uses the file's embedded settings (``slice_without_profiles``) since the
     slot mapping is a model property, independent of any user-picked profile
-    triplet. A slice killed by an unparsable custom G-code template is retried
-    once with that template blanked, still on the file's own settings.
+    triplet. Those settings are sentinel-sanitised first (#1201, #3030). A
+    slice killed by an unparsable custom G-code template is retried once with
+    that template blanked, still on the file's own settings.
 
     Returns ``None`` when the preview slice fails — the caller should fall
     back to whatever heuristic it has (typically the project_filaments +
     painted-face approach in ``threemf_tools``).
     """
+    # Hash the file as it was given to us, not as it is sent: the key
+    # identifies the source file, and sanitising is deterministic, so folding
+    # it in would only make two names for one thing.
     h = _content_hash(file_bytes)
     key: _PreviewCacheKey = (kind, source_id, plate_id, h)
     cached = _preview_cache.get(key)
@@ -231,6 +239,17 @@ async def get_preview_filaments(
         # while the slicer is visibly working.
         svc_kwargs = {} if timeout_seconds is None else {"timeout_seconds": timeout_seconds}
 
+        # Same sanitiser the real slice runs (#1201, #3030). It matters more
+        # here, not less: this path slices on the file's own embedded
+        # settings, so there is no --load-settings pass that could supply a
+        # replacement for a field the CLI's range validator has already
+        # rejected. Without it a MakerWorld 3MF carrying Bambu's inherit
+        # markers fails before producing any slice_info, and the modal falls
+        # back to its painted-face heuristic for a file the slicer could have
+        # answered exactly. Applied before the G-code retry below so that
+        # retry inherits it rather than reintroducing the markers.
+        slice_bytes = sanitize_project_settings_sentinels(file_bytes)
+
         async def _slice(model_bytes: bytes):
             async with SlicerApiService(base_url=api_url, **svc_kwargs) as svc:
                 return await svc.slice_without_profiles(
@@ -242,7 +261,7 @@ async def get_preview_filaments(
                 )
 
         try:
-            result = await _slice(file_bytes)
+            result = await _slice(slice_bytes)
         except SlicerApiError as e:
             # One retry, and only for a custom-G-code template the sidecar
             # cannot parse — a file from a Studio newer than the sidecar. The
@@ -259,7 +278,7 @@ async def get_preview_filaments(
             retry_bytes = None
             option = _unparsable_gcode_option(str(e))
             if option is not None:
-                retry_bytes = _blank_custom_gcode(file_bytes, option)
+                retry_bytes = _blank_custom_gcode(slice_bytes, option)
             if retry_bytes is None:
                 logger.warning(
                     "Preview slice failed for %s/%s plate %s: %s",

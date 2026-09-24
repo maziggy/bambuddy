@@ -8,6 +8,7 @@ import type { InventorySpool } from '../../api/client';
 import { resolveSpoolColorName, getSwatchStyle, spoolColorString } from '../../utils/colors';
 import { formatSlotLabel } from '../../utils/amsHelpers';
 import { filterSpoolsByQuery } from '../../utils/inventorySearch';
+import { useColorCatalogVersion } from '../../hooks/useColorCatalogVersion';
 import { InventorySpoolInfoCard } from '../../components/spoolbuddy/InventorySpoolInfoCard';
 import { AssignToAmsModal } from '../../components/spoolbuddy/AssignToAmsModal';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
@@ -65,6 +66,9 @@ function SpoolCircle({ color, size = 56 }: { color: string; size?: number }) {
 export function SpoolBuddyInventoryPage() {
   const { sbState, selectedPrinterId } = useOutletContext<SpoolBuddyOutletContext>();
   const { t } = useTranslation();
+  // The spool filter below resolves colour names through the catalog; its
+  // memo has to recompute when the catalog finishes loading (#3090).
+  const colorCatalogVersion = useColorCatalogVersion();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
@@ -137,6 +141,11 @@ export function SpoolBuddyInventoryPage() {
 
   // Filter and sort
   const filteredSpools = useMemo(() => {
+    // Named so this memo depends on it: the search below resolves colour
+    // names through the catalog, which `resolveSpoolColorName` reads from
+    // module state the linter cannot follow. Without it a query typed
+    // before the catalog loads keeps its empty result (#3090).
+    void colorCatalogVersion;
     let list = activeSpools;
 
     if (filterMode === 'in_ams') {
@@ -154,7 +163,7 @@ export function SpoolBuddyInventoryPage() {
       if (aAssigned !== bAssigned) return aAssigned - bAssigned;
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     });
-  }, [activeSpools, filterMode, searchQuery, assignedSpoolIds]);
+  }, [activeSpools, filterMode, searchQuery, assignedSpoolIds, colorCatalogVersion]);
 
   return (
     <div className="h-full flex flex-col">
@@ -306,7 +315,7 @@ function CatalogCard({ spool, assignment, onClick }: {
   const color = spoolColor(spool);
   const pct = spoolPct(spool);
   const remaining = spoolRemaining(spool);
-  const colorName = resolveSpoolColorName(spool.color_name, spool.rgba);
+  const colorName = resolveSpoolColorName(spool.color_name, spool.rgba, spool.color_name_is_synthesized);
 
   return (
     <button

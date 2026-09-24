@@ -2272,3 +2272,238 @@ describe('PrintModal — per-plate quantity (#342)', () => {
     expect(queued.every((q) => q.quantity === undefined)).toBe(true);
   });
 });
+
+describe('PrintModal — override survives "Any model" -> "Specific Printer" (#3133)', () => {
+  const mockOnClose = vi.fn();
+
+  const PRINTERS = [
+    { id: 1, name: 'Printer 01', model: 'P2S', ip_address: '192.168.1.101', enabled: true, is_active: true },
+    { id: 2, name: 'Printer 02', model: 'X1C', ip_address: '192.168.1.102', enabled: true, is_active: true },
+  ];
+  const BROWN = '#8B4513';
+  const BONE_WHITE = '#F5F5DC';
+  // The 3MF was sliced in brown; the user asked for Bone White.
+  const SLOT_1_BROWN = { slot_id: 1, type: 'PLA', color: BROWN, tray_info_idx: 'GFA00', used_grams: 50 };
+
+  type Patched = {
+    printer_id?: number | null;
+    target_model?: string | null;
+    ams_mapping?: number[] | null;
+    filament_overrides?: Array<{ slot_id: number; type: string; color: string }> | null;
+  };
+  let patched: Patched[];
+  let posted: Patched[];
+
+  const statusWith = (trays: Array<{ id: number; tray_type: string; tray_color: string }>) =>
+    HttpResponse.json({ connected: true, state: 'IDLE', ams: [{ id: 0, tray: trays }], vt_tray: [] });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    patched = [];
+    posted = [];
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json(PRINTERS)),
+      http.get('/api/v1/archives/:id/plates', () => HttpResponse.json({ is_multi_plate: false, plates: [] })),
+      http.get('/api/v1/archives/:id/filament-requirements', () => HttpResponse.json({ filaments: [SLOT_1_BROWN] })),
+      http.get('/api/v1/printers/available-filaments', () =>
+        HttpResponse.json([
+          { type: 'PLA', color: BROWN, tray_info_idx: 'GFA00', tray_sub_brands: 'PLA Basic', extruder_id: null },
+          { type: 'PLA', color: BONE_WHITE, tray_info_idx: 'GFA00', tray_sub_brands: 'PLA Basic', extruder_id: null },
+        ]),
+      ),
+      // Printer 01 has both colours loaded; brown is first, so a match against
+      // the 3MF picks tray 0 and a match against the override picks tray 1.
+      http.get('/api/v1/printers/:id/status', () =>
+        statusWith([
+          { id: 0, tray_type: 'PLA', tray_color: '8B4513FF' },
+          { id: 1, tray_type: 'PLA', tray_color: 'F5F5DCFF' },
+        ]),
+      ),
+      http.get('/api/v1/printers/:id/assignments', () => HttpResponse.json([])),
+      http.patch('/api/v1/queue/:id', async ({ request }) => {
+        patched.push((await request.json()) as Patched);
+        return HttpResponse.json({ id: 1, status: 'pending' });
+      }),
+      http.post('/api/v1/queue/', async ({ request }) => {
+        posted.push((await request.json()) as Patched);
+        return HttpResponse.json({ id: 1, status: 'pending' });
+      }),
+    );
+  });
+
+  const anyP2SItem = () =>
+    createMockQueueItem({
+      printer_id: null,
+      target_model: 'P2S',
+      filament_overrides: [{ slot_id: 1, type: 'PLA', color: BONE_WHITE, force_color_match: false }],
+    } as Partial<PrintQueueItem>);
+
+  const moveToPrinter01 = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(await screen.findByRole('button', { name: /specific printer/i }));
+    await user.click(await screen.findByText('Printer 01'));
+  };
+
+  const submit = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+  };
+
+  it('matches the chosen printer against the override and keeps it on the item', async () => {
+    const user = userEvent.setup();
+    render(<PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={anyP2SItem()} onClose={mockOnClose} />);
+
+    await moveToPrinter01(user);
+    // Wait for the mapping to settle on the printer's trays before saving.
+    await waitFor(() => expect(screen.getByText(/filament mapping/i)).toBeInTheDocument());
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(patched[0].printer_id).toBe(1);
+    expect(patched[0].target_model).toBeNull();
+    // Tray 1 is the Bone White spool. Matching the 3MF would have taken tray 0.
+    expect(patched[0].ams_mapping).toEqual([1]);
+    expect(patched[0].filament_overrides).toEqual([
+      expect.objectContaining({ slot_id: 1, type: 'PLA', color: BONE_WHITE }),
+    ]);
+  });
+
+  it('keeps the requested colour when the printer has no such spool', async () => {
+    server.use(
+      http.get('/api/v1/printers/:id/status', () =>
+        statusWith([
+          { id: 0, tray_type: 'PLA', tray_color: '8B4513FF' },
+          { id: 1, tray_type: 'PLA', tray_color: '000000FF' },
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={anyP2SItem()} onClose={mockOnClose} />);
+
+    await moveToPrinter01(user);
+    await waitFor(() => expect(screen.getByText(/filament mapping/i)).toBeInTheDocument());
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    // Still asked for, so the scheduler's recompute at dispatch looks for it too
+    // instead of settling on the brown the 3MF was sliced with.
+    expect(patched[0].filament_overrides).toEqual([
+      expect.objectContaining({ slot_id: 1, color: BONE_WHITE }),
+    ]);
+  });
+
+  it('still drops the override when the job moves to a different model', async () => {
+    const user = userEvent.setup();
+    render(<PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={anyP2SItem()} onClose={mockOnClose} />);
+
+    const modelSelect = await waitFor(() => {
+      const select = screen
+        .getAllByRole('combobox')
+        .find((el) => (el as HTMLSelectElement).options[0]?.text === 'Select a model...');
+      if (!select) throw new Error('target model select not rendered');
+      return select as HTMLSelectElement;
+    });
+    // The override was picked from P2S's loaded filaments; X1C's are another list.
+    await user.selectOptions(modelSelect, 'X1C');
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(patched[0].target_model).toBe('X1C');
+    expect(patched[0].filament_overrides ?? null).toBeNull();
+  });
+
+  it("keeps a virtual printer's variant pin when its specific-printer job is saved", async () => {
+    // A VP with force colour on writes the 3MF's own filament back as an
+    // override, tray_info_idx included, to tell PLA variants apart (#2650). Two
+    // brown trays differ only by variant; the job was sliced for Matte (GFA01).
+    server.use(
+      http.get('/api/v1/archives/:id/filament-requirements', () =>
+        HttpResponse.json({ filaments: [{ ...SLOT_1_BROWN, tray_info_idx: 'GFA01' }] }),
+      ),
+      http.get('/api/v1/printers/:id/status', () =>
+        HttpResponse.json({
+          connected: true,
+          state: 'IDLE',
+          ams: [{ id: 0, tray: [
+            { id: 0, tray_type: 'PLA', tray_color: '8B4513FF', tray_info_idx: 'GFA00' },
+            { id: 1, tray_type: 'PLA', tray_color: '8B4513FF', tray_info_idx: 'GFA01' },
+          ] }],
+          vt_tray: [],
+        }),
+      ),
+    );
+    const vpItem = createMockQueueItem({
+      printer_id: 1,
+      target_model: null,
+      filament_overrides: [
+        { slot_id: 1, type: 'PLA', color: BROWN, tray_info_idx: 'GFA01', force_color_match: true },
+      ],
+    } as Partial<PrintQueueItem>);
+    const user = userEvent.setup();
+    render(<PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={vpItem} onClose={mockOnClose} />);
+
+    await waitFor(() => expect(screen.getByText(/filament mapping/i)).toBeInTheDocument());
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    // Not treated as a swap: the matcher still pins the Matte tray...
+    expect(patched[0].ams_mapping).toEqual([1]);
+    // ...and the row keeps the pin rather than losing it on save.
+    expect(patched[0].filament_overrides).toEqual([
+      expect.objectContaining({ slot_id: 1, color: BROWN, tray_info_idx: 'GFA01', force_color_match: true }),
+    ]);
+  });
+
+  it("keeps a virtual printer's variant pin when its any-model job is saved", async () => {
+    const vpItem = createMockQueueItem({
+      printer_id: null,
+      target_model: 'P2S',
+      filament_overrides: [
+        { slot_id: 1, type: 'PLA', color: BROWN, tray_info_idx: 'GFA01', force_color_match: true },
+      ],
+    } as Partial<PrintQueueItem>);
+    const user = userEvent.setup();
+    render(<PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={vpItem} onClose={mockOnClose} />);
+
+    await waitFor(() => expect(screen.getByText('Filament Override')).toBeInTheDocument());
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(patched[0].target_model).toBe('P2S');
+    expect(patched[0].filament_overrides).toEqual([
+      expect.objectContaining({ slot_id: 1, tray_info_idx: 'GFA01', force_color_match: true }),
+    ]);
+  });
+
+  it('carries an override picked in model mode into a specific-printer job when creating', async () => {
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Job" onClose={mockOnClose} />);
+
+    await user.click(await screen.findByRole('button', { name: /any model/i }));
+    const modelSelect = await waitFor(() => {
+      const select = screen
+        .getAllByRole('combobox')
+        .find((el) => (el as HTMLSelectElement).options[0]?.text === 'Select a model...');
+      if (!select) throw new Error('target model select not rendered');
+      return select as HTMLSelectElement;
+    });
+    await user.selectOptions(modelSelect, 'P2S');
+    const overrideSelect = await waitFor(() => {
+      const select = screen
+        .getAllByRole('combobox')
+        .find((el) => [...(el as HTMLSelectElement).options].some((o) => o.value === `PLA|${BONE_WHITE}`));
+      if (!select) throw new Error('override select not rendered');
+      return select as HTMLSelectElement;
+    });
+    await user.selectOptions(overrideSelect, `PLA|${BONE_WHITE}`);
+
+    await moveToPrinter01(user);
+    await waitFor(() => expect(screen.getByText(/filament mapping/i)).toBeInTheDocument());
+    await submit(user);
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0].printer_id).toBe(1);
+    expect(posted[0].ams_mapping).toEqual([1]);
+    expect(posted[0].filament_overrides).toEqual([
+      expect.objectContaining({ slot_id: 1, type: 'PLA', color: BONE_WHITE }),
+    ]);
+  });
+});

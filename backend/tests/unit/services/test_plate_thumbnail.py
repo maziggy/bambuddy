@@ -196,3 +196,226 @@ class TestInjectPlateThumbnails:
         # Same object identity — second pass hits the no-op fast path
         # because every plate now has its plate_N.png.
         assert twice is once
+
+
+# --- Bambu Studio / OrcaSlicer layout (#3135) ------------------------------
+#
+# Those slicers keep every mesh in ``3D/Objects/*.model`` and write each
+# instance in ``3D/3dmodel.model`` as its own ``<object>`` holding one
+# ``<component p:path=...>``. trimesh's reader re-parsed the referenced file for
+# every such component and appended its meshes again each time, so N copies of
+# a part came back with N² copies of its triangles — 25 bins took 8.4 GB to
+# render and OOM-killed the server.
+
+_NS = (
+    'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" '
+    'xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/1015/06" requiredextensions="p"'
+)
+_IDENTITY = "1 0 0 0 1 0 0 0 1 0 0 0"
+
+
+def _box_mesh_xml(size: float = 10.0) -> tuple[str, int]:
+    import trimesh
+
+    box = trimesh.creation.box(extents=(size, size, size))
+    verts = "".join(f'<vertex x="{x}" y="{y}" z="{z}"/>' for x, y, z in box.vertices)
+    tris = "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}"/>' for a, b, c in box.faces)
+    return f"<mesh><vertices>{verts}</vertices><triangles>{tris}</triangles></mesh>", len(box.faces)
+
+
+def _bambu_layout_3mf(
+    placements: list[tuple[str, str]],
+    parts: dict[str, float] | None = None,
+    extra_root_objects: str = "",
+    extra_items: str = "",
+    mesh_xml: str | None = None,
+) -> bytes:
+    """A sliced 3MF in the Bambu/Orca layout.
+
+    ``parts``: object id -> box size, all in ``3D/Objects/object_1.model``.
+    ``placements``: (part id, build-item transform), one wrapper object each.
+    ``mesh_xml``: a ``<mesh>`` to use for every part instead of a box.
+    """
+    parts = parts or {"1": 10.0}
+    objects = "".join(
+        f'<object id="{oid}" type="model">{mesh_xml or _box_mesh_xml(size)[0]}</object>' for oid, size in parts.items()
+    )
+    part_file = f'<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" {_NS}><resources>{objects}</resources><build/></model>'
+    wrappers = "".join(
+        f'<object id="{100 + i}" type="model"><components>'
+        f'<component p:path="/3D/Objects/object_1.model" objectid="{part}" transform="{_IDENTITY}"/>'
+        f"</components></object>"
+        for i, (part, _t) in enumerate(placements)
+    )
+    items = "".join(f'<item objectid="{100 + i}" transform="{t}"/>' for i, (_p, t) in enumerate(placements))
+    root = (
+        f'<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" {_NS}>'
+        f"<resources>{wrappers}{extra_root_objects}</resources><build>{items}{extra_items}</build></model>"
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("3D/Objects/object_1.model", part_file)
+        zf.writestr("3D/3dmodel.model", root)
+        zf.writestr("Metadata/plate_1.gcode", b"; dummy gcode\n")
+    return buf.getvalue()
+
+
+def _grid(n: int) -> list[str]:
+    return [f"1 0 0 0 1 0 0 0 1 {20 * (i % 5)} {20 * (i // 5)} 5" for i in range(n)]
+
+
+def _geometry(blob: bytes):
+    import trimesh
+
+    from backend.app.services.plate_thumbnail import _load_plate_geometry
+
+    with zipfile.ZipFile(io.BytesIO(blob), "r") as zf:
+        return _load_plate_geometry(zf, trimesh, lambda *_a: None)
+
+
+@pytest.mark.skipif(not _trimesh_available(), reason="trimesh not installed")
+class TestBambuLayoutGeometry:
+    def test_each_instance_is_placed_once_not_n_squared(self):
+        _, box_faces = _box_mesh_xml()
+        blob = _bambu_layout_3mf([("1", t) for t in _grid(25)])
+
+        vertices, faces = _geometry(blob)
+
+        # 25 boxes of 12 faces. trimesh returned 25 * 25 * 12 = 7500.
+        assert len(faces) == 25 * box_faces
+        # Laid out on the grid, not stacked: 5 columns 20 mm apart plus a 10 mm box.
+        extent = vertices.max(axis=0) - vertices.min(axis=0)
+        assert extent[0] == pytest.approx(4 * 20 + 10)
+        assert extent[1] == pytest.approx(4 * 20 + 10)
+
+    def test_a_component_places_only_the_object_it_names(self):
+        # One object file holding three parts. trimesh appended all three to
+        # every part it referenced, so each placement drew the whole file.
+        _, box_faces = _box_mesh_xml()
+        blob = _bambu_layout_3mf(
+            [("1", _grid(1)[0]), ("3", "1 0 0 0 1 0 0 0 1 50 0 5")],
+            parts={"1": 10.0, "2": 40.0, "3": 10.0},
+        )
+
+        vertices, faces = _geometry(blob)
+
+        assert len(faces) == 2 * box_faces
+        # Part 2 (40 mm) is never placed, so nothing is that tall.
+        assert (vertices.max(axis=0) - vertices.min(axis=0))[2] == pytest.approx(10)
+
+    def test_a_mirrored_instance_keeps_its_faces_pointing_out(self):
+        import numpy as np
+        import trimesh
+
+        blob = _bambu_layout_3mf([("1", "-1 0 0 0 1 0 0 0 1 0 0 5")])
+
+        vertices, faces = _geometry(blob)
+
+        mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+        outward = mesh.triangles.mean(axis=1) - mesh.vertices.mean(axis=0)
+        assert (np.einsum("ij,ij->i", mesh.face_normals, outward) > 0).all()
+
+    def test_a_self_referencing_component_terminates(self):
+        # Object 500 places the box and then itself; the walk must stop at the
+        # loop rather than recurse, and still draw the box it reached once.
+        loop = (
+            '<object id="500" type="model"><components>'
+            f'<component p:path="/3D/Objects/object_1.model" objectid="1" transform="{_IDENTITY}"/>'
+            f'<component objectid="500" transform="1 0 0 0 1 0 0 0 1 30 0 0"/></components></object>'
+        )
+        blob = _bambu_layout_3mf(
+            [],
+            extra_root_objects=loop,
+            extra_items=f'<item objectid="500" transform="{_IDENTITY}"/>',
+        )
+
+        _vertices, faces = _geometry(blob)
+
+        assert len(faces) == _box_mesh_xml()[1]
+
+    def test_a_build_item_can_name_the_file_its_object_lives_in(self):
+        # Production extension: ``p:path`` on the item itself, no wrapper object.
+        blob = _bambu_layout_3mf(
+            [],
+            extra_items=f'<item p:path="/3D/Objects/object_1.model" objectid="1" transform="{_IDENTITY}"/>',
+        )
+
+        _vertices, faces = _geometry(blob)
+
+        assert len(faces) == _box_mesh_xml()[1]
+
+    def test_a_component_pointing_at_a_missing_file_is_skipped(self):
+        blob = _bambu_layout_3mf([("1", _grid(1)[0])])
+        broken = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(blob)) as src, zipfile.ZipFile(broken, "w") as dst:
+            for item in src.infolist():
+                if item.filename != "3D/Objects/object_1.model":
+                    dst.writestr(item, src.read(item.filename))
+
+        assert _geometry(broken.getvalue()) is None
+
+    def test_many_instances_are_decimated_to_the_face_budget(self, monkeypatch):
+        import trimesh
+
+        import backend.app.services.plate_thumbnail as pt
+
+        # 25 spheres of 5120 faces against a budget of 1000 per copy.
+        sphere = trimesh.creation.icosphere(subdivisions=4)
+        verts = "".join(f'<vertex x="{x}" y="{y}" z="{z}"/>' for x, y, z in sphere.vertices)
+        tris = "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}"/>' for a, b, c in sphere.faces)
+        blob = _bambu_layout_3mf(
+            [("1", t) for t in _grid(25)],
+            mesh_xml=f"<mesh><vertices>{verts}</vertices><triangles>{tris}</triangles></mesh>",
+        )
+        monkeypatch.setattr(pt, "_RENDER_FACE_BUDGET", 25 * 1000)
+
+        _vertices, faces = _geometry(blob)
+
+        # Decimated once, to its share of the budget, then placed 25 times.
+        assert len(faces) <= 25 * 1100
+        assert len(faces) % 25 == 0
+
+    def test_a_decimation_that_fails_is_still_held_to_the_ceiling(self, monkeypatch):
+        import trimesh
+
+        import backend.app.services.plate_thumbnail as pt
+
+        # The budget would bring 25 spheres to 25k faces, well under the ceiling,
+        # so the up-front check passes. Decimation then fails and leaves each
+        # sphere whole: 128k faces, which the render must not be handed.
+        sphere = trimesh.creation.icosphere(subdivisions=4)
+        verts = "".join(f'<vertex x="{x}" y="{y}" z="{z}"/>' for x, y, z in sphere.vertices)
+        tris = "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}"/>' for a, b, c in sphere.faces)
+        blob = _bambu_layout_3mf(
+            [("1", t) for t in _grid(25)],
+            mesh_xml=f"<mesh><vertices>{verts}</vertices><triangles>{tris}</triangles></mesh>",
+        )
+        monkeypatch.setattr(pt, "_RENDER_FACE_BUDGET", 25 * 1000)
+        monkeypatch.setattr(pt, "_MAX_PLACED_FACES", 50_000)
+
+        def fail(*_a, **_k):
+            raise RuntimeError("decimation failed")
+
+        monkeypatch.setattr(trimesh.Trimesh, "simplify_quadric_decimation", fail)
+
+        assert _geometry(blob) is None
+
+    def test_over_the_ceiling_skips_the_thumbnail_and_keeps_the_3mf(self, monkeypatch):
+        import backend.app.services.plate_thumbnail as pt
+        from backend.app.services.plate_thumbnail import inject_plate_thumbnails_if_missing
+
+        # 25 boxes can't go below 12 faces each, so a ceiling under 300 is
+        # unreachable however hard the budget decimates.
+        monkeypatch.setattr(pt, "_MIN_FACES_PER_MESH", 12)
+        monkeypatch.setattr(pt, "_MAX_PLACED_FACES", 100)
+        blob = _bambu_layout_3mf([("1", t) for t in _grid(25)])
+
+        assert inject_plate_thumbnails_if_missing(blob) is blob
+
+    def test_injects_thumbnails_for_a_bambu_layout_plate(self):
+        from backend.app.services.plate_thumbnail import inject_plate_thumbnails_if_missing
+
+        blob = _bambu_layout_3mf([("1", t) for t in _grid(25)])
+        out = inject_plate_thumbnails_if_missing(blob)
+
+        assert {"Metadata/plate_1.png", "Metadata/plate_1_small.png"} <= _names_in_zip(out)

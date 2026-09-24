@@ -1,7 +1,8 @@
 """TLS certificate generation for virtual printer services.
 
-Generates certificates that mimic real Bambu printer certificate format:
-- CA certificate mimics "BBL CA" from "BBL Technologies Co., Ltd"
+Generates the certificate chain a slicer accepts in place of a real printer's:
+- CA certificate with CN = "Virtual Printer CA <id>", unique to the install
+  that generated it (a CA generated before that carries the bare name)
 - Printer certificate has CN = serial number, signed by the CA
 
 The CA certificate is persistent and only regenerated if missing or expired.
@@ -27,6 +28,11 @@ DEFAULT_SERIAL = "00M09A391800001"
 # Minimum days remaining before CA is considered expired and needs regeneration
 CA_EXPIRY_THRESHOLD_DAYS = 30
 
+# Common-name prefix of the generated CA. What follows it is derived from the
+# CA's own public key, so two installs never share a Subject DN -- see
+# ``_generate_ca_certificate`` for why that matters.
+CA_COMMON_NAME_PREFIX = "Virtual Printer CA"
+
 
 def _get_local_ip() -> str:
     """Get the local IP address."""
@@ -43,8 +49,10 @@ def _get_local_ip() -> str:
 class CertificateService:
     """Generate and manage TLS certificates for virtual printer.
 
-    Creates a certificate chain mimicking real Bambu printers:
-    - Root CA with CN="BBL CA", O="BBL Technologies Co., Ltd", C="CN"
+    Creates a certificate chain a slicer accepts in place of a real
+    printer's:
+    - Root CA with CN="Virtual Printer CA <id>", unique to the install that
+      generated it (an older CA carries the bare name and is kept as it is)
     - Printer cert with CN=serial_number, signed by the CA
     """
 
@@ -90,9 +98,10 @@ class CertificateService:
         is broken even though both files exist on disk. ``ensure_certificates``
         uses this to decide whether to regenerate.
 
-        Uses real signature verification — Bambuddy's auto-generated CAs all
-        share the same Subject DN ("Virtual Printer CA"), so a DN-only compare
-        would incorrectly return True even after rotation.
+        Uses real signature verification — every CA generated before the
+        common name carried a per-install suffix is literally
+        "CN=Virtual Printer CA", so on those installs a DN-only compare would
+        incorrectly return True even after rotation.
         """
         try:
             if not self.ca_cert_path.exists():
@@ -213,10 +222,25 @@ class CertificateService:
             key_size=2048,
         )
 
-        # Use a generic CA name - NOT BBL to avoid being rejected as fake
+        # Use a generic CA name - NOT BBL to avoid being rejected as fake.
+        #
+        # The name carries a per-install suffix taken from this CA's own key
+        # identifier. A slicer trust store is a flat list of certificates and
+        # OpenSSL looks an issuer up by Subject DN: it takes the first CA whose
+        # DN matches and fails the chain if that one did not sign the
+        # certificate, rather than trying the next match. So while every
+        # install signed as plain "CN=Virtual Printer CA", a user who imported
+        # the CAs of two Bambuddy instances broke one of them — each worked on
+        # its own, together whichever landed second in the file lost, with the
+        # same generic connection error an unimported CA gives (#3014).
+        # Distinct DNs mean both are found and both verify.
+        ca_skid = x509.SubjectKeyIdentifier.from_public_key(ca_key.public_key())
         ca_name = x509.Name(
             [
-                x509.NameAttribute(NameOID.COMMON_NAME, "Virtual Printer CA"),
+                x509.NameAttribute(
+                    NameOID.COMMON_NAME,
+                    f"{CA_COMMON_NAME_PREFIX} {ca_skid.digest.hex()[:8].upper()}",
+                ),
             ]
         )
 
@@ -248,6 +272,7 @@ class CertificateService:
                 ),
                 critical=True,
             )
+            .add_extension(ca_skid, critical=False)
             .sign(ca_key, hashes.SHA256())
         )
 
@@ -313,12 +338,23 @@ class CertificateService:
         # Issuer is the CA
         issuer = ca_cert.subject
 
+        # Key identifiers, but only when the CA carries one to point at. A CA
+        # generated before the per-install common name has no
+        # SubjectKeyIdentifier, and a leaf signed by it keeps exactly the shape
+        # it has today rather than naming an identifier its issuer does not
+        # advertise — those installs keep working with the CA they imported
+        # long ago, untouched.
+        try:
+            ca_skid = ca_cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value
+        except x509.ExtensionNotFound:
+            ca_skid = None
+
         now = datetime.now(timezone.utc)
         local_ip = _get_local_ip()
         logger.info("Generating printer certificate with CN=%s, local IP: %s", self.serial, local_ip)
 
         # Build printer certificate signed by CA
-        printer_cert = (
+        printer_cert_builder = (
             x509.CertificateBuilder()
             .subject_name(printer_subject)
             .issuer_name(issuer)
@@ -357,8 +393,18 @@ class CertificateService:
                 ),
                 critical=True,
             )
-            .sign(ca_key, hashes.SHA256())  # Signed by CA, not self-signed
         )
+
+        if ca_skid is not None:
+            printer_cert_builder = printer_cert_builder.add_extension(
+                x509.SubjectKeyIdentifier.from_public_key(printer_key.public_key()),
+                critical=False,
+            ).add_extension(
+                x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(ca_skid),
+                critical=False,
+            )
+
+        printer_cert = printer_cert_builder.sign(ca_key, hashes.SHA256())  # Signed by CA, not self-signed
 
         # Write printer private key
         self.key_path.write_bytes(
@@ -380,7 +426,7 @@ class CertificateService:
         self.cert_path.write_bytes(cert_chain)
 
         logger.info("Generated certificate chain at %s", self.cert_dir)
-        logger.info("  CA: CN=Virtual Printer CA")
+        logger.info("  CA: %s", ca_cert.subject.rfc4514_string())
         logger.info("  Printer: CN=%s", self.serial)
         return self.cert_path, self.key_path
 

@@ -77,6 +77,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { QueueStatsBar } from '../components/QueueStatsBar';
 import { CompactHistoryRow } from '../components/CompactHistoryRow';
 import { QueueTimelineView } from '../components/QueueTimelineView';
+import { compareQueueOrder, compareQueueOrderAcrossLanes } from '../utils/queueOrder';
 import { BatchOrdersView } from '../components/BatchOrdersView';
 
 function formatWeight(g: number, useKg = false): string {
@@ -132,6 +133,7 @@ function BulkEditModal({
   onClose,
   isSaving,
   canControlPrinter,
+  hasGcodeSnippets,
   t,
 }: {
   selectedCount: number;
@@ -140,12 +142,14 @@ function BulkEditModal({
   onClose: () => void;
   isSaving: boolean;
   canControlPrinter: boolean;
+  hasGcodeSnippets: boolean;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const [printerId, setPrinterId] = useState<number | null | 'unchanged'>('unchanged');
   const [manualStart, setManualStart] = useState<boolean | 'unchanged'>('unchanged');
   const [autoOffAfter, setAutoOffAfter] = useState<boolean | 'unchanged'>('unchanged');
   const [requirePreviousSuccess, setRequirePreviousSuccess] = useState<boolean | 'unchanged'>('unchanged');
+  const [gcodeInjection, setGcodeInjection] = useState<boolean | 'unchanged'>('unchanged');
   const [bedLevelling, setBedLevelling] = useState<CalibrationMode | 'unchanged'>('unchanged');
   const [flowCali, setFlowCali] = useState<CalibrationMode | 'unchanged'>('unchanged');
   const [vibrationCali, setVibrationCali] = useState<boolean | 'unchanged'>('unchanged');
@@ -165,6 +169,7 @@ function BulkEditModal({
     if (manualStart !== 'unchanged') data.manual_start = manualStart;
     if (autoOffAfter !== 'unchanged') data.auto_off_after = autoOffAfter;
     if (requirePreviousSuccess !== 'unchanged') data.require_previous_success = requirePreviousSuccess;
+    if (gcodeInjection !== 'unchanged') data.gcode_injection = gcodeInjection;
     if (bedLevelling !== 'unchanged') data.bed_levelling = bedLevelling;
     if (flowCali !== 'unchanged') data.flow_cali = flowCali;
     if (vibrationCali !== 'unchanged') data.vibration_cali = vibrationCali;
@@ -178,7 +183,7 @@ function BulkEditModal({
   const hasChanges = printerId !== 'unchanged' || manualStart !== 'unchanged' || autoOffAfter !== 'unchanged' ||
     requirePreviousSuccess !== 'unchanged' || bedLevelling !== 'unchanged' || flowCali !== 'unchanged' ||
     vibrationCali !== 'unchanged' || layerInspect !== 'unchanged' || timelapse !== 'unchanged' || useAms !== 'unchanged' ||
-    nozzleOffsetCali !== 'unchanged';
+    nozzleOffsetCali !== 'unchanged' || gcodeInjection !== 'unchanged';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -225,6 +230,12 @@ function BulkEditModal({
               <TriStateToggle label={t('queue.bulkEdit.staged')} value={manualStart} onChange={setManualStart} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.autoPowerOff')} value={autoOffAfter} onChange={setAutoOffAfter} disabled={!canControlPrinter} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.requirePrevious')} value={requirePreviousSuccess} onChange={setRequirePreviousSuccess} t={t} />
+              {/* Same gate as the print modal's checkbox (#3058): hidden until an
+                  admin has saved a snippet for some printer model, so the toggle
+                  never promises an injection that has nothing to inject. */}
+              {hasGcodeSnippets && (
+                <TriStateToggle label={t('queue.bulkEdit.gcodeInjection')} value={gcodeInjection} onChange={setGcodeInjection} t={t} />
+              )}
             </div>
           </div>
 
@@ -664,11 +675,18 @@ function SortableQueueItem({
             {isPending && !item.manual_start && (
               <span className="flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" />
+                {/* An item with no scheduled time used to render as "ASAP", which is the
+                    name of a dispatch mode the user may well not have picked -- ASAP and
+                    Queue differ only in insert position, and neither is stored on the
+                    item, so the two are indistinguishable here. Someone who chose Queue
+                    saw their row labelled ASAP and read it as Bambuddy overriding them
+                    (#2557, #3018). This column answers "when does it run", so it now says
+                    that instead of borrowing a mode name. */}
                 {item.scheduled_time
                   ? ((parseUTCDate(item.scheduled_time)?.getTime() ?? 0) - Date.now() < -60000
                       ? t?.('queue.time.overdue') ?? 'Overdue'
                       : formatRelativeTime(item.scheduled_time, timeFormat, t))
-                  : t?.('queue.time.asap') ?? 'ASAP'}
+                  : t?.('queue.time.whenFree') ?? 'When a printer is free'}
               </span>
             )}
           </div>
@@ -1777,22 +1795,7 @@ export function QueuePage() {
 
     // When SJF is enabled, override sort to match scheduler order
     if (settings?.queue_shortest_first) {
-      return [...items].sort((a, b) => {
-        // Group by printer first (nulls = model-based, grouped by target_model)
-        const aPrinter = a.printer_id ?? -(a.target_model?.charCodeAt(0) ?? 0);
-        const bPrinter = b.printer_id ?? -(b.target_model?.charCodeAt(0) ?? 0);
-        if (aPrinter !== bPrinter) return aPrinter - bPrinter;
-        // Within same printer/model: jumped items first (starvation guard)
-        const aJumped = a.been_jumped ? 1 : 0;
-        const bJumped = b.been_jumped ? 1 : 0;
-        if (aJumped !== bJumped) return bJumped - aJumped;
-        // Shortest print time next (nulls last)
-        const aTime = a.print_time_seconds ?? Infinity;
-        const bTime = b.print_time_seconds ?? Infinity;
-        if (aTime !== bTime) return aTime - bTime;
-        // Position as tiebreaker
-        return a.position - b.position;
-      });
+      return [...items].sort((a, b) => compareQueueOrderAcrossLanes(a, b, true));
     }
 
     return [...items].sort((a, b) => {
@@ -1833,10 +1836,12 @@ export function QueuePage() {
   // Queue items eligible for an "if started now" ETA (#2740).
   //
   // The ETA answers "when would this finish if it began right now", so it may
-  // only appear on items that really could begin right now. Deriving that from
-  // waiting_reason alone is not enough: the scheduler only writes that field on
-  // the model-based assignment path (print_scheduler.py), so an item pinned to a
-  // specific printer sits behind a running job with waiting_reason still NULL.
+  // only appear on items that really could begin right now. waiting_reason now
+  // covers the pinned-printer case too (#3074), but it is still not enough on
+  // its own: it says whether the scheduler had a reason to hold the item on its
+  // last pass, not whether this item is the one that printer takes next. Two
+  // items pinned to the same free printer both come back with no reason, and
+  // only one of them can start now — which is what the ordering below works out.
   //
   // Computed from the unfiltered queue on purpose — hiding a printer behind the
   // location filter must not make its printer look free.
@@ -1856,17 +1861,10 @@ export function QueuePage() {
 
     // Mirrors the scheduler's own ordering so "next up" here means the item the
     // scheduler would actually dispatch next, not whatever the user sorted by.
-    const schedulerOrder = (a: PrintQueueItem, b: PrintQueueItem): number => {
-      if (settings?.queue_shortest_first) {
-        const aJumped = a.been_jumped ? 1 : 0;
-        const bJumped = b.been_jumped ? 1 : 0;
-        if (aJumped !== bJumped) return bJumped - aJumped;
-        const aTime = a.print_time_seconds ?? Infinity;
-        const bTime = b.print_time_seconds ?? Infinity;
-        if (aTime !== bTime) return aTime - bTime;
-      }
-      return a.position - b.position;
-    };
+    // Bucketed by printer immediately below, so the within-lane comparator is
+    // the right one -- no cross-lane grouping needed.
+    const schedulerOrder = (a: PrintQueueItem, b: PrintQueueItem): number =>
+      compareQueueOrder(a, b, settings?.queue_shortest_first ?? false);
 
     // Claimants for each printer, in the order the scheduler would take them.
     // Staged and future-scheduled items are excluded: the scheduler skips both
@@ -2550,6 +2548,7 @@ export function QueuePage() {
           queueItems={queue || []}
           printers={printers || []}
           printerStatuses={printerStatusMap}
+          sjfEnabled={settings?.queue_shortest_first ?? false}
           onItemClick={(item) => {
             if (['completed', 'failed', 'skipped', 'cancelled'].includes(item.status)) {
               setRequeueItem(item);
@@ -2959,6 +2958,7 @@ export function QueuePage() {
           onClose={() => setShowBulkEditModal(false)}
           isSaving={bulkUpdateMutation.isPending}
           canControlPrinter={hasPermission('printers:control')}
+          hasGcodeSnippets={!!settings?.gcode_snippets}
           t={t}
         />
       )}

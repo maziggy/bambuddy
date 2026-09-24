@@ -1,4 +1,4 @@
-import { isApiSliceableFilename, isSliceableFilename } from './slicer';
+import { isApiSliceableFilename, isSliceableFilename, type SlicerType } from './slicer';
 
 /**
  * Is a library file sliced — does it carry printer-executable G-code?
@@ -34,11 +34,19 @@ export function isSlicedLibraryFile(file: {
  * as name-bound as the Print gate it sits beside (#2993), so once a sliced
  * `Foo.3mf` correctly gained a Print button it would have been offered a
  * Slice one as well: re-slicing its own G-code.
+ *
+ * `desktopSlicer` is required even when `useSlicerApi` is true, where it is not
+ * consulted: the desktop answer depends on which slicer the URL is handed to
+ * (#3029), and a caller that cannot name one has not yet decided what its
+ * button will do.
  */
 export function isSliceableLibraryFile(
   file: { filename: string; file_type?: string | null },
   useSlicerApi: boolean,
+  desktopSlicer: SlicerType,
 ): boolean {
   if (isSlicedLibraryFile(file)) return false;
-  return useSlicerApi ? isApiSliceableFilename(file.filename) : isSliceableFilename(file.filename);
+  return useSlicerApi
+    ? isApiSliceableFilename(file.filename)
+    : isSliceableFilename(file.filename, desktopSlicer);
 }

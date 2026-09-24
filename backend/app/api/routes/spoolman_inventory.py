@@ -62,6 +62,7 @@ from backend.app.services.spoolman import (
     init_spoolman_client,
 )
 from backend.app.services.spoolman_tracking import get_fallback_spool_tag_for_slot
+from backend.app.services.tag_conflict import tag_already_linked
 from backend.app.utils.color_utils import spoolman_color_hex
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
@@ -1154,6 +1155,18 @@ async def sync_spool_weight(
     return {"status": "ok", "weight_used": weight_used}
 
 
+def _extra_tag(spool: dict) -> str:
+    """The tag stored in a Spoolman spool's ``extra``, normalised for comparison.
+
+    Anything that is not a string reads as no tag. ``extra`` is free-form and
+    edited outside Bambuddy, and ``.get("tag", "")`` does not default a key
+    that is present and null -- that returns None, which has no ``.strip``.
+    """
+    extra = spool.get("extra")
+    raw = extra.get("tag") if isinstance(extra, dict) else None
+    return raw.strip('"').upper() if isinstance(raw, str) else ""
+
+
 @router.patch("/spools/{spool_id}/tag")
 async def link_tag_to_spoolman_spool(
     *,
@@ -1165,8 +1178,10 @@ async def link_tag_to_spoolman_spool(
     """Write an NFC tag UID or Bambu tray UUID into Spoolman's extra.tag for a spool.
 
     tray_uuid takes precedence over tag_uid when both are supplied.
-    Returns 409 if another spool already carries the same tag.
     Uses extra_lock to serialise against concurrent extra-field writes.
+
+    A tag another active spool already carries is refused with the shared
+    ``tag_already_linked`` 409, identical to the built-in route's (#3110).
     """
     client = await _get_client(db)
     tag = (data.tray_uuid or data.tag_uid).upper()
@@ -1174,15 +1189,25 @@ async def link_tag_to_spoolman_spool(
 
     async with client.extra_lock(spool_id):
         # Duplicate check: scan all spools for the same tag on a different spool.
+        # Sorted, because Spoolman has no unique constraint on extra.tag either,
+        # and a caller offered whichever row the scan happened to reach first
+        # could not tell two holders apart. The built-in route names the lowest
+        # id for the same reason (#3110).
+        #
+        # Sorting means every row is read, where the old loop stopped at its
+        # first match, so one malformed row after the holder must not be able
+        # to take the whole request down: _extra_tag refuses a non-string, and
+        # a row without an integer id cannot be named and so is not treated as
+        # a holder. Bambuddy only ever writes a JSON string here; a third party
+        # editing extra.tag in Spoolman is what puts anything else in reach.
         async with _translate_spoolman_errors():
             all_spools = await client.get_all_spools()
-        for s in all_spools:
-            s_tag = (s.get("extra") or {}).get("tag", "")
-            if s_tag.strip('"').upper() == tag and s.get("id") != spool_id:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Tag is already assigned to spool {s['id']}",
-                )
+        holders = sorted(
+            (s for s in all_spools if _extra_tag(s) == tag and isinstance(s.get("id"), int) and s["id"] != spool_id),
+            key=lambda s: s["id"],
+        )
+        if holders:
+            raise tag_already_linked("tray_uuid" if data.tray_uuid else "tag_uid", holders[0]["id"])
 
         # Re-fetch inside the lock so cur_extra reflects any concurrent update.
         async with _translate_spoolman_errors():

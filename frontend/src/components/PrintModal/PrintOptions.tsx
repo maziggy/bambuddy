@@ -198,6 +198,16 @@ export function PrintOptionsPanel({
                 />
               </div>
             )}
+            {/* A typed 0 and a derived 0 do different things (#3041): the
+                first is a request for a bed-only preheat and still runs the
+                soak, the second means no material here wants a chamber and
+                skips the stage. Nothing in the field said so, and a user
+                reaching for 0 to switch preheat off got the delay instead. */}
+            {options.preheat_override !== 'off' && (
+              <p className="text-[11px] text-bambu-gray mt-1">
+                {t('settings.preheatTargetOverrideHelp', '0 heats the bed and runs the soak without the chamber. Leave blank and a print with no chamber requirement skips preheat entirely.')}
+              </p>
+            )}
           </div>
         </div>
       )}

@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 import aiohttp
 
 from backend.app.core.logging_filters import redact_url_credentials
+from backend.app.utils.ffmpeg_output import NO_FFMPEG_OUTPUT, summarize_ffmpeg_stderr
 
 logger = logging.getLogger(__name__)
 
@@ -517,7 +518,7 @@ async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
 
         if process.returncode != 0:
-            logger.error("ffmpeg USB capture failed: %s", stderr.decode()[:200])
+            logger.error("ffmpeg USB capture failed: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT)
             return None
 
         if not stdout or len(stdout) < 100:
@@ -642,7 +643,7 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         try:
             from urllib.parse import urlparse
 
-            from backend.app.services.camera import create_tls_proxy
+            from backend.app.services.camera import close_tls_proxy, create_tls_proxy
 
             parsed = urlparse(safe_url)
             target_port = parsed.port or 322
@@ -701,8 +702,8 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         )
 
         if process.returncode != 0:
-            # ffmpeg echoes the RTSP input URL, which carries the camera password.
-            logger.error("ffmpeg RTSP capture failed: %s", redact_url_credentials(stderr.decode())[:200])
+            # The summariser masks the camera password the input URL carries.
+            logger.error("ffmpeg RTSP capture failed: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT)
             return None
 
         if not stdout or len(stdout) < 100:
@@ -721,8 +722,7 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         return None
     finally:
         if proxy_server:
-            proxy_server.close()
-            await proxy_server.wait_closed()
+            await close_tls_proxy(proxy_server)
 
 
 def _transcode_to_jpeg(data: bytes) -> bytes | None:
@@ -1075,7 +1075,7 @@ async def _stream_rtsp(
         try:
             from urllib.parse import urlparse
 
-            from backend.app.services.camera import create_tls_proxy
+            from backend.app.services.camera import close_tls_proxy, create_tls_proxy
 
             parsed = urlparse(safe_url)
             target_port = parsed.port or 322
@@ -1112,10 +1112,18 @@ async def _stream_rtsp(
         "1024000",
         "-max_delay",
         "500000",
-        "-probesize",
-        "32",
-        "-analyzeduration",
-        "0",
+        # No probe cap here (#3082). The input is whatever camera the user
+        # owns, so there is no stream to tune a fast-start probe against: a
+        # 32-byte probe expires before a source that carries SPS/PPS in-band
+        # rather than in its SDP has sent them, and ffmpeg then starts no
+        # H.264 decoder and emits nothing at all. ffmpeg's defaults are a
+        # ceiling rather than a wait, so a camera that announces itself in the
+        # first packet still starts as fast as it ever did.
+        #
+        # `_capture_rtsp_frame` has always run on those defaults, which is how
+        # a camera could pass the connection test and still show a black live
+        # view. The printer path is the opposite case — a known Bambu camera
+        # per model — and keeps its tuning in `camera_profiles.py`.
         "-fflags",
         "nobuffer",
         "-flags",
@@ -1149,8 +1157,10 @@ async def _stream_rtsp(
         await asyncio.sleep(0.1)
         if process.returncode is not None:
             stderr = await process.stderr.read()
-            # ffmpeg echoes the RTSP input URL, which carries the camera password.
-            logger.error("ffmpeg RTSP stream failed immediately: %s", redact_url_credentials(stderr.decode())[:300])
+            # The summariser masks the camera password the input URL carries.
+            logger.error(
+                "ffmpeg RTSP stream failed immediately: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT
+            )
             return
 
         buffer = b""
@@ -1201,8 +1211,7 @@ async def _stream_rtsp(
                 process.kill()
                 await process.wait()
         if proxy_server:
-            proxy_server.close()
-            await proxy_server.wait_closed()
+            await close_tls_proxy(proxy_server)
 
 
 async def _stream_usb(
@@ -1262,7 +1271,9 @@ async def _stream_usb(
         await asyncio.sleep(0.5)
         if process.returncode is not None:
             stderr = await process.stderr.read()
-            logger.error("ffmpeg USB stream failed immediately: %s", stderr.decode()[:300])
+            logger.error(
+                "ffmpeg USB stream failed immediately: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT
+            )
             return
 
         buffer = b""

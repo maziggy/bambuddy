@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 from backend.app.services.camera import get_ffmpeg_path
+from backend.app.utils.ffmpeg_output import NO_FFMPEG_OUTPUT, summarize_ffmpeg_stderr
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +44,12 @@ class TimelapseProcessor:
         stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
-            logger.error("ffprobe failed: %s", stderr.decode())
-            raise RuntimeError(f"ffprobe failed: {stderr.decode()}")
+            # Summarised once and used for both: the raise carried a second,
+            # bare ``stderr.decode()`` that could itself raise UnicodeDecodeError
+            # on the bytes ffprobe copies out of a broken file (#2968).
+            detail = summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT
+            logger.error("ffprobe failed: %s", detail)
+            raise RuntimeError(f"ffprobe failed: {detail}")
 
         data = json.loads(stdout.decode())
         video_stream = next(
@@ -230,7 +235,7 @@ class TimelapseProcessor:
         _, stderr = await process.communicate()
 
         if process.returncode != 0:
-            logger.error("FFmpeg processing failed: %s", stderr.decode())
+            logger.error("FFmpeg processing failed: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT)
             return False
 
         return output_path.exists()

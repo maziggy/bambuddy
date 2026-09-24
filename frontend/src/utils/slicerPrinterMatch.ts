@@ -45,6 +45,12 @@ export const EMPTY_COMPATIBILITY_INDEX: PrinterCompatibilityIndex = {
 // (e.g. "X1" ⇄ "X1C") would silently group truly distinct printers.
 const PRINTER_MODEL_SUFFIX_ALIASES: Record<string, readonly string[]> = {
   'A1 MINI': ['A1M'],
+  // Same shape, spotted while tracing #2982: the bundle names every H2D Pro
+  // process and filament preset "@BBL H2DP" while the printer preset — and
+  // PRINTER_MODEL_MAP with it — spells the model "H2D Pro". Without the alias
+  // the H2D Pro classified all 198 bundled processes as belonging to another
+  // printer.
+  'H2D PRO': ['H2DP'],
 };
 
 /**

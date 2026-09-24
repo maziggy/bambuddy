@@ -705,5 +705,194 @@ describe('ProjectsPage', () => {
       // Flattening every descendant onto the root would lose the depth.
       expect(wingGroup!.textContent).not.toContain('Airframe');
     });
+
+    describe('folding sub-project groups away (#2991)', () => {
+      // localStorage is globally mocked in setup.ts, so each test programs the
+      // preference it wants explicitly.
+      const getItemMock = localStorage.getItem as ReturnType<typeof vi.fn>;
+      const setItemMock = localStorage.setItem as ReturnType<typeof vi.fn>;
+
+      beforeEach(() => {
+        getItemMock.mockReset();
+        setItemMock.mockReset();
+      });
+
+      // The mock is module-global: an implementation left behind here would
+      // silently collapse the groups of every later test.
+      afterEach(() => {
+        getItemMock.mockReset();
+        setItemMock.mockReset();
+      });
+
+      const serveAirframe = () =>
+        server.use(
+          http.get('/api/v1/projects/', () =>
+            HttpResponse.json([
+              listItem({ id: 1, name: 'Airframe', child_count: 1 }),
+              listItem({ id: 2, name: 'Wing', parent_id: 1 }),
+            ]),
+          ),
+        );
+
+      it('leaves groups open when no preference has been stored', async () => {
+        getItemMock.mockReturnValue(null);
+        serveAirframe();
+
+        render(<ProjectsPage />);
+
+        await waitFor(() => {
+          expect(screen.getByText('Sub-projects of Airframe')).toBeInTheDocument();
+        });
+        // The page behaved this way before the toggle existed, and an upgrade
+        // that hides half of somebody's projects is not a fix.
+        expect(screen.getByText('Wing')).toBeInTheDocument();
+      });
+
+      it('opens with the groups shut when that is what was stored', async () => {
+        getItemMock.mockImplementation((key: string) =>
+          key === 'projects-collapse-subprojects' ? 'true' : null,
+        );
+        serveAirframe();
+
+        render(<ProjectsPage />);
+
+        await waitFor(() => {
+          expect(screen.getByText('Sub-projects of Airframe')).toBeInTheDocument();
+        });
+        // The caption stays — it is the way back in, and it says what is behind
+        // it. Only the cards go.
+        expect(screen.queryByText('Wing')).not.toBeInTheDocument();
+      });
+
+      it('shuts one group from its own caption, leaving the others alone', async () => {
+        getItemMock.mockReturnValue(null);
+        server.use(
+          http.get('/api/v1/projects/', () =>
+            HttpResponse.json([
+              listItem({ id: 1, name: 'Airframe', child_count: 1 }),
+              listItem({ id: 2, name: 'Wing', parent_id: 1 }),
+              listItem({ id: 3, name: 'Fuselage', child_count: 1 }),
+              listItem({ id: 4, name: 'Bulkhead', parent_id: 3 }),
+            ]),
+          ),
+        );
+        const user = userEvent.setup();
+
+        render(<ProjectsPage />);
+
+        await waitFor(() => {
+          expect(screen.getByText('Wing')).toBeInTheDocument();
+        });
+
+        await user.click(screen.getByRole('button', { name: /Sub-projects of Airframe/ }));
+
+        await waitFor(() => {
+          expect(screen.queryByText('Wing')).not.toBeInTheDocument();
+        });
+        expect(screen.getByText('Bulkhead')).toBeInTheDocument();
+        // A per-group chevron is a passing choice, not a new default for the
+        // whole page.
+        expect(setItemMock).not.toHaveBeenCalledWith('projects-collapse-subprojects', 'true');
+      });
+
+      it('remembers the default the pill sets', async () => {
+        getItemMock.mockReturnValue(null);
+        const user = userEvent.setup();
+        serveAirframe();
+
+        render(<ProjectsPage />);
+
+        await waitFor(() => {
+          expect(screen.getByText('Wing')).toBeInTheDocument();
+        });
+
+        await user.click(screen.getByRole('button', { name: 'Collapse' }));
+
+        await waitFor(() => {
+          expect(screen.queryByText('Wing')).not.toBeInTheDocument();
+        });
+        expect(setItemMock).toHaveBeenCalledWith('projects-collapse-subprojects', 'true');
+      });
+
+      it('drops per-group choices when the default is flipped against them', async () => {
+        getItemMock.mockReturnValue(null);
+        const user = userEvent.setup();
+        serveAirframe();
+
+        render(<ProjectsPage />);
+
+        await waitFor(() => {
+          expect(screen.getByText('Wing')).toBeInTheDocument();
+        });
+
+        // Shut this one by hand, then ask for everything shut, then everything
+        // open again. The hand-made choice was made against the old default,
+        // and honouring it now would leave a group defying the pill the user
+        // just pressed.
+        await user.click(screen.getByRole('button', { name: /Sub-projects of Airframe/ }));
+        await waitFor(() => {
+          expect(screen.queryByText('Wing')).not.toBeInTheDocument();
+        });
+
+        await user.click(screen.getByRole('button', { name: 'Collapse' }));
+        await user.click(screen.getByRole('button', { name: 'Collapse' }));
+
+        await waitFor(() => {
+          expect(screen.getByText('Wing')).toBeInTheDocument();
+        });
+      });
+
+      it('counts what the chevron actually unfolds, not the card badge', async () => {
+        // The API counts sub-projects across every status on purpose, so the
+        // card badge says 2 while the Active filter leaves one child to show.
+        // A caption repeating the badge would promise a card that is not there.
+        getItemMock.mockImplementation((key: string) =>
+          key === 'projects-collapse-subprojects' ? 'true' : null,
+        );
+        server.use(
+          http.get('/api/v1/projects/', ({ request }) => {
+            const status = new URL(request.url).searchParams.get('status');
+            const all = [
+              listItem({ id: 1, name: 'Airframe', child_count: 2 }),
+              listItem({ id: 2, name: 'Wing', parent_id: 1 }),
+              listItem({ id: 3, name: 'Tailplane', parent_id: 1, status: 'archived' }),
+            ];
+            return HttpResponse.json(status ? all.filter((p) => p.status === status) : all);
+          }),
+        );
+
+        render(<ProjectsPage />);
+
+        const caption = await screen.findByRole('button', { name: /Sub-projects of Airframe/ });
+        expect(caption.textContent).toContain('1');
+        expect(caption.textContent).not.toContain('2');
+      });
+
+      it('gives a shut group one grid cell instead of a whole row', async () => {
+        // Folding a tree that still spends a full-width row per parent halves
+        // the scrolling at best; the point is to get the page back.
+        getItemMock.mockImplementation((key: string) =>
+          key === 'projects-collapse-subprojects' ? 'true' : null,
+        );
+        serveAirframe();
+
+        render(<ProjectsPage />);
+
+        const caption = await screen.findByRole('button', { name: /Sub-projects of Airframe/ });
+        expect(caption.closest('.col-span-full')).toBeNull();
+      });
+
+      it('offers no pill on a page where nothing is nested', async () => {
+        getItemMock.mockReturnValue(null);
+
+        render(<ProjectsPage />);
+
+        await waitFor(() => {
+          expect(screen.getByText('Functional Parts')).toBeInTheDocument();
+        });
+        // A control that cannot change anything is just one more thing to read.
+        expect(screen.queryByRole('button', { name: 'Collapse' })).not.toBeInTheDocument();
+      });
+    });
   });
 });

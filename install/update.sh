@@ -52,6 +52,87 @@ cleanup_old_backups() {
   log "Pruned old backups, kept newest $max_count file(s)"
 }
 
+# Restore the --loop asyncio pin on a unit file written before it existed (#3001).
+#
+# install.sh has pinned the loop since 2026-07-05 (#1896), but this script has
+# never rewritten a unit file, and nothing else does either -- so an install
+# created before that date still runs on uvloop today no matter how many times
+# it has been updated. uvloop has been in every native venv since
+# uvicorn[standard] landed on 2025-11-28, and uvicorn's --loop auto prefers it,
+# so that is a seven-month window of installs still on the wrong loop. It cost
+# them every RTSP camera on 1.2.5.4 (#3001), and before that it exposed them to
+# Virtual Printer FTP uploads being silently truncated (#1896). Neither is
+# discoverable from the outside, which is why this repairs rather than reports.
+#
+# Only ever inserts the one flag. Everything else in the unit -- hardening,
+# environment, ExecStartPre, a hand-edited port -- is left byte-identical, and
+# the file is copied aside first.
+repair_loop_flag() {
+  local fragment exec_line backup
+
+  # The effective ExecStart, so a drop-in that already pins the loop counts.
+  if systemctl show "$SERVICE_NAME" --property=ExecStart --value 2>/dev/null | grep -q -- '--loop'; then
+    return 0
+  fi
+
+  fragment="$(systemctl show "$SERVICE_NAME" --property=FragmentPath --value 2>/dev/null || true)"
+  if [ -z "$fragment" ] || [ ! -f "$fragment" ]; then
+    warn "Cannot locate the unit file for $SERVICE_NAME; not repairing the --loop flag."
+    return 0
+  fi
+
+  # A drop-in, not the fragment, may be what defines ExecStart. Editing the
+  # fragment would then change nothing while reporting success.
+  if [ -n "$(systemctl show "$SERVICE_NAME" --property=DropInPaths --value 2>/dev/null || true)" ]; then
+    warn "$SERVICE_NAME has systemd drop-ins; add '--loop asyncio' to its uvicorn command by hand. See #1896."
+    return 0
+  fi
+
+  # Anything but exactly one single-line uvicorn ExecStart is someone else's
+  # arrangement -- a wrapper script, a continuation, several ExecStart lines --
+  # and is described rather than edited.
+  if [ "$(grep -c '^ExecStart=' "$fragment")" -ne 1 ]; then
+    warn "$fragment has no single ExecStart line; add '--loop asyncio' to its uvicorn command by hand. See #1896."
+    return 0
+  fi
+  exec_line="$(grep '^ExecStart=' "$fragment")"
+  case "$exec_line" in
+    *uvicorn*) ;;
+    *)
+      warn "$fragment does not start uvicorn directly; add '--loop asyncio' to it by hand. See #1896."
+      return 0
+      ;;
+  esac
+  case "$exec_line" in
+    *\\)
+      warn "$fragment continues its ExecStart onto another line; add '--loop asyncio' by hand. See #1896."
+      return 0
+      ;;
+  esac
+  if [ ! -w "$fragment" ]; then
+    warn "$fragment is not writable; add '--loop asyncio' to its uvicorn command by hand. See #1896."
+    return 0
+  fi
+
+  backup="$fragment.bak-$(date +%Y%m%d-%H%M%S)"
+  cp -p "$fragment" "$backup" || {
+    warn "Could not back up $fragment; leaving it alone."
+    return 0
+  }
+
+  # Appended, not spliced: uvicorn accepts its options in any order after the
+  # app path, and appending cannot disturb a value already on the line.
+  if ! sed -i 's|^ExecStart=.*|& --loop asyncio|' "$fragment"; then
+    warn "Failed to edit $fragment; restoring from $backup."
+    cp -p "$backup" "$fragment" || true
+    return 0
+  fi
+
+  log "Added the missing '--loop asyncio' flag to $fragment (was written before #1896; backup at $backup)"
+  log "Without it Bambuddy runs on uvloop, which breaks RTSP cameras (#3001) and can truncate Virtual Printer FTP uploads (#1896)."
+  systemctl daemon-reload || warn "systemctl daemon-reload failed; the new flag applies after the next reload."
+}
+
 on_error() {
   local exit_code="$1"
 
@@ -226,6 +307,8 @@ if [ -f "$FRONTEND_DIR/package.json" ]; then
 else
   warn "Skipping frontend build (frontend/package.json not found)."
 fi
+
+repair_loop_flag
 
 log "Starting service: $SERVICE_NAME"
 systemctl start "$SERVICE_NAME"

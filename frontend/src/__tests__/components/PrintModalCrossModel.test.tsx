@@ -9,7 +9,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
 import { server } from '../mocks/server';
@@ -139,5 +140,93 @@ describe('PrintModal cross-model mode', () => {
     // The scheduler derives the mapping against whichever printer it picks —
     // collecting tray numbers here would only be thrown away.
     expect(screen.queryByText('Filament Mapping')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Cross-model on a multi-plate file (#3101).
+ *
+ * The two features met badly. A multi-plate file moves quantity onto the
+ * per-plate steppers and hides the global field (#342), but the cross-model
+ * submit posts the global one — which in that configuration nothing can
+ * change. The reporter asked for 19 runs across an X1C and a P2S, watched the
+ * modal say "19 runs in total", and got exactly one print.
+ */
+describe('PrintModal cross-model mode on a multi-plate file', () => {
+  const PLATES = [1, 2, 3].map((i) => ({
+    index: i,
+    name: `Plate ${i}`,
+    objects: ['bracket'],
+    filaments: [{ slot_id: 1, type: 'PETG', color: '#FFFFFF' }],
+    has_thumbnail: false,
+    thumbnail_url: null,
+    bed_type: null,
+    print_time_seconds: 3600,
+  }));
+
+  let posted: Record<string, unknown> | null;
+  let reqUrls: string[];
+
+  beforeEach(() => {
+    posted = null;
+    reqUrls = [];
+    mockBackend();
+    server.use(
+      http.get('/api/v1/library/files/:id/plates', ({ params }) =>
+        HttpResponse.json({ file_id: Number(params.id), filename: 'x', plates: PLATES, is_multi_plate: true }),
+      ),
+      http.get('/api/v1/library/files/:id/filament-requirements', ({ request }) => {
+        reqUrls.push(request.url);
+        return HttpResponse.json({
+          filaments: [{ slot_id: 1, type: 'PETG', color: '#FFFFFF', used_grams: 15, used_meters: 5 }],
+        });
+      }),
+      http.post('/api/v1/queue/', async ({ request }) => {
+        posted = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ id: 1, status: 'pending', variants: [] });
+      }),
+    );
+  });
+
+  it('offers the global Quantity field, not the per-plate steppers', async () => {
+    renderCrossModel();
+    await screen.findByText('x1c.gcode.3mf');
+
+    // The plate selector is gone: its choice never reached the request, and the
+    // candidate list below is where a cross-model job picks its plates.
+    expect(screen.queryByRole('button', { name: /Select All/i })).toBeNull();
+    expect(await screen.findByLabelText('Quantity')).toBeInTheDocument();
+  });
+
+  it('queues the number of copies the user asked for', async () => {
+    const user = userEvent.setup();
+    renderCrossModel();
+    await screen.findByText('x1c.gcode.3mf');
+
+    fireEvent.change(await screen.findByLabelText('Quantity'), { target: { value: '19' } });
+    await user.click(screen.getByRole('button', { name: /^Print$/i }));
+
+    await waitFor(() => expect(posted).not.toBeNull());
+    expect(posted!.quantity).toBe(19);
+    // One job with both candidates, nineteen times over — not nineteen jobs
+    // each pinned to a model, and not one job.
+    expect((posted!.variants as Array<{ library_file_id: number }>).map((v) => v.library_file_id))
+      .toEqual([11, 12]);
+  });
+
+  it('reads filament requirements for the plate the primary candidate will run', async () => {
+    const user = userEvent.setup();
+    renderCrossModel();
+    await screen.findByText('x1c.gcode.3mf');
+    await waitFor(() => expect(reqUrls.some((u) => u.includes('plate_id=1'))).toBe(true));
+
+    await user.selectOptions(
+      screen.getByLabelText('Plate for x1c.gcode.3mf'),
+      '3',
+    );
+
+    // Without this the override panel would describe plate 1 while the job ran
+    // plate 3 — the plate selector that used to key it is no longer on screen.
+    await waitFor(() => expect(reqUrls.some((u) => u.includes('plate_id=3'))).toBe(true));
   });
 });

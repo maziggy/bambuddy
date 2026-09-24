@@ -29,10 +29,20 @@ print-complete callbacks can share one answer.
 # ``auto_pa_line_calib_mode`` is the pressure-advance (K profile) line. This one
 # is reported as a *subtask name* with no ``/usr/`` path at all, which is why
 # the path rule alone was never enough.
+#
+# ``pa_line_calib_mode`` and ``pa_pattern_calib_mode`` are the same calibration
+# started by hand rather than automatically before a print. Manual flow dynamics
+# offers both shapes -- a line and a pattern -- and each reports under its own
+# name with no ``auto_`` prefix, so neither is covered by the automatic entry
+# above and both produced the same no-3MF archive. They are listed as two
+# literals rather than matched by a shared ``pa_`` stem for the reason the whole
+# set is exact: a stem rule would also swallow a user's own ``pa_bracket.3mf``.
 INTERNAL_JOB_NAMES = frozenset(
     {
         "auto_cali_for_user",
         "auto_pa_line_calib_mode",
+        "pa_line_calib_mode",
+        "pa_pattern_calib_mode",
     }
 )
 

@@ -14,6 +14,7 @@ from pathlib import Path
 from backend.app.core.config import settings
 from backend.app.services.camera import apply_camera_rotation
 from backend.app.services.external_camera import capture_frame
+from backend.app.utils.ffmpeg_output import NO_FFMPEG_OUTPUT, summarize_ffmpeg_stderr
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +190,7 @@ class TimelapseSession:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
 
             if process.returncode != 0:
-                logger.error("ffmpeg timelapse stitch failed: %s", stderr.decode()[:500])
+                logger.error("ffmpeg timelapse stitch failed: %s", summarize_ffmpeg_stderr(stderr) or NO_FFMPEG_OUTPUT)
                 return False
 
             logger.info("Created timelapse video: %s (%s frames)", output_path, self.frame_count)

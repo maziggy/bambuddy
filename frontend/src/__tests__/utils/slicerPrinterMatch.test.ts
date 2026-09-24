@@ -333,6 +333,50 @@ describe('matchesPrinterModelSuffix (#1649)', () => {
   });
 });
 
+describe('H2D Pro spelled H2DP in preset names (#2982)', () => {
+  const H2D_PRO = 'Bambu Lab H2D Pro 0.4 nozzle';
+  const H2D = 'Bambu Lab H2D 0.4 nozzle';
+  const idx = buildCompatibilityIndex(PRINTER_MODELS);
+
+  it('matches the preset-name spelling against the printer-name spelling', () => {
+    // The bundle names every H2D Pro process and filament "@BBL H2DP"; the
+    // printer preset, and PRINTER_MODEL_MAP with it, says "H2D Pro". Without
+    // the alias an H2D Pro read all 198 bundled processes as another
+    // printer's, and got an A1 process auto-picked.
+    expect(matchesPrinterModelSuffix('H2DP', 'H2D Pro')).toBe(true);
+    expect(matchesPrinterModelSuffix('H2D Pro', 'H2DP')).toBe(true);
+  });
+
+  it('does NOT collapse H2DP into the plain H2D', () => {
+    // Different machines. The nozzle-count and build-volume differences make
+    // their presets genuinely non-interchangeable.
+    expect(matchesPrinterModelSuffix('H2DP', 'H2D')).toBe(false);
+    expect(matchesPrinterModelSuffix('H2D', 'H2D Pro')).toBe(false);
+  });
+
+  it('classifies an @BBL H2DP process as compatible with an H2D Pro', () => {
+    expect(
+      presetCompatibility(
+        { name: '0.20mm Balanced Strength @BBL H2DP' },
+        'process',
+        H2D_PRO,
+        idx,
+      ),
+    ).toBe('match');
+  });
+
+  it('still classifies an @BBL H2DP process as a mismatch for a plain H2D', () => {
+    expect(
+      presetCompatibility(
+        { name: '0.20mm Balanced Strength @BBL H2DP' },
+        'process',
+        H2D,
+        idx,
+      ),
+    ).toBe('mismatch');
+  });
+});
+
 describe('presetCompatibility with Bambu cloud A1M rename (#1649)', () => {
   const A1_MINI = 'Bambu Lab A1 mini 0.4 nozzle';
   const A1 = 'Bambu Lab A1 0.4 nozzle';

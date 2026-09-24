@@ -398,9 +398,18 @@ class NotificationService:
         # Per-event Priority header (#990). Only set when the user has
         # explicitly mapped this event to a 1-5 value; otherwise fall through
         # to the ntfy server's default so existing setups stay unchanged.
+        #
+        # The map is keyed by the provider's toggle column ("on_print_failed"),
+        # because that is what the dialog builds its rows from -- but every
+        # sender is called with the bare event name ("print_failed"), so the
+        # lookup used to miss for every real notification and hit only in tests
+        # that called this method with the prefixed name (issue #3139). Both
+        # spellings are accepted, which also leaves stored configs untouched.
         event_priorities = config.get("event_priorities") or {}
         if event_type and isinstance(event_priorities, dict):
             raw = event_priorities.get(event_type)
+            if raw is None and not event_type.startswith("on_"):
+                raw = event_priorities.get(f"on_{event_type}")
             try:
                 priority = int(raw) if raw is not None else None
             except (TypeError, ValueError):

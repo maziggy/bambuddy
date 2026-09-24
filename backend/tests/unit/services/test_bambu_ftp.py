@@ -487,6 +487,62 @@ class TestUpload:
         assert result is True, "intact file (SIZE match) tolerates 426 noise"
         client.disconnect()
 
+    def test_upload_426_with_intact_file_logs_at_info_not_warning(
+        self, ftp_client_factory, ftp_server, tmp_path, caplog
+    ):
+        """A verified-intact 426 is how Bambu FTPS normally ends a transfer,
+        not a fault, so it must not be a WARNING (#2987).
+
+        It fired 54 times in one support bundle, every one followed by a
+        completed upload, and buried the 26 TLS handshake failures in the same
+        log that actually cost the reporter two prints. The truncated case below
+        is still an error -- this only moves the one we have already verified.
+        """
+        import ftplib  # nosec B402 — tests need the real ftplib to construct mock 426 responses
+        import logging
+
+        local = tmp_path / "test.bin"
+        local.write_bytes(b"data" * 256)  # 1024 bytes
+        client = ftp_client_factory()
+        client.connect()
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        client._ftp.voidresp = raise_426
+        client._ftp.size = lambda _path: 1024
+
+        with caplog.at_level(logging.INFO, logger="backend.app.services.bambu_ftp"):
+            assert client.upload_file(local, "/cache/test.bin") is True
+        client.disconnect()
+
+        intact = [r for r in caplog.records if "file is intact on the" in r.getMessage()]
+        assert intact, "the proceed path must still say why it proceeded"
+        assert [r.levelno for r in intact] == [logging.INFO] * len(intact)
+
+    def test_upload_426_with_truncated_file_still_logs_an_error(self, ftp_client_factory, ftp_server, tmp_path, caplog):
+        """The half that must stay loud: bytes that did not verify."""
+        import ftplib  # nosec B402 — tests need the real ftplib to construct mock 426 responses
+        import logging
+
+        local = tmp_path / "test.bin"
+        local.write_bytes(b"data" * 256)
+        client = ftp_client_factory()
+        client.connect()
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        client._ftp.voidresp = raise_426
+        client._ftp.size = lambda _path: 100
+
+        with caplog.at_level(logging.INFO, logger="backend.app.services.bambu_ftp"):
+            assert client.upload_file(local, "/cache/test.bin") is False
+        client.disconnect()
+
+        rejected = [r for r in caplog.records if "rejected by printer" in r.getMessage()]
+        assert rejected and all(r.levelno == logging.ERROR for r in rejected)
+
     def test_upload_426_with_truncated_file_returns_false(self, ftp_client_factory, ftp_server, tmp_path):
         """The original #1401 fix is preserved: when SIZE confirms the file
         isn't on the server at full size (or SIZE itself fails), the upload

@@ -383,6 +383,12 @@ async def build_printer_files_zip(
                         max_bytes=MAX_PRINTER_ZIP_BYTES - total_bytes,
                         cancel_event=cancel_signal,
                         min_free_bytes=PRINTER_ZIP_FREE_SPACE_RESERVE,
+                        # Outside the per-printer download gate (#2957), in both
+                        # directions. A selection of ~250 MB /ipcam chunks holds
+                        # the printer for as long as it legitimately takes, and
+                        # nothing else should be made to wait that out; equally,
+                        # each file here must not stall behind a thumbnail.
+                        serialize=False,
                     )
                     if not downloaded:
                         failed_paths.append(remote_path)
@@ -509,6 +515,9 @@ async def build_printer_file(
             max_bytes=MAX_PRINTER_ZIP_BYTES,
             cancel_event=cancel_signal,
             min_free_bytes=PRINTER_ZIP_FREE_SPACE_RESERVE,
+            # The lock-free promise in this function's docstring, kept: a preview
+            # must not queue behind somebody else's selection (#2957).
+            serialize=False,
         )
         if not downloaded:
             raise FileNotFoundError("The selected printer file could not be downloaded")

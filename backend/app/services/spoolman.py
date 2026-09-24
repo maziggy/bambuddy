@@ -113,6 +113,12 @@ class SpoolmanClient:
         # grows with spool count; scoped to the instance so a client pointed at
         # a different Spoolman starts over.
         self._ensured_extra_fields: set[str] = set()
+        # Whether Spoolman's extra-field listing has been read once. Separate
+        # from the set above because the two answer different questions: the
+        # set is "which fields are known to exist", this is "have we asked".
+        # Without it a client registering three brand-new fields re-read the
+        # whole listing before each one.
+        self._extra_fields_listed = False
         self._ensure_extra_lock = asyncio.Lock()
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -953,6 +959,36 @@ class SpoolmanClient:
         """Register the 'tag' extra field in Spoolman if not present; returns True on success."""
         return await self.ensure_extra_field("tag")
 
+    async def _load_existing_extra_field_keys(self) -> set[str] | None:
+        """Keys of the spool extra fields Spoolman already has, or ``None`` when
+        the listing could not be read.
+
+        ``None`` and ``set()`` mean different things and the caller acts on the
+        difference: an empty set is "Spoolman has no extra fields", which means
+        every field Bambuddy needs must be created; ``None`` is "we could not
+        find out", where the only safe move is to fall back to attempting the
+        write blind.
+        """
+        try:
+            client = await self._get_client()
+            response = await client.get(f"{self.api_url}/field/spool")
+            if response.status_code != 200:
+                logger.debug(
+                    "Spoolman extra-field listing returned %s; falling back to blind registration",
+                    response.status_code,
+                )
+                return None
+            fields = response.json()
+        except Exception as e:  # noqa: BLE001 — registration is best-effort, see _ensure_extra_fields
+            logger.debug("Could not read Spoolman extra-field listing: %s", e)
+            return None
+        if not isinstance(fields, list):
+            return None
+        # Match on `key`, not `name`: `key` is the identifier the extra dict is
+        # written under and the one Bambuddy cares about, while `name` is the
+        # free-text label a user is free to change in Spoolman's UI.
+        return {f["key"] for f in fields if isinstance(f, dict) and isinstance(f.get("key"), str)}
+
     async def ensure_extra_field(self, name: str, field_type: str = "text") -> bool:
         """Register a custom extra field in Spoolman if not present.
 
@@ -960,18 +996,40 @@ class SpoolmanClient:
         with HTTP 400 ('Unknown extra field <name>.'), so any custom field
         Bambuddy persists alongside spools needs to be pre-registered.
         Idempotent — returns True if the field already exists.
+
+        Existence is read from ``GET /field/spool``, the whole-listing endpoint.
+        This used to probe ``GET /field/spool/{name}`` for one field at a time,
+        which Spoolman has never served: it declares only POST and DELETE at
+        that path, so the probe answered 405 every time and the check could
+        never succeed (issue #2983, reported by @ngreatorex).
+
+        Falling through to the POST on every call was worse than a wasted
+        request, because that endpoint is an upsert rather than a create. It
+        answered 200 whether or not the field was already there, so a field a
+        user had renamed, retyped or given a default in Spoolman's own UI was
+        silently reset to Bambuddy's version of it on every restart. Reading
+        the listing first is what lets an existing field be left alone.
         """
         try:
-            client = await self._get_client()
-
-            # Check if field already exists
-            response = await client.get(f"{self.api_url}/field/spool/{name}")
-            if response.status_code == 200:
-                logger.debug("Spoolman extra field %r already exists", name)
-                self._ensured_extra_fields.add(name)
+            if name in self._ensured_extra_fields:
                 return True
 
-            # Field doesn't exist - create it
+            if not self._extra_fields_listed:
+                existing = await self._load_existing_extra_field_keys()
+                if existing is not None:
+                    # Bank the whole listing: the caller registers several
+                    # fields in a row, and each one it already has is a request
+                    # not sent and a user customisation not overwritten. Read
+                    # once per client — every field created after this point is
+                    # added to the set as it is created, so re-reading would
+                    # only ever confirm what we already know.
+                    self._ensured_extra_fields |= existing
+                    self._extra_fields_listed = True
+                    if name in existing:
+                        logger.debug("Spoolman extra field %r already exists", name)
+                        return True
+
+            client = await self._get_client()
             field_data = {
                 "name": name,
                 "field_type": field_type,

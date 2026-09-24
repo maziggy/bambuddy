@@ -57,6 +57,112 @@ is_service_active() {
   launchctl list | grep -q "$SERVICE_NAME"
 }
 
+# Restore the --loop asyncio pin on a plist written before it existed (#3001).
+#
+# The macOS twin of the systemd repair in update.sh, and there for the same
+# reason: install.sh has pinned the loop since 2026-07-05 (#1896), this script
+# has never rewritten the plist, and nothing else does -- so an install created
+# before that date still launches on uvloop today. uvloop reaches macOS as
+# well, since uvicorn[standard] only excludes it on Windows. That costs every
+# RTSP camera (#3001) and risks silently truncated Virtual Printer FTP uploads
+# (#1896), neither of which is visible from outside the machine.
+#
+# PlistBuddy is used rather than sed because the plist is XML and
+# ProgramArguments is an array; appending the two strings is safe because
+# uvicorn accepts its options in any order after the app path.
+repair_loop_flag() {
+  local plistbuddy="/usr/libexec/PlistBuddy" backup
+
+  [ -f "$PLIST_PATH" ] || return 0
+  if grep -q -- '--loop' "$PLIST_PATH"; then
+    return 0
+  fi
+  if [ ! -x "$plistbuddy" ]; then
+    warn "PlistBuddy not found; add '--loop' and 'asyncio' to ProgramArguments in $PLIST_PATH by hand. See #1896."
+    return 0
+  fi
+  # A plist that does not invoke uvicorn directly is someone else's
+  # arrangement and is described rather than edited.
+  if ! grep -q 'uvicorn' "$PLIST_PATH"; then
+    warn "$PLIST_PATH does not start uvicorn directly; add '--loop asyncio' to it by hand. See #1896."
+    return 0
+  fi
+
+  backup="$PLIST_PATH.bak-$(date +%Y%m%d-%H%M%S)"
+  cp -p "$PLIST_PATH" "$backup" || {
+    warn "Could not back up $PLIST_PATH; leaving it alone."
+    return 0
+  }
+
+  if ! "$plistbuddy" -c 'Add :ProgramArguments: string --loop' \
+                     -c 'Add :ProgramArguments: string asyncio' "$PLIST_PATH" >/dev/null 2>&1; then
+    warn "Failed to edit $PLIST_PATH; restoring from $backup."
+    cp -p "$backup" "$PLIST_PATH" || true
+    return 0
+  fi
+
+  log "Added the missing '--loop asyncio' flag to $PLIST_PATH (was written before #1896; backup at $backup)"
+  log "Without it Bambuddy runs on uvloop, which breaks RTSP cameras (#3001) and can truncate Virtual Printer FTP uploads (#1896)."
+}
+
+# Re-apply the ad-hoc Python signature macOS needs to grant Local Network
+# access (#3114).
+#
+# The macOS twin of sign_python_for_tcc in install.sh, and here for two
+# reasons rather than one. An install created before that step existed has an
+# unsigned interpreter and no other way to acquire one -- the same gap
+# repair_loop_flag covers above. And it recurs: `brew upgrade python` installs
+# a fresh unsigned binary under a new versioned path, so this has to be
+# checked on every update, not once at install time.
+#
+# Without it, on an Intel Mac, TCC has no identity to anchor the grant to,
+# drops every connection to the printer with no error and no prompt, and the
+# entry in Privacy & Security cannot be made to work: the printer is simply
+# unreachable and nothing in the log says why.
+#
+# Only signs what is unsigned. On arm64 every binary already carries an
+# ad-hoc signature whose identity is a hash of the file, so re-signing would
+# rotate it and revoke a working grant on every single update.
+repair_python_signature() {
+  local python_bin base_exe framework target signed_any=0
+  local -a targets=()
+
+  python_bin="$INSTALL_DIR/venv/bin/python3"
+  [ -x "$python_bin" ] || return 0
+
+  if ! command -v codesign >/dev/null 2>&1; then
+    warn "codesign not found; skipping the macOS Local Network signing check."
+    warn "If the printer is unreachable, run 'xcode-select --install' and re-run this script."
+    return 0
+  fi
+
+  base_exe="$("$python_bin" -c 'import os, sys; print(os.path.realpath(getattr(sys, "_base_executable", None) or sys.executable))' 2>/dev/null)" || return 0
+  { [ -n "$base_exe" ] && [ -e "$base_exe" ]; } || return 0
+  targets+=("$base_exe")
+
+  # .../Versions/3.13/bin/python3.13 -> .../Versions/3.13/Resources/Python.app
+  framework="${base_exe%/bin/*}"
+  if [ "$framework" != "$base_exe" ] && [ -d "$framework/Resources/Python.app" ]; then
+    targets+=("$framework/Resources/Python.app")
+  fi
+
+  for target in "${targets[@]}"; do
+    if codesign -dv "$target" >/dev/null 2>&1; then
+      continue
+    fi
+    if codesign --force --sign - "$target" >/dev/null 2>&1; then
+      log "Ad-hoc signed $target so macOS can grant Local Network access (#3114)"
+      signed_any=1
+    else
+      warn "Could not sign $target; Bambuddy may be unable to reach the printer."
+      warn "Run by hand: codesign --force --sign - \"$target\""
+    fi
+  done
+
+  [ "$signed_any" -eq 0 ] || log "Restart any open Bambuddy page after this update; the signature changes only take effect on the restart below."
+  return 0
+}
+
 on_error() {
   local exit_code="$1"
 
@@ -210,6 +316,9 @@ if [ -f "$FRONTEND_DIR/package.json" ]; then
 else
   warn "Skipping frontend build (frontend/package.json not found)."
 fi
+
+repair_loop_flag
+repair_python_signature
 
 log "Starting service: $SERVICE_NAME"
 launchctl load "$PLIST_PATH"

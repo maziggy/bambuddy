@@ -1025,6 +1025,96 @@ def extract_bed_type_from_3mf(file_path: Path, plate_id: int | None = None) -> s
     return extract_plate_metadata_from_3mf(file_path, plate_id).bed_type
 
 
+# Bed temperature is not one key in a BambuStudio project. Every plate type has
+# its own per-filament array, and the plate actually fitted is named separately
+# in ``curr_bed_type`` -- so reading a bed temperature means picking the array
+# the plate points at. Keys and mapping are BambuStudio's own
+# ``get_bed_temp_1st_layer_key`` / ``get_bed_temp_key`` (PrintConfig.hpp), and
+# the plate names are the ``curr_bed_type`` enum values (PrintConfig.cpp).
+# First-layer temperature first: that is what the printer heats to before the
+# print starts, which is what preheat is trying to reach.
+#
+# ``Default Plate`` is deliberately absent -- BambuStudio maps it to no key at
+# all, so there is nothing to read and guessing a plate would invent a bed
+# temperature the slice never specified.
+_BED_TEMP_KEYS: dict[str, tuple[str, str]] = {
+    "Cool Plate": ("cool_plate_temp_initial_layer", "cool_plate_temp"),
+    "Engineering Plate": ("eng_plate_temp_initial_layer", "eng_plate_temp"),
+    "High Temp Plate": ("hot_plate_temp_initial_layer", "hot_plate_temp"),
+    "Textured PEI Plate": ("textured_plate_temp_initial_layer", "textured_plate_temp"),
+    "Supertack Plate": ("supertack_plate_temp_initial_layer", "supertack_plate_temp"),
+}
+
+# Fallback for a config that names no plate: the Orca/PrusaSlicer spelling,
+# which is a single value rather than a per-plate array.
+_GENERIC_BED_TEMP_KEYS = ("bed_temperature_initial_layer", "bed_temperature")
+
+
+def _plate_temperature(val) -> int | None:
+    """Bed temperature from one plate-temperature entry, or None.
+
+    The plate arrays carry one entry per filament in the project, and a 0 means
+    that filament cannot print on this plate. The bed only has one temperature,
+    so the print runs at the highest its filaments ask for -- taking entry 0 the
+    way the neighbouring scalar settings do would store a 0 for any project
+    whose first filament is not one this plate is heated for.
+    """
+    values = val if isinstance(val, list) else [val]
+    temps = []
+    for entry in values:
+        if isinstance(entry, bool) or not isinstance(entry, (int, float, str)):
+            continue
+        try:
+            temps.append(int(float(entry)))
+        except (TypeError, ValueError):
+            continue
+    return max(temps) if temps else None
+
+
+def bed_temperature_from_config(data: dict) -> int | None:
+    """Bed temperature for the plate *data* is sliced for, or None (#2989).
+
+    *data* is a parsed ``Metadata/project_settings.config``. Lives here rather
+    than beside the archive parser so the ingest path and the one-shot backfill
+    that repairs archives written before the fix read it exactly the same way.
+    """
+    bed_type = str(data.get("curr_bed_type") or "").strip()
+    for key in (*_BED_TEMP_KEYS.get(bed_type, ()), *_GENERIC_BED_TEMP_KEYS):
+        if key not in data:
+            continue
+        temperature = _plate_temperature(data[key])
+        # A plate array of all zeros means no filament in the project prints on
+        # this plate, which is not a bed temperature -- keep looking rather than
+        # recording a 0 that reads as "cold bed".
+        if temperature:
+            return temperature
+    return None
+
+
+def extract_bed_temperature_from_3mf(file_path: Path) -> int | None:
+    """Read a 3MF's bed temperature straight off disk, or None.
+
+    For the backfill, which has a ``file_path`` and nothing else. Opens only
+    ``Metadata/project_settings.config`` -- the archive parser reads thumbnails,
+    the model and the slice info as well, and none of that is wanted here.
+
+    Every failure is None. Deliberately broader than the handful of exceptions a
+    malformed zip is expected to raise: the caller runs inside the startup
+    migration, which has no handler above it, so anything unlisted escaping here
+    does not skip one archive -- it stops Bambuddy from booting, and keeps
+    stopping it, because the one-shot flag is written in the same transaction
+    that just rolled back. A bed temperature is not worth that.
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            if "Metadata/project_settings.config" not in zf.namelist():
+                return None
+            data = json.loads(zf.read("Metadata/project_settings.config").decode())
+        return bed_temperature_from_config(data) if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
 # Header values exposed as `{placeholder}` substitutions inside snippets.
 # Aliases let users write Prusa-style names (`{max_layer_z}`) that map onto
 # Bambu/Orca header keys (`max_z_height`).
@@ -1118,6 +1208,39 @@ def default_plate_gcode_name(names: list[str]) -> str | None:
     if numbered:
         return min(numbered)[1]
     return gcodes[0]
+
+
+def names_carry_gcode(names: list[str]) -> bool:
+    """Is this 3MF a sliced file — does it carry printer-executable G-code?
+
+    One definition, because several of them is the bug (#2993). The archive
+    side judged a file by what it holds -- the card's GCODE badge reads the
+    layer count and print time parsed out of the plate G-code, and
+    ``/archives/{id}/capabilities`` scanned the zip -- while the library judged
+    it by its filename. So a sliced 3MF stored as ``Foo.3mf`` rather than
+    ``Foo.gcode.3mf`` carried the badge and still re-imported as a source-only
+    project. This is the answer for anything asking the zip directly.
+
+    Defers to ``default_plate_gcode_name`` rather than testing for
+    ``Metadata/plate_<n>.gcode``, so a slicer that lays its output out some
+    other way is judged by the same rule everywhere.
+    """
+    return default_plate_gcode_name(names) is not None
+
+
+def carries_gcode(file_path: Path | str) -> bool:
+    """``names_carry_gcode`` for a file on disk. False for anything unreadable.
+
+    Only the zip's central directory is read — no member is decompressed — so
+    this is cheap enough to run on every ingested file.
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            return names_carry_gcode(zf.namelist())
+    except (OSError, zipfile.BadZipFile):
+        # Not a zip, gone, or unreadable. Callers treat that as "no G-code
+        # visible", which is what they did before this check existed.
+        return False
 
 
 # The header block sits at the very top of the plate G-code. Read only that
@@ -1644,3 +1767,125 @@ def extract_plate_extruder_set_from_3mf(zf: zipfile.ZipFile, plate_id: int) -> s
                     used.update(_scan_paint(path))
         break
     return used
+
+
+# Keys in ``Metadata/project_settings.config`` that Bambu Studio writes an
+# "inherit / unset" marker into, mapped to the marker it uses for that key.
+# The slicer CLI's ``StaticPrintConfig`` validator runs against the embedded
+# settings *before* ``--load-settings`` overrides apply, so a marker the CLI's
+# own range check rejects makes it exit non-zero before our profile triplet is
+# ever consulted.
+#
+# There are two markers because there are two conventions, and which one a
+# given CLI rejects depends on the build:
+#
+#   "-1" -- inherit from the parent process preset (#1201, MakerWorld P2S
+#   3MFs). ``raft_first_layer_expansion`` and ``tree_support_wall_count`` are
+#   min 0 in every OrcaSlicer to date, so those still fail on the current
+#   sidecar; ``prime_tower_brim_width`` gained min -1 in Orca 2.4.2 and now
+#   passes there, but not on older builds.
+#
+#   "0" -- "use the active object/part filament", the default Bambu Studio
+#   writes for the three feature-filament indices (#3030). Bambu Studio and
+#   OrcaSlicer 2.4.0+ both define these min 0, so 0 is legal there; OrcaSlicer
+#   2.3.x and earlier still used the 1-based scheme (min 1, default 1) and
+#   reject it with ``0 not in range [1.000000,...]``. Sidecar images are
+#   version-tagged, so an install can be pinned to one of those.
+#
+# Removing the key rather than rewriting it is what makes this safe on every
+# build: the CLI then falls back to its own compiled default, which is 0 on
+# the builds where 0 was legal (so nothing changes) and 1 on the older ones,
+# which is what "the active filament" means under that scheme.
+#
+# Allowlisted (rather than "strip every marker-shaped value") because some
+# fields legitimately take the marker value -- z_offset, translations, and any
+# feature index a user really did set to a first filament -- and a blanket
+# strip would silently corrupt those.
+#
+# Add new entries as reports surface: the slicer names the offending field
+# directly, e.g. ``<field>: <value> not in range [...]``.
+PROJECT_SETTINGS_SENTINELS: dict[str, str] = {
+    # Reported in #1201 (MakerWorld P2S 3MFs).
+    "raft_first_layer_expansion": "-1",
+    "tree_support_wall_count": "-1",
+    # Known sentinel case from earlier reports, cited in #1201.
+    "prime_tower_brim_width": "-1",
+    # Reported in #3030 (MakerWorld 3MF, OrcaSlicer sidecar).
+    "wall_filament": "0",
+    "sparse_infill_filament": "0",
+    "solid_infill_filament": "0",
+}
+
+PROJECT_SETTINGS_PATH = "Metadata/project_settings.config"
+
+
+def _is_sentinel(value: object, sentinel: str) -> bool:
+    """Does ``value`` carry ``sentinel``, whether stored as text or a number?
+
+    Bambu Studio writes every ``project_settings.config`` value as a string,
+    but a 3MF that has been round-tripped through another tool can carry the
+    same field as a JSON number. ``bool`` is excluded explicitly: it is an
+    ``int`` subclass in Python, and ``str(False)`` would otherwise never match
+    anyway -- the exclusion is there so a future numeric sentinel like ``0``
+    cannot be matched by ``False``.
+    """
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (str, int)):
+        return str(value) == sentinel
+    return False
+
+
+def sanitize_project_settings_sentinels(zip_bytes: bytes) -> bytes:
+    """Strip inherit/unset sentinels from a 3MF's ``project_settings.config``
+    so the slicer CLI's range validator accepts the file (#1201, #3030).
+
+    Removes only allowlisted keys (see ``PROJECT_SETTINGS_SENTINELS``) and only
+    when the value is exactly that key's sentinel. The rest of the config --
+    and every other entry in the zip -- is preserved byte-for-byte. Unlike a
+    whole-file strip this leaves ``StaticPrintConfig`` initialisation intact:
+    the file is still present, still parses, and the slicer falls back to the
+    supplied ``--load-settings`` value, or to its own default, for the removed
+    key.
+
+    Returns the original bytes unchanged when no sanitisation is needed (input
+    isn't a valid zip, no ``project_settings.config``, no allowlisted sentinels
+    present, or any other parse failure) so the caller can pass the result on
+    without further checks.
+    """
+    from io import BytesIO
+
+    try:
+        with zipfile.ZipFile(BytesIO(zip_bytes), "r") as zin:
+            if PROJECT_SETTINGS_PATH not in zin.namelist():
+                return zip_bytes
+            try:
+                config = json.loads(zin.read(PROJECT_SETTINGS_PATH).decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return zip_bytes
+            if not isinstance(config, dict):
+                return zip_bytes
+            removed = {
+                key: sentinel
+                for key, sentinel in PROJECT_SETTINGS_SENTINELS.items()
+                if _is_sentinel(config.get(key), sentinel)
+            }
+            if not removed:
+                return zip_bytes
+            for key in removed:
+                config.pop(key, None)
+            patched = json.dumps(config)
+            logger.info(
+                "3MF sanitiser: removed inherit sentinels %s - slicer will use its defaults for those keys",
+                sorted(f"{key}={sentinel}" for key, sentinel in removed.items()),
+            )
+            dst = BytesIO()
+            with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    if item.filename == PROJECT_SETTINGS_PATH:
+                        zout.writestr(item, patched)
+                    else:
+                        zout.writestr(item, zin.read(item.filename))
+            return dst.getvalue()
+    except (zipfile.BadZipFile, OSError):
+        return zip_bytes

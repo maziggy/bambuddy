@@ -413,6 +413,11 @@ export function SpoolBuddyDashboard() {
     try {
       const weight = liveWeight ?? displayedWeight;
       if (spoolmanMode) {
+        // The tare is a property of the filament type in Spoolman, not of the
+        // spool, and Bambuddy already reads it from there. Sending one from
+        // here — even the form's own default — stamps an explicit per-spool
+        // tare on every spool the kiosk creates and stops it inheriting
+        // (issue #2908).
         const created = await api.createSpoolmanInventorySpool({
           material: 'PLA',
           subtype: null,
@@ -422,8 +427,6 @@ export function SpoolBuddyDashboard() {
           effect_type: null,
           brand: null,
           label_weight: 1000,
-          core_weight: 250,
-          core_weight_catalog_id: null,
           weight_used: 0,
           slicer_filament: null,
           slicer_filament_name: null,
@@ -442,7 +445,7 @@ export function SpoolBuddyDashboard() {
           last_weighed_at: weight !== null ? new Date().toISOString() : null,
           category: null,
           low_stock_threshold_pct: null,
-        });
+        } as Parameters<typeof api.createSpoolmanInventorySpool>[0]);
         await api.linkTagToSpoolmanSpool(created.id, {
           tag_uid: sbState.unknownTagUid || undefined,
           tray_uuid: (!sbState.unknownTagUid && sbState.unknownTrayUuid) ? sbState.unknownTrayUuid : undefined,

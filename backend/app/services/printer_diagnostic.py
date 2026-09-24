@@ -601,7 +601,7 @@ async def run_connection_diagnostic(
     ):
         # The toggle is on, a card is in, the printer said the last print's file
         # is on internal storage — and a probe confirmed it really is out of
-        # reach. That is what H2-series and P2S firmware does, and no setting
+        # reach. That is what H2-series, P2S and X2D firmware does, and no setting
         # here changes it (#2762 tracks reading that storage). A pass here would
         # be a lie; a fail would be unresolvable.
         #

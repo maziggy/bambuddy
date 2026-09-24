@@ -32,6 +32,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@Neasham21](https://github.com/Neasham21)
 - [@strikerfab](https://github.com/strikerfab)
 - [@Thomansky](https://github.com/Thomansky)
+- [@TheVikingTech(https://github.com/TheVikingTech)
 
 ## Supporters ($15/mo+)
 

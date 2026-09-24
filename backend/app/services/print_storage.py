@@ -4,8 +4,8 @@ Bambuddy reads a print's 3MF, cover and timelapse off the printer over implicit
 FTPS on port 990. On every Bambu model that port serves **external storage only**
 -- the SD card or USB stick. It is not a view of the printer's filesystem.
 
-H2-series and P2S firmware default to keeping the sliced file on internal eMMC
-instead, and BambuStudio uploads there over a separate service on port 6000
+H2-series, P2S and X2D firmware default to keeping the sliced file on internal
+eMMC instead, and BambuStudio uploads there over a separate service on port 6000
 (the "BambuTunnelLocal" protocol -- see #2762, which tracks implementing it).
 The dispatch says where it went: the ``project_file`` command carries ``url``,
 which is ``ftp://<name>`` for external storage and ``brtc://emmc/<name>`` for

@@ -4543,8 +4543,10 @@ async def slice_and_persist(
     # BS/Orca CLIs skip plate_N.png in headless --export-3mf — render +
     # inject server-side so the library card has a thumbnail. Best-effort:
     # no-op when the slicer did embed thumbs (desktop Studio path), and
-    # falls through to the unmodified bytes on any render error.
-    result = result._replace(content=inject_plate_thumbnails_if_missing(result.content))
+    # falls through to the unmodified bytes on any render error. In a thread:
+    # a large plate renders for seconds, and on the event loop that stalled
+    # every request and printer connection for as long (#3135).
+    result = result._replace(content=await asyncio.to_thread(inject_plate_thumbnails_if_missing, result.content))
     out_path.write_bytes(result.content)
 
     # Extract thumbnail from the produced 3MF so the library card shows a
@@ -4691,8 +4693,9 @@ async def slice_and_persist_as_archive(
     # See library-slice path: BS/Orca sidecar CLIs don't embed plate_N.png
     # in headless --export-3mf, so the produced 3MF often has no thumbnail
     # at all. Server-side render fills the gap; no-op when the slicer did
-    # embed (desktop Studio path) and best-effort on any render error.
-    result = result._replace(content=inject_plate_thumbnails_if_missing(result.content))
+    # embed (desktop Studio path) and best-effort on any render error. Off the
+    # event loop, like the library-slice path (#3135).
+    result = result._replace(content=await asyncio.to_thread(inject_plate_thumbnails_if_missing, result.content))
     out_path.write_bytes(result.content)
 
     # Extract a thumbnail for the new archive card. Priority order:

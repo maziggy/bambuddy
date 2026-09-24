@@ -2198,14 +2198,14 @@ class TestLinkTagDuplicate:
 
 
 class TestSpoolmanInventoryUpdateCoreWeight:
-    """core_weight is accepted for schema parity but not persisted — any value should be accepted."""
+    """core_weight is forwarded to Spoolman when sent — any value should be accepted."""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_patch_core_weight_other_than_250_accepted(
         self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
     ):
-        """PATCH with core_weight != 250 is accepted (field is ignored server-side, not rejected)."""
+        """PATCH with core_weight != 250 is accepted and carried through, not rejected."""
         resp = await async_client.patch(
             "/api/v1/spoolman/inventory/spools/42",
             json={"core_weight": 100},
@@ -2740,7 +2740,7 @@ class TestCreateSpoolWeightValidation:
     async def test_create_spool_with_non_default_core_weight_accepted(
         self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
     ):
-        """A3: core_weight != 250 must no longer be rejected → 201."""
+        """A3: core_weight != 250 is accepted and reaches Spoolman → 201."""
         resp = await async_client.post(
             "/api/v1/spoolman/inventory/spools",
             json={"material": "PLA", "label_weight": 1000, "weight_used": 0, "core_weight": 196},

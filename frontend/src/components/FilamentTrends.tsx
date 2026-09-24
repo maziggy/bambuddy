@@ -47,7 +47,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
       existing.filament += archive.filament_used_grams || 0;
       existing.cost += archive.cost || 0;
       existing.energy += archive.energy_kwh || 0;
-      existing.prints += archive.quantity || 1;
+      existing.prints += archive.quantity ?? 1;
       dataMap.set(key, existing);
     });
 
@@ -88,7 +88,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
       existing.filament += archive.filament_used_grams || 0;
       existing.cost += archive.cost || 0;
       existing.energy += archive.energy_kwh || 0;
-      existing.prints += archive.quantity || 1;
+      existing.prints += archive.quantity ?? 1;
       dataMap.set(key, existing);
     });
 
@@ -242,7 +242,10 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
   const totalCost = archives.reduce((sum, a) => sum + (a.cost || 0), 0);
   const totalEnergy = archives.reduce((sum, a) => sum + (a.energy_kwh || 0), 0);
   const totalEnergyCost = archives.reduce((sum, a) => sum + (a.energy_cost || 0), 0);
-  const totalPrints = archives.reduce((sum, a) => sum + (a.quantity || 1), 0);
+  // `??`, not `||`: an archive edited down to 0 produced nothing (#3051), and
+  // `0 || 1` would count the ruined plate as one print here while the project
+  // page correctly counts none.
+  const totalPrints = archives.reduce((sum, a) => sum + (a.quantity ?? 1), 0);
   const printerCount = new Set(archives.map(a => a.printer_id).filter(Boolean)).size;
 
   return (

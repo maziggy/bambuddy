@@ -1081,6 +1081,10 @@ export function SettingsPage() {
       // re-compare the updated `settings` with current `localSettings` and
       // debounce-save any remaining differences.
       queryClient.invalidateQueries({ queryKey: ['archiveStats'] });
+      // /settings/ui-flags serves currency and the sidebar gates to users who
+      // cannot read /settings. Nothing invalidated it, so a currency change
+      // sat behind that query's own staleTime instead of showing up (#3123).
+      queryClient.invalidateQueries({ queryKey: ['ui-flags'] });
       showToast(t('settings.toast.settingsSaved'), 'success');
     },
     onError: (error: Error) => {

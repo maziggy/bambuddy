@@ -343,6 +343,55 @@ def _validate_email_claim_name(v: str) -> str:
     return v
 
 
+def _validate_group_claim_name(v: str) -> str:
+    """#3107 — like _validate_email_claim_name, but also allows one slash.
+
+    Auth0 (and Auth0-compatible providers) only expose custom claims under a
+    non-reserved namespace, e.g. ``https://example.com/roles`` or ``app/roles``,
+    so the email-claim charset would refuse every valid Auth0 group claim.
+    The slash is structurally safe here: the value never reaches a URL, a
+    path or SQL — it is only a JWT claim lookup key inside ``claims.get`` —
+    so the wider charset does not widen any injection surface. The 64-char
+    cap and the "starts with a letter" rule are kept. The full-URL form of
+    an Auth0 namespace exceeds 64 chars, but that is Auth0's documented
+    short-namespace territory; the limit matches email_claim and keeps the
+    column bound meaningful.
+    """
+    if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_\-/]{0,63}", v):
+        raise ValueError("Invalid claim name")
+    return v
+
+
+def _validate_group_mapping(v: dict[str, str]) -> dict[str, str]:
+    """#3107 — normalise and bound an IdP-group -> Bambuddy-group mapping.
+
+    Values must reference Bambuddy group names; existence is checked against
+    the database in the route handlers (same split as default_group_id), since
+    the schema layer has no session. Keys are left as-is apart from stripping:
+    IdP group values are opaque strings (DNs, UUIDs, names) and must match the
+    claim byte-for-byte, so any normalisation beyond whitespace would silently
+    break the lookup. Case sensitivity matches the LDAP mapping, which compares
+    the directory side case-insensitively; here the IdP side keeps its case
+    because two IdP groups differing only by case mapping to one Bambuddy group
+    is a legitimate configuration, while the reverse would be ambiguous.
+    """
+    if not isinstance(v, dict):
+        raise ValueError("group_mapping must be a JSON object")
+    if len(v) > 100:
+        raise ValueError("group_mapping must have at most 100 entries")
+    cleaned: dict[str, str] = {}
+    for key, value in v.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError("group_mapping keys must be non-empty strings")
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("group_mapping values must be non-empty group names")
+        cleaned[key.strip()] = value.strip()
+    # Two keys differing only by case folding to the same group is fine (both
+    # IdP spellings grant it); the reverse — one key spelling two groups — is
+    # impossible by construction because dict keys are unique.
+    return cleaned
+
+
 def _validate_icon_url(v: str | None) -> str | None:
     """Reject non-HTTPS icon URLs and SSRF-unsafe hosts.
 
@@ -436,6 +485,9 @@ class OIDCProviderCreate(BaseModel):
     auto_link_existing_accounts: bool = False  # M-2: conservative default, opt-in only
     email_claim: str = Field(default="email", max_length=64)
     require_email_verified: bool = True
+    # #3107 — group sync config. group_mapping empty (default) = no sync.
+    group_claim: str = Field(default="groups", max_length=64)
+    group_mapping: dict[str, str] = Field(default_factory=dict)
     icon_url: str | None = None
     default_group_id: int | None = None
     is_autologin: bool = False  # #1589 — at most one provider may carry this
@@ -460,6 +512,17 @@ class OIDCProviderCreate(BaseModel):
     @classmethod
     def validate_email_claim(cls, v: str) -> str:
         return _validate_email_claim_name(v)
+
+    @field_validator("group_claim")
+    @classmethod
+    def validate_group_claim(cls, v: str) -> str:
+        # Namespaced claims allowed here (Auth0 et al) — see _validate_group_claim_name.
+        return _validate_group_claim_name(v)
+
+    @field_validator("group_mapping")
+    @classmethod
+    def validate_group_mapping(cls, v: dict[str, str]) -> dict[str, str]:
+        return _validate_group_mapping(v)
 
     @field_validator("icon_url")
     @classmethod
@@ -493,6 +556,10 @@ class OIDCProviderUpdate(BaseModel):
     auto_link_existing_accounts: bool | None = None
     email_claim: str | None = Field(default=None, max_length=64)
     require_email_verified: bool | None = None
+    # #3107 — group sync config. None = leave unchanged, same as every other
+    # optional field here; an explicit {} clears the mapping and disables sync.
+    group_claim: str | None = Field(default=None, max_length=64)
+    group_mapping: dict[str, str] | None = None
     icon_url: str | None = None
     default_group_id: int | None = None
     is_autologin: bool | None = None  # #1589
@@ -508,6 +575,20 @@ class OIDCProviderUpdate(BaseModel):
         if v is None:
             return None
         return _validate_email_claim_name(v)
+
+    @field_validator("group_claim")
+    @classmethod
+    def validate_group_claim(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return _validate_group_claim_name(v)
+
+    @field_validator("group_mapping")
+    @classmethod
+    def validate_group_mapping(cls, v: dict[str, str] | None) -> dict[str, str] | None:
+        if v is None:
+            return None
+        return _validate_group_mapping(v)
 
     @field_validator("icon_url")
     @classmethod
@@ -540,6 +621,9 @@ class OIDCProviderResponse(BaseModel):
     auto_link_existing_accounts: bool = False
     email_claim: str = "email"
     require_email_verified: bool = True
+    # #3107 — group sync config, echoed back so the settings UI can render it.
+    group_claim: str = "groups"
+    group_mapping: dict[str, str] = {}
     icon_url: str | None = None
     default_group_id: int | None = None
     is_autologin: bool = False  # #1589
@@ -552,6 +636,27 @@ class OIDCProviderResponse(BaseModel):
     # Required (no default) so Pydantic fails loudly if any code path skips
     # `_build_provider_response` and tries `model_validate(provider)` directly.
     has_icon: bool
+
+    class Config:
+        from_attributes = True
+
+
+class OIDCProviderPublicResponse(BaseModel):
+    """#3107 — what the unauthenticated login page is allowed to see.
+
+    GET /oidc/providers is public so the login page can render the SSO
+    buttons, and it needs exactly four fields: id + name for the button,
+    has_icon for the avatar, is_autologin for the redirect-on-mount (#1589).
+    The full OIDCProviderResponse carries group_claim / group_mapping —
+    which IdP group name maps to which Bambuddy group, including
+    Administrators — and leaking that to anonymous visitors would tell
+    anyone who can reach the login page exactly which IdP group to aim for.
+    """
+
+    id: int
+    name: str
+    has_icon: bool
+    is_autologin: bool = False
 
     class Config:
         from_attributes = True

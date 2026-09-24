@@ -4271,6 +4271,9 @@ export interface OIDCProvider {
   auto_link_existing_accounts: boolean;
   email_claim: string;
   require_email_verified: boolean;
+  // #3107 — group sync. Empty mapping = sync off (default).
+  group_claim?: string;
+  group_mapping?: Record<string, string>;
   icon_url?: string | null;
   default_group_id?: number | null;
   // True when the backend has cached icon bytes for this provider.
@@ -4302,6 +4305,9 @@ export interface OIDCProviderCreate {
   auto_link_existing_accounts?: boolean;
   email_claim?: string;
   require_email_verified?: boolean;
+  // #3107 — group sync. Omit both to leave them unchanged on update.
+  group_claim?: string;
+  group_mapping?: Record<string, string>;
   icon_url?: string | null;
   default_group_id?: number | null;
   is_autologin?: boolean;  // #1589

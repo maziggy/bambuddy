@@ -91,6 +91,12 @@ fast-simplification>=0.1.0
 networkx>=3.0
 lxml>=5.0
 
+# PDF Thumbnail Generation (first page of a PDF rendered on upload, #2976).
+# pdfium ships inside the wheel — manylinux x86_64/aarch64, macOS and
+# Windows — so nothing is needed from the OS. Platforms without a wheel
+# still work: the helper degrades to the browser-rendered thumbnail.
+pypdfium2>=5.0.0
+
 # System monitoring
 psutil>=6.0.0
 

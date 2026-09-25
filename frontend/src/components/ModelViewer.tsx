@@ -9,6 +9,63 @@ import JSZip from 'jszip';
 import { Loader2, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from './Button';
 import { getAuthToken } from '../api/client';
+import type { StepWorkerMesh, StepWorkerResponse } from '../workers/stepPreview.worker';
+
+// STEP triangulation runs in a dedicated worker (#2976): OpenCascade-as-WASM
+// takes seconds on a real assembly and its embind glue needs an eval-relaxed
+// CSP that only the worker's own script response carries (see the worker
+// file and security_headers_middleware in backend/app/main.py). The worker —
+// and with it the ~7 MB wasm — loads on the first STEP preview and is then
+// kept warm for the page's lifetime.
+let stepWorker: Worker | null = null;
+let stepRequestId = 0;
+const stepPendingRequests = new Map<
+  number,
+  { resolve: (meshes: StepWorkerMesh[]) => void; reject: (err: Error) => void }
+>();
+
+function failAllStepRequests(message: string): void {
+  for (const pending of stepPendingRequests.values()) {
+    pending.reject(new Error(message));
+  }
+  stepPendingRequests.clear();
+}
+
+function getStepWorker(): Worker {
+  if (!stepWorker) {
+    const worker = new Worker(new URL('../workers/stepPreview.worker.ts', import.meta.url), { type: 'module' });
+    worker.onmessage = (event: MessageEvent<StepWorkerResponse>) => {
+      const pending = stepPendingRequests.get(event.data.id);
+      if (!pending) return;
+      stepPendingRequests.delete(event.data.id);
+      if (event.data.ok) {
+        pending.resolve(event.data.meshes);
+      } else {
+        pending.reject(new Error(event.data.reason));
+      }
+    };
+    // A crashed or unloadable worker is dropped so the next preview attempt
+    // starts a fresh one instead of reusing a dead instance.
+    worker.onerror = () => {
+      failAllStepRequests('error');
+      worker.terminate();
+      if (stepWorker === worker) stepWorker = null;
+    };
+    stepWorker = worker;
+  }
+  return stepWorker;
+}
+
+function parseStepInWorker(buffer: ArrayBuffer): Promise<StepWorkerMesh[]> {
+  return new Promise((resolve, reject) => {
+    const id = ++stepRequestId;
+    stepPendingRequests.set(id, { resolve, reject });
+    getStepWorker().postMessage({ id, buffer }, [buffer]);
+  });
+}
+
+// How far the user may dolly out, as a multiple of the framed distance.
+const MAX_ZOOM_OUT = 8;
 
 /**
  * Frame the camera on a bounding box.
@@ -24,6 +81,7 @@ function fitCameraToBox(
   camera: THREE.PerspectiveCamera,
   controls: OrbitControls,
   box: THREE.Box3,
+  plateDiagonal: number,
   padding = 1.15,
 ): void {
   const size = box.getSize(new THREE.Vector3());
@@ -38,10 +96,18 @@ function fitCameraToBox(
   // Keep the established three-quarter view; only the distance changes.
   const direction = new THREE.Vector3(0.7, 0.5, 0.7).normalize();
   camera.position.copy(center).addScaledVector(direction, distance);
+
+  // Zoom range relative to the framed distance. Without the upper bound the
+  // wheel dollied straight through the far plane: five or six notches out and
+  // the model, plate and grid all vanished, which reads as "zoom is broken".
+  controls.minDistance = Math.max(radius * 0.05, 0.05);
+  controls.maxDistance = distance * MAX_ZOOM_OUT;
+
   // Clip planes scaled to the subject, so a small model doesn't z-fight and a
-  // large one isn't sliced by the far plane.
+  // large one isn't sliced by the far plane. The far plane has to cover the
+  // whole dolly range plus the plate, whose diagonal dwarfs a small model.
   camera.near = Math.max(distance / 1000, 0.01);
-  camera.far = distance + radius * 4;
+  camera.far = controls.maxDistance + radius * 4 + plateDiagonal;
   camera.updateProjectionMatrix();
 
   controls.target.copy(center);
@@ -54,6 +120,11 @@ interface BuildVolume {
   z: number;
 }
 
+// Module-level so the default keeps its identity: an inline default object is
+// new on every render and, as an effect dependency, would rebuild the whole
+// scene each time the component re-renders.
+const DEFAULT_BUILD_VOLUME: BuildVolume = { x: 256, y: 256, z: 256 };
+
 interface ModelViewerProps {
   url: string;
   fileType?: string;
@@ -61,7 +132,14 @@ interface ModelViewerProps {
   filamentColors?: string[];
   selectedPlateId?: number | null;
   className?: string;
+  /** Called once with a 256px PNG of the first render — used by the file
+   * manager to persist a thumbnail for formats the server cannot render
+   * itself (STEP, #2976). */
+  onSnapshot?: (blob: Blob) => void;
 }
+
+// Triangulated STEP shape as posted back by the step preview worker.
+type StepMeshData = StepWorkerMesh;
 
 interface MeshData {
   vertices: number[];
@@ -666,13 +744,49 @@ function buildModelGroup(
   return group;
 }
 
+// One mesh per STEP shape so per-part colours survive; parts without a colour
+// fall back to the same filament colour the STL path uses.
+function buildStepGroup(meshes: StepMeshData[], filamentColors?: string[]): THREE.Group {
+  const group = new THREE.Group();
+  const fallback = filamentColors?.[0] || '#00ae42';
+  for (const meshData of meshes) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(meshData.positions, 3));
+    if (meshData.normals) {
+      geometry.setAttribute('normal', new THREE.BufferAttribute(meshData.normals, 3));
+    }
+    if (meshData.indices) {
+      geometry.setIndex(new THREE.BufferAttribute(meshData.indices, 1));
+    }
+    if (!meshData.normals) {
+      geometry.computeVertexNormals();
+    }
+    // STEP is Z-up like STL; three.js is Y-up.
+    geometry.rotateX(-Math.PI / 2);
+    const color = meshData.color
+      ? new THREE.Color(meshData.color[0], meshData.color[1], meshData.color[2])
+      : new THREE.Color(fallback);
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.62,
+      metalness: 0.0,
+      envMapIntensity: 0.55,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    group.add(mesh);
+  }
+  return group;
+}
+
 export function ModelViewer({
   url,
   fileType,
-  buildVolume = { x: 256, y: 256, z: 256 },
+  buildVolume = DEFAULT_BUILD_VOLUME,
   filamentColors,
   selectedPlateId = null,
   className = '',
+  onSnapshot,
 }: ModelViewerProps) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -689,10 +803,21 @@ export function ModelViewer({
   const modelGroupRef = useRef<THREE.Group | null>(null);
   const plateRef = useRef<THREE.Mesh | null>(null);
   const gridRef = useRef<THREE.GridHelper | null>(null);
+  // The last framed bounds, so Reset returns to the framed view rather than
+  // a fixed camera pose that ignores where the model was placed.
+  const fitBoxRef = useRef<THREE.Box3 | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<Parsed3MFData | null>(null);
   const [stlGeometry, setStlGeometry] = useState<THREE.BufferGeometry | null>(null);
+  const [stepMeshes, setStepMeshes] = useState<StepMeshData[] | null>(null);
+  // Snapshot is a one-shot per loaded url; the callback lives in a ref so its
+  // identity never retriggers the (expensive) scene effects.
+  const snapshotSentRef = useRef(false);
+  const onSnapshotRef = useRef(onSnapshot);
+  useEffect(() => {
+    onSnapshotRef.current = onSnapshot;
+  });
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -819,6 +944,8 @@ export function ModelViewer({
     setError(null);
     setParsedData(null);
     setStlGeometry(null);
+    setStepMeshes(null);
+    snapshotSentRef.current = false;
 
     const normalizedType = (fileType || url.split('?')[0].split('.').pop() || '').toLowerCase();
 
@@ -863,6 +990,27 @@ export function ModelViewer({
           setError(err.message);
           setLoading(false);
         });
+    } else if (normalizedType === 'step' || normalizedType === 'stp') {
+      // STEP has no three.js loader; triangulation happens in the dedicated
+      // OpenCascade worker (#2976), off the UI thread.
+      fetch(url, { headers })
+        .then((res) => {
+          if (!res.ok) throw new Error(t('modelViewer.errors.failedToLoad'));
+          return res.arrayBuffer();
+        })
+        .then(parseStepInWorker)
+        .then(setStepMeshes)
+        .catch((err: Error) => {
+          // Worker rejections carry machine reasons; everything else already
+          // is a translated message from the fetch step above.
+          const message = err.message === 'no-meshes'
+            ? t('modelViewer.errors.noMeshes')
+            : err.message === 'error'
+              ? t('modelViewer.errors.failedToLoad')
+              : err.message;
+          setError(message);
+          setLoading(false);
+        });
     } else {
       setError(t('modelViewer.errors.unsupportedFormat'));
       setLoading(false);
@@ -879,6 +1027,10 @@ export function ModelViewer({
       renderer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
+    // Entering or leaving fullscreen resizes the container too; the observer
+    // catches that, but only after layout — resizing on the event itself
+    // avoids one frame drawn at the old aspect.
+    document.addEventListener('fullscreenchange', handleResize);
     const resizeObserver = new ResizeObserver(() => {
       handleResize();
     });
@@ -886,6 +1038,7 @@ export function ModelViewer({
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      document.removeEventListener('fullscreenchange', handleResize);
       resizeObserver.disconnect();
       cancelAnimationFrame(animationId);
       controls.dispose();
@@ -909,15 +1062,17 @@ export function ModelViewer({
 
   useEffect(() => {
     if (!sceneRef.current || !cameraRef.current || !controlsRef.current) return;
-    if (!parsedData && !stlGeometry) return;
+    if (!parsedData && !stlGeometry && !stepMeshes) return;
 
     if (modelGroupRef.current) {
       sceneRef.current.remove(modelGroupRef.current);
       disposeGroup(modelGroupRef.current);
     }
 
-    const isStlModel = !!stlGeometry;
-    const group = isStlModel
+    // STL and STEP are plain single models with no plate/build-item layout;
+    // they share the same centre-on-plate placement below.
+    const isPlainModel = !!stlGeometry || !!stepMeshes;
+    const group = stlGeometry
       ? (() => {
           const materialColor = filamentColors?.[0] || '#00ae42';
           const material = new THREE.MeshStandardMaterial({
@@ -926,13 +1081,15 @@ export function ModelViewer({
             metalness: 0.0,
             envMapIntensity: 0.55,
           });
-          const mesh = new THREE.Mesh(stlGeometry!, material);
+          const mesh = new THREE.Mesh(stlGeometry, material);
           mesh.castShadow = true;
           const stlGroup = new THREE.Group();
           stlGroup.add(mesh);
           return stlGroup;
         })()
-      : buildModelGroup(parsedData!, selectedPlateId ?? null, filamentColors);
+      : stepMeshes
+        ? buildStepGroup(stepMeshes, filamentColors)
+        : buildModelGroup(parsedData!, selectedPlateId ?? null, filamentColors);
     modelGroupRef.current = group;
     sceneRef.current.add(group);
 
@@ -943,13 +1100,13 @@ export function ModelViewer({
     // Always place models on the build plate (Y=0)
     group.position.y = -box.min.y;
 
-    const selectedPlateBounds = (!isStlModel && selectedPlateId != null && parsedData!.buildItems.length > 0)
+    const selectedPlateBounds = (!isPlainModel && selectedPlateId != null && parsedData!.buildItems.length > 0)
       ? parsedData!.plateBounds.get(selectedPlateId)
       : undefined;
-    const selectedPlateOffset = (!isStlModel && selectedPlateId != null)
+    const selectedPlateOffset = (!isPlainModel && selectedPlateId != null)
       ? parsedData!.plateOffsets.get(selectedPlateId)
       : undefined;
-    const shouldCenterOnPlate = isStlModel
+    const shouldCenterOnPlate = isPlainModel
       || parsedData!.buildItems.length === 0
       || (selectedPlateId != null && !selectedPlateBounds && !selectedPlateOffset);
     const centerOffsetX = shouldCenterOnPlate ? -center.x : 0;
@@ -957,7 +1114,7 @@ export function ModelViewer({
 
     let plateOffsetX = 0;
     let plateOffsetZ = 0;
-    if (!isStlModel && selectedPlateId != null && parsedData!.buildItems.length > 0 && selectedPlateBounds) {
+    if (!isPlainModel && selectedPlateId != null && parsedData!.buildItems.length > 0 && selectedPlateBounds) {
       const plateBox = new THREE.Box3().setFromObject(group);
       plateOffsetX = plateBox.min.x - selectedPlateBounds.minX;
       plateOffsetZ = plateBox.min.z - selectedPlateBounds.minY;
@@ -966,10 +1123,10 @@ export function ModelViewer({
     const plateCenterX = buildVolume.x / 2;
     const plateCenterZ = buildVolume.y / 2;
 
-    if (!isStlModel && selectedPlateId != null && parsedData!.buildItems.length > 0 && selectedPlateBounds) {
+    if (!isPlainModel && selectedPlateId != null && parsedData!.buildItems.length > 0 && selectedPlateBounds) {
       group.position.x = centerOffsetX - plateOffsetX;
       group.position.z = centerOffsetZ - plateOffsetZ;
-    } else if (!isStlModel && selectedPlateId != null && selectedPlateOffset) {
+    } else if (!isPlainModel && selectedPlateId != null && selectedPlateOffset) {
       group.position.x = centerOffsetX + (plateCenterX - selectedPlateOffset.offsetX);
       group.position.z = centerOffsetZ + (plateCenterZ - selectedPlateOffset.offsetY);
     } else if (shouldCenterOnPlate) {
@@ -1000,23 +1157,66 @@ export function ModelViewer({
     const finalBox = new THREE.Box3().setFromObject(group);
 
     // Adjust camera to fit model
-    fitCameraToBox(cameraRef.current, controlsRef.current, finalBox);
+    fitBoxRef.current = finalBox;
+    fitCameraToBox(cameraRef.current, controlsRef.current, finalBox, Math.hypot(buildVolume.x, buildVolume.y));
 
     setLoading(false);
-  }, [parsedData, stlGeometry, selectedPlateId, filamentColors, buildVolume]);
+
+    // One-shot snapshot of the first framed render (#2976). Rendering
+    // explicitly right before reading the canvas keeps the WebGL buffer
+    // valid without preserveDrawingBuffer.
+    if (onSnapshotRef.current && !snapshotSentRef.current) {
+      snapshotSentRef.current = true;
+      requestAnimationFrame(() => {
+        const renderer = rendererRef.current;
+        const scene = sceneRef.current;
+        const camera = cameraRef.current;
+        if (!renderer || !scene || !camera) return;
+        try {
+          renderer.render(scene, camera);
+          const source = renderer.domElement;
+          const size = 256;
+          const side = Math.min(source.width, source.height);
+          const target = document.createElement('canvas');
+          target.width = size;
+          target.height = size;
+          const ctx = target.getContext('2d');
+          if (!ctx) return;
+          ctx.drawImage(source, (source.width - side) / 2, (source.height - side) / 2, side, side, 0, 0, size, size);
+          target.toBlob((blob) => {
+            if (blob) onSnapshotRef.current?.(blob);
+          }, 'image/png');
+        } catch {
+          // Snapshot is best-effort; the preview itself already rendered.
+        }
+      });
+    }
+  }, [parsedData, stlGeometry, stepMeshes, selectedPlateId, filamentColors, buildVolume]);
 
   const resetView = () => {
-    if (cameraRef.current && controlsRef.current) {
-      cameraRef.current.position.set(150, 150, 150);
-      controlsRef.current.target.set(0, 50, 0);
-      controlsRef.current.update();
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+    if (fitBoxRef.current) {
+      fitCameraToBox(camera, controls, fitBoxRef.current, Math.hypot(buildVolume.x, buildVolume.y));
+    } else {
+      camera.position.set(150, 150, 150);
+      controls.target.set(0, 50, 0);
+      controls.update();
     }
   };
 
+  // Dolly along the view axis, like the wheel. Scaling the camera position
+  // itself measured from the world origin, not from the orbit target at the
+  // plate centre, so each press also slid the model sideways.
   const zoom = (factor: number) => {
-    if (cameraRef.current) {
-      cameraRef.current.position.multiplyScalar(factor);
-    }
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+    const offset = camera.position.clone().sub(controls.target);
+    const distance = Math.min(controls.maxDistance, Math.max(controls.minDistance, offset.length() * factor));
+    camera.position.copy(controls.target).addScaledVector(offset.normalize(), distance);
+    controls.update();
   };
 
   return (

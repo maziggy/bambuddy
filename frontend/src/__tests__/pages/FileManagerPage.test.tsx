@@ -553,11 +553,11 @@ describe('FileManagerPage', () => {
       });
     });
 
-    it('Generate Thumbnails button has correct title', async () => {
+    it('Generate Thumbnails button covers STL and PDF files (#2976)', async () => {
       render(<FileManagerPage />);
 
       await waitFor(() => {
-        const button = screen.getByTitle('Generate thumbnails for STL files missing them');
+        const button = screen.getByTitle('Generate thumbnails for STL and PDF files without a preview');
         expect(button).toBeInTheDocument();
       });
     });
@@ -598,6 +598,86 @@ describe('FileManagerPage', () => {
         // bracket.stl has no thumbnail_path
         expect(screen.getByText('bracket.stl')).toBeInTheDocument();
         expect(screen.getAllByText('STL').length).toBeGreaterThan(0);
+      });
+    });
+
+    // Since #2976 the server renders PDF thumbnails too, so the per-file
+    // action is offered for PDFs and stays hidden for types it cannot render.
+    describe('per-file action for PDFs', () => {
+      const pdfFile = {
+        id: 40,
+        filename: 'drawing.pdf',
+        file_path: '/library/drawing.pdf',
+        file_size: 4096,
+        file_type: 'pdf',
+        folder_id: null,
+        thumbnail_path: null,
+        print_name: null,
+        print_time_seconds: null,
+        print_count: 0,
+        duplicate_count: 0,
+        created_at: '2024-01-04T00:00:00Z',
+      };
+      const stepFile = { ...pdfFile, id: 41, filename: 'part.step', file_path: '/library/part.step', file_type: 'step' };
+
+      beforeEach(() => {
+        server.use(
+          http.get('/api/v1/library/files', () => HttpResponse.json([...mockFiles, pdfFile, stepFile])),
+        );
+      });
+
+      const openMenu = async (user: ReturnType<typeof userEvent.setup>, filename: string) => {
+        const card = screen.getByText(filename).closest('.group') as HTMLElement;
+        const kebab = card.querySelector('.lucide-ellipsis-vertical')?.closest('button') as HTMLButtonElement;
+        await user.click(kebab);
+        return card;
+      };
+
+      it('offers Generate Thumbnail in the card menu of a PDF', async () => {
+        const user = userEvent.setup();
+        server.use(
+          http.post('/api/v1/library/generate-stl-thumbnails', async ({ request }) => {
+            const body = (await request.json()) as { file_ids?: number[] };
+            return HttpResponse.json({
+              processed: 1,
+              succeeded: 1,
+              failed: 0,
+              results: [{ file_id: body.file_ids?.[0], success: true }],
+            });
+          })
+        );
+        render(<FileManagerPage />);
+        await waitFor(() => expect(screen.getByText('drawing.pdf')).toBeInTheDocument());
+
+        const card = await openMenu(user, 'drawing.pdf');
+        await user.click(within(card).getByText('Generate Thumbnail'));
+
+        expect(await screen.findByText('Thumbnail generated')).toBeInTheDocument();
+      });
+
+      it('does not offer it for STEP, which only the browser can render', async () => {
+        const user = userEvent.setup();
+        render(<FileManagerPage />);
+        await waitFor(() => expect(screen.getByText('part.step')).toBeInTheDocument());
+
+        const card = await openMenu(user, 'part.step');
+        expect(within(card).queryByText('Generate Thumbnail')).not.toBeInTheDocument();
+      });
+
+      it('offers the action in the list view strip of a PDF', async () => {
+        const user = userEvent.setup();
+        render(<FileManagerPage />);
+        await waitFor(() => expect(screen.getByText('drawing.pdf')).toBeInTheDocument());
+
+        await user.click(screen.getByRole('button', { name: /list/i }));
+
+        // List rows are CSS grids; the row is the nearest grid ancestor.
+        await waitFor(() => {
+          const row = screen.getByText('drawing.pdf').closest('.grid') as HTMLElement;
+          expect(within(row).getByTitle('Generate Thumbnail')).toBeInTheDocument();
+        });
+        const stepRow = screen.getByText('part.step').closest('.grid') as HTMLElement;
+        expect(within(stepRow).queryByTitle('Generate Thumbnail')).not.toBeInTheDocument();
       });
     });
   });

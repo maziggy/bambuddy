@@ -1192,6 +1192,31 @@ endsolid cube"""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_upload_image_stores_a_thumbnail(self, async_client: AsyncClient, db_session):
+        """An uploaded image gets its own grid thumbnail, so PNGs are not blank cards (#2976)."""
+        from PIL import Image
+
+        buffer = io.BytesIO()
+        Image.new("RGB", (640, 480), (0, 174, 66)).save(buffer, format="PNG")
+
+        files = {"file": ("photo.png", buffer.getvalue(), "image/png")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["file_type"] == "png"
+        assert result["thumbnail_path"]
+
+        from backend.app.api.routes.library import to_absolute_path
+
+        thumb = to_absolute_path(result["thumbnail_path"])
+        assert thumb is not None and thumb.exists()
+        with Image.open(thumb) as thumbnail:
+            assert thumbnail.format == "PNG"
+            assert max(thumbnail.size) <= 256
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_extract_zip_with_stl_thumbnail_param(self, async_client: AsyncClient, db_session):
         """Verify ZIP extraction accepts generate_stl_thumbnails parameter."""
         # Create a ZIP file containing an STL

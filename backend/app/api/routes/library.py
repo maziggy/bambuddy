@@ -17,7 +17,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse as FastAPIFileResponse
-from sqlalchemy import distinct, func, select
+from sqlalchemy import distinct, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -49,6 +49,7 @@ from backend.app.schemas.library import (
     BatchThumbnailResult,
     BulkDeleteRequest,
     BulkDeleteResponse,
+    ClientThumbnailResponse,
     ExternalFolderCreate,
     FileDuplicate,
     FileListResponse,
@@ -75,6 +76,7 @@ from backend.app.services.design_settings import (
     overrides_from_config,
 )
 from backend.app.services.filament_requirements import annotate_rack_groups
+from backend.app.services.pdf_thumbnail import generate_pdf_thumbnail
 from backend.app.services.plate_thumbnail import inject_plate_thumbnails_if_missing
 from backend.app.services.process_overrides import apply_process_overrides
 from backend.app.services.slice_output_check import (
@@ -808,9 +810,45 @@ def create_image_thumbnail(file_path: Path, thumbnails_dir: Path, max_size: int 
 # Supported image extensions for thumbnails
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif"}
 
+# File types whose thumbnails may be rendered client-side and uploaded back
+# (#2976). The server has no renderer for STEP (OpenCascade) or spreadsheets,
+# so the browser posts its first preview render to
+# POST /files/{id}/preview-thumbnail instead. PDF is rendered server-side on
+# upload (pypdfium2) and stays in this set only as the fallback for installs
+# where that renderer is unavailable. Kept to exactly these types so the
+# endpoint can never overwrite a server-generated STL/3MF/G-code/image
+# thumbnail.
+CLIENT_THUMBNAIL_TYPES = {"step", "stp", "pdf", "csv", "xlsx", "ods"}
+
+# File types the server renders thumbnails for itself, on upload and through
+# the batch / per-file "Generate thumbnails" actions.
+SERVER_THUMBNAIL_TYPES = ("stl", "pdf")
+
+# Upper bound for an uploaded client-rendered thumbnail. The FE sends a
+# 256px PNG (a few tens of KB); anything near this limit is not a thumbnail.
+MAX_CLIENT_THUMBNAIL_BYTES = 2 * 1024 * 1024
+
+# Upper bound on the *decoded* size, checked against the header before any
+# pixels are allocated: a few-KB PNG can declare 12000x7000 and still be under
+# PIL's own decompression-bomb limit, which would be ~340 MB of RGBA.
+MAX_CLIENT_THUMBNAIL_EDGE = 2048
+
+# What the endpoint stores. The grid renders at ~256px, so anything larger is
+# downscaled rather than kept.
+STORED_CLIENT_THUMBNAIL_EDGE = 512
+
+
+def _generate_server_thumbnail(file_type: str, file_path: Path, thumbnails_dir: Path) -> str | None:
+    """Render a thumbnail for one of ``SERVER_THUMBNAIL_TYPES``; None for anything else."""
+    if file_type == "stl":
+        return generate_stl_thumbnail(file_path, thumbnails_dir)
+    if file_type == "pdf":
+        return generate_pdf_thumbnail(file_path, thumbnails_dir)
+    return None
+
 
 async def _backfill_external_stl_thumbnails(folder_ids: list[int]) -> None:
-    """Generate STL thumbnails for an external folder tree in the background.
+    """Generate STL and PDF thumbnails for an external folder tree in the background.
 
     Spawned via ``asyncio.create_task`` from ``scan_external_folder`` so the
     HTTP request can return as soon as the filesystem walk + folder/file rows
@@ -832,37 +870,38 @@ async def _backfill_external_stl_thumbnails(folder_ids: list[int]) -> None:
         result = await db.execute(
             LibraryFile.active().where(
                 LibraryFile.folder_id.in_(folder_ids),
-                LibraryFile.file_type == "stl",
+                LibraryFile.file_type.in_(SERVER_THUMBNAIL_TYPES),
                 LibraryFile.thumbnail_path.is_(None),
             )
         )
-        stl_files = result.scalars().all()
-        if not stl_files:
+        pending_files = result.scalars().all()
+        if not pending_files:
             return
         logger.info(
-            "Backfilling STL thumbnails: %d file(s) across %d folder(s)",
-            len(stl_files),
+            "Backfilling STL/PDF thumbnails: %d file(s) across %d folder(s)",
+            len(pending_files),
             len(folder_ids),
         )
-        for stl_file in stl_files:
-            abs_path = to_absolute_path(stl_file.file_path)
+        for pending_file in pending_files:
+            abs_path = to_absolute_path(pending_file.file_path)
             if not abs_path or not abs_path.exists():
                 continue
-            # Pre-skip files too small to contain even a single triangle.
+            # Pre-skip STLs too small to contain even a single triangle.
             # Bulk-uploaded ZIPs of stub STLs would otherwise trigger one
             # trimesh.load() call + one debug log line per stub.
-            try:
-                if abs_path.stat().st_size < MIN_USABLE_STL_BYTES:
+            if pending_file.file_type == "stl":
+                try:
+                    if abs_path.stat().st_size < MIN_USABLE_STL_BYTES:
+                        continue
+                except OSError:
                     continue
-            except OSError:
-                continue
             try:
-                thumb_path = generate_stl_thumbnail(abs_path, thumbnails_dir)
-            except Exception as exc:  # noqa: BLE001 — never let one bad STL kill the rest
-                logger.debug("STL thumbnail backfill skipped %s: %s", abs_path, exc)
+                thumb_path = _generate_server_thumbnail(pending_file.file_type, abs_path, thumbnails_dir)
+            except Exception as exc:  # noqa: BLE001 — never let one bad file kill the rest
+                logger.debug("Thumbnail backfill skipped %s: %s", abs_path, exc)
                 continue
             if thumb_path:
-                stl_file.thumbnail_path = to_relative_path(Path(thumb_path))
+                pending_file.thumbnail_path = to_relative_path(Path(thumb_path))
                 await db.commit()
 
 
@@ -1588,6 +1627,12 @@ _SCANNABLE_EXTENSIONS = {
     ".webp",
     ".svg",
     ".md",
+    # Documents that ship alongside a job folder and now have in-app
+    # previews (#2976): drawings/datasheets and part lists.
+    ".pdf",
+    ".csv",
+    ".xlsx",
+    ".ods",
 }
 
 
@@ -1954,8 +1999,8 @@ async def scan_external_folder(
                 except Exception as e:
                     logger.debug("Failed to extract metadata from external 3mf %s: %s", filepath, e)
 
-            # STL thumbnails are deferred to a background task spawned after
-            # the scan's db.commit() — see _backfill_external_stl_thumbnails.
+            # STL and PDF thumbnails are deferred to a background task spawned
+            # after the scan's db.commit() — see _backfill_external_stl_thumbnails.
             # Doing them inline would block the HTTP request for minutes on a
             # large NAS mount (#1299).
 
@@ -2374,6 +2419,12 @@ async def upload_file(
                 except OSError:
                     pass
 
+        elif ext == ".pdf":
+            # First page as the grid thumbnail (#2976). Not behind the STL
+            # toggle: a pdfium render is milliseconds, not the seconds a
+            # mesh render costs, and the helper degrades to no thumbnail.
+            thumbnail_path = generate_pdf_thumbnail(file_path, thumbnails_dir)
+
         # Create database entry (managed files store relative paths for portability;
         # external files store the absolute mount path — same shape as scan produces)
         library_file = LibraryFile(
@@ -2643,6 +2694,9 @@ async def extract_zip_file(
                         if generate_stl_thumbnails and len(file_content) >= MIN_USABLE_STL_BYTES:
                             thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
 
+                    elif ext == ".pdf":
+                        thumbnail_path = generate_pdf_thumbnail(file_path, thumbnails_dir)
+
                     # Create database entry (store relative paths for portability)
                     library_file = LibraryFile(
                         folder_id=target_folder_id,
@@ -2697,7 +2751,7 @@ async def extract_zip_file(
             pass  # Best-effort temp file cleanup; ignore if already removed
 
 
-# ============ STL Thumbnail Batch Generation ============
+# ============ STL / PDF Thumbnail Batch Generation ============
 
 
 @router.post("/generate-stl-thumbnails", response_model=BatchThumbnailResponse)
@@ -2706,27 +2760,30 @@ async def batch_generate_stl_thumbnails(
     db: AsyncSession = Depends(get_db),
     _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPDATE_ALL)),
 ):
-    """Generate thumbnails for STL files in batch.
+    """Generate thumbnails for STL and PDF files in batch.
+
+    The route keeps its STL-era name for API compatibility; since #2976 it
+    covers every type the server can render itself (``SERVER_THUMBNAIL_TYPES``).
 
     Note: Requires library:update_all permission since this is a batch operation
     that may affect files owned by different users.
 
     Can generate thumbnails for:
     - Specific file IDs (file_ids)
-    - All STL files in a folder (folder_id)
-    - All STL files missing thumbnails (all_missing=True)
+    - All STL/PDF files in a folder (folder_id)
+    - All STL/PDF files missing thumbnails (all_missing=True)
     """
     thumbnails_dir = get_library_thumbnails_dir()
     results: list[BatchThumbnailResult] = []
 
     # Build query based on request
-    query = LibraryFile.active().where(LibraryFile.file_type == "stl")
+    query = LibraryFile.active().where(LibraryFile.file_type.in_(SERVER_THUMBNAIL_TYPES))
 
     if request.file_ids:
         # Specific files
         query = query.where(LibraryFile.id.in_(request.file_ids))
     elif request.folder_id is not None:
-        # All STL files in a specific folder
+        # All STL/PDF files in a specific folder
         query = query.where(LibraryFile.folder_id == request.folder_id)
         if not request.all_missing:
             # If not specifically asking for missing thumbnails, get all
@@ -2734,7 +2791,7 @@ async def batch_generate_stl_thumbnails(
         else:
             query = query.where(LibraryFile.thumbnail_path.is_(None))
     elif request.all_missing:
-        # All STL files without thumbnails
+        # All STL/PDF files without thumbnails
         query = query.where(LibraryFile.thumbnail_path.is_(None))
     else:
         # No criteria specified - return empty
@@ -2767,7 +2824,7 @@ async def batch_generate_stl_thumbnails(
             continue
 
         try:
-            thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
+            thumbnail_path = _generate_server_thumbnail(stl_file.file_type, file_path, thumbnails_dir)
 
             if thumbnail_path:
                 # Update database with relative path
@@ -5326,6 +5383,103 @@ async def get_thumbnail(
     media_type = media_types.get(thumb_ext, "image/png")
 
     return FastAPIFileResponse(str(abs_thumb_path), media_type=media_type)
+
+
+@router.post("/files/{file_id}/preview-thumbnail", response_model=ClientThumbnailResponse)
+async def upload_preview_thumbnail(
+    file_id: int,
+    thumbnail: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_UPDATE_ALL,
+            Permission.LIBRARY_UPDATE_OWN,
+        )
+    ),
+):
+    """Store a client-rendered preview thumbnail for a file (#2976).
+
+    STEP, PDF and spreadsheet previews are rendered in the browser; the FE
+    posts its first render here so the grid gets a thumbnail without the
+    server needing OpenCascade. Only file types in ``CLIENT_THUMBNAIL_TYPES``
+    are accepted, and only while the file has no thumbnail yet — a stored
+    thumbnail is never replaced by this route, which is also what keeps the
+    server-rendered PDF thumbnail from upload authoritative.
+    """
+    user, can_modify_all = auth_result
+
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
+    file = result.scalar_one_or_none()
+
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Ownership check (same shape as update_file)
+    if not can_modify_all:
+        if file.created_by_id != user.id:
+            raise HTTPException(status_code=403, detail="You can only update your own files")
+
+    if file.file_type not in CLIENT_THUMBNAIL_TYPES:
+        raise HTTPException(status_code=400, detail="File type does not accept client-rendered thumbnails")
+
+    if file.thumbnail_path:
+        return ClientThumbnailResponse(updated=False)
+
+    content = await thumbnail.read(MAX_CLIENT_THUMBNAIL_BYTES + 1)
+    if len(content) > MAX_CLIENT_THUMBNAIL_BYTES:
+        raise HTTPException(status_code=413, detail="Thumbnail too large")
+
+    # Decode and re-encode through PIL: validates the bytes are a real PNG
+    # and strips anything that isn't pixel data before it lands on disk.
+    import io
+
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        # Image.open() reads the header only. Both checks below happen before
+        # load(), so a declared-but-never-delivered canvas is refused rather
+        # than allocated. DecompressionBombError derives straight from
+        # Exception, so it has to be named explicitly — open() itself raises
+        # it once the declared size passes PIL's own limit.
+        with Image.open(io.BytesIO(content)) as source:
+            if source.format != "PNG":
+                raise HTTPException(status_code=400, detail="Thumbnail must be a PNG image")
+            if max(source.size) > MAX_CLIENT_THUMBNAIL_EDGE:
+                raise HTTPException(status_code=400, detail="Thumbnail image dimensions too large")
+            source.load()
+            img = source.convert("RGBA") if source.mode not in ("RGB", "RGBA") else source.copy()
+    except HTTPException:
+        raise
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as e:
+        raise HTTPException(status_code=400, detail="Invalid thumbnail image") from e
+
+    if max(img.size) > STORED_CLIENT_THUMBNAIL_EDGE:
+        img.thumbnail((STORED_CLIENT_THUMBNAIL_EDGE, STORED_CLIENT_THUMBNAIL_EDGE), Image.Resampling.LANCZOS)
+
+    thumbnails_dir = get_library_thumbnails_dir()
+    thumb_filename = f"{uuid.uuid4().hex}.png"
+    thumb_path = thumbnails_dir / thumb_filename  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
+    # Outside the decode guard on purpose: a full disk or an unwritable
+    # thumbnail directory is ours, not "Invalid thumbnail image".
+    try:
+        img.save(thumb_path, "PNG", optimize=True)
+    except OSError as e:
+        logger.error("Failed to store preview thumbnail for file %s: %s", file_id, e)
+        raise HTTPException(status_code=500, detail="Failed to store thumbnail") from e
+
+    # Two previews of the same file can reach this point together; the loser
+    # of the UPDATE takes its PNG back off disk instead of orphaning it.
+    result = await db.execute(
+        update(LibraryFile)
+        .where(LibraryFile.id == file_id, LibraryFile.thumbnail_path.is_(None))
+        .values(thumbnail_path=to_relative_path(thumb_path))
+    )
+    await db.commit()
+    if result.rowcount == 0:
+        thumb_path.unlink(missing_ok=True)
+        return ClientThumbnailResponse(updated=False)
+
+    return ClientThumbnailResponse(updated=True)
 
 
 @router.get("/files/{file_id}/gcode")

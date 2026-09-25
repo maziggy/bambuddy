@@ -28,10 +28,32 @@
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ASSETS = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'static', 'assets');
+
+/**
+ * Every extension the build can emit executable JavaScript under. `.mjs` is
+ * not hypothetical: pdf.js's worker is pulled in with `?url` and lands as
+ * `pdf.worker.min-<hash>.mjs`, so a `.js`-only filter scanned everything
+ * except the one asset the bundler does not compile (#2976).
+ */
+const SCRIPT_EXTENSIONS = ['.js', '.mjs', '.cjs'];
+
+/** Every script under `dir`, recursively, as paths relative to ASSETS. */
+function collectScripts(dir) {
+  const found = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      found.push(...collectScripts(full));
+    } else if (SCRIPT_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) {
+      found.push(relative(ASSETS, full));
+    }
+  }
+  return found;
+}
 
 /**
  * Each pattern must match only real occurrences of the feature. Anything that
@@ -56,20 +78,24 @@ const FORBIDDEN = [
     pattern: /\bstatic\s*\{/g,
     feature: 'class static initialisation block',
     since: 'Safari 16.4',
-    hint: 'Set `build.target` low enough that esbuild lowers it, or drop the dependency.',
+    hint: 'Set `build.target` low enough that the bundler lowers it, or drop the dependency.\n'
+      + '    An asset imported with `?url` is copied through uncompiled - vite.config.ts\n'
+      + '    lowers those in a generateBundle step (#2976).',
   },
 ];
 
 let bundles;
 try {
-  bundles = readdirSync(ASSETS).filter((f) => f.endsWith('.js'));
+  bundles = collectScripts(ASSETS);
 } catch {
   console.error(`check-browser-baseline: no build output at ${ASSETS} - run \`vite build\` first.`);
   process.exit(1);
 }
 
 if (bundles.length === 0) {
-  console.error(`check-browser-baseline: no .js files in ${ASSETS} - did the build succeed?`);
+  console.error(
+    `check-browser-baseline: no ${SCRIPT_EXTENSIONS.join('/')} files in ${ASSETS} - did the build succeed?`,
+  );
   process.exit(1);
 }
 

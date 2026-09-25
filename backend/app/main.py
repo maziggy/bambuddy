@@ -4,6 +4,7 @@ import logging
 import math
 import os
 import posixpath
+import re
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -9609,6 +9610,15 @@ def _frame_ancestors(default_value: str) -> str:
     return f"frame-ancestors {default_value};"
 
 
+# The two Vite-emitted worker assets that compile WebAssembly (#2976). Both
+# patterns are anchored on the exact emitted name so the relaxed policies
+# below can never apply to any other asset.
+#   src/workers/stepPreview.worker.ts -> /assets/stepPreview.worker-<hash>.js
+#   pdfjs-dist/build/pdf.worker.min.mjs -> /assets/pdf.worker.min-<hash>.mjs
+_STEP_WORKER_ASSET_RE = re.compile(r"^/assets/stepPreview\.worker-[\w-]+\.js$")
+_PDF_WORKER_ASSET_RE = re.compile(r"^/assets/pdf\.worker\.min-[\w-]+\.mjs$")
+
+
 @app.middleware("http")
 async def security_headers_middleware(request, call_next):
     """Add standard HTTP security headers to every response."""
@@ -9655,6 +9665,37 @@ async def security_headers_middleware(request, call_next):
             "object-src 'none'; "
             "base-uri 'self'; " + _frame_ancestors("'none'")
         )
+    elif _STEP_WORKER_ASSET_RE.match(request.url.path):
+        # The STEP preview worker (#2976) runs OpenCascade compiled to WASM;
+        # its emscripten/embind glue generates invoker functions with `new
+        # Function(...)`, which needs 'unsafe-eval'. Per CSP3 a dedicated
+        # worker is governed by the policy delivered with the WORKER SCRIPT's
+        # own response — not the document's — so relaxing it here confines
+        # eval to that DOM-less worker context. The document policy below
+        # stays nonce-strict, and this response header has no effect when the
+        # file is merely fetched (a fetch's CSP is enforced against the
+        # requesting document, not the resource's own headers).
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; "
+            "connect-src 'self'; "
+            "object-src 'none'; "
+            "base-uri 'self'; " + _frame_ancestors("'none'")
+        )
+    elif _PDF_WORKER_ASSET_RE.match(request.url.path):
+        # pdf.js decodes JPEG2000/JBIG2 images and ICC colour with WebAssembly
+        # and fetches those modules from /assets/pdfjs/wasm/ (#2976). Same CSP3
+        # rule as the STEP worker above: the policy that governs a dedicated
+        # worker is the one delivered with its own script, so the wasm compile
+        # has to be permitted here rather than on the document. Unlike the STEP
+        # worker this one needs no JS eval, so it gets 'wasm-unsafe-eval' only.
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'wasm-unsafe-eval'; "
+            "connect-src 'self'; "
+            "object-src 'none'; "
+            "base-uri 'self'; " + _frame_ancestors("'none'")
+        )
     else:
         # The streaming overlay is embedded same-origin by the URL builder's
         # preview in Settings (#1422), so this branch allows 'self'.
@@ -9668,6 +9709,11 @@ async def security_headers_middleware(request, call_next):
         # TRUSTED_FRAME_ORIGINS is for, and _frame_ancestors already folds that
         # allowlist in.
         embeddable_same_origin = request.url.path.startswith("/overlay/")
+        # No 'wasm-unsafe-eval' here: nothing compiles WebAssembly on the main
+        # thread. Both wasm consumers — the STEP preview and pdf.js's image
+        # decoders (#2976) — run in dedicated workers, which CSP3 governs by
+        # the policy served with their own script, so each gets it in its own
+        # branch above and the document policy stays as strict as it was.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             f"script-src 'self' 'nonce-{csp_nonce}'; "

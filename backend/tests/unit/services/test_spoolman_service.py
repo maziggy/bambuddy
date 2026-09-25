@@ -5,42 +5,21 @@ functionality that controls whether remaining_weight is updated.
 Also includes tests for is_bambu_lab_spool RFID detection.
 """
 
+import json
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from backend.app.services.color_catalog_lookup import CatalogColor
 from backend.app.services.spoolman import AMSTray, SpoolmanClient, init_spoolman_client
-
-
-class _Catalog:
-    """A DB session whose colour catalogue names one colour.
-
-    ``_find_or_create_filament`` resolves the expected colour name from
-    (Bambu Lab, hex, sub-brand) and uses it to pick the external entry, so a test
-    about that selection needs the catalogue to have an answer (#2907).
-    """
-
-    def __init__(self, color_name: str):
-        self._color_name = color_name
-
-    async def execute(self, *_args, **_kwargs):
-        entry = type("_Entry", (), {"color_name": self._color_name})()
-
-        class _Result:
-            @staticmethod
-            def scalar_one_or_none():
-                return entry
-
-        return _Result()
 
 
 class _NoCatalog:
     """A DB session whose colour catalogue has no row for anything.
 
-    ``_find_or_create_filament`` resolves the expected colour name from the
-    catalogue now (#2907), so it needs a session. These tests predate the
-    catalogue and were written against the state where it cannot name the
-    colour, which is this. Tests that care about the name pass a real session.
+    ``sync_ams_tray`` resolves the roll's colour from the catalogue now (#2907),
+    so it needs a session. These tests predate the catalogue and were written
+    against the state where it cannot name the colour, which is this.
     """
 
     async def execute(self, *_args, **_kwargs):
@@ -48,6 +27,24 @@ class _NoCatalog:
             @staticmethod
             def scalar_one_or_none():
                 return None
+
+        return _Result()
+
+
+class _BlackCatalog:
+    """A DB session whose colour catalogue answers "Black" for anything.
+
+    The fake ignores the query, so it stands for the trap rather than the lookup:
+    a catalogue that would name a clear roll's ``000000`` if it were asked.
+    """
+
+    async def execute(self, *_args, **_kwargs):
+        entry = type("_Entry", (), {"color_name": "Black", "extra_colors": None, "effect_type": None})()
+
+        class _Result:
+            @staticmethod
+            def scalar_one_or_none():
+                return entry
 
         return _Result()
 
@@ -206,6 +203,41 @@ class TestSpoolmanClient:
             # New spools should ALWAYS include remaining_weight
             assert "remaining_weight" in call_kwargs
             assert call_kwargs["remaining_weight"] == 500.0  # 50% of 1000g
+
+    @pytest.mark.asyncio
+    async def test_a_new_spool_carries_the_catalogue_colour_name(self, client, sample_tray, mock_filament):
+        """Where #1357 put the colour name on this side: Spoolman has no color_name
+        on Filament, so it lives in spool.extra.bambu_color_name and
+        _map_spoolman_spool reads that first. The AMS path never wrote it, which
+        is why the colour ended up in the filament name and the product line fell
+        out of the subtype (#2907, round three)."""
+        with (
+            patch.object(client, "find_spool_by_tag", AsyncMock(return_value=None)),
+            patch.object(client, "_find_or_create_filament", AsyncMock(return_value=mock_filament)) as mock_find,
+            patch.object(client, "create_spool", AsyncMock(return_value={"id": 99})) as mock_create,
+        ):
+            await client.sync_ams_tray(sample_tray, "TestPrinter", _BlackCatalog())
+
+        # The same answer goes to the filament lookup and onto the spool.
+        assert mock_find.call_args.args[1] == CatalogColor("Black")
+        extra = mock_create.call_args.kwargs["extra"]
+        assert extra["bambu_color_name"] == json.dumps("Black")
+        assert "tag" in extra
+
+    @pytest.mark.asyncio
+    async def test_no_catalogue_row_means_no_colour_name_rather_than_an_empty_one(
+        self, client, sample_tray, mock_filament
+    ):
+        """An empty string would read back as a name. Leaving the key out lets
+        _map_spoolman_spool fall through to the subtype, as it did before."""
+        with (
+            patch.object(client, "find_spool_by_tag", AsyncMock(return_value=None)),
+            patch.object(client, "_find_or_create_filament", AsyncMock(return_value=mock_filament)),
+            patch.object(client, "create_spool", AsyncMock(return_value={"id": 99})) as mock_create,
+        ):
+            await client.sync_ams_tray(sample_tray, "TestPrinter", _NoCatalog())
+
+        assert "bambu_color_name" not in mock_create.call_args.kwargs["extra"]
 
     @pytest.mark.asyncio
     async def test_sync_ams_tray_does_not_write_location(self, client, sample_tray, existing_spool):
@@ -759,14 +791,14 @@ class TestFindOrCreateFilament:
             tray_weight=1000,
         )
 
-    async def _run(self, client, tray, db, *, filaments=None, external=None):
+    async def _run(self, client, tray, catalog_color, *, filaments=None, external=None):
         with (
             patch.object(client, "ensure_bambu_vendor", AsyncMock(return_value=2)),
             patch.object(client, "get_filaments", AsyncMock(return_value=filaments or [])),
             patch.object(client, "get_external_filaments", AsyncMock(return_value=external or [])) as mock_external,
             patch.object(client, "create_filament", AsyncMock(return_value={"id": 99})) as mock_create,
         ):
-            result = await client._find_or_create_filament(tray, db)
+            result = await client._find_or_create_filament(tray, catalog_color)
         return result, mock_external, mock_create
 
     @pytest.mark.asyncio
@@ -792,7 +824,7 @@ class TestFindOrCreateFilament:
             "color_hex": "000000",  # alpha stripped by create_filament at insert time
             "vendor_id": 2,
         }
-        result, mock_external, mock_create = await self._run(client, tray_pla_black, _NoCatalog(), filaments=[existing])
+        result, mock_external, mock_create = await self._run(client, tray_pla_black, None, filaments=[existing])
 
         assert result is existing
         mock_external.assert_not_called()
@@ -800,11 +832,12 @@ class TestFindOrCreateFilament:
 
     @pytest.mark.asyncio
     async def test_reuses_a_filament_named_for_the_catalogue_colour(self, client, tray_pla_black):
-        """The other spelling: an entry taken from the external library is already
-        called by its colour name, and so is everything this path creates from now on."""
+        """The bare-colour spelling: what an entry taken from the external library
+        used to be called, and what PLA Basic is called there. An existing instance
+        is full of these, so refusing it would duplicate every one."""
         existing = {"id": 6, "name": "Black", "material": "PLA", "color_hex": "000000", "vendor_id": 2}
 
-        result, _, mock_create = await self._run(client, tray_pla_black, _Catalog("Black"), filaments=[existing])
+        result, _, mock_create = await self._run(client, tray_pla_black, CatalogColor("Black"), filaments=[existing])
 
         assert result is existing
         mock_create.assert_not_called()
@@ -815,10 +848,10 @@ class TestFindOrCreateFilament:
         PLA Basic Black filament that happens to share its material and hex."""
         pla_basic_black = {"id": 6, "name": "Black", "material": "PLA", "color_hex": "000000", "vendor_id": 2}
 
-        _, _, mock_create = await self._run(client, tray_matte, _Catalog("Charcoal"), filaments=[pla_basic_black])
+        _, _, mock_create = await self._run(client, tray_matte, CatalogColor("Charcoal"), filaments=[pla_basic_black])
 
         mock_create.assert_called_once()
-        assert mock_create.call_args.kwargs["name"] == "Charcoal"
+        assert mock_create.call_args.kwargs["name"] == "PLA Matte"
 
     @pytest.mark.asyncio
     async def test_skips_non_bambu_lab_external_entries(self, client, tray_pla_black):
@@ -859,17 +892,18 @@ class TestFindOrCreateFilament:
             patch.object(client, "get_external_filaments", AsyncMock(return_value=external)),
             patch.object(client, "create_filament", AsyncMock(return_value={"id": 99})) as mock_create,
         ):
-            await client._find_or_create_filament(tray_pla_black, _Catalog("Black"))
+            await client._find_or_create_filament(tray_pla_black, CatalogColor("Black"))
 
         mock_create.assert_called_once()
         kwargs = mock_create.call_args.kwargs
         # The Bambu Lab entry must win — not 3DJAKE / 3DXTECH which sort earlier.
-        assert kwargs["name"] == "Black"
+        # The name is the tray's either way, so the density says which entry it was.
+        assert kwargs["name"] == "PLA Basic"
         assert kwargs["density"] == 1.26
 
     @pytest.mark.asyncio
-    async def test_prefers_the_external_entry_the_catalogue_names(self, client, tray_matte):
-        """The tie-break selects on the catalogue's colour name, not on tray_sub_brands.
+    async def test_prefers_the_external_entry_that_carries_the_line(self, client, tray_matte):
+        """The tie-break selects on the line and the catalogue's colour together.
 
         The fixture is the real pair. A current SpoolmanDB carries, for Bambu Lab
         PLA at #000000, ``bambulab_pla_black_1000_175_n`` named "Black" and
@@ -884,6 +918,13 @@ class TestFindOrCreateFilament:
         so it falls through to candidates[0] -- "Black" -- and a Matte roll is
         created as PLA Basic Black. That is #2907. Against the invented fixture
         it matched, which is why the old test passed.
+
+        The catalogue value is the real one too. ``catalog_defaults.py`` seeds
+        #000000 under PLA Matte as "Charcoal", with the line in its material
+        column; the round-two version of this test staged "Matte Charcoal", which
+        is the library's spelling, and so exercised a branch the seed never
+        reaches. Neither side's name equals the other's here, which is why the
+        selector rebuilds the library's spelling from the line and the colour.
         """
         external = [
             {
@@ -909,15 +950,16 @@ class TestFindOrCreateFilament:
             patch.object(client, "get_external_filaments", AsyncMock(return_value=external)),
             patch.object(client, "create_filament", AsyncMock(return_value={"id": 99})) as mock_create,
         ):
-            await client._find_or_create_filament(tray_matte, _Catalog("Matte Charcoal"))
+            await client._find_or_create_filament(tray_matte, CatalogColor("Charcoal"))
 
         mock_create.assert_called_once()
         kwargs = mock_create.call_args.kwargs
-        # The catalogue calls #000000 "Matte Charcoal" for PLA Matte, so that is
-        # the entry -- and the density that comes with it. candidates[0] is
-        # "Black", which is what the old tie-break would have taken here.
-        assert kwargs["name"] == "Matte Charcoal"
+        # "Matte Charcoal" is the entry, and the density that comes with it says
+        # so. candidates[0] is "Black", which the old tie-break would have taken.
+        # The filament is named for the line either way, as internal mode's
+        # subtype is.
         assert kwargs["density"] == 1.26
+        assert kwargs["name"] == "PLA Matte"
 
     @pytest.mark.asyncio
     async def test_falls_back_to_create_when_no_bambu_match_anywhere(self, client, tray_pla_black):
@@ -941,7 +983,7 @@ class TestFindOrCreateFilament:
             patch.object(client, "get_external_filaments", AsyncMock(return_value=external)),
             patch.object(client, "create_filament", AsyncMock(return_value={"id": 99})) as mock_create,
         ):
-            await client._find_or_create_filament(tray_pla_black, _NoCatalog())
+            await client._find_or_create_filament(tray_pla_black, None)
 
         mock_create.assert_called_once()
         kwargs = mock_create.call_args.kwargs
@@ -979,7 +1021,7 @@ class TestFindOrCreateFilament:
                 "density": 1.31,
             },
         ]
-        _, _, mock_create = await self._run(client, tray_pla_black, _NoCatalog(), external=external)
+        _, _, mock_create = await self._run(client, tray_pla_black, None, external=external)
 
         mock_create.assert_called_once()
         kwargs = mock_create.call_args.kwargs
@@ -997,8 +1039,8 @@ class TestFindOrCreateFilament:
     async def test_a_name_the_library_does_not_carry_is_built_from_the_tray_too(self, client, tray_matte):
         """The other half: the catalogue answers and no candidate carries that name.
 
-        The catalogue names this roll "Matte Charcoal"; the library offers only
-        "Black" for Bambu Lab PLA at #000000. That is the state an instance sits
+        The catalogue names this roll "Charcoal" under PLA Matte; the library
+        offers only "Black" for Bambu Lab PLA at #000000. That is the state an instance sits
         in between a colour shipping and SpoolmanDB catching up. The name is the
         only field separating the two product lines at this hex, so a candidate
         that does not carry it is not this roll -- and "Black" is exactly the
@@ -1014,13 +1056,13 @@ class TestFindOrCreateFilament:
                 "density": 1.24,
             },
         ]
-        _, _, mock_create = await self._run(client, tray_matte, _Catalog("Matte Charcoal"), external=external)
+        _, _, mock_create = await self._run(client, tray_matte, CatalogColor("Charcoal"), external=external)
 
         mock_create.assert_called_once()
         kwargs = mock_create.call_args.kwargs
-        # The catalogue's name is what the filament is called; what it must not
-        # take is the "Black" entry's identity or the density that comes with it.
-        assert kwargs["name"] == "Matte Charcoal"
+        # Named for the line, as every filament this path creates is; what it
+        # must not take is the "Black" entry's identity or the density with it.
+        assert kwargs["name"] == "PLA Matte"
         assert kwargs["material"] == "PLA"
         assert kwargs["color_hex"] == "000000"
         assert "density" not in kwargs
@@ -1046,10 +1088,12 @@ class TestFindOrCreateFilament:
             patch.object(client, "get_external_filaments", AsyncMock(return_value=external)),
             patch.object(client, "create_filament", AsyncMock(return_value={"id": 99})) as mock_create,
         ):
-            await client._find_or_create_filament(tray_pla_black, _Catalog("Black"))
+            await client._find_or_create_filament(tray_pla_black, CatalogColor("Black"))
 
         mock_create.assert_called_once()
-        assert mock_create.call_args.kwargs["name"] == "Black"
+        # Only the external path forwards a density, so this is what shows the
+        # entry was accepted rather than the roll being built from scratch.
+        assert mock_create.call_args.kwargs["density"] == 1.24
 
     @pytest.mark.asyncio
     async def test_external_density_propagates_to_create_filament(self, client, tray_pla_black):
@@ -1074,7 +1118,7 @@ class TestFindOrCreateFilament:
             patch.object(client, "get_external_filaments", AsyncMock(return_value=external)),
             patch.object(client, "create_filament", AsyncMock(return_value={"id": 99})) as mock_create,
         ):
-            await client._find_or_create_filament(tray_pla_black, _Catalog("Black"))
+            await client._find_or_create_filament(tray_pla_black, CatalogColor("Black"))
 
         mock_create.assert_called_once()
         assert mock_create.call_args.kwargs["density"] == 1.31
@@ -1143,7 +1187,7 @@ class TestColorHexAlphaHandling:
             patch.object(client, "get_external_filaments", AsyncMock(return_value=[])),
             patch.object(client, "create_filament", AsyncMock(return_value={"id": 99})) as mock_create,
         ):
-            await client._find_or_create_filament(self._tray("00000000"), _NoCatalog())
+            await client._find_or_create_filament(self._tray("00000000"), None)
 
         assert mock_create.call_args.kwargs["color_hex"] == "00000000"
 
@@ -1151,23 +1195,22 @@ class TestColorHexAlphaHandling:
     async def test_a_clear_tray_is_not_named_from_the_catalogue_even_when_it_can_answer(self, client):
         """#1545 at this level: the catalogue must not get to name a clear roll.
 
-        The test above passes a session that cannot answer, so it says nothing
-        about the guard. Here the catalogue does have a row -- the trap is that a
-        clear roll reports ``00000000`` and the catalogue stores RGB, so the
-        lookup would hit #000000 and come back "Black". Without the guard this
-        creates a Spoolman filament called "Black" for a clear roll, while the
-        built-in path calls the same roll "Clear" on the same printer.
+        The catalogue here does have a row -- the trap is that a clear roll
+        reports ``00000000`` and the catalogue stores RGB, so the lookup would hit
+        #000000 and come back "Black". Without the guard the spool is stored as
+        "Black" for a clear roll, while the built-in path calls the same roll
+        "Clear" on the same printer. The colour is resolved in ``sync_ams_tray``
+        and handed down, so that is where this has to be driven from.
         """
         with (
-            patch.object(client, "ensure_bambu_vendor", AsyncMock(return_value=2)),
-            patch.object(client, "get_filaments", AsyncMock(return_value=[])),
-            patch.object(client, "get_external_filaments", AsyncMock(return_value=[])),
-            patch.object(client, "create_filament", AsyncMock(return_value={"id": 99})) as mock_create,
+            patch.object(client, "find_spool_by_tag", AsyncMock(return_value=None)),
+            patch.object(client, "_find_or_create_filament", AsyncMock(return_value={"id": 7})) as mock_find,
+            patch.object(client, "create_spool", AsyncMock(return_value={"id": 99})) as mock_create,
         ):
-            await client._find_or_create_filament(self._tray("00000000"), _Catalog("Black"))
+            await client.sync_ams_tray(self._tray("00000000"), "TestPrinter", _BlackCatalog())
 
-        assert mock_create.call_args.kwargs["name"] == "Clear"
-        assert mock_create.call_args.kwargs["color_hex"] == "00000000"
+        assert mock_find.call_args.args[1] == CatalogColor("Clear")
+        assert mock_create.call_args.kwargs["extra"]["bambu_color_name"] == json.dumps("Clear")
 
     @pytest.mark.asyncio
     async def test_opaque_tray_still_matches_an_existing_six_char_filament(self, client):
@@ -1188,7 +1231,7 @@ class TestColorHexAlphaHandling:
             # Named after the catalogue's colour name, so the product-line
             # criterion (#2907) is satisfied and the six/eight-character key is
             # the only thing this test can fail on.
-            result = await client._find_or_create_filament(self._tray("000000FF"), _Catalog("Black"))
+            result = await client._find_or_create_filament(self._tray("000000FF"), CatalogColor("Black"))
 
         assert result is existing
         mock_external.assert_not_called()
@@ -1205,7 +1248,7 @@ class TestColorHexAlphaHandling:
             patch.object(client, "get_external_filaments", AsyncMock(return_value=[])),
             patch.object(client, "create_filament", AsyncMock(return_value={"id": 99})) as mock_create,
         ):
-            await client._find_or_create_filament(self._tray("00000000"), _Catalog("Black"))
+            await client._find_or_create_filament(self._tray("00000000"), CatalogColor("Black"))
 
         assert mock_create.call_args.kwargs["color_hex"] == "00000000"
 
@@ -1224,7 +1267,7 @@ class TestColorHexAlphaHandling:
             patch.object(client, "get_external_filaments", AsyncMock(return_value=[])),
             patch.object(client, "create_filament", AsyncMock(return_value={"id": 99})) as mock_create,
         ):
-            await client._find_or_create_filament(self._tray("000000FF"), _Catalog("Clear"))
+            await client._find_or_create_filament(self._tray("000000FF"), CatalogColor("Clear"))
 
         assert mock_create.call_args.kwargs["color_hex"] == "000000"
 
@@ -1253,7 +1296,7 @@ class TestColorHexAlphaHandling:
             # The catalogue is made to name this colour exactly what the external
             # entry is called, so the selector (#2907) would take it. Only the
             # colour key keeps it out of the candidate list at all.
-            await client._find_or_create_filament(self._tray("00000000"), _Catalog("PLA Basic Black"))
+            await client._find_or_create_filament(self._tray("00000000"), CatalogColor("PLA Basic Black"))
 
         assert mock_create.call_args.kwargs["color_hex"] == "00000000"
 

@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.schemas.spool import normalize_effect_type
+from backend.app.services.color_catalog_lookup import resolve_bambu_color
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_filament_preset import printer_safe_filament_id, resolve_spool_preset
 from backend.app.utils.tag_normalization import (
@@ -53,7 +54,6 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     Extracts material, subtype, color, temps, and tag info from the tray dict.
     Looks up core_weight from the spool catalog if a Bambu Lab entry matches.
     """
-    from backend.app.models.color_catalog import ColorCatalogEntry
     from backend.app.models.spool_catalog import SpoolCatalogEntry
 
     tray_type = tray_data.get("tray_type", "")  # "PLA"
@@ -107,42 +107,17 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     # the printer-reported material variant (`tray_sub_brands`, e.g. "PLA Matte")
     # so a new Ivory White roll doesn't get auto-named Jade White just because
     # PLA Basic happens to come first in catalog insertion order. See #1227.
+    #
+    # Clear rolls (#1545) and the catalogue's gradient stops and effect hint
+    # come back from the same call: the lookup is shared with the Spoolman path
+    # so the two modes stop answering this question differently (#2907). The
+    # stops and hint are the same row the spool form's colour picker reads, so
+    # a roll the AMS identified renders like one picked by hand from that row.
     rgba = tray_color if tray_color else None
-    color_name = None
-    extra_colors = None
-    effect_type = None
-
-    # Transparent filament (#1545): the AMS reports alpha=00 for clear spools.
-    # Skip the catalog lookup — the catalog only stores RGB so 000000 would
-    # resolve to "Black" (or whatever else lives at that RGB), which is exactly
-    # the bug the cream rewrite in parse_ams_tray used to paper over. Store
-    # "Clear" directly and let the frontend's resolveSpoolColorName +
-    # hexToColorName render the swatch as a checkerboard.
-    if rgba and len(rgba) == 8 and rgba[6:8].lower() == "00":
-        color_name = "Clear"
-    elif rgba and len(rgba) >= 6:
-        hex_prefix = f"#{rgba[:6].upper()}"
-        cat_query = (
-            select(ColorCatalogEntry)
-            .where(func.upper(ColorCatalogEntry.hex_color) == hex_prefix)
-            .where(func.upper(ColorCatalogEntry.manufacturer) == "BAMBU LAB")
-        )
-        if tray_sub_brands:
-            cat_query = cat_query.where(func.upper(ColorCatalogEntry.material) == tray_sub_brands.upper())
-        # Deterministic tiebreak when the material filter can't disambiguate
-        # (e.g. third-party spools with empty tray_sub_brands).
-        cat_query = cat_query.order_by(ColorCatalogEntry.id).limit(1)
-        cat_result = await db.execute(cat_query)
-        entry = cat_result.scalar_one_or_none()
-        if entry:
-            color_name = entry.color_name
-            # The same row the spool form's colour picker reads. It hands
-            # `extra_colors` and `effect_type` to the new spool when a user
-            # picks a colour by hand (ColorSection.selectColor), and this path
-            # was taking the name alone -- so a roll added by hand rendered
-            # its gradient and a roll the AMS identified for you did not.
-            extra_colors = entry.extra_colors
-            effect_type = entry.effect_type
+    catalog_color = await resolve_bambu_color(db, rgba, tray_sub_brands)
+    color_name = catalog_color.name if catalog_color else None
+    extra_colors = catalog_color.extra_colors if catalog_color else None
+    effect_type = catalog_color.effect_type if catalog_color else None
 
     # If tray_id_name is a human-readable name (no "-" code), fall back to it.
     if not color_name and tray_id_name and "-" not in tray_id_name:

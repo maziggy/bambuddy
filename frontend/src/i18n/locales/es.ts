@@ -381,6 +381,11 @@ export default {
       editFieldHelp: 'Cuando está activado, esta impresora se pausa de MQTT, despacho de cola y notificaciones — útil para reparaciones, instalaciones paralelas de Bambuddy o suspensión temporal.',
     },
     // Chamber light
+    // Per-printer opt-out from the door plate-clear trigger (#2805)
+    plateClearDoor: {
+      editFieldLabel: 'Cerrar la puerta confirma la cama',
+      editFieldHelp: 'Desmarca esto en una impresora cuya puerta se abre por otros motivos: entonces esperará al botón como antes.',
+    },
     chamberLightOn: 'Encender luz de la cámara',
     chamberLightOff: 'Apagar luz de la cámara',
     // Files
@@ -2361,6 +2366,10 @@ export default {
     plateClear: 'Confirmación de cama despejada',
     requirePlateClear: 'Requerir confirmación de cama despejada',
     requirePlateClearDescription: 'Cuando está activado, el planificador espera la confirmación de cama despejada por impresora antes de iniciar impresiones en cola en impresoras con trabajos finalizados. Desactivar esto también oculta la insignia de estado de la cama y el botón "Marcar cama como despejada" en las tarjetas de impresora.',
+    plateClearTrigger: 'Liberar la confirmación mediante',
+    plateClearTriggerManual: 'Solo el botón',
+    plateClearTriggerDoor: 'El botón, o cerrar la puerta',
+    plateClearTriggerDescription: 'Con «cerrar la puerta», una impresora que espera la confirmación de su cama se libera sola cuando su puerta se abre y se vuelve a cerrar: retirar las piezas es la confirmación. Las impresoras sin sensor de puerta no se ven afectadas, y cualquier impresora puede quedar excluida en sus ajustes.',
     keepBedWarm: 'Mantener la cama caliente entre impresiones',
     keepBedWarmDesc: 'Mientras se espera la confirmación de limpieza de placa, mantiene la cama a la temperatura de mantenimiento indicada abajo para que la cámara siga caliente — o a la temperatura de cama de la siguiente impresión si es mayor. Solo aplica cuando la siguiente impresión requiere calefacción de cámara (ASA, ABS, PA, PC, etc.). Requiere la confirmación de limpieza de placa activada.',
     keepWarmBedTemp: 'Temperatura de la cama en mantenimiento (°C)',

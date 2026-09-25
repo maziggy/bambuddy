@@ -362,6 +362,11 @@ export default {
       editFieldLabel: '유지보수 모드',
       editFieldHelp: '활성화하면 이 프린터는 MQTT, 대기열 디스패치 및 알림에서 일시 중지됩니다 — 수리, 병렬 Bambuddy 설치 또는 임시 중지에 유용합니다.',
     },
+    // Per-printer opt-out from the door plate-clear trigger (#2805)
+    plateClearDoor: {
+      editFieldLabel: '도어를 닫으면 플레이트가 확인됨',
+      editFieldHelp: '다른 이유로 도어를 여는 프린터는 체크를 해제하세요. 그러면 이전처럼 버튼을 기다립니다.',
+    },
     chamberLightOn: '챔버 조명 켜기',
     chamberLightOff: '챔버 조명 끄기',
     files: '파일',
@@ -2238,6 +2243,10 @@ export default {
     plateClear: '플레이트 비움 확인',
     requirePlateClear: '플레이트 비움 확인 필요',
     requirePlateClearDescription: '활성화하면 스케줄러가 완료된 작업이 있는 프린터에서 대기 중인 인쇄를 시작하기 전에 프린터별 플레이트 비움 확인을 기다립니다.',
+    plateClearTrigger: '확인 해제 방식',
+    plateClearTriggerManual: '버튼만',
+    plateClearTriggerDoor: '버튼 또는 도어 닫힘',
+    plateClearTriggerDescription: '‘도어 닫힘’을 선택하면 플레이트 확인을 기다리는 프린터가 도어를 열었다가 다시 닫는 시점에 스스로 해제됩니다. 출력물을 떼어내는 행위가 곧 확인입니다. 도어 센서가 없는 프린터는 영향을 받지 않으며, 프린터별 설정에서 제외할 수 있습니다.',
     keepBedWarm: '출력 사이에 베드 온도 유지',
     keepBedWarmDesc: '플레이트 클리어 확인 대기 중에 아래의 온도 유지 값으로 베드를 유지하여 챔버를 따뜻하게 유지합니다. 다음 출력의 베드 온도가 더 높으면 그 값을 사용합니다. 다음 출력에 챔버 가열이 필요한 경우에만 적용됩니다(ASA, ABS, PA, PC 등). 플레이트 클리어 확인이 활성화되어 있어야 합니다.',
     keepWarmBedTemp: '온도 유지 시 베드 온도 (°C)',

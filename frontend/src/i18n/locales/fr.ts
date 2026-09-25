@@ -381,6 +381,11 @@ export default {
       editFieldHelp: "Quand activé, cette imprimante est mise en pause de MQTT, de la file d'attente et des notifications — utile pour les réparations, les installations Bambuddy parallèles ou une suspension temporaire.",
     },
     // Chamber light
+    // Per-printer opt-out from the door plate-clear trigger (#2805)
+    plateClearDoor: {
+      editFieldLabel: 'Fermer la porte confirme le plateau',
+      editFieldHelp: 'Décochez pour une imprimante dont la porte est ouverte pour d’autres raisons — elle attendra alors le bouton comme avant.',
+    },
     chamberLightOn: 'Allumer la lumière de la chambre',
     chamberLightOff: 'Éteindre la lumière de la chambre',
     // Files
@@ -2314,6 +2319,10 @@ export default {
     plateClear: 'Confirmation de plateau libre',
     requirePlateClear: 'Exiger la confirmation de plateau libre',
     requirePlateClearDescription: 'Lorsque cette option est activée, le planificateur attend une confirmation de plateau libre par imprimante avant de lancer les impressions en file d\'attente sur les imprimantes ayant terminé. La désactiver masque également le badge d\'état du plateau et le bouton « Marquer le plateau comme dégagé » sur les cartes d\'imprimante.',
+    plateClearTrigger: 'Libérer la confirmation par',
+    plateClearTriggerManual: 'Le bouton uniquement',
+    plateClearTriggerDoor: 'Le bouton, ou la fermeture de la porte',
+    plateClearTriggerDescription: 'Avec « fermeture de la porte », une imprimante qui attend la confirmation de son plateau se libère d’elle-même lorsque sa porte est ouverte puis refermée — retirer les pièces vaut confirmation. Les imprimantes sans capteur de porte ne sont pas concernées, et chaque imprimante peut être exclue dans ses paramètres.',
     keepBedWarm: 'Maintenir le plateau chaud entre les impressions',
     keepBedWarmDesc: 'En attendant la confirmation de plateau libéré, maintient le plateau à la température de maintien au chaud ci-dessous pour que la chambre reste chaude — ou à la température de plateau de l\'impression suivante si elle est plus élevée. S\'applique uniquement lorsque l\'impression suivante nécessite un chauffage de chambre (ASA, ABS, PA, PC, etc.). Nécessite l\'activation de la confirmation de plateau libéré.',
     keepWarmBedTemp: 'Température du plateau en maintien au chaud (°C)',

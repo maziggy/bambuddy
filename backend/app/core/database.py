@@ -3448,6 +3448,11 @@ async def run_migrations(conn):
     # Migration: Add awaiting_plate_clear column to printers (#961)
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN awaiting_plate_clear BOOLEAN DEFAULT FALSE NOT NULL")
 
+    # Migration: Add plate_clear_door_enabled column to printers (#2805). Defaults
+    # to TRUE so that turning the door trigger on globally covers the whole farm;
+    # the column is the per-printer way back out.
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plate_clear_door_enabled BOOLEAN DEFAULT TRUE NOT NULL")
+
     # Migration: Add REST/Webhook smart plug fields
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_on_url VARCHAR(500)")
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_on_body TEXT")

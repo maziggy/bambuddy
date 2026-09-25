@@ -77,6 +77,7 @@ class PrinterUpdate(BaseModel):
     camera_rotation: int | None = None  # 0, 90, 180, 270 degrees
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
+    plate_clear_door_enabled: bool | None = None
 
 
 class PrinterResponse(PrinterBase):
@@ -96,6 +97,7 @@ class PrinterResponse(PrinterBase):
     camera_rotation: int = 0  # 0, 90, 180, 270 degrees
     plate_detection_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
+    plate_clear_door_enabled: bool = True
     created_at: datetime
     updated_at: datetime
 
@@ -123,6 +125,7 @@ class PrinterResponse(PrinterBase):
             "supports_nozzle_flow_type": supports_nozzle_flow_type(printer.model),
             "print_hours_offset": printer.print_hours_offset,
             "plate_detection_enabled": printer.plate_detection_enabled,
+            "plate_clear_door_enabled": printer.plate_clear_door_enabled,
             "created_at": printer.created_at,
             "updated_at": printer.updated_at,
         }

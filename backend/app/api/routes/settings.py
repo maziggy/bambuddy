@@ -452,6 +452,7 @@ async def get_default_sidebar_order(
 # When adding a field here, confirm it doesn't carry anything sensitive.
 _UI_PREFERENCE_FIELDS: tuple[str, ...] = (
     "require_plate_clear",
+    "plate_clear_trigger",
     "check_printer_firmware",
     "camera_view_mode",
     "time_format",

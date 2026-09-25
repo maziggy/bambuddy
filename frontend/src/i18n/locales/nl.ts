@@ -384,6 +384,11 @@ export default {
       editFieldHelp: 'Als dit is ingeschakeld, wordt deze printer gepauzeerd voor MQTT, wachtrijverwerking en meldingen — handig voor reparatie, parallelle Bambuddy-installaties of tijdelijke buitengebruikstelling.',
     },
     // Chamber light
+    // Per-printer opt-out from the door plate-clear trigger (#2805)
+    plateClearDoor: {
+      editFieldLabel: 'Deur sluiten bevestigt de plaat',
+      editFieldHelp: 'Vink dit uit voor een printer waarvan de deur om andere redenen wordt geopend — die wacht dan zoals voorheen op de knop.',
+    },
     chamberLightOn: 'Kamerverlichting inschakelen',
     chamberLightOff: 'Kamerverlichting uitschakelen',
     // Files
@@ -2378,6 +2383,10 @@ export default {
     plateClear: 'Bevestiging plaat vrij',
     requirePlateClear: 'Bevestiging vereisen dat plaat vrij is',
     requirePlateClearDescription: 'Wanneer ingeschakeld wacht de scheduler op een bevestiging per printer dat de plaat vrij is voordat afdrukken uit de wachtrij starten op printers met voltooide taken. Als je dit uitschakelt, worden ook de plaatstatusbadge en de knop "Plaat als leeg markeren" op printerkaarten verborgen.',
+    plateClearTrigger: 'Bevestiging vrijgeven via',
+    plateClearTriggerManual: 'Alleen de knop',
+    plateClearTriggerDoor: 'De knop, of het sluiten van de deur',
+    plateClearTriggerDescription: 'Met “sluiten van de deur” geeft een printer die wacht op bevestiging van zijn plaat zichzelf vrij zodra de deur is geopend en weer gesloten — de onderdelen eraf halen is de bevestiging. Printers zonder deursensor zijn niet betrokken, en elke printer kan in zijn instellingen worden uitgesloten.',
     keepBedWarm: 'Bed warm houden tussen afdrukken',
     keepBedWarmDesc: 'Tijdens het wachten op het vrijgeven van de plaat wordt het bed op de onderstaande warmhoudtemperatuur gehouden zodat de kamer warm blijft — of op de eigen bedtemperatuur van de volgende afdruk als die hoger is. Alleen van toepassing wanneer de volgende afdruk kamerverwarming nodig heeft (ASA, ABS, PA, PC enz.). Vereist dat bevestiging plaat vrij is ingeschakeld.',
     keepWarmBedTemp: 'Warmhoudtemperatuur bed (°C)',

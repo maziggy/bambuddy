@@ -381,6 +381,11 @@ export default {
       editFieldHelp: 'Quando ativado, esta impressora é pausada do MQTT, despacho de fila e notificações — útil para reparos, instalações paralelas do Bambuddy ou suspensão temporária.',
     },
     // Chamber light
+    // Per-printer opt-out from the door plate-clear trigger (#2805)
+    plateClearDoor: {
+      editFieldLabel: 'Fechar a porta confirma a placa',
+      editFieldHelp: 'Desmarque para uma impressora cuja porta é aberta por outros motivos — ela então aguarda o botão como antes.',
+    },
     chamberLightOn: 'Ligar luz da câmara',
     chamberLightOff: 'Desligar luz da câmara',
     // Files
@@ -2314,6 +2319,10 @@ export default {
     plateClear: 'Confirmação de placa livre',
     requirePlateClear: 'Exigir confirmação de placa livre',
     requirePlateClearDescription: 'Quando ativado, o agendador aguarda uma confirmação de placa livre por impressora antes de iniciar impressões na fila em impressoras com trabalhos concluídos. Desativar isso também oculta o indicador de status da placa e o botão "Marcar placa como liberada" nos cartões das impressoras.',
+    plateClearTrigger: 'Liberar a confirmação por',
+    plateClearTriggerManual: 'Apenas o botão',
+    plateClearTriggerDoor: 'O botão, ou fechar a porta',
+    plateClearTriggerDescription: 'Com “fechar a porta”, uma impressora que aguarda a confirmação da placa se libera sozinha quando sua porta é aberta e fechada novamente — retirar as peças é a confirmação. Impressoras sem sensor de porta não são afetadas, e qualquer impressora pode ser excluída em suas configurações.',
     keepBedWarm: 'Manter a mesa aquecida entre impressões',
     keepBedWarmDesc: 'Enquanto aguarda a confirmação de placa limpa, mantém a mesa na temperatura de aquecimento definida abaixo para que a câmara continue quente — ou na temperatura da mesa da próxima impressão, se for maior. Aplica-se apenas quando a próxima impressão requer aquecimento de câmara (ASA, ABS, PA, PC, etc.). Requer a confirmação de placa limpa ativada.',
     keepWarmBedTemp: 'Temperatura da mesa em aquecimento (°C)',

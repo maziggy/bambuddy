@@ -1201,6 +1201,7 @@ export function SettingsPage() {
       (baseline.stagger_group_size ?? 2) !== (localSettings.stagger_group_size ?? 2) ||
       (baseline.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
       (baseline.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
+      (baseline.plate_clear_trigger ?? 'manual') !== (localSettings.plate_clear_trigger ?? 'manual') ||
       (baseline.queue_max_concurrent_uploads ?? 4) !== (localSettings.queue_max_concurrent_uploads ?? 4) ||
       (baseline.preheat_enabled ?? false) !== (localSettings.preheat_enabled ?? false) ||
       (baseline.preheat_filament_targets ?? '') !== (localSettings.preheat_filament_targets ?? '') ||
@@ -1313,6 +1314,7 @@ export function SettingsPage() {
         stagger_group_size: localSettings.stagger_group_size,
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
+        plate_clear_trigger: localSettings.plate_clear_trigger,
         queue_max_concurrent_uploads: localSettings.queue_max_concurrent_uploads,
         preheat_enabled: localSettings.preheat_enabled,
         preheat_filament_targets: localSettings.preheat_filament_targets,
@@ -5002,6 +5004,26 @@ export function SettingsPage() {
                   />
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
                 </label>
+              </div>
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">
+                  {t('settings.plateClearTrigger', 'Release the confirmation by')}
+                </label>
+                <div className="relative">
+                  <select
+                    value={localSettings.plate_clear_trigger ?? 'manual'}
+                    onChange={(e) => updateSetting('plate_clear_trigger', e.target.value as 'manual' | 'door')}
+                    disabled={!(localSettings.require_plate_clear ?? false)}
+                    className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="manual">{t('settings.plateClearTriggerManual', 'The button only')}</option>
+                    <option value="door">{t('settings.plateClearTriggerDoor', 'The button, or closing the door')}</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                </div>
+                <p className="text-xs text-bambu-gray mt-1">
+                  {t('settings.plateClearTriggerDescription', 'With "closing the door", a printer that is waiting for its plate to be confirmed releases itself when its door is opened and closed again — taking the parts off is the confirmation. Printers without a door sensor are unaffected, and any printer can opt out in its settings.')}
+                </p>
               </div>
             </CardContent>
           </Card>

@@ -467,6 +467,32 @@ _unauthorized_print_kill_sent: set[int] = set()
 _KILL_SWITCH_SETTING_CACHE_TTL_SECONDS = 5.0
 _kill_switch_setting_cache: tuple[bool, float] | None = None
 
+# Door-sensor plate-clear trigger (#2805). `_printer_door_stable` holds the last
+# door reading that survived debouncing; `_printer_door_candidate` holds
+# (value, consecutive_frames) for a reading that disagrees with it and has not
+# been confirmed yet. Both are updated on every status frame, whether or not the
+# trigger is armed, so the "was open" half of the edge is already on record by
+# the time someone closes the door.
+_printer_door_stable: dict[int, bool] = {}
+_printer_door_candidate: dict[int, tuple[bool, int]] = {}
+
+# How many consecutive status frames must agree before a door reading counts.
+# The sensor chatters, and a false open→close edge is the expensive kind of
+# wrong: it releases the gate on an uncleared plate and the queue prints the
+# next job into the last one.
+_DOOR_CLEAR_DEBOUNCE_FRAMES = 2
+
+# States in which a confirmed door close may release the gate. A door opened
+# mid-print must never release anything. IDLE is here because a printer that
+# was powered down after finishing boots into IDLE with the gate still up
+# (#961), and that plate still gets cleared by hand like any other.
+_DOOR_CLEAR_STATES = ("FINISH", "FAILED", "IDLE")
+
+# Same hot-path reasoning as the kill-switch cache above: the door trigger is
+# two settings, and the frames that ask about it arrive several per second.
+_DOOR_TRIGGER_SETTING_CACHE_TTL_SECONDS = 5.0
+_door_trigger_setting_cache: tuple[bool, float] | None = None
+
 # Provider notification started when the kill switch stops a print. The later
 # MQTT print-complete callback awaits this task and only sends its regular
 # provider notification when the immediate attempt failed.
@@ -772,6 +798,108 @@ async def _is_printer_kill_switch_enabled_cached() -> bool:
 
     _kill_switch_setting_cache = (enabled, now + _KILL_SWITCH_SETTING_CACHE_TTL_SECONDS)
     return enabled
+
+
+async def _is_door_plate_clear_trigger_armed_cached() -> bool:
+    """Return whether the door plate-clear trigger is on, without querying per frame."""
+
+    global _door_trigger_setting_cache
+
+    now = time.monotonic()
+    if _door_trigger_setting_cache is not None:
+        armed, expires_at = _door_trigger_setting_cache
+        if now < expires_at:
+            return armed
+
+    from backend.app.api.routes.settings import get_setting
+
+    async with async_session() as db:
+        require_plate_clear = (await get_setting(db, "require_plate_clear") or "false") == "true"
+        trigger = (await get_setting(db, "plate_clear_trigger") or "manual").strip().lower()
+
+    # A trigger changes how the gate opens, never whether there is one: with the
+    # confirmation switched off there is no gate to release, and any trigger
+    # value we don't recognise falls through to the manual button.
+    armed = require_plate_clear and trigger == "door"
+    _door_trigger_setting_cache = (armed, now + _DOOR_TRIGGER_SETTING_CACHE_TTL_SECONDS)
+    return armed
+
+
+async def _is_door_trigger_enabled_for_printer(printer_id: int) -> bool:
+    """Per-printer opt-out from the door trigger (#2805).
+
+    Read at release time rather than cached: a confirmed door edge on a printer
+    that is actually awaiting its plate happens about once per print, so the
+    query costs nothing, and a farm re-arming one machine sees it take effect
+    immediately.
+    """
+
+    from backend.app.models.printer import Printer
+
+    async with async_session() as db:
+        enabled = await db.scalar(select(Printer.plate_clear_door_enabled).where(Printer.id == printer_id))
+    return bool(enabled)
+
+
+async def _maybe_release_plate_clear_on_door(printer_id: int, state: PrinterState) -> None:
+    """Release the plate-clear gate when the printer's door closes (#2805).
+
+    The printer already reports the physical act that means "I have cleared this
+    plate", and until now ``door_open`` was parsed and displayed and nothing
+    else. Reading it here, on the push that already carries it, makes the
+    release edge-driven and costs no second poll loop.
+
+    Two properties carry the whole design:
+
+    * **The edge, not the level.** A closed door is the resting state, so
+      releasing on "door is closed" would clear the plate the moment a print
+      finished, and then keep clearing it. Only open → closed means a human was
+      at the machine.
+    * **Doorless models need no allow-list.** A P1S reports its door as
+      permanently closed even though the model has none (#1866). It therefore
+      never produces an open → closed transition, and the feature is inert on it
+      without anyone maintaining a list of which models have a real sensor.
+    """
+
+    door_open = getattr(state, "door_open", None)
+    # Never infer an edge from a missing reading — a printer that reports no
+    # door at all must not look like one whose door just closed.
+    if not isinstance(door_open, bool):
+        return
+
+    stable = _printer_door_stable.get(printer_id)
+    if door_open == stable:
+        _printer_door_candidate.pop(printer_id, None)
+        return
+
+    candidate, frames = _printer_door_candidate.get(printer_id, (door_open, 0))
+    frames = frames + 1 if candidate == door_open else 1
+    _printer_door_candidate[printer_id] = (door_open, frames)
+    if frames < _DOOR_CLEAR_DEBOUNCE_FRAMES:
+        return
+
+    _printer_door_candidate.pop(printer_id, None)
+    _printer_door_stable[printer_id] = door_open
+
+    # The first reading a printer ever gives us has no predecessor, so it only
+    # establishes the resting state.
+    if stable is not True or door_open is not False:
+        return
+    if not printer_manager.is_awaiting_plate_clear(printer_id):
+        return
+    if state.state not in _DOOR_CLEAR_STATES:
+        return
+    if not await _is_door_plate_clear_trigger_armed_cached():
+        return
+    if not await _is_door_trigger_enabled_for_printer(printer_id):
+        return
+
+    logging.getLogger(__name__).info(
+        "[#2805] Printer %s door closed after being opened while awaiting plate-clear (state=%s) — releasing the gate",
+        printer_id,
+        state.state,
+    )
+    printer_manager.set_awaiting_plate_clear(printer_id, False)
 
 
 async def _is_bambuddy_authorized_print(printer_id: int, state: PrinterState, db) -> bool | None:
@@ -1495,6 +1623,15 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                 printer_id,
             )
             pending.cancel()
+
+    # Door plate-clear trigger (#2805). Runs ahead of the status_key dedup below:
+    # a door reading needs a second, agreeing frame to confirm, and if nothing
+    # else on the printer moved in between that frame carries an identical key
+    # and returns early — the debounce would never complete.
+    try:
+        await _maybe_release_plate_clear_on_door(printer_id, state)
+    except Exception as e:
+        logging.getLogger(__name__).warning("[#2805] Door plate-clear trigger failed for printer %s: %s", printer_id, e)
 
     # Only broadcast if something meaningful changed (reduce WebSocket spam)
     # Include rounded temperatures to detect meaningful temp changes (within 1 degree)

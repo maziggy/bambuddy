@@ -380,6 +380,11 @@ export default {
       editFieldHelp: '有効にすると、このプリンターはMQTT、キューディスパッチ、通知から一時停止されます — 修理、並列のBambuddyインストール、または一時的な停止に役立ちます。',
     },
     // Chamber light
+    // Per-printer opt-out from the door plate-clear trigger (#2805)
+    plateClearDoor: {
+      editFieldLabel: 'ドアを閉めるとベッドを確認済みにする',
+      editFieldHelp: 'ドアを別の理由で開けるプリンターではチェックを外してください。その場合は従来どおりボタンを待ちます。',
+    },
     chamberLightOn: 'チャンバーライトをオンにしました',
     chamberLightOff: 'チャンバーライトをオフにしました',
     // Files
@@ -2357,6 +2362,10 @@ export default {
     plateClear: 'プレートクリア確認',
     requirePlateClear: 'プレートクリア確認を必須にする',
     requirePlateClearDescription: '有効にすると、スケジューラーは完了したプリンターでキューの印刷を開始する前に、プリンターごとのプレートクリア確認を待ちます。無効にすると、プリンターカード上のプレート状態バッジと「プレートをクリア済みにする」ボタンも非表示になります。',
+    plateClearTrigger: 'ベッド確認の解除方法',
+    plateClearTriggerManual: 'ボタンのみ',
+    plateClearTriggerDoor: 'ボタン、またはドアを閉めたとき',
+    plateClearTriggerDescription: '「ドアを閉めたとき」を選ぶと、ベッドの確認を待っているプリンターは、ドアが開けられてから再び閉められた時点で自動的に解除されます。造形物を取り外す動作そのものが確認になります。ドアセンサーのないプリンターには影響がなく、各プリンターの設定で個別に除外できます。',
     keepBedWarm: '印刷間ベッド温度維持',
     keepBedWarmDesc: 'プレートクリア確認待ち中、下記の保温温度でベッドを維持してチャンバーを温かく保ちます。次の印刷のベッド温度の方が高い場合はそちらを使用します。次の印刷がチャンバー加熱を必要とする場合のみ適用されます（ASA、ABS、PA、PC など）。プレートクリア確認が有効になっている必要があります。',
     keepWarmBedTemp: '保温時のベッド温度 (°C)',

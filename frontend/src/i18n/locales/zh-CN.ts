@@ -381,6 +381,11 @@ export default {
       editFieldHelp: '启用后，此打印机将从 MQTT、队列调度和通知中暂停 — 适用于维修、并行 Bambuddy 安装或临时停用。',
     },
     // Chamber light
+    // Per-printer opt-out from the door plate-clear trigger (#2805)
+    plateClearDoor: {
+      editFieldLabel: '关闭舱门即确认热床已清理',
+      editFieldHelp: '对于因其他原因需要开门的打印机请取消勾选，它将像以前一样等待按钮。',
+    },
     chamberLightOn: '打开腔室灯',
     chamberLightOff: '关闭腔室灯',
     // Files
@@ -2359,6 +2364,10 @@ export default {
     plateClear: '热床清空确认',
     requirePlateClear: '需要热床清空确认',
     requirePlateClearDescription: '启用后，调度器会在已完成打印的打印机上启动排队打印之前，等待每台打印机的热床清空确认。禁用后，也会隐藏打印机卡片上的打印板状态标记和“将打印板标记为已清理”按钮。',
+    plateClearTrigger: '通过何种方式解除确认',
+    plateClearTriggerManual: '仅按钮',
+    plateClearTriggerDoor: '按钮，或关闭舱门',
+    plateClearTriggerDescription: '选择“关闭舱门”后，正在等待热床确认的打印机会在舱门被打开并再次关闭时自行解除等待——取下模型本身就是确认。没有舱门传感器的打印机不受影响，任何打印机都可以在其设置中排除。',
     keepBedWarm: '在打印之间保持热床温度',
     keepBedWarmDesc: '在等待打印板清空确认时，将热床保持在下方设置的保温温度，使腔室保持温热；若下一个任务的热床温度更高，则使用该温度。仅在下一次打印需要腔室加热（ASA、ABS、PA、PC 等）时适用。需要启用打印板清空确认。',
     keepWarmBedTemp: '保温热床温度 (°C)',

@@ -384,6 +384,11 @@ export default {
       editFieldHelp: 'When on, this printer is paused from MQTT, queue dispatch and notifications — useful for repair, parallel Bambuddy installs, or temporary suspension.',
     },
     // Chamber light
+    // Per-printer opt-out from the door plate-clear trigger (#2805)
+    plateClearDoor: {
+      editFieldLabel: 'Closing the door confirms the plate',
+      editFieldHelp: 'Uncheck for a printer whose door gets opened for other reasons — it then waits for the button like before.',
+    },
     chamberLightOn: 'Turn on chamber light',
     chamberLightOff: 'Turn off chamber light',
     // Files
@@ -2378,6 +2383,10 @@ export default {
     plateClear: 'Plate-Clear Confirmation',
     requirePlateClear: 'Require plate-clear confirmation',
     requirePlateClearDescription: 'When enabled, the scheduler waits for per-printer plate-clear confirmation before starting queued prints on printers with finished jobs. Disabling this also hides the plate status badge and the "Mark plate as cleared" button on printer cards.',
+    plateClearTrigger: 'Release the confirmation by',
+    plateClearTriggerManual: 'The button only',
+    plateClearTriggerDoor: 'The button, or closing the door',
+    plateClearTriggerDescription: 'With "closing the door", a printer that is waiting for its plate to be confirmed releases itself when its door is opened and closed again — taking the parts off is the confirmation. Printers without a door sensor are unaffected, and any printer can opt out in its settings.',
     keepBedWarm: 'Keep bed warm between prints',
     keepBedWarmDesc: 'While awaiting plate-clear, hold the bed at the keep-warm temperature below so the chamber stays hot — or at the next print\'s own bed temperature when that is higher. Only applies when the next print needs chamber heating (ASA, ABS, PA, PC etc.). Requires plate-clear confirmation to be enabled.',
     keepWarmBedTemp: 'Keep-warm bed temperature (°C)',

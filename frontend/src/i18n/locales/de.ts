@@ -381,6 +381,11 @@ export default {
       editFieldHelp: 'Wenn aktiviert, ist dieser Drucker von MQTT, Warteschlangenversand und Benachrichtigungen pausiert — nützlich für Reparaturen, parallele Bambuddy-Installationen oder temporäre Außerbetriebnahme.',
     },
     // Chamber light
+    // Per-printer opt-out from the door plate-clear trigger (#2805)
+    plateClearDoor: {
+      editFieldLabel: 'Tür schließen bestätigt die Druckplatte',
+      editFieldHelp: 'Deaktiviere dies für einen Drucker, dessen Tür aus anderen Gründen geöffnet wird — er wartet dann wie bisher auf die Schaltfläche.',
+    },
     chamberLightOn: 'Kammerbeleuchtung einschalten',
     chamberLightOff: 'Kammerbeleuchtung ausschalten',
     // Files
@@ -2358,6 +2363,10 @@ export default {
     plateClear: 'Druckplatte-Bestätigung',
     requirePlateClear: 'Druckplatte-Bestätigung erforderlich',
     requirePlateClearDescription: 'Wenn aktiviert, wartet der Scheduler auf eine Druckplatten-Bestätigung pro Drucker, bevor geplante Drucke auf Druckern mit abgeschlossenen Aufträgen gestartet werden. Wenn dies deaktiviert ist, werden auch das Druckplatten-Status-Badge und die Schaltfläche "Druckplatte als freigegeben markieren" auf den Druckerkarten ausgeblendet.',
+    plateClearTrigger: 'Bestätigung auslösen durch',
+    plateClearTriggerManual: 'Nur die Schaltfläche',
+    plateClearTriggerDoor: 'Die Schaltfläche oder das Schließen der Tür',
+    plateClearTriggerDescription: 'Mit „Schließen der Tür“ gibt sich ein Drucker, der auf die Bestätigung seiner Druckplatte wartet, selbst frei, sobald seine Tür geöffnet und wieder geschlossen wurde — die Teile abzunehmen ist die Bestätigung. Drucker ohne Türsensor sind nicht betroffen, und jeder Drucker kann in seinen Einstellungen ausgenommen werden.',
     keepBedWarm: 'Heizbett zwischen Drucken warmhalten',
     keepBedWarmDesc: 'Während auf die Druckplatten-Bestätigung gewartet wird, wird das Heizbett auf der unten eingestellten Warmhalte-Temperatur gehalten, damit die Kammer warm bleibt — oder auf der Betttemperatur des nächsten Drucks, falls diese höher ist. Gilt nur, wenn der nächste Druck Kammerwärme benötigt (ASA, ABS, PA, PC usw.). Erfordert aktivierte Druckplatten-Bestätigung.',
     keepWarmBedTemp: 'Warmhalte-Temperatur des Heizbetts (°C)',

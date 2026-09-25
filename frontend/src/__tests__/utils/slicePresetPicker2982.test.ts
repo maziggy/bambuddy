@@ -7,6 +7,7 @@ import {
   statesDifferentMaterial,
 } from '../../utils/slicePresetPicker';
 import { buildCompatibilityIndex } from '../../utils/slicerPrinterMatch';
+import { buildFilamentInventoryIdentity } from '../../utils/filamentInventoryMatch';
 
 // The production registry, trimmed to the models these cases name.
 const index = buildCompatibilityIndex({
@@ -147,6 +148,51 @@ describe('pickFilamentForSlot — material is a hard partition (#2982)', () => {
     ]);
     const pick = pickFilamentForSlot(presets, { type: 'PLA', color: '#FF0000' }, A1, index);
     expect(pick).toEqual({ source: 'standard', id: 'Bambu PLA Basic @BBL A1' });
+  });
+});
+
+describe('pickFilamentForSlot — active inventory preference (#3157)', () => {
+  it('prefers an inventory-backed preset within the valid material/printer partition', () => {
+    const presets = standard('filament', [
+      { name: 'Bambu PLA Matte @BBL A1', filament_type: 'PLA', filament_colour: '#FF0000' },
+      { name: 'Bambu PLA Basic @BBL A1', filament_type: 'PLA', filament_colour: '#FFFFFF' },
+    ]);
+    const inventory = buildFilamentInventoryIdentity([
+      {
+        slicer_filament: 'another-printer-id',
+        slicer_filament_name: 'Bambu PLA Basic @BBL X1C',
+      },
+    ]);
+
+    const pick = pickFilamentForSlot(
+      presets,
+      { type: 'PLA', color: '#FF0000' },
+      A1,
+      index,
+      inventory,
+    );
+
+    expect(pick).toEqual({ source: 'standard', id: 'Bambu PLA Basic @BBL A1' });
+  });
+
+  it('does not let an owned wrong-material preset beat a valid unowned one', () => {
+    const presets = standard('filament', [
+      { name: 'Owned PETG @BBL A1', filament_type: 'PETG', filament_colour: '#FF0000' },
+      { name: 'Available PLA @BBL A1', filament_type: 'PLA', filament_colour: '#FFFFFF' },
+    ]);
+    const inventory = buildFilamentInventoryIdentity([
+      { slicer_filament: 'Owned PETG @BBL A1', slicer_filament_name: 'Owned PETG @BBL A1' },
+    ]);
+
+    expect(
+      pickFilamentForSlot(
+        presets,
+        { type: 'PLA', color: '#FF0000' },
+        A1,
+        index,
+        inventory,
+      ),
+    ).toEqual({ source: 'standard', id: 'Available PLA @BBL A1' });
   });
 });
 

@@ -3540,6 +3540,7 @@ export default {
       tokenWarning: 'このURLにはトークンが含まれます。URLを読める人は誰でも映像とファイル名を見られます。アクセスを止めるにはトークンを失効させてください。',
       fields: '表示する項目',
       fieldPrinter: 'プリンター名',
+      fieldModel: 'プリンターの機種',
       fieldFilename: 'ファイル名',
       fieldStatus: 'ステータス',
       fieldProgress: '進捗バー',

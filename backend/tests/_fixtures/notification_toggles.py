@@ -28,9 +28,28 @@ _EVENT_TOGGLES: list[Column] = [
 
 EVENT_TOGGLE_COLUMNS: list[str] = sorted(column.name for column in _EVENT_TOGGLES)
 
+# Every column a client is meant to be able to set. The hazard #2945 describes is
+# per-column -- a field that exists everywhere except one of the maps it has to
+# cross -- and `enabled`, the quiet-hours and digest fields cross the same two
+# maps as the on_* toggles. The prefix is a naming convention, not the boundary.
+# What is left out is what the server owns: the key, the timestamps, and the
+# delivery status it records itself.
+_SERVER_OWNED = {"id", "created_at", "updated_at", "last_success", "last_error", "last_error_at"}
+
+SETTABLE_COLUMNS: list[str] = sorted(
+    column.name for column in NotificationProvider.__table__.columns if column.name not in _SERVER_OWNED
+)
+
 
 def _model_default(column: Column) -> bool:
-    """The value a row gets for this column when the caller sends nothing."""
+    """The value a row gets for this column when the caller sends nothing.
+
+    Reads the Python-side default only. That is exact while every toggle
+    declares one, which ``test_every_event_column_has_a_python_default`` holds
+    in place: a column added with only a ``server_default`` would read as False
+    here, get a target of True, and for a server-default-true column the round
+    trip would send True and assert True -- vacuous again, and silently.
+    """
     if column.default is None:
         return False
     return bool(column.default.arg)

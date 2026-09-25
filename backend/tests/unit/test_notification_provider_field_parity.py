@@ -1,4 +1,4 @@
-"""Every notification toggle column must be reachable through the API (#2945).
+"""Every client-settable notification provider column must reach the API (#2945).
 
 The defect this pins is not a wrong value, it is a field that exists everywhere
 except the modules a toggle has to cross. `on_stock_reorder_alert` and
@@ -24,11 +24,16 @@ from __future__ import annotations
 
 import pytest
 
+from backend.app.models.notification import NotificationProvider
 from backend.app.schemas.notification import (
     NotificationProviderCreate,
     NotificationProviderUpdate,
 )
-from backend.tests._fixtures.notification_toggles import EVENT_TOGGLE_COLUMNS, TOGGLE_TARGET
+from backend.tests._fixtures.notification_toggles import (
+    EVENT_TOGGLE_COLUMNS,
+    SETTABLE_COLUMNS,
+    TOGGLE_TARGET,
+)
 
 
 def test_there_are_event_columns_to_check() -> None:
@@ -49,12 +54,20 @@ def test_the_targets_cover_both_directions() -> None:
 
 
 @pytest.mark.parametrize("column", EVENT_TOGGLE_COLUMNS)
-def test_every_event_column_is_settable_on_create(column: str) -> None:
+def test_every_event_column_has_a_python_default(column: str) -> None:
+    """``TOGGLE_TARGET`` derives each target from the Python-side default, so a
+    toggle that only has a ``server_default`` would get the wrong target and
+    its round trip would pass on the default alone. Fail here instead."""
+    assert NotificationProvider.__table__.columns[column].default is not None
+
+
+@pytest.mark.parametrize("column", SETTABLE_COLUMNS)
+def test_every_settable_column_is_settable_on_create(column: str) -> None:
     """Absent from the Create schema, the field is silently dropped from the POST."""
     assert column in NotificationProviderCreate.model_fields
 
 
-@pytest.mark.parametrize("column", EVENT_TOGGLE_COLUMNS)
-def test_every_event_column_is_settable_on_update(column: str) -> None:
+@pytest.mark.parametrize("column", SETTABLE_COLUMNS)
+def test_every_settable_column_is_settable_on_update(column: str) -> None:
     """This is the one the report hit: the PATCH succeeds and writes nothing."""
     assert column in NotificationProviderUpdate.model_fields

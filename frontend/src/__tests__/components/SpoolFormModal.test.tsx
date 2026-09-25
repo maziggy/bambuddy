@@ -1063,6 +1063,118 @@ describe('SpoolFormModal — Unassign button (#1336)', () => {
   });
 });
 
+describe('SpoolFormModal — Clear RFID Tag for a tray-UUID-only spool (#3109)', () => {
+  const trayUuidOnly = (overrides: Partial<InventorySpool>): InventorySpool =>
+    ({
+      ...existingSpool,
+      id: 42,
+      tag_uid: null,
+      tray_uuid: 'A1B2C3D4E5F60718293A4B5C6D7E8F90',
+      ...overrides,
+    }) as InventorySpool;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('clears the tag on a Spoolman spool linked only by its tray UUID', async () => {
+    // _map_spoolman_spool splits extra.tag by length: a 32-char value becomes
+    // tray_uuid and tag_uid stays None. That is every Bambu Lab spool synced
+    // from the AMS, and not one of them could have its tag cleared here.
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={trayUuidOnly({ data_origin: 'spoolman', tag_type: 'spoolman' })}
+        mode="edit"
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    const clearBtn = await screen.findByRole('button', { name: /clear rfid tag/i });
+    expect(clearBtn).not.toBeDisabled();
+
+    fireEvent.click(clearBtn);
+
+    await waitFor(() => {
+      expect(api.updateSpoolmanInventorySpool).toHaveBeenCalledWith(
+        42,
+        expect.objectContaining({ tag_uid: null, tray_uuid: null })
+      );
+    });
+    expect(api.updateSpool).not.toHaveBeenCalled();
+  });
+
+  it('clears the tag on a built-in spool linked only by its tray UUID', async () => {
+    // PATCH /inventory/spools/{id}/link-tag takes tray_uuid on its own, so the
+    // built-in inventory reaches the same state without Spoolman involved.
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={trayUuidOnly({})}
+        mode="edit"
+        currencySymbol="$"
+      />
+    );
+
+    const clearBtn = await screen.findByRole('button', { name: /clear rfid tag/i });
+    expect(clearBtn).not.toBeDisabled();
+
+    fireEvent.click(clearBtn);
+
+    await waitFor(() => {
+      expect(api.updateSpool).toHaveBeenCalledWith(
+        42,
+        expect.objectContaining({ tag_uid: null, tray_uuid: null })
+      );
+    });
+    expect(api.updateSpoolmanInventorySpool).not.toHaveBeenCalled();
+  });
+
+  it('stays disabled for a spool carrying neither identifier', async () => {
+    // The button still has something to gate on -- it is not simply always on.
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={trayUuidOnly({ tray_uuid: null })}
+        mode="edit"
+        currencySymbol="$"
+      />
+    );
+
+    const clearBtn = await screen.findByRole('button', { name: /clear rfid tag/i });
+    expect(clearBtn).toBeDisabled();
+  });
+
+  it('still clears the tag on a spool carrying a tag_uid', async () => {
+    const clearBtnSpool = trayUuidOnly({ tag_uid: 'DEADBEEF', tray_uuid: null });
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={clearBtnSpool}
+        mode="edit"
+        currencySymbol="$"
+      />
+    );
+
+    const clearBtn = await screen.findByRole('button', { name: /clear rfid tag/i });
+    expect(clearBtn).not.toBeDisabled();
+
+    fireEvent.click(clearBtn);
+
+    await waitFor(() => {
+      expect(api.updateSpool).toHaveBeenCalledWith(
+        42,
+        expect.objectContaining({ tag_uid: null, tray_uuid: null })
+      );
+    });
+  });
+});
+
 describe('SpoolFormModal locationIdTouched', () => {
   /**
    * Regression tests for the round-trip bug: saving the edit modal without

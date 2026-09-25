@@ -178,7 +178,7 @@ def _mask_string(value: str, sensitive_strings: dict[str, str]) -> str:
     Known values are matched first (longest first so "My Printer 1" beats
     "My Printer"); the regex pass then catches any IPs the sensitive_strings
     table didn't already cover — most importantly the Bambuddy host's own
-    IP (returned by ``_get_host_ip`` inside the diagnostic, not in the DB)
+    IP (returned by ``_host_source_ip`` inside the diagnostic, not in the DB)
     and any virtual-printer ``bind_ip`` the user picked at setup.
     """
     if not value:

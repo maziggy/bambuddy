@@ -93,10 +93,14 @@ async def get_ams_history(
         ],
         min_humidity=stats.min_humidity,
         max_humidity=stats.max_humidity,
-        avg_humidity=round(stats.avg_humidity, 1) if stats.avg_humidity else None,
+        # ``is not None``, not truthiness: an average of exactly 0 is a
+        # reading, and the min/max beside it would report it while the average
+        # showed an em dash. AVG over an empty or all-NULL window is the only
+        # case that has no answer (#3140).
+        avg_humidity=round(stats.avg_humidity, 1) if stats.avg_humidity is not None else None,
         min_temperature=stats.min_temp,
         max_temperature=stats.max_temp,
-        avg_temperature=round(stats.avg_temp, 1) if stats.avg_temp else None,
+        avg_temperature=round(stats.avg_temp, 1) if stats.avg_temp is not None else None,
     )
 
 

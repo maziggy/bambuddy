@@ -4,8 +4,8 @@ Bambuddy reads a print's 3MF, cover and timelapse off the printer over implicit
 FTPS on port 990. On every Bambu model that port serves **external storage only**
 -- the SD card or USB stick. It is not a view of the printer's filesystem.
 
-H2-series and P2S firmware default to keeping the sliced file on internal eMMC
-instead, and BambuStudio uploads there over a separate service on port 6000
+H2-series, P2S and X2D firmware default to keeping the sliced file on internal
+eMMC instead, and BambuStudio uploads there over a separate service on port 6000
 (the "BambuTunnelLocal" protocol -- see #2762, which tracks implementing it).
 The dispatch says where it went: the ``project_file`` command carries ``url``,
 which is ``ftp://<name>`` for external storage and ``brtc://emmc/<name>`` for
@@ -83,6 +83,18 @@ REASON_INTERNAL_HISTORY = "internal_history"
 # `_verdict`, and unlike the two above it is temporary: it is the one reason a
 # retry is worth scheduling (#2957).
 REASON_FTPS_COOLOFF = "ftps_cooloff"
+
+# Also not a storage verdict, and the file's location was never in question
+# here either: the print went to external storage, FTPS served it, and the
+# transfer still did not finish inside its budget. At print start the printer is
+# also handling MQTT, the camera and the job upload, and a large 3MF does not
+# reliably complete against that -- #3063's reporter watched the same 19MB file
+# download successfully three times in the two minutes after the archive flow
+# gave up on it. Like the cool-off above and unlike the three storage verdicts,
+# this one is temporary and worth a retry; unlike the cool-off, nothing has to
+# expire first. Stamped by the print-start handler, which is the only place that
+# knows an attempt was made and failed in transit rather than answering 550.
+REASON_FTP_TRANSFER_FAILED = "ftp_transfer_failed"
 
 # Where a sliced file has ever been found over FTPS, in the order the sweep in
 # `main.py` tries them -- root first, which is where A1/P1-series uploads land

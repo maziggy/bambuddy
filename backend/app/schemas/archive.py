@@ -18,7 +18,11 @@ class ArchiveBase(BaseModel):
     notes: str | None = None
     cost: float | None = None
     failure_reason: str | None = None
-    quantity: int | None = None  # Number of items printed
+    # Number of items printed. 0 is a legal answer -- a plate that jammed and
+    # came off ruined produced nothing, and the project's completed-items count
+    # sums this column (#3051). Bounded for the same reason as the grams below:
+    # it feeds project totals, and a negative would subtract from them.
+    quantity: Annotated[int | None, Field(ge=0, le=10_000)] = None
     # User-defined link (Printables, Thingiverse, etc.)
     external_url: str | None = None
 

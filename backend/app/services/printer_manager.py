@@ -15,6 +15,7 @@ from backend.app.services.bambu_mqtt import (
     PrinterState,
     get_stage_name,
 )
+from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.kprofile_lookup import build_slot_k_resolver
 
 logger = logging.getLogger(__name__)
@@ -185,24 +186,6 @@ def has_stg_cur_idle_bug(model: str | None) -> bool:
         return False
     model_upper = model.strip().upper()
     return model_upper in STG_CUR_IDLE_BUG_MODELS
-
-
-def is_bed_slinger(model: str | None) -> bool:
-    """Whether the printer's Z axis controls the *toolhead*, not the bed.
-
-    Bambu's A1 family (A1, A1 Mini; internal codes N1 / N2S) are open-frame
-    bed-slingers: the bed moves on Y, the toolhead moves on X+Z. On every
-    other current model (X1, P1, H2, H2C, H2D, H2S, P2S, ...) the bed moves
-    on Z and the toolhead is fixed in Z.
-
-    G-code direction is opposite on these two families. `G1 Z-10` reduces
-    the nozzle-bed gap on both, but on bed-on-Z machines it does so by
-    moving the BED up, while on bed-slingers it does so by moving the
-    TOOLHEAD down — which is what crashed the nozzle in #1334.
-    """
-    if not model:
-        return False
-    return model.strip().upper() in A1_MODELS
 
 
 # Minimum firmware versions for AMS drying support (confirmed via capture testing)
@@ -1417,22 +1400,10 @@ def printer_state_to_dict(
                         "exists": tray.get("exists"),
                     }
                 )
-            # Prefer humidity_raw (actual percentage) over humidity (index 1-5)
-            humidity_raw = ams_data.get("humidity_raw")
-            humidity_idx = ams_data.get("humidity")
-            humidity_value = None
-
-            if humidity_raw is not None:
-                try:
-                    humidity_value = int(humidity_raw)
-                except (ValueError, TypeError):
-                    pass  # Skip unparseable humidity; will try index fallback
-            # Fall back to index if no raw value (index is 1-5, not percentage)
-            if humidity_value is None and humidity_idx is not None:
-                try:
-                    humidity_value = int(humidity_idx)
-                except (ValueError, TypeError):
-                    pass  # Skip unparseable humidity index; humidity remains None
+            # Percentage only — the 1-5 index is inverted and must never stand
+            # in for one (#3140). See utils/ams_humidity.
+            humidity_pct = ams_humidity_percent(ams_data)
+            humidity_value = int(round(humidity_pct)) if humidity_pct is not None else None
 
             # AMS-HT has 1 tray, regular AMS has 4 trays
             is_ams_ht = len(trays) == 1

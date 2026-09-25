@@ -24,8 +24,13 @@
 </p>
 
 <p align="center">
-  <sub><strong>Backed by</strong></sub><br>
+  <sub><strong>Corporate sponsor</strong></sub><br>
   <a href="https://northpole3dprinting.com/"><img src="static/img/sponsors/northpole-3d-printing.jpg" alt="North Pole 3D Printing" height="60"></a>
+</p>
+
+<p align="center">
+  <sub><strong>Sustaining sponsor</strong></sub><br>
+  <a href="https://getnotifyapp.com"><img src="static/img/sponsors/notify.png" alt="Notify! - know the moment anything changes" height="90"></a>
 </p>
 
 <p align="center">

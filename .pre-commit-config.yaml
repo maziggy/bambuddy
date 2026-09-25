@@ -31,7 +31,17 @@ repos:
         args: ['--maxkb=1000']
         # CHANGELOG.md is intentionally large (detailed per-release entries over
         # many versions); exempt it while keeping the 1 MB guard for everything else.
-        exclude: ^(static/assets/|CHANGELOG\.md$)
+        #
+        # backend/tests/.test_durations is ~1.5 MB and cannot be made smaller:
+        # its 11703 pytest node IDs are 1160 kB of keys before a single duration
+        # value is written, so no encoding fits under the guard (compact JSON
+        # with 3-decimal values still measures 1263 kB). Pruning fast tests is
+        # worse than useless -- pytest-split gives a test missing from the file
+        # the AVERAGE of the entries that remain, so dropped 1 ms tests come back
+        # weighted at ~89 ms and the balance it exists to provide degrades.
+        # It compresses to ~314 kB in the object store. Regenerate with
+        # --store-durations; see the backend test job in .github/workflows/ci.yml.
+        exclude: ^(static/assets/|CHANGELOG\.md$|backend/tests/\.test_durations$)
       - id: check-merge-conflict
       - id: debug-statements
       - id: detect-private-key

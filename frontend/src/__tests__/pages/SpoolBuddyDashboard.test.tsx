@@ -42,13 +42,37 @@ vi.mock('../../api/client', () => ({
   spoolbuddyApi: {
     getDevices: vi.fn().mockResolvedValue([]),
   },
+  // Real class, not a stub: the link handler branches on `instanceof ApiError`
+  // to decide whether a failure carries a structured code (#3110).
+  ApiError: class ApiError extends Error {
+    status: number;
+    code: string | null;
+    detail: Record<string, unknown> | null;
+    constructor(message: string, status: number, code: string | null = null, detail: Record<string, unknown> | null = null) {
+      super(message);
+      this.name = 'ApiError';
+      this.status = status;
+      this.code = code;
+      this.detail = detail;
+    }
+  },
 }));
+
+// Hoisted so the react-i18next factory can reach it: what the toast shows is
+// only half the contract -- the other half is that the spool id reaches the
+// interpolation bag (#3110), and the key-as-text mock cannot show that.
+const i18nSpy = vi.hoisted(() => ({ t: vi.fn() }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    // Mirrors i18next's (key, defaultValue, options) signature with simple
-    // {{var}} interpolation so tests can assert on the rendered text.
-    t: (key: string, fallback?: string, options?: Record<string, unknown>) => {
+    // Mirrors i18next's overloaded (key, defaultValue?, options?) signature --
+    // including the (key, options) form, where the second argument is the
+    // interpolation bag and there is no default value -- with simple {{var}}
+    // interpolation so tests can assert on the rendered text.
+    t: (key: string, fallbackOrOptions?: string | Record<string, unknown>, maybeOptions?: Record<string, unknown>) => {
+      i18nSpy.t(key, fallbackOrOptions, maybeOptions);
+      const fallback = typeof fallbackOrOptions === 'string' ? fallbackOrOptions : undefined;
+      const options = typeof fallbackOrOptions === 'object' ? fallbackOrOptions : maybeOptions;
       const text = fallback ?? key;
       if (!options) return text;
       return text.replace(/\{\{(\w+)\}\}/g, (_m, k) => String(options[k] ?? ''));
@@ -435,6 +459,79 @@ describe('SpoolBuddyDashboard', () => {
         expect(screen.queryByText('Link Tag')).toBeNull();
         // UnknownTagCard still visible — no card switch on failure
         expect(screen.getByText('Assign Spool')).toBeDefined();
+      });
+    });
+
+    it('names the spool holding the tag when Spoolman refuses the link (#3110)', async () => {
+      const { api, ApiError } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      (api.getSpoolmanInventorySpools as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 30, material: 'TPU', brand: 'Bambu', tag_uid: null, tray_uuid: null, archived_at: null, color_name: 'Orange', rgba: 'FF6600FF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 0 },
+      ]);
+      (api.linkTagToSpoolmanSpool as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new ApiError('Tray UUID is already linked to spool 42', 409, 'tag_already_linked', {
+          code: 'tag_already_linked',
+          message: 'Tray UUID is already linked to spool 42',
+          spool_id: 42,
+          field: 'tray_uuid',
+        }),
+      );
+
+      renderPage({
+        unknownTagUid: 'AABB1122334455FF',
+        unknownTrayUuid: 'DEADBEEFDEADBEEFDEADBEEFDEADBEEF',
+      });
+
+      const linkBtn = await waitFor(() => screen.getByText('Assign Spool'));
+      fireEvent.click(linkBtn);
+      fireEvent.click(await waitFor(() => screen.getByText('Orange')));
+      fireEvent.click(await waitFor(() => screen.getByText('Link Tag')));
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('inventory.tagAlreadyLinked', 'error');
+      });
+      // The operator can only walk to the other spool if the id is in the
+      // sentence, so assert it reached the interpolation bag rather than
+      // trusting the key-as-text mock's output.
+      expect(i18nSpy.t).toHaveBeenCalledWith('inventory.tagAlreadyLinked', { id: 42 }, undefined);
+    });
+
+    it('keeps the generic toast for a link failure that carries no code', async () => {
+      const { api, ApiError } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      (api.getSpoolmanInventorySpools as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 30, material: 'TPU', brand: 'Bambu', tag_uid: null, tray_uuid: null, archived_at: null, color_name: 'Orange', rgba: 'FF6600FF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 0 },
+      ]);
+      // A 409 from something other than a tag conflict, and a plain-string
+      // detail, must not be dressed up as one.
+      (api.linkTagToSpoolmanSpool as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new ApiError('Spoolman unavailable', 503),
+      );
+
+      renderPage({
+        unknownTagUid: 'AABB1122334455FF',
+        unknownTrayUuid: 'DEADBEEFDEADBEEFDEADBEEFDEADBEEF',
+      });
+
+      const linkBtn = await waitFor(() => screen.getByText('Assign Spool'));
+      fireEvent.click(linkBtn);
+      fireEvent.click(await waitFor(() => screen.getByText('Orange')));
+      fireEvent.click(await waitFor(() => screen.getByText('Link Tag')));
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('spoolman.linkFailed', 'error');
       });
     });
 

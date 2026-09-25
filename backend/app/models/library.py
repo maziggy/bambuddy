@@ -25,7 +25,29 @@ class LibraryFolder(Base):
 
     # Link to project or archive
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
-    archive_id: Mapped[int | None] = mapped_column(ForeignKey("print_archives.id", ondelete="SET NULL"), nullable=True)
+    # use_alter breaks a dependency cycle in the schema, and is not about this
+    # link being special: print_archives.library_file_id -> library_files,
+    # library_files.folder_id -> library_folders, and this column back to
+    # print_archives. Each is reasonable alone and together they are a loop
+    # SQLAlchemy cannot topologically sort, so metadata.sorted_tables dropped
+    # those edges, warned on every backup and restore, and could hand back an
+    # order placing a child before its parent -- which once imported
+    # library_files ahead of library_folders and killed a restore on a foreign
+    # key violation. Marking ONE edge for ALTER removes it from the sort graph
+    # and the other two order correctly. The constraint is still created and
+    # still enforced: PostgreSQL emits it as ALTER TABLE ADD CONSTRAINT (as it
+    # already does for every constraint on these three tables), and SQLite,
+    # which reports no ALTER support, inlines it into CREATE TABLE as before.
+    # It has to be named, because an unnamed constraint cannot be ALTERed in.
+    archive_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "print_archives.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_library_folders_archive_id",
+        ),
+        nullable=True,
+    )
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

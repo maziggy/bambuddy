@@ -179,9 +179,14 @@ class TestFixedPrinter:
     async def test_the_reason_clears_even_when_the_printer_is_still_busy(self, queue_db):
         """You shut the door, but the printer is midway through something else.
 
-        The hold has lifted and the queue must say so. Clearing the reason only
-        at dispatch would leave a shut door reading "Waiting on Enclosure Door"
-        for the rest of a ten-hour print.
+        The hold has lifted and the queue must say so. Leaving the old reason
+        standing would have a shut door reading "Waiting on Enclosure Door" for
+        the rest of a ten-hour print.
+
+        The reason no longer goes to None here: since #3074 the branch always
+        says what it is waiting on, and what it is waiting on now is the print.
+        The invariant under test is the same one — the lifted hold does not
+        survive the pass that lifted it.
         """
         item_id = await _add_item(queue_db, printer_id=1)
         scheduler = PrintScheduler()
@@ -191,7 +196,9 @@ class TestFixedPrinter:
         await _run(queue_db, scheduler, {}, launched, idle=False)
 
         launched.assert_not_called()
-        assert (await _get_item(queue_db, item_id)).waiting_reason is None
+        reason = (await _get_item(queue_db, item_id)).waiting_reason
+        assert "Enclosure Door" not in (reason or "")
+        assert reason == "Busy: X1C-1"
 
     @pytest.mark.asyncio
     async def test_another_printers_sensor_does_not_hold_this_one(self, queue_db):

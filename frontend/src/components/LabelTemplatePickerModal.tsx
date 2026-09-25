@@ -4,12 +4,13 @@ import { X, Loader2, Printer, CheckSquare, Square, Search } from 'lucide-react';
 import { api, type SpoolLabelTemplate, type InventorySpool } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
-import { getSwatchStyle } from '../utils/colors';
+import { getSwatchStyle, resolveSpoolColorName } from '../utils/colors';
+import { useColorCatalogVersion } from '../hooks/useColorCatalogVersion';
 
 /** Subset of InventorySpool the modal needs for checkbox rendering. */
 type SpoolForLabel = Pick<
   InventorySpool,
-  'id' | 'material' | 'subtype' | 'brand' | 'color_name' | 'rgba'
+  'id' | 'material' | 'subtype' | 'brand' | 'color_name' | 'color_name_is_synthesized' | 'rgba'
 >;
 
 interface LabelTemplatePickerModalProps {
@@ -109,15 +110,22 @@ function swatchStyle(rgba: string | null | undefined): React.CSSProperties {
   return getSwatchStyle(rgba);
 }
 
+function labelColorName(s: SpoolForLabel): string | null {
+  return resolveSpoolColorName(s.color_name, s.rgba, s.color_name_is_synthesized);
+}
+
 function spoolDisplayName(s: SpoolForLabel): string {
-  const head = s.color_name ?? `${s.material}${s.subtype ? ` ${s.subtype}` : ''}`;
+  // Resolved, not stored: most Bambu spools arrive with no colour name on the
+  // tag, and picking a label template for "PLA Silk" tells you nothing about
+  // which of six red spools you are looking at (#3090).
+  const head = labelColorName(s) ?? `${s.material}${s.subtype ? ` ${s.subtype}` : ''}`;
   const brand = s.brand ? ` · ${s.brand}` : '';
   return `${head}${brand}`;
 }
 
 /** Build a lowercased haystack that the search input matches against. */
 function searchableText(s: SpoolForLabel): string {
-  return [s.color_name, s.material, s.subtype, s.brand, `#${s.id}`]
+  return [labelColorName(s), s.color_name, s.material, s.subtype, s.brand, `#${s.id}`]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
@@ -175,6 +183,9 @@ export function LabelTemplatePickerModal({
   spoolmanMode,
 }: LabelTemplatePickerModalProps) {
   const { t } = useTranslation();
+  // The spool filter below resolves colour names through the catalog; its
+  // memo has to recompute when the catalog finishes loading (#3090).
+  const colorCatalogVersion = useColorCatalogVersion();
   const { showToast } = useToast();
   const [pending, setPending] = useState<SpoolLabelTemplate | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -230,13 +241,18 @@ export function LabelTemplatePickerModal({
   }, [sortedSpools]);
 
   const visibleSpools = useMemo(() => {
+    // Named so this memo depends on it: searchableText resolves colour names
+    // through the catalog, which resolveSpoolColorName reads from module state
+    // the linter cannot follow. Without it a query typed before the catalog
+    // loads keeps its empty result (#3090).
+    void colorCatalogVersion;
     const q = search.trim().toLowerCase();
     return sortedSpools.filter((s) => {
       if (materialFilter && (s.material || '').toUpperCase() !== materialFilter) return false;
       if (q && !searchableText(s).includes(q)) return false;
       return true;
     });
-  }, [sortedSpools, search, materialFilter]);
+  }, [sortedSpools, search, materialFilter, colorCatalogVersion]);
 
   const allVisibleChecked =
     visibleSpools.length > 0 && visibleSpools.every((s) => selectedIds.has(s.id));

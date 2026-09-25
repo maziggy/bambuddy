@@ -28,6 +28,7 @@ from backend.app.models.project import Project
 from backend.app.models.scheduled_drying import ScheduledDrying
 from backend.app.models.settings import Settings
 from backend.app.models.slicer_pipeline import SlicerPipeline
+from backend.app.models.slicer_plugin_upload import SlicerPluginUpload
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.models.smart_plug_energy_snapshot import SmartPlugEnergySnapshot
 from backend.app.models.sponsor_toast_state import SponsorToastState
@@ -82,6 +83,7 @@ __all__ = [
     "PipelineJob",
     "PipelineRun",
     "SlicerPipeline",
+    "SlicerPluginUpload",
     "Spool",
     "SpoolFilamentPreset",
     "SpoolKProfile",

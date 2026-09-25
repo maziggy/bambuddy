@@ -2235,6 +2235,167 @@ async def list_files(
     return file_list
 
 
+async def ingest_library_upload(
+    db: AsyncSession,
+    *,
+    filename: str,
+    content: bytes,
+    folder_id: int | None,
+    created_by_id: int | None,
+    generate_stl_thumbnails: bool = True,
+) -> tuple[LibraryFile, int | None]:
+    """Validate, store and index one uploaded file as a library row, and commit.
+
+    Everything ``POST /library/files`` does once the request is read. Shared
+    with the slicer plugin's upload (``slicer_plugin.py``) so a file sent from
+    the slicer is checked, hashed, parsed and thumbnailed exactly as one
+    dropped into the library is -- a second copy of these rules would be a
+    second thing to keep in step. Raises HTTPException for the caller's
+    mistakes. Returns the new row and the id of an active file with the same
+    bytes, if there is one.
+    """
+    # Reject FAT32/exFAT-incompatible filenames up front (#1540).
+    try:
+        validate_print_filename(filename)
+    except InvalidFilenameError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    # `ext` stays the trailing extension because the on-disk filename uses
+    # it directly and the 3MF-parse branch below still gates on
+    # `ext == ".3mf"`, which is correct for both `.3mf` and `.gcode.3mf`.
+    # `file_type` is compound-aware and is decided further down, once the
+    # bytes are on disk to be read.
+    ext = os.path.splitext(filename)[1].lower()
+
+    # Verify folder exists if specified
+    target_folder = None
+    if folder_id is not None:
+        folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
+        target_folder = folder_result.scalar_one_or_none()
+        if not target_folder:
+            raise HTTPException(status_code=404, detail="Folder not found")
+
+    # Writable external folders write through to the mount so the file is
+    # visible outside Bambuddy (#1112); everything else lands under the
+    # internal library dir with a UUID-scoped filename. Resolved BEFORE
+    # the content validation below so folder-permission rejections
+    # (403 read-only, 400 missing path, 409 collision) still surface
+    # before any "bad file format" 400 — preserves existing error
+    # ordering / tests.
+    file_path, is_external_upload = _resolve_upload_destination(target_folder, filename)
+
+    # The caller has read the upload so the validation can sniff magic bytes;
+    # the file is written to disk only after the checks. #1401.
+    validate_print_file_upload(filename, content)
+
+    # Save file
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    # Now that the bytes are on disk the zip can settle what the name only
+    # guessed at: a sliced 3MF uploaded as `Foo.3mf` is a sliced 3MF (#2993).
+    file_type = classify_file_type(filename, file_path)
+
+    # Calculate hash
+    file_hash = calculate_file_hash(file_path)
+
+    # Check for duplicates
+    dup_result = await db.execute(
+        select(LibraryFile.id).where(LibraryFile.file_hash == file_hash, LibraryFile.deleted_at.is_(None)).limit(1)
+    )
+    duplicate_of = dup_result.scalar()
+
+    # Extract metadata and thumbnail
+    metadata = {}
+    thumbnail_path = None
+    thumbnails_dir = get_library_thumbnails_dir()
+
+    if ext == ".3mf":
+        try:
+            parser = ThreeMFParser(str(file_path))
+            raw_metadata = parser.parse()
+
+            # Extract thumbnail before cleaning metadata
+            thumbnail_data = raw_metadata.get("_thumbnail_data")
+            thumbnail_ext = raw_metadata.get("_thumbnail_ext", ".png")
+
+            # Save thumbnail if extracted
+            if thumbnail_data:
+                thumb_filename = f"{uuid.uuid4().hex}{thumbnail_ext}"
+                thumb_path = (
+                    thumbnails_dir / thumb_filename
+                )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + thumbnail_ext
+                with open(thumb_path, "wb") as f:
+                    f.write(thumbnail_data)
+                thumbnail_path = str(thumb_path)
+
+            # Clean metadata - remove non-JSON-serializable data (bytes, etc.)
+            def clean_metadata(obj):
+                if isinstance(obj, dict):
+                    return {
+                        k: clean_metadata(v)
+                        for k, v in obj.items()
+                        if not isinstance(v, bytes) and k not in ("_thumbnail_data", "_thumbnail_ext")
+                    }
+                elif isinstance(obj, list):
+                    return [clean_metadata(i) for i in obj if not isinstance(i, bytes)]
+                elif isinstance(obj, bytes):
+                    return None
+                return obj
+
+            metadata = clean_metadata(raw_metadata)
+        except Exception as e:
+            logger.warning("Failed to parse 3MF: %s", e)
+
+    elif ext == ".gcode":
+        # Extract embedded thumbnail from gcode
+        try:
+            thumbnail_data = extract_gcode_thumbnail(file_path)
+            if thumbnail_data:
+                thumb_filename = f"{uuid.uuid4().hex}.png"
+                thumb_path = thumbnails_dir / thumb_filename  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
+                with open(thumb_path, "wb") as f:
+                    f.write(thumbnail_data)
+                thumbnail_path = str(thumb_path)
+        except Exception as e:
+            logger.warning("Failed to extract gcode thumbnail: %s", e)
+
+    elif ext.lower() in IMAGE_EXTENSIONS:
+        # For image files, create a thumbnail from the image itself
+        thumbnail_path = create_image_thumbnail(file_path, thumbnails_dir)
+
+    elif ext == ".stl":
+        # Generate STL thumbnail if enabled. Same MIN_USABLE_STL_BYTES
+        # pre-skip as extract_zip_file — stubs / placeholders below this
+        # size can't contain a triangle so trimesh would return an empty
+        # mesh anyway.
+        if generate_stl_thumbnails:
+            try:
+                if file_path.stat().st_size >= MIN_USABLE_STL_BYTES:
+                    thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
+            except OSError:
+                pass
+
+    # Create database entry (managed files store relative paths for portability;
+    # external files store the absolute mount path — same shape as scan produces)
+    library_file = LibraryFile(
+        folder_id=folder_id,
+        is_external=is_external_upload,
+        filename=filename,
+        file_path=_stored_file_path(file_path, is_external_upload),
+        file_type=file_type,
+        file_size=len(content),
+        file_hash=file_hash,
+        thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
+        file_metadata=_without_print_name(metadata) if metadata else None,
+        created_by_id=created_by_id,
+    )
+    db.add(library_file)
+    await db.commit()
+    await db.refresh(library_file)
+
+    return library_file, duplicate_of
+
+
 @router.post("/files", response_model=FileUploadResponse)
 @router.post("/files/", response_model=FileUploadResponse)
 async def upload_file(
@@ -2249,148 +2410,14 @@ async def upload_file(
         if not file.filename:
             raise HTTPException(status_code=400, detail="Filename is required")
 
-        filename = file.filename
-        # Reject FAT32/exFAT-incompatible filenames up front (#1540).
-        try:
-            validate_print_filename(filename)
-        except InvalidFilenameError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-        # `ext` stays the trailing extension because the on-disk filename uses
-        # it directly and the 3MF-parse branch below still gates on
-        # `ext == ".3mf"`, which is correct for both `.3mf` and `.gcode.3mf`.
-        # `file_type` is compound-aware and is decided further down, once the
-        # bytes are on disk to be read.
-        ext = os.path.splitext(filename)[1].lower()
-
-        # Verify folder exists if specified
-        target_folder = None
-        if folder_id is not None:
-            folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
-            target_folder = folder_result.scalar_one_or_none()
-            if not target_folder:
-                raise HTTPException(status_code=404, detail="Folder not found")
-
-        # Writable external folders write through to the mount so the file is
-        # visible outside Bambuddy (#1112); everything else lands under the
-        # internal library dir with a UUID-scoped filename. Resolved BEFORE
-        # the content validation below so folder-permission rejections
-        # (403 read-only, 400 missing path, 409 collision) still surface
-        # before any "bad file format" 400 — preserves existing error
-        # ordering / tests.
-        file_path, is_external_upload = _resolve_upload_destination(target_folder, filename)
-
-        # Read upload now so the validation can sniff magic bytes; the file
-        # is written to disk only after the checks. #1401.
-        content = await file.read()
-        validate_print_file_upload(filename, content)
-
-        # Save file
-        with open(file_path, "wb") as f:
-            f.write(content)
-
-        # Now that the bytes are on disk the zip can settle what the name only
-        # guessed at: a sliced 3MF uploaded as `Foo.3mf` is a sliced 3MF (#2993).
-        file_type = classify_file_type(filename, file_path)
-
-        # Calculate hash
-        file_hash = calculate_file_hash(file_path)
-
-        # Check for duplicates
-        dup_result = await db.execute(
-            select(LibraryFile.id).where(LibraryFile.file_hash == file_hash, LibraryFile.deleted_at.is_(None)).limit(1)
-        )
-        duplicate_of = dup_result.scalar()
-
-        # Extract metadata and thumbnail
-        metadata = {}
-        thumbnail_path = None
-        thumbnails_dir = get_library_thumbnails_dir()
-
-        if ext == ".3mf":
-            try:
-                parser = ThreeMFParser(str(file_path))
-                raw_metadata = parser.parse()
-
-                # Extract thumbnail before cleaning metadata
-                thumbnail_data = raw_metadata.get("_thumbnail_data")
-                thumbnail_ext = raw_metadata.get("_thumbnail_ext", ".png")
-
-                # Save thumbnail if extracted
-                if thumbnail_data:
-                    thumb_filename = f"{uuid.uuid4().hex}{thumbnail_ext}"
-                    thumb_path = (
-                        thumbnails_dir / thumb_filename
-                    )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + thumbnail_ext
-                    with open(thumb_path, "wb") as f:
-                        f.write(thumbnail_data)
-                    thumbnail_path = str(thumb_path)
-
-                # Clean metadata - remove non-JSON-serializable data (bytes, etc.)
-                def clean_metadata(obj):
-                    if isinstance(obj, dict):
-                        return {
-                            k: clean_metadata(v)
-                            for k, v in obj.items()
-                            if not isinstance(v, bytes) and k not in ("_thumbnail_data", "_thumbnail_ext")
-                        }
-                    elif isinstance(obj, list):
-                        return [clean_metadata(i) for i in obj if not isinstance(i, bytes)]
-                    elif isinstance(obj, bytes):
-                        return None
-                    return obj
-
-                metadata = clean_metadata(raw_metadata)
-            except Exception as e:
-                logger.warning("Failed to parse 3MF: %s", e)
-
-        elif ext == ".gcode":
-            # Extract embedded thumbnail from gcode
-            try:
-                thumbnail_data = extract_gcode_thumbnail(file_path)
-                if thumbnail_data:
-                    thumb_filename = f"{uuid.uuid4().hex}.png"
-                    thumb_path = (
-                        thumbnails_dir / thumb_filename
-                    )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
-                    with open(thumb_path, "wb") as f:
-                        f.write(thumbnail_data)
-                    thumbnail_path = str(thumb_path)
-            except Exception as e:
-                logger.warning("Failed to extract gcode thumbnail: %s", e)
-
-        elif ext.lower() in IMAGE_EXTENSIONS:
-            # For image files, create a thumbnail from the image itself
-            thumbnail_path = create_image_thumbnail(file_path, thumbnails_dir)
-
-        elif ext == ".stl":
-            # Generate STL thumbnail if enabled. Same MIN_USABLE_STL_BYTES
-            # pre-skip as extract_zip_file — stubs / placeholders below this
-            # size can't contain a triangle so trimesh would return an empty
-            # mesh anyway.
-            if generate_stl_thumbnails:
-                try:
-                    if file_path.stat().st_size >= MIN_USABLE_STL_BYTES:
-                        thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
-                except OSError:
-                    pass
-
-        # Create database entry (managed files store relative paths for portability;
-        # external files store the absolute mount path — same shape as scan produces)
-        library_file = LibraryFile(
+        library_file, duplicate_of = await ingest_library_upload(
+            db,
+            filename=file.filename,
+            content=await file.read(),
             folder_id=folder_id,
-            is_external=is_external_upload,
-            filename=filename,
-            file_path=_stored_file_path(file_path, is_external_upload),
-            file_type=file_type,
-            file_size=len(content),
-            file_hash=file_hash,
-            thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
-            file_metadata=_without_print_name(metadata) if metadata else None,
             created_by_id=current_user.id if current_user else None,
+            generate_stl_thumbnails=generate_stl_thumbnails,
         )
-        db.add(library_file)
-        await db.commit()
-        await db.refresh(library_file)
 
         return FileUploadResponse(
             id=library_file.id,

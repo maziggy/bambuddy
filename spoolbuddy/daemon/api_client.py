@@ -24,7 +24,17 @@ class APIClient:
     async def close(self):
         await self._client.aclose()
 
-    async def _post(self, path: str, data: dict) -> dict | None:
+    async def _post(self, path: str, data: dict, buffer: bool = True) -> dict | None:
+        """POST ``data`` to ``path``; return the JSON response, or None on failure.
+
+        ``buffer`` controls what happens when the backend is unreachable. By
+        default a failed request is queued and replayed in order once the
+        connection is restored (see ``_flush_buffer``), so state-syncing events
+        survive a brief outage without being lost. Callers whose events are
+        ephemeral or time-sensitive — where a delayed, out-of-order replay would
+        be wrong rather than helpful — pass ``buffer=False`` so the request is
+        dropped instead of queued.
+        """
         try:
             resp = await self._client.post(f"{self._base}{path}", json=data)
             resp.raise_for_status()
@@ -35,7 +45,8 @@ class APIClient:
             if self._connected:
                 logger.warning("Backend connection lost: %s", e)
                 self._connected = False
-            self._buffer.append({"path": path, "data": data})
+            if buffer:
+                self._buffer.append({"path": path, "data": data})
             return None
 
     async def _get(self, path: str) -> dict | None:
@@ -71,6 +82,7 @@ class APIClient:
         nfc_connection: str | None = None,
         backend_url: str | None = None,
         has_backlight: bool = False,
+        has_barcode: bool = False,
     ) -> dict | None:
         while True:
             result = await self._post(
@@ -88,6 +100,7 @@ class APIClient:
                     "nfc_connection": nfc_connection,
                     "backend_url": backend_url,
                     "has_backlight": has_backlight,
+                    "has_barcode": has_barcode,
                 },
             )
             if result is not None:
@@ -109,10 +122,12 @@ class APIClient:
         nfc_connection: str | None = None,
         backend_url: str | None = None,
         system_stats: dict | None = None,
+        barcode_ok: bool = False,
     ) -> dict | None:
         payload: dict = {
             "nfc_ok": nfc_ok,
             "scale_ok": scale_ok,
+            "barcode_ok": barcode_ok,
             "uptime_s": uptime_s,
             "ip_address": ip_address,
             "firmware_version": firmware_version,
@@ -148,6 +163,17 @@ class APIClient:
                 "tag_type": tag_type,
             },
         )
+
+    async def barcode_scanned(self, device_id: str, barcode: str, symbology: str | None = None) -> dict | None:
+        # buffer=False: a scan that can't reach the backend right now must not
+        # replay minutes later and pop a surprise modal on the kiosk.
+        payload = {
+            "device_id": device_id,
+            "barcode": barcode,
+        }
+        if symbology:
+            payload["symbology"] = symbology
+        return await self._post("/barcode/scanned", payload, buffer=False)
 
     async def tag_removed(self, device_id: str, tag_uid: str) -> dict | None:
         return await self._post(

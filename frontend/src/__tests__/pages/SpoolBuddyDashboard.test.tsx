@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import React from 'react';
 import { render } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -36,6 +36,8 @@ vi.mock('../../api/client', () => ({
     linkTagToSpool: vi.fn().mockResolvedValue({}),
     linkTagToSpoolmanSpool: vi.fn().mockResolvedValue({}),
     createSpool: vi.fn().mockResolvedValue({ id: 4 }),
+    getLocations: vi.fn().mockResolvedValue([]),
+    createLocation: vi.fn(),
     createSpoolmanInventorySpool: vi.fn().mockResolvedValue({ id: 4 }),
     clearPlate: vi.fn().mockResolvedValue({}),
   },
@@ -684,4 +686,74 @@ describe('SpoolBuddyDashboard', () => {
       });
     });
   });
+
+  describe('barcode add modal tag wiring', () => {
+    // Regression: the modal must get the LIVE tag state, not the sticky
+    // Current Spool card tag (displayedTagId), which persists after the roll
+    // is removed — a barcode-first add right after removing a roll showed
+    // (and would have attached) the previous roll's tag.
+    it('shows no tag in the add modal when the roll was removed before the scan', async () => {
+      const { api, spoolbuddyApi } = await import('../../api/client');
+      (spoolbuddyApi.getDevices as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { device_id: 'dev-1', has_barcode: true, barcode_enabled: true },
+      ]);
+      // Earlier tests flip the persistent mock to Spoolman mode — pin local mode.
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'false', spoolman_url: '', spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false', spoolman_report_partial_usage: 'false',
+      });
+
+      const baseSbState = { ...mockOutletContext.sbState, lastScan: null, clearScan: vi.fn() };
+      let setCtx: (ctx: unknown) => void = () => {};
+      function StatefulWrapper() {
+        const [ctx, set] = React.useState<unknown>({
+          ...mockOutletContext,
+          sbState: { ...baseSbState, unknownTagUid: '72DB77EB' },
+        });
+        setCtx = set;
+        return <Outlet context={ctx} />;
+      }
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+      render(
+        <ToastProvider>
+          <QueryClientProvider client={qc}>
+            <MemoryRouter initialEntries={['/spoolbuddy']}>
+              <Routes>
+                <Route element={<StatefulWrapper />}>
+                  <Route path="spoolbuddy" element={<SpoolBuddyDashboard />} />
+                </Route>
+              </Routes>
+            </MemoryRouter>
+          </QueryClientProvider>
+        </ToastProvider>
+      );
+
+      // Unknown tag on the scale first — its card shows the UID.
+      await waitFor(() => expect(screen.getByText(/72DB77EB/)).toBeTruthy());
+
+      // Roll removed (tag gone), then a fresh hardware scan arrives.
+      act(() => {
+        setCtx({
+          ...mockOutletContext,
+          sbState: {
+            ...baseSbState,
+            unknownTagUid: null,
+            lastScan: {
+              barcode: '6975337031234', kind: 'gtin', valid: true, matched: true, source: 'ofd',
+              material: 'PLA', brand: 'Polymaker', subtype: null, color_name: 'Charcoal',
+              rgba: '3B3B3FFF', label_weight: 1000, nozzle_temp_min: null, nozzle_temp_max: null,
+              is_refill: false, linked_codes: [], deviceId: 'dev-1', receivedAt: Date.now(),
+            },
+          },
+        });
+      });
+
+      // The modal auto-opens on the scan in barcode-first mode: no tag chip
+      // value, and the removed roll's UID must be gone from the screen.
+      await waitFor(() => expect(screen.getByText('Barcode Scanned')).toBeTruthy());
+      expect(screen.queryByText(/72DB77EB/)).toBeNull();
+      expect(screen.getByText('waiting…')).toBeTruthy();
+    });
+  });
+
 });

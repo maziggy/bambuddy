@@ -462,6 +462,19 @@ class AppSettings(BaseModel):
         default=False,
         description="Master toggle / default for new queue items. Per-item preheat_override can flip the decision per print.",
     )
+
+    # Gates the outbound lookups (Open Filament Database, SpoolmanDB-Community)
+    # used by scan-to-add barcode resolution — on every path, reads AND writes
+    # (saving a spool that carries a barcode cross-references sibling codes).
+    # Scanning against the user's own inventory is always local and unaffected
+    # by this toggle.
+    barcode_lookup_enabled: bool = Field(
+        default=True,
+        description=(
+            "Allow barcode scanning to query community filament databases "
+            "(Open Filament Database, SpoolmanDB-Community)"
+        ),
+    )
     preheat_filament_targets: str = Field(
         default="",
         description=(
@@ -747,6 +760,7 @@ class AppSettingsUpdate(BaseModel):
     queue_shortest_first: bool | None = None
     queue_max_concurrent_uploads: int | None = Field(default=None, ge=1, le=16)
     preheat_enabled: bool | None = None
+    barcode_lookup_enabled: bool | None = None
     preheat_filament_targets: str | None = None
     preheat_max_wait_seconds: int | None = Field(default=None, ge=60, le=3600)
     preheat_soak_seconds: int | None = Field(default=None, ge=0, le=1800)

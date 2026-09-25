@@ -25,7 +25,13 @@ export function spoolMatchesQuery(spool: InventorySpool, query: string): boolean
     (spool.subtype?.toLowerCase().includes(q) ?? false) ||
     (spool.note?.toLowerCase().includes(q) ?? false) ||
     (spool.slicer_filament_name?.toLowerCase().includes(q) ?? false) ||
-    (spool.storage_location?.toLowerCase().includes(q) ?? false)
+    (spool.storage_location?.toLowerCase().includes(q) ?? false) ||
+    // Typed code columns: searching "17600" must find every roll of that
+    // SKU (and likewise GTIN / ASIN / the user's own codes).
+    (spool.gtin_code?.toLowerCase().includes(q) ?? false) ||
+    (spool.sku_code?.toLowerCase().includes(q) ?? false) ||
+    (spool.asin_code?.toLowerCase().includes(q) ?? false) ||
+    (spool.other_code?.toLowerCase().includes(q) ?? false)
   );
 }
 

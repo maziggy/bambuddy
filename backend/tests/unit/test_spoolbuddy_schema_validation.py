@@ -7,9 +7,12 @@ import pytest
 from pydantic import ValidationError
 
 from backend.app.schemas.spoolbuddy import (
+    BarcodeScannedRequest,
     DeviceRegisterRequest,
     HeartbeatRequest,
+    HeartbeatResponse,
     ScaleReadingRequest,
+    ScannerSettingsRequest,
     UpdateStatusRequest,
     WriteTagResultRequest,
 )
@@ -205,3 +208,46 @@ class TestScaleReadingRequestValidation:
 
         with pytest.raises(ValidationError):
             ScaleReadingRequest(device_id="sb1", weight_grams=math.inf)
+
+
+# ---------------------------------------------------------------------------
+# Barcode scanner schemas
+# ---------------------------------------------------------------------------
+
+
+class TestBarcodeScannerSchemas:
+    def test_barcode_scanned_valid(self):
+        req = BarcodeScannedRequest(device_id="sb1", barcode="6975337031234")
+        assert req.barcode == "6975337031234"
+
+    def test_barcode_scanned_empty_rejected(self):
+        with pytest.raises(ValidationError):
+            BarcodeScannedRequest(device_id="sb1", barcode="")
+
+    def test_barcode_scanned_over_64_chars_rejected(self):
+        with pytest.raises(ValidationError):
+            BarcodeScannedRequest(device_id="sb1", barcode="X" * 65)
+
+    def test_scanner_settings_request(self):
+        assert ScannerSettingsRequest(enabled=True).enabled is True
+        assert ScannerSettingsRequest(enabled=False).enabled is False
+
+    def test_register_defaults_no_scanner(self):
+        req = DeviceRegisterRequest(device_id="sb1", hostname="h", ip_address="1.2.3.4")
+        assert req.has_barcode is False
+
+    def test_register_with_scanner(self):
+        req = DeviceRegisterRequest(
+            device_id="sb1",
+            hostname="h",
+            ip_address="1.2.3.4",
+            has_barcode=True,
+        )
+        assert req.has_barcode is True
+
+    def test_heartbeat_response_scanner_enabled_defaults_true(self):
+        resp = HeartbeatResponse(tare_offset=0, calibration_factor=1.0)
+        assert resp.barcode_enabled is True
+
+    def test_heartbeat_request_barcode_ok_defaults_false(self):
+        assert HeartbeatRequest().barcode_ok is False

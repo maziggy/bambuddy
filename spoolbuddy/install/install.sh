@@ -44,7 +44,7 @@ BAMBUDDY_SERVICE_USER="bambuddy"
 SYSTEM_PACKAGES="python3 python3-pip python3-venv python3-dev python3-spidev python3-libgpiod gpiod libgpiod-dev i2c-tools git plymouth-themes"
 
 # Python packages for SpoolBuddy daemon
-SPOOLBUDDY_PIP_PACKAGES="spidev gpiod smbus2 httpx"
+SPOOLBUDDY_PIP_PACKAGES="spidev gpiod smbus2 httpx evdev"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Variables (set by args or prompts)
@@ -506,7 +506,7 @@ create_spoolbuddy_user() {
     fi
 
     # Add to hardware access groups (gpio, spi, i2c, video for backlight)
-    for group in gpio spi i2c video; do
+    for group in gpio spi i2c video input; do
         if getent group "$group" &>/dev/null; then
             usermod -aG "$group" "$SPOOLBUDDY_SERVICE_USER" 2>/dev/null || true
         fi

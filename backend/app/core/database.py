@@ -3181,6 +3181,14 @@ async def run_migrations(conn):
     # Migration: Add system_stats JSON blob column to spoolbuddy_devices
     await _safe_execute(conn, "ALTER TABLE spoolbuddy_devices ADD COLUMN system_stats TEXT")
 
+    # Migration: Add USB barcode scanner columns to spoolbuddy_devices (#2648).
+    # DEFAULT FALSE/TRUE, not 0/1 — Postgres won't take an integer default for
+    # a boolean column and _safe_execute would swallow the error silently (see
+    # the notification_providers migrations below for the same trap).
+    await _safe_execute(conn, "ALTER TABLE spoolbuddy_devices ADD COLUMN has_barcode BOOLEAN DEFAULT FALSE")
+    await _safe_execute(conn, "ALTER TABLE spoolbuddy_devices ADD COLUMN barcode_enabled BOOLEAN DEFAULT TRUE")
+    await _safe_execute(conn, "ALTER TABLE spoolbuddy_devices ADD COLUMN barcode_ok BOOLEAN DEFAULT FALSE")
+
     # Migration: Add SSH host key for TOFU verification (H1 security fix)
     await _safe_execute(conn, "ALTER TABLE spoolbuddy_devices ADD COLUMN ssh_host_key VARCHAR(500)")
     # Migration: Widen ssh_host_key from VARCHAR(500) to TEXT — RSA-3072+ host keys
@@ -4955,6 +4963,8 @@ async def run_migrations(conn):
         conn, "ALTER TABLE notification_providers ADD COLUMN on_ams_drying_suspended BOOLEAN DEFAULT TRUE"
     )
 
+    # Migration: typed code columns for spools (#2648).
+    await _migrate_add_spool_code_columns(conn)
     # Migration: storage location sensor alerts (#2824), own column rather than
     # reusing on_ha_sensor_alert. That column can be scoped to one printer
     # (printer_id), and a location alert has no printer to scope by — sharing
@@ -5226,6 +5236,28 @@ async def _migrate_repair_rfid_core_weight(conn) -> None:
             text('INSERT INTO settings ("key", value) VALUES (:k, :v)'),
             {"k": flag, "v": "true"},
         )
+
+
+async def _migrate_add_spool_code_columns(conn) -> None:
+    """Add the typed code columns for scan-to-add lookups (#2648).
+
+    ``gtin_code`` stores the retail barcode ONLY (canonicalized, checksum
+    valid); ``sku_code`` the manufacturer SKU/article number; ``asin_code``
+    an Amazon ASIN; ``other_code`` a user-owned free code. ``bought_as_refill``
+    records purchase form (refill coil vs boxed with spool). Any stored code
+    resolves a later scan from the user's own inventory before the external
+    community databases. The model declares index=True on the searched
+    columns, so fresh installs get the indexes from create_all(); migrated
+    databases need them spelled out.
+    """
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN gtin_code VARCHAR(64)")
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN asin_code VARCHAR(16)")
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN sku_code VARCHAR(64)")
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN other_code VARCHAR(64)")
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN bought_as_refill BOOLEAN DEFAULT FALSE")
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_spool_gtin_code ON spool (gtin_code)")
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_spool_asin_code ON spool (asin_code)")
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_spool_sku_code ON spool (sku_code)")
 
 
 async def _migrate_backfill_variant_groups(conn) -> None:

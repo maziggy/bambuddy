@@ -5,11 +5,14 @@ import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { api, ApiError, type InventorySpool, type Printer, type PrinterStatus } from '../../api/client';
 import type { MatchedSpool } from '../../hooks/useSpoolBuddyState';
+import { useBarcodeAddFlow } from '../../hooks/useBarcodeAddFlow';
 import { useToast } from '../../contexts/ToastContext';
 import { SpoolIcon } from '../../components/spoolbuddy/SpoolIcon';
 import { SpoolInfoCard, UnknownTagCard } from '../../components/spoolbuddy/SpoolInfoCard';
+import { ScanHint } from '../../components/spoolbuddy/ScanHint';
 import { AssignToAmsModal } from '../../components/spoolbuddy/AssignToAmsModal';
 import { LinkSpoolModal } from '../../components/spoolbuddy/LinkSpoolModal';
+import { BarcodeAddModal } from '../../components/spoolbuddy/BarcodeAddModal';
 
 function normalizeHexTag(value: string | null | undefined): string {
   if (!value) return '';
@@ -25,6 +28,10 @@ function tagsEquivalent(a: string | null | undefined, b: string | null | undefin
   return aNorm.endsWith(bNorm) || bNorm.endsWith(aNorm);
 }
 
+// Auto-close of the Current Spool card after a barcode add (#2648): the scale
+// must read empty within ARM_MS of the add (roll lifted right away = task
+// done), then the Close button turns into a cancellable countdown.
+
 // Color palette for the cycling spool animation
 const SPOOL_COLORS = [
   '#00AE42', '#FF6B35', '#3B82F6', '#EF4444', '#A855F7',
@@ -32,7 +39,7 @@ const SPOOL_COLORS = [
 ];
 
 // --- Idle state with slow color-cycling spool ---
-function IdleSpool() {
+function IdleSpool({ showScanHint }: { showScanHint?: boolean }) {
   const { t } = useTranslation();
   const [colorIndex, setColorIndex] = useState(0);
 
@@ -97,6 +104,7 @@ function IdleSpool() {
         </svg>
         <span>{t('spoolbuddy.dashboard.nfcHint', 'NFC tag will be read automatically')}</span>
       </div>
+      {showScanHint && <ScanHint className="mt-2" />}
     </div>
   );
 }
@@ -236,8 +244,26 @@ export function SpoolBuddyDashboard() {
   const [quickAddBusy, setQuickAddBusy] = useState(false);
   const [justLinkedSpool, setJustLinkedSpool] = useState<Omit<MatchedSpool, 'tag_uid'> | null>(null);
 
+  // Barcode scan → add-to-inventory flow (availability + auto-open on scan).
+  const barcodeFlow = useBarcodeAddFlow({
+    deviceId: sbState.deviceId,
+    lastScan: sbState.lastScan,
+    matchedSpool: sbState.matchedSpool,
+  });
+  const scannerAvailable = barcodeFlow.scannerAvailable;
+
   // Track current tag from state
   const currentTagId = sbState.matchedSpool?.tag_uid ?? sbState.unknownTagUid ?? null;
+
+  // Tag offered to the barcode add flow: never a tag that is already linked to
+  // an active spool — attaching it to a second spool makes every later tag
+  // lookup ambiguous (reachable when a missed tag-removed event leaves stale
+  // tag state behind; the backend also rejects such a create with a 409).
+  const barcodeAddTagUid = useMemo(() => {
+    if (!currentTagId) return null;
+    const linked = spools.some((s) => !s.archived_at && tagsEquivalent(s.tag_uid, currentTagId));
+    return linked ? null : currentTagId;
+  }, [currentTagId, spools]);
   const currentWeight = sbState.weight;
   const weightStable = sbState.weightStable;
 
@@ -437,6 +463,10 @@ export function SpoolBuddyDashboard() {
           tray_uuid: null,
           data_origin: null,
           tag_type: null,
+          gtin_code: null,
+          asin_code: null,
+          sku_code: null,
+          other_code: null,
           cost_per_kg: null,
           last_scale_weight: weight !== null ? Math.round(weight) : null,
           last_weighed_at: weight !== null ? new Date().toISOString() : null,
@@ -472,6 +502,10 @@ export function SpoolBuddyDashboard() {
           tray_uuid: null,
           data_origin: 'spoolbuddy',
           tag_type: 'generic',
+          gtin_code: null,
+          asin_code: null,
+          sku_code: null,
+          other_code: null,
           cost_per_kg: null,
           last_scale_weight: weight !== null ? Math.round(weight) : null,
           last_weighed_at: weight !== null ? new Date().toISOString() : null,
@@ -651,6 +685,8 @@ export function SpoolBuddyDashboard() {
                       label_weight: s.label_weight,
                       core_weight: s.core_weight,
                       weight_used: s.weight_used,
+                      // Only the list-sourced spool carries the flag; matchedSpool doesn't.
+                      bought_as_refill: displayedSpool?.bought_as_refill ?? false,
                     };
                   })()}
                   scaleWeight={liveWeight ?? displayedWeight}
@@ -669,11 +705,12 @@ export function SpoolBuddyDashboard() {
                   tagUid={displayedTagId}
                   scaleWeight={liveWeight ?? displayedWeight}
                   onLinkSpool={untaggedSpools.length > 0 ? () => setShowLinkModal(true) : undefined}
-                  onAddToInventory={() => setShowQuickAddModal(true)}
+                  onAddToInventory={() => scannerAvailable ? barcodeFlow.open() : setShowQuickAddModal(true)}
+                  showScanHint={scannerAvailable}
                   onClose={handleCloseSpoolCard}
                 />
               ) : (
-                <IdleSpool />
+                <IdleSpool showScanHint={scannerAvailable} />
               )}
             </div>
           </div>
@@ -705,6 +742,31 @@ export function SpoolBuddyDashboard() {
           onLink={handleLinkTagToSpool}
         />
       )}
+
+      {/* Barcode scan → add-to-inventory flow (replaces quick-add when a
+          hardware scanner is available on this device) */}
+      <BarcodeAddModal
+        isOpen={barcodeFlow.isOpen}
+        onClose={barcodeFlow.close}
+        scan={sbState.lastScan}
+        /* Live tag only — displayedTagId is the sticky Current Spool card state
+           and persists after the roll is removed, which would show (and attach)
+           a stale tag on the next barcode-first add. */
+        tagUid={barcodeAddTagUid}
+        trayUuid={sbState.unknownTrayUuid}
+        scaleWeight={liveWeight ?? displayedWeight}
+        spoolmanMode={spoolmanMode}
+        spools={spools}
+        onCreated={() => {
+          refetchSpools();
+          showToast(t('spoolbuddy.barcode.addedToast', 'Added to inventory'), 'success');
+        }}
+        onFallbackQuickAdd={() => {
+          barcodeFlow.close();
+          setShowQuickAddModal(true);
+        }}
+        clearScan={sbState.clearScan}
+      />
 
       {/* Quick-add to Inventory Modal */}
       {showQuickAddModal && displayedTagId && (

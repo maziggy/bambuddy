@@ -156,13 +156,13 @@ export function SpoolBuddyInventoryPage() {
 
     list = filterSpoolsByQuery(list, searchQuery.trim());
 
-    // Sort: assigned spools first (by slot label), then by most recently updated
-    return [...list].sort((a, b) => {
-      const aAssigned = assignedSpoolIds.has(a.id) ? 0 : 1;
-      const bAssigned = assignedSpoolIds.has(b.id) ? 0 : 1;
-      if (aAssigned !== bAssigned) return aAssigned - bAssigned;
-      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-    });
+    // Sort: most recently modified first (a just-created spool counts — its
+    // updated_at is stamped on insert). Assigned spools used to pin to the
+    // top, which buried a freshly added spool below the whole AMS block; the
+    // "In AMS" filter pill already covers finding assigned spools.
+    return [...list].sort(
+      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+    );
   }, [activeSpools, filterMode, searchQuery, assignedSpoolIds, colorCatalogVersion]);
 
   return (

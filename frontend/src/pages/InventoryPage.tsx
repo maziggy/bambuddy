@@ -10,6 +10,7 @@ import {
   Upload, Download,
 } from 'lucide-react';
 import { ForecastPanel } from '../components/ForecastPanel';
+import { RefillBadge } from '../components/RefillBadge';
 import { api, spoolbuddyApi, ApiError } from '../api/client';
 import type { InventorySpool, SpoolCatalogEntry, LocationHASensorReading } from '../api/client';
 import { Button } from '../components/Button';
@@ -100,6 +101,8 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'note', label: 'Note', visible: false },
   { id: 'pa_k', label: 'PA(K)', visible: true },
   { id: 'tag_id', label: 'Tag ID', visible: false },
+  { id: 'barcode', label: 'Barcode', visible: false },
+  { id: 'sku_code', label: 'SKU', visible: false },
   { id: 'data_origin', label: 'Data Origin', visible: false },
   { id: 'tag_type', label: 'Linked Tag Type', visible: false },
   { id: 'stock', label: 'Stock', visible: false },
@@ -229,6 +232,8 @@ const columnHeaders: Record<string, (t: TFn) => string> = {
   note: (t) => t('inventory.note'),
   pa_k: () => 'PA(K)',
   tag_id: () => 'Tag ID',
+  barcode: (t) => t('inventory.barcode', { defaultValue: 'Barcode' }),
+  sku_code: (t) => t('inventory.skuCode', { defaultValue: 'SKU' }),
   data_origin: () => 'Data Origin',
   tag_type: () => 'Linked Tag Type',
   stock: (t) => t('inventory.stock'),
@@ -264,7 +269,10 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
     </div>
   ),
   material: ({ spool }) => (
-    <span className="text-sm text-white">{spool.material}</span>
+    <span className="inline-flex items-center gap-1.5 text-sm text-white">
+      {spool.material}
+      {spool.bought_as_refill && <RefillBadge />}
+    </span>
   ),
   subtype: ({ spool }) => (
     <span className="text-sm text-bambu-gray">{spool.subtype || '-'}</span>
@@ -382,6 +390,26 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
     return (
       <span className="text-sm text-bambu-gray font-mono" title={tag}>
         {tag.length > 12 ? `${tag.slice(0, 6)}...${tag.slice(-4)}` : tag}
+      </span>
+    );
+  },
+  barcode: ({ spool }) => {
+    // The roll's retail identity: the GTIN, or the ASIN when no GTIN exists
+    // (Amazon-native brands) — never both. SKU has its own column; a
+    // user-owned other_code shows only in the edit form.
+    const code = spool.gtin_code || spool.asin_code;
+    if (!code) return <span className="text-sm text-bambu-gray/50">-</span>;
+    return (
+      <span className="text-sm text-bambu-gray font-mono" title={code}>
+        {code}
+      </span>
+    );
+  },
+  sku_code: ({ spool }) => {
+    if (!spool.sku_code) return <span className="text-sm text-bambu-gray/50">-</span>;
+    return (
+      <span className="text-sm text-bambu-gray font-mono" title={spool.sku_code}>
+        {spool.sku_code}
       </span>
     );
   },
@@ -513,6 +541,8 @@ const columnSortValues: Record<
   used: (s) => s.weight_used,
   remaining: (s) => s.label_weight > 0 ? Math.max(0, s.label_weight - s.weight_used) / s.label_weight : 0,
   note: (s) => (s.note || '').toLowerCase(),
+  barcode: (s) => s.gtin_code || s.asin_code || '',
+  sku_code: (s) => s.sku_code || '',
   data_origin: (s) => (s.data_origin || '').toLowerCase(),
   tag_type: (s) => (s.tag_type || '').toLowerCase(),
   stock: (s) => s.slicer_filament ? 1 : 0,
@@ -2648,8 +2678,9 @@ function SpoolCard({
       <div className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h3 className="font-semibold text-white">
-              {spool.material}{spool.subtype ? ` ${spool.subtype}` : ''}
+            <h3 className="font-semibold text-white flex flex-wrap items-center gap-1.5">
+              <span>{spool.material}{spool.subtype ? ` ${spool.subtype}` : ''}</span>
+              {spool.bought_as_refill && <RefillBadge />}
             </h3>
             <p className="text-sm text-bambu-gray">{spool.brand || '-'}</p>
           </div>

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -67,6 +67,23 @@ class Spool(Base):
     encode_time: Mapped[datetime | None] = mapped_column(DateTime)  # When spool was encoded/written to tag
     tag_uid: Mapped[str | None] = mapped_column(String(32))  # RFID tag UID (up to 32 hex chars)
     tray_uuid: Mapped[str | None] = mapped_column(String(32))  # Bambu Lab spool UUID (32 hex chars)
+    # Typed code columns (see classify_code's ladder in schemas/spool.py).
+    # gtin_code: the retail barcode ONLY (EAN/UPC, canonicalized, checksum-
+    # valid). sku_code: manufacturer SKU/article number. asin_code: Amazon
+    # ASIN. other_code: the user's own code space — self-printed barcodes
+    # welcome; no uniqueness semantics imposed, never submitted upstream.
+    # A scan fills its own column; siblings auto-fill from the community DBs
+    # under the size-consistency rule (same purchasable package only).
+    gtin_code: Mapped[str | None] = mapped_column(String(64), index=True)
+    asin_code: Mapped[str | None] = mapped_column(String(16), index=True)
+    sku_code: Mapped[str | None] = mapped_column(String(64), index=True)
+    other_code: Mapped[str | None] = mapped_column(String(64))
+    # How the roll was PURCHASED (refill coil vs boxed with a spool) — not
+    # current physical state: a refill mounted on a Bambu spool keeps this
+    # flag; its core_weight is what changes. Drives the "Refill pack" badge.
+    # server_default too (not just the Python-side default): raw-SQL inserts
+    # (migrations, tests) and rows predating the ALTER must land as FALSE.
+    bought_as_refill: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     data_origin: Mapped[str | None] = mapped_column(String(20))  # How data was populated: manual, rfid_auto, nfc_link
     tag_type: Mapped[str | None] = mapped_column(String(20))  # Tag vendor: bambulab, generic, etc.
     archived_at: Mapped[datetime | None] = mapped_column(DateTime)  # NULL = active

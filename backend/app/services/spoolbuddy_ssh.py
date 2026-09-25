@@ -312,7 +312,7 @@ async def perform_ssh_update(device_id: str, ip_address: str, install_path: str 
         venv_pip = shlex.quote(f"{install_path}/spoolbuddy/venv/bin/pip")
         rc, _, stderr, _ = await _run_ssh_command(
             ip_address,
-            f"{venv_pip} install --upgrade spidev gpiod smbus2 httpx 2>&1",
+            f"{venv_pip} install --upgrade spidev gpiod smbus2 httpx evdev 2>&1",
             private_key,
             known_hosts=known_hosts,
             timeout=120,

@@ -1427,6 +1427,9 @@ export interface AppSettings {
   bed_cooled_threshold: number;
   // Inventory low stock threshold
   low_stock_threshold: number;
+  // Gates the Open Filament Database outbound lookup used by scan-to-add
+  // barcode/label scanning. Native in-inventory barcode lookup is unaffected.
+  barcode_lookup_enabled: boolean;
   // Session policy (#1706) — admin-set ceiling, hours, [1, 720]
   session_max_hours: number;
   // User email notifications toggle
@@ -3531,6 +3534,16 @@ export type SpoolLabelTemplate =
   | 'avery_5160'
   | 'avery_l7160';
 
+// One sibling code (GTIN barcode or manufacturer SKU/article number)
+// discovered for the same physical product as the primary scanned/entered
+// code — e.g. another package-size GTIN, the refill-pack GTIN, or the
+// manufacturer SKU. Read-only display data; excludes the primary code itself.
+export interface LinkedCode {
+  code: string;
+  kind: 'gtin' | 'sku';
+  is_refill: boolean;
+}
+
 export interface PrintSpoolLabelsRequest {
   spool_ids: number[];
   template: SpoolLabelTemplate;
@@ -3576,6 +3589,23 @@ export interface InventorySpool {
   tray_uuid: string | null;
   data_origin: string | null;
   tag_type: string | null;
+  // Typed code columns. gtin_code holds retail barcodes ONLY (canonicalized,
+  // checksum-valid); sku_code the manufacturer article number; asin_code an
+  // Amazon ASIN; other_code the user's own code space (no semantics imposed,
+  // never submitted to a community DB). Any stored code resolves a later scan
+  // from the user's own inventory before the community databases.
+  gtin_code: string | null;
+  asin_code: string | null;
+  sku_code: string | null;
+  other_code: string | null;
+  // Write-only on create: the raw code a scanner read. The backend classifies
+  // it (GTIN / ASIN / SKU-candidate / other) and cross-fills the sibling
+  // columns from the community DBs under the size-consistency rule.
+  scanned_code?: string | null;
+  scanned_symbology?: string | null;
+  // How the roll was PURCHASED (refill coil vs boxed with a spool) — not
+  // current physical state (that's core_weight). Drives the "Refill pack" badge.
+  bought_as_refill?: boolean;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
@@ -3588,6 +3618,45 @@ export interface InventorySpool {
   k_profiles?: SpoolKProfile[];
   storage_location?: string | null;
   location_id?: number | null;
+}
+
+// Scan-to-add barcode lookup (#1). `source` tells the caller how much to
+// trust the fields: "inventory" is an exact match against the user's own
+// spools, "ofd" is community-sourced from the Open Filament Database.
+export interface BarcodeLookupResult {
+  enabled: boolean;
+  matched: boolean;
+  source: 'inventory' | 'ofd' | 'spoolmandb-community' | null;
+  barcode: string;
+  material: string | null;
+  brand: string | null;
+  subtype: string | null;
+  color_name: string | null;
+  rgba: string | null;
+  label_weight: number | null;
+  nozzle_temp_min: number | null;
+  nozzle_temp_max: number | null;
+  /** True when the looked-up code itself is a no-spool refill (backend-detected). */
+  is_refill: boolean;
+  linked_codes: LinkedCode[];
+}
+
+// One candidate row for the SpoolBuddy "Find This Filament" picker — a
+// filament the user can pick to link a scanned-but-unmatched barcode to a
+// known product. Mirrors the barcode-lookup field set plus a source tag and
+// the sibling codes to persist when the row is chosen.
+export interface CatalogSearchRow {
+  source: 'inventory' | 'ofd' | 'spoolmandb-community';
+  spool_id: number | null;
+  material: string | null;
+  brand: string | null;
+  subtype: string | null;
+  color_name: string | null;
+  rgba: string | null;
+  label_weight: number | null;
+  nozzle_temp_min: number | null;
+  nozzle_temp_max: number | null;
+  codes: LinkedCode[];
 }
 
 export interface SpoolmanBulkCreateResult {
@@ -6448,6 +6517,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ spool: data, quantity }),
     }),
+  // ── Scan-to-add barcode lookup ───────────────────────────────────────────
+  lookupFilamentBarcode: (barcode: string) =>
+    request<BarcodeLookupResult>(`/inventory/barcode/${encodeURIComponent(barcode)}`),
+  // SpoolBuddy "Find This Filament": search inventory + community DBs by text.
+  searchBarcodeCatalog: (q: string, limit = 25) =>
+    request<CatalogSearchRow[]>(
+      `/inventory/barcode/catalog-search?q=${encodeURIComponent(q)}&limit=${limit}`,
+    ),
   // ── CSV import/export (#1576) ────────────────────────────────────────────
   // dry_run=true → preview (no write); omitted → real import. Both share one
   // multipart upload helper; see `uploadSpoolsCsv` below.
@@ -8716,6 +8793,7 @@ export interface SpoolBuddyDevice {
   firmware_version: string | null;
   has_nfc: boolean;
   has_scale: boolean;
+  has_barcode: boolean;
   tare_offset: number;
   calibration_factor: number;
   nfc_reader_type: string | null;
@@ -8728,6 +8806,8 @@ export interface SpoolBuddyDevice {
   pending_command: string | null;
   nfc_ok: boolean;
   scale_ok: boolean;
+  barcode_ok: boolean;
+  barcode_enabled: boolean;
   uptime_s: number;
   update_status: string | null;
   update_message: string | null;
@@ -8784,6 +8864,12 @@ export const spoolbuddyApi = {
     request<{ status: string }>(`/spoolbuddy/devices/${deviceId}/display`, {
       method: 'PUT',
       body: JSON.stringify({ brightness, blank_timeout: blankTimeout }),
+    }),
+
+  setScannerSettings: (deviceId: string, enabled: boolean) =>
+    request<{ status: string; enabled: boolean }>(`/spoolbuddy/devices/${deviceId}/scanner`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
     }),
 
   updateSystemConfig: (deviceId: string, backendUrl: string, apiKey?: string) =>

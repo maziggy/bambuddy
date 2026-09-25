@@ -169,3 +169,42 @@ sudo python3 spoolbuddy/scale_diag.py
 
 The diagnostic reads 10 samples at 10 SPS and shows raw ADC values, average,
 and spread. Typical idle readings are around ~500k with a spread under 20k.
+
+## Barcode Scanner (optional, USB)
+
+SpoolBuddy supports a USB barcode scanner in keyboard-emulation (HID) mode —
+for example the SB Components Barcode Breakout (DE2120 engine). The daemon
+detects the scanner automatically, grabs it exclusively (scans never type
+into the kiosk browser), and forwards scans to the backend so new spools can
+be added with full filament metadata directly on the device.
+
+### Setup
+
+- Plug the scanner into any USB port. Keyboard-emulation mode (the factory
+  default on most scanners) is all that's needed — no suffix configuration
+  required; both Enter-terminated and suffix-less scans are handled.
+- Fresh installs get the required `input` group membership and the `evdev`
+  Python package automatically. **Existing installs** updating to a daemon
+  with scanner support need:
+
+```bash
+sudo usermod -aG input $(whoami)
+sudo reboot
+```
+
+- Detection is automatic, by device name — the scanner is matched when its
+  USB device name contains `barcode`, `scanner`, `kbw`, `de2120`, or a known
+  vendor (like the NFC and scale readers, there's no manual device override).
+  Check the name it enumerates with via `cat /proc/bus/input/devices` if it
+  isn't picked up.
+
+### Verify
+
+```bash
+journalctl -u spoolbuddy -f
+# Look for: "Barcode scanner detected: <name> (/dev/input/eventN)"
+# Scanning any barcode logs: "Barcode scanned: <code>"
+```
+
+The scanner can be enabled/disabled per device in the kiosk under
+Settings → Scanner.

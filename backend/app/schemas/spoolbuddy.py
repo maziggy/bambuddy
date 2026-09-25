@@ -20,6 +20,7 @@ class DeviceRegisterRequest(BaseModel):
     nfc_connection: str | None = Field(None, max_length=20)
     backend_url: str | None = Field(None, max_length=255)
     has_backlight: bool = False
+    has_barcode: bool = False
 
 
 class DeviceResponse(BaseModel):
@@ -43,6 +44,9 @@ class DeviceResponse(BaseModel):
     pending_command: str | None = None
     nfc_ok: bool
     scale_ok: bool
+    has_barcode: bool = False
+    barcode_enabled: bool = True
+    barcode_ok: bool = False
     uptime_s: int
     update_status: str | None = None
     update_message: str | None = None
@@ -59,6 +63,7 @@ class DeviceResponse(BaseModel):
 class HeartbeatRequest(BaseModel):
     nfc_ok: bool = False
     scale_ok: bool = False
+    barcode_ok: bool = False
     uptime_s: int = 0
     firmware_version: str | None = Field(None, max_length=20)
     ip_address: str | None = Field(None, max_length=45)
@@ -83,6 +88,7 @@ class HeartbeatResponse(BaseModel):
     calibration_factor: float
     display_brightness: int = 100
     display_blank_timeout: int = 0
+    barcode_enabled: bool = True
     ssh_public_key: str | None = None
 
 
@@ -101,6 +107,22 @@ class TagScannedRequest(BaseModel):
 class TagRemovedRequest(BaseModel):
     device_id: str = Field(..., max_length=50)
     tag_uid: str = Field(..., max_length=32)
+
+
+# --- Barcode scanner schemas ---
+
+
+class BarcodeScannedRequest(BaseModel):
+    device_id: str = Field(..., max_length=50)
+    barcode: str = Field(..., min_length=1, max_length=64)
+    # AIM symbology family (e.g. "ean-upc", "code128") when the scanner is
+    # configured to transmit AIM IDs; absent on older daemons and scanners
+    # left at factory defaults.
+    symbology: str | None = Field(None, max_length=16)
+
+
+class ScannerSettingsRequest(BaseModel):
+    enabled: bool
 
 
 # --- Scale schemas ---

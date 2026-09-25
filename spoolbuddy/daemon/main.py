@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import __version__, system_stats
 from .api_client import APIClient
+from .barcode_reader import BarcodeReader
 from .config import Config
 from .display_control import DisplayControl
 from .nfc_reader import NFCReader, NFCState
@@ -234,6 +235,24 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
         scale.close()
 
 
+async def barcode_poll_loop(config: Config, api: APIClient, shared: dict):
+    """Continuous barcode scanner loop — decodes USB HID scans, posts to backend."""
+    display: DisplayControl = shared["display"]
+    barcode: BarcodeReader = shared["barcode"]
+
+    async def on_scan(code: str, symbology: str | None = None):
+        display.wake()
+        await api.barcode_scanned(device_id=config.device_id, barcode=code, symbology=symbology)
+
+    def is_enabled() -> bool:
+        return shared.get("barcode_enabled", True)
+
+    try:
+        await barcode.run(on_scan, is_enabled)
+    finally:
+        barcode.close()
+
+
 async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shared: dict):
     """Periodic heartbeat to keep device registered and pick up commands."""
     display: DisplayControl = shared["display"]
@@ -244,12 +263,14 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
 
         nfc = shared.get("nfc")
         scale = shared.get("scale")
+        barcode = shared.get("barcode")
         uptime = int(time.monotonic() - start_time)
         stats = await asyncio.to_thread(system_stats.collect)
         result = await api.heartbeat(
             device_id=config.device_id,
             nfc_ok=nfc.ok if nfc else False,
             scale_ok=scale.ok if scale else False,
+            barcode_ok=barcode.ok if barcode else False,
             uptime_s=uptime,
             ip_address=ip,
             firmware_version=__version__,
@@ -419,6 +440,11 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
             if blank_timeout is not None:
                 display.set_blank_timeout(blank_timeout)
 
+            # Apply barcode scanner enable/disable from backend
+            scanner_enabled = result.get("barcode_enabled")
+            if scanner_enabled is not None:
+                shared["barcode_enabled"] = bool(scanner_enabled)
+
         display.tick()
 
 
@@ -439,6 +465,10 @@ async def main():
         calibration_factor=config.calibration_factor,
     )
     display = DisplayControl()
+    # A missing scanner must never block startup — open() is a quick probe and
+    # the poll loop keeps rescanning for hotplug either way.
+    barcode = BarcodeReader()
+    barcode.open()
 
     # Register with backend (retries until success)
     reg = await api.register_device(
@@ -454,6 +484,7 @@ async def main():
         nfc_connection=nfc.connection,
         backend_url=config.backend_url,
         has_backlight=display.has_backlight,
+        has_barcode=barcode.ok,
     )
 
     # Use server-side calibration if available
@@ -469,11 +500,18 @@ async def main():
 
     logger.info("Device registered, starting poll loops")
 
-    shared: dict = {"nfc": nfc, "scale": scale, "display": display, "nfc_scan_paused": False}
+    shared: dict = {
+        "nfc": nfc,
+        "scale": scale,
+        "display": display,
+        "barcode": barcode,
+        "nfc_scan_paused": False,
+    }
     try:
         await asyncio.gather(
             nfc_poll_loop(config, api, shared),
             scale_poll_loop(config, api, shared),
+            barcode_poll_loop(config, api, shared),
             heartbeat_loop(config, api, start_time, shared),
         )
     except KeyboardInterrupt:

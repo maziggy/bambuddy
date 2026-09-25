@@ -57,6 +57,21 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --root-user-action=ignore --upgrade 'pip>=26.1.2' \
  && pip install --root-user-action=ignore -r requirements.txt
 
+# Bake a SpoolmanDB-Community snapshot into the image as the offline-fallback
+# seed for barcode/catalog lookups (MIT-licensed data — see
+# backend/scripts/seed_spoolmandb_community_cache.py). Sits BEFORE the full
+# backend COPY, with only the minimal module subset the script imports copied
+# ahead of it, so an unrelated backend change doesn't re-download the dataset
+# on every build. A build-time network failure skips the seed rather than
+# failing the build. Kept as its own layer so it stays independently droppable.
+COPY backend/__init__.py ./backend/__init__.py
+COPY backend/app/__init__.py ./backend/app/__init__.py
+COPY backend/app/core/__init__.py backend/app/core/paths.py ./backend/app/core/
+COPY backend/app/services/__init__.py backend/app/services/external_catalog_cache.py \
+     backend/app/services/spoolmandb_community_client.py ./backend/app/services/
+COPY backend/scripts/ ./backend/scripts/
+RUN python -m backend.scripts.seed_spoolmandb_community_cache
+
 # Copy backend
 COPY backend/ ./backend/
 

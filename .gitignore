@@ -21,6 +21,10 @@ docker-compose.override.yml
 dist/
 build/
 
+# Generated at Docker build time by backend/scripts/seed_spoolmandb_community_cache.py
+# (offline-fallback catalog snapshot) — never committed.
+backend/seeds/
+
 # Node
 frontend/node_modules/
 frontend/coverage/

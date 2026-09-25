@@ -206,6 +206,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "local_login_enabled",
             "preheat_enabled",
             "queue_keep_bed_warm",
+            "barcode_lookup_enabled",
         ]:
             settings_dict[setting.key] = setting.value.lower() == "true"
         elif setting.key in [

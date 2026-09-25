@@ -493,6 +493,10 @@ export function useWebSocket() {
         window.dispatchEvent(new CustomEvent('spoolbuddy-unknown-tag', { detail: message }));
         break;
 
+      case 'spoolbuddy_barcode_scanned':
+        window.dispatchEvent(new CustomEvent('spoolbuddy-barcode-scanned', { detail: message }));
+        break;
+
       case 'spoolbuddy_tag_removed':
         window.dispatchEvent(new CustomEvent('spoolbuddy-tag-removed', { detail: message }));
         break;

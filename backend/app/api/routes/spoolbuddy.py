@@ -20,6 +20,7 @@ from backend.app.core.websocket import ws_manager
 from backend.app.models.spoolbuddy_device import SpoolBuddyDevice
 from backend.app.models.user import User
 from backend.app.schemas.spoolbuddy import (
+    BarcodeScannedRequest,
     CalibrationResponse,
     DeviceRegisterRequest,
     DeviceResponse,
@@ -28,6 +29,7 @@ from backend.app.schemas.spoolbuddy import (
     HeartbeatRequest,
     HeartbeatResponse,
     ScaleReadingRequest,
+    ScannerSettingsRequest,
     SetCalibrationFactorRequest,
     SetTareRequest,
     SystemCommandRequest,
@@ -148,6 +150,9 @@ def _device_to_response(device: SpoolBuddyDevice) -> DeviceResponse:
         pending_command=device.pending_command,
         nfc_ok=device.nfc_ok,
         scale_ok=device.scale_ok,
+        has_barcode=device.has_barcode,
+        barcode_enabled=device.barcode_enabled,
+        barcode_ok=device.barcode_ok,
         uptime_s=device.uptime_s,
         update_status=device.update_status,
         update_message=device.update_message,
@@ -196,6 +201,7 @@ async def register_device(
         if req.backend_url:
             device.backend_url = req.backend_url
         device.has_backlight = req.has_backlight
+        device.has_barcode = req.has_barcode
         device.last_seen = now
         # Clear stale update status on re-registration (daemon restarted after update)
         if device.update_status in ("pending", "updating", "complete", "error"):
@@ -215,6 +221,7 @@ async def register_device(
             nfc_reader_type=req.nfc_reader_type,
             nfc_connection=req.nfc_connection,
             has_backlight=req.has_backlight,
+            has_barcode=req.has_barcode,
             backend_url=req.backend_url,
             last_seen=now,
         )
@@ -296,6 +303,7 @@ async def device_heartbeat(
     device.last_seen = now
     device.nfc_ok = req.nfc_ok
     device.scale_ok = req.scale_ok
+    device.barcode_ok = req.barcode_ok
     device.uptime_s = req.uptime_s
     if req.firmware_version:
         device.firmware_version = req.firmware_version
@@ -367,8 +375,90 @@ async def device_heartbeat(
         calibration_factor=device.calibration_factor,
         display_brightness=device.display_brightness,
         display_blank_timeout=device.display_blank_timeout,
+        barcode_enabled=device.barcode_enabled,
         ssh_public_key=ssh_public_key,
     )
+
+
+# --- Barcode scanner endpoints ---
+
+
+@router.post("/barcode/scanned")
+async def barcode_scanned(
+    req: BarcodeScannedRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """RPi reports a hardware barcode scan — resolve filament data and broadcast.
+
+    Resolution reuses the inventory barcode chain (own inventory first, then
+    the community databases), and the broadcast payload mirrors
+    ``BarcodeLookupResponse`` field-for-field so the kiosk can share types
+    with the regular lookup endpoint.
+    """
+    # _load_settings_map / _ensure_spoolman_client are pre-existing request
+    # plumbing shared with the inventory routes (lazy import avoids a module
+    # cycle); the barcode logic itself is the shared service.
+    from backend.app.api.routes.inventory import _ensure_spoolman_client, _load_settings_map
+    from backend.app.schemas.spool import classify_code
+    from backend.app.services.barcode_resolver import resolve_barcode
+
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == req.device_id))
+    device = result.scalar_one_or_none()
+    if device is not None and not device.barcode_enabled:
+        # Belt-and-braces vs. daemon settings lag (the daemon releases its
+        # grab within one heartbeat of the toggle turning off).
+        return {"status": "ok", "matched": False, "ignored": True}
+
+    from backend.app.schemas.spool import IGNORED_SYMBOLOGIES, looks_like_url_payload
+
+    if req.symbology in IGNORED_SYMBOLOGIES or looks_like_url_payload(req.barcode):
+        # QR/DataMatrix payloads (the Bambu spool QR is a URL) are never
+        # product codes — drop silently instead of popping a no-match modal.
+        logger.debug("Ignoring 2D/URL scan: %s", req.barcode)
+        return {"status": "ok", "matched": False, "ignored": True}
+
+    canonical, kind = classify_code(req.barcode, symbology=req.symbology)
+    valid = bool(canonical) and len(canonical) >= 3
+
+    fields: dict = {}
+    source: str | None = None
+    all_codes: list[dict] = []
+    if valid:
+        settings = await _load_settings_map(db)
+        spoolman_client = await _ensure_spoolman_client(settings)
+        fields, source, all_codes = await resolve_barcode(db, canonical, kind, settings, spoolman_client)
+
+    scanned_is_refill = any(c.get("is_refill") for c in all_codes if c.get("code") == canonical)
+    # Build the filament fields from BarcodeLookupResponse itself so the WS
+    # payload can never drift from the REST lookup shape (the kiosk treats the
+    # two as the same type by design) — new schema fields flow automatically.
+    from backend.app.schemas.spool import BarcodeLookupResponse
+
+    lookup = BarcodeLookupResponse(
+        matched=source is not None,
+        source=source,
+        barcode=canonical or req.barcode,
+        is_refill=scanned_is_refill,
+        linked_codes=[c for c in all_codes if c.get("code") != canonical],
+        **fields,
+    )
+    await ws_manager.broadcast(
+        {
+            "type": "spoolbuddy_barcode_scanned",
+            "device_id": req.device_id,
+            "kind": kind,
+            "symbology": req.symbology,
+            "valid": valid,
+            **lookup.model_dump(exclude={"enabled"}),
+        }
+    )
+    logger.info(
+        "SpoolBuddy barcode scanned: %s -> %s",
+        canonical or req.barcode,
+        source or ("no match" if valid else "invalid"),
+    )
+    return {"status": "ok", "matched": source is not None}
 
 
 # --- NFC endpoints ---
@@ -1096,6 +1186,30 @@ async def update_display_settings(
         req.blank_timeout,
     )
     return {"status": "ok", "brightness": req.brightness, "blank_timeout": req.blank_timeout}
+
+
+@router.put("/devices/{device_id}/scanner")
+async def update_scanner_settings(
+    device_id: str,
+    req: ScannerSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Enable/disable the hardware barcode scanner for a device.
+
+    The daemon picks the flag up in its next heartbeat response and releases
+    its exclusive device grab while disabled.
+    """
+    result = await db.execute(select(SpoolBuddyDevice).where(SpoolBuddyDevice.device_id == device_id))
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    device.barcode_enabled = req.enabled
+    await db.commit()
+
+    logger.info("SpoolBuddy %s barcode scanner %s", device_id, "enabled" if req.enabled else "disabled")
+    return {"status": "ok", "enabled": req.enabled}
 
 
 @router.post("/devices/{device_id}/system/config")

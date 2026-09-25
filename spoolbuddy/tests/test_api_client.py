@@ -196,6 +196,51 @@ class TestRegisterDevice:
         assert payload["has_backlight"] is True
         assert payload["calibration_factor"] == 1.05
 
+    @pytest.mark.asyncio
+    async def test_register_sends_barcode_scanner_capability(self, api):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"ok": True}
+        mock_resp.raise_for_status = MagicMock()
+        api._client.post = AsyncMock(return_value=mock_resp)
+
+        await api.register_device(
+            device_id="dev-1",
+            hostname="myhost",
+            ip_address="10.0.0.1",
+            has_barcode=True,
+        )
+
+        payload = api._client.post.call_args[1]["json"]
+        assert payload["has_barcode"] is True
+
+
+class TestBarcodeScanned:
+    @pytest.mark.asyncio
+    async def test_posts_to_correct_path(self, api):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"status": "ok", "matched": True}
+        mock_resp.raise_for_status = MagicMock()
+        api._client.post = AsyncMock(return_value=mock_resp)
+
+        result = await api.barcode_scanned(device_id="dev-1", barcode="6975337031234")
+
+        assert result == {"status": "ok", "matched": True}
+        call_args = api._client.post.call_args
+        assert "/barcode/scanned" in call_args[0][0]
+        payload = call_args[1]["json"]
+        assert payload == {"device_id": "dev-1", "barcode": "6975337031234"}
+
+    @pytest.mark.asyncio
+    async def test_failed_scan_is_not_buffered(self, api):
+        # A scan that can't reach the backend must not replay later and pop a
+        # surprise modal — unlike tag/scale events, it uses buffer=False.
+        api._client.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
+
+        result = await api.barcode_scanned(device_id="dev-1", barcode="6975337031234")
+
+        assert result is None
+        assert len(api._buffer) == 0
+
 
 class TestReportUpdateStatus:
     @pytest.mark.asyncio

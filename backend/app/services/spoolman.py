@@ -1,6 +1,7 @@
 """Spoolman integration service for syncing AMS filament data."""
 
 import asyncio
+import json
 import logging
 import weakref
 from dataclasses import dataclass
@@ -877,6 +878,55 @@ class SpoolmanClient:
                         logger.debug("Found spool %s matching tag %s", spool["id"], tag_uid)
                         return spool
         return None
+
+    # The extra keys a scanned code can match against: the typed code fields
+    # (see spoolman_inventory.py's writes) plus the interim branch's single
+    # bambu_barcode key, read-tolerated so pre-migration spools still resolve.
+    _CODE_EXTRA_KEYS = (
+        "bambu_gtin_code",
+        "bambu_sku_code",
+        "bambu_asin_code",
+        "bambu_other_code",
+        "bambu_barcode",
+    )
+
+    async def find_spool_by_barcode(self, barcode: str, cached_spools: list[dict] | None = None) -> dict | None:
+        """Return the spool matching the given code, or None if not found.
+
+        Spoolman has no native code fields, so values are stored JSON-encoded
+        under the extra keys in ``_CODE_EXTRA_KEYS`` (same pattern as
+        extra.tag for RFID) — whichever typed column the code lives in, the
+        same string matches. Searches archived spools too, so a repeat scan
+        resolves even if the original spool was later archived — matching the
+        local-inventory lookup's behavior. When more than one spool carries
+        the same code, the most recently registered one wins.
+        """
+        spools = cached_spools if cached_spools is not None else await self.get_all_spools(allow_archived=True)
+        matches: list[dict] = []
+        for spool in spools:
+            extra = spool.get("extra") or {}
+            for key in self._CODE_EXTRA_KEYS:
+                raw = extra.get(key)
+                stored: object = None
+                if isinstance(raw, str) and raw:
+                    try:
+                        stored = json.loads(raw)
+                    except (json.JSONDecodeError, ValueError):
+                        stored = raw
+                    # Our writers always json.dumps a string, but a hand-edited
+                    # extra field holding a bare digit string (e.g. 6938936716785,
+                    # unquoted) json-decodes to an int — coerce it back so the
+                    # spool still matches instead of silently never resolving.
+                    if isinstance(stored, int) and not isinstance(stored, bool):
+                        stored = str(stored)
+                if isinstance(stored, str) and stored == barcode:
+                    matches.append(spool)
+                    break
+
+        if not matches:
+            return None
+        matches.sort(key=lambda s: s.get("registered") or "", reverse=True)
+        return matches[0]
 
     def _find_spool_by_location(self, location: str, cached_spools: list[dict] | None) -> dict | None:
         """Return the spool at the exact location string, or None; fallback when RFID is unavailable."""

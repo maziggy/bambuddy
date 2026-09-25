@@ -42,8 +42,16 @@ from backend.app.models.spool_filament_preset import SpoolmanFilamentPreset
 from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.models.user import User
-from backend.app.schemas.spool import SpoolFilamentPresetBase, SpoolKProfileBase
+from backend.app.schemas.spool import (
+    SpoolFilamentPresetBase,
+    SpoolKProfileBase,
+    normalize_asin_code,
+    normalize_gtin_code,
+    normalize_other_code,
+    normalize_sku_code,
+)
 from backend.app.schemas.spoolman import SpoolmanFilamentPatch, SpoolmanSlotAssignmentEnriched
+from backend.app.services.barcode_resolver import route_scanned_code
 from backend.app.services.location_service import (
     enrich_spool_dicts_with_location_id,
     maybe_sync_spoolman_locations,
@@ -168,6 +176,11 @@ async def _clear_stale_slot_fallback_tag_links(
         keep_spool_id=keep_spool_id,
         log_context=f"printer={printer_serial} ams={ams_id} tray={tray_id}",
     )
+
+
+async def _settings_map(db: AsyncSession) -> dict[str, str]:
+    result = await db.execute(select(Settings))
+    return {s.key: s.value for s in result.scalars().all()}
 
 
 async def _get_client(db: AsyncSession) -> SpoolmanClient:
@@ -324,6 +337,42 @@ class SpoolmanInventoryCreate(BaseModel):
     # in the spool's extra dict and read it back in _map_spoolman_spool.
     slicer_filament: str | None = Field(None, max_length=128)
     slicer_filament_name: str | None = Field(None, max_length=255)
+    # Typed code columns, mirroring the local-DB SpoolCreate (see
+    # schemas/spool.py). Spoolman has no native fields for these, so they're
+    # persisted under bambu_gtin_code / bambu_asin_code / bambu_sku_code /
+    # bambu_other_code / bambu_bought_as_refill in the spool's extra dict and
+    # read back in _map_spoolman_spool.
+    gtin_code: str | None = Field(None, max_length=64)
+    asin_code: str | None = Field(None, max_length=16)
+    sku_code: str | None = Field(None, max_length=64)
+    other_code: str | None = Field(None, max_length=64)
+    bought_as_refill: bool = False
+    # Write-only: the raw scanned code, routed into the typed extras exactly
+    # like the local-mode create (classify ladder + size-consistent cross-fill).
+    scanned_code: str | None = Field(None, max_length=64)
+    # Write-only companion: AIM symbology family from scan time (see
+    # SpoolCreate.scanned_symbology) so routing can't re-promote a demoted code.
+    scanned_symbology: str | None = Field(None, max_length=16)
+
+    @field_validator("gtin_code")
+    @classmethod
+    def validate_gtin_code(cls, v: str | None) -> str | None:
+        return normalize_gtin_code(v)
+
+    @field_validator("asin_code")
+    @classmethod
+    def validate_asin_code(cls, v: str | None) -> str | None:
+        return normalize_asin_code(v)
+
+    @field_validator("sku_code")
+    @classmethod
+    def validate_sku_code(cls, v: str | None) -> str | None:
+        return normalize_sku_code(v)
+
+    @field_validator("other_code")
+    @classmethod
+    def validate_other_code(cls, v: str | None) -> str | None:
+        return normalize_other_code(v)
 
     @field_validator("rgba")
     @classmethod
@@ -366,6 +415,34 @@ class SpoolmanInventoryUpdate(BaseModel):
     # schema). Pass an empty string to clear; null/omitted leaves unchanged.
     slicer_filament: str | None = Field(None, max_length=128)
     slicer_filament_name: str | None = Field(None, max_length=255)
+    # Typed code fields — persisted to the Spoolman extra dict (see Create
+    # schema). Pass an empty string to clear; null/omitted leaves unchanged
+    # (clearing keys off model_fields_set, not the value).
+    gtin_code: str | None = Field(None, max_length=64)
+    asin_code: str | None = Field(None, max_length=16)
+    sku_code: str | None = Field(None, max_length=64)
+    other_code: str | None = Field(None, max_length=64)
+    bought_as_refill: bool | None = None
+
+    @field_validator("gtin_code")
+    @classmethod
+    def validate_gtin_code(cls, v: str | None) -> str | None:
+        return normalize_gtin_code(v)
+
+    @field_validator("asin_code")
+    @classmethod
+    def validate_asin_code(cls, v: str | None) -> str | None:
+        return normalize_asin_code(v)
+
+    @field_validator("sku_code")
+    @classmethod
+    def validate_sku_code(cls, v: str | None) -> str | None:
+        return normalize_sku_code(v)
+
+    @field_validator("other_code")
+    @classmethod
+    def validate_other_code(cls, v: str | None) -> str | None:
+        return normalize_other_code(v)
 
     @field_validator("rgba")
     @classmethod
@@ -563,10 +640,41 @@ async def create_spool(
 
     spool, price_warnings = await _apply_price_if_set(client, spool, data.cost_per_kg)
 
-    # Persist slicer_filament AND color_name under the spool's extra dict
-    # (mirror update_spool). Spoolman has no `color_name` field on filament
-    # (#1357) so we own the round-trip ourselves.
-    if data.slicer_filament is not None or data.slicer_filament_name is not None or data.color_name is not None:
+    # Persist slicer_filament AND color_name AND the typed code fields under
+    # the spool's extra dict (mirror update_spool). Spoolman has no native
+    # field for any of them (#1357) so we own the round-trip ourselves.
+    typed_codes: dict[str, str | None] = {
+        "bambu_gtin_code": data.gtin_code,
+        "bambu_asin_code": data.asin_code,
+        "bambu_sku_code": data.sku_code,
+        "bambu_other_code": data.other_code,
+    }
+    if data.scanned_code:
+        # Route the raw scanned code exactly like the local-mode create:
+        # classify ladder + size-consistent cross-fill. Explicit fields win.
+        routed = await route_scanned_code(
+            data.scanned_code,
+            await _settings_map(db),
+            bought_as_refill=bool(data.bought_as_refill),
+            symbology=data.scanned_symbology,
+        )
+        key_map = {
+            "gtin_code": "bambu_gtin_code",
+            "asin_code": "bambu_asin_code",
+            "sku_code": "bambu_sku_code",
+            "other_code": "bambu_other_code",
+        }
+        for column, value in routed.items():
+            extra_key = key_map[column]
+            if value and not typed_codes.get(extra_key):
+                typed_codes[extra_key] = value
+    codes_set = any(v is not None for v in typed_codes.values()) or data.scanned_code is not None
+    if (
+        data.slicer_filament is not None
+        or data.slicer_filament_name is not None
+        or data.color_name is not None
+        or codes_set
+    ):
         # Ensure extra fields are registered before write.
         if data.slicer_filament is not None:
             await client.ensure_extra_field("bambu_slicer_filament")
@@ -574,6 +682,10 @@ async def create_spool(
             await client.ensure_extra_field("bambu_slicer_filament_name")
         if data.color_name is not None:
             await client.ensure_extra_field("bambu_color_name")
+        if codes_set:
+            for extra_key in typed_codes:
+                await client.ensure_extra_field(extra_key)
+            await client.ensure_extra_field("bambu_bought_as_refill")
         new_extra: dict = {}
         if data.slicer_filament is not None:
             new_extra["bambu_slicer_filament"] = json.dumps(data.slicer_filament)
@@ -581,6 +693,13 @@ async def create_spool(
             new_extra["bambu_slicer_filament_name"] = json.dumps(data.slicer_filament_name)
         if data.color_name is not None:
             new_extra["bambu_color_name"] = json.dumps(data.color_name)
+        if codes_set:
+            for extra_key, value in typed_codes.items():
+                if value is not None:
+                    new_extra[extra_key] = json.dumps(value)
+            # Purchase-form flag, not current physical state (see the local
+            # Spool.bought_as_refill column for the rationale).
+            new_extra["bambu_bought_as_refill"] = json.dumps(bool(data.bought_as_refill))
         if new_extra:
             try:
                 async with _translate_spoolman_errors():
@@ -588,7 +707,7 @@ async def create_spool(
             except HTTPException:
                 # Best-effort — the spool already exists, log and continue.
                 logger.warning(
-                    "Failed to persist slicer_filament/color_name for spool %s",
+                    "Failed to persist slicer_filament/color_name/codes for spool %s",
                     spool.get("id"),
                 )
 
@@ -867,7 +986,15 @@ async def update_spool(
     sf_set = "slicer_filament" in data.model_fields_set
     sfn_set = "slicer_filament_name" in data.model_fields_set
     cn_set = "color_name" in data.model_fields_set
-    if sf_set or sfn_set or cn_set:
+    code_fields = {
+        "gtin_code": "bambu_gtin_code",
+        "asin_code": "bambu_asin_code",
+        "sku_code": "bambu_sku_code",
+        "other_code": "bambu_other_code",
+    }
+    codes_set = {f for f in code_fields if f in data.model_fields_set}
+    refill_set = "bought_as_refill" in data.model_fields_set
+    if sf_set or sfn_set or cn_set or codes_set or refill_set:
         # Ensure extra fields are registered (Spoolman rejects PATCHes with
         # unknown keys with HTTP 400). Idempotent if startup already ran this.
         if sf_set:
@@ -876,6 +1003,10 @@ async def update_spool(
             await client.ensure_extra_field("bambu_slicer_filament_name")
         if cn_set:
             await client.ensure_extra_field("bambu_color_name")
+        for field in codes_set:
+            await client.ensure_extra_field(code_fields[field])
+        if refill_set:
+            await client.ensure_extra_field("bambu_bought_as_refill")
         new_extra: dict = {}
         if sf_set:
             new_extra["bambu_slicer_filament"] = json.dumps(data.slicer_filament or "")
@@ -883,6 +1014,10 @@ async def update_spool(
             new_extra["bambu_slicer_filament_name"] = json.dumps(data.slicer_filament_name or "")
         if cn_set:
             new_extra["bambu_color_name"] = json.dumps(data.color_name or "")
+        for field in codes_set:
+            new_extra[code_fields[field]] = json.dumps(getattr(data, field) or "")
+        if refill_set:
+            new_extra["bambu_bought_as_refill"] = json.dumps(bool(data.bought_as_refill))
         async with _translate_spoolman_errors():
             updated = await client.merge_spool_extra(spool_id, new_extra)
 

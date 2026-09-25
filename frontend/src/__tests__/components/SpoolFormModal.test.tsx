@@ -1432,3 +1432,137 @@ describe('SpoolFormModal header spool ID (#1385)', () => {
     expect(screen.queryByText(/^#\d+$/)).not.toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Barcode field (scan-to-add support)
+// ---------------------------------------------------------------------------
+describe('SpoolFormModal code fields', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('sends null code fields for a normal manual create', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        mode="create"
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
+    });
+
+    const addButtons = screen.getAllByRole('button', { name: /add spool/i });
+    const submitButton = addButtons.find(btn => btn.tagName === 'BUTTON' && btn.querySelector('svg.lucide-save'));
+    fireEvent.click(submitButton!);
+
+    await waitFor(() => {
+      expect(api.createSpool).toHaveBeenCalledTimes(1);
+    });
+
+    const [payload] = vi.mocked(api.createSpool).mock.calls[0] as [Record<string, unknown>];
+    expect(payload).toHaveProperty('gtin_code', null);
+    expect(payload).toHaveProperty('sku_code', null);
+    expect(payload).toHaveProperty('asin_code', null);
+  });
+
+  it('sends null code fields when editing a spool that has none', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={existingSpool}
+        mode="edit"
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    const saveButton = screen.getByRole('button', { name: /save/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.updateSpool).toHaveBeenCalledTimes(1);
+    });
+
+    const [, payload] = vi.mocked(api.updateSpool).mock.calls[0] as [number, Record<string, unknown>];
+    // The code fields are normal editable fields — always sent, null since
+    // existingSpool has none set.
+    expect(payload).toHaveProperty('gtin_code', null);
+    expect(payload).toHaveProperty('sku_code', null);
+  });
+
+  it('prefills the code fields from an existing spool when editing', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={{ ...existingSpool, gtin_code: '6938936716785', sku_code: '17600' }}
+        mode="edit"
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+    openColorAndCostTab();
+
+    expect(screen.getByDisplayValue('6938936716785')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('17600')).toBeInTheDocument();
+  });
+
+  it('shows the Refill badge when editing a refill spool, and not otherwise', async () => {
+    const { rerender } = render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={{ ...existingSpool, gtin_code: '6938936716785', bought_as_refill: true }}
+        mode="edit"
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+    openColorAndCostTab();
+    expect(screen.getByText('Refill pack')).toBeInTheDocument();
+
+    rerender(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={{ ...existingSpool, gtin_code: '6938936716785', bought_as_refill: false }}
+        mode="edit"
+        currencySymbol="$"
+      />
+    );
+    expect(screen.queryByText('Refill pack')).not.toBeInTheDocument();
+  });
+
+  it('clears the code fields when copying a spool — a copy is a new, unscanned physical item', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={{ ...existingSpool, gtin_code: '6938936716785', sku_code: '17600' }}
+        mode="copy"
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Copy Spool' })).toBeInTheDocument();
+    });
+
+    expect(screen.queryByDisplayValue('6938936716785')).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue('17600')).not.toBeInTheDocument();
+  });
+});

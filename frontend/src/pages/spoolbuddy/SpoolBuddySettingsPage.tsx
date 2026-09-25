@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { spoolbuddyApi, type SpoolBuddyDevice } from '../../api/client';
 import { DiagnosticModal } from '../../components/spoolbuddy/DiagnosticModal';
+import { ScannerTab } from '../../components/spoolbuddy/ScannerTab';
 import { FileText, Wand2, Zap } from 'lucide-react';
 import { parseUTCDate } from '../../utils/date';
 
@@ -1011,7 +1012,7 @@ function SystemTab({ device }: { device: SpoolBuddyDevice }) {
 
 // --- Main Settings Page ---
 
-type SettingsTab = 'device' | 'display' | 'scale' | 'updates' | 'system';
+type SettingsTab = 'device' | 'display' | 'scale' | 'scanner' | 'updates' | 'system';
 
 export function SpoolBuddySettingsPage() {
   const { sbState, setDisplayBrightness } = useOutletContext<SpoolBuddyOutletContext>();
@@ -1034,6 +1035,7 @@ export function SpoolBuddySettingsPage() {
     { id: 'device', label: t('spoolbuddy.settings.tabDevice', 'Device') },
     { id: 'display', label: t('spoolbuddy.settings.tabDisplay', 'Display') },
     { id: 'scale', label: t('spoolbuddy.settings.tabScale', 'Scale') },
+    { id: 'scanner', label: t('spoolbuddy.settings.tabScanner', 'Scanner') },
     { id: 'updates', label: t('spoolbuddy.settings.tabUpdates', 'Updates') },
     { id: 'system', label: t('spoolbuddy.settings.tabSystem', 'System') },
   ];
@@ -1086,6 +1088,7 @@ export function SpoolBuddySettingsPage() {
                 rawAdc={sbState.rawAdc}
               />
             )}
+            {activeTab === 'scanner' && <ScannerTab device={device} />}
             {activeTab === 'updates' && <UpdatesTab device={device} />}
             {activeTab === 'system' && <SystemTab device={device} />}
           </>

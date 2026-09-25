@@ -1191,6 +1191,7 @@ export function SettingsPage() {
       (baseline.bambu_studio_api_url ?? '') !== (localSettings.bambu_studio_api_url ?? '') ||
       baseline.prometheus_enabled !== localSettings.prometheus_enabled ||
       baseline.prometheus_token !== localSettings.prometheus_token ||
+      (baseline.barcode_lookup_enabled ?? true) !== (localSettings.barcode_lookup_enabled ?? true) ||
       (baseline.user_notifications_enabled ?? true) !== (localSettings.user_notifications_enabled ?? true) ||
       (baseline.default_bed_levelling ?? 'auto') !== (localSettings.default_bed_levelling ?? 'auto') ||
       (baseline.default_flow_cali ?? 'auto') !== (localSettings.default_flow_cali ?? 'auto') ||
@@ -1303,6 +1304,7 @@ export function SettingsPage() {
         bambu_studio_api_url: localSettings.bambu_studio_api_url,
         prometheus_enabled: localSettings.prometheus_enabled,
         prometheus_token: localSettings.prometheus_token,
+        barcode_lookup_enabled: localSettings.barcode_lookup_enabled,
         user_notifications_enabled: localSettings.user_notifications_enabled,
         default_bed_levelling: localSettings.default_bed_levelling,
         default_flow_cali: localSettings.default_flow_cali,
@@ -5979,6 +5981,31 @@ export function SettingsPage() {
                       type="checkbox"
                       checked={localSettings.prefer_lowest_filament}
                       onChange={(e) => updateSetting('prefer_lowest_filament', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                  </label>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card id="card-barcode-scan">
+              <CardHeader>
+                <h2 className="text-lg font-semibold text-white">{t('settings.barcodeScan.title')}</h2>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white">{t('settings.barcodeScan.enableLookup')}</p>
+                    <p className="text-sm text-bambu-gray">
+                      {t('settings.barcodeScan.enableLookupDesc')}
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={localSettings.barcode_lookup_enabled ?? true}
+                      onChange={(e) => updateSetting('barcode_lookup_enabled', e.target.checked)}
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>

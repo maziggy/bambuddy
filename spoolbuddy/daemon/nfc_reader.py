@@ -198,6 +198,18 @@ class NFCReader:
             uid_hex = uid_bytes.hex().upper()
             self._miss_count = 0
 
+            if self._state == NFCState.TAG_PRESENT and uid_hex != self._current_uid:
+                # A different tag replaced the current one before MISS_THRESHOLD
+                # consecutive misses could declare it removed (rolls swapped
+                # quickly). Report the old tag removed and drop to IDLE; the next
+                # poll re-detects the new tag as a fresh tag_detected, keeping
+                # the one-event-per-poll contract.
+                old_uid = self._current_uid
+                self._state = NFCState.IDLE
+                self._current_uid = None
+                self._current_sak = None
+                return "tag_removed", {"tag_uid": old_uid}
+
             if self._state == NFCState.IDLE:
                 self._state = NFCState.TAG_PRESENT
                 self._current_uid = uid_hex

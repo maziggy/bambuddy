@@ -1672,6 +1672,16 @@ export default {
     printActivity: 'Utskriftsaktivitet',
     filamentTypes: 'Filamenttyper',
     filamentTrends: 'Filamenttrender',
+    // Consumption/cost grouped by the internal material number (#2870).
+    materialNumbers: {
+      title: 'Efter materialnummer',
+      empty: 'Inga materialnummer tilldelade än. Lägg till dem på rullar i inventariet för att gruppera förbrukning och kostnader här.',
+      loadFailed: 'Kunde inte ladda materialnummerstatistiken.',
+      spools: 'Rullar',
+      remaining: 'Återstående',
+      consumed: 'Förbrukat',
+      cost: 'Kostnad',
+    },
     failureAnalysis: 'Felanalys',
     timeAccuracy: 'Tidsnoggrannhet',
     successful: 'Lyckade:',
@@ -4774,6 +4784,11 @@ errors: {
     storageLocationNone: 'Ingen lagringsplats inställd',
     lowStockThresholdOverride: 'Lågt lagertröskelvärde (denna rulle)',
     lowStockThresholdOverrideHelp: 'Lämna tomt för att använda det globala tröskelvärdet ({{global}}%).',
+    // Internal material / article number (#2870)
+    materialNumber: 'Materialnr',
+    materialNumberPlaceholder: 't.ex. 15',
+    materialNumberHelp: 'Internt inköpsnummer — delas av alla rullar av denna produkt. Nya rullar av samma produkt ärver det.',
+    materialNumberNone: 'Inget materialnummer',
     // RFID button rename (was "Delete Tag" — confusing because it sounds like a
     // taxonomy delete; this clears the RFID tag/UUID off the spool record)
     clearRfid: 'Rensa RFID-tagg',

@@ -97,6 +97,39 @@ async def test_create_spool_from_tray_weight_from_remain(db_session):
 
 
 @pytest.mark.asyncio
+async def test_create_spool_from_tray_inherits_material_number(db_session):
+    """A scanned refill of an already-numbered product arrives costed (#2870).
+
+    This is the one create path nobody watches: it fires from the AMS, not
+    from a request, and it hardcodes brand="Bambu Lab" in the lookup.
+    """
+    first = await create_spool_from_tray(db_session, SAMPLE_TRAY)
+    await db_session.commit()
+    assert first.material_number is None
+
+    first.material_number = "15"
+    await db_session.commit()
+
+    second = await create_spool_from_tray(db_session, SAMPLE_TRAY)
+    await db_session.commit()
+
+    assert second.material_number == "15"
+
+
+@pytest.mark.asyncio
+async def test_create_spool_from_tray_does_not_inherit_across_products(db_session):
+    """The number follows the product, not the brand (#2870)."""
+    donor = await create_spool_from_tray(db_session, SAMPLE_TRAY)
+    donor.material_number = "15"
+    await db_session.commit()
+
+    other = await create_spool_from_tray(db_session, {**SAMPLE_TRAY, "tray_type": "PETG"})
+    await db_session.commit()
+
+    assert other.material_number is None
+
+
+@pytest.mark.asyncio
 async def test_create_spool_from_tray_relationships_loaded(db_session):
     """Both k_profiles and assignments must be eagerly initialized.
 

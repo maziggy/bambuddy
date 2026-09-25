@@ -465,6 +465,8 @@ describe('useWebSocket hook', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inventory-spools'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['spoolman-inventory-spools'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inventory-locations'] });
+      // The per-material-number aggregate is derived from the same rows (#2870).
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['material-number-stats'] });
 
       vi.useRealTimers();
       vi.unstubAllGlobals();

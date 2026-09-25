@@ -932,6 +932,62 @@ class TestRestoreSpools:
         assert spools[0].created_at == datetime(2026, 1, 5, 12, 0, 0)
 
     @pytest.mark.asyncio
+    async def test_restores_the_owners_own_bookkeeping_fields(self, db_session):
+        """#2870 + #729: purchasing number, category, threshold, storage."""
+        tally = _CategoryTally()
+        entry = self._spool_entry(
+            material_number="15",
+            category="Production",
+            low_stock_threshold_pct=40,
+            storage_location="Shelf B",
+        )
+
+        await _service()._restore_spools(db_session, {"spools": [entry]}, None, False, tally, {})
+        await db_session.commit()
+
+        row = (await db_session.execute(select(Spool))).scalar_one()
+        assert row.material_number == "15"
+        assert row.category == "Production"
+        assert row.low_stock_threshold_pct == 40
+        assert row.storage_location == "Shelf B"
+
+    @pytest.mark.asyncio
+    async def test_a_backup_predating_those_fields_does_not_wipe_them(self, db_session):
+        """An old file has no such keys — overwrite must leave the live values."""
+        db_session.add(
+            Spool(
+                material="PLA",
+                tag_uid="AABBCCDD",
+                material_number="15",
+                category="Production",
+                low_stock_threshold_pct=40,
+                storage_location="Shelf B",
+            )
+        )
+        await db_session.commit()
+        tally = _CategoryTally()
+
+        await _service()._restore_spools(db_session, {"spools": [self._spool_entry()]}, None, True, tally, {})
+        await db_session.commit()
+
+        row = (await db_session.execute(select(Spool))).scalar_one()
+        assert row.material_number == "15"
+        assert row.category == "Production"
+        assert row.low_stock_threshold_pct == 40
+        assert row.storage_location == "Shelf B"
+
+    @pytest.mark.asyncio
+    async def test_location_id_is_never_restored(self, db_session):
+        """The locations table is not in the backup, so the ID is meaningless."""
+        tally = _CategoryTally()
+        entry = self._spool_entry(location_id=99)
+
+        await _service()._restore_spools(db_session, {"spools": [entry]}, None, False, tally, {})
+        await db_session.commit()
+
+        assert (await db_session.execute(select(Spool))).scalar_one().location_id is None
+
+    @pytest.mark.asyncio
     async def test_usage_history_spool_id_is_remapped(self, db_session):
         """Usage rows must point at the new local spool id, not the backup's."""
         tally = _CategoryTally()

@@ -30,6 +30,23 @@ vi.mock('../../api/client', () => ({
     }),
     getSpoolmanInventorySpools: vi.fn().mockResolvedValue([]),
     createSpoolmanInventorySpool: vi.fn().mockResolvedValue({ id: 1, material: 'PLA' }),
+    bulkCreateSpools: vi.fn().mockResolvedValue([{ id: 1, material: 'PLA' }]),
+    bulkCreateSpoolmanInventorySpools: vi.fn().mockResolvedValue({ created: [{ id: 1, material: 'PLA' }] }),
+    getSettings: vi.fn().mockResolvedValue({ low_stock_threshold: 20 }),
+    getSpoolCatalog: vi.fn().mockResolvedValue([]),
+    getColorCatalog: vi.fn().mockResolvedValue([]),
+    getBuiltinFilaments: vi.fn().mockResolvedValue([]),
+    getLocalPresets: vi.fn().mockResolvedValue({ filament: [] }),
+    getFilamentPresets: vi.fn().mockResolvedValue([]),
+    getCloudStatus: vi.fn().mockResolvedValue({ is_authenticated: false }),
+    orcaCloudStatus: vi.fn().mockResolvedValue({ is_authenticated: false }),
+    orcaCloudListProfiles: vi.fn().mockResolvedValue([]),
+    getPrinters: vi.fn().mockResolvedValue([]),
+    getPrinterStatus: vi.fn().mockResolvedValue({}),
+    saveSpoolKProfiles: vi.fn().mockResolvedValue({}),
+    saveSpoolmanKProfiles: vi.fn().mockResolvedValue({}),
+    linkTagToSpool: vi.fn().mockResolvedValue({}),
+    linkTagToSpoolmanSpool: vi.fn().mockResolvedValue({}),
   },
   spoolbuddyApi: {
     getDevices: vi.fn().mockResolvedValue([]),
@@ -38,10 +55,12 @@ vi.mock('../../api/client', () => ({
   },
 }));
 
-// Mock i18n
+// Mock i18n. The full view reaches keys that pass interpolation values
+// instead of a fallback string, so fall back to the key for those — returning
+// the options object would hand React an object to render.
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback: string) => fallback,
+    t: (key: string, fallback?: unknown) => (typeof fallback === 'string' ? fallback : key),
     i18n: { language: 'en', changeLanguage: vi.fn() },
   }),
 }));
@@ -279,5 +298,61 @@ describe('SpoolBuddyWriteTagPage', () => {
     });
 
     mockOutletContext.sbState.deviceOnline = false;
+  });
+
+  // #2870: the form rendered a Material No. input whose value never made it
+  // into the create payload, so the spool was saved with an inherited number
+  // or none at all — silently, with no hint that the typed one was dropped.
+  async function openFullNewSpoolForm() {
+    const rendered = renderPage();
+    fireEvent.click(screen.getByText('New Spool'));
+    await waitFor(() => {
+      expect(screen.getByText('Material')).toBeDefined();
+    });
+    // The simple view's material select is the cheapest way to satisfy the
+    // only field validateForm insists on.
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'PLA' } });
+    fireEvent.click(screen.getByText('Full'));
+    await waitFor(() => {
+      expect(screen.getByText('Quick Add')).toBeDefined();
+    });
+    return rendered;
+  }
+
+  it('sends the material number the operator typed (#2870)', async () => {
+    const { container } = await openFullNewSpoolForm();
+
+    // Quick Add so material is the only required field on this form.
+    const quickAddToggle = screen.getByText('Quick Add').parentElement?.querySelector('button');
+    expect(quickAddToggle).toBeTruthy();
+    fireEvent.click(quickAddToggle as HTMLElement);
+
+    const numberInput = container.querySelector('#spool-material-number') as HTMLInputElement;
+    expect(numberInput).toBeTruthy();
+    fireEvent.change(numberInput, { target: { value: '77' } });
+
+    fireEvent.click(screen.getByText('Create Spool'));
+
+    await waitFor(() => {
+      expect(vi.mocked(mockedApi.createSpool)).toHaveBeenCalled();
+    });
+    expect(vi.mocked(mockedApi.createSpool).mock.calls[0][0]).toEqual(
+      expect.objectContaining({ material_number: '77' }),
+    );
+  });
+
+  it('does not offer the material number in Spoolman mode (#2870)', async () => {
+    // There the number is Spoolman's filament-level article_number; an input
+    // the internal create path cannot store must not be shown.
+    vi.mocked(mockedApi.getSpoolmanSettings).mockResolvedValue({
+      spoolman_enabled: 'true',
+      spoolman_url: 'http://spoolman.test',
+      spoolman_sync_mode: '',
+      spoolman_disable_weight_sync: '',
+      spoolman_report_partial_usage: '',
+    });
+    const { container } = await openFullNewSpoolForm();
+
+    expect(container.querySelector('#spool-material-number')).toBeNull();
   });
 });

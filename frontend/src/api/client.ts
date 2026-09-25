@@ -3585,9 +3585,21 @@ export interface InventorySpool {
   // User-defined category + per-spool low-stock threshold override (#729).
   category: string | null;
   low_stock_threshold_pct: number | null;
+  // Internal material / article number (#2870) — the purchasing identifier
+  // shared by all spools of the same product.
+  material_number?: string | null;
   k_profiles?: SpoolKProfile[];
   storage_location?: string | null;
   location_id?: number | null;
+}
+
+/** Per-material-number inventory aggregate (#2870). */
+export interface MaterialNumberStats {
+  material_number: string;
+  spool_count: number;
+  remaining_g: number;
+  consumed_g: number;
+  cost: number;
 }
 
 export interface SpoolmanBulkCreateResult {
@@ -6626,6 +6638,15 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+  // Per-material-number inventory aggregate (#2870). The date range narrows
+  // the usage half only — stock is point-in-time.
+  getMaterialNumberStats: (options?: { dateFrom?: string; dateTo?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.dateFrom) params.set('date_from', options.dateFrom);
+    if (options?.dateTo) params.set('date_to', options.dateTo);
+    const qs = params.toString();
+    return request<MaterialNumberStats[]>(`/inventory/stats/material-numbers${qs ? `?${qs}` : ''}`);
+  },
   getSpoolUsageHistory: (spoolId: number, limit = 50) =>
     request<SpoolUsageRecord[]>(`/inventory/spools/${spoolId}/usage?limit=${limit}`),
   getAllUsageHistory: (limit = 100, printerId?: number) =>

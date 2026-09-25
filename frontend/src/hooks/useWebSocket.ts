@@ -397,6 +397,8 @@ export function useWebSocket() {
         debouncedInvalidate('inventory-spools');
         debouncedInvalidate('spoolman-inventory-spools');
         debouncedInvalidate(inventoryLocationsQueryKey[0]);
+        // The per-material-number aggregate is derived from the same rows (#2870).
+        debouncedInvalidate('material-number-stats');
         break;
 
       case 'spool_assignment_changed':

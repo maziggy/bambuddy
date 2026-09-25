@@ -19,7 +19,8 @@ BAMBU_RFID_TAG_LENGTH = 32
 
 # Spool.extra key holding the consumed-counter baseline. Defined here rather
 # than imported from the routes package so the client does not depend on it;
-# _spoolman_helpers declares the same name for the read side (#2906).
+# _spoolman_helpers declares the same name for the read side (#2906), and
+# test_spoolman_reset_baseline_2906.py asserts the two are equal.
 BAMBU_WEIGHT_USED_BASELINE_KEY = "bambu_weight_used_baseline"
 
 

@@ -320,9 +320,12 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     else:
         used_weight = real_used_weight
         weight_used_baseline = stored_baseline  # already clamped to >= 0 above
-    # Never let the displayed counter read negative: a baseline larger than
-    # what the spool has consumed means used_weight moved backwards in Spoolman
-    # after the reset, which is the user's edit and not ours to reinterpret.
+    # Never let the displayed counter read negative. used_weight can fall below
+    # the baseline after a reset without anyone touching it: the AMS sync
+    # writes remaining_weight from the tray percentage, and Spoolman derives
+    # used_weight from that. The counter then reads 0 until consumption climbs
+    # past the baseline again. Internal mode behaves the same way, and it is
+    # far better than before #2906, when the next sync undid the reset outright.
     weight_used_baseline = min(weight_used_baseline, used_weight)
 
     # Archived state – Spoolman uses a boolean ``archived`` field

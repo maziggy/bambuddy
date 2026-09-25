@@ -335,3 +335,17 @@ def test_a_missing_baseline_and_a_zero_one_are_not_the_same_thing():
         _extract_extra_float({BAMBU_WEIGHT_USED_BASELINE_KEY: json.dumps(263.0)}, BAMBU_WEIGHT_USED_BASELINE_KEY)
         == 263.0
     )
+
+
+def test_the_writer_and_the_reader_name_the_same_key():
+    """The key is declared twice on purpose (services/spoolman.py keeps the
+    client free of the routes package), so nothing but this assert holds the
+    two together. A divergence would not fail loudly anywhere else: the reset
+    returns 200, the value lands under the writer's key, and the reader never
+    finds it, so the counter simply never zeroes. And because Spoolman fixes an
+    extra field's type on its first write, a stray key cannot be tidied up
+    afterwards either."""
+    from backend.app.api.routes import _spoolman_helpers
+    from backend.app.services import spoolman
+
+    assert spoolman.BAMBU_WEIGHT_USED_BASELINE_KEY == _spoolman_helpers.BAMBU_WEIGHT_USED_BASELINE_KEY

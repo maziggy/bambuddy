@@ -574,6 +574,8 @@ GUARDED_BODY_URLS = {
     ("OIDCProviderCreate", "icon_url"),
     ("OIDCProviderUpdate", "issuer_url"),
     ("OIDCProviderUpdate", "icon_url"),
+    ("WLEDPresetListRequest", "base_url"),  # WLEDConfig LAN-service guard
+    ("WLEDPresetTestRequest", "base_url"),  # Same validated WLED LAN-service URL
     # Gitea/Forgejo derive their API base from this and request it with the
     # stored token, so it is a real fetch target — guarded in
     # github_backup._enforce_private_repo, which both POST and PATCH funnel through.

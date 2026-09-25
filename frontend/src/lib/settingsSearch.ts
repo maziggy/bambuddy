@@ -16,6 +16,7 @@ export type SettingsSearchTab =
   | 'queue'
   | 'filament'
   | 'network'
+  | 'wled'
   | 'apikeys'
   | 'virtual-printer'
   | 'spoolbuddy'

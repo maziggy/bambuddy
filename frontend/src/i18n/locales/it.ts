@@ -1851,6 +1851,14 @@ export default {
   },
 
   // Settings page
+  wled: {
+    connectionSection: 'Connessione', mappingSection: 'Mappatura stati', testConnection: 'Testa connessione', notTested: 'Non testata', connected: 'Connesso a WLED{{name}}{{version}}', notReachable: 'Impossibile connettersi a WLED.', testPreset: 'Test', presetTested: 'Preset attivato', presetTestFailed: 'Impossibile attivare il preset', mappingSummary: 'Stati configurati: {{configured}} · Stati disattivati: {{disabled}}',
+    title: 'WLED', description: 'Colori, effetti e preset vengono gestiti direttamente in WLED. Bambuddy associa solo gli stati della stampante ai preset esistenti.',
+    printer: 'Stampante', enabled: 'Attiva integrazione WLED', baseUrl: 'URL WLED', loadPresets: 'Carica preset', online: '{{count}} preset caricati', offlineHint: 'WLED non è raggiungibile. Gli ID salvati vengono mantenuti.', noPrinters: 'Nessuna stampante configurata.', noPreset: 'Disattivato — nessun preset', savedUnavailable: 'Preset {{id}} salvato — non disponibile', finishedTimeout: 'Timeout fine (secondi)', finishedTimeoutHint: 'Poi passa dal preset Fine al preset Inattiva. 0 disattiva il timeout.', saved: 'Impostazioni WLED salvate', saveError: 'Impossibile salvare le impostazioni WLED',
+    presetSegmentHint: 'Seleziona il segmento di destinazione quando crei il preset in WLED e attiva “Checked segments only”. Durante l’esecuzione, Bambuddy attiva solo il preset configurato.',
+    status: { idle: 'Inattiva', prepare: 'Preparazione', printing: 'Stampa', paused: 'In pausa', finished: 'Terminata', error: 'Fallita / Errore', queue_waiting: 'In attesa di liberare il piano', filament_problem: 'Problema filamento', hms_error: 'Errore HMS', offline: 'Offline' },
+  },
+
   settings: {
     sliceEngine: 'Motore di slicing',
     sliceEngineSidecar: 'Sidecar del server',
@@ -1870,6 +1878,7 @@ export default {
       queuePipelines: 'Pipeline',
       filament: 'Filamento',
       network: 'Rete',
+      wled: 'WLED',
       apiKeys: 'Chiavi API',
       virtualPrinter: 'Stampante virtuale',
       failureDetection: 'Rilevamento guasti',

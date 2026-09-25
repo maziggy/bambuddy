@@ -1851,6 +1851,14 @@ export default {
   },
 
   // Settings page
+  wled: {
+    connectionSection: 'Connexion', mappingSection: 'Association des états', testConnection: 'Tester la connexion', notTested: 'Non testé', connected: 'Connecté à WLED{{name}}{{version}}', notReachable: 'Impossible de se connecter à WLED.', testPreset: 'Tester', presetTested: 'Préréglage activé', presetTestFailed: 'Impossible d’activer le préréglage', mappingSummary: 'États configurés : {{configured}} · États désactivés : {{disabled}}',
+    title: 'WLED', description: 'Les couleurs, effets et préréglages sont gérés directement dans WLED. Bambuddy associe uniquement les états de l’imprimante aux préréglages existants.',
+    printer: 'Imprimante', enabled: 'Activer l’intégration WLED', baseUrl: 'URL WLED', loadPresets: 'Charger les préréglages', online: '{{count}} préréglages chargés', offlineHint: 'WLED est indisponible. Les ID enregistrés sont conservés.', noPrinters: 'Aucune imprimante configurée.', noPreset: 'Désactivé — aucun préréglage', savedUnavailable: 'Préréglage {{id}} enregistré — indisponible', finishedTimeout: 'Délai après fin (secondes)', finishedTimeoutHint: 'Passe ensuite du préréglage Terminé à Inactif. 0 désactive le délai.', saved: 'Paramètres WLED enregistrés', saveError: 'Impossible d’enregistrer les paramètres WLED',
+    presetSegmentHint: 'Sélectionnez le segment cible lors de la création du préréglage dans WLED et activez « Checked segments only ». À l’exécution, Bambuddy active uniquement le préréglage configuré.',
+    status: { idle: 'Inactive', prepare: 'Préparation', printing: 'Impression', paused: 'En pause', finished: 'Terminée', error: 'Échec / Erreur', queue_waiting: 'En attente du retrait du plateau', filament_problem: 'Problème de filament', hms_error: 'Erreur HMS', offline: 'Hors ligne' },
+  },
+
   settings: {
     sliceEngine: 'Moteur de découpage',
     sliceEngineSidecar: 'Sidecar serveur',
@@ -1870,6 +1878,7 @@ export default {
       queuePipelines: 'Pipelines',
       filament: 'Filament',
       network: 'Réseau',
+      wled: 'WLED',
       apiKeys: 'Clés API',
       virtualPrinter: 'Imprimante virtuelle',
       failureDetection: 'Détection d\'échec',

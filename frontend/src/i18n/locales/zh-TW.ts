@@ -1851,6 +1851,14 @@ export default {
   },
 
   // Settings page
+  wled: {
+    connectionSection: '連線', mappingSection: '狀態對應', testConnection: '測試連線', notTested: '尚未測試', connected: '已連線至 WLED{{name}}{{version}}', notReachable: '無法連線至 WLED。', testPreset: '測試', presetTested: '預設已啟用', presetTestFailed: '無法啟用預設', mappingSummary: '已設定狀態: {{configured}} · 已停用狀態: {{disabled}}',
+    title: 'WLED', description: '顏色、效果與預設均直接在 WLED 中管理。Bambuddy 僅將印表機狀態對應至現有預設。',
+    printer: '印表機', enabled: '啟用 WLED 整合', baseUrl: 'WLED 網址', loadPresets: '載入預設', online: '已載入 {{count}} 個預設', offlineHint: 'WLED 無法使用。已儲存的預設 ID 將保留。', noPrinters: '尚未設定印表機。', noPreset: '已停用 — 無預設', savedUnavailable: '已儲存預設 {{id}} — 目前無法使用', finishedTimeout: '完成逾時（秒）', finishedTimeoutHint: '時間到後由完成預設切換至閒置預設。設為 0 可停用。', saved: 'WLED 設定已儲存', saveError: '無法儲存 WLED 設定',
+    presetSegmentHint: '在 WLED 中建立預設時選擇目標區段，並啟用「Checked segments only」。執行期間，Bambuddy 只會啟用已設定的預設。',
+    status: { idle: '閒置', prepare: '準備中', printing: '列印中', paused: '已暫停', finished: '已完成', error: '失敗 / 錯誤', queue_waiting: '等待清空列印板', filament_problem: '耗材問題', hms_error: 'HMS 錯誤', offline: '離線' },
+  },
+
   settings: {
     sliceEngine: '切片引擎',
     sliceEngineSidecar: '伺服器 sidecar',
@@ -1870,6 +1878,7 @@ export default {
       queuePipelines: '管線',
       filament: '耗材',
       network: '網路',
+      wled: 'WLED',
       apiKeys: 'API 金鑰',
       virtualPrinter: '虛擬印表機',
       spoolbuddy: 'SpoolBuddy',

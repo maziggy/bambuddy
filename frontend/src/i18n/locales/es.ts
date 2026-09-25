@@ -1852,6 +1852,14 @@ export default {
   },
 
   // Settings page
+  wled: {
+    connectionSection: 'Conexión', mappingSection: 'Asignación de estados', testConnection: 'Probar conexión', notTested: 'Sin probar', connected: 'Conectado a WLED{{name}}{{version}}', notReachable: 'No se puede conectar con WLED.', testPreset: 'Probar', presetTested: 'Preajuste activado', presetTestFailed: 'No se pudo activar el preajuste', mappingSummary: 'Estados configurados: {{configured}} · Estados desactivados: {{disabled}}',
+    title: 'WLED', description: 'Los colores, efectos y preajustes se gestionan directamente en WLED. Bambuddy solo asigna estados de impresora a preajustes existentes.',
+    printer: 'Impresora', enabled: 'Activar integración WLED', baseUrl: 'URL de WLED', loadPresets: 'Cargar preajustes', online: '{{count}} preajustes cargados', offlineHint: 'WLED no está disponible. Se conservan los ID guardados.', noPrinters: 'No hay impresoras configuradas.', noPreset: 'Desactivado — sin preajuste', savedUnavailable: 'Preajuste {{id}} guardado — no disponible', finishedTimeout: 'Tiempo tras finalizar (segundos)', finishedTimeoutHint: 'Después cambia del preajuste Finalizado al de Inactivo. 0 lo desactiva.', saved: 'Ajustes de WLED guardados', saveError: 'No se pudieron guardar los ajustes de WLED',
+    presetSegmentHint: 'Selecciona el segmento de destino al crear el preajuste en WLED y activa “Checked segments only”. Durante el funcionamiento, Bambuddy solo activa el preajuste configurado.',
+    status: { idle: 'Inactiva', prepare: 'Preparando', printing: 'Imprimiendo', paused: 'Pausada', finished: 'Finalizada', error: 'Fallo / Error', queue_waiting: 'Esperando retirar la placa', filament_problem: 'Problema de filamento', hms_error: 'Error HMS', offline: 'Sin conexión' },
+  },
+
   settings: {
     sliceEngine: 'Motor de laminado',
     sliceEngineSidecar: 'Sidecar del servidor',
@@ -1871,6 +1879,7 @@ export default {
       queuePipelines: 'Pipelines',
       filament: 'Filamento',
       network: 'Red',
+      wled: 'WLED',
       apiKeys: 'Claves API',
       virtualPrinter: 'Impresora virtual',
       spoolbuddy: 'SpoolBuddy',

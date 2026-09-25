@@ -1,8 +1,78 @@
 from datetime import datetime
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.app.utils.printer_models import supports_nozzle_flow_type
+
+
+class WLEDPresets(BaseModel):
+    idle: int | None = Field(default=None, ge=1, le=250)
+    prepare: int | None = Field(default=None, ge=1, le=250)
+    printing: int | None = Field(default=None, ge=1, le=250)
+    paused: int | None = Field(default=None, ge=1, le=250)
+    finished: int | None = Field(default=None, ge=1, le=250)
+    error: int | None = Field(default=None, ge=1, le=250)
+    queue_waiting: int | None = Field(default=None, ge=1, le=250)
+    filament_problem: int | None = Field(default=None, ge=1, le=250)
+    hms_error: int | None = Field(default=None, ge=1, le=250)
+    offline: int | None = Field(default=None, ge=1, le=250)
+
+
+class WLEDConfig(BaseModel):
+    enabled: bool = False
+    base_url: str | None = Field(default=None, max_length=500)
+    presets: WLEDPresets = Field(default_factory=WLEDPresets)
+    finished_timeout_seconds: int | None = Field(default=None, ge=0, le=86400)
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().rstrip("/")
+        if not normalized:
+            return None
+
+        from backend.app.api.routes._url_safety import assert_safe_lan_service_url
+
+        assert_safe_lan_service_url(normalized, label="WLED URL")
+        parsed = urlparse(normalized)
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("WLED URL must not include credentials")
+        return normalized
+
+    @model_validator(mode="after")
+    def _require_base_url_when_enabled(self):
+        if self.enabled and not self.base_url:
+            raise ValueError("base_url is required when WLED is enabled")
+        return self
+
+
+class WLEDPreset(BaseModel):
+    id: int
+    name: str
+
+
+class WLEDPresetListRequest(BaseModel):
+    base_url: str = Field(max_length=500)
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, value: str) -> str:
+        normalized = WLEDConfig._validate_base_url(value)
+        if not normalized:
+            raise ValueError("base_url is required")
+        return normalized
+
+
+class WLEDPresetTestRequest(WLEDPresetListRequest):
+    preset_id: int = Field(ge=1, le=250)
+
+
+class WLEDConnectionInfo(BaseModel):
+    name: str | None = None
+    version: str | None = None
 
 
 class PrinterBase(BaseModel):
@@ -39,6 +109,7 @@ class PrinterBase(BaseModel):
     external_camera_enabled: bool = False
     external_camera_snapshot_url: str | None = None  # Optional single-frame override; #1177
     camera_rotation: int = 0  # 0, 90, 180, 270 degrees
+    wled_config: WLEDConfig | None = None
 
 
 class PrinterCreate(PrinterBase):
@@ -77,6 +148,7 @@ class PrinterUpdate(BaseModel):
     camera_rotation: int | None = None  # 0, 90, 180, 270 degrees
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
+    wled_config: WLEDConfig | None = None
 
 
 class PrinterResponse(PrinterBase):
@@ -123,6 +195,7 @@ class PrinterResponse(PrinterBase):
             "supports_nozzle_flow_type": supports_nozzle_flow_type(printer.model),
             "print_hours_offset": printer.print_hours_offset,
             "plate_detection_enabled": printer.plate_detection_enabled,
+            "wled_config": printer.wled_config,
             "created_at": printer.created_at,
             "updated_at": printer.updated_at,
         }

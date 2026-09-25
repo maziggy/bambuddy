@@ -1850,6 +1850,14 @@ export default {
   },
 
   // Settings page
+  wled: {
+    connectionSection: '接続', mappingSection: 'ステータスマッピング', testConnection: '接続をテスト', notTested: '未テスト', connected: 'WLED に接続済み{{name}}{{version}}', notReachable: 'WLED に接続できません。', testPreset: 'テスト', presetTested: 'プリセットを有効化しました', presetTestFailed: 'プリセットを有効化できませんでした', mappingSummary: '設定済みの状態: {{configured}}・無効な状態: {{disabled}}',
+    title: 'WLED', description: '色、エフェクト、プリセットはWLEDで直接管理します。Bambuddyはプリンターの状態を既存のプリセットに割り当てるだけです。',
+    printer: 'プリンター', enabled: 'WLED連携を有効化', baseUrl: 'WLEDのアドレス', loadPresets: 'プリセットを読み込む', online: '{{count}}件のプリセットを読み込みました', offlineHint: 'WLEDに接続できません。保存済みのプリセットIDは保持されます。', noPrinters: 'プリンターが設定されていません。', noPreset: '無効 — プリセットなし', savedUnavailable: '保存済みプリセット {{id}} — 現在利用不可', finishedTimeout: '完了タイムアウト（秒）', finishedTimeoutHint: 'この時間後に完了から待機プリセットへ切り替えます。0で無効です。', saved: 'WLED設定を保存しました', saveError: 'WLED設定を保存できませんでした',
+    presetSegmentHint: 'WLEDでプリセットを作成するときに対象セグメントを選択し、「Checked segments only」を有効にしてください。実行時、Bambuddyは設定されたプリセットのみを有効化します。',
+    status: { idle: '待機', prepare: '準備中', printing: '印刷中', paused: '一時停止', finished: '完了', error: '失敗 / エラー', queue_waiting: 'プレート取り外し待ち', filament_problem: 'フィラメント問題', hms_error: 'HMSエラー', offline: 'オフライン' },
+  },
+
   settings: {
     sliceEngine: 'スライスエンジン',
     sliceEngineSidecar: 'サーバーサイドカー',
@@ -1869,6 +1877,7 @@ export default {
       queuePipelines: 'パイプライン',
       filament: 'フィラメント',
       network: 'ネットワーク',
+      wled: 'WLED',
       apiKeys: 'APIキー',
       virtualPrinter: '仮想プリンター',
       spoolbuddy: 'SpoolBuddy',

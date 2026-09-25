@@ -301,6 +301,26 @@ class FileUploadResponse(BaseModel):
     metadata: dict | None = None
 
 
+# ============ Combine ============
+
+
+class CombineItem(BaseModel):
+    """One source model in a combine request."""
+
+    file_id: int
+    copies: int = Field(default=1, ge=1, le=100)
+
+
+class CombineFilesRequest(BaseModel):
+    """Combine STL library files into one multi-object 3MF on a single plate."""
+
+    items: list[CombineItem] = Field(..., min_length=1, max_length=100)
+    # Name of the new library file; ``.3mf`` is appended when missing.
+    filename: str = Field(..., min_length=1, max_length=255)
+    # Destination folder; None = library root.
+    folder_id: int | None = None
+
+
 # ============ Bulk Operations ============
 
 

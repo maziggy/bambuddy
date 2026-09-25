@@ -3862,6 +3862,22 @@ errors: {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Kombinera till 3MF',
+      tooltip: 'Kombinera de valda STL-filerna till en 3MF så att de kan slicas på en platta',
+      title: 'Kombinera till 3MF',
+      description: 'Skapar en 3MF med alla modeller nedan, redo att slicas på en platta. Slå på automatisk placering vid slicing för att fördela dem på bädden.',
+      nameLabel: 'Filnamn',
+      defaultName: '{{name}} + {{count}} till',
+      model: 'Modell',
+      copies: 'Kopior',
+      copiesFor: 'Kopior av {{filename}}',
+      total: 'Objekt på plattan: {{count}}',
+      tooMany: 'Högst {{max}} objekt per platta',
+      sliceNext: 'Öppna slicern när det är klart',
+      submit: 'Kombinera',
+      done: 'Skapade {{filename}} med {{count}} objekt',
+    },
     variants: {
       badge: '{{count}} versioner',
       groupAction: 'Gruppera som versioner',

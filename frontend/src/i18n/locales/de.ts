@@ -3832,6 +3832,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Zu 3MF kombinieren',
+      tooltip: 'Die ausgewählten STLs zu einer 3MF kombinieren, um sie auf einer Platte zu slicen',
+      title: 'Zu 3MF kombinieren',
+      description: 'Erstellt eine 3MF mit allen unten aufgeführten Modellen, bereit zum Slicen auf einer Platte. Aktiviere beim Slicen das automatische Anordnen, um sie auf dem Druckbett zu verteilen.',
+      nameLabel: 'Dateiname',
+      defaultName: '{{name}} + {{count}} weitere',
+      model: 'Modell',
+      copies: 'Kopien',
+      copiesFor: 'Kopien von {{filename}}',
+      total: 'Objekte auf der Platte: {{count}}',
+      tooMany: 'Höchstens {{max}} Objekte pro Platte',
+      sliceNext: 'Danach den Slicer öffnen',
+      submit: 'Kombinieren',
+      done: '{{filename}} mit {{count}} Objekten erstellt',
+    },
     variants: {
       badge: '{{count}} Versionen',
       groupAction: 'Als Versionen gruppieren',

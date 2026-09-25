@@ -3820,6 +3820,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: '合并为 3MF',
+      tooltip: '将所选 STL 合并为一个 3MF，以便在同一个盘上切片',
+      title: '合并为 3MF',
+      description: '创建一个包含下方所有模型的 3MF，可直接在同一个盘上切片。切片时开启自动排列即可将它们摆放在热床上。',
+      nameLabel: '文件名',
+      defaultName: '{{name}} 等 {{count}} 个',
+      model: '模型',
+      copies: '数量',
+      copiesFor: '{{filename}} 的数量',
+      total: '盘上对象：{{count}}',
+      tooMany: '每个盘最多 {{max}} 个对象',
+      sliceNext: '完成后打开切片器',
+      submit: '合并',
+      done: '已创建 {{filename}}，共 {{count}} 个对象',
+    },
     variants: {
       badge: '{{count}} 个版本',
       groupAction: '归为版本组',

@@ -3821,6 +3821,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Combiner en 3MF',
+      tooltip: 'Combiner les STL sélectionnés en un seul 3MF pour les trancher sur un seul plateau',
+      title: 'Combiner en 3MF',
+      description: 'Crée un 3MF contenant tous les modèles ci-dessous, prêt à être tranché sur un seul plateau. Activez l\'agencement automatique lors du tranchage pour les répartir sur le plateau.',
+      nameLabel: 'Nom du fichier',
+      defaultName: '{{name}} + {{count}} autres',
+      model: 'Modèle',
+      copies: 'Copies',
+      copiesFor: 'Copies de {{filename}}',
+      total: 'Objets sur le plateau : {{count}}',
+      tooMany: '{{max}} objets maximum par plateau',
+      sliceNext: 'Ouvrir le trancheur ensuite',
+      submit: 'Combiner',
+      done: '{{filename}} créé avec {{count}} objets',
+    },
     variants: {
       badge: 'Versions : {{count}}',
       groupAction: 'Grouper comme versions',

@@ -3862,6 +3862,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Combine to 3MF',
+      tooltip: 'Combine the selected STLs into one 3MF so they can be sliced on a single plate',
+      title: 'Combine to 3MF',
+      description: 'Builds one 3MF with every model below, ready to slice on a single plate. Turn on auto-arrange when slicing to lay them out on the bed.',
+      nameLabel: 'File name',
+      defaultName: '{{name}} + {{count}} more',
+      model: 'Model',
+      copies: 'Copies',
+      copiesFor: 'Copies of {{filename}}',
+      total: 'Objects on the plate: {{count}}',
+      tooMany: 'At most {{max}} objects per plate',
+      sliceNext: 'Open the slicer when done',
+      submit: 'Combine',
+      done: 'Created {{filename}} with {{count}} objects',
+    },
     variants: {
       badge: '{{count}} versions',
       groupAction: 'Group as versions',

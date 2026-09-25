@@ -3820,6 +3820,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Combinar em 3MF',
+      tooltip: 'Combina os STLs selecionados em um 3MF para fatiá-los em uma única placa',
+      title: 'Combinar em 3MF',
+      description: 'Cria um 3MF com todos os modelos abaixo, pronto para fatiar em uma única placa. Ative o arranjo automático ao fatiar para distribuí-los na mesa.',
+      nameLabel: 'Nome do arquivo',
+      defaultName: '{{name}} + {{count}} outros',
+      model: 'Modelo',
+      copies: 'Cópias',
+      copiesFor: 'Cópias de {{filename}}',
+      total: 'Objetos na placa: {{count}}',
+      tooMany: 'No máximo {{max}} objetos por placa',
+      sliceNext: 'Abrir o fatiador ao concluir',
+      submit: 'Combinar',
+      done: '{{filename}} criado com {{count}} objetos',
+    },
     variants: {
       badge: '{{count}} versões',
       groupAction: 'Agrupar como versões',

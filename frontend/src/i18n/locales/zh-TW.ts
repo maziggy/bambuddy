@@ -3820,6 +3820,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: '合併為 3MF',
+      tooltip: '將所選 STL 合併為一個 3MF，以便在同一個盤上切片',
+      title: '合併為 3MF',
+      description: '建立一個包含下方所有模型的 3MF，可直接在同一個盤上切片。切片時開啟自動排列即可將它們擺放在熱床上。',
+      nameLabel: '檔案名稱',
+      defaultName: '{{name}} 等 {{count}} 個',
+      model: '模型',
+      copies: '數量',
+      copiesFor: '{{filename}} 的數量',
+      total: '盤上物件：{{count}}',
+      tooMany: '每個盤最多 {{max}} 個物件',
+      sliceNext: '完成後開啟切片器',
+      submit: '合併',
+      done: '已建立 {{filename}}，共 {{count}} 個物件',
+    },
     variants: {
       badge: '{{count}} 個版本',
       groupAction: '歸為版本群組',

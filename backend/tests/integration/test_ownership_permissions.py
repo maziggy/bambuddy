@@ -1772,6 +1772,34 @@ class TestSliceOwnershipPermissions(TestOwnershipPermissionsSetup):
         assert resp.status_code == 404
         assert resp.json()["detail"] == "Source file missing on disk"
 
+    # --- combine to 3MF ----------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_combine_others_library_file(self, async_client, auth_setup, library_file_factory):
+        own = await library_file_factory(filename="own.stl", created_by_id=auth_setup["operator_user"]["id"])
+        other = await library_file_factory(filename="other.stl", created_by_id=auth_setup["operator2_user"]["id"])
+        resp = await async_client.post(
+            "/api/v1/library/files/combine",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json={"items": [{"file_id": own.id}, {"file_id": other.id}], "filename": "mix"},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "File not found"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_can_combine_any_library_file(self, async_client, auth_setup, library_file_factory):
+        other = await library_file_factory(filename="other.stl", created_by_id=auth_setup["operator2_user"]["id"])
+        resp = await async_client.post(
+            "/api/v1/library/files/combine",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+            json={"items": [{"file_id": other.id}], "filename": "mix"},
+        )
+        # Past the ownership gate — only the on-disk source is missing in tests.
+        assert resp.status_code == 404
+        assert resp.json()["detail"].startswith("Source file missing on disk")
+
     # --- archive slice -----------------------------------------------------
 
     @pytest.mark.asyncio

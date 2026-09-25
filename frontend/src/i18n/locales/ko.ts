@@ -3642,6 +3642,22 @@ export default {
     bundleStepBuild: '지원 번들 ZIP 빌드 중'
   },
   fileManager: {
+    combine: {
+      action: '3MF로 결합',
+      tooltip: '선택한 STL을 하나의 3MF로 결합해 한 플레이트에서 슬라이스합니다',
+      title: '3MF로 결합',
+      description: '아래 모든 모델을 담은 3MF 하나를 만들어 한 플레이트에서 슬라이스할 수 있게 합니다. 슬라이스할 때 자동 배치를 켜면 베드 위에 배치됩니다.',
+      nameLabel: '파일 이름',
+      defaultName: '{{name}} 외 {{count}}개',
+      model: '모델',
+      copies: '개수',
+      copiesFor: '{{filename}} 개수',
+      total: '플레이트의 객체: {{count}}',
+      tooMany: '플레이트당 최대 {{max}}개 객체',
+      sliceNext: '완료 후 슬라이서 열기',
+      submit: '결합',
+      done: '{{filename}} 생성됨 (객체 {{count}}개)',
+    },
     variants: {
       badge: '버전 {{count}}개',
       groupAction: '버전으로 그룹화',

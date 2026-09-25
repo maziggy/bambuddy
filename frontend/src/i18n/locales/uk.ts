@@ -3860,6 +3860,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Об\'єднати в 3MF',
+      tooltip: 'Об\'єднати вибрані STL в один 3MF, щоб нарізати їх на одній пластині',
+      title: 'Об\'єднати в 3MF',
+      description: 'Створює один 3MF з усіма моделями нижче, готовий до нарізки на одній пластині. Увімкніть авторозстановку під час нарізки, щоб розмістити їх на столі.',
+      nameLabel: 'Назва файлу',
+      defaultName: '{{name}} і ще {{count}}',
+      model: 'Модель',
+      copies: 'Копії',
+      copiesFor: 'Копії {{filename}}',
+      total: 'Об\'єктів на пластині: {{count}}',
+      tooMany: 'Не більше {{max}} об\'єктів на пластину',
+      sliceNext: 'Відкрити слайсер після об\'єднання',
+      submit: 'Об\'єднати',
+      done: 'Створено {{filename}}, об\'єктів: {{count}}',
+    },
     variants: {
       badge: 'Версій: {{count}}',
       groupAction: 'Згрупувати як версії',

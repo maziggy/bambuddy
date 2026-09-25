@@ -3834,6 +3834,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Combinar en 3MF',
+      tooltip: 'Combina los STL seleccionados en un 3MF para laminarlos en una sola placa',
+      title: 'Combinar en 3MF',
+      description: 'Crea un 3MF con todos los modelos de abajo, listo para laminar en una sola placa. Activa la organización automática al laminar para distribuirlos en la cama.',
+      nameLabel: 'Nombre del archivo',
+      defaultName: '{{name}} + {{count}} más',
+      model: 'Modelo',
+      copies: 'Copias',
+      copiesFor: 'Copias de {{filename}}',
+      total: 'Objetos en la placa: {{count}}',
+      tooMany: 'Como máximo {{max}} objetos por placa',
+      sliceNext: 'Abrir el laminador al terminar',
+      submit: 'Combinar',
+      done: 'Se creó {{filename}} con {{count}} objetos',
+    },
     variants: {
       badge: '{{count}} versiones',
       groupAction: 'Agrupar como versiones',

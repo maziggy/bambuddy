@@ -3862,6 +3862,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Combineren tot 3MF',
+      tooltip: 'Combineer de geselecteerde STL\'s tot één 3MF om ze op één plaat te slicen',
+      title: 'Combineren tot 3MF',
+      description: 'Maakt één 3MF met alle onderstaande modellen, klaar om op één plaat te slicen. Zet automatisch schikken aan bij het slicen om ze over het bed te verdelen.',
+      nameLabel: 'Bestandsnaam',
+      defaultName: '{{name}} + {{count}} andere',
+      model: 'Model',
+      copies: 'Kopieën',
+      copiesFor: 'Kopieën van {{filename}}',
+      total: 'Objecten op de plaat: {{count}}',
+      tooMany: 'Maximaal {{max}} objecten per plaat',
+      sliceNext: 'Slicer openen na afloop',
+      submit: 'Combineren',
+      done: '{{filename}} gemaakt met {{count}} objecten',
+    },
     variants: {
       badge: '{{count}} versies',
       groupAction: 'Als versies groeperen',

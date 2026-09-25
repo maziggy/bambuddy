@@ -43,6 +43,9 @@ export type SliceSource =
 interface SliceModalProps {
   source: SliceSource;
   onClose: () => void;
+  // Start with auto-arrange ticked. Set when the source was just built by
+  // "Combine to 3MF": its objects only become a sensible plate once arranged.
+  defaultAutoArrange?: boolean;
 }
 
 function toRefValue(ref: PresetRef | null): string {
@@ -207,7 +210,7 @@ function colourInputValue(raw: string | null | undefined): string {
     : SLICER_DEFAULT_COLOUR;
 }
 
-export function SliceModal({ source, onClose }: SliceModalProps) {
+export function SliceModal({ source, onClose, defaultAutoArrange = false }: SliceModalProps) {
   const { t } = useTranslation();
   const { trackJob } = useSliceJobTracker();
   const queryClient = useQueryClient();
@@ -268,7 +271,7 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   // enabled in embedded mode, unlike the process-level options around
   // them — these act on the geometry, whichever config drives the slice.
   const [autoOrient, setAutoOrient] = useState(false);
-  const [autoArrange, setAutoArrange] = useState(false);
+  const [autoArrange, setAutoArrange] = useState(defaultAutoArrange);
 
   // #2622: process settings the designer changed away from the stock preset,
   // carried onto the picked process profile so a cross-printer re-slice keeps

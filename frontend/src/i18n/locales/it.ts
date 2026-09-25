@@ -3820,6 +3820,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: 'Combina in 3MF',
+      tooltip: 'Combina gli STL selezionati in un unico 3MF per slicerli su un solo piatto',
+      title: 'Combina in 3MF',
+      description: 'Crea un 3MF con tutti i modelli qui sotto, pronto per lo slicing su un solo piatto. Attiva la disposizione automatica durante lo slicing per distribuirli sul piano.',
+      nameLabel: 'Nome file',
+      defaultName: '{{name}} + altri {{count}}',
+      model: 'Modello',
+      copies: 'Copie',
+      copiesFor: 'Copie di {{filename}}',
+      total: 'Oggetti sul piatto: {{count}}',
+      tooMany: 'Al massimo {{max}} oggetti per piatto',
+      sliceNext: 'Apri lo slicer al termine',
+      submit: 'Combina',
+      done: 'Creato {{filename}} con {{count}} oggetti',
+    },
     variants: {
       badge: '{{count}} versioni',
       groupAction: 'Raggruppa come versioni',

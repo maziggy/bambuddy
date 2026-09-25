@@ -7502,6 +7502,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(options),
     }),
+  combineLibraryFiles: (items: { file_id: number; copies: number }[], filename: string, folderId: number | null) =>
+    request<LibraryFileUploadResponse>('/library/files/combine', {
+      method: 'POST',
+      body: JSON.stringify({ items, filename, folder_id: folderId }),
+    }),
   addLibraryFilesToQueue: (fileIds: number[]) =>
     request<AddToQueueResponse>('/library/files/add-to-queue', {
       method: 'POST',

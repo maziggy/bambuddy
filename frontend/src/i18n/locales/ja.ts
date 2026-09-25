@@ -3832,6 +3832,22 @@ export default {
 
   // File manager
   fileManager: {
+    combine: {
+      action: '3MFに結合',
+      tooltip: '選択したSTLを1つの3MFに結合し、1枚のプレートでスライスできるようにします',
+      title: '3MFに結合',
+      description: '下のすべてのモデルを含む3MFを1つ作成し、1枚のプレートでスライスできるようにします。スライス時に自動配置をオンにすると、ベッド上に並べられます。',
+      nameLabel: 'ファイル名',
+      defaultName: '{{name}} ほか{{count}}件',
+      model: 'モデル',
+      copies: '個数',
+      copiesFor: '{{filename}} の個数',
+      total: 'プレート上のオブジェクト: {{count}}',
+      tooMany: '1プレートあたり最大{{max}}オブジェクト',
+      sliceNext: '完了後にスライサーを開く',
+      submit: '結合',
+      done: '{{filename}} を作成しました（{{count}}オブジェクト）',
+    },
     variants: {
       badge: '{{count}}個のバージョン',
       groupAction: 'バージョンとしてグループ化',

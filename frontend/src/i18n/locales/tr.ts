@@ -4924,7 +4924,6 @@ export default {
     spoolmanFilamentUnlinked: 'Filament katalog bağlantısı temizlendi',
     noSpoolmanFilaments: 'Spoolman kataloğunda filament bulunamadı',
     spoolmanFilamentColorSwatch: 'Filament rengi',
-    spoolWeightManagedBySpoolman: 'Boş makara ağırlığı Spoolman\'de filament türü başına yönetilir',
     spoolmanCatalogLoadFailed: 'Spoolman filament kataloğu yüklenemedi',
   },
 

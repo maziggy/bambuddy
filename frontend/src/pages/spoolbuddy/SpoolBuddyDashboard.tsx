@@ -413,11 +413,11 @@ export function SpoolBuddyDashboard() {
     try {
       const weight = liveWeight ?? displayedWeight;
       if (spoolmanMode) {
-        // The tare is a property of the filament type in Spoolman, not of the
-        // spool, and Bambuddy already reads it from there. Sending one from
-        // here — even the form's own default — stamps an explicit per-spool
-        // tare on every spool the kiosk creates and stops it inheriting
-        // (issue #2908).
+        // No tare is sent. The quick-create has no input for one, so the 250
+        // that used to go here was a placeholder, not a user's choice -- and
+        // since #2908 a sent value is written to the spool's own spool_weight,
+        // which would stamp every spool the kiosk creates and stop it
+        // inheriting the filament type's.
         const created = await api.createSpoolmanInventorySpool({
           material: 'PLA',
           subtype: null,

@@ -4936,7 +4936,6 @@ export default {
     spoolmanFilamentUnlinked: 'Lien avec le catalogue de filaments supprimé',
     noSpoolmanFilaments: 'Aucun filament trouvé dans le catalogue Spoolman',
     spoolmanFilamentColorSwatch: 'Couleur du filament',
-    spoolWeightManagedBySpoolman: 'Le poids de la bobine vide est géré par type de filament dans Spoolman',
     spoolmanCatalogLoadFailed: 'Impossible de charger le catalogue Spoolman',
   },
 

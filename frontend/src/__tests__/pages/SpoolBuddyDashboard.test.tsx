@@ -385,6 +385,33 @@ describe('SpoolBuddyDashboard', () => {
       });
     });
 
+    it('quick-adds a Spoolman spool without a tare, so it inherits the filament type\'s (#2908)', async () => {
+      // The quick-create has no tare input. The 250 it used to send was a
+      // placeholder, and since #2908 a sent value lands on the spool's own
+      // spool_weight -- every kiosk-created spool would stop inheriting.
+      const { api } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+
+      renderPage({ unknownTagUid: 'AABB1122334455FF' });
+
+      fireEvent.click(await waitFor(() => screen.getAllByText('Add to Inventory')[0]));
+      fireEvent.click(await waitFor(() => screen.getByText('Add Anyway')));
+
+      await waitFor(() => {
+        expect(api.createSpoolmanInventorySpool).toHaveBeenCalledTimes(1);
+      });
+      const payload = (api.createSpoolmanInventorySpool as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload).not.toHaveProperty('core_weight');
+      expect(payload).not.toHaveProperty('core_weight_catalog_id');
+      expect(api.createSpool).not.toHaveBeenCalled();
+    });
+
     it('switches to SpoolInfoCard and hides UnknownTagCard after successful Spoolman link', async () => {
       const { api } = await import('../../api/client');
       (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({

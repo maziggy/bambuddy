@@ -4712,7 +4712,6 @@ export default {
     spoolmanFilamentUnlinked: '필라멘트 카탈로그 연결 해제됨',
     noSpoolmanFilaments: 'Spoolman 카탈로그에서 필라멘트를 찾을 수 없음',
     spoolmanFilamentColorSwatch: '필라멘트 색상',
-    spoolWeightManagedBySpoolman: '빈 스풀 무게는 Spoolman에서 필라멘트 유형별로 관리됩니다',
     spoolmanCatalogLoadFailed: 'Spoolman 필라멘트 카탈로그 불러오기 실패',
     subtitle: '스풀 관리',
     storageLocationNone: '위치 미설정',

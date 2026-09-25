@@ -4992,7 +4992,6 @@ export default {
     spoolmanFilamentUnlinked: 'Koppeling met filamentcatalogus gewist',
     noSpoolmanFilaments: 'Geen filamenten gevonden in Spoolman-catalogus',
     spoolmanFilamentColorSwatch: 'Filamentkleur',
-    spoolWeightManagedBySpoolman: 'Leeg spoelgewicht wordt per filamenttype beheerd in Spoolman',
     spoolmanCatalogLoadFailed: 'Spoolman-filamentcatalogus laden mislukt',
   },
 

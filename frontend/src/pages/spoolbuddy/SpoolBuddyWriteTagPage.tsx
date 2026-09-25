@@ -469,9 +469,9 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
   const [viewMode, setViewMode] = useState<NewSpoolViewMode>('simple');
   const [activeSubTab, setActiveSubTab] = useState<NewSpoolSubTab>('filament');
   const [formData, setFormData] = useState<SpoolFormData>(defaultFormData);
-  // This page renders AdditionalSection without spoolmanMode, so the empty
-  // spool weight picker is on screen even in Spoolman mode. Track whether the
-  // user reached for it, so an untouched form does not send its default (issue #2908).
+  // The empty spool weight picker is on screen in Spoolman mode too. Track
+  // whether the user reached for it, so an untouched form does not send its
+  // default (issue #2908).
   const [coreWeightTouched, setCoreWeightTouched] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof SpoolFormData, string>>>({});
   const [quickAdd, setQuickAdd] = useState(false);
@@ -753,8 +753,12 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
       label_weight: formData.label_weight,
       // Only send a per-spool tare in Spoolman mode when the user actually set
       // one here; otherwise let it keep inheriting from the filament type.
-      ...(spoolmanMode && !coreWeightTouched
-        ? {}
+      // The catalogue id has no field on the Spoolman side, so a catalogue
+      // selection does not round-trip there; only the weight does.
+      ...(spoolmanMode
+        ? coreWeightTouched
+          ? { core_weight: formData.core_weight }
+          : {}
         : { core_weight: formData.core_weight, core_weight_catalog_id: formData.core_weight_catalog_id }),
       weight_used: formData.weight_used,
       slicer_filament: formData.slicer_filament || null,

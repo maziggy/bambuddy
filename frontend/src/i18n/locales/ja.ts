@@ -4947,7 +4947,6 @@ export default {
     spoolmanFilamentUnlinked: 'フィラメントカタログのリンクを解除しました',
     noSpoolmanFilaments: 'Spoolmanカタログにフィラメントが見つかりません',
     spoolmanFilamentColorSwatch: 'フィラメントの色',
-    spoolWeightManagedBySpoolman: '空スプールの重量はSpoolmanでフィラメントタイプごとに管理されています',
     spoolmanCatalogLoadFailed: 'Spoolmanのフィラメントカタログを読み込めませんでした',
   },
 

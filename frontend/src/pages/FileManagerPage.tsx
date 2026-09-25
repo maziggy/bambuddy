@@ -82,6 +82,15 @@ type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
 type SortDirection = 'asc' | 'desc';
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
+// Keep the filename useful when fixed columns consume the available width,
+// and give the header spacer and row checkbox one shared track so every later
+// column stays aligned. min-w-min lets each auth variant size itself to its
+// intrinsic grid width inside the overflow-x-auto wrapper (#3105).
+const fileListGridColumns = (authEnabled: boolean) => authEnabled
+  ? 'grid-cols-[24px_minmax(240px,1fr)_120px_100px_100px_100px_minmax(0,200px)_220px]'
+  : 'grid-cols-[24px_minmax(240px,1fr)_100px_100px_100px_minmax(0,200px)_220px]';
+const fileListGridMinWidth = 'min-w-min';
+
 // New Folder Modal
 interface NewFolderModalProps {
   parentId: number | null;
@@ -2473,7 +2482,10 @@ export function FileManagerPage() {
                     grids that compute `min-content` independently — the header's empty
                     trailing div resolved to 0px, leaving body columns shifted left of
                     their headers. Fixed width keeps header and body in lockstep. */}
-                <div className={`hidden sm:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_minmax(0,200px)_220px]' : 'grid-cols-[auto_1fr_100px_100px_100px_minmax(0,200px)_220px]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
+                <div
+                  data-testid="file-list-grid-header"
+                  className={`hidden sm:grid ${fileListGridColumns(authEnabled)} ${fileListGridMinWidth} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}
+                >
                   <div className="w-6" />
                   <div>{t('common.name')}</div>
                   {authEnabled && <div>{t('fileManager.uploadedBy', { defaultValue: 'Uploaded By' })}</div>}
@@ -2487,7 +2499,8 @@ export function FileManagerPage() {
                 {filteredAndSortedFiles.map((file) => (
                   <div
                     key={file.id}
-                    className={`grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_minmax(0,200px)_220px]' : 'grid-cols-[auto_1fr_100px_100px_100px_minmax(0,200px)_220px]'} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
+                    data-testid="file-list-grid-row"
+                    className={`grid ${fileListGridColumns(authEnabled)} ${fileListGridMinWidth} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
                       selectedFiles.includes(file.id) ? 'bg-bambu-green/10' : ''
                     }`}
                     onClick={() => handleFileSelect(file.id)}

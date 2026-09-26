@@ -343,6 +343,7 @@ export default {
     // Printer card
     readyToPrint: 'Redo att skriva ut',
     external: 'Extern',
+    ext: 'Extern',
     extL: 'Ext-V',
     extR: 'Ext-H',
     deleteArchives: 'Ta bort utskriftsarkiv',
@@ -6934,6 +6935,7 @@ errors: {
       assign: 'Tilldela',
       assigning: 'Tilldelar...',
       assignSuccess: 'Tilldelad!',
+      assignSuccessColorUpdateFailed: 'Rullen tilldelades, men färgen kunde inte sparas.',
       assignPendingInsert: 'Tilldelad. Facket kommer att konfigureras när du sätter in rullen.',
       assignError: 'Kunde inte tilldela rulle. Försök igen.',
       noPrinterSelected: 'Välj en skrivare...',

@@ -343,6 +343,7 @@ export default {
     // Printer card
     readyToPrint: 'Ready to print',
     external: 'External',
+    ext: 'Ext',
     extL: 'Ext-L',
     extR: 'Ext-R',
     deleteArchives: 'Delete print archives',
@@ -6934,6 +6935,7 @@ export default {
       assign: 'Assign',
       assigning: 'Assigning...',
       assignSuccess: 'Assigned!',
+      assignSuccessColorUpdateFailed: 'Spool assigned, but its colour could not be saved.',
       assignPendingInsert: 'Assigned. Slot will configure when you insert the spool.',
       assignError: 'Failed to assign spool. Please try again.',
       noPrinterSelected: 'Select a printer...',

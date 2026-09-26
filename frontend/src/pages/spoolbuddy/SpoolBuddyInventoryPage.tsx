@@ -274,6 +274,8 @@ export function SpoolBuddyInventoryPage() {
               onClose={() => setShowAssignAmsModal(false)}
               spool={liveSpool}
               printerId={selectedPrinterId}
+              variant="kiosk"
+              showColorEditor={false}
               spoolmanMode={spoolmanMode}
             />
           </>

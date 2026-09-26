@@ -343,6 +343,7 @@ export default {
     // Printer card
     readyToPrint: '準備列印',
     external: '外部',
+    ext: '外接',
     extL: '外接左',
     extR: '外接右',
     deleteArchives: '刪除列印歸檔',
@@ -6870,6 +6871,7 @@ export default {
       assign: '分配',
       assigning: '分配中...',
       assignSuccess: '已分配！',
+      assignSuccessColorUpdateFailed: '線材捲已指派，但無法儲存其顏色。',
       assignPendingInsert: '已分配。插入耗材後將設定槽位。',
       assignError: '分配耗材失敗。請重試。',
       noPrinterSelected: '選擇印表機...',

@@ -343,6 +343,7 @@ export default {
     // Printer card
     readyToPrint: 'Pronta a stampare',
     external: 'Esterna',
+    ext: 'Esterno',
     extL: 'Ext-L',
     extR: 'Ext-R',
     deleteArchives: 'Elimina archivi stampa',
@@ -6872,6 +6873,7 @@ export default {
       assign: 'Assegna',
       assigning: 'Assegnazione...',
       assignSuccess: 'Assegnato!',
+      assignSuccessColorUpdateFailed: 'Bobina assegnata, ma non è stato possibile salvarne il colore.',
       assignPendingInsert: 'Assegnato. Lo slot verrà configurato all\'inserimento della bobina.',
       assignError: 'Impossibile assegnare la bobina. Riprovare.',
       noPrinterSelected: 'Seleziona una stampante...',

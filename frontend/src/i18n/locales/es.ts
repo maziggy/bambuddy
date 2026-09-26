@@ -343,6 +343,7 @@ export default {
     // Printer card
     readyToPrint: 'Lista para imprimir',
     external: 'Externo',
+    ext: 'Externo',
     extL: 'Ext-L',
     extR: 'Ext-R',
     deleteArchives: 'Eliminar archivos de impresión',
@@ -6891,6 +6892,7 @@ export default {
       assign: 'Asignar',
       assigning: 'Asignando...',
       assignSuccess: '¡Asignada!',
+      assignSuccessColorUpdateFailed: 'Bobina asignada, pero no se pudo guardar su color.',
       assignPendingInsert: 'Asignada. La ranura se configurará cuando inserte la bobina.',
       assignError: 'Error al asignar la bobina. Inténtelo de nuevo.',
       noPrinterSelected: 'Seleccionar una impresora...',

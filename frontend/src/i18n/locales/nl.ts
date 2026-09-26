@@ -343,6 +343,7 @@ export default {
     // Printer card
     readyToPrint: 'Klaar om af te drukken',
     external: 'Extern',
+    ext: 'Extern',
     extL: 'Ext-L',
     extR: 'Ext-R',
     deleteArchives: 'Afdrukarchieven verwijderen',
@@ -6934,6 +6935,7 @@ export default {
       assign: 'Toewijzen',
       assigning: 'Toewijzen...',
       assignSuccess: 'Toegewezen!',
+      assignSuccessColorUpdateFailed: 'Spoel toegewezen, maar de kleur kon niet worden opgeslagen.',
       assignPendingInsert: 'Toegewezen. Sleuf wordt geconfigureerd zodra je de spoel plaatst.',
       assignError: 'Spoel toewijzen mislukt. Probeer het opnieuw.',
       noPrinterSelected: 'Selecteer een printer...',

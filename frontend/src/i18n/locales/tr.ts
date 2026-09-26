@@ -343,6 +343,7 @@ export default {
     // Yazıcı kartı
     readyToPrint: 'Baskıya hazır',
     external: 'Harici',
+    ext: 'Harici',
     extL: 'Ext-L',
     extR: 'Ext-R',
     deleteArchives: 'Baskı arşivlerini sil',
@@ -6827,6 +6828,7 @@ export default {
       assign: 'Ata',
       assigning: 'Atanıyor...',
       assignSuccess: 'Atandı!',
+      assignSuccessColorUpdateFailed: 'Makara atandı ancak rengi kaydedilemedi.',
       assignPendingInsert: 'Atandı. Makarayı yerleştirdiğinizde yuva yapılandırılacak.',
       assignError: 'Makara atanamadı. Lütfen tekrar deneyin.',
       noPrinterSelected: 'Bir yazıcı seçin...',

@@ -817,6 +817,9 @@ export interface Archive {
   cost: number | null;
   photos: string[] | null;
   failure_reason: string | null;
+  // Post-print outcome confirmation (#1898)
+  user_verdict: 'good' | 'reject' | null;
+  confirm_requested: boolean;
   quantity: number;
   energy_kwh: number | null;
   energy_cost: number | null;
@@ -911,6 +914,11 @@ export interface FailureAnalysis {
   total_prints: number;
   failed_prints: number;
   failure_rate: number;
+  // Quality dimension (#1898): completed prints the user rejected. Optional
+  // so a frontend build against an older backend degrades gracefully.
+  rejected_prints?: number;
+  yield_rate?: number;
+  rejects_by_reason?: Record<string, number>;
   failures_by_reason: Record<string, number>;
   failures_by_filament: Record<string, number>;
   failures_by_printer: Record<string, number>;
@@ -1438,6 +1446,10 @@ export interface AppSettings {
   default_layer_inspect: boolean;
   default_timelapse: boolean;
   default_nozzle_offset_cali: CalibrationMode;
+  // Default for the per-job "ask for outcome afterwards" toggle (#1898)
+  default_confirm_outcome: boolean;
+  // Count unanswered outcome prompts as "good" when the plate is released (#1898)
+  confirm_default_good_on_plate_clear: boolean;
   // Staggered batch start defaults
   stagger_group_size: number;
   stagger_interval_minutes: number;
@@ -2577,6 +2589,8 @@ export interface PrintQueueItem {
   timelapse: boolean;
   use_ams: boolean;
   nozzle_offset_cali: CalibrationMode;
+  // Ask for a post-print outcome verdict when this job completes (#1898)
+  confirm_outcome: boolean;
   preheat_override: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override: number | null;
   status: 'pending' | 'printing' | 'completed' | 'failed' | 'skipped' | 'cancelled';
@@ -2704,6 +2718,8 @@ export interface PrintQueueItemCreate {
   timelapse?: boolean;
   use_ams?: boolean;
   nozzle_offset_cali?: CalibrationMode;
+  // Ask for a post-print outcome verdict when this job completes (#1898)
+  confirm_outcome?: boolean;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -2792,6 +2808,8 @@ export interface PrintQueueItemUpdate {
   timelapse?: boolean;
   use_ams?: boolean;
   nozzle_offset_cali?: CalibrationMode;
+  // Ask for a post-print outcome verdict when this job completes (#1898)
+  confirm_outcome?: boolean;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -2928,6 +2946,8 @@ export interface Filament {
 
 // Notification Provider types
 export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook' | 'homeassistant' | 'bark';
+// How a Telegram provider collects the outcome verdict (#3046)
+export type TelegramVerdictMode = 'buttons' | 'reactions' | 'both';
 
 export interface NotificationProvider {
   id: number;
@@ -2959,6 +2979,9 @@ export interface NotificationProvider {
   // Build plate detection
   on_plate_not_empty: boolean;
   on_plate_clear_required: boolean;
+  // Post-print outcome confirmation (#1898)
+  on_print_confirm_request: boolean;
+  telegram_verdict_mode: TelegramVerdictMode;
   // Bed cooled
   on_bed_cooled: boolean;
   on_ha_sensor_alert: boolean;
@@ -3023,6 +3046,9 @@ export interface NotificationProviderCreate {
   // Build plate detection
   on_plate_not_empty?: boolean;
   on_plate_clear_required?: boolean;
+  // Post-print outcome confirmation (#1898)
+  on_print_confirm_request?: boolean;
+  telegram_verdict_mode?: TelegramVerdictMode;
   // Bed cooled
   on_bed_cooled?: boolean;
   on_ha_sensor_alert?: boolean;
@@ -3080,6 +3106,9 @@ export interface NotificationProviderUpdate {
   // Build plate detection
   on_plate_not_empty?: boolean;
   on_plate_clear_required?: boolean;
+  // Post-print outcome confirmation (#1898)
+  on_print_confirm_request?: boolean;
+  telegram_verdict_mode?: TelegramVerdictMode;
   // Bed cooled
   on_bed_cooled?: boolean;
   on_ha_sensor_alert?: boolean;
@@ -5083,6 +5112,8 @@ export const api = {
     quantity?: number;
     external_url?: string | null;
     filament_used_grams?: number | null;
+    // Post-print outcome verdict (#1898); null clears it
+    user_verdict?: 'good' | 'reject' | null;
   }) =>
     request<Archive>(`/archives/${id}`, {
       method: 'PATCH',

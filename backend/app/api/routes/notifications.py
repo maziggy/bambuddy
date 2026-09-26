@@ -23,10 +23,23 @@ from backend.app.schemas.notification import (
     NotificationTestResponse,
 )
 from backend.app.services.notification_service import notification_service
+from backend.app.services.telegram_reactions import telegram_reaction_poller
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
+
+
+async def _resync_reaction_poller():
+    """Start/stop Telegram reaction polls after a provider changed (#3046).
+
+    Never fails the request: the provider row is already saved, and the
+    poller catches up on the next restart at worst.
+    """
+    try:
+        await telegram_reaction_poller.sync()
+    except Exception as e:
+        logger.warning("Telegram reaction poller resync failed: %s", e)
 
 
 def _provider_to_dict(provider: NotificationProvider) -> dict:
@@ -66,6 +79,10 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         # Build plate detection
         "on_plate_not_empty": provider.on_plate_not_empty,
         "on_plate_clear_required": provider.on_plate_clear_required,
+        # Post-print outcome confirmation (#1898)
+        "on_print_confirm_request": provider.on_print_confirm_request,
+        # Rows from before #3046 hold NULL here; "buttons" is what they did.
+        "telegram_verdict_mode": provider.telegram_verdict_mode or "buttons",
         # Bed cooled
         "on_bed_cooled": provider.on_bed_cooled,
         # First layer complete
@@ -158,6 +175,9 @@ async def create_notification_provider(
         # Build plate detection
         on_plate_not_empty=provider_data.on_plate_not_empty,
         on_plate_clear_required=provider_data.on_plate_clear_required,
+        # Post-print outcome confirmation (#1898)
+        on_print_confirm_request=provider_data.on_print_confirm_request,
+        telegram_verdict_mode=provider_data.telegram_verdict_mode,
         # Bed cooled
         on_bed_cooled=provider_data.on_bed_cooled,
         # First layer complete
@@ -189,6 +209,7 @@ async def create_notification_provider(
     await db.refresh(provider)
 
     logger.info("Created notification provider: %s (%s)", provider.name, provider.provider_type)
+    await _resync_reaction_poller()
 
     return _provider_to_dict(provider)
 
@@ -442,6 +463,7 @@ async def update_notification_provider(
     await db.refresh(provider)
 
     logger.info("Updated notification provider: %s", provider.name)
+    await _resync_reaction_poller()
 
     return _provider_to_dict(provider)
 
@@ -464,6 +486,7 @@ async def delete_notification_provider(
     await db.commit()
 
     logger.info("Deleted notification provider: %s", name)
+    await _resync_reaction_poller()
 
     return {"message": f"Notification provider '{name}' deleted"}
 

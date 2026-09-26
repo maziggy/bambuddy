@@ -4970,6 +4970,57 @@ async def run_migrations(conn):
         conn, "ALTER TABLE notification_providers ADD COLUMN on_location_ha_sensor_alert BOOLEAN DEFAULT FALSE"
     )
 
+    # Migration: post-print outcome confirmation (#1898). VARCHAR and the
+    # BOOLEAN DEFAULT FALSE/TRUE spellings are identical on SQLite and
+    # Postgres (see the on_ha_sensor_alert note above for why not DEFAULT 0).
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN user_verdict VARCHAR(10)")
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN confirm_requested BOOLEAN DEFAULT FALSE")
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN confirm_token VARCHAR(64)")
+    await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN user_verdict VARCHAR(10)")
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN confirm_outcome BOOLEAN DEFAULT FALSE")
+    await _safe_execute(
+        conn, "ALTER TABLE notification_providers ADD COLUMN on_print_confirm_request BOOLEAN DEFAULT TRUE"
+    )
+
+    # Migration: Telegram verdict-by-reaction (#3046). Per-provider mode plus
+    # the table of delivered prompts the reaction poller matches updates
+    # against. create_all covers fresh installs; this covers upgrades.
+    await _safe_execute(
+        conn, "ALTER TABLE notification_providers ADD COLUMN telegram_verdict_mode VARCHAR(16) DEFAULT 'buttons'"
+    )
+    await _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS telegram_pending_verdicts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider_id INTEGER NOT NULL REFERENCES notification_providers(id) ON DELETE CASCADE,
+            chat_id VARCHAR(64) NOT NULL,
+            message_id INTEGER NOT NULL,
+            archive_id INTEGER NOT NULL REFERENCES print_archives(id) ON DELETE CASCADE,
+            has_caption BOOLEAN DEFAULT FALSE,
+            message_text TEXT,
+            created_at DATETIME
+        )
+        """
+        if is_sqlite()
+        else """
+        CREATE TABLE IF NOT EXISTS telegram_pending_verdicts (
+            id SERIAL PRIMARY KEY,
+            provider_id INTEGER NOT NULL REFERENCES notification_providers(id) ON DELETE CASCADE,
+            chat_id VARCHAR(64) NOT NULL,
+            message_id INTEGER NOT NULL,
+            archive_id INTEGER NOT NULL REFERENCES print_archives(id) ON DELETE CASCADE,
+            has_caption BOOLEAN DEFAULT FALSE,
+            message_text TEXT,
+            created_at TIMESTAMP
+        )
+        """,
+    )
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_telegram_pending_verdicts_created_at ON telegram_pending_verdicts (created_at)",
+    )
+
     # Migration: rename the ha_sensor_alert template (#2824). "Home Assistant
     # Sensor Alert" was fine as a name while it was the only such template;
     # next to the new "Storage Location Sensor Alert" it no longer says which

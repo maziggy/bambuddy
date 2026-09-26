@@ -147,6 +147,12 @@ class LibraryFile(Base):
     # User notes
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # User-provided link (Printables, Thingiverse, ...) and photos of the printed
+    # result (#3077) — the same trio archives carry. ``photos`` is a list of
+    # stored filenames under ``library_paths.library_photos_dir(id)``.
+    external_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    photos: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
     # Provenance — when the file was imported from an external source (e.g.
     # MakerWorld), ``source_type`` identifies the source and ``source_url`` is
     # the canonical public URL. Used for "already imported" detection and

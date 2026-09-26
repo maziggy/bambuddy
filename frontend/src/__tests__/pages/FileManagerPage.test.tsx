@@ -557,7 +557,7 @@ describe('FileManagerPage', () => {
       render(<FileManagerPage />);
 
       await waitFor(() => {
-        const button = screen.getByTitle('Generate thumbnails for STL files missing them');
+        const button = screen.getByTitle('Generate thumbnails for STL and PDF files missing them');
         expect(button).toBeInTheDocument();
       });
     });

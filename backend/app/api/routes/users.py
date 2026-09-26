@@ -50,6 +50,7 @@ from backend.app.services.email_service import (
     send_email,
 )
 from backend.app.services.finance_defaults import ensure_user_finance_defaults
+from backend.app.utils.library_paths import remove_library_photos_dir
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -444,7 +445,14 @@ async def delete_user(
             detail="Cannot delete your own account",
         )
 
+    # Photo directories of the library rows about to go, resolved while the
+    # rows still exist to say which ids they belong to. Removed after the
+    # commit, so a failed delete leaves the pictures alone (#3077).
+    doomed_library_file_ids: list[int] = []
     if delete_items:
+        doomed_library_file_ids = list(
+            (await db.execute(select(LibraryFile.id).where(LibraryFile.created_by_id == user_id))).scalars().all()
+        )
         # Delete all items created by this user
         await db.execute(delete(PrintArchive).where(PrintArchive.created_by_id == user_id))
         await db.execute(delete(PrintQueueItem).where(PrintQueueItem.created_by_id == user_id))
@@ -493,6 +501,9 @@ async def delete_user(
 
     await db.delete(user)
     await db.commit()
+
+    for file_id in doomed_library_file_ids:
+        remove_library_photos_dir(file_id)
 
 
 @router.post("/me/change-password", response_model=dict)

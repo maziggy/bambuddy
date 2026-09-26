@@ -4955,6 +4955,12 @@ async def run_migrations(conn):
         conn, "ALTER TABLE notification_providers ADD COLUMN on_ams_drying_suspended BOOLEAN DEFAULT TRUE"
     )
 
+    # Migration: user link + photos on library files (#3077), the same trio
+    # print_archives carries (external_url / photos). Photos are stored under
+    # <archive_dir>/library/photos/<file_id>/ — the column only holds the names.
+    await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN external_url VARCHAR(500)")
+    await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN photos JSON")
+
     # Migration: storage location sensor alerts (#2824), own column rather than
     # reusing on_ha_sensor_alert. That column can be scoped to one printer
     # (printer_id), and a location alert has no printer to scope by — sharing

@@ -222,6 +222,7 @@ const FR_COGNATES = [
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   'Simple', 'Expert',  // slicer settings visibility tiers — identical words in French
   'Support',  // same word in French
+  'Photos', '{{count}} photo', '{{count}} photos',  // file details photo strip (#3077) — same word in French
 ];
 
 // Italian cognates.

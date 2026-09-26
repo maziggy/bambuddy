@@ -5,6 +5,7 @@ Tests:
 - Bulk create endpoint creates the requested number of spools
 - Bulk create with quantity=1 (single spool)
 - Bulk create returns spools with k_profiles loaded
+- Bulk create copies the inherited supplier links onto every copy
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -12,6 +13,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import ValidationError
 
+from backend.app.models.spool import Spool
+from backend.app.models.supplier import SpoolSupplier
 from backend.app.schemas.spool import SpoolBulkCreate, SpoolCreate
 
 # ── Schema Validation ──────────────────────────────────────────────────────
@@ -96,6 +99,40 @@ def _make_mock_spool(spool_id):
     return spool
 
 
+def _result(rows):
+    """A stand-in for the Result of a query that selected ``rows``."""
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = list(rows)
+    result.scalars.return_value.first.return_value = rows[0] if rows else None
+    result.first.return_value = (rows[0],) if rows else None
+    return result
+
+
+def _make_db(refetched, *, donor_id=None, donor_links=()):
+    """Session double that answers each of the bulk path's queries separately.
+
+    The endpoint runs three different selects — the supplier donor lookup,
+    that donor's link rows (#2988), and the re-fetch of the created spools —
+    so one canned result for all of them hands Spool rows to the supplier
+    code and invents a donor that was never seeded. Route on what each select
+    asks for instead. Returns the session and the list ``db.add`` lands in.
+    """
+    added = []
+    db = AsyncMock()
+    db.add = added.append
+
+    async def execute(statement, *_args, **_kwargs):
+        described = statement.column_descriptions[0]
+        if described["entity"] is SpoolSupplier:
+            return _result(donor_links)
+        if described["name"] == "id":
+            return _result([] if donor_id is None else [donor_id])
+        return _result(refetched)
+
+    db.execute = AsyncMock(side_effect=execute)
+    return db, added
+
+
 class TestBulkCreateEndpoint:
     """Tests for the bulk_create_spools endpoint logic."""
 
@@ -109,15 +146,7 @@ class TestBulkCreateEndpoint:
             quantity=3,
         )
 
-        db = AsyncMock()
-        added_objects = []
-        db.add = lambda obj: added_objects.append(obj)
-
-        # Mock the re-fetch query
-        mock_result = MagicMock()
-        mock_spools = [_make_mock_spool(i + 1) for i in range(3)]
-        mock_result.scalars.return_value.all.return_value = mock_spools
-        db.execute = AsyncMock(return_value=mock_result)
+        db, added_objects = _make_db([_make_mock_spool(i + 1) for i in range(3)])
 
         result = await bulk_create_spools(data=data, db=db, _=None)
 
@@ -135,14 +164,7 @@ class TestBulkCreateEndpoint:
             quantity=1,
         )
 
-        db = AsyncMock()
-        added_objects = []
-        db.add = lambda obj: added_objects.append(obj)
-
-        mock_result = MagicMock()
-        mock_spools = [_make_mock_spool(1)]
-        mock_result.scalars.return_value.all.return_value = mock_spools
-        db.execute = AsyncMock(return_value=mock_result)
+        db, added_objects = _make_db([_make_mock_spool(1)])
 
         result = await bulk_create_spools(data=data, db=db, _=None)
 
@@ -165,19 +187,15 @@ class TestBulkCreateEndpoint:
             quantity=3,
         )
 
-        db = AsyncMock()
-        added_objects = []
-        db.add = lambda obj: added_objects.append(obj)
-
-        mock_result = MagicMock()
-        mock_spools = [_make_mock_spool(i + 1) for i in range(3)]
-        mock_result.scalars.return_value.all.return_value = mock_spools
-        db.execute = AsyncMock(return_value=mock_result)
+        db, added_objects = _make_db([_make_mock_spool(i + 1) for i in range(3)])
 
         await bulk_create_spools(data=data, db=db, _=None)
 
-        # All added Spool objects should have the same material/brand/color
-        for spool_obj in added_objects:
+        # The spools, not everything the session was handed: the bulk path also
+        # adds the inherited supplier links, and a SpoolSupplier has no material.
+        spools = [obj for obj in added_objects if isinstance(obj, Spool)]
+        assert len(spools) == 3
+        for spool_obj in spools:
             assert spool_obj.material == "ABS"
             assert spool_obj.brand == "Bambu Lab"
             assert spool_obj.color_name == "Black"

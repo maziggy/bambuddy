@@ -47,6 +47,11 @@ vi.mock('../../api/client', () => ({
     getSpoolmanSlotAssignments: vi.fn().mockResolvedValue([]),
     unassignSpool: vi.fn().mockResolvedValue({}),
     unassignSpoolmanSlot: vi.fn().mockResolvedValue({}),
+    // Suppliers (#2988) — the SupplierSection inside the form loads these.
+    getSuppliers: vi.fn().mockResolvedValue([]),
+    createSupplier: vi.fn().mockResolvedValue({ id: 1, name: 'S' }),
+    setSpoolSuppliers: vi.fn().mockResolvedValue([]),
+    setSpoolmanSpoolSuppliers: vi.fn().mockResolvedValue([]),
   },
   ApiError: class ApiError extends Error {
     status: number;
@@ -1366,6 +1371,105 @@ describe('SpoolFormModal copy mode', () => {
 
     const [payload] = vi.mocked(api.createSpool).mock.calls[0];
     expect((payload as Record<string, unknown>).weight_used).toBe(0);
+  });
+
+  // The dialog seeds the supplier chips from the spool being copied and shows
+  // them, so the copy has to actually get them (#2988). The backend's
+  // inheritance is not a stand-in: it keys on the (material, subtype, brand,
+  // color_name) tuple, so it resolves to the NEWEST spool of that product
+  // rather than the one on screen, and in Spoolman mode it never runs at all.
+  const spoolWithSuppliers: InventorySpool = {
+    ...existingSpool,
+    suppliers: [
+      {
+        id: 11,
+        supplier_id: 4,
+        supplier_name: 'Extrudr',
+        supplier_article_number: 'EX-42',
+        quoted_price_per_kg: 21.5,
+        is_purchase_source: true,
+      },
+    ],
+  };
+
+  async function clickCopy() {
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Copy Spool' })).toBeInTheDocument();
+    });
+    const saveBtn = screen.getAllByRole('button', { name: /copy spool/i })
+      .find(btn => btn.tagName === 'BUTTON' && btn.querySelector('svg'));
+    expect(saveBtn).toBeTruthy();
+    fireEvent.click(saveBtn!);
+  }
+
+  it('saves the supplier assignments it displays when copying', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolWithSuppliers}
+        mode="copy"
+        currencySymbol="$"
+      />
+    );
+
+    await clickCopy();
+
+    await waitFor(() => {
+      expect(api.setSpoolSuppliers).toHaveBeenCalledTimes(1);
+    });
+    // createSpool is mocked to answer id 99.
+    expect(vi.mocked(api.setSpoolSuppliers).mock.calls[0]).toEqual([
+      99,
+      [
+        {
+          supplier_id: 4,
+          supplier_article_number: 'EX-42',
+          quoted_price_per_kg: 21.5,
+          // Where a copy was bought is unknown — only the source list carries over.
+          is_purchase_source: false,
+        },
+      ],
+    ]);
+  });
+
+  it('saves them through the Spoolman endpoint in Spoolman mode', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolWithSuppliers}
+        mode="copy"
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await clickCopy();
+
+    await waitFor(() => {
+      expect(api.setSpoolmanSpoolSuppliers).toHaveBeenCalledTimes(1);
+    });
+    // createSpoolmanInventorySpool is mocked to answer id 88.
+    expect(vi.mocked(api.setSpoolmanSpoolSuppliers).mock.calls[0][0]).toBe(88);
+    expect(api.setSpoolSuppliers).not.toHaveBeenCalled();
+  });
+
+  it('leaves an untouched create to the backend inheritance', async () => {
+    render(<SpoolFormModal isOpen={true} onClose={vi.fn()} currencySymbol="$" />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
+    });
+    const addButtons = screen.getAllByRole('button', { name: /add spool/i });
+    const submitButton = addButtons.find(btn => btn.tagName === 'BUTTON' && btn.querySelector('svg.lucide-save'));
+    fireEvent.click(submitButton!);
+
+    await waitFor(() => {
+      expect(api.createSpool).toHaveBeenCalledTimes(1);
+    });
+    // An empty replace-all here would wipe what the backend just inherited.
+    expect(api.setSpoolSuppliers).not.toHaveBeenCalled();
   });
 });
 

@@ -35,6 +35,10 @@ vi.mock('../../api/client', () => ({
     createSlicerPipeline: vi.fn(),
     getSlicerPrinterModels: vi.fn(),
     getSlicerPresetValues: vi.fn(),
+    getPrinters: vi.fn().mockResolvedValue([]),
+    getPrinterStatus: vi.fn().mockResolvedValue(null),
+    getSlotPresets: vi.fn().mockResolvedValue({}),
+    getInventoryRemain: vi.fn().mockResolvedValue({ inventory_remain_g: {}, slot_materials: [] }),
   },
 }));
 
@@ -51,6 +55,10 @@ const mockApi = api as unknown as {
   createSlicerPipeline: ReturnType<typeof vi.fn>;
   getSlicerPrinterModels: ReturnType<typeof vi.fn>;
   getSlicerPresetValues: ReturnType<typeof vi.fn>;
+  getPrinters: ReturnType<typeof vi.fn>;
+  getPrinterStatus: ReturnType<typeof vi.fn>;
+  getSlotPresets: ReturnType<typeof vi.fn>;
+  getInventoryRemain: ReturnType<typeof vi.fn>;
 };
 
 function makeUnified(overrides: Partial<UnifiedPresetsResponse> = {}): UnifiedPresetsResponse {
@@ -2683,5 +2691,192 @@ describe('SliceModal — material and printer filtering (#2982)', () => {
     );
     const labels = Array.from(processSelect!.options).map((o) => o.textContent);
     expect(labels.some((l) => l?.includes('0.06mm Fine @BBL A1 0.2 nozzle'))).toBe(false);
+  });
+});
+
+describe('SliceModal connected-printer filters', () => {
+  const PRINTER_MODELS: Record<string, string> = {
+    'Bambu Lab X1 Carbon': 'X1C',
+    'Bambu Lab H2D': 'H2D',
+    'Bambu Lab H2D Pro': 'H2D Pro',
+    'Bambu Lab H2C': 'H2C',
+    'Bambu Lab P1S': 'P1S',
+  };
+
+  beforeEach(() => {
+    localStorage.removeItem('bambuddy.slice.onlyConnectedPrinters');
+    localStorage.removeItem('bambuddy.slice.onlyLoadedSpools');
+    mockApi.getSlicerPresets.mockResolvedValue(makeUnified({
+      standard: {
+        printer: [
+          { id: 'x1c', name: 'Bambu Lab X1 Carbon 0.4 nozzle', source: 'standard' },
+          { id: 'p1s', name: 'Bambu Lab P1S 0.4 nozzle', source: 'standard' },
+          { id: 'h2d06', name: 'Bambu Lab H2D 0.6 nozzle', source: 'standard' },
+          { id: 'h2d04', name: 'Bambu Lab H2D 0.4 nozzle', source: 'standard' },
+          { id: 'h2c02', name: 'Bambu Lab H2C 0.2 nozzle', source: 'standard' },
+          { id: 'shop', name: 'Shop default', source: 'standard' },
+        ],
+        process: [{ id: 'proc', name: '0.20mm Standard @BBL H2D', source: 'standard' }],
+        filament: [
+          { id: 'sun-matte', name: 'SUNLU PLA MATTE GEN2 @BBL H2D', source: 'standard', filament_type: 'PLA' },
+          { id: 'sun-matte-06', name: 'SUNLU PLA MATTE GEN2 @Bambu Lab H2D 0.6 nozzle', source: 'standard', filament_type: 'PLA' },
+          { id: 'pla-basic', name: 'Bambu PLA Basic @BBL H2D', source: 'standard', filament_type: 'PLA' },
+          { id: 'pla-matte', name: 'Bambu PLA Matte @BBL H2D', source: 'standard', filament_type: 'PLA' },
+          { id: 'sun-petg', name: 'SUNLU PETG BASIC GEN2 @BBL H2D', source: 'standard', filament_type: 'PETG' },
+        ],
+      },
+    }));
+    mockApi.getSlicerPresetValues.mockResolvedValue({ resolved: true, values: {}, reason: 'ok' });
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100,
+      filename: 'Cube.stl',
+      plates: [],
+      is_multi_plate: false,
+    });
+    mockApi.getLibraryFileFilamentRequirements.mockResolvedValue({
+      file_id: 100,
+      filename: 'Cube.stl',
+      plate_id: 1,
+      filaments: [],
+    });
+    mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [] });
+    mockApi.getSlicerPrinterModels.mockResolvedValue(PRINTER_MODELS);
+    mockApi.getPrinters.mockResolvedValue([
+      { id: 1, name: 'Workshop H2D', model: 'H2D' },
+      { id: 2, name: 'Workshop H2C', model: 'H2C' },
+      { id: 3, name: 'Shelf X1C', model: 'X1C' },
+    ]);
+    mockApi.getPrinterStatus.mockImplementation(async (id: number) => {
+      if (id === 1) {
+        return {
+          id: 1,
+          connected: true,
+          nozzles: [{ nozzle_diameter: '0.4' }],
+          nozzle_rack: [],
+          ams: [{ id: 0, tray: [{ tray_type: 'PLA', tray_sub_brands: 'PLA', tray_color: 'FF8800FF' }] }],
+          vt_tray: [],
+        };
+      }
+      if (id === 2) {
+        return {
+          id: 2,
+          connected: true,
+          nozzles: [{ nozzle_diameter: '0.6' }],
+          nozzle_rack: [{ nozzle_diameter: '0.2' }],
+          ams: [{ id: 0, tray: [{ tray_type: 'PETG', tray_sub_brands: 'PETG', tray_color: '112233FF' }] }],
+          vt_tray: [],
+        };
+      }
+      return {
+        id: 3,
+        connected: false,
+        nozzles: [{ nozzle_diameter: '0.4' }],
+        ams: [{ id: 0, tray: [{ tray_type: 'ABS', tray_sub_brands: 'ABS' }] }],
+        vt_tray: [],
+      };
+    });
+    mockApi.getSlotPresets.mockImplementation(async (id: number) => {
+      if (id === 1) {
+        return { 0: { ams_id: 0, tray_id: 0, preset_id: 'SUN20010', preset_name: 'SUNLU PLA MATTE GEN2 @Bambu Lab H2C 0.4 nozzle' } };
+      }
+      if (id === 2) {
+        return { 0: { ams_id: 0, tray_id: 0, preset_id: 'SUN22001', preset_name: 'SUNLU PETG BASIC GEN2 @Bambu Lab H2C 0.4 nozzle' } };
+      }
+      return {};
+    });
+    mockApi.getInventoryRemain.mockResolvedValue({
+      inventory_remain_g: {},
+      slot_materials: [
+        { global_tray_id: 0, spool: { brand: 'Sunlu', material: 'PLA', subtype: 'Matte', color_name: 'Orange', rgba: 'FF8800FF' } },
+      ],
+    });
+  });
+
+  afterEach(() => {
+    localStorage.removeItem('bambuddy.slice.onlyConnectedPrinters');
+    localStorage.removeItem('bambuddy.slice.onlyLoadedSpools');
+  });
+
+  function optionTexts(select: HTMLSelectElement): string[] {
+    return [...select.options].filter((option) => option.value).map((option) => option.text);
+  }
+
+  it('limits printer profiles to connected models while keeping every nozzle size', async () => {
+    const user = userEvent.setup();
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(presetSelects()[0].value).toBe('standard:x1c');
+    });
+
+    await user.click(screen.getByRole('checkbox', { name: /only connected printer models/i }));
+
+    await waitFor(() => {
+      expect(presetSelects()[0].value).toBe('standard:h2d04');
+    });
+    const printers = optionTexts(presetSelects()[0]);
+    expect(printers).toEqual(expect.arrayContaining([
+      'Bambu Lab H2D 0.4 nozzle',
+      'Bambu Lab H2D 0.6 nozzle',
+      'Bambu Lab H2C 0.2 nozzle',
+      'Shop default',
+    ]));
+    expect(printers).not.toContain('Bambu Lab X1 Carbon 0.4 nozzle');
+    expect(printers).not.toContain('Bambu Lab P1S 0.4 nozzle');
+    expect(screen.getByText(/Online: H2C, H2D/)).toBeDefined();
+  });
+
+  it('limits filament profiles to spools loaded in connected printers', async () => {
+    const user = userEvent.setup();
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose: vi.fn(),
+    });
+
+    const connected = await screen.findByRole('checkbox', { name: /only connected printer models/i });
+    await user.click(connected);
+    await waitFor(() => {
+      expect(presetSelects()[0].value).toBe('standard:h2d04');
+    });
+
+    await user.click(screen.getByRole('checkbox', { name: /only loaded spools/i }));
+
+    await waitFor(() => {
+      const filaments = optionTexts(presetSelects()[3]);
+      expect(filaments).toContain('SUNLU PLA MATTE GEN2 @BBL H2D');
+      expect(filaments).toContain('SUNLU PETG BASIC GEN2 @BBL H2D');
+      expect(filaments).not.toContain('SUNLU PLA MATTE GEN2 @Bambu Lab H2D 0.6 nozzle');
+      expect(filaments).not.toContain('Bambu PLA Basic @BBL H2D');
+      expect(filaments).not.toContain('Bambu PLA Matte @BBL H2D');
+    });
+  });
+
+  it('sets the filament profile and colour from the AMS slot that was picked', async () => {
+    const user = userEvent.setup();
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(presetSelects()[0].value).toBe('standard:x1c');
+    });
+    await user.selectOptions(presetSelects()[0], 'standard:h2d04');
+
+    await user.click(await screen.findByRole('button', { name: /pick a loaded spool/i }));
+    const dialog = await screen.findByRole('dialog', { name: /loaded spools/i });
+    expect(within(dialog).getByText('Workshop H2D')).toBeDefined();
+    expect(within(dialog).getAllByText('Empty').length).toBeGreaterThan(0);
+    expect(within(dialog).queryByText('Shelf X1C')).toBeNull();
+
+    await user.click(within(dialog).getByRole('button', { name: /PLA/i }));
+
+    await waitFor(() => {
+      expect(presetSelects()[3].value).toBe('standard:sun-matte');
+    });
+    expect((screen.getByLabelText('Filament colour') as HTMLInputElement).value.toUpperCase()).toBe('#FF8800');
   });
 });

@@ -3540,6 +3540,7 @@ export default {
       tokenWarning: 'Diese URL enthält ein Token — wer sie lesen kann, sieht den Stream und den Dateinamen. Token widerrufen, um den Zugriff zu beenden.',
       fields: 'Anzuzeigende Felder',
       fieldPrinter: 'Druckername',
+      fieldModel: 'Druckermodell',
       fieldFilename: 'Dateiname',
       fieldStatus: 'Status',
       fieldProgress: 'Fortschrittsbalken',

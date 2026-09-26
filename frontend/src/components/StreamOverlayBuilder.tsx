@@ -20,6 +20,7 @@ type OverlaySize = 'small' | 'medium' | 'large';
 // checkbox list reads as a preview of the result.
 const FIELDS = [
   { key: 'printer', labelKey: 'streamOverlay.builder.fieldPrinter', fallback: 'Printer name' },
+  { key: 'model', labelKey: 'streamOverlay.builder.fieldModel', fallback: 'Printer model' },
   { key: 'filename', labelKey: 'streamOverlay.builder.fieldFilename', fallback: 'File name' },
   { key: 'status', labelKey: 'streamOverlay.builder.fieldStatus', fallback: 'Status' },
   { key: 'progress', labelKey: 'streamOverlay.builder.fieldProgress', fallback: 'Progress bar' },

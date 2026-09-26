@@ -6,6 +6,7 @@ import {
   api,
   type PresetRef,
   type PresetSource,
+  type InventorySpool,
   type SliceJobProgress,
   type SliceRequest,
   type SlicerCloudStatus,
@@ -35,6 +36,11 @@ import {
   statesDifferentMaterial,
   type Slot,
 } from '../utils/slicePresetPicker';
+import {
+  buildFilamentInventoryIdentity,
+  filamentPresetIsInInventory,
+  type FilamentInventoryIdentity,
+} from '../utils/filamentInventoryMatch';
 
 export type SliceSource =
   | { kind: 'libraryFile'; id: number; filename: string }
@@ -408,6 +414,34 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     enabled: !platesQuery.isLoading && !needsPlatePicker,
   });
 
+  // Active inventory narrows operational filament selectors to profiles the
+  // user actually owns (#3157). Settings decide which inventory backend is
+  // authoritative. Every failure mode intentionally degrades to the existing
+  // complete preset list: settings/inventory permissions, an unreachable
+  // Spoolman instance, an empty inventory, or spools with no linked profile.
+  const inventorySettingsQuery = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.getSettings(),
+    staleTime: 60_000,
+    enabled: !platesQuery.isLoading && !needsPlatePicker,
+  });
+  const useSpoolmanInventory = inventorySettingsQuery.data?.spoolman_enabled === true;
+  const filamentInventoryQuery = useQuery<InventorySpool[]>({
+    queryKey: ['slice-filament-inventory', useSpoolmanInventory ? 'spoolman' : 'internal'],
+    queryFn: () => useSpoolmanInventory
+      ? api.getSpoolmanInventorySpools(false)
+      : api.getSpools(false),
+    enabled: inventorySettingsQuery.isSuccess && !platesQuery.isLoading && !needsPlatePicker,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const filamentInventory = useMemo<FilamentInventoryIdentity | null>(
+    () => filamentInventoryQuery.isSuccess
+      ? buildFilamentInventoryIdentity(filamentInventoryQuery.data)
+      : null,
+    [filamentInventoryQuery.data, filamentInventoryQuery.isSuccess],
+  );
+
   // Manual refresh — bypasses the backend's 5-minute cloud cache and 1-hour
   // bundled cache for one call so users who deleted a preset in Bambu
   // Studio / Bambu Handy see the change immediately (#1581). The cache write
@@ -575,9 +609,10 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   // Filament pre-pick: re-runs when the active filament-slot count changes
   // (plate selection, single-plate metadata arriving) or the selected printer
   // changes. Each slot scores every available filament preset against the
-  // slot's required (type, colour); an existing pick (incl. a user override)
-  // is kept as long as it's still compatible with the selected printer, while
-  // null slots and printer-incompatible picks are re-picked (#1325).
+  // slot's required (type, colour); an existing pick is kept while it remains
+  // valid for the printer and active inventory. Explicit dropdown and pipeline
+  // choices are always preserved, including deliberate overrides (#1325,
+  // #3157).
   useEffect(() => {
     const data = presetsQuery.data;
     if (!data) return;
@@ -598,6 +633,9 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
           if (
             p
             && !wrongMaterial
+            && (explicitFilamentSlots.current.has(i)
+              || !filamentInventory
+              || filamentPresetIsInInventory(p, filamentInventory))
             && presetCompatibility(p, 'filament', selectedPrinterName, compatIndex) !== 'mismatch'
           ) {
             return cur;
@@ -608,10 +646,11 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
           { type: slot.type, color: slot.color },
           selectedPrinterName,
           compatIndex,
+          filamentInventory,
         );
       });
     });
-  }, [presetsQuery.data, filamentSlots, selectedPrinterName, compatIndex]);
+  }, [presetsQuery.data, filamentSlots, selectedPrinterName, compatIndex, filamentInventory]);
 
   // Drop colour overrides when the slot count changes. A plate switch renumbers
   // the slots, so keeping index-keyed overrides would paint slot 2's colour
@@ -1090,6 +1129,7 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                       }
                       selectedPrinterName={selectedPrinterName}
                       compatIndex={compatIndex}
+                      filamentInventory={filamentInventory}
                     />
                   );
                 })
@@ -1377,6 +1417,9 @@ interface PresetDropdownProps {
   // held back behind a "Show all" link instead of padding out the main list.
   selectedPrinterName?: string | null;
   compatIndex?: PrinterCompatibilityIndex;
+  // Only filament selectors receive this. null/undefined means inventory is
+  // empty or unavailable and deliberately preserves the complete list.
+  filamentInventory?: FilamentInventoryIdentity | null;
 }
 
 function PresetDropdown({
@@ -1391,6 +1434,7 @@ function PresetDropdown({
   swatchColorLabel,
   selectedPrinterName,
   compatIndex,
+  filamentInventory,
 }: PresetDropdownProps) {
   const { t } = useTranslation();
   // Reveals the other-printer group for this slot only. Per-dropdown rather
@@ -1408,9 +1452,10 @@ function PresetDropdown({
   // Tier sections (imported → cloud → standard), plus — for a process /
   // filament slot with a selected printer — a trailing group of presets that
   // resolve to a different printer (#1325). Compatibility-unknown presets
-  // stay in their tier, so a custom / untagged preset is never hidden, and
-  // empty sections collapse out.
-  const { sections, otherEntries } = useMemo(() => {
+  // stay in their tier rather than being mislabeled as another printer; the
+  // optional inventory layer may still hold them behind Show all. Empty
+  // sections collapse out.
+  const { sections, hiddenInventoryEntries, otherEntries, tierLabels } = useMemo(() => {
     const tiers: { key: keyof UnifiedPresetsResponse; label: string; fallback: string }[] = [
       { key: 'local', label: 'slice.tier.local', fallback: 'Imported' },
       { key: 'orca_cloud', label: 'slice.tier.orcaCloud', fallback: 'Orca Cloud' },
@@ -1418,7 +1463,9 @@ function PresetDropdown({
       { key: 'standard', label: 'slice.tier.standard', fallback: 'Standard' },
     ];
     const filterByPrinter = slot !== 'printer';
+    const tierLabels = tiers.map(({ label, fallback }) => t(label, fallback));
     const compatSections: { tierLabel: string; entries: UnifiedPreset[] }[] = [];
+    const inventoryHiddenSections: { tierLabel: string; entries: UnifiedPreset[] }[] = [];
     // The same sections with the printer filter never applied, kept for the
     // all-filtered-out case below.
     const unfiltered: { tierLabel: string; entries: UnifiedPreset[] }[] = [];
@@ -1447,7 +1494,20 @@ function PresetDropdown({
         }
       }
       if (compatible.length > 0) {
-        compatSections.push({ tierLabel: t(lk, fallback), entries: compatible });
+        const tierLabel = t(lk, fallback);
+        if (slot === 'filament' && filamentInventory) {
+          const represented: UnifiedPreset[] = [];
+          const notRepresented: UnifiedPreset[] = [];
+          for (const preset of compatible) {
+            (filamentPresetIsInInventory(preset, filamentInventory)
+              ? represented
+              : notRepresented).push(preset);
+          }
+          if (represented.length > 0) compatSections.push({ tierLabel, entries: represented });
+          if (notRepresented.length > 0) inventoryHiddenSections.push({ tierLabel, entries: notRepresented });
+        } else {
+          compatSections.push({ tierLabel, entries: compatible });
+        }
       }
     }
     // Filtering that leaves nothing at all is a statement about our matching,
@@ -1458,27 +1518,61 @@ function PresetDropdown({
     // and a "Show all" link, with no hint that the list was the problem. So
     // when the filter empties the list, show it unfiltered — a visible preset
     // for the wrong printer is recoverable, an empty dropdown is not.
-    if (compatSections.length === 0 && other.length > 0) {
-      return { sections: unfiltered, otherEntries: [] };
+    if (compatSections.length === 0 && inventoryHiddenSections.length === 0 && other.length > 0) {
+      return { sections: unfiltered, hiddenInventoryEntries: [], otherEntries: [], tierLabels };
     }
-    return { sections: compatSections, otherEntries: other };
-  }, [data, slot, t, selectedPrinterName, compatIndex]);
+    // Inventory identities may be stale or refer only to profiles no longer
+    // present in this registry. An empty filtered result is not useful, so it
+    // gets the same graceful full-list fallback as failed/empty inventory.
+    if (compatSections.length === 0 && inventoryHiddenSections.length > 0) {
+      return {
+        sections: inventoryHiddenSections,
+        hiddenInventoryEntries: [],
+        otherEntries: other,
+        tierLabels,
+      };
+    }
+    return {
+      sections: compatSections,
+      hiddenInventoryEntries: inventoryHiddenSections,
+      otherEntries: other,
+      tierLabels,
+    };
+  }, [data, slot, t, selectedPrinterName, compatIndex, filamentInventory]);
 
-  // Other-printer presets are held back by default so the list shows what is
-  // usable on the selected printer. Two things are never hidden: a preset whose
-  // compatibility is merely *unknown* (it never reaches otherEntries), and the
-  // one currently selected — a pipeline or an auto-pick can land on a
-  // cross-printer preset, and dropping it from the options would blank the
-  // select and silently discard the choice.
+  // Other-printer and non-inventory presets are held back by default so the
+  // list shows what is both usable and on hand. The currently selected preset
+  // is never hidden — a pipeline or legacy pick can sit outside either filter,
+  // and dropping it from the options would blank the select and silently
+  // discard the choice.
   const selectedRefValue = toRefValue(value);
+  const visibleSections = useMemo(() => {
+    const visible: { tierLabel: string; entries: UnifiedPreset[] }[] = [];
+    for (const tierLabel of tierLabels) {
+      const normal = sections.find((section) => section.tierLabel === tierLabel)?.entries ?? [];
+      const hidden = hiddenInventoryEntries.find((section) => section.tierLabel === tierLabel)?.entries ?? [];
+      const revealed = showAll
+        ? hidden
+        : hidden.filter((preset) => `${preset.source}:${preset.id}` === selectedRefValue);
+      const entries = [...normal, ...revealed];
+      if (entries.length > 0) visible.push({ tierLabel, entries });
+    }
+    return visible;
+  }, [hiddenInventoryEntries, sections, selectedRefValue, showAll, tierLabels]);
   const visibleOther = useMemo(() => {
     if (showAll) return otherEntries;
     return otherEntries.filter((p) => `${p.source}:${p.id}` === selectedRefValue);
   }, [showAll, otherEntries, selectedRefValue]);
 
-  const hiddenCount = otherEntries.length - visibleOther.length;
+  const hiddenInventoryCount = hiddenInventoryEntries.reduce(
+    (sum, section) => sum + section.entries.filter((p) => `${p.source}:${p.id}` !== selectedRefValue).length,
+    0,
+  );
+  const hiddenCount = showAll
+    ? 0
+    : hiddenInventoryCount + otherEntries.length - visibleOther.length;
   const totalEntries =
-    sections.reduce((sum, s) => sum + s.entries.length, 0) + visibleOther.length;
+    visibleSections.reduce((sum, s) => sum + s.entries.length, 0) + visibleOther.length;
 
   return (
     // A plain wrapper rather than a <label> around everything: the "Show all"
@@ -1509,7 +1603,9 @@ function PresetDropdown({
               type="button"
               onClick={() => setShowAll((v) => !v)}
               disabled={disabled}
-              className="text-bambu-green hover:underline disabled:opacity-50 disabled:no-underline"
+              aria-pressed={showAll}
+              aria-controls={selectId}
+              className="shrink-0 rounded-md border border-bambu-green/50 bg-bambu-green/10 px-2 py-1 font-medium text-bambu-green hover:bg-bambu-green/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bambu-green disabled:opacity-50"
             >
               {showAll
                 ? t('slice.showFewerPresets', 'Show fewer')
@@ -1531,7 +1627,7 @@ function PresetDropdown({
             ? t('slice.noPresetsForSlot')
             : t('slice.selectPreset')}
         </option>
-        {sections.map((section) => (
+        {visibleSections.map((section) => (
           <optgroup key={section.tierLabel} label={section.tierLabel}>
             {section.entries.map((p) => (
               <option key={`${p.source}:${p.id}`} value={`${p.source}:${p.id}`}>

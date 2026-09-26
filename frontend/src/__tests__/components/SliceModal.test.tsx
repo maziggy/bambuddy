@@ -29,6 +29,8 @@ vi.mock('../../api/client', () => ({
     getLibraryFileFilamentRequirements: vi.fn(),
     getArchiveFilamentRequirements: vi.fn(),
     getSettings: vi.fn().mockResolvedValue({}),
+    getSpools: vi.fn().mockResolvedValue([]),
+    getSpoolmanInventorySpools: vi.fn().mockResolvedValue([]),
     updateSettings: vi.fn().mockResolvedValue({}),
     // Slicer Pipelines (#1425)
     listSlicerPipelines: vi.fn(),
@@ -51,6 +53,9 @@ const mockApi = api as unknown as {
   createSlicerPipeline: ReturnType<typeof vi.fn>;
   getSlicerPrinterModels: ReturnType<typeof vi.fn>;
   getSlicerPresetValues: ReturnType<typeof vi.fn>;
+  getSettings: ReturnType<typeof vi.fn>;
+  getSpools: ReturnType<typeof vi.fn>;
+  getSpoolmanInventorySpools: ReturnType<typeof vi.fn>;
 };
 
 function makeUnified(overrides: Partial<UnifiedPresetsResponse> = {}): UnifiedPresetsResponse {
@@ -2249,6 +2254,201 @@ describe('SliceModal — presets filtered by the selected printer', () => {
     expect(presetSelects()[1].value).toBe('standard:p-h2d');
     // The one still-hidden preset is counted; the selected one is not.
     expect(screen.getByText('1 hidden')).toBeInTheDocument();
+  });
+});
+
+describe('SliceModal — filament presets represented by active inventory (#3157)', () => {
+  const X1C = 'Bambu Lab X1 Carbon 0.4 nozzle';
+  const inventoryPresets = makeUnified({
+    standard: {
+      printer: [{ id: X1C, name: X1C, source: 'standard' }],
+      process: [{
+        id: '0.20mm Standard @BBL X1C',
+        name: '0.20mm Standard @BBL X1C',
+        source: 'standard',
+      }],
+      filament: [
+        {
+          id: 'basic-x1c',
+          name: 'Bambu PLA Basic @BBL X1C',
+          source: 'standard',
+          filament_type: 'PLA',
+          filament_colour: '#FFFFFF',
+        },
+        {
+          id: 'matte-x1c',
+          name: 'Bambu PLA Matte @BBL X1C',
+          source: 'standard',
+          filament_type: 'PLA',
+          filament_colour: '#FF0000',
+        },
+      ],
+    },
+  });
+
+  const activeBasicSpool = {
+    slicer_filament: 'basic-a1',
+    slicer_filament_name: 'Bambu PLA Basic @BBL A1 0.4 nozzle',
+  };
+
+  const filamentOptionNames = () =>
+    Array.from(presetSelects()[3].options).map((option) => option.textContent);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockApi.getSlicerPresets.mockResolvedValue(inventoryPresets);
+    mockApi.getSlicerPresetValues.mockResolvedValue({ resolved: true, values: {}, reason: 'ok' });
+    mockApi.getSlicerPrinterModels.mockResolvedValue({ 'Bambu Lab X1 Carbon': 'X1C' });
+    mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [] });
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100, filename: 'Cube.3mf', plates: [], is_multi_plate: false,
+    });
+    mockApi.getLibraryFileFilamentRequirements.mockResolvedValue({
+      file_id: 100,
+      filename: 'Cube.3mf',
+      plate_id: 1,
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10, used_meters: 3 }],
+    });
+    mockApi.getSettings.mockResolvedValue({ spoolman_enabled: false });
+    mockApi.getSpools.mockResolvedValue([activeBasicSpool]);
+    mockApi.getSpoolmanInventorySpools.mockResolvedValue([]);
+  });
+
+  const open = async () => {
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.3mf' },
+      onClose: vi.fn(),
+    });
+    await waitFor(() => expect(mockApi.getSpools).toHaveBeenCalledWith(false));
+    await waitFor(() => expect(filamentOptionNames()).not.toContain('Bambu PLA Matte @BBL X1C'));
+  };
+
+  it('shows active-inventory profiles by default and auto-picks one by normalized name', async () => {
+    await open();
+
+    expect(filamentOptionNames()).toContain('Bambu PLA Basic @BBL X1C');
+    expect(presetSelects()[3].value).toBe('standard:basic-x1c');
+    expect(screen.getByText('1 hidden')).toBeInTheDocument();
+  });
+
+  it('reveals non-inventory compatible profiles with Show all and keeps a manual override visible', async () => {
+    const user = userEvent.setup();
+    await open();
+
+    const hidden = screen.getByText('1 hidden');
+    await user.click(within(hidden.parentElement as HTMLElement).getByRole('button', { name: 'Show all' }));
+    await waitFor(() => expect(filamentOptionNames()).toContain('Bambu PLA Matte @BBL X1C'));
+
+    await user.selectOptions(presetSelects()[3], 'standard:matte-x1c');
+    await user.click(screen.getByRole('button', { name: 'Show fewer' }));
+
+    expect(filamentOptionNames()).toContain('Bambu PLA Matte @BBL X1C');
+    expect(presetSelects()[3].value).toBe('standard:matte-x1c');
+  });
+
+  it('uses Spoolman as the authoritative inventory when enabled', async () => {
+    mockApi.getSettings.mockResolvedValue({ spoolman_enabled: true });
+    mockApi.getSpools.mockResolvedValue([]);
+    mockApi.getSpoolmanInventorySpools.mockResolvedValue([activeBasicSpool]);
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(mockApi.getSpoolmanInventorySpools).toHaveBeenCalledWith(false));
+    expect(mockApi.getSpools).not.toHaveBeenCalled();
+    await waitFor(() => expect(filamentOptionNames()).not.toContain('Bambu PLA Matte @BBL X1C'));
+  });
+
+  it('preserves a saved pipeline filament outside inventory', async () => {
+    mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [{
+      id: 7,
+      name: 'Non-inventory filament',
+      printer_preset: { source: 'standard', id: X1C },
+      process_preset: { source: 'standard', id: '0.20mm Standard @BBL X1C' },
+      filament_presets: [{ source: 'standard', id: 'matte-x1c' }],
+      bed_type: null,
+    }] });
+    await open();
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText(/Apply pipeline/i), '7');
+
+    expect(presetSelects()[3].value).toBe('standard:matte-x1c');
+    expect(filamentOptionNames()).toContain('Bambu PLA Matte @BBL X1C');
+  });
+
+  it('retains the printer compatibility filter when no inventory identity matches', async () => {
+    const presets = structuredClone(inventoryPresets);
+    presets.standard.filament.push({
+      id: 'pla-a1', name: 'Generic PLA @BBL A1', source: 'standard', filament_type: 'PLA',
+    });
+    mockApi.getSlicerPresets.mockResolvedValue(presets);
+    mockApi.getSlicerPrinterModels.mockResolvedValue({
+      'Bambu Lab X1 Carbon': 'X1C', 'Bambu Lab A1': 'A1',
+    });
+    mockApi.getSpools.mockResolvedValue([{
+      slicer_filament: 'deleted-profile', slicer_filament_name: 'Deleted profile',
+    }]);
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.3mf' }, onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(mockApi.getSpools).toHaveBeenCalledWith(false));
+    await waitFor(() => expect(screen.getByText('1 hidden')).toBeInTheDocument());
+    expect(filamentOptionNames()).toContain('Bambu PLA Basic @BBL X1C');
+    expect(filamentOptionNames()).toContain('Bambu PLA Matte @BBL X1C');
+    expect(filamentOptionNames()).not.toContain('Generic PLA @BBL A1');
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Show all' }));
+    expect(filamentOptionNames()).toContain('Generic PLA @BBL A1');
+  });
+
+  it('keeps the normal list when settings permission is unavailable', async () => {
+    mockApi.getSettings.mockRejectedValue(new Error('forbidden'));
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.3mf' }, onClose: vi.fn(),
+    });
+    await waitFor(() => expect(filamentOptionNames()).toContain('Bambu PLA Matte @BBL X1C'));
+    expect(mockApi.getSpools).not.toHaveBeenCalled();
+    expect(mockApi.getSpoolmanInventorySpools).not.toHaveBeenCalled();
+  });
+
+  it('keeps the normal list when Spoolman is unreachable', async () => {
+    mockApi.getSettings.mockResolvedValue({ spoolman_enabled: true });
+    mockApi.getSpoolmanInventorySpools.mockRejectedValue(new Error('unreachable'));
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.3mf' }, onClose: vi.fn(),
+    });
+    await waitFor(() => expect(mockApi.getSpoolmanInventorySpools).toHaveBeenCalledWith(false));
+    await waitFor(() => expect(filamentOptionNames()).toContain('Bambu PLA Matte @BBL X1C'));
+    expect(mockApi.getSpools).not.toHaveBeenCalled();
+  });
+
+  it('keeps the full compatible list when inventory is empty', async () => {
+    mockApi.getSpools.mockResolvedValue([]);
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(mockApi.getSpools).toHaveBeenCalledWith(false));
+    expect(filamentOptionNames()).toContain('Bambu PLA Basic @BBL X1C');
+    expect(filamentOptionNames()).toContain('Bambu PLA Matte @BBL X1C');
+  });
+
+  it('keeps the full compatible list when inventory is inaccessible', async () => {
+    mockApi.getSpools.mockRejectedValue(new Error('forbidden'));
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(mockApi.getSpools).toHaveBeenCalledWith(false));
+    expect(filamentOptionNames()).toContain('Bambu PLA Basic @BBL X1C');
+    expect(filamentOptionNames()).toContain('Bambu PLA Matte @BBL X1C');
   });
 });
 

@@ -833,7 +833,7 @@ class TestSpoolmanAPI:
 
         captured_hints: list = []
 
-        async def capturing_sync(tray, printer_name, **kwargs):
+        async def capturing_sync(tray, printer_name, db, **kwargs):
             captured_hints.append(kwargs.get("spoolman_spool_id_hint"))
             return None
 

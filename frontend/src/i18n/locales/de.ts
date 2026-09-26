@@ -4947,7 +4947,6 @@ export default {
     spoolmanFilamentUnlinked: 'Verknüpfung mit Filamentkatalog aufgehoben',
     noSpoolmanFilaments: 'Keine Filamente im Spoolman-Katalog gefunden',
     spoolmanFilamentColorSwatch: 'Filamentfarbe',
-    spoolWeightManagedBySpoolman: 'Das Leerspulengewicht wird pro Filamenttyp in Spoolman verwaltet',
     spoolmanCatalogLoadFailed: 'Spoolman-Filamentkatalog konnte nicht geladen werden',
   },
 

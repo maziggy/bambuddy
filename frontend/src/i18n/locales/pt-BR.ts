@@ -4935,7 +4935,6 @@ export default {
     spoolmanFilamentUnlinked: 'Vínculo com o catálogo de filamentos removido',
     noSpoolmanFilaments: 'Nenhum filamento encontrado no catálogo Spoolman',
     spoolmanFilamentColorSwatch: 'Cor do filamento',
-    spoolWeightManagedBySpoolman: 'O peso do carretel vazio é gerenciado por tipo de filamento no Spoolman',
     spoolmanCatalogLoadFailed: 'Falha ao carregar catálogo de filamentos do Spoolman',
   },
 

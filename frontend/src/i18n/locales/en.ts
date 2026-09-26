@@ -4992,7 +4992,6 @@ export default {
     spoolmanFilamentUnlinked: 'Filament catalog link cleared',
     noSpoolmanFilaments: 'No filaments found in Spoolman catalog',
     spoolmanFilamentColorSwatch: 'Filament color',
-    spoolWeightManagedBySpoolman: 'Empty spool weight is managed per filament type in Spoolman',
     spoolmanCatalogLoadFailed: 'Failed to load Spoolman filament catalog',
   },
 

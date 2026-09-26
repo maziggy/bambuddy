@@ -413,6 +413,11 @@ export function SpoolBuddyDashboard() {
     try {
       const weight = liveWeight ?? displayedWeight;
       if (spoolmanMode) {
+        // No tare is sent. The quick-create has no input for one, so the 250
+        // that used to go here was a placeholder, not a user's choice -- and
+        // since #2908 a sent value is written to the spool's own spool_weight,
+        // which would stamp every spool the kiosk creates and stop it
+        // inheriting the filament type's.
         const created = await api.createSpoolmanInventorySpool({
           material: 'PLA',
           subtype: null,
@@ -422,8 +427,6 @@ export function SpoolBuddyDashboard() {
           effect_type: null,
           brand: null,
           label_weight: 1000,
-          core_weight: 250,
-          core_weight_catalog_id: null,
           weight_used: 0,
           slicer_filament: null,
           slicer_filament_name: null,
@@ -442,7 +445,7 @@ export function SpoolBuddyDashboard() {
           last_weighed_at: weight !== null ? new Date().toISOString() : null,
           category: null,
           low_stock_threshold_pct: null,
-        });
+        } as Parameters<typeof api.createSpoolmanInventorySpool>[0]);
         await api.linkTagToSpoolmanSpool(created.id, {
           tag_uid: sbState.unknownTagUid || undefined,
           tray_uuid: (!sbState.unknownTagUid && sbState.unknownTrayUuid) ? sbState.unknownTrayUuid : undefined,

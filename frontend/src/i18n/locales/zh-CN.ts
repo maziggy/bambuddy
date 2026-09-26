@@ -4935,7 +4935,6 @@ export default {
     spoolmanFilamentUnlinked: '已解除耗材目录关联',
     noSpoolmanFilaments: 'Spoolman 目录中未找到耗材',
     spoolmanFilamentColorSwatch: '耗材颜色',
-    spoolWeightManagedBySpoolman: '空线轴重量在 Spoolman 中按耗材类型管理',
     spoolmanCatalogLoadFailed: '无法加载 Spoolman 耗材目录',
   },
 

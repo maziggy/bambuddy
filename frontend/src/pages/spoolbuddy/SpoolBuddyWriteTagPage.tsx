@@ -469,6 +469,10 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
   const [viewMode, setViewMode] = useState<NewSpoolViewMode>('simple');
   const [activeSubTab, setActiveSubTab] = useState<NewSpoolSubTab>('filament');
   const [formData, setFormData] = useState<SpoolFormData>(defaultFormData);
+  // The empty spool weight picker is on screen in Spoolman mode too. Track
+  // whether the user reached for it, so an untouched form does not send its
+  // default (issue #2908).
+  const [coreWeightTouched, setCoreWeightTouched] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof SpoolFormData, string>>>({});
   const [quickAdd, setQuickAdd] = useState(false);
   const [quantity, setQuantity] = useState(1);
@@ -670,6 +674,9 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
 
   const updateField = <K extends keyof SpoolFormData>(key: K, value: SpoolFormData[K]) => {
     setFormData(prev => ({ ...prev, [key]: value }));
+    if (key === 'core_weight') {
+      setCoreWeightTouched(true);
+    }
     if (errors[key]) {
       setErrors(prev => ({ ...prev, [key]: undefined }));
     }
@@ -735,7 +742,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
     }
 
     const presetName = selectedPresetOption?.displayName || presetInputValue || null;
-    const payload = {
+    const payload: Record<string, unknown> = {
       material: formData.material,
       subtype: formData.subtype || null,
       brand: formData.brand || null,
@@ -744,8 +751,15 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
       extra_colors: formData.extra_colors || null,
       effect_type: formData.effect_type || null,
       label_weight: formData.label_weight,
-      core_weight: formData.core_weight,
-      core_weight_catalog_id: formData.core_weight_catalog_id,
+      // Only send a per-spool tare in Spoolman mode when the user actually set
+      // one here; otherwise let it keep inheriting from the filament type.
+      // The catalogue id has no field on the Spoolman side, so a catalogue
+      // selection does not round-trip there; only the weight does.
+      ...(spoolmanMode
+        ? coreWeightTouched
+          ? { core_weight: formData.core_weight }
+          : {}
+        : { core_weight: formData.core_weight, core_weight_catalog_id: formData.core_weight_catalog_id }),
       weight_used: formData.weight_used,
       slicer_filament: formData.slicer_filament || null,
       slicer_filament_name: presetName,
@@ -773,8 +787,8 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
         // internal bulk returns InventorySpool[]. Mirrors SpoolFormModal's
         // duck-typed handling so partial failures surface as a warning toast.
         const raw = spoolmanMode
-          ? await api.bulkCreateSpoolmanInventorySpools(payload, quantity)
-          : await api.bulkCreateSpools(payload, quantity);
+          ? await api.bulkCreateSpoolmanInventorySpools(payload as Parameters<typeof api.bulkCreateSpoolmanInventorySpools>[0], quantity)
+          : await api.bulkCreateSpools(payload as Parameters<typeof api.bulkCreateSpools>[0], quantity);
         const created: InventorySpool[] =
           spoolmanMode && raw && typeof raw === 'object' && 'created' in raw
             ? (raw as { created: InventorySpool[] }).created
@@ -785,8 +799,8 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
         if (created.length > 0) onCreated(created[0]);
       } else {
         const created = spoolmanMode
-          ? await api.createSpoolmanInventorySpool(payload)
-          : await api.createSpool(payload);
+          ? await api.createSpoolmanInventorySpool(payload as Parameters<typeof api.createSpoolmanInventorySpool>[0])
+          : await api.createSpool(payload as Parameters<typeof api.createSpool>[0]);
         await saveKProfiles(created.id);
         onCreated(created);
       }

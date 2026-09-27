@@ -733,6 +733,12 @@ Full documentation available at **[wiki.bambuddy.cool](http://wiki.bambuddy.cool
 
 ---
 
+## ☁️ One-Click Deploy
+
+[![Deploy on RepoCloud](https://d16t0pc4846x52.cloudfront.net/deploylobe.svg)](https://repocloud.io/details/Bambuddy/)
+
+---
+
 ## 🖨️ Supported Printers
 
 | Series | Models |

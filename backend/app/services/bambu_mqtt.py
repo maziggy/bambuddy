@@ -23,7 +23,7 @@ import paho.mqtt.client as mqtt
 
 from backend.app.services.hms_actions import HMSAction, get_actions_for_error_code
 from backend.app.services.hms_errors import describe_fault
-from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES
+from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES, DRY_COUNTDOWN_STALL_SECONDS
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.paho_teardown import retire_paho_client
 
@@ -177,6 +177,40 @@ def a2l_lite_wire_ids(ams_id: int, tray_id: int) -> tuple[int, int, int] | None:
         local_slot,
         A2L_LITE_PHYSICAL_AMS_ID * 4 + local_slot,
     )
+
+
+def resolve_external_spools_in_mapping(ams_mapping: object, ams_mapping2: object, is_dual_nozzle: bool) -> object:
+    """Put the external spool back into a captured flat ``ams_mapping`` (#3166).
+
+    The firmware rejects 254/255 in the flat list, so BambuStudio and our own
+    dispatch both write an external spool there as -1 -- the same value as a
+    slot that isn't fed at all -- and carry the real target only in
+    ``ams_mapping2`` as ``{ams_id: 254|255, slot_id: 0}``. Capturing the flat
+    list alone turns "printed from the external spool" into "unmapped", and
+    usage then lands on whatever tray the fallback guesses.
+
+    Each -1 whose ``ams_mapping2`` entry names an external spool becomes the
+    global tray the rest of Bambuddy uses: the ams_id itself on dual-nozzle
+    printers (254 = left/deputy, 255 = right/main), 254 on single-nozzle
+    printers, which have one external spool that the wire always calls 255.
+    ``{255, 255}`` is the unmapped marker and stays -1. Every other entry is
+    left exactly as captured. Without a usable ``ams_mapping2`` the input is
+    returned unchanged.
+    """
+    if not isinstance(ams_mapping, list) or not isinstance(ams_mapping2, list):
+        return ams_mapping
+    if len(ams_mapping2) != len(ams_mapping):
+        return ams_mapping
+    resolved = list(ams_mapping)
+    for i, (flat, detail) in enumerate(zip(ams_mapping, ams_mapping2, strict=True)):
+        if flat != -1 or not isinstance(detail, dict):
+            continue
+        ams_id = detail.get("ams_id")
+        slot_id = detail.get("slot_id")
+        if ams_id not in (254, 255) or slot_id == 255:
+            continue
+        resolved[i] = ams_id if is_dual_nozzle else 254
+    return resolved
 
 
 def apply_tray_exist_bits(
@@ -1277,6 +1311,15 @@ class BambuMQTTClient:
         # Per-AMS previous dry_time, used to detect the falling edge above.
         # Seeded lazily as we observe each AMS unit.
         self._previous_dry_times: dict[int, int] = {}
+        # Per-AMS monotonic stamp of the last time dry_time CHANGED value.
+        # A live cycle's countdown ticks once a minute; a command the firmware
+        # accepted but never actually started (observed on an H2D mid-print
+        # with two AMS-HT cycles already running: the third unit's timer sat
+        # frozen at its full duration) never ticks. dry_time > 0 with no tick
+        # for DRY_COUNTDOWN_STALL_SECONDS and no active dry_status phase is
+        # reported as dry_countdown_stalled so the UI can stop claiming an
+        # active cycle that is not running.
+        self._dry_time_changed_at: dict[int, float] = {}
         # Per-AMS active-cycle target params (filament + temp) we sent on the
         # last start. Bambu does not echo these back in the per-tick AMS push
         # — only the dry_time countdown — so we cache what we sent to drive
@@ -1988,7 +2031,7 @@ class BambuMQTTClient:
                 self.state.current_project_url = url
                 self.state.last_project_url = url
             if "ams_mapping" in print_data:
-                self._captured_ams_mapping = print_data["ams_mapping"]
+                self._captured_ams_mapping = self._resolve_captured_mapping(print_data)
                 logger.info(
                     "[%s] Captured ams_mapping from print command: %s",
                     self.serial_number,
@@ -2068,12 +2111,23 @@ class BambuMQTTClient:
         # already captured this print's mapping that copy is the slicer's own,
         # and the echo can arrive without the field at all.
         if self._captured_ams_mapping is None and isinstance(print_data.get("ams_mapping"), list):
-            self._captured_ams_mapping = print_data["ams_mapping"]
+            self._captured_ams_mapping = self._resolve_captured_mapping(print_data)
             logger.info(
                 "[%s] Captured ams_mapping from print response: %s",
                 self.serial_number,
                 self._captured_ams_mapping,
             )
+
+    def _resolve_captured_mapping(self, print_data: dict) -> object:
+        """The ``ams_mapping`` of a project_file, with external spools resolved
+        from its ``ams_mapping2`` (#3166)."""
+        from backend.app.utils.printer_models import is_dual_nozzle_model
+
+        return resolve_external_spools_in_mapping(
+            print_data.get("ams_mapping"),
+            print_data.get("ams_mapping2"),
+            self._is_dual_nozzle or is_dual_nozzle_model(self.model),
+        )
 
     @staticmethod
     def _project_file_key(print_data: dict) -> str:
@@ -3185,15 +3239,16 @@ class BambuMQTTClient:
                     # slot (typically 0) when the active feed is actually the
                     # external spool. X1C / P1S / A1 correctly report 254 in
                     # that case; H2S does not. When the slicer-captured
-                    # ams_mapping is all-external (every entry == -1), the
-                    # print can only be feeding from the external spool, so
-                    # promote tray_now to 254. Mixed (e.g. [5, -1]) and
+                    # ams_mapping is all-external (every entry is 254, or -1
+                    # when the command carried no ams_mapping2 to resolve it
+                    # from, #3166), the print can only be feeding from the
+                    # external spool, so promote tray_now to 254. Mixed (e.g. [5, 254]) and
                     # AMS-only mappings are NOT overridden — there's no
                     # evidence the firmware misreports in those cases. Prints
                     # started without a captured mapping (printer-screen start,
                     # or before Bambuddy connected) fall through unchanged.
                     captured = self._captured_ams_mapping
-                    if captured and all(s == -1 for s in captured):
+                    if captured and all(s in (-1, 254, 255) for s in captured):
                         if self.state.tray_now != 254:
                             logger.debug(
                                 f"[{self.serial_number}] tray_now external-spool override (#1822): "
@@ -3588,6 +3643,11 @@ class BambuMQTTClient:
                 continue
             if ams_id < 0:
                 continue
+            # The firmware phase outranks the stalled-countdown heuristic even
+            # on a transient-zero frame, which the completion guard below skips.
+            # Clear a previously raised flag before that early continue.
+            if ams_unit.get("dry_status") in ACTIVE_DRY_STATUSES:
+                ams_unit["dry_countdown_stalled"] = False
             # Only evaluate the edge when this update carries an explicit
             # dry_time. An absent / unparseable value is NOT zero — treating
             # it as 0 lets a tray-only partial fake a drying-complete edge
@@ -3623,6 +3683,18 @@ class BambuMQTTClient:
                 continue
             previous = self._previous_dry_times.get(ams_id, 0)
             self._previous_dry_times[ams_id] = current
+            # Stall detection: stamp value CHANGES only — a live countdown
+            # decrements once a minute, so repeats of the same value within
+            # the minute must not refresh the stamp, and a frame without a
+            # dry_time never reaches here (the absent-value skip above).
+            now_mono = time.monotonic()
+            if current != previous or ams_id not in self._dry_time_changed_at:
+                self._dry_time_changed_at[ams_id] = now_mono
+            ams_unit["dry_countdown_stalled"] = bool(
+                current > 0
+                and ams_unit.get("dry_status") not in ACTIVE_DRY_STATUSES
+                and now_mono - self._dry_time_changed_at[ams_id] > DRY_COUNTDOWN_STALL_SECONDS
+            )
             if previous > 0 and current == 0:
                 self._log_drying_cycle_end(ams_id, previous, ams_unit, self._drying_targets.pop(ams_id, None))
                 if self.on_drying_complete:

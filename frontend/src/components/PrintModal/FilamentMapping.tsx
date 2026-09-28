@@ -5,8 +5,10 @@ import { Circle, Check, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Palett
 import { api } from '../../api/client';
 import type { SlotSpoolIdentity } from '../../api/client';
 import { useFilamentMapping } from '../../hooks/useFilamentMapping';
-import { getGlobalTrayId, effectivePreferLowest, FTS_INLET_SIDE } from '../../utils/amsHelpers';
+import { getGlobalTrayId, effectivePreferLowest, FTS_INLET_SIDE, normalizeColorForCompare } from '../../utils/amsHelpers';
 import { disambiguateColorNames, getColorName } from '../../utils/colors';
+import { SlotPicker } from './SlotPicker';
+import { displayHex } from './displayHex';
 import { useFilamentLabels } from './useFilamentLabels';
 import { autoAssignRackPositions, rackOptionsForGroup } from '../../utils/nozzleRack';
 import type { FilamentMappingProps, RackGroupInfo } from './types';
@@ -490,11 +492,32 @@ export function FilamentMapping({
                 </span>
                 {/* Arrow */}
                 <span className="text-bambu-gray">→</span>
-                {/* Slot selector dropdown */}
-                <select
-                  value={item.loaded?.globalTrayId ?? ''}
-                  onChange={(e) => handleSlotChange(slotId, e.target.value)}
-                  className={`flex-1 px-2 py-1 rounded border text-xs bg-bambu-dark-secondary focus:outline-none focus:ring-1 focus:ring-bambu-green ${
+                {/*
+                  Slot picker. Not a <select>: an <option> renders text only,
+                  and the colour of the slot is the whole point of this row
+                  (#3159) -- colour names come from the catalogue or from hue,
+                  so a third-party beige reads as "Orange" and the mismatch
+                  warning cannot be judged without seeing both swatches.
+
+                  #1722: every loaded slot is offered for every filament row,
+                  regardless of which extruder the slot is wired to. Before that
+                  change a slot was only listed when its extruder matched the
+                  filament's slicer-assigned nozzle (item.nozzle_id), which
+                  locked users out of cross-extruder picks even when they'd
+                  intentionally loaded the required filament into the "other"
+                  AMS. The L/R badge on the filament row still tells the user
+                  what the slicer planned; the picker trusts the user to pick
+                  based on their physical setup. Printer firmware accepts or
+                  rejects the ams_mapping at start-print -- failure is loud,
+                  not silent.
+                */}
+                <SlotPicker
+                  value={item.loaded?.globalTrayId != null ? String(item.loaded.globalTrayId) : ''}
+                  onChange={(next) => handleSlotChange(slotId, next)}
+                  placeholder={`-- ${t('printModal.selectSlot')} --`}
+                  ariaLabel={t('printModal.slotForFilament', { name: resolvedName })}
+                  exactMatchLabel={t('printModal.exactColorMatch')}
+                  className={`${
                     item.status === 'match'
                       ? 'border-bambu-green/50 text-bambu-green'
                       : item.status === 'type_only'
@@ -502,24 +525,7 @@ export function FilamentMapping({
                       : 'border-orange-500 dark:border-orange-400/50 text-orange-700 dark:text-orange-400'
                   } ${item.isManual ? 'ring-1 ring-blue-400/50' : ''}`}
                   title={item.isManual ? t('printModal.manuallySelected') : t('printModal.autoMatched')}
-                >
-                  <option value="" className="bg-bambu-dark text-bambu-gray">
-                    -- {t('printModal.selectSlot')} --
-                  </option>
-                  {/*
-                    #1722: every loaded slot is offered for every filament row,
-                    regardless of which extruder the slot is wired to. Before this
-                    change a slot was only listed when its extruder matched the
-                    filament's slicer-assigned nozzle (item.nozzle_id), which
-                    locked users out of cross-extruder picks even when they'd
-                    intentionally loaded the required filament into the "other"
-                    AMS. The L/R badge on the filament row still tells the user
-                    what the slicer planned; the dropdown now trusts the user to
-                    pick based on their physical setup. Printer firmware accepts
-                    or rejects the ams_mapping at start-print — failure is loud,
-                    not silent.
-                  */}
-                  {loadedFilaments.map((f) => {
+                  options={loadedFilaments.map((f) => {
                       const remainingWeight = trayRemainingWeightMap.get(f.globalTrayId);
                       const remainingLabel = remainingWeight != null
                         ? t('printModal.slotRemainingShort', {
@@ -536,13 +542,24 @@ export function FilamentMapping({
                       // two views agree. Not translated: L and R are the letters on
                       // the machine.
                       const ftsBadge = ftsInlet == null ? '' : ` [${FTS_INLET_SIDE[ftsInlet]}]`;
-                      return (
-                        <option key={f.globalTrayId} value={f.globalTrayId} className="bg-bambu-dark text-white">
-                          {f.label}: {f.spoolName || f.traySubBrands || f.type} ({f.colorName}){remainingLabel}{ftsBadge}
-                        </option>
-                      );
+                      return {
+                        value: String(f.globalTrayId),
+                        label: `${f.label}: ${f.spoolName || f.traySubBrands || f.type} (${f.colorName})`,
+                        meta: `${remainingLabel}${ftsBadge}`,
+                        rgba: f.color,
+                        extraColors: f.extraColors,
+                        effectType: f.effectType,
+                        subtype: f.spoolSubtype,
+                        hex: displayHex(f.color),
+                        // The hex the slice asked for, against the hex the
+                        // printer reports -- the comparison the colour names
+                        // cannot be trusted to make.
+                        exactMatch:
+                          normalizeColorForCompare(item.color) !== '' &&
+                          normalizeColorForCompare(f.color) === normalizeColorForCompare(item.color),
+                      };
                   })}
-                </select>
+                />
                 {/* Status icon */}
                 {item.status === 'match' ? (
                   <Check className="w-3 h-3 text-bambu-green" />

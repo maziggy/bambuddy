@@ -18,7 +18,7 @@ can skip empty units while still alarming on loaded ones in the same printer.
 from datetime import datetime, timedelta, timezone
 
 from backend.app.main import _ams_has_filament, _resolve_temp_alarm_threshold
-from backend.app.utils.ams_drying import is_drying_active, temperature_alarm_suppressed
+from backend.app.utils.ams_drying import is_countdown_parked, is_drying_active, temperature_alarm_suppressed
 
 
 class TestAmsHasFilament:
@@ -127,6 +127,28 @@ class TestIsDryingActive:
         # Firmware that never sends a parseable `info` has no dry_status at all.
         assert is_drying_active({"dry_time": 30}) is True
         assert is_drying_active({"dry_time": 0}) is False
+
+    def test_parked_countdown_is_not_active(self):
+        # #2896: the printer took the command but the AMS is not heating, so a
+        # high temperature is not "expected heat" and must not be suppressed.
+        assert is_drying_active({"dry_time": 720, "dry_countdown_stalled": True}) is False
+        assert is_drying_active({"dry_time": 720, "dry_countdown_stalled": False}) is True
+
+
+class TestIsCountdownParked:
+    def test_stalled_timer_is_parked(self):
+        assert is_countdown_parked({"dry_time": 720, "dry_countdown_stalled": True}) is True
+        assert is_countdown_parked({"dry_time": "720", "dry_countdown_stalled": True}) is True
+
+    def test_running_or_absent_timer_is_not_parked(self):
+        assert is_countdown_parked({"dry_time": 720}) is False
+        assert is_countdown_parked({"dry_time": 720, "dry_countdown_stalled": False}) is False
+        # A flag left behind on a finished cycle does not make it parked.
+        assert is_countdown_parked({"dry_time": 0, "dry_countdown_stalled": True}) is False
+
+    def test_malformed_input_is_not_parked(self):
+        assert is_countdown_parked(None) is False
+        assert is_countdown_parked({"dry_time": "x", "dry_countdown_stalled": True}) is False
 
     def test_unparseable_values_do_not_raise(self):
         assert is_drying_active({"dry_time": "junk", "dry_status": 2}) is True

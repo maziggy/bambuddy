@@ -180,6 +180,51 @@ class TestDeleteUserCleansAuthRows:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_delete_user_removes_connected_app_consent_and_codes(
+        self,
+        async_client: AsyncClient,
+        db_session: AsyncSession,
+        auth_token: str,
+    ):
+        """A leftover consent row would skip the consent screen for the next
+        user given the same id; a live code is keyed by username."""
+        from backend.app.models.auth_ephemeral import AuthEphemeralToken, TokenType
+        from backend.app.models.connected_app import ConnectedApp, ConnectedAppGrant
+
+        user_id = await self._create_user(async_client, auth_token, "appclean")
+        app = ConnectedApp(
+            name="Orders", client_id="bba_cleanup", client_secret_hash="x", redirect_uri="http://o.local/cb"
+        )
+        db_session.add(app)
+        await db_session.flush()
+        db_session.add(ConnectedAppGrant(app_id=app.id, user_id=user_id))
+        db_session.add(
+            AuthEphemeralToken.new_connect_code(
+                code_hash="h" * 64,
+                username="AppClean",
+                app_id=app.id,
+                code_challenge="c" * 43,
+                expires_at=datetime.now(timezone.utc) + timedelta(seconds=60),
+            )
+        )
+        await db_session.commit()
+
+        resp = await async_client.delete(
+            f"/api/v1/users/{user_id}",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert resp.status_code == 204
+
+        await db_session.commit()
+        grants = await db_session.execute(select(ConnectedAppGrant).where(ConnectedAppGrant.user_id == user_id))
+        assert grants.scalar_one_or_none() is None
+        codes = await db_session.execute(
+            select(AuthEphemeralToken).where(AuthEphemeralToken.token_type == TokenType.CONNECT_CODE)
+        )
+        assert codes.scalar_one_or_none() is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_delete_user_removes_user_otp_codes(
         self,
         async_client: AsyncClient,

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -45,6 +45,12 @@ import {
   Lock,
   FolderSymlink,
   Tag as TagIcon,
+  FileText,
+  FileSpreadsheet,
+  Info,
+  Globe,
+  StickyNote,
+  Camera,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type {
@@ -68,6 +74,7 @@ import { BulkTagsPickerModal } from '../components/BulkTagsPickerModal';
 import { FileUploadModal } from '../components/FileUploadModal';
 import { FolderReadmePanel } from '../components/FolderReadmePanel';
 import { LibraryTagsModal } from '../components/LibraryTagsModal';
+import { LibraryFileDetailsModal } from '../components/LibraryFileDetailsModal';
 import { PurgeOldFilesModal } from '../components/PurgeOldFilesModal';
 import { useToast } from '../contexts/ToastContext';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
@@ -81,6 +88,23 @@ import { isSlicedLibraryFile, isSliceableLibraryFile } from '../utils/libraryFil
 type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
 type SortDirection = 'asc' | 'desc';
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
+
+// Document previews (#2976) are code-split: pdf.js and the spreadsheet
+// parsers only load when a preview is actually opened.
+const PdfPreviewModal = lazy(() =>
+  import('../components/PdfPreviewModal').then((m) => ({ default: m.PdfPreviewModal }))
+);
+const SpreadsheetPreviewModal = lazy(() =>
+  import('../components/SpreadsheetPreviewModal').then((m) => ({ default: m.SpreadsheetPreviewModal }))
+);
+
+function isSpreadsheetType(fileType: string): boolean {
+  return fileType === 'csv' || fileType === 'xlsx' || fileType === 'ods';
+}
+
+function isStepType(fileType: string): boolean {
+  return fileType === 'step' || fileType === 'stp';
+}
 
 // New Folder Modal
 interface NewFolderModalProps {
@@ -761,7 +785,9 @@ interface FileCardProps {
   desktopSlicer: SlicerType;
   canSlice?: boolean;
   onPreview3d?: (file: LibraryFileListItem) => void;
+  onPreviewDocument?: (file: LibraryFileListItem) => void;
   onRename?: (file: LibraryFileListItem) => void;
+  onDetails?: (file: LibraryFileListItem) => void;
   onGenerateThumbnail?: (file: LibraryFileListItem) => void;
   onTagClick?: (tagId: number) => void;
   thumbnailVersion?: number;
@@ -772,7 +798,7 @@ interface FileCardProps {
   t: TFunction;
 }
 
-function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, desktopSlicer, canSlice, onPreview3d, onRename, onGenerateThumbnail, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
+function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, desktopSlicer, canSlice, onPreview3d, onPreviewDocument, onRename, onDetails, onGenerateThumbnail, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
   // Viewport coordinates rather than a flag, because the menu is rendered by
   // `ContextMenu` at `position: fixed` and anchored to the button (#2846). The
   // card it belongs to is only ~270px tall for a bare STL, which is shorter
@@ -814,11 +840,20 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
       title: !hasPermission('pipelines:run') ? t('library.runWithPipeline.noPermission') : undefined,
     });
   }
-  if (onPreview3d && (file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl' || file.file_type === 'gcode.3mf')) {
+  if (onPreview3d && (file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl' || file.file_type === 'gcode.3mf' || isStepType(file.file_type))) {
     menuItems.push({
       label: t('fileManager.preview3d'),
       icon: <Box className="w-4 h-4" />,
       onClick: () => onPreview3d(file),
+      disabled: !canPreview3d,
+      title: !canPreview3d ? t('fileManager.noPermissionPreview') : undefined,
+    });
+  }
+  if (onPreviewDocument && (file.file_type === 'pdf' || isSpreadsheetType(file.file_type))) {
+    menuItems.push({
+      label: t('fileManager.preview.open'),
+      icon: file.file_type === 'pdf' ? <FileText className="w-4 h-4" /> : <FileSpreadsheet className="w-4 h-4" />,
+      onClick: () => onPreviewDocument(file),
       disabled: !canPreview3d,
       title: !canPreview3d ? t('fileManager.noPermissionPreview') : undefined,
     });
@@ -837,6 +872,24 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
       onClick: () => onRename(file),
       disabled: !canRename,
       title: !canRename ? t('fileManager.noPermissionRenameFile') : undefined,
+    });
+  }
+  if (onDetails) {
+    menuItems.push({
+      label: t('fileManager.details.title'),
+      icon: <Info className="w-4 h-4" />,
+      onClick: () => onDetails(file),
+      disabled: !canPreview3d,
+      title: !canPreview3d ? t('fileManager.noPermissionPreview') : undefined,
+    });
+  }
+  if (file.external_url) {
+    menuItems.push({
+      label: t('fileManager.details.openLink'),
+      icon: <Globe className="w-4 h-4" />,
+      // The URL is stored by whoever owns the file, so the opened page must
+      // not get a handle on this window (#3077).
+      onClick: () => window.open(file.external_url!, '_blank', 'noopener,noreferrer'),
     });
   }
   if (onGenerateThumbnail && file.file_type === 'stl') {
@@ -874,6 +927,10 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
             alt={file.filename}
             className="w-full h-full object-cover"
           />
+        ) : file.file_type === 'pdf' ? (
+          <FileText className="w-12 h-12 text-bambu-gray/30" />
+        ) : isSpreadsheetType(file.file_type) ? (
+          <FileSpreadsheet className="w-12 h-12 text-bambu-gray/30" />
         ) : (
           <FileBox className="w-12 h-12 text-bambu-gray/30" />
         )}
@@ -884,6 +941,9 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
           // that the file is already sliced and ready to print (#1543).
           : file.file_type === 'gcode' || file.file_type === 'gcode.3mf' ? 'bg-blue-500/90 text-white'
           : file.file_type === 'stl' ? 'bg-purple-500/90 text-white'
+          : isStepType(file.file_type) ? 'bg-amber-500/90 text-white'
+          : file.file_type === 'pdf' ? 'bg-red-500/90 text-white'
+          : isSpreadsheetType(file.file_type) ? 'bg-teal-500/90 text-white'
           : 'bg-bambu-gray/90 text-white'
         }`}>
           {file.file_type.toUpperCase()}
@@ -921,6 +981,47 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
         {file.print_count > 0 && (
           <div className="mt-1 text-xs text-bambu-green">
             {t('fileManager.printedCount', { count: file.print_count })}
+          </div>
+        )}
+        {/* Metadata indicators (#3077): link, notes, photos. The link opens in
+            a new tab like the archive card's globe; the others open Details. */}
+        {(file.external_url || file.has_notes || (file.photo_count ?? 0) > 0) && (
+          <div className="mt-1 flex items-center gap-2 text-xs text-bambu-gray" onClick={(e) => e.stopPropagation()}>
+            {file.external_url && (
+              <a
+                href={file.external_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-0.5 rounded hover:text-bambu-green"
+                title={t('fileManager.details.openLink')}
+                aria-label={t('fileManager.details.openLink')}
+              >
+                <Globe className="w-3.5 h-3.5" />
+              </a>
+            )}
+            {file.has_notes && (
+              <button
+                type="button"
+                onClick={() => onDetails?.(file)}
+                className="p-0.5 rounded hover:text-bambu-green"
+                title={t('fileManager.details.hasNotes')}
+                aria-label={t('fileManager.details.hasNotes')}
+              >
+                <StickyNote className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {(file.photo_count ?? 0) > 0 && (
+              <button
+                type="button"
+                onClick={() => onDetails?.(file)}
+                className="flex items-center gap-0.5 p-0.5 rounded hover:text-bambu-green"
+                title={t('fileManager.details.photoCount', { count: file.photo_count })}
+                aria-label={t('fileManager.details.photoCount', { count: file.photo_count })}
+              >
+                <Camera className="w-3.5 h-3.5" />
+                <span>{file.photo_count}</span>
+              </button>
+            )}
           </div>
         )}
         {authEnabled && file.created_by_username && (
@@ -1026,6 +1127,9 @@ export function FileManagerPage() {
   const [renameItem, setRenameItem] = useState<{ type: 'file' | 'folder'; id: number; name: string } | null>(null);
   const [thumbnailVersions, setThumbnailVersions] = useState<Record<number, number>>({});
   const [viewerFile, setViewerFile] = useState<LibraryFileListItem | null>(null);
+  const [pdfPreviewFile, setPdfPreviewFile] = useState<LibraryFileListItem | null>(null);
+  const [sheetPreviewFile, setSheetPreviewFile] = useState<LibraryFileListItem | null>(null);
+  const [detailsFile, setDetailsFile] = useState<LibraryFileListItem | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     return (localStorage.getItem('library-view-mode') as 'grid' | 'list') || 'grid';
   });
@@ -1645,6 +1749,30 @@ export function FileManagerPage() {
       setShowUploadModal(true);
     },
   });
+
+  // Returns the snapshot callback the preview components call with their
+  // first render, or undefined when nothing should be persisted — the file
+  // already has a thumbnail, or the user may not update it (#2976).
+  const previewSnapshotHandler = useCallback(
+    (file: LibraryFileListItem): ((blob: Blob) => void) | undefined => {
+      if (file.thumbnail_path) return undefined;
+      if (!canModify('library', 'update', file.created_by_id)) return undefined;
+      return (blob: Blob) => {
+        api
+          .uploadLibraryPreviewThumbnail(file.id, blob)
+          .then((res) => {
+            if (res.updated) {
+              setThumbnailVersions((prev) => ({ ...prev, [file.id]: (prev[file.id] || 0) + 1 }));
+              queryClient.invalidateQueries({ queryKey: ['library-files'] });
+            }
+          })
+          .catch(() => {
+            // Thumbnail persistence is best-effort; the preview already rendered.
+          });
+      };
+    },
+    [canModify, queryClient]
+  );
 
   const handleDownload = (id: number) => {
     api.downloadLibraryFile(id).catch((err) => {
@@ -2447,7 +2575,12 @@ export function FileManagerPage() {
                         setViewerFile(f);
                       }
                     }}
+                    onPreviewDocument={(f) => {
+                      if (f.file_type === 'pdf') setPdfPreviewFile(f);
+                      else setSheetPreviewFile(f);
+                    }}
                     onRename={(f) => setRenameItem({ type: 'file', id: f.id, name: f.filename })}
+                    onDetails={setDetailsFile}
                     onGenerateThumbnail={(f) => singleThumbnailMutation.mutate(f.id)}
                     onTagClick={toggleTagFilter}
                     thumbnailVersion={thumbnailVersions[file.id]}
@@ -2512,7 +2645,13 @@ export function FileManagerPage() {
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center">
-                              <FileBox className="w-5 h-5 text-bambu-gray/50" />
+                              {file.file_type === 'pdf' ? (
+                                <FileText className="w-5 h-5 text-bambu-gray/50" />
+                              ) : isSpreadsheetType(file.file_type) ? (
+                                <FileSpreadsheet className="w-5 h-5 text-bambu-gray/50" />
+                              ) : (
+                                <FileBox className="w-5 h-5 text-bambu-gray/50" />
+                              )}
                             </div>
                           )}
                         </div>
@@ -2530,7 +2669,34 @@ export function FileManagerPage() {
                         )}
                       </div>
                       <div className="min-w-0">
-                        <div className="text-sm text-white truncate">{file.print_name || file.filename}</div>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-sm text-white truncate">{file.print_name || file.filename}</span>
+                          {/* Metadata indicators (#3077), same set as the card. */}
+                          {file.external_url && (
+                            <a
+                              href={file.external_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex-shrink-0 text-bambu-gray hover:text-bambu-green"
+                              title={t('fileManager.details.openLink')}
+                              aria-label={t('fileManager.details.openLink')}
+                            >
+                              <Globe className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                          {file.has_notes && (
+                            <span className="flex-shrink-0 text-bambu-gray" title={t('fileManager.details.hasNotes')} aria-label={t('fileManager.details.hasNotes')}>
+                              <StickyNote className="w-3.5 h-3.5" />
+                            </span>
+                          )}
+                          {(file.photo_count ?? 0) > 0 && (
+                            <span className="flex-shrink-0 flex items-center gap-0.5 text-xs text-bambu-gray" title={t('fileManager.details.photoCount', { count: file.photo_count })}>
+                              <Camera className="w-3.5 h-3.5" />
+                              {file.photo_count}
+                            </span>
+                          )}
+                        </div>
                         {/* #2680: last-modified date under the name, toggled from
                             the toolbar. Real on-disk mtime when known, else created_at. */}
                         {showModified && (
@@ -2560,6 +2726,9 @@ export function FileManagerPage() {
                         file.file_type === '3mf' ? 'bg-bambu-green/20 text-bambu-green'
                         : (file.file_type === 'gcode' || file.file_type === 'gcode.3mf') ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
                         : file.file_type === 'stl' ? 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400'
+                        : isStepType(file.file_type) ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400'
+                        : file.file_type === 'pdf' ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400'
+                        : isSpreadsheetType(file.file_type) ? 'bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-400'
                         : 'bg-bambu-gray/20 text-bambu-gray'
                       }`}>
                         {file.file_type.toUpperCase()}
@@ -2642,7 +2811,7 @@ export function FileManagerPage() {
                           <Play className="w-4 h-4" />
                         </button>
                       )}
-                      {(file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'gcode.3mf' || file.file_type === 'stl') && (
+                      {(file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'gcode.3mf' || file.file_type === 'stl' || isStepType(file.file_type)) && (
                         <button
                           onClick={() => {
                             if (!hasPermission('library:read')) return;
@@ -2657,10 +2826,28 @@ export function FileManagerPage() {
                               ? 'hover:bg-bambu-dark text-bambu-gray hover:text-bambu-green'
                               : 'text-bambu-gray/50 cursor-not-allowed'
                           }`}
-                          title={hasPermission('library:read') ? '3D Preview' : 'You do not have permission to preview files'}
+                          title={hasPermission('library:read') ? t('fileManager.preview3d') : t('fileManager.noPermissionPreview')}
                           disabled={!hasPermission('library:read')}
                         >
                           <Box className="w-4 h-4" />
+                        </button>
+                      )}
+                      {(file.file_type === 'pdf' || isSpreadsheetType(file.file_type)) && (
+                        <button
+                          onClick={() => {
+                            if (!hasPermission('library:read')) return;
+                            if (file.file_type === 'pdf') setPdfPreviewFile(file);
+                            else setSheetPreviewFile(file);
+                          }}
+                          className={`p-1.5 rounded transition-colors ${
+                            hasPermission('library:read')
+                              ? 'hover:bg-bambu-dark text-bambu-gray hover:text-bambu-green'
+                              : 'text-bambu-gray/50 cursor-not-allowed'
+                          }`}
+                          title={hasPermission('library:read') ? t('fileManager.preview.open') : t('fileManager.noPermissionPreview')}
+                          disabled={!hasPermission('library:read')}
+                        >
+                          {file.file_type === 'pdf' ? <FileText className="w-4 h-4" /> : <FileSpreadsheet className="w-4 h-4" />}
                         </button>
                       )}
                       <button
@@ -2674,6 +2861,18 @@ export function FileManagerPage() {
                         disabled={!hasPermission('library:read')}
                       >
                         <Download className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => hasPermission('library:read') && setDetailsFile(file)}
+                        className={`p-1.5 rounded transition-colors ${
+                          hasPermission('library:read')
+                            ? 'hover:bg-bambu-dark text-bambu-gray hover:text-white'
+                            : 'text-bambu-gray/50 cursor-not-allowed'
+                        }`}
+                        title={hasPermission('library:read') ? t('fileManager.details.title') : t('fileManager.noPermissionPreview')}
+                        disabled={!hasPermission('library:read')}
+                      >
+                        <Info className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => canModify('library', 'update', file.created_by_id) && setRenameItem({ type: 'file', id: file.id, name: file.filename })}
@@ -2871,6 +3070,9 @@ export function FileManagerPage() {
           title={viewerFile.print_name || viewerFile.filename}
           fileType={viewerFile.file_type}
           onClose={() => setViewerFile(null)}
+          // STEP has no server-side renderer; persist the first client render
+          // as the grid thumbnail (#2976).
+          onSnapshot={isStepType(viewerFile.file_type) ? previewSnapshotHandler(viewerFile) : undefined}
           onSliceWithBambuddy={
             // Only offer in-app slicing on files the SliceModal can actually
             // handle (matches the file-row Cog visibility check at :2127).
@@ -2882,6 +3084,38 @@ export function FileManagerPage() {
                 }
               : undefined
           }
+        />
+      )}
+
+      {(pdfPreviewFile || sheetPreviewFile) && (
+        <Suspense fallback={null}>
+          {pdfPreviewFile && (
+            <PdfPreviewModal
+              libraryFileId={pdfPreviewFile.id}
+              filename={pdfPreviewFile.print_name || pdfPreviewFile.filename}
+              fileSize={pdfPreviewFile.file_size}
+              onClose={() => setPdfPreviewFile(null)}
+              onSnapshot={previewSnapshotHandler(pdfPreviewFile)}
+            />
+          )}
+          {sheetPreviewFile && (
+            <SpreadsheetPreviewModal
+              libraryFileId={sheetPreviewFile.id}
+              filename={sheetPreviewFile.print_name || sheetPreviewFile.filename}
+              fileType={sheetPreviewFile.file_type}
+              fileSize={sheetPreviewFile.file_size}
+              onClose={() => setSheetPreviewFile(null)}
+              onSnapshot={previewSnapshotHandler(sheetPreviewFile)}
+            />
+          )}
+        </Suspense>
+      )}
+
+      {detailsFile && (
+        <LibraryFileDetailsModal
+          file={detailsFile}
+          canEdit={canModify('library', 'update', detailsFile.created_by_id)}
+          onClose={() => setDetailsFile(null)}
         />
       )}
 

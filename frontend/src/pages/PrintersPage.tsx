@@ -58,6 +58,19 @@ function waitingReasonKey(reason: string | null | undefined): string | undefined
   return reason ? WAITING_REASON_KEYS[reason] : undefined;
 }
 
+// Why a scheduled drying failed, by the code the scheduler stores. A row with
+// no code (failed before codes existed) or an unknown one shows the backend's
+// English error_message instead.
+const FAILED_REASON_KEYS: Record<string, string> = {
+  screen_only: 'printers.drying.screenOnly',
+  unsupported: 'printers.drying.notSupported',
+  did_not_start: 'printers.drying.scheduleFailedDidNotStart',
+};
+
+function failedReasonKey(code: string | null | undefined): string | undefined {
+  return code ? FAILED_REASON_KEYS[code] : undefined;
+}
+
 // Which cannot-dry code to name when the firmware reports several at once.
 // Same priority as the backend's drying_preflight.primary_reason_code, so the
 // button's tooltip and a scheduled row's waiting reason describe one blocked
@@ -123,6 +136,7 @@ import {
   Info,
   Cable,
   Flame,
+  Hourglass,
   Repeat,
   Snowflake,
   Gauge,
@@ -140,7 +154,10 @@ import {
   MonitorPlay,
   ExternalLink,
   PictureInPicture2,
+  ThumbsUp,
+  ThumbsDown,
 } from 'lucide-react';
+import { ConfirmOutcomeDialog } from '../components/ConfirmOutcomeDialog';
 
 // Aliased: lucide-react already exports a `Link` icon into this module.
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
@@ -2045,6 +2062,7 @@ function ScheduledDryingBanner({ printerId, dryingActive, timeFormat }: { printe
       {rows.map(s => {
         const failed = s.status === 'failed';
         const reasonKey = waitingReasonKey(s.waiting_reason);
+        const failedKey = failedReasonKey(s.error_code);
         return (
           <div
             key={s.id}
@@ -2056,7 +2074,7 @@ function ScheduledDryingBanner({ printerId, dryingActive, timeFormat }: { printe
             <span className={failed ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'}>
               {failed ? (
                 t('printers.drying.scheduleFailedReason', {
-                  reason: s.error_message || t('printers.drying.scheduleFailedUnknown'),
+                  reason: failedKey ? t(failedKey) : s.error_message || t('printers.drying.scheduleFailedUnknown'),
                 })
               ) : (
                 <>
@@ -2164,7 +2182,7 @@ function PrinterCard({
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { hasPermission } = useAuth();
+  const { hasPermission, canModify } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteArchives, setDeleteArchives] = useState(true);
@@ -2655,6 +2673,21 @@ function PrinterCard({
   const lastPrint = lastPrints?.[0];
   const isPrintingOrPaused = status?.state === 'RUNNING' || status?.state === 'PAUSE';
   const needsPlateClear = requirePlateClear && status?.awaiting_plate_clear === true;
+  // Post-print outcome confirmation on the card (#1898): while the plate-clear
+  // gate is up and the just-finished print asked for a verdict, offer
+  // Good/Reject right where the operator releases the plate. Releasing the
+  // plate without answering stays possible — the two are orthogonal (though
+  // the confirm_default_good_on_plate_clear setting can couple them).
+  // Only offered to whoever may record it: the PATCH checks archives:update
+  // against the archive's owner, so for anyone else the pair could only fail.
+  const pendingConfirmArchive =
+    lastPrint &&
+    lastPrint.status === 'completed' &&
+    lastPrint.confirm_requested &&
+    lastPrint.user_verdict == null &&
+    canModify('archives', 'update', lastPrint.created_by_id)
+      ? lastPrint
+      : null;
   // Not gated on `connected`: the plate-clear gate is Bambuddy-side state, and with
   // Auto Power Off the printer is powered down exactly when the operator clears the
   // plate. Hiding the control there left no way to release the gate (#2864).
@@ -2871,24 +2904,80 @@ function PrinterCard({
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
   });
 
+  // Post-print outcome confirmation (#1898): one-tap "good" from the card,
+  // reject goes through the dialog for the optional reason + reprint.
+  const [showConfirmOutcome, setShowConfirmOutcome] = useState(false);
+  // Only "good" is answered on the card. A reject wants a reason and possibly
+  // a reprint, so that button opens the dialog instead — and the parameter
+  // says as much, rather than accepting a verdict this path cannot send and
+  // then reporting it as good.
+  const cardVerdictMutation = useMutation({
+    mutationFn: (verdict: 'good') =>
+      api.updateArchive(pendingConfirmArchive!.id, {
+        user_verdict: verdict,
+        user_verdict_source: 'printer_card',
+      }),
+    onSuccess: () => {
+      showToast(t('confirmOutcome.savedGood'), 'success');
+      queryClient.invalidateQueries({ queryKey: ['archives'] });
+    },
+    onError: (error: Error) => showToast(error.message || t('confirmOutcome.saveFailed'), 'error'),
+  });
+
   // Rendered from two places: inside the live-status block for a connected printer,
   // and standalone below it for a powered-down one, whose status block isn't rendered
   // at all (#2864). Shared so the two can't drift apart.
   const expandedClearPlateButton = (
-    <button
-      type="button"
-      onClick={() => clearPlateMutation.mutate()}
-      disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
-      className="mt-2 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-300 dark:border-yellow-400/40 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs font-medium disabled:opacity-50"
-      title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
-    >
-      {clearPlateMutation.isPending ? (
-        <Loader2 className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] animate-spin" />
-      ) : (
-        <PlateClearedIcon className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
+    <>
+      {pendingConfirmArchive && (
+        <div className="mt-2 flex items-center gap-1.5">
+          <span
+            className="flex-1 min-w-0 truncate text-xs text-bambu-gray"
+            title={pendingConfirmArchive.print_name || pendingConfirmArchive.filename}
+          >
+            {t('confirmOutcome.cardPrompt')}
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowConfirmOutcome(true)}
+            disabled={cardVerdictMutation.isPending}
+            className="p-1.5 rounded-lg border border-red-500/40 text-red-500 hover:bg-red-500/10 transition-colors"
+            title={t('confirmOutcome.reject')}
+          >
+            <ThumbsDown className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
+          </button>
+          <button
+            type="button"
+            onClick={() => cardVerdictMutation.mutate('good')}
+            disabled={cardVerdictMutation.isPending}
+            className="p-1.5 rounded-lg border border-bambu-green/50 text-bambu-green hover:bg-bambu-green/10 transition-colors"
+            title={t('confirmOutcome.good')}
+          >
+            <ThumbsUp className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
+          </button>
+        </div>
       )}
-      {t('printers.plateStatus.markCleared')}
-    </button>
+      <button
+        type="button"
+        onClick={() => clearPlateMutation.mutate()}
+        disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
+        className="mt-2 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-300 dark:border-yellow-400/40 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs font-medium disabled:opacity-50"
+        title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
+      >
+        {clearPlateMutation.isPending ? (
+          <Loader2 className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] animate-spin" />
+        ) : (
+          <PlateClearedIcon className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
+        )}
+        {t('printers.plateStatus.markCleared')}
+      </button>
+      {showConfirmOutcome && pendingConfirmArchive && (
+        <ConfirmOutcomeDialog
+          archiveId={pendingConfirmArchive.id}
+          onClose={() => setShowConfirmOutcome(false)}
+        />
+      )}
+    </>
   );
 
   const nozzleTemperatureMutation = useMutation({
@@ -5416,8 +5505,36 @@ function PrinterCard({
                                 </div>
                               )}
                             </div>
-                            {/* Drying status bar */}
-                            {ams.dry_time > 0 && (
+                            {/* Drying status bar. A dry_time whose countdown is not
+                                ticking, with no active drying phase (a parked command —
+                                e.g. an H2D mid-print already powering other drying — or
+                                a paused cycle), is shown as "not running", not as an
+                                active cycle: the amber badge claiming a running dry
+                                that the AMS never began is how this was found. */}
+                            {ams.dry_time > 0 && ams.dry_countdown_stalled && (
+                              <div className="flex items-center gap-2 rounded-lg bg-slate-100 dark:bg-slate-500/10 px-2 py-1 text-[length:var(--pc-t9,9px)]" title={t('printers.drying.notRunningHint')}>
+                                <Hourglass className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] text-slate-500 dark:text-slate-400 shrink-0" />
+                                <span className="text-slate-600 dark:text-slate-300 font-medium">{t('printers.drying.notRunning')}</span>
+                                {ams.dry_filament && (
+                                  <span className="text-slate-500/90 dark:text-slate-400/80">
+                                    {ams.dry_target_temp != null
+                                      ? t('printers.drying.targetSummary', { filament: ams.dry_filament, temp: ams.dry_target_temp })
+                                      : ams.dry_filament}
+                                  </span>
+                                )}
+                                {!status.drying_screen_only && (
+                                  <button
+                                    onClick={() => stopDryingMutation.mutate(ams.id)}
+                                    disabled={stopDryingMutation.isPending}
+                                    className="ml-auto text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors disabled:opacity-50"
+                                    title={t('printers.drying.stop')}
+                                  >
+                                    <X className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                            {ams.dry_time > 0 && !ams.dry_countdown_stalled && (
                               <div className="flex items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-500/10 px-2 py-1 text-[length:var(--pc-t9,9px)]">
                                 <Flame className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] text-amber-600 dark:text-amber-400 shrink-0" />
                                 <span className="text-amber-700 dark:text-amber-400 font-medium">{t('printers.drying.active')}</span>
@@ -5985,22 +6102,31 @@ function PrinterCard({
                                 </div>
                               )}
                             </div>
-                            {/* HT AMS drying status bar */}
+                            {/* HT AMS drying status bar. Same not-running split as the
+                                standard-AMS bar above: a frozen countdown is not a
+                                running cycle. */}
                             {ams.dry_time > 0 && (
-                              <div className="flex items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg bg-amber-50 dark:bg-amber-500/10 px-2 py-1 text-[length:var(--pc-t9,9px)]">
-                                <Flame className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] text-amber-600 dark:text-amber-400 shrink-0" />
+                              <div className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg px-2 py-1 text-[length:var(--pc-t9,9px)] ${ams.dry_countdown_stalled ? 'bg-slate-100 dark:bg-slate-500/10' : 'bg-amber-50 dark:bg-amber-500/10'}`} title={ams.dry_countdown_stalled ? t('printers.drying.notRunningHint') : undefined}>
+                                {ams.dry_countdown_stalled
+                                  ? <Hourglass className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] text-slate-500 dark:text-slate-400 shrink-0" />
+                                  : <Flame className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] text-amber-600 dark:text-amber-400 shrink-0" />}
+                                {ams.dry_countdown_stalled && (
+                                  <span className="text-slate-600 dark:text-slate-300 text-[length:var(--pc-t8,8px)] font-medium truncate">{t('printers.drying.notRunning')}</span>
+                                )}
                                 {ams.dry_filament && (
-                                  <span className="text-amber-700/80 dark:text-amber-300/70 text-[length:var(--pc-t8,8px)] truncate">
+                                  <span className={`${ams.dry_countdown_stalled ? 'text-slate-500/90 dark:text-slate-400/80' : 'text-amber-700/80 dark:text-amber-300/70'} text-[length:var(--pc-t8,8px)] truncate`}>
                                     {ams.dry_target_temp != null
                                       ? t('printers.drying.targetSummary', { filament: ams.dry_filament, temp: ams.dry_target_temp })
                                       : ams.dry_filament}
                                   </span>
                                 )}
-                                <span className="text-amber-700/80 dark:text-amber-300/70 text-[length:var(--pc-t8,8px)] truncate">
-                                  {ams.dry_time >= 60
-                                    ? `${Math.floor(ams.dry_time / 60)}h ${ams.dry_time % 60}m`
-                                    : `${ams.dry_time}m`}
-                                </span>
+                                {!ams.dry_countdown_stalled && (
+                                  <span className="text-amber-700/80 dark:text-amber-300/70 text-[length:var(--pc-t8,8px)] truncate">
+                                    {ams.dry_time >= 60
+                                      ? `${Math.floor(ams.dry_time / 60)}h ${ams.dry_time % 60}m`
+                                      : `${ams.dry_time}m`}
+                                  </span>
+                                )}
                                 {!status.drying_screen_only && (
                                   <button
                                     onClick={() => stopDryingMutation.mutate(ams.id)}

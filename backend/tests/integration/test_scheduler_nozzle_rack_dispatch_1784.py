@@ -47,7 +47,7 @@ _FILAMENTS = (
 _NOZZLES = '<nozzle id="0" extruder_id="1"/><nozzle id="1" extruder_id="2"/><nozzle id="2" extruder_id="2"/>'
 
 
-def _write_3mf(path: Path, gcode_members: tuple[str, ...] = ()) -> None:
+def _write_3mf(path: Path, gcode_members: tuple[str, ...] = (), slice_info: str | None = None) -> None:
     """The rack cases need no G-code member and carry none, which is why
     ``gcode_members`` defaults to empty. #2947 does need one: the plate a
     dispatch resolves to when the queue item names none is read out of the
@@ -68,7 +68,7 @@ def _write_3mf(path: Path, gcode_members: tuple[str, ...] = ()) -> None:
         )
         zf.writestr(
             "Metadata/slice_info.config",
-            f'<config><plate><metadata key="index" value="1"/>{_FILAMENTS}{_NOZZLES}</plate></config>',
+            slice_info or f'<config><plate><metadata key="index" value="1"/>{_FILAMENTS}{_NOZZLES}</plate></config>',
         )
         for name in gcode_members:
             zf.writestr(name, "")
@@ -98,9 +98,10 @@ async def rack_case(tmp_path):
         *,
         plate_id: int | None = 1,
         gcode_members: tuple[str, ...] = (),
+        slice_info: str | None = None,
     ):
-        if gcode_members:
-            _write_3mf(base_dir / archive_rel, gcode_members)
+        if gcode_members or slice_info:
+            _write_3mf(base_dir / archive_rel, gcode_members, slice_info)
         async with session_maker() as db:
             printer = Printer(
                 name="H2C-1",
@@ -283,6 +284,56 @@ class TestThePlateThatGetsDispatched:
 
         assert start_print.call_count == 1
         assert register.call_args.kwargs["plate_id"] == 2
+
+
+# Plates 2 and 3 cut out of a larger project, so there is no plate 1. Plate 2
+# prints filaments 1 and 2 (one rack group, one fixed); plate 3 prints filament
+# 3 on a second rack group. The rack lookups read every plate when asked for one
+# the file does not describe, and across both plates this becomes the
+# two-rack-groups case that neither lookup can answer the same way.
+_PLATES_2_AND_3 = (
+    "<config>"
+    '<plate><metadata key="index" value="2"/>'
+    '<filament id="1" group_id="2" color="#DE4343" nozzle_diameter="0.40" volume_type="High Flow"/>'
+    '<filament id="2" group_id="0" color="#F4EE2A" nozzle_diameter="0.40" volume_type="High Flow"/>'
+    '<nozzle id="0" extruder_id="1"/><nozzle id="2" extruder_id="2"/></plate>'
+    '<plate><metadata key="index" value="3"/>'
+    '<filament id="3" group_id="1" color="#0078BF" nozzle_diameter="0.40" volume_type="High Flow"/>'
+    '<nozzle id="1" extruder_id="2"/></plate>'
+    "</config>"
+)
+
+
+class TestTheRackLookupsReadThePlateThatGetsDispatched:
+    """#2947 on an H2C: the rack plan and the slot extruders are read for the
+    same plate the print command names, not for a plate 1 the file lacks.
+    """
+
+    async def _build(self, rack_case):
+        return await rack_case.build(
+            "H2C",
+            None,
+            plate_id=None,
+            gcode_members=("Metadata/plate_2.gcode", "Metadata/plate_3.gcode"),
+            slice_info=_PLATES_2_AND_3,
+        )
+
+    async def test_the_rack_is_resolved_for_plate_two_only(self, rack_case):
+        ids = await self._build(rack_case)
+        start_print, _, _ = await _dispatch(rack_case, ids, _rack())
+
+        assert start_print.call_args.kwargs["plate_id"] == 2
+        # Filament 3 belongs to plate 3; plate 2 has no third slot to map.
+        assert _sent_mapping(start_print)[:3] == [16, 1, -1]
+
+    async def test_the_slot_extruders_are_read_for_plate_two_only(self, rack_case):
+        """With no rack to assign from, the dispatch falls back to the #2800
+        slot extruders, which plate 2 alone can state and the pair cannot."""
+        ids = await self._build(rack_case)
+        start_print, _, _ = await _dispatch(rack_case, ids, _rack(present=()))
+
+        assert start_print.call_args.kwargs["nozzle_mapping"] is None
+        assert json.loads(start_print.call_args.kwargs["nozzle_slot_extruders"]) == [0, 1]
 
 
 class TestOtherModels:

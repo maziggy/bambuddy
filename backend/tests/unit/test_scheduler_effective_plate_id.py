@@ -1,6 +1,7 @@
 """``_effective_plate_id``, the plate resolved once in ``_start_print`` and
-reused at every dispatch call site: G-code injection, rack-plan lookup,
-slot-extruder lookup, and the actual print command (#2947).
+reused at every dispatch call site: G-code injection, usage registration,
+rack-plan lookup, slot-extruder lookup, the external-spool check, and the
+actual print command (#2947).
 
 A single-plate 3MF exported out of a multi-plate project keeps its ORIGINAL
 plate number: cutting the right-side plate out of a two-plate project leaves
@@ -9,7 +10,7 @@ a file whose only G-code member is ``Metadata/plate_2.gcode``, never
 print command for a plate the archive doesn't hold. The printer accepts the
 command, can't find the G-code, and wedges until power-cycled.
 
-The four call sites agreed on this fallback only by accident before this fix
+The call sites agreed on this fallback only by accident before this fix
 — see the function's own docstring for how a plate mismatch could sneak past
 G-code injection specifically.
 """

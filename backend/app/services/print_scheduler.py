@@ -858,8 +858,9 @@ def _unmatched_filament_message(required: list[dict], loaded: list[dict]) -> str
 
 def _effective_plate_id(explicit_plate_id: int | None, file_path: Path) -> int:
     """The plate to dispatch, resolved once in ``_start_print`` and reused at
-    every call site below it: G-code injection, rack-plan lookup,
-    slot-extruder lookup, and the actual print command.
+    every call site below it: G-code injection, usage registration, rack-plan
+    lookup, slot-extruder lookup, the external-spool check, and the actual
+    print command.
 
     A positive explicit ``plate_id`` on the queue item always wins. A
     non-positive one is treated as "not set" and resolved from the archive,
@@ -877,7 +878,7 @@ def _effective_plate_id(explicit_plate_id: int | None, file_path: Path) -> int:
     the file, throws an HMS error, and sits wedged in IDLE until
     power-cycled (#2947).
 
-    The four call sites agreed on a fallback only by accident before this:
+    The call sites agreed on a fallback only by accident before this:
     with G-code injection on, ``inject_gcode_into_3mf`` already falls back to
     the archive's own default plate internally whenever the plate id it's
     handed isn't in the file, so it could silently inject into a different
@@ -6907,7 +6908,7 @@ class PrintScheduler:
             return
 
         # See `_effective_plate_id` for why this is resolved once here rather
-        # than each of the four sites below repeating `item.plate_id or 1`.
+        # than each site below repeating `item.plate_id or 1`.
         effective_plate_id = _effective_plate_id(item.plate_id, file_path)
 
         # G-code injection for auto-print systems (#422)
@@ -7429,7 +7430,7 @@ class PrintScheduler:
             from backend.app.services.filament_requirements import extract_filament_requirements
 
             consumed = _consumed_mapping_entries(
-                ams_mapping, extract_filament_requirements(file_path, plate_id=item.plate_id or 1)
+                ams_mapping, extract_filament_requirements(file_path, plate_id=effective_plate_id)
             )
             if consumed and all(_is_external_tray(t) for t in consumed):
                 effective_use_ams = False
@@ -7437,7 +7438,7 @@ class PrintScheduler:
                     "Queue item %s: every filament plate %s prints is on the external spool "
                     "(mapping %s) — dispatching with use_ams=False (#3087)",
                     item.id,
-                    item.plate_id or 1,
+                    effective_plate_id,
                     ams_mapping,
                 )
 

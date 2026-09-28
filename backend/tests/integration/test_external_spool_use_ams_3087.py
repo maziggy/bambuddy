@@ -46,13 +46,20 @@ pytestmark = pytest.mark.integration
 _PLATE_4_ONE_FILAMENT = '<filament id="7" used_g="12.4" type="PLA" color="#F98C36"/>'
 
 
-def _write_3mf(path: Path, plate_index: int = 4, filaments: str = _PLATE_4_ONE_FILAMENT) -> None:
+def _write_3mf(
+    path: Path,
+    plate_index: int = 4,
+    filaments: str = _PLATE_4_ONE_FILAMENT,
+    gcode_members: tuple[str, ...] = (),
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w") as zf:
         zf.writestr(
             "Metadata/slice_info.config",
             f'<config><plate><metadata key="index" value="{plate_index}"/>{filaments}</plate></config>',
         )
+        for name in gcode_members:
+            zf.writestr(name, "")
 
 
 def _write_3mf_without_slice_info(path: Path) -> None:
@@ -70,11 +77,24 @@ async def dispatch_case(tmp_path):
     base_dir = tmp_path / "external-spool"
 
     async def _build(
-        mapping, *, use_ams=True, plate_id=4, filaments=_PLATE_4_ONE_FILAMENT, slice_info=True, model="P1S"
+        mapping,
+        *,
+        use_ams=True,
+        plate_id=4,
+        filaments=_PLATE_4_ONE_FILAMENT,
+        slice_info=True,
+        model="P1S",
+        plate_index=None,
+        gcode_members=(),
     ):
-        archive_rel = Path("archives") / f"plate-{plate_id}-{abs(hash(str(mapping))) % 10**6}.gcode.3mf"
+        # The file's own plate number follows the queue item's unless a case
+        # needs them apart: an item with no plate still prints a numbered one.
+        plate_index = plate_id if plate_index is None else plate_index
+        archive_rel = Path("archives") / f"plate-{plate_index}-{abs(hash(str(mapping))) % 10**6}.gcode.3mf"
         if slice_info:
-            _write_3mf(base_dir / archive_rel, plate_index=plate_id, filaments=filaments)
+            _write_3mf(
+                base_dir / archive_rel, plate_index=plate_index, filaments=filaments, gcode_members=gcode_members
+            )
         else:
             _write_3mf_without_slice_info(base_dir / archive_rel)
 
@@ -175,6 +195,23 @@ class TestThePlateThatOnlyPrintsFromTheSpoolHolder:
         ids = await dispatch_case.build([254], filaments='<filament id="1" used_g="9.0" type="PLA"/>', plate_id=1)
         call = await _dispatch(dispatch_case, ids)
 
+        assert call.kwargs["use_ams"] is False
+
+    async def test_an_item_with_no_plate_is_judged_on_the_plate_that_prints(self, dispatch_case):
+        """#2947's file: plate 2 cut out of a two-plate project, queued with no
+        plate. The check read plate 1 then, which this file does not describe,
+        so it found no filaments and the print went out with the AMS.
+        """
+        ids = await dispatch_case.build(
+            [-1, 254],
+            filaments='<filament id="2" used_g="9.0" type="PLA"/>',
+            plate_id=None,
+            plate_index=2,
+            gcode_members=("Metadata/plate_2.gcode",),
+        )
+        call = await _dispatch(dispatch_case, ids)
+
+        assert call.kwargs["plate_id"] == 2
         assert call.kwargs["use_ams"] is False
 
 

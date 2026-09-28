@@ -62,14 +62,17 @@ const FORBIDDEN = [
 
 let bundles;
 try {
-  bundles = readdirSync(ASSETS).filter((f) => f.endsWith('.js'));
+  // .mjs too: a dependency's worker imported with `?url` is copied verbatim
+  // under its own extension, bypasses `build.target`, and was invisible here -
+  // the pdf.js worker shipped a class static block that way (#2976).
+  bundles = readdirSync(ASSETS).filter((f) => f.endsWith('.js') || f.endsWith('.mjs'));
 } catch {
   console.error(`check-browser-baseline: no build output at ${ASSETS} - run \`vite build\` first.`);
   process.exit(1);
 }
 
 if (bundles.length === 0) {
-  console.error(`check-browser-baseline: no .js files in ${ASSETS} - did the build succeed?`);
+  console.error(`check-browser-baseline: no .js or .mjs files in ${ASSETS} - did the build succeed?`);
   process.exit(1);
 }
 

@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { screen, waitFor, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
@@ -94,8 +94,14 @@ describe('PrintModal cross-model mode', () => {
 
     // PLA Matte is loaded only on the H2D. It has to be offered anyway: the job
     // can land there, and choosing it simply narrows which candidates match.
+    // The control is a listbox since it gained a swatch per choice (#3159), so
+    // its rows exist only while it is open.
+    const trigger = await screen.findByRole('combobox', { name: /filament override for/i });
+    fireEvent.click(trigger);
     await waitFor(() => {
-      const options = screen.getAllByRole('option').map((o) => o.textContent ?? '');
+      const options = within(screen.getByRole('listbox'))
+        .getAllByRole('option')
+        .map((o) => o.textContent ?? '');
       expect(options.some((o) => o.includes('PLA Matte'))).toBe(true);
       expect(options.some((o) => o.includes('PLA Basic'))).toBe(true);
     });

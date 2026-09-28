@@ -45,6 +45,25 @@ describe('isPrinterCurrentlyDispatchable', () => {
     ).toBe(false);
   });
 
+  it('ignores a parked drying timer, which never ends on its own (#2896)', () => {
+    expect(
+      isPrinterCurrentlyDispatchable(
+        status({ ams: [{ dry_time: 720, dry_countdown_stalled: true }] as PrinterStatus['ams'] })
+      )
+    ).toBe(true);
+    // One unit really drying still holds the printer back.
+    expect(
+      isPrinterCurrentlyDispatchable(
+        status({
+          ams: [
+            { dry_time: 720, dry_countdown_stalled: true },
+            { dry_time: 240, dry_countdown_stalled: false },
+          ] as PrinterStatus['ams'],
+        })
+      )
+    ).toBe(false);
+  });
+
   it('ignores an AMS that is loaded but not drying', () => {
     expect(
       isPrinterCurrentlyDispatchable(status({ ams: [{ dry_time: 0 }] as PrinterStatus['ams'] }))

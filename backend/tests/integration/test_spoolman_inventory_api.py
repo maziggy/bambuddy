@@ -4,6 +4,7 @@ These tests verify that /api/v1/spoolman/inventory/spools/* correctly
 translates between Spoolman's data model and Bambuddy's InventorySpool format.
 """
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -63,7 +64,27 @@ def mock_spoolman_client():
     mock_client.set_spool_archived = AsyncMock(
         side_effect=lambda spool_id, archived: {**SAMPLE_SPOOLMAN_SPOOL, "archived": archived}
     )
-    mock_client.reset_spool_usage = AsyncMock(return_value={**SAMPLE_SPOOLMAN_SPOOL, "used_weight": 0})
+    # The reset records a baseline in spool.extra and touches no native field,
+    # so the spool comes back with remaining_weight and used_weight unchanged
+    # (#2906). The previous fixture returned used_weight=0 alongside
+    # remaining_weight=750.0, which real Spoolman cannot produce -- it
+    # recomputes remaining from initial minus used, so that response would have
+    # been 1000.0 and the "remaining unchanged" assertion below would have
+    # failed. The one check that could have caught the bug was cancelled out by
+    # the mock.
+    #
+    # The baseline is staged as the JSON string '"250.0"', not the JSON number
+    # '250.0'. Spoolman registers an unseen extra key as field_type "text" and
+    # then requires the value to decode to a str, so the number form is
+    # rejected with "Value is not a string." -- staging it here would be the
+    # same class of mistake as the used_weight=0 above: a value the real server
+    # cannot hold.
+    mock_client.reset_spool_consumed_counter = AsyncMock(
+        return_value={
+            **SAMPLE_SPOOLMAN_SPOOL,
+            "extra": {**SAMPLE_SPOOLMAN_SPOOL["extra"], "bambu_weight_used_baseline": json.dumps("250.0")},
+        }
+    )
     mock_client.update_spool_full = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
     mock_client.merge_spool_extra = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
     mock_client.find_or_create_filament = AsyncMock(return_value=7)
@@ -654,23 +675,21 @@ class TestSpoolmanInventoryCRUD:
     ):
         """POST /spoolman/inventory/spools/{id}/reset-consumed-counter zeroes the displayed counter.
 
-        Parity with internal mode (#1390): the InventorySpool response
-        carries `weight_used = label - remaining` and
-        `weight_used_baseline = weight_used - real_used_weight`, so the
-        displayed consumed counter (weight_used - baseline) reads 0
-        while remaining (= label - weight_used) preserves Spoolman's
-        independent remaining_weight field.
+        Parity with internal mode (#1644): the baseline lives in spool.extra and
+        `_map_spoolman_spool` folds it into `weight_used_baseline`, so the
+        displayed consumed counter (weight_used - baseline) reads 0 while every
+        native Spoolman field — initial, remaining, used — is left alone.
         """
         response = await async_client.post("/api/v1/spoolman/inventory/spools/42/reset-consumed-counter")
 
         assert response.status_code == 200
         body = response.json()
-        # Sample spool: label=1000, remaining=750, used_weight=0 after Spoolman reset.
+        # Sample spool: label=1000, remaining=750, used_weight=250, baseline recorded at 250.
         assert body["weight_used"] == 250.0, "synthetic weight_used = label - remaining"
         assert body["weight_used_baseline"] == 250.0, "baseline absorbs the reset"
         assert body["weight_used"] - body["weight_used_baseline"] == 0, "displayed consumed = 0"
         assert body["label_weight"] - body["weight_used"] == 750, "remaining unchanged"
-        mock_spoolman_client.reset_spool_usage.assert_called_once_with(42)
+        mock_spoolman_client.reset_spool_consumed_counter.assert_called_once_with(42)
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -688,7 +707,7 @@ class TestSpoolmanInventoryCRUD:
 
         assert response.status_code == 200
         assert response.json() == {"reset": 3}
-        assert mock_spoolman_client.reset_spool_usage.call_count == 3
+        assert mock_spoolman_client.reset_spool_consumed_counter.call_count == 3
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -705,7 +724,7 @@ class TestSpoolmanInventoryCRUD:
         )
 
         assert response.status_code == 400
-        mock_spoolman_client.reset_spool_usage.assert_not_called()
+        mock_spoolman_client.reset_spool_consumed_counter.assert_not_called()
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -2198,14 +2217,14 @@ class TestLinkTagDuplicate:
 
 
 class TestSpoolmanInventoryUpdateCoreWeight:
-    """core_weight is accepted for schema parity but not persisted — any value should be accepted."""
+    """core_weight is forwarded to Spoolman when sent — any value should be accepted."""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_patch_core_weight_other_than_250_accepted(
         self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
     ):
-        """PATCH with core_weight != 250 is accepted (field is ignored server-side, not rejected)."""
+        """PATCH with core_weight != 250 is accepted and carried through, not rejected."""
         resp = await async_client.patch(
             "/api/v1/spoolman/inventory/spools/42",
             json={"core_weight": 100},
@@ -2740,7 +2759,7 @@ class TestCreateSpoolWeightValidation:
     async def test_create_spool_with_non_default_core_weight_accepted(
         self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
     ):
-        """A3: core_weight != 250 must no longer be rejected → 201."""
+        """A3: core_weight != 250 is accepted and reaches Spoolman → 201."""
         resp = await async_client.post(
             "/api/v1/spoolman/inventory/spools",
             json={"material": "PLA", "label_weight": 1000, "weight_used": 0, "core_weight": 196},
@@ -2926,3 +2945,129 @@ class TestGetAllSlotAssignmentsEnriched:
         assert data[0]["printer_id"] == 1
         assert data[0]["printer_name"] == "P1"
         assert data[0]["spoolman_spool_id"] == 201
+
+
+class TestPerSpoolCoreWeight:
+    """The per-spool tare reaches Spoolman now (#2908).
+
+    `core_weight` was declared on both write schemas and dropped after
+    validation, with a comment saying so. The read path never showed it: it
+    derives the value from ``spool.spool_weight ?? filament.spool_weight ?? 250``
+    (_spoolman_helpers.py), so an edit that went nowhere came back as the
+    inherited value and looked like it had simply not changed.
+
+    It is not cosmetic, because the same resolution is the tare the weigh
+    endpoint subtracts. A spool whose real empty weight differs from its
+    filament's produced a wrong remaining weight on every weigh-in -- 70 g for
+    the reporter's third-party spools against Bambu's 250 g reusable ones.
+
+    Spoolman already has the field and already gives it priority. Only the
+    write was missing.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_edited_tare_is_written_to_the_spools_own_field(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json={"core_weight": 180})
+
+        assert response.status_code == 200
+        assert mock_spoolman_client.update_spool_full.call_args.kwargs["spool_weight"] == 180
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_edit_that_does_not_mention_the_tare_leaves_it_inheriting(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """The reason this keys off model_fields_set rather than the value.
+
+        `core_weight` carries a default, so a PATCH that never mentions it still
+        arrives at the handler holding one. Writing that would stamp an explicit
+        tare on every spool the user edits for any reason, silently detaching it
+        from its filament -- a worse bug than the one being fixed, and an
+        invisible one, since the number displayed would not change.
+        """
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json={"note": "just a note"})
+
+        assert response.status_code == 200
+        assert mock_spoolman_client.update_spool_full.call_args.kwargs["spool_weight"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_tare_given_at_creation_is_written(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        response = await async_client.post(
+            "/api/v1/spoolman/inventory/spools",
+            json={"material": "PLA", "label_weight": 1000, "core_weight": 180},
+        )
+
+        assert response.status_code == 200
+        assert mock_spoolman_client.create_spool.call_args.kwargs["spool_weight"] == 180
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_creation_that_omits_the_tare_leaves_the_spool_inheriting(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """Same defaulting hazard as the update, and the commoner path: the
+        form posts without a tare far more often than with one."""
+        response = await async_client.post(
+            "/api/v1/spoolman/inventory/spools",
+            json={"material": "PLA", "label_weight": 1000},
+        )
+
+        assert response.status_code == 200
+        assert mock_spoolman_client.create_spool.call_args.kwargs["spool_weight"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_creation_persists_the_tare_on_every_spool(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """Bulk create takes the same schema, so it dropped the field the same way."""
+        response = await async_client.post(
+            "/api/v1/spoolman/inventory/spools/bulk",
+            json={"spool": {"material": "PLA", "label_weight": 1000, "core_weight": 180}, "quantity": 3},
+        )
+
+        assert response.status_code in (200, 201)
+        assert mock_spoolman_client.create_spool.await_count == 3
+        assert all(c.kwargs["spool_weight"] == 180 for c in mock_spoolman_client.create_spool.await_args_list)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_zero_tare_is_a_value_not_an_absence(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """0 g is a real answer -- a coil with no spool -- and the schema allows
+        it (``ge=0``). Guarding the write on truthiness rather than ``is not
+        None`` would silently turn it into "inherit", which resolves to 250."""
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json={"core_weight": 0})
+
+        assert response.status_code == 200
+        assert mock_spoolman_client.update_spool_full.call_args.kwargs["spool_weight"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_written_tare_is_the_one_the_weigh_endpoint_subtracts(
+        self, async_client: AsyncClient, spoolman_settings, mock_spoolman_client
+    ):
+        """What the fix is actually for.
+
+        The weigh endpoint resolves the tare exactly as the read path does, so
+        once the per-spool value is stored it is the number a measured gross
+        weight is reduced by. With a 180 g spool inheriting the filament's 250 g
+        this same weigh-in would have recorded 550 g remaining instead of 620 --
+        the 70 g error from the report, on every weigh-in.
+        """
+        mock_spoolman_client.get_spool.return_value = {
+            **SAMPLE_SPOOLMAN_SPOOL,
+            "spool_weight": 180.0,
+        }
+
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42/weight", json={"weight_grams": 800.0})
+
+        assert response.status_code == 200
+        assert mock_spoolman_client.update_spool_full.call_args.kwargs["remaining_weight"] == 620.0

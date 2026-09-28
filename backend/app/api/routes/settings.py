@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import (
     RequirePermissionIfAuthEnabled,
+    ScopedCaller,
     caller_is_api_key,
     require_auth_if_enabled,
     require_energy_cost_update,
@@ -129,6 +130,22 @@ def normalize_str_setting(key: str, value: object) -> str:
     raise HTTPException(400, f"{key} must be a string; got {type(value).__name__}")
 
 
+async def get_external_base_url(db: AsyncSession) -> str:
+    """Base URL for links Bambuddy hands to the outside world (no trailing slash).
+
+    ``external_url`` is optional and has no default, so anything that must be
+    absolute — a login link in an e-mail, the one-tap outcome verdict links
+    (#1898), whose Telegram/ntfy buttons are dropped for a relative URL — falls
+    back to APP_URL and finally to the dev origin.
+    """
+    import os
+
+    external_url = await get_setting(db, "external_url")
+    if external_url:
+        return external_url.rstrip("/")
+    return os.environ.get("APP_URL", "http://localhost:5173").rstrip("/")
+
+
 async def get_external_login_url(db: AsyncSession) -> str:
     """Get the external URL for the login page.
 
@@ -140,14 +157,7 @@ async def get_external_login_url(db: AsyncSession) -> str:
     Returns:
         Full URL to the login page
     """
-    import os
-
-    external_url = await get_setting(db, "external_url")
-    if external_url:
-        external_url = external_url.rstrip("/")
-    else:
-        external_url = os.environ.get("APP_URL", "http://localhost:5173")
-    return external_url + "/login"
+    return await get_external_base_url(db) + "/login"
 
 
 async def set_setting(db: AsyncSession, key: str, value: str) -> None:
@@ -155,6 +165,96 @@ async def set_setting(db: AsyncSession, key: str, value: str) -> None:
     from backend.app.core.db_dialect import upsert_setting
 
     await upsert_setting(db, Settings, key, value)
+
+
+# Settings stored as booleans / numbers. Storage is a VARCHAR column, so
+# _build_settings_response() parses these back, and update_settings() refuses
+# an explicit null for them: a null is stored as the literal "None", which
+# reads back as False for a boolean and is not a number at all.
+_BOOL_SETTING_KEYS = frozenset(
+    {
+        "auto_archive",
+        "save_thumbnails",
+        "capture_finish_photo",
+        "finish_photo_restore_plate",
+        "spoolman_enabled",
+        "spoolman_disable_weight_sync",
+        "spoolman_report_partial_usage",
+        "auto_add_unknown_rfid",
+        "disable_filament_warnings",
+        "prefer_lowest_filament",
+        "check_updates",
+        "check_printer_firmware",
+        "include_beta_updates",
+        "virtual_printer_enabled",
+        "ftp_retry_enabled",
+        "mqtt_enabled",
+        "mqtt_use_tls",
+        "ha_enabled",
+        "per_printer_mapping_expanded",
+        "prometheus_enabled",
+        "user_notifications_enabled",
+        "queue_drying_enabled",
+        "queue_drying_block",
+        "ambient_drying_enabled",
+        "print_drying_enabled",
+        "require_plate_clear",
+        "queue_shortest_first",
+        # default_bed_levelling / default_flow_cali / default_nozzle_offset_cali
+        # are tri-state strings (off/on/auto) — parsed via the raw-string else
+        # branch; the TriState validator coerces legacy "true"/"false" rows.
+        "default_vibration_cali",
+        "default_layer_inspect",
+        "default_timelapse",
+        "default_confirm_outcome",
+        "confirm_outcome_external_prints",
+        "confirm_default_good_on_plate_clear",
+        "billing_enabled",
+        "printer_kill_switch_enabled",
+        "ldap_enabled",
+        "ldap_auto_provision",
+        "local_login_enabled",
+        "preheat_enabled",
+        "queue_keep_bed_warm",
+    }
+)
+
+_FLOAT_SETTING_KEYS = frozenset(
+    {
+        "default_filament_cost",
+        "energy_cost_per_kwh",
+        "ams_temp_good",
+        "ams_temp_fair",
+        "library_disk_warning_gb",
+        "low_stock_threshold",
+    }
+)
+
+_INT_SETTING_KEYS = frozenset(
+    {
+        "ams_humidity_good",
+        "ams_humidity_fair",
+        "ams_history_retention_days",
+        "printer_sensor_history_retention_days",
+        "ftp_retry_count",
+        "ftp_retry_delay",
+        "ftp_timeout",
+        "mqtt_port",
+        "stagger_group_size",
+        "stagger_interval_minutes",
+        "forecast_global_lead_time_days",
+        "location_sensor_poll_interval",
+        "finance_budget_reset_day",
+        "session_max_hours",
+        "pipeline_max_copies",
+        "preheat_max_wait_seconds",
+        "preheat_soak_seconds",
+        "queue_keep_warm_bed_temp",
+        "queue_keep_warm_max_minutes",
+        "queue_max_concurrent_uploads",
+        "ambient_drying_sustained_minutes",
+    }
+)
 
 
 async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -> AppSettings:
@@ -165,91 +265,27 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
     for setting in result.scalars().all():
         if setting.key not in settings_dict:
             continue
-        if setting.key in [
-            "auto_archive",
-            "save_thumbnails",
-            "capture_finish_photo",
-            "finish_photo_restore_plate",
-            "spoolman_enabled",
-            "spoolman_disable_weight_sync",
-            "spoolman_report_partial_usage",
-            "auto_add_unknown_rfid",
-            "disable_filament_warnings",
-            "prefer_lowest_filament",
-            "check_updates",
-            "check_printer_firmware",
-            "include_beta_updates",
-            "virtual_printer_enabled",
-            "ftp_retry_enabled",
-            "mqtt_enabled",
-            "mqtt_use_tls",
-            "ha_enabled",
-            "per_printer_mapping_expanded",
-            "prometheus_enabled",
-            "user_notifications_enabled",
-            "queue_drying_enabled",
-            "queue_drying_block",
-            "ambient_drying_enabled",
-            "print_drying_enabled",
-            "require_plate_clear",
-            "queue_shortest_first",
-            # default_bed_levelling / default_flow_cali / default_nozzle_offset_cali
-            # are tri-state strings (off/on/auto) — parsed via the raw-string else
-            # branch; the TriState validator coerces legacy "true"/"false" rows.
-            "default_vibration_cali",
-            "default_layer_inspect",
-            "default_timelapse",
-            "billing_enabled",
-            "printer_kill_switch_enabled",
-            "ldap_enabled",
-            "ldap_auto_provision",
-            "local_login_enabled",
-            "preheat_enabled",
-            "queue_keep_bed_warm",
-        ]:
+        if setting.key in _BOOL_SETTING_KEYS:
             settings_dict[setting.key] = setting.value.lower() == "true"
-        elif setting.key in [
-            "default_filament_cost",
-            "energy_cost_per_kwh",
-            "ams_temp_good",
-            "ams_temp_fair",
-            "library_disk_warning_gb",
-            "low_stock_threshold",
-        ]:
-            settings_dict[setting.key] = float(setting.value)
+        elif setting.key in _FLOAT_SETTING_KEYS or setting.key in _INT_SETTING_KEYS:
+            # A value that does not parse (the literal "None" from an old
+            # null save, or a hand-edited row) keeps the default instead of
+            # taking the whole settings response down with it.
+            parse = int if setting.key in _INT_SETTING_KEYS else float
+            try:
+                settings_dict[setting.key] = parse(setting.value)
+            except (TypeError, ValueError):
+                logger.warning("Setting %s has an unparseable value; using the default", setting.key)
         elif setting.key in [
             # Nullable floats. Settings storage stringifies None to the literal
-            # "None", so these cannot go in the list above -- float("None")
-            # raises and would take the whole settings response with it (#2905).
+            # "None", which must read back as null here -- not as the default
+            # the _FLOAT_SETTING_KEYS branch above falls back to (#2905).
             "ams_temp_alarm",
         ]:
             try:
                 settings_dict[setting.key] = float(setting.value)
             except (TypeError, ValueError):
                 settings_dict[setting.key] = None
-        elif setting.key in [
-            "ams_humidity_good",
-            "ams_humidity_fair",
-            "ams_history_retention_days",
-            "printer_sensor_history_retention_days",
-            "ftp_retry_count",
-            "ftp_retry_delay",
-            "ftp_timeout",
-            "mqtt_port",
-            "stagger_group_size",
-            "stagger_interval_minutes",
-            "forecast_global_lead_time_days",
-            "location_sensor_poll_interval",
-            "finance_budget_reset_day",
-            "session_max_hours",
-            "pipeline_max_copies",
-            "preheat_max_wait_seconds",
-            "preheat_soak_seconds",
-            "queue_keep_warm_bed_temp",
-            "queue_keep_warm_max_minutes",
-            "queue_max_concurrent_uploads",
-        ]:
-            settings_dict[setting.key] = int(setting.value)
         elif setting.key == "default_printer_id":
             settings_dict[setting.key] = int(setting.value) if setting.value and setting.value != "None" else None
         elif setting.key == "open_in_slicer":
@@ -293,6 +329,16 @@ async def update_settings(
 ):
     """Update application settings."""
     update_data = settings_update.model_dump(exclude_unset=True)
+
+    # An explicit null for a boolean or numeric setting has no meaning -- these
+    # are not clearable -- and would be stored as the literal "None".
+    null_keys = sorted(
+        key
+        for key, value in update_data.items()
+        if value is None and key in (_BOOL_SETTING_KEYS | _FLOAT_SETTING_KEYS | _INT_SETTING_KEYS)
+    )
+    if null_keys:
+        raise HTTPException(status_code=422, detail=f"These settings cannot be null: {', '.join(null_keys)}")
 
     # Safety refusals on disabling local login (#1589). Two failure modes
     # would otherwise lock everyone out of the install:
@@ -397,7 +443,7 @@ class ElectricityPriceUpdate(BaseModel):
 async def update_electricity_price(
     payload: ElectricityPriceUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_energy_cost_update()),
+    _: ScopedCaller = Depends(require_energy_cost_update()),
     _is_api_key: bool = Depends(caller_is_api_key),
 ):
     """Update the per-kWh electricity cost used by the energy-tracking pipeline.

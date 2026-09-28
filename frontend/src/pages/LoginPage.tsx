@@ -207,12 +207,16 @@ export function LoginPage() {
     );
     Promise.race([api.getOIDCAuthorizeUrl(providerId), timeoutPromise])
       .then((result) => {
+        const fromState = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
+        if (fromState?.pathname) {
+          stashPostLoginRedirect(`${fromState.pathname}${fromState.search ?? ''}`);
+        }
         window.location.href = (result as { auth_url: string }).auth_url;
       })
       .catch(() => {
         setAutologinFailed(true);
       });
-  }, [advancedAuthStatus, searchParams]);
+  }, [advancedAuthStatus, searchParams, location.state]);
 
   const localLoginEnabled = advancedAuthStatus?.local_login_enabled !== false;
   const showAutologinBanner = autologinFailed && advancedAuthStatus?.autologin_provider_id != null;
@@ -391,12 +395,14 @@ export function LoginPage() {
   const oidcLoginMutation = useMutation({
     mutationFn: (providerId: number) => api.getOIDCAuthorizeUrl(providerId),
     onSuccess: (data) => {
-      if (rememberMe) {
-        try {
+      try {
+        if (rememberMe) {
           sessionStorage.setItem(REMEMBER_ME_KEY, '1');
-        } catch (err) {
-          console.warn('setItem auth_remember_me failed, Remember Me will not carry through OIDC redirect', err);
+        } else {
+          sessionStorage.removeItem(REMEMBER_ME_KEY);
         }
+      } catch (err) {
+        console.warn('setItem/removeItem auth_remember_me failed, Remember Me will not carry through OIDC redirect', err);
       }
       // Stash the post-login destination from router state so it survives the
       // provider round-trip (window.location.href kills React state). If the
@@ -809,14 +815,31 @@ export function LoginPage() {
         {/* OIDC provider buttons */}
         {oidcProviders && oidcProviders.length > 0 && (
           <div className="space-y-3">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-bambu-dark-tertiary" />
+            {localLoginEnabled && (
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-bambu-dark-tertiary" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-bambu-dark-secondary text-bambu-gray">{t('login.twoFA.orContinueWith')}</span>
+                </div>
               </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-bambu-dark-secondary text-bambu-gray">{t('login.twoFA.orContinueWith')}</span>
+            )}
+
+            {!localLoginEnabled && (
+              <div className="flex items-center gap-2">
+                <input
+                  id="remember-me"
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 rounded border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-green focus:ring-bambu-green/50 cursor-pointer"
+                />
+                <label htmlFor="remember-me" className="text-sm text-bambu-gray cursor-pointer">
+                  {t('login.rememberMe')}
+                </label>
               </div>
-            </div>
+            )}
 
             <div className="space-y-2">
               {oidcProviders.map((provider) => (

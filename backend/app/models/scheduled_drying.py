@@ -33,6 +33,10 @@ class ScheduledDrying(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")
     waiting_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Why a failed run failed, as a code the UI translates (screen_only /
+    # unsupported / did_not_start). error_message keeps the English text for the
+    # API and logs; a row without a code falls back to showing that.
+    error_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

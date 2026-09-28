@@ -413,6 +413,7 @@ async def run_connection_diagnostic(
     serial_number: str | None = None,
     access_code: str | None = None,
     wait_for_publish_seconds: float = 0.0,
+    progress: dict | None = None,
 ) -> PrinterDiagnosticResult:
     """Run connection checks for a printer.
 
@@ -422,10 +423,20 @@ async def run_connection_diagnostic(
     Each check carries a stable ``id`` and a ``status`` of
     pass / fail / warn / skip; the frontend renders the human-readable
     title and fix text (localized) keyed on that id + status.
+
+    ``progress``, when given, is kept current while the checks run: its
+    ``checks`` key is the list of finished checks and ``stage`` names the step
+    in flight. The support bundle cancels a run that overruns its budget, and
+    this is how it can still say which step hung and keep what finished --
+    a bare "timed out" for every printer is all #3164's bundle could show.
     """
     checks: list[DiagnosticCheck] = []
+    if progress is None:
+        progress = {}
+    progress["checks"] = checks
 
     # --- Port reachability (probed in parallel) ---
+    progress["stage"] = "ports"
     camera_port, camera_protocol = _camera_port_for_printer(printer)
     mqtt_ok, ftps_state, camera_ok = await asyncio.gather(
         _check_port(ip_address, PORT_MQTT),
@@ -452,6 +463,7 @@ async def run_connection_diagnostic(
     )
 
     # --- macOS Local Network permission ---
+    progress["stage"] = "macos_local_network"
     # Appended on macOS only. Everywhere else there is nothing to say, and a
     # permanently dimmed "skipped" row would be noise for the users who make
     # up nearly all of them.
@@ -485,6 +497,7 @@ async def run_connection_diagnostic(
                 checks.append(DiagnosticCheck(id="macos_local_network", status="warn", params={"reason": "permission"}))
 
     # --- Container network mode ---
+    progress["stage"] = "network_mode"
     # Not Docker-only: Podman runs Bambuddy in exactly the same two shapes and
     # its users were told "Not running in Docker", which reads as "you are on
     # bare metal" and sent them looking for the problem somewhere else (#3092).
@@ -514,6 +527,7 @@ async def run_connection_diagnostic(
             )
 
     # --- Subnet match ---
+    progress["stage"] = "subnet"
     # Skipped in bridge mode: the container IP is the bridge IP, not the host's,
     # so the comparison is meaningless and the network_mode check already covers it.
     if network_mode == "bridge":
@@ -534,6 +548,7 @@ async def run_connection_diagnostic(
             )
 
     # --- External storage (printer-side "Store sent files on external storage") ---
+    progress["stage"] = "external_storage"
     # Install step 4. The setting has two variants depending on
     # firmware/slicer combo: on newer firmware the toggle lives on the
     # printer (P2S 01.02 / BambuStudio 2.6+), on older versions it's
@@ -632,6 +647,7 @@ async def run_connection_diagnostic(
         checks.append(DiagnosticCheck(id="external_storage", status="skip"))
 
     # --- MQTT credentials / connection ---
+    progress["stage"] = "mqtt_auth"
     if not mqtt_ok:
         # Can't reach the broker at all — the port check already reported it.
         checks.append(DiagnosticCheck(id="mqtt_auth", status="skip"))
@@ -671,6 +687,7 @@ async def run_connection_diagnostic(
         checks.append(DiagnosticCheck(id="mqtt_auth", status="skip"))
 
     # --- LAN developer mode (only readable over a live MQTT connection) ---
+    progress["stage"] = "developer_mode"
     if state is not None and state.connected:
         if state.developer_mode is True:
             dev_status = "pass"
@@ -683,6 +700,7 @@ async def run_connection_diagnostic(
         checks.append(DiagnosticCheck(id="developer_mode", status="skip"))
 
     # --- Printer is actually publishing on its report topic ---
+    progress["stage"] = "printer_publishing"
     # The mqtt_auth check above only proves TCP + TLS + auth + SUBSCRIBE
     # succeed. A printer with a wrong-cased serial — or one that simply isn't
     # publishing for some other reason — still passes mqtt_auth because the

@@ -212,9 +212,6 @@ export interface AdditionalSectionProps extends SectionProps {
   globalLowStockThreshold: number;
   availableLocations?: { id: number; name: string }[];
   onCreateLocation?: (name: string) => Promise<{ id: number; name: string } | null>;
-  // When true the empty-spool weight is managed by Spoolman on the filament
-  // object, so SpoolWeightPicker is hidden and an info notice is shown instead.
-  spoolmanMode?: boolean;
 }
 
 // PA Profile section props

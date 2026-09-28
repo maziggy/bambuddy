@@ -61,6 +61,7 @@ from backend.app.services.pipeline_eligibility import (
     EligibilityReport,
     check_pipeline_eligibility,
 )
+from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
 
 logger = logging.getLogger(__name__)
 
@@ -571,6 +572,9 @@ def _make_orchestration_callable(
             if len(jobs) != copies:
                 logger.warning("pipeline_run %d expected %d jobs, found %d", run_id, copies, len(jobs))
 
+            # No per-job ask-for-outcome toggle on a pipeline run either (#1898).
+            confirm_outcome = await confirm_outcome_for_new_queue_item(session)
+
             for job, (printer_id, target_model) in zip(jobs, assignments, strict=False):
                 queue_item = PrintQueueItem(
                     printer_id=printer_id,
@@ -578,6 +582,7 @@ def _make_orchestration_callable(
                     library_file_id=slice_response.library_file_id,
                     created_by_id=creator_user_id,
                     status="pending",
+                    confirm_outcome=confirm_outcome,
                 )
                 session.add(queue_item)
                 await session.flush()

@@ -142,7 +142,7 @@ export function InventorySpoolInfoCard({
     <div className={`flex flex-col items-center space-y-4 max-w-md ${className ?? ''}`}>
       <div className="flex items-start gap-5">
         <div className="relative shrink-0">
-          <SpoolIcon color={colorHex} isEmpty={false} size={100} />
+          <SpoolIcon color={colorHex} isEmpty={false} size={100} spool={spool} />
           {fillPercent !== null && (
             <div
               className="absolute -bottom-2 -right-2 px-2 py-0.5 rounded-full text-xs font-bold text-white shadow-lg"

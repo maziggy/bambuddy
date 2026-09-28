@@ -160,6 +160,83 @@ async def test_snapshot_emits_timed_out_marker_when_probe_exceeds_cap():
 
 
 @pytest.mark.asyncio
+async def test_timed_out_entry_names_the_stalled_step_and_keeps_finished_checks():
+    """#3164: every printer of a 14-printer farm came back as a bare
+    `timed_out`, so the bundle could not say which step hung. The real
+    diagnostic runs here with the ports answering and the subnet lookup
+    hanging; the entry must name `subnet` and carry the port checks that
+    finished before it."""
+    import time as _time
+
+    printers = [
+        SimpleNamespace(
+            id=1,
+            name="A1",
+            model="A1",
+            ip_address="10.0.0.5",
+            serial_number="s",
+            access_code="a",
+        )
+    ]
+    db = _make_db_with_printers_and_vps(printers, [])
+
+    def hanging_subnet(*_a, **_k):
+        _time.sleep(1.0)  # blocks its worker thread well past the cap below
+        return True
+
+    with (
+        patch("backend.app.services.printer_diagnostic._check_port", new=AsyncMock(return_value=True)),
+        patch("backend.app.services.printer_diagnostic._check_ftps_tls", new=AsyncMock(return_value="ok")),
+        patch("backend.app.services.printer_diagnostic.detect_container_runtime", return_value=None),
+        patch("backend.app.services.printer_diagnostic._host_source_ip", return_value="10.0.0.2"),
+        patch("backend.app.services.printer_diagnostic._same_subnet", side_effect=hanging_subnet),
+        patch("backend.app.services.diagnostic_snapshot._PER_DIAGNOSTIC_TIMEOUT_SECONDS", 0.2),
+        patch(
+            "backend.app.services.diagnostic_snapshot._run_log_health",
+            new=AsyncMock(return_value={"findings": []}),
+        ),
+    ):
+        out = await collect_diagnostic_snapshot(db)
+
+    entry = out["connection_diagnostics"][0]
+    assert entry["error"] == "timed_out"
+    assert entry["stalled_in"] == "subnet"
+    assert 0.1 <= entry["elapsed_s"] < 1.0
+    finished = {c["id"]: c["status"] for c in entry["checks"]}
+    assert finished["port_mqtt"] == "pass"
+    assert finished["port_ftps"] == "pass"
+    assert finished["network_mode"] == "skip"
+    assert "subnet" not in finished
+
+
+@pytest.mark.asyncio
+async def test_timed_out_entry_without_progress_still_has_the_marker():
+    """A diagnostic that hangs before recording anything still yields the
+    marker with an empty check list rather than a KeyError."""
+    printers = [SimpleNamespace(id=1, name="slow", ip_address="1.1.1.1", serial_number="s", access_code="a")]
+    db = _make_db_with_printers_and_vps(printers, [])
+
+    async def hang(*a, **k):
+        import asyncio
+
+        await asyncio.sleep(5)
+
+    with (
+        patch("backend.app.services.printer_diagnostic.run_connection_diagnostic", new=AsyncMock(side_effect=hang)),
+        patch("backend.app.services.diagnostic_snapshot._PER_DIAGNOSTIC_TIMEOUT_SECONDS", 0.05),
+        patch(
+            "backend.app.services.diagnostic_snapshot._run_log_health",
+            new=AsyncMock(return_value={"findings": []}),
+        ),
+    ):
+        out = await collect_diagnostic_snapshot(db)
+
+    entry = out["connection_diagnostics"][0]
+    assert entry["stalled_in"] is None
+    assert entry["checks"] == []
+
+
+@pytest.mark.asyncio
 async def test_snapshot_masks_ip_addresses_in_all_diagnostic_fields():
     """The diagnostic schemas embed raw IPv4 in three places — the top-level
     ``PrinterDiagnosticResult.ip_address``, the network-mode check's

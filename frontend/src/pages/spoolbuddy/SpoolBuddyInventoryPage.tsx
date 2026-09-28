@@ -6,6 +6,8 @@ import { Search, X, Package } from 'lucide-react';
 import { api } from '../../api/client';
 import type { InventorySpool } from '../../api/client';
 import { resolveSpoolColorName, getSwatchStyle, spoolColorString } from '../../utils/colors';
+import { SpoolPaint, SpoolShade } from '../../components/spoolbuddy/SpoolIcon';
+import { hasFilamentPaint, spoolSwatchStyle } from '../../components/spoolbuddy/spoolPaint';
 import { formatSlotLabel } from '../../utils/amsHelpers';
 import { filterSpoolsByQuery } from '../../utils/inventorySearch';
 import { useColorCatalogVersion } from '../../hooks/useColorCatalogVersion';
@@ -44,7 +46,22 @@ function assignmentLabel(a: SlotInfo): string {
 }
 
 /* Spool circle — same style as AMS page tray slots */
-function SpoolCircle({ color, size = 56 }: { color: string; size?: number }) {
+function SpoolCircle({ color, spool, size = 56 }: { color: string; spool?: InventorySpool; size?: number }) {
+  if (hasFilamentPaint(spool)) {
+    // Extra colours or an effect: paint the two rings with the Filament page's
+    // background and keep the shine and hub from the SVG on top (#3033).
+    return (
+      <div className="relative shrink-0" style={{ width: size, height: size }}>
+        <SpoolPaint spool={spool} size={size} inset={2 / 56} />
+        <SpoolShade inset={8 / 56} />
+        <svg className="absolute inset-0" width={size} height={size} viewBox="0 0 56 56">
+          <ellipse cx="20" cy="20" rx="6" ry="4" fill="white" opacity="0.3" />
+          <circle cx="28" cy="28" r="8" fill="#2d2d2d" />
+          <circle cx="28" cy="28" r="5" fill="#1a1a1a" />
+        </svg>
+      </div>
+    );
+  }
   return (
     <svg width={size} height={size} viewBox="0 0 56 56">
       <circle cx="28" cy="28" r="26" fill={color} />
@@ -274,6 +291,7 @@ export function SpoolBuddyInventoryPage() {
               onClose={() => setShowAssignAmsModal(false)}
               spool={liveSpool}
               printerId={selectedPrinterId}
+              variant="kiosk"
               spoolmanMode={spoolmanMode}
             />
           </>
@@ -323,7 +341,7 @@ function CatalogCard({ spool, assignment, onClick }: {
       className="bg-bambu-dark-secondary rounded-xl p-3 flex flex-col items-center text-center gap-1.5 border border-transparent hover:border-bambu-green/50 transition-colors"
     >
       {/* Spool icon */}
-      <SpoolCircle color={color} size={56} />
+      <SpoolCircle color={color} spool={spool} size={56} />
 
       {/* Material + Subtype */}
       <p className="text-xs font-semibold text-white leading-tight truncate w-full">
@@ -334,7 +352,7 @@ function CatalogCard({ spool, assignment, onClick }: {
       <div className="flex items-center gap-1 min-w-0 max-w-full">
         <span
           className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/10"
-          style={getSwatchStyle(spool.rgba)}
+          style={spoolSwatchStyle(spool) ?? getSwatchStyle(spool.rgba)}
         />
         <span className="text-[11px] text-white/50 truncate">
           {colorName || '-'}

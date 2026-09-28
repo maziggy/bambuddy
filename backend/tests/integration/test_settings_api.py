@@ -63,6 +63,50 @@ class TestSettingsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    @pytest.mark.parametrize(
+        ("key", "default"),
+        [
+            ("ambient_drying_sustained_minutes", 0),
+            ("queue_keep_warm_bed_temp", 90),
+            ("default_filament_cost", 25.0),
+        ],
+    )
+    async def test_unparseable_number_setting_reads_back_as_the_default(
+        self, async_client: AsyncClient, db_session, key, default
+    ):
+        """A numeric row holding "None" (an old null save) or any other
+        unparseable value must fall back to the default, not make int()/float()
+        raise inside the response builder and take every setting with it."""
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key=key, value="None"))
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/settings/")
+
+        assert response.status_code == 200
+        assert response.json()[key] == default
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("key", ["ambient_drying_sustained_minutes", "default_filament_cost", "auto_archive"])
+    async def test_null_for_a_typed_setting_is_refused_and_not_stored(self, async_client: AsyncClient, key):
+        """A null for a boolean or numeric setting would be stored as the literal
+        "None". The whole request is refused, so a valid field sent alongside it
+        is not half-applied either."""
+        before = (await async_client.get("/api/v1/settings/")).json()
+        assert before["currency"] != "EUR"
+
+        response = await async_client.put("/api/v1/settings/", json={key: None, "currency": "EUR"})
+
+        assert response.status_code == 422
+        assert key in response.json()["detail"]
+        after = (await async_client.get("/api/v1/settings/")).json()
+        assert after[key] == before[key]
+        assert after["currency"] == before["currency"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_a_set_temp_alarm_reads_back_as_a_float(self, async_client: AsyncClient, db_session):
         from backend.app.models.settings import Settings
 

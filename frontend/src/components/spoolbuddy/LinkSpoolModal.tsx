@@ -102,6 +102,7 @@ export function LinkSpoolModal({
                 >
                   <SpoolIcon
                     color={spoolColorString(spool.rgba)}
+                    spool={spool}
                     isEmpty={false}
                     size={40}
                   />

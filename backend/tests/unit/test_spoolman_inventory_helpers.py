@@ -430,6 +430,18 @@ class TestMapSpoolmanSpool:
         spool = {**MINIMAL_SPOOL, "spool_weight": None, "filament": {**MINIMAL_SPOOL["filament"], "spool_weight": 196}}
         assert _map_spoolman_spool(spool)["core_weight"] == 196
 
+    @pytest.mark.parametrize(
+        ("spool_level", "inherited"),
+        [(180, False), (0, False), (None, True), ("absent", True)],
+    )
+    def test_core_weight_is_inherited_says_whose_tare_it_is(self, spool_level, inherited):
+        """The spool form copies an own tare onto a copy and leaves an
+        inherited one alone (#2908). 0 is an own tare, not a missing one."""
+        spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "spool_weight": 196}}
+        if spool_level != "absent":
+            spool["spool_weight"] = spool_level
+        assert _map_spoolman_spool(spool)["core_weight_is_inherited"] is inherited
+
     def test_spool_level_absent_falls_back_to_filament(self):
         spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "spool_weight": 196}}
         assert _map_spoolman_spool(spool)["core_weight"] == 196

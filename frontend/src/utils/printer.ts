@@ -70,7 +70,8 @@ import type { PrinterStatus, PrintQueueItem } from '../api/client';
 export function isPrinterCurrentlyDispatchable(status: PrinterStatus | undefined): boolean {
   if (!status?.connected) return false;
   if (status.awaiting_plate_clear) return false;
-  if (status.ams?.some((ams) => ams.dry_time > 0)) return false;
+  // A parked drying timer (#2896) never ends, so it does not hold a print back.
+  if (status.ams?.some((ams) => ams.dry_time > 0 && !ams.dry_countdown_stalled)) return false;
   return ['IDLE', 'FINISH', 'FAILED'].includes(status.state ?? '');
 }
 

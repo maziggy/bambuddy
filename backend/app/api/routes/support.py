@@ -33,7 +33,7 @@ from backend.app.models.project import Project
 from backend.app.models.settings import Settings
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.models.user import User
-from backend.app.services.discovery import is_running_in_docker
+from backend.app.services.discovery import detect_container_runtime, is_running_in_docker
 from backend.app.services.log_reader import (
     LogEntry,
     collect_sensitive_strings,
@@ -806,6 +806,11 @@ async def _collect_support_info() -> dict:
         },
         "environment": {
             "docker": in_docker,
+            # Named separately from the Docker flag: a Podman or LXC bundle
+            # used to carry `"docker": false` and nothing else, which reads
+            # as bare metal and hid the deployment shape a report depended on
+            # (#3092).
+            "container_runtime": detect_container_runtime(),
             "data_dir": _sanitize_path(str(settings.base_dir)),
             "log_dir": _sanitize_path(str(settings.log_dir)),
             "timezone": os.environ.get("TZ", ""),

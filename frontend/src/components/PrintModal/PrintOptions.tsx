@@ -49,6 +49,8 @@ export function PrintOptionsPanel({
     { key: 'layer_inspect', label: t('settings.defaultLayerInspect'), desc: t('settings.defaultLayerInspectDesc') },
     { key: 'timelapse', label: t('settings.defaultTimelapse'), desc: t('settings.defaultTimelapseDesc') },
     { key: 'nozzle_offset_cali', label: t('settings.defaultNozzleOffsetCali'), desc: t('settings.defaultNozzleOffsetCaliDesc'), dualNozzleOnly: true, tristate: true },
+    // Post-print outcome confirmation (#1898) — same settings.default* reuse.
+    { key: 'confirm_outcome', label: t('settings.defaultConfirmOutcome'), desc: t('settings.defaultConfirmOutcomeDesc') },
   ];
 
   const visibleOptions = printOptionsConfig.filter(o => !o.dualNozzleOnly || showDualNozzleOptions);
@@ -197,6 +199,16 @@ export function PrintOptionsPanel({
                   className="w-16 px-2 py-1 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-white text-xs text-right focus:outline-none focus:border-bambu-green"
                 />
               </div>
+            )}
+            {/* A typed 0 and a derived 0 do different things (#3041): the
+                first is a request for a bed-only preheat and still runs the
+                soak, the second means no material here wants a chamber and
+                skips the stage. Nothing in the field said so, and a user
+                reaching for 0 to switch preheat off got the delay instead. */}
+            {options.preheat_override !== 'off' && (
+              <p className="text-[11px] text-bambu-gray mt-1">
+                {t('settings.preheatTargetOverrideHelp', '0 heats the bed and runs the soak without the chamber. Leave blank and a print with no chamber requirement skips preheat entirely.')}
+              </p>
             )}
           </div>
         </div>

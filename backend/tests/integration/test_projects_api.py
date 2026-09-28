@@ -220,13 +220,18 @@ class TestProjectUrlAndCoverImage:
         assert response.status_code == 400
 
     @pytest.mark.integration
-    def test_cover_image_get_uses_stream_token_gate(self):
-        """Regression guard: GET /projects/{id}/cover-image MUST be gated by
-        ``RequireCameraStreamTokenIfAuthEnabled`` (accepts ``?token=…`` query
-        string) rather than by the bearer-token gate, because browsers can't
-        attach an ``Authorization`` header to ``<img src>`` requests. Swapping
-        back to the bearer gate would silently 401 every cover image when auth
-        is enabled."""
+    def test_cover_image_get_uses_query_token_gate(self):
+        """Regression guard: GET /projects/{id}/cover-image MUST be gated by a
+        dependency that accepts ``?token=…`` in the query string rather than by
+        a header-only bearer gate, because browsers can't attach an
+        ``Authorization`` header to ``<img src>`` requests. Swapping to a
+        header-only gate would silently 401 every cover image when auth is
+        enabled.
+
+        The token type changed in #3025 -- the route took the camera-stream
+        token until then, which made ``camera:view`` a prerequisite for seeing
+        a project cover -- so this pins the media gate. What it is really
+        asserting is unchanged: the credential has to fit in a URL."""
         from fastapi.routing import APIRoute
 
         from backend.app.api.routes.projects import router
@@ -242,21 +247,20 @@ class TestProjectUrlAndCoverImage:
 
         assert cover_get is not None, "GET cover-image route missing"
 
-        # The route's dependant tree includes a Depends(require_camera_stream_token_if_auth_enabled())
+        # The route's dependant tree includes a Depends(require_media_token_permission(...))
         # — its `call` is the inner check function returned by that factory.
         # Walk the dependant tree and assert one of the dependencies came from
-        # the stream-token factory, NOT from require_permission_if_auth_enabled.
-        from backend.app.core.auth import (
-            require_camera_stream_token_if_auth_enabled,
-        )
+        # the media-token factory, NOT from require_permission_if_auth_enabled.
+        from backend.app.core.auth import require_media_token_permission
+        from backend.app.core.permissions import Permission
 
         # The factory returns a fresh closure each call; the most reliable
         # signature is the qualified name of the function in the closure chain.
-        expected_qualname = require_camera_stream_token_if_auth_enabled().__qualname__
+        expected_qualname = require_media_token_permission(Permission.PROJECTS_READ).__qualname__
 
         gate_qualnames = [dep.call.__qualname__ for dep in cover_get.dependant.dependencies if dep.call]
         assert expected_qualname in gate_qualnames, (
-            f"GET cover-image route is not gated by RequireCameraStreamTokenIfAuthEnabled. Found: {gate_qualnames}"
+            f"GET cover-image route is not gated by a media-token dependency. Found: {gate_qualnames}"
         )
 
 

@@ -186,6 +186,15 @@ export function FinancePage() {
     enabled: canReadOwn,
   });
 
+  // Currency comes from the install setting, like every other page. Read from
+  // /settings/ui-flags rather than /settings, which needs SETTINGS_READ that a
+  // cost_centers:read_own user does not have (#3023). The Layout already holds
+  // this query key, so this is served from cache.
+  const { data: uiFlags } = useQuery({
+    queryKey: ['ui-flags'],
+    queryFn: api.getUiFlags,
+  });
+
   const { data: transactionsResponse, isLoading: personalTxLoading } = useQuery({
     queryKey: ['finance', 'me', 'transactions', txLimit, txOffset],
     queryFn: () => api.getMyTransactions(txLimit, txOffset),
@@ -583,7 +592,7 @@ export function FinancePage() {
     removeMemberMutation.mutate({ costCenterId: selectedManageCenterId, userId });
   };
 
-  const currency = wallet?.currency || 'EUR';
+  const currency = uiFlags?.currency || 'USD';
   const currencySymbol = getCurrencySymbol(currency);
 
   const sortedUsers = useMemo(() => {

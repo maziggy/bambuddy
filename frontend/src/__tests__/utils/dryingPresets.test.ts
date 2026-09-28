@@ -67,9 +67,20 @@ describe('resolveDryingPresetKey', () => {
   });
 
   it('recognises the polyamide family under its own spellings', () => {
+    // The grades have to be listed: "PA12" shares no prefix rule with "PA", so
+    // dropping the suffix alone leaves it unrecognised. #3067 reported PA6 and
+    // named PA11 and PA12 alongside it.
     expect(resolveDryingPresetKey('PA6-CF', PRESETS)).toBe('PA');
+    expect(resolveDryingPresetKey('PA6-GF', PRESETS)).toBe('PA');
+    expect(resolveDryingPresetKey('PA11-CF', PRESETS)).toBe('PA');
+    expect(resolveDryingPresetKey('PA12-CF', PRESETS)).toBe('PA');
     expect(resolveDryingPresetKey('PAHT-CF', PRESETS)).toBe('PA');
     expect(resolveDryingPresetKey('Nylon', PRESETS)).toBe('PA');
+    // Polyphthalamide is a distinct polymer rather than a nylon grade, so this
+    // one is a judgement: an aromatic polyamide that takes up moisture the same
+    // way, dried on the hottest row the table has.
+    expect(resolveDryingPresetKey('PPA-CF', PRESETS)).toBe('PA');
+    expect(resolveDryingPresetKey('PPA-GF', PRESETS)).toBe('PA');
   });
 
   it('falls back to the coolest row for an unknown material', () => {

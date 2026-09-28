@@ -5,6 +5,7 @@ Tests the virtual printer manager, FTP server, and SSDP server components.
 
 import asyncio
 import json
+import shutil
 import zipfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -3773,6 +3774,130 @@ class TestCertificateService:
 
         assert cert_path.exists()
         assert key_path.exists()
+
+    # --- CA identity (#3014) ------------------------------------------------
+    #
+    # A slicer trust store is a flat list of certificates, and OpenSSL resolves
+    # an issuer by Subject DN: the first CA whose DN matches is the only one
+    # tried. While every Bambuddy install signed as plain "Virtual Printer CA",
+    # importing the CAs of two instances broke whichever landed second in the
+    # file — with the same generic connection error an unimported CA produces.
+
+    @staticmethod
+    def _install(base, serial):
+        """Build a CertificateService laid out the way the manager lays one out."""
+        from backend.app.services.virtual_printer.certificate import CertificateService
+
+        return CertificateService(cert_dir=base / "0", serial=serial, shared_ca_dir=base)
+
+    @staticmethod
+    def _plant_legacy_ca(ca_dir):
+        """Write a pre-#3014 CA: plain common name, no SubjectKeyIdentifier."""
+        from datetime import datetime, timedelta, timezone
+
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.x509.oid import NameOID
+
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Virtual Printer CA")])
+        now = datetime.now(timezone.utc)
+        cert = (
+            x509.CertificateBuilder()
+            .subject_name(name)
+            .issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now)
+            .not_valid_after(now + timedelta(days=7300))
+            .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+            .sign(key, hashes.SHA256())
+        )
+        ca_dir.mkdir(parents=True, exist_ok=True)
+        (ca_dir / "bbl_ca.key").write_bytes(
+            key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption(),
+            )
+        )
+        (ca_dir / "bbl_ca.crt").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+        return cert
+
+    def test_ca_common_name_is_unique_per_install(self, tmp_path):
+        """Two installs must not produce CAs that share a Subject DN."""
+        from cryptography import x509
+
+        from backend.app.services.virtual_printer.certificate import CA_COMMON_NAME_PREFIX
+
+        cas = []
+        for name in ("a", "b"):
+            service = self._install(tmp_path / name, "TEST123")
+            service.generate_certificates()
+            cas.append(x509.load_pem_x509_certificate(service.ca_cert_path.read_bytes()))
+
+        subjects = [ca.subject.rfc4514_string() for ca in cas]
+        assert all(s.startswith(f"CN={CA_COMMON_NAME_PREFIX} ") for s in subjects)
+        assert subjects[0] != subjects[1]
+
+    def test_ca_key_identifier_is_carried_into_the_printer_certificate(self, cert_service):
+        """The CA advertises a key id and the leaf names it as its authority."""
+        from cryptography import x509
+
+        cert_path, _ = cert_service.generate_certificates()
+        leaf = x509.load_pem_x509_certificate(cert_path.read_bytes())
+        ca = x509.load_pem_x509_certificate(cert_service.ca_cert_path.read_bytes())
+
+        ca_skid = ca.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value
+        leaf_akid = leaf.extensions.get_extension_for_class(x509.AuthorityKeyIdentifier).value
+        assert leaf_akid.key_identifier == ca_skid.digest
+
+    def test_existing_ca_is_reused_and_its_certificate_shape_is_unchanged(self, tmp_path):
+        """An install that already has a CA keeps it — nothing to re-import.
+
+        Its printer certificate also stays exactly as it was: no authority key
+        identifier, because the CA it was signed by advertises none.
+        """
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes
+
+        planted = self._plant_legacy_ca(tmp_path)
+        service = self._install(tmp_path, "TEST123")
+        cert_path, _ = service.generate_certificates()
+
+        ca = x509.load_pem_x509_certificate(service.ca_cert_path.read_bytes())
+        assert ca.fingerprint(hashes.SHA256()) == planted.fingerprint(hashes.SHA256())
+        assert ca.subject.rfc4514_string() == "CN=Virtual Printer CA"
+
+        leaf = x509.load_pem_x509_certificate(cert_path.read_bytes())
+        with pytest.raises(x509.ExtensionNotFound):
+            leaf.extensions.get_extension_for_class(x509.AuthorityKeyIdentifier)
+
+    @pytest.mark.skipif(shutil.which("openssl") is None, reason="needs the openssl binary")
+    def test_two_installs_verify_from_a_single_trust_store(self, tmp_path):
+        """The reported symptom: both CAs imported, both chains must verify."""
+        import subprocess
+
+        leaves = []
+        bundle = b""
+        for name, serial in (("a", "00M09A391800001"), ("b", "01P00A391800002")):
+            service = self._install(tmp_path / name, serial)
+            cert_path, _ = service.generate_certificates()
+            # The per-VP file is a chain (leaf + CA); OpenSSL reads the leaf first.
+            leaves.append(cert_path)
+            bundle += service.ca_cert_path.read_bytes()
+
+        bundle_path = tmp_path / "trust_store.pem"
+        bundle_path.write_bytes(bundle)
+
+        for leaf in leaves:
+            result = subprocess.run(
+                ["openssl", "verify", "-CAfile", str(bundle_path), str(leaf)],
+                capture_output=True,
+                text=True,
+            )
+            assert result.returncode == 0, result.stdout + result.stderr
 
 
 class TestBindServer:

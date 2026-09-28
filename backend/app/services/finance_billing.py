@@ -220,7 +220,7 @@ async def apply_print_charge_for_archive(
 
         wallet = (await db.execute(select(UserWallet).where(UserWallet.user_id == actual_user_id))).scalar_one_or_none()
         if wallet is None:
-            wallet = UserWallet(user_id=actual_user_id, balance=0.0, currency="EUR")
+            wallet = UserWallet(user_id=actual_user_id, balance=0.0)
             db.add(wallet)
             await db.flush()
             logger.info("Created new wallet for user ID %s.", actual_user_id)

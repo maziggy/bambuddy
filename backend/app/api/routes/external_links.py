@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequireCameraStreamTokenIfAuthEnabled, RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_media_token_permission
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -239,11 +239,14 @@ async def delete_icon(
 async def get_icon(
     link_id: int,
     db: AsyncSession = Depends(get_db),
-    _: None = RequireCameraStreamTokenIfAuthEnabled,
+    _: User | None = Depends(require_media_token_permission(Permission.EXTERNAL_LINKS_READ)),
 ):
     """Get the custom icon for an external link.
 
-    Requires a stream token query param (?token=xxx) when auth is enabled.
+    Requires a media token query param (?token=xxx) when auth is enabled, and
+    the same ``external_links:read`` every other read on this router takes.
+    Previously it took the camera-stream token, so a sidebar icon was visible
+    only to users who could also watch the printer camera (#3025).
     """
     result = await db.execute(select(ExternalLink).where(ExternalLink.id == link_id))
     link = result.scalar_one_or_none()

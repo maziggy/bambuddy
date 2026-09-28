@@ -105,6 +105,64 @@ repair_loop_flag() {
   log "Without it Bambuddy runs on uvloop, which breaks RTSP cameras (#3001) and can truncate Virtual Printer FTP uploads (#1896)."
 }
 
+# Re-apply the ad-hoc Python signature macOS needs to grant Local Network
+# access (#3114).
+#
+# The macOS twin of sign_python_for_tcc in install.sh, and here for two
+# reasons rather than one. An install created before that step existed has an
+# unsigned interpreter and no other way to acquire one -- the same gap
+# repair_loop_flag covers above. And it recurs: `brew upgrade python` installs
+# a fresh unsigned binary under a new versioned path, so this has to be
+# checked on every update, not once at install time.
+#
+# Without it, on an Intel Mac, TCC has no identity to anchor the grant to,
+# drops every connection to the printer with no error and no prompt, and the
+# entry in Privacy & Security cannot be made to work: the printer is simply
+# unreachable and nothing in the log says why.
+#
+# Only signs what is unsigned. On arm64 every binary already carries an
+# ad-hoc signature whose identity is a hash of the file, so re-signing would
+# rotate it and revoke a working grant on every single update.
+repair_python_signature() {
+  local python_bin base_exe framework target signed_any=0
+  local -a targets=()
+
+  python_bin="$INSTALL_DIR/venv/bin/python3"
+  [ -x "$python_bin" ] || return 0
+
+  if ! command -v codesign >/dev/null 2>&1; then
+    warn "codesign not found; skipping the macOS Local Network signing check."
+    warn "If the printer is unreachable, run 'xcode-select --install' and re-run this script."
+    return 0
+  fi
+
+  base_exe="$("$python_bin" -c 'import os, sys; print(os.path.realpath(getattr(sys, "_base_executable", None) or sys.executable))' 2>/dev/null)" || return 0
+  { [ -n "$base_exe" ] && [ -e "$base_exe" ]; } || return 0
+  targets+=("$base_exe")
+
+  # .../Versions/3.13/bin/python3.13 -> .../Versions/3.13/Resources/Python.app
+  framework="${base_exe%/bin/*}"
+  if [ "$framework" != "$base_exe" ] && [ -d "$framework/Resources/Python.app" ]; then
+    targets+=("$framework/Resources/Python.app")
+  fi
+
+  for target in "${targets[@]}"; do
+    if codesign -dv "$target" >/dev/null 2>&1; then
+      continue
+    fi
+    if codesign --force --sign - "$target" >/dev/null 2>&1; then
+      log "Ad-hoc signed $target so macOS can grant Local Network access (#3114)"
+      signed_any=1
+    else
+      warn "Could not sign $target; Bambuddy may be unable to reach the printer."
+      warn "Run by hand: codesign --force --sign - \"$target\""
+    fi
+  done
+
+  [ "$signed_any" -eq 0 ] || log "Restart any open Bambuddy page after this update; the signature changes only take effect on the restart below."
+  return 0
+}
+
 on_error() {
   local exit_code="$1"
 
@@ -260,6 +318,7 @@ else
 fi
 
 repair_loop_flag
+repair_python_signature
 
 log "Starting service: $SERVICE_NAME"
 launchctl load "$PLIST_PATH"

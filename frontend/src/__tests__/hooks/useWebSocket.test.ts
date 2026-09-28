@@ -465,6 +465,9 @@ describe('useWebSocket hook', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inventory-spools'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['spoolman-inventory-spools'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inventory-locations'] });
+      // #2988: without this key the supplier broadcast reached nothing, so a
+      // supplier created in one tab never showed up in another.
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inventory-suppliers'] });
 
       vi.useRealTimers();
       vi.unstubAllGlobals();

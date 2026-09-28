@@ -42,6 +42,7 @@ class TokenType(str, Enum):
     PASSWORD_RESET = "password_reset"
     EMAIL_OTP_SETUP = "email_otp_setup"
     SLICER_DOWNLOAD = "slicer_download"
+    CONNECT_CODE = "connect_code"
 
 
 class EventType(str, Enum):
@@ -57,6 +58,8 @@ class EventType(str, Enum):
     LOGIN_IP = "login_ip"
     PASSWORD_RESET_SEND = "password_reset_send"
     PASSWORD_RESET_IP = "password_reset_ip"
+    CONNECT_TOKEN_CLIENT = "connect_client"
+    CONNECT_TOKEN_IP = "connect_ip"
 
 
 class AuthEphemeralToken(Base):
@@ -180,6 +183,30 @@ class AuthEphemeralToken(Base):
             token_type=TokenType.EMAIL_OTP_SETUP,
             username=username,
             nonce=code_hash,
+            expires_at=expires_at,
+        )
+
+    @classmethod
+    def new_connect_code(
+        cls,
+        code_hash: str,
+        username: str,
+        app_id: int,
+        code_challenge: str,
+        expires_at: datetime,
+    ) -> AuthEphemeralToken:
+        """Create a connected-app authorization code.
+
+        Only the SHA-256 of the code is stored (``token``), so a database read
+        does not yield a usable code. Field reuse: ``provider_id`` holds the
+        connected app's id and ``nonce`` the PKCE S256 challenge.
+        """
+        return cls(
+            token=code_hash,
+            token_type=TokenType.CONNECT_CODE,
+            username=username,
+            provider_id=app_id,
+            nonce=code_challenge,
             expires_at=expires_at,
         )
 

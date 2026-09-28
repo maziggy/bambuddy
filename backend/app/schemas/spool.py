@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from backend.app.schemas.supplier import SpoolSupplierResponse
+
 # Visual variant applied to a spool's swatch — purely cosmetic, does not
 # affect MQTT/firmware. Kept independent of `subtype` so users can override
 # the rendering hint without touching Bambu's categorical filament label.
@@ -241,9 +243,15 @@ class SpoolResponse(SpoolBase):
     created_at: datetime
     updated_at: datetime
     k_profiles: list[SpoolKProfileResponse] = []
+    # Supplier assignments (#2988): where this product can be bought, with
+    # per-assignment article number / price and a purchase-source marker.
+    # Reads the ORM relationship `supplier_links`, which every route
+    # answering with this schema loads explicitly (see spool_response_loads).
+    suppliers: list[SpoolSupplierResponse] = Field(default=[], validation_alias="supplier_links")
 
     class Config:
         from_attributes = True
+        populate_by_name = True
 
 
 class SpoolAssignmentCreate(BaseModel):

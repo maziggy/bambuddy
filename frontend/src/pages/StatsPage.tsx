@@ -38,6 +38,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { api, type ArchiveSlim } from '../api/client';
 import { PrintCalendar } from '../components/PrintCalendar';
 import { FilamentTrends } from '../components/FilamentTrends';
+import { SupplierStats } from '../components/SupplierStats';
 import { Dashboard, type DashboardWidget } from '../components/Dashboard';
 import { getCurrencySymbol } from '../utils/currency';
 import { formatWeight } from '../utils/weight';
@@ -787,6 +788,19 @@ function FailureAnalysisWidget({ size = 1, dateFrom, dateTo, createdById }: {
         <div className="text-sm text-bambu-gray mt-1">
           {t('stats.failedPrintsCount', { failed: analysis.failed_prints, total: analysis.total_prints })}
         </div>
+        {/* Quality dimension (#1898): completed prints the user rejected.
+            Only rendered once at least one verdict exists — installs without
+            the confirmation workflow see the widget unchanged. */}
+        {(analysis.rejected_prints ?? 0) > 0 && (
+          <div className="text-sm mt-1">
+            <span className="text-status-warning">
+              {t('stats.rejectedPrintsCount', { rejected: analysis.rejected_prints })}
+            </span>
+            <span className="text-bambu-gray ml-2">
+              {t('stats.yieldRate', { rate: (analysis.yield_rate ?? 0).toFixed(1) })}
+            </span>
+          </div>
+        )}
         {/* Trend indicator */}
         {analysis.trend && analysis.trend.length >= 2 && (
           <div className={`${size >= 2 ? 'mt-4' : 'mt-2 pt-2 border-t border-bambu-dark-tertiary'}`}>
@@ -1053,6 +1067,22 @@ export function StatsPage() {
     queryFn: api.getSettings,
   });
 
+  // The supplier widget aggregates the internal spool table, which is empty
+  // in Spoolman mode — there the assignments live in the Spoolman twin table.
+  // Rather than show a permanently empty card next to an inventory that does
+  // display supplier chips, drop it (#2988).
+  const { data: spoolmanSettings, isPending: spoolmanSettingsPending } = useQuery({
+    queryKey: ['spoolman-settings'],
+    queryFn: api.getSpoolmanSettings,
+    staleTime: 5 * 60 * 1000,
+  });
+  // The rest of the dashboard renders off the archive response, so the card
+  // would otherwise mount — and hit the aggregate endpoint — while the mode
+  // is still unknown. "Not loaded yet" is not "internal mode".
+  const spoolmanModeReady = !spoolmanSettingsPending;
+  const spoolmanMode =
+    spoolmanSettings?.spoolman_enabled === 'true' && !!spoolmanSettings?.spoolman_url;
+
   // Slim listing (#1894): the filter only needs id + username, and gating it
   // on the admin-level users:read left the dropdown empty for exactly the
   // operators who were granted stats:filter_by_user.
@@ -1177,6 +1207,12 @@ export function StatsPage() {
       component: <FilamentTrendsWidget archives={archives || []} currency={currency} dateFrom={effectiveDateRange.dateFrom} dateTo={effectiveDateRange.dateTo} />,
       defaultSize: 4,
     },
+    ...(!spoolmanModeReady || spoolmanMode ? [] : ([{
+      id: 'suppliers',
+      title: t('stats.suppliers.title'),
+      component: <SupplierStats currency={currency} dateFrom={effectiveDateRange.dateFrom} dateTo={effectiveDateRange.dateTo} />,
+      defaultSize: 2,
+    }] as DashboardWidget[])),
   ];
 
   return (

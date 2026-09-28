@@ -1,4 +1,4 @@
-"""Tests for the S3 presigned-download path in ``services/makerworld.py``.
+"""Tests for the S3 presigned-download path in ``model_providers/makerworld/http.py``.
 
 MakerWorld hands back an AWS presigned URL for the 3MF, and we fetch that one
 with ``urllib.request`` rather than httpx — httpx re-encodes the query string
@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 
-from backend.app.services import makerworld as mw
+from backend.app.services.model_providers.makerworld import http as mw
 
 # A presigned URL in the shape Bambu Cloud actually mints: the signature is
 # computed over these exact query-string bytes, so any re-encoding breaks it.

@@ -179,6 +179,31 @@ describe('resolveSpoolColorName', () => {
   it('returns Clear for transparent rgba even when color_name is a code', () => {
     expect(resolveSpoolColorName('A99-Z9', '00000000')).toBe('Clear');
   });
+
+  // #3090 — Spoolman has no colour-name field, so every Spoolman-backed spool
+  // arrives with its subtype sitting in color_name. It reads like a name and
+  // is not one.
+  describe('a name the backend synthesised from the subtype', () => {
+    it('loses to the catalog', () => {
+      expect(resolveSpoolColorName('Silk+', '5F6367FF', true)).toBe('Titan Gray');
+    });
+
+    it('still wins over nothing when the hex is unknown', () => {
+      // Better than "-": it at least says what is on the spool. The catalog
+      // only covers what someone put in it.
+      expect(resolveSpoolColorName('Silk+', '123456FF', true)).toBe('Silk+');
+    });
+
+    it('is not consulted when the flag is absent', () => {
+      // The flag defaults to false, so every existing caller keeps the old
+      // behaviour: a stored name is the user's and is used as given.
+      expect(resolveSpoolColorName('Silk+', '5F6367FF')).toBe('Silk+');
+    });
+
+    it('does not resurrect a Bambu internal code', () => {
+      expect(resolveSpoolColorName('A99-Z9', '123456FF', true)).toBeNull();
+    });
+  });
 });
 
 describe('colorSortKey (#2729)', () => {

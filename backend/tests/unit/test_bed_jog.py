@@ -1,8 +1,14 @@
 """Unit tests for the bed-jog and home-axes endpoints (#791).
 
 Tests:
-  POST /api/v1/printers/{printer_id}/bed-jog?distance=<mm>&force=<bool>
+  POST /api/v1/printers/{printer_id}/bed-jog?distance=<mm>
   POST /api/v1/printers/{printer_id}/home-axes?axes=<z|xy|all>
+
+``distance`` is a signed nozzle-bed gap and ``axes`` is accepted but always
+homes everything — both endpoints once took a second parameter that made them
+do something more clever, and both parameters are gone for the same reason
+(#2579, #1052): on a machine with a nozzle and a plate, the clever version is
+the one that ends with them touching.
 """
 
 from unittest.mock import MagicMock, patch
@@ -51,9 +57,12 @@ class TestBedJogAPI:
 
     @pytest.mark.asyncio
     async def test_bed_jog_emits_bare_move_and_never_touches_m211(self, async_client: AsyncClient, printer_factory):
-        """A jog must be a bare relative move — no M211 at all — exactly what the
-        printer's touchscreen sends, which the firmware clamps at the travel
-        limit. Touching M211 is what broke it (#2579)."""
+        """A jog must be a bare relative move — no M211 at all (#2579).
+
+        Not because a bare move is clamped: the firmware ignores soft endstops
+        on MQTT G-code whatever we send. But ``M211 S0`` disabled them
+        *globally*, so Bambuddy was also taking away the protection on the
+        printer's own touchscreen, and that part was ours to stop doing."""
         printer = await printer_factory(name="P1")
         mock_client = MagicMock()
         mock_client.send_gcode.return_value = True
@@ -84,60 +93,78 @@ class TestBedJogAPI:
             assert "G1 Z50.00" in sent_gcode
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("model", ["X1C", "P1S", "H2D", "H2S", "H2C", "P2S"])
-    async def test_bed_jog_bed_on_z_models_pass_distance_through(
-        self, async_client: AsyncClient, printer_factory, model
-    ):
-        """On bed-on-Z printers the UI's signed distance maps directly to the
-        G-code Z value — UI "Up" (negative) → bed up (G1 Z-) → less gap."""
-        printer = await printer_factory(name=f"Test-{model}", model=model)
-        mock_client = MagicMock()
-        mock_client.send_gcode.return_value = True
-        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
-            mock_pm.get_client.return_value = mock_client
-            response = await async_client.post(f"/api/v1/printers/{printer.id}/bed-jog?distance=-10")
-            assert response.status_code == 200
-            sent_gcode = mock_client.send_gcode.call_args[0][0]
-            # Negative distance from the UI → negative Z in the G-code: bed moves up.
-            assert "G1 Z-10.00" in sent_gcode, f"{model}: expected G1 Z-10.00 in gcode, got {sent_gcode!r}"
-
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "model",
-        ["A1", "A1 Mini", "A1MINI", "A1-MINI", "N1", "N2S"],  # display names + internal codes
+        [
+            # bed-on-Z
+            "X1C",
+            "P1S",
+            "H2D",
+            "H2S",
+            "H2C",
+            "P2S",
+            # bed-slingers — the Z axis carries the toolhead instead
+            "A1",
+            "A1 Mini",
+            "A1MINI",
+            "A1-MINI",
+            "A2L",
+            "N1",
+            "N2S",
+            "N9",
+        ],
     )
-    async def test_bed_jog_a1_models_invert_z_sign(self, async_client: AsyncClient, printer_factory, model):
-        """#1334 regression: on bed-slinger A1 / A1 Mini the Z axis is the
-        TOOLHEAD, not the bed. The frontend sends negative distance for "Up"
-        (decrease gap) expecting bed-on-Z semantics, but ``G1 Z-`` on A1
-        drives the nozzle DOWN into the bed. The backend must invert the
-        sign on these models so "Up" still decreases the gap by raising the
-        toolhead (G1 Z+) rather than crashing it."""
+    @pytest.mark.parametrize("distance", [-10, 10])
+    async def test_bed_jog_sends_the_distance_unchanged_on_every_model(
+        self, async_client: AsyncClient, printer_factory, model, distance
+    ):
+        """``distance`` is a nozzle-bed gap, and a gap is a gap on every printer.
+
+        ``G1 Z+`` opens the nozzle-bed gap whether the bed drops away from the
+        nozzle (X1 / P1 / H2) or the toolhead rises off the plate (A1 / A2L) —
+        that is what the Z axis *means*, not a per-family convention. So one
+        API call describes one physical outcome everywhere, and the route has
+        no model branch to get wrong.
+
+        It had one once. #1334 was a bed-slinger owner clicking an arrow
+        labelled "move the plate up" and watching the nozzle dive, and the fix
+        inverted the G-code sign on A1 models. That made a documented
+        model-independent parameter mean the opposite thing on those printers:
+        @AQU4R1U5 asked for 5 mm of clearance through the API and got 5 mm less.
+        """
         printer = await printer_factory(name=f"Test-{model}", model=model)
         mock_client = MagicMock()
         mock_client.send_gcode.return_value = True
         with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
             mock_pm.get_client.return_value = mock_client
-            # UI sends -10 for "Up" → backend must emit G1 Z+10 on A1.
-            response = await async_client.post(f"/api/v1/printers/{printer.id}/bed-jog?distance=-10")
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/bed-jog?distance={distance}")
             assert response.status_code == 200
             sent_gcode = mock_client.send_gcode.call_args[0][0]
-            assert "G1 Z10.00" in sent_gcode, f"{model}: expected G1 Z10.00 in gcode, got {sent_gcode!r}"
-            assert "G1 Z-10" not in sent_gcode, f"{model}: must NOT emit negative Z for a UI 'Up' click"
+            assert f"G1 Z{distance:.2f} F600" in sent_gcode, f"{model}: got {sent_gcode!r}"
 
     @pytest.mark.asyncio
-    async def test_bed_jog_a1_down_arrow_drops_toolhead(self, async_client: AsyncClient, printer_factory):
-        """Symmetric to the regression test: UI "Down" (positive distance,
-        increase gap) on A1 must lower the toolhead via G1 Z-."""
-        printer = await printer_factory(name="A1-Mini-Test", model="A1 Mini")
+    @pytest.mark.parametrize("model", ["A1", "A1 Mini", "A2L", "N1", "N2S", "N9"])
+    async def test_bed_jog_positive_is_the_safe_direction_on_bed_slingers(
+        self, async_client: AsyncClient, printer_factory, model
+    ):
+        """The one that bit @AQU4R1U5: asking for clearance must never close the gap.
+
+        Spelled out separately from the pass-through test above because this is
+        the property that matters to anyone driving the API from a script — the
+        sign of ``distance`` is the only thing standing between "lift the nozzle
+        off my print" and a nozzle in the plate, and it must not depend on which
+        printer is on the other end.
+        """
+        printer = await printer_factory(name=f"Test-{model}", model=model)
         mock_client = MagicMock()
         mock_client.send_gcode.return_value = True
         with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
             mock_pm.get_client.return_value = mock_client
-            response = await async_client.post(f"/api/v1/printers/{printer.id}/bed-jog?distance=10")
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/bed-jog?distance=5")
             assert response.status_code == 200
             sent_gcode = mock_client.send_gcode.call_args[0][0]
-            assert "G1 Z-10.00" in sent_gcode
+            assert "G1 Z-" not in sent_gcode, f"{model}: clearance request closed the gap — {sent_gcode!r}"
+            assert "G1 Z5.00" in sent_gcode
 
 
 class TestHomeAxesAPI:

@@ -168,3 +168,84 @@ async def test_running_twice_changes_nothing(db_session: AsyncSession, model) ->
     first = await _read(db_session, model, ids)
     await _run(db_session)
     assert await _read(db_session, model, ids) == first == ["layerShift", "Custom legacy reason"]
+
+
+# ---------------------------------------------------------------------------
+# Position within run_migrations
+# ---------------------------------------------------------------------------
+
+
+async def test_upgrade_from_before_print_log_failure_reason_boots(tmp_path) -> None:
+    """A database older than #1378 has no print_log_entries.failure_reason.
+
+    The conversion used to run at the top of run_migrations, before the ALTER
+    that adds that column, so upgrading such a database crashed startup with
+    "no such column: failure_reason". Run the real migration sequence over a
+    database shaped like that and require it to finish, add the column, and
+    still convert the labels that were already there.
+    """
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from backend.app.core.database import Base, run_migrations
+
+    # Register every model on Base.metadata, as init_db does before create_all;
+    # otherwise tables the migrations ALTER would be missing.
+    from backend.app.main import app  # noqa: F401
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'old.db'}")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(text("ALTER TABLE print_log_entries DROP COLUMN failure_reason"))
+        async with AsyncSession(engine) as session:
+            session.add(PrintArchive(status="failed", failure_reason="Layer shift", **_REQUIRED["PrintArchive"]))
+            await session.commit()
+
+        async with engine.begin() as conn:
+            await run_migrations(conn)
+
+        async with engine.connect() as conn:
+            columns = {row[1] for row in (await conn.execute(text("PRAGMA table_info(print_log_entries)"))).all()}
+            reason = (await conn.execute(text("SELECT failure_reason FROM print_archives"))).scalar_one()
+        assert "failure_reason" in columns
+        assert reason == "layerShift"
+    finally:
+        await engine.dispose()
+
+
+async def test_archive_missing_from_the_fts_index_is_converted(tmp_path) -> None:
+    """Archives created before archive_fts existed were never indexed.
+
+    Updating such a row fires the FTS 'delete' trigger for a row the index
+    doesn't hold, which SQLite reports as "database disk image is malformed" --
+    fatal at startup. The conversion must rebuild the index first.
+    """
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from backend.app.core.database import Base, run_migrations
+
+    # Register every model on Base.metadata, as init_db does before create_all.
+    from backend.app.main import app  # noqa: F401
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'fts.db'}")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await run_migrations(conn)  # creates archive_fts and its triggers
+        async with AsyncSession(engine) as session:
+            session.add(PrintArchive(status="failed", failure_reason="Layer shift", **_REQUIRED["PrintArchive"]))
+            await session.commit()
+        async with engine.begin() as conn:
+            # Empty the index: the archive is now what a pre-FTS row looks like.
+            await conn.execute(text("INSERT INTO archive_fts(archive_fts) VALUES('delete-all')"))
+
+        async with engine.begin() as conn:
+            await _migrate_failure_reason_vocabulary(conn)
+
+        async with engine.connect() as conn:
+            reason = (await conn.execute(text("SELECT failure_reason FROM print_archives"))).scalar_one()
+        assert reason == "layerShift"
+    finally:
+        await engine.dispose()

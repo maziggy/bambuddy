@@ -23,8 +23,106 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+# Runtime names :func:`detect_container_runtime` can return. These reach the
+# user in the connection diagnostic, so they are the names people know their
+# own setup by.
+RUNTIME_DOCKER = "Docker"
+RUNTIME_PODMAN = "Podman"
+RUNTIME_KUBERNETES = "Kubernetes"
+RUNTIME_CONTAINERD = "containerd"
+RUNTIME_LXC = "LXC"
+# Sentinel for "in a container we cannot name". The others are proper nouns
+# that interpolate into any language; this one is localized by the frontend
+# (diagnostic.check.network_mode.genericRuntime), so keep the two in step.
+RUNTIME_OTHER = "container"
+
+# Runtimes that put Bambuddy in an OCI container whose network mode is a
+# choice the user made and can change. LXC is deliberately absent: a Proxmox
+# or LXD system container is bridged onto the LAN like a small VM, so there is
+# no "recreate it with host networking" advice to give.
+OCI_RUNTIMES = frozenset({RUNTIME_DOCKER, RUNTIME_PODMAN, RUNTIME_KUBERNETES, RUNTIME_CONTAINERD, RUNTIME_OTHER})
+
+# systemd writes the engine's own name here. It is the only signal that tells
+# Podman apart from Docker without guessing, which is why it is consulted
+# first (see updates.py, which has used it for the same reason for longer).
+_SYSTEMD_CONTAINER = Path("/run/systemd/container")
+
+_SYSTEMD_RUNTIME_NAMES = {
+    "docker": RUNTIME_DOCKER,
+    "podman": RUNTIME_PODMAN,
+    "containerd": RUNTIME_CONTAINERD,
+    "lxc": RUNTIME_LXC,
+    "lxc-libvirt": RUNTIME_LXC,
+    "oci": RUNTIME_OTHER,
+}
+
+
+def _read_text(path: Path) -> str:
+    """Read a small /proc or /run marker file, empty string if unreadable."""
+    try:
+        return path.read_text()
+    except (OSError, ValueError):
+        # Unreadable, absent, or /proc entry that vanished mid-read.
+        return ""
+
+
+def detect_container_runtime() -> str | None:
+    """Name the container runtime Bambuddy is running under, or None.
+
+    ``is_running_in_docker`` below answers a narrower question and is
+    deliberately left alone — see the comment on it.
+
+    Detection is ordered most-specific first, because the generic markers
+    cannot tell two engines apart: Podman sets ``/run/.containerenv`` *and*
+    writes ``libpod`` into the cgroup path, while Docker sets ``/.dockerenv``
+    and writes ``docker``. A container started by neither still gets a name
+    (``container``) rather than None, because "we are in something" is a
+    useful answer even when the engine is not.
+    """
+    systemd_name = _read_text(_SYSTEMD_CONTAINER).strip().lower()
+    if systemd_name:
+        return _SYSTEMD_RUNTIME_NAMES.get(systemd_name, RUNTIME_OTHER)
+
+    # Podman writes /run/.containerenv into every container it starts. Older
+    # versions put it at the root, so both are checked.
+    if Path("/run/.containerenv").exists() or Path("/.containerenv").exists():
+        return RUNTIME_PODMAN
+    if Path("/.dockerenv").exists():
+        return RUNTIME_DOCKER
+
+    cgroup = _read_text(Path("/proc/1/cgroup"))
+    if "libpod" in cgroup:
+        return RUNTIME_PODMAN
+    if "kubepods" in cgroup:
+        return RUNTIME_KUBERNETES
+    if "docker" in cgroup:
+        return RUNTIME_DOCKER
+    if "containerd" in cgroup:
+        return RUNTIME_CONTAINERD
+    if "/lxc" in cgroup:
+        return RUNTIME_LXC
+
+    env_name = (os.environ.get("CONTAINER") or "").strip().lower()
+    if env_name:
+        return _SYSTEMD_RUNTIME_NAMES.get(env_name, RUNTIME_OTHER)
+    if os.environ.get("DOCKER_CONTAINER"):
+        return RUNTIME_DOCKER
+
+    return None
+
+
 def is_running_in_docker() -> bool:
-    """Detect if we're running inside a Docker container."""
+    """Detect if we're running inside a Docker container.
+
+    Kept Docker-specific on purpose, and NOT rewritten on top of
+    :func:`detect_container_runtime`. Three callers key real behaviour off
+    this: ``/api/discovery/info`` feeds it to the Add-Printer flow, where
+    ``isDocker`` switches discovery from SSDP to subnet scanning, and the
+    backup-path probe and support bundle both read it. Answering True for a
+    host-networked Podman container would take SSDP away from users for whom
+    it works (#3092). Widening it is a separate decision from naming the
+    runtime, so it is made separately.
+    """
     # Check for .dockerenv file
     if Path("/.dockerenv").exists():
         return True

@@ -247,6 +247,51 @@ describe('PrintersPage - drying start modes', () => {
     expect(await screen.findByText('Connect AMS power adapter to enable drying')).toBeInTheDocument();
   });
 
+  it('shows a failed run by its error code, translated, not the backend English text', async () => {
+    server.use(
+      http.get('/api/v1/scheduled-dryings', () =>
+        HttpResponse.json([
+          {
+            ...PENDING_ROW,
+            status: 'failed',
+            error_code: 'did_not_start',
+            // Deliberately different from the translation, so the test shows
+            // which of the two was rendered.
+            error_message: 'backend English text',
+            completed_at: '2026-07-25T23:25:00',
+          },
+        ])
+      ),
+    );
+    render(<PrintersPage />);
+    expect(
+      await screen.findByText(
+        'Scheduled drying failed: The printer accepted the command, but the AMS did not start drying'
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/backend English text/)).not.toBeInTheDocument();
+  });
+
+  it('falls back to the error message for an unknown error code', async () => {
+    server.use(
+      http.get('/api/v1/scheduled-dryings', () =>
+        HttpResponse.json([
+          {
+            ...PENDING_ROW,
+            status: 'failed',
+            error_code: 'something_new',
+            error_message: 'A reason this frontend has no key for',
+            completed_at: '2026-07-25T23:25:00',
+          },
+        ])
+      ),
+    );
+    render(<PrintersPage />);
+    expect(
+      await screen.findByText('Scheduled drying failed: A reason this frontend has no key for')
+    ).toBeInTheDocument();
+  });
+
   it('shows a run that failed at dispatch, with a dismiss that clears it', async () => {
     // Only dispatch can fail (firmware too old on a printer that was offline
     // at schedule time). Without this the run vanishes and only the backend

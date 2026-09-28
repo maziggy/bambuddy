@@ -78,6 +78,11 @@ qrcode[pil]>=7.4.0
 # PDF generation (spool label printing — #809)
 reportlab>=4.0.0
 
+# PDF thumbnails for the file manager (#2976): renders page one with PDFium.
+# Wheels bundle the PDFium binary for every platform we ship (Linux x86_64 /
+# aarch64 / armv7, macOS, Windows), so no system package is needed.
+pypdfium2>=5.0.0
+
 # STL Thumbnail Generation
 trimesh>=4.0.0
 matplotlib>=3.8.0

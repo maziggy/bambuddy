@@ -969,6 +969,118 @@ describe('SettingsPage', () => {
     });
   });
 
+  describe('sustained-minutes input drafts while typing (#2518)', () => {
+    const openWorkflowTab = async (user: ReturnType<typeof userEvent.setup>) => {
+      render(<SettingsPage />);
+      await waitFor(() => {
+        expect(screen.getByText('Workflow')).toBeInTheDocument();
+      });
+      await user.click(screen.getByText('Workflow'));
+      await waitFor(() => {
+        expect(screen.getByText('Queue Auto-Drying')).toBeInTheDocument();
+      });
+      // 15 is unique to this input in the mock settings below
+      return screen.getByDisplayValue('15') as HTMLInputElement;
+    };
+
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/settings/', () => {
+          return HttpResponse.json({
+            ...mockSettings,
+            ambient_drying_enabled: true,
+            ambient_drying_sustained_minutes: 15,
+          });
+        })
+      );
+    });
+
+    it('seeds a new sustained wait at 15 minutes when enabled from off', async () => {
+      const user = userEvent.setup();
+      let saved: Record<string, unknown> | null = null;
+      server.use(
+        http.get('/api/v1/settings/', () =>
+          HttpResponse.json({
+            ...mockSettings,
+            ambient_drying_enabled: true,
+            ambient_drying_sustained_minutes: 0,
+          })
+        ),
+        http.put('/api/v1/settings/', async ({ request }) => {
+          saved = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...mockSettings, ...saved });
+        })
+      );
+
+      render(<SettingsPage />);
+      await user.click(await screen.findByText('Workflow'));
+      const label = await screen.findByText('Require sustained humidity');
+      const row = label.closest('div')!.parentElement!;
+      const toggle = within(row).getByRole('checkbox');
+      expect(toggle).not.toBeChecked();
+
+      // Wait out the page's initial-load save suppression before toggling.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await user.click(toggle);
+
+      expect(toggle).toBeChecked();
+      expect(screen.getByDisplayValue('15')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(saved).not.toBeNull();
+      }, { timeout: 3000 });
+      expect(saved!.ambient_drying_sustained_minutes).toBe(15);
+    });
+
+    it('clearing the field does not snap it to a value mid-edit', async () => {
+      const user = userEvent.setup();
+      const input = await openWorkflowTab(user);
+
+      await user.clear(input);
+      // The old per-keystroke clamp rewrote '' to 10 immediately.
+      expect(input.value).toBe('');
+    });
+
+    it('intermediate below-minimum digits are not rewritten while typing', async () => {
+      const user = userEvent.setup();
+      const input = await openWorkflowTab(user);
+
+      await user.clear(input);
+      await user.type(input, '2');
+      // The old clamp turned the '2' (on the way to '25') into 5.
+      expect(input.value).toBe('2');
+      await user.type(input, '5');
+      expect(input.value).toBe('25');
+
+      await user.tab();
+      await waitFor(() => {
+        expect(input.value).toBe('25');
+      });
+    });
+
+    it('blur with an empty field reverts to the saved value instead of inventing one', async () => {
+      const user = userEvent.setup();
+      const input = await openWorkflowTab(user);
+
+      await user.clear(input);
+      await user.tab();
+      await waitFor(() => {
+        expect(input.value).toBe('15');
+      });
+    });
+
+    it('still clamps an out-of-range value on blur', async () => {
+      const user = userEvent.setup();
+      const input = await openWorkflowTab(user);
+
+      await user.clear(input);
+      await user.type(input, '500');
+      await user.tab();
+      await waitFor(() => {
+        expect(input.value).toBe('240');
+      });
+    });
+  });
+
   describe('API Keys tab', () => {
     it('can switch to API Keys tab', async () => {
       const user = userEvent.setup();
@@ -1615,6 +1727,93 @@ describe('SettingsPage', () => {
         expect(window.location.search).toContain('tab=queue');
         expect(window.location.search).toContain('sub=pipelines');
       });
+    });
+  });
+
+  // --------------------------------------------------------------------
+  // Ask for the outcome of prints Bambuddy did not start (#1898)
+  // --------------------------------------------------------------------
+  describe('outcome prompt for external prints (#1898)', () => {
+    const externalLabel = 'Also ask for prints started outside Bambuddy';
+
+    const openDefaultPrintOptions = async () => {
+      render(<SettingsPage />);
+      const user = userEvent.setup();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Workflow' })).toBeInTheDocument());
+      await user.click(screen.getByRole('button', { name: 'Workflow' }));
+      return user;
+    };
+
+    it('offers the toggle alongside the per-job outcome default', async () => {
+      await openDefaultPrintOptions();
+
+      expect(await screen.findByText(externalLabel)).toBeInTheDocument();
+      expect(screen.getByText('Ask for Outcome')).toBeInTheDocument();
+    });
+
+    it('shows it off when the backend has no value for it', async () => {
+      // Default false: an install that never touches it keeps today's
+      // behaviour, where only queued prints are asked about.
+      await openDefaultPrintOptions();
+
+      const label = await screen.findByText(externalLabel);
+      const row = label.closest('div')!.parentElement!;
+      expect(within(row).getByRole('checkbox')).not.toBeChecked();
+    });
+
+    it('sends the new value on save', async () => {
+      let saved: Record<string, unknown> | null = null;
+      server.use(
+        http.put('/api/v1/settings/', async ({ request }) => {
+          saved = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...mockSettings, ...saved });
+        })
+      );
+      const user = await openDefaultPrintOptions();
+
+      const label = await screen.findByText(externalLabel);
+      // The page suppresses auto-save for 100ms after the settings load.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const row = label.closest('div')!.parentElement!;
+      await user.click(within(row).getByRole('checkbox'));
+
+      await waitFor(() => {
+        expect(saved).not.toBeNull();
+      }, { timeout: 3000 });
+      expect(saved!.confirm_outcome_external_prints).toBe(true);
+    });
+
+    it('reflects a value the backend already has', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () =>
+          HttpResponse.json({ ...mockSettings, confirm_outcome_external_prints: true })
+        )
+      );
+      await openDefaultPrintOptions();
+
+      const label = await screen.findByText(externalLabel);
+      const row = label.closest('div')!.parentElement!;
+      expect(within(row).getByRole('checkbox')).toBeChecked();
+    });
+  });
+
+  // --------------------------------------------------------------------
+  // The plate-clear default answers outcome prompts on its own (#1898), so
+  // its help text has to name that consequence — the farm case was a user
+  // who had it on and could not work out why Telegram said "already used".
+  // --------------------------------------------------------------------
+  describe('plate-clear outcome default help text (#1898)', () => {
+    it('warns that a later Telegram or link answer only shows the result', async () => {
+      render(<SettingsPage />);
+      const user = userEvent.setup();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Workflow' })).toBeInTheDocument());
+      await user.click(screen.getByRole('button', { name: 'Workflow' }));
+
+      const label = await screen.findByText('Count unanswered outcomes as good on plate release');
+      const row = label.closest('div')!;
+      expect(row).toHaveTextContent(
+        /a Telegram or link answer after that only shows the recorded result/i,
+      );
     });
   });
 });

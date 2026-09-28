@@ -4,6 +4,7 @@ from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent
 from backend.app.models.color_catalog import ColorCatalogEntry
+from backend.app.models.connected_app import ConnectedApp, ConnectedAppGrant
 from backend.app.models.filament import Filament
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
 from backend.app.models.group import Group, user_groups
@@ -38,6 +39,7 @@ from backend.app.models.spool_filament_preset import SpoolFilamentPreset, Spoolm
 from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.spoolbuddy_device import SpoolBuddyDevice
+from backend.app.models.supplier import SpoolmanSpoolSupplier, SpoolSupplier, Supplier
 from backend.app.models.user import User
 from backend.app.models.user_email_pref import UserEmailPreference
 from backend.app.models.user_otp_code import UserOTPCode
@@ -89,6 +91,9 @@ __all__ = [
     "SpoolAssignment",
     "SpoolCatalogEntry",
     "SpoolUsageHistory",
+    "Supplier",
+    "SpoolSupplier",
+    "SpoolmanSpoolSupplier",
     "ColorCatalogEntry",
     "SpoolBuddyDevice",
     "SponsorToastState",
@@ -98,4 +103,6 @@ __all__ = [
     "AuthEphemeralToken",
     "AuthRateLimitEvent",
     "LongLivedToken",
+    "ConnectedApp",
+    "ConnectedAppGrant",
 ]

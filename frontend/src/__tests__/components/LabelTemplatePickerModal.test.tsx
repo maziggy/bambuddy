@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { render } from '../utils';
+import { setColorCatalog, __resetColorCatalogForTests } from '../../utils/colors';
 import { LabelTemplatePickerModal } from '../../components/LabelTemplatePickerModal';
 import { api } from '../../api/client';
 
@@ -35,6 +36,47 @@ beforeEach(() => {
     configurable: true,
   });
   vi.spyOn(window, 'open').mockImplementation(() => ({}) as Window);
+});
+
+describe('a colour name that only the catalog knows (#3090)', () => {
+  // The list labels a spool by its colour, and most Bambu spools carry no
+  // colour name — the name comes from resolving the swatch's hex against the
+  // catalog, which is fetched once at startup. The filter that builds this
+  // list is memoised, so it has to be told the catalog arrived; otherwise a
+  // search typed first keeps the empty result it computed without one.
+  const nameless = [{ id: 9, material: 'PLA', subtype: 'Silk+', brand: 'Bambu Lab', color_name: null, rgba: 'D02727FF' }];
+
+  beforeEach(() => {
+    __resetColorCatalogForTests();
+  });
+
+  const openModal = () =>
+    render(
+      <LabelTemplatePickerModal
+        isOpen
+        onClose={vi.fn()}
+        availableSpools={nameless}
+        initialSelectedIds={[]}
+        spoolmanMode={false}
+      />,
+    );
+
+  it('labels the spool from the catalog instead of falling back to its material', () => {
+    setColorCatalog({ d02727: 'Candy Red' });
+    openModal();
+
+    expect(screen.getByText(/Candy Red/)).toBeInTheDocument();
+  });
+
+  it('re-filters when the catalog arrives after the query was typed', async () => {
+    openModal();
+    fireEvent.change(screen.getByPlaceholderText(/Search/i), { target: { value: 'candy' } });
+    expect(screen.queryByText(/Candy Red/)).not.toBeInTheDocument();
+
+    setColorCatalog({ d02727: 'Candy Red' });
+
+    await waitFor(() => expect(screen.getByText(/Candy Red/)).toBeInTheDocument());
+  });
 });
 
 describe('LabelTemplatePickerModal', () => {

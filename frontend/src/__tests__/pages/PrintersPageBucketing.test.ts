@@ -11,35 +11,25 @@
  * meaning: print ended, plate may need clearing). FAILED-with-HMS still
  * counts as a problem because there's a real fault to investigate.
  *
- * Mirrors the logic at PrintersPage.tsx:917-948 and the classifyPrinterStatus
- * helper at PrintersPage.tsx:1028 — kept as inline copies so this test
- * doesn't need the helpers to be exported.
+ * Mirrors the classifyPrinterStatus helper in PrintersPage.tsx as an inline
+ * copy so this test doesn't need it exported. The HMS filter is the real one:
+ * a copy of it here once kept the old catalogue rule after the rule changed.
  */
 import { describe, it, expect } from 'vitest';
+import { filterKnownHMSErrors } from '../../components/HMSErrorModal';
+import type { HMSError } from '../../api/client';
 
 type Status = {
   connected: boolean;
   state: string | null;
-  hms_errors?: { code: string; attr: number; severity: number; actions?: string[] }[];
+  hms_errors?: HMSError[];
 };
 
 type Bucket = 'printing' | 'paused' | 'finished' | 'idle' | 'offline' | 'error';
 
-const KNOWN_HMS_CODES = new Set(['0300_4057', '0500_4038']);
-
-function filterKnownHMSErrors(errors: Status['hms_errors']): NonNullable<Status['hms_errors']> {
-  return (errors ?? []).filter((e) => {
-    const codeNum = parseInt(e.code.replace('0x', ''), 16) || 0;
-    const module = ((e.attr >> 16) & 0xFFFF).toString(16).padStart(4, '0').toUpperCase();
-    const code = (codeNum & 0xFFFF).toString(16).padStart(4, '0').toUpperCase();
-    if (KNOWN_HMS_CODES.has(`${module}_${code}`)) return true;
-    return (e.actions?.length ?? 0) > 0;
-  });
-}
-
 function classifyPrinterStatus(status: Status | undefined): Bucket {
   if (!status?.connected) return 'offline';
-  const knownHms = filterKnownHMSErrors(status.hms_errors);
+  const knownHms = filterKnownHMSErrors(status.hms_errors ?? []);
   if (knownHms.length > 0) return 'error';
   switch (status.state) {
     case 'RUNNING': return 'printing';
@@ -64,7 +54,7 @@ describe('FAILED-without-HMS bucketing', () => {
     const reallyFailedPrinter: Status = {
       connected: true,
       state: 'FAILED',
-      hms_errors: [{ code: '0x4057', attr: 0x0300_0000, severity: 1 }],
+      hms_errors: [{ code: '0x4057', attr: 0x0300_4057, severity: 1, full_code: '03004057', description: 'Z-axis step loss detected.' }],
     };
     expect(classifyPrinterStatus(reallyFailedPrinter)).toBe('error');
   });
@@ -73,7 +63,8 @@ describe('FAILED-without-HMS bucketing', () => {
     const cancelEcho: Status = {
       connected: true,
       state: 'FAILED',
-      hms_errors: [{ code: '0x2001b', attr: 0x0C00_0C00, severity: 1 }], // 0C00_001B not in known set
+      // The H2S post-cancel echo 0C00-0100-0002-001B: Bambu lists it with no text.
+      hms_errors: [{ code: '0x2001b', attr: 0x0C00_0100, severity: 2, full_code: '0C0001000002001B', description: null }],
     };
     expect(classifyPrinterStatus(cancelEcho)).toBe('finished');
   });
@@ -101,7 +92,7 @@ describe('FAILED-without-HMS bucketing', () => {
     const offline: Status = {
       connected: false,
       state: 'FAILED',
-      hms_errors: [{ code: '0x4057', attr: 0x0300_0000, severity: 1 }],
+      hms_errors: [{ code: '0x4057', attr: 0x0300_4057, severity: 1, full_code: '03004057', description: 'Z-axis step loss detected.' }],
     };
     expect(classifyPrinterStatus(offline)).toBe('offline');
   });

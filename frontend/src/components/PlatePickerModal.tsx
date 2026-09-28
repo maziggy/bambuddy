@@ -1,7 +1,7 @@
 import { Layers, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { PlateMetadata } from '../types/plates';
-import { withStreamToken } from '../api/client';
+import { withMediaToken } from '../api/client';
 import { formatDuration } from '../utils/date';
 
 interface PlatePickerModalProps {
@@ -47,7 +47,7 @@ export function PlatePickerModal({ plates, onSelect, onClose }: PlatePickerModal
               >
                 {plate.has_thumbnail && plate.thumbnail_url != null ? (
                   <img
-                    src={withStreamToken(plate.thumbnail_url)}
+                    src={withMediaToken(plate.thumbnail_url)}
                     alt={`Plate ${plate.index}`}
                     className="w-12 h-12 rounded object-cover bg-bambu-dark-tertiary flex-shrink-0"
                   />

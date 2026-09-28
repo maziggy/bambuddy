@@ -200,6 +200,8 @@ async def test_screen_only_model_fails_instead_of_dispatching(scheduler, db_sess
     await db_session.refresh(row)
     assert row.status == "failed"
     assert row.error_message
+    # The code the card translates; error_message stays English for the API.
+    assert row.error_code == "screen_only"
     assert row.completed_at is not None
 
 
@@ -217,6 +219,7 @@ async def test_firmware_below_minimum_fails(scheduler, db_session, printer_facto
     await db_session.refresh(row)
     assert row.status == "failed"
     assert row.error_message
+    assert row.error_code == "unsupported"
     assert row.completed_at is not None
 
 
@@ -617,3 +620,149 @@ async def test_malformed_ams_id_does_not_throw_while_running(scheduler, db_sessi
     await db_session.refresh(row)
     assert row.status == "pending"
     assert row.waiting_reason == "interrupted"
+
+
+def _parked_state(ams_id=0, dry_time=720):
+    """A unit whose countdown the MQTT layer has flagged as not running (#2896)."""
+    state = _mock_state(ams_id=ams_id, dry_time=dry_time)
+    state.raw_data["ams"][0]["dry_countdown_stalled"] = True
+    return state
+
+
+@pytest.mark.asyncio
+async def test_running_with_a_ticking_countdown_stays_running(scheduler, db_session, printer_factory):
+    row = await _make_row(
+        db_session, printer_factory, status="running", started_at=_utcnow_naive() - timedelta(minutes=30)
+    )
+    with patch("backend.app.services.print_scheduler.printer_manager") as mock_pm:
+        mock_pm.get_status.return_value = _mock_state(dry_time=450)
+        await scheduler._check_scheduled_dryings(db_session)
+    await db_session.refresh(row)
+    assert row.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_running_with_a_parked_countdown_during_a_print_requeues(scheduler, db_session, printer_factory):
+    """#2896: a timer the printer took but never runs would keep the row
+    "running" forever. Mid-print it is re-queued like any interruption."""
+    row = await _make_row(
+        db_session, printer_factory, status="running", started_at=_utcnow_naive() - timedelta(minutes=30)
+    )
+    with (
+        patch("backend.app.services.print_scheduler.printer_manager") as mock_pm,
+        patch.object(scheduler, "_is_printer_idle", return_value=False),
+    ):
+        mock_pm.get_status.return_value = _parked_state()
+        await scheduler._check_scheduled_dryings(db_session)
+    # Neither a stop nor a restart: the timer stays on the printer.
+    mock_pm.send_drying_command.assert_not_called()
+    await db_session.refresh(row)
+    assert row.status == "pending"
+    assert row.started_at is None
+    assert row.waiting_reason == "interrupted"
+    assert row.printer_id not in scheduler._scheduled_drying_printer_ids
+
+
+@pytest.mark.asyncio
+async def test_running_with_a_parked_countdown_on_an_idle_printer_fails(scheduler, db_session, printer_factory):
+    """Parked with nothing else running is a refusal, not a user stop: the row
+    fails with a reason instead of reading as cancelled or retrying forever."""
+    row = await _make_row(
+        db_session, printer_factory, status="running", started_at=_utcnow_naive() - timedelta(minutes=30)
+    )
+    with (
+        patch("backend.app.services.print_scheduler.printer_manager") as mock_pm,
+        patch.object(scheduler, "_is_printer_idle", return_value=True),
+    ):
+        mock_pm.get_status.return_value = _parked_state()
+        await scheduler._check_scheduled_dryings(db_session)
+    await db_session.refresh(row)
+    assert row.status == "failed"
+    assert "did not start drying" in row.error_message
+    assert row.error_code == "did_not_start"
+    assert row.completed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_a_parked_timer_does_not_make_a_pending_run_wait(scheduler, db_session, printer_factory):
+    """Auto-drying keeps tracking a parked unit so its stop paths still reach it,
+    but a scheduled run must not wait "already_drying" on a timer that never ends."""
+    row = await _make_row(db_session, printer_factory, start_after=None)
+    scheduler._drying_in_progress[row.printer_id] = 1.0
+    with (
+        patch("backend.app.services.print_scheduler.printer_manager") as mock_pm,
+        patch.object(scheduler, "_is_printer_idle", return_value=True),
+    ):
+        mock_pm.get_status.return_value = _parked_state()
+        mock_pm.send_drying_command.return_value = True
+        await scheduler._check_scheduled_dryings(db_session)
+    mock_pm.send_drying_command.assert_called_once()
+    await db_session.refresh(row)
+    assert row.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_real_drying_still_makes_a_pending_run_wait(scheduler, db_session, printer_factory):
+    row = await _make_row(db_session, printer_factory, start_after=None)
+    scheduler._drying_in_progress[row.printer_id] = 1.0
+    with (
+        patch("backend.app.services.print_scheduler.printer_manager") as mock_pm,
+        patch.object(scheduler, "_is_printer_idle", return_value=True),
+    ):
+        mock_pm.get_status.return_value = _mock_state(dry_time=450)
+        await scheduler._check_scheduled_dryings(db_session)
+    mock_pm.send_drying_command.assert_not_called()
+    await db_session.refresh(row)
+    assert row.waiting_reason == "already_drying"
+
+
+class TestDryingIsOnlyParked:
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    def test_every_timed_unit_parked(self, mock_pm):
+        state = MagicMock()
+        state.raw_data = {
+            "ams": [
+                {"id": 0, "dry_time": 720, "dry_countdown_stalled": True},
+                {"id": 1, "dry_time": 0},
+            ]
+        }
+        mock_pm.get_status.return_value = state
+        assert PrintScheduler._drying_is_only_parked(1) is True
+
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    def test_one_running_unit_is_enough_to_count_as_drying(self, mock_pm):
+        state = MagicMock()
+        state.raw_data = {
+            "ams": [
+                {"id": 0, "dry_time": 720, "dry_countdown_stalled": True},
+                {"id": 1, "dry_time": 300},
+            ]
+        }
+        mock_pm.get_status.return_value = state
+        assert PrintScheduler._drying_is_only_parked(1) is False
+
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    def test_no_timer_yet_is_not_parked(self, mock_pm):
+        """A command just sent that the firmware has not reported back yet is
+        real drying about to begin, not a parked one."""
+        state = MagicMock()
+        state.raw_data = {"ams": [{"id": 0, "dry_time": 0}]}
+        mock_pm.get_status.return_value = state
+        assert PrintScheduler._drying_is_only_parked(1) is False
+
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    def test_offline_printer_is_not_parked(self, mock_pm):
+        mock_pm.get_status.return_value = None
+        assert PrintScheduler._drying_is_only_parked(1) is False
+
+
+def test_every_failure_detail_has_a_code():
+    """Each English failure text the scheduler can store maps to a code the
+    frontend translates (FAILED_REASON_KEYS in PrintersPage.tsx)."""
+    from backend.app.services import drying_preflight
+
+    assert drying_preflight.DETAIL_CODES == {
+        drying_preflight.SCREEN_ONLY_DETAIL: "screen_only",
+        drying_preflight.UNSUPPORTED_DETAIL: "unsupported",
+        drying_preflight.DID_NOT_START_DETAIL: "did_not_start",
+    }

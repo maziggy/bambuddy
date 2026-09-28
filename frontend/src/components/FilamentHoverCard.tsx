@@ -46,6 +46,9 @@ interface InventoryConfig {
     subtype: string | null;
     brand: string | null;
     color_name: string | null;
+    // Spoolman has no colour-name field, so `color_name` on a Spoolman-backed
+    // spool is usually its subtype standing in for one (#3090).
+    color_name_is_synthesized?: boolean;
     rgba?: string | null;
     extra_colors?: string | null;
     effect_type?: string | null;
@@ -215,8 +218,23 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
   // already resolved with the slot's material (#2875).
   // Trimmed, so a spool saved with a whitespace-only colour name leaves the
   // swatch reading the catalogue answer instead of reading blank.
-  const assignedColorName = resolveSpoolColorName(inventory?.assignedSpool?.color_name ?? null, null)?.trim();
+  // A synthesised name is dropped outright rather than passed through the
+  // helper: with a null rgba the helper has nothing to resolve against and
+  // would hand back "Silk+", displacing the catalogue answer the caller
+  // already worked out from the slot's material (#3090).
+  const assignedColorName = inventory?.assignedSpool?.color_name_is_synthesized
+    ? undefined
+    : resolveSpoolColorName(inventory?.assignedSpool?.color_name ?? null, null)?.trim();
   const displayColorName = assignedColorName || data.colorName;
+  // The ASSIGNED row has the spool's own swatch to hand, so unlike the header
+  // above it can resolve a missing or synthesised name against the catalogue.
+  const assignedRowColorName = inventory?.assignedSpool
+    ? resolveSpoolColorName(
+        inventory.assignedSpool.color_name,
+        inventory.assignedSpool.rgba ?? null,
+        inventory.assignedSpool.color_name_is_synthesized,
+      )
+    : null;
   const assignedRemainingWeight = inventory?.assignedSpool?.remainingWeightGrams ?? null;
 
   // The header paints the spool's own swatch whenever the spool describes more
@@ -473,7 +491,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                           {inventory.assignedSpool.brand ? `${inventory.assignedSpool.brand} ` : ''}
                           {inventory.assignedSpool.material}
                           {inventory.assignedSpool.subtype ? ` ${inventory.assignedSpool.subtype}` : ''}
-                          {inventory.assignedSpool.color_name ? ` - ${inventory.assignedSpool.color_name}` : ''}
+                          {assignedRowColorName ? ` - ${assignedRowColorName}` : ''}
                         </p>
                         <span className="text-[10px] font-mono text-bambu-gray shrink-0">#{inventory.assignedSpool.id}</span>
                       </div>

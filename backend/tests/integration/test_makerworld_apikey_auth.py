@@ -29,6 +29,12 @@ from backend.app.core.auth import generate_api_key
 from backend.app.models.api_key import APIKey
 from backend.app.models.library import LibraryFile
 from backend.app.models.user import User
+from backend.app.services.model_providers.base import (
+    ProviderDownload,
+    ProviderDownloadInfo,
+    ProviderResolvedModel,
+    ProviderResourceRef,
+)
 
 
 async def _setup_auth_with_admin(client: AsyncClient) -> str:
@@ -104,6 +110,20 @@ def _fake_service(**stubs):
     return svc
 
 
+def _download_info(
+    model_id: int = 1400373,
+    profile_id: int = 298919107,
+    name: str = "cube.3mf",
+) -> ProviderDownloadInfo:
+    """What ``service.get_download`` hands the route — signed URL + raw
+    upstream name + enriched ref (sub_id carries the resolved profile)."""
+    return ProviderDownloadInfo(
+        ref=ProviderResourceRef(source_type="makerworld", external_id=str(model_id), sub_id=str(profile_id)),
+        url="https://makerworld.bblmw.com/makerworld/model/X/Y/cube.3mf?exp=1&key=k",
+        suggested_filename=name,
+    )
+
+
 class TestStatusEndpoint:
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -161,9 +181,13 @@ class TestResolveEndpoint:
         admin = await _store_admin_cloud_token(db_session, "mwadmin", token="fake-bambu-token")
         key = await _make_key(db_session, owner=admin, name="resolve-cloud")
 
-        design = {"id": 1400373, "modelId": "US2bb73b106683e5", "title": "Cube", "instances": []}
-        instances = {"total": 0, "hits": []}
-        svc = _fake_service(get_design=design, get_design_instances=instances)
+        svc = _fake_service(
+            resolve=ProviderResolvedModel(
+                ref=ProviderResourceRef(source_type="makerworld", external_id="1400373"),
+                design={"id": 1400373, "title": "Cube"},
+                instances=[],
+            )
+        )
         build = AsyncMock(return_value=svc)
 
         with patch("backend.app.api.routes.makerworld._build_service", build):
@@ -173,14 +197,22 @@ class TestResolveEndpoint:
                 headers={"X-API-Key": key},
             )
         assert resp.status_code == 200, resp.text
-        # _build_service receives (db, user); the user arg must be the owning admin.
-        # Without the fix it'd be None (the API-key dep value).
+        # _build_service receives (db, provider, current_user, api_key_cloud_owner).
+        # Identity resolution lives in the provider now: for an API-keyed
+        # call current_user is None by design and the key's owner must arrive
+        # via api_key_cloud_owner — without the fix it'd be dropped entirely.
         assert build.await_count == 1
-        passed_user = (
-            build.await_args.args[1] if len(build.await_args.args) > 1 else build.await_args.kwargs.get("user")
+        jwt_user = (
+            build.await_args.args[2] if len(build.await_args.args) > 2 else build.await_args.kwargs.get("current_user")
         )
-        assert passed_user is not None, "resolve_url must pass the API-key owner, not None"
-        assert passed_user.id == admin.id
+        key_owner = (
+            build.await_args.args[3]
+            if len(build.await_args.args) > 3
+            else build.await_args.kwargs.get("api_key_cloud_owner")
+        )
+        assert jwt_user is None, "API-keyed callers present no JWT user"
+        assert key_owner is not None, "resolve_url must forward the API-key owner to the provider"
+        assert key_owner.id == admin.id
 
 
 class TestImportEndpoint:
@@ -195,23 +227,12 @@ class TestImportEndpoint:
         admin = await _store_admin_cloud_token(db_session, "mwadmin", token="fake-bambu-token")
         key = await _make_key(db_session, owner=admin, name="import-cloud")
 
-        design = {
-            "id": 1400373,
-            "modelId": "US2bb73b106683e5",
-            "title": "Cube",
-            "instances": [{"profileId": 298919107, "title": "default"}],
-        }
-        manifest = {
-            "name": "cube.3mf",
-            "url": "https://makerworld.bblmw.com/makerworld/model/X/Y/cube.3mf?exp=1&key=k",
-        }
-        # 3MF download returns (bytes, filename). The bytes don't have to be a
-        # valid zip — save_3mf_bytes_to_library stores them as-is and the
-        # downstream thumbnail extractor swallows errors.
+        # The 3MF bytes don't have to be a valid zip —
+        # save_3mf_bytes_to_library stores them as-is and the downstream
+        # thumbnail extractor swallows errors.
         svc = _fake_service(
-            get_design=design,
-            get_profile_download=manifest,
-            download_3mf=(b"PK\x03\x04fake-3mf-bytes", "cube.3mf"),
+            get_download=_download_info(),
+            download=ProviderDownload(file_bytes=b"PK\x03\x04fake-3mf-bytes", filename="cube.3mf"),
         )
 
         with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
@@ -249,16 +270,9 @@ class TestImportEndpoint:
         admin = await _store_admin_cloud_token(db_session, "mwadmin", token="fake-bambu-token")
         key = await _make_key(db_session, owner=admin, name="import-no-cloud", can_access_cloud=False)
 
-        design = {
-            "id": 1400373,
-            "modelId": "US2bb73b106683e5",
-            "instances": [{"profileId": 298919107}],
-        }
-        manifest = {"name": "cube.3mf", "url": "https://makerworld.bblmw.com/x.3mf"}
         svc = _fake_service(
-            get_design=design,
-            get_profile_download=manifest,
-            download_3mf=(b"PK\x03\x04fake", "cube.3mf"),
+            get_download=_download_info(),
+            download=ProviderDownload(file_bytes=b"PK\x03\x04fake", filename="cube.3mf"),
         )
 
         with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)) as build:
@@ -270,11 +284,19 @@ class TestImportEndpoint:
         assert resp.status_code == 200, resp.text
         body = resp.json()
 
-        # _build_service got None — same as before the PR for non-cloud keys.
-        passed_user = (
-            build.await_args.args[1] if len(build.await_args.args) > 1 else build.await_args.kwargs.get("user")
+        # Both identity slots are None — same as before the PR for non-cloud
+        # keys: no JWT user, and the cloud-scope fence keeps the key's owner
+        # back, so the provider builds an anonymous service.
+        jwt_user = (
+            build.await_args.args[2] if len(build.await_args.args) > 2 else build.await_args.kwargs.get("current_user")
         )
-        assert passed_user is None
+        key_owner = (
+            build.await_args.args[3]
+            if len(build.await_args.args) > 3
+            else build.await_args.kwargs.get("api_key_cloud_owner")
+        )
+        assert jwt_user is None
+        assert key_owner is None
 
         # And owner_id is NULL because the cloud-scope fence said no.
         result = await db_session.execute(select(LibraryFile).where(LibraryFile.id == body["library_file_id"]))

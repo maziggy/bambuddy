@@ -348,6 +348,16 @@ body {
   color: var(--text-primary);
 }
 
+/* Same, for the hover variant (#1909).  Tailwind compiles `hover:text-white`
+   to `.hover\:text-white:hover`, a different selector the rule above never
+   matches -- so every one of the ~400 `text-bambu-gray hover:text-white`
+   controls turned literally white on hover and vanished against the light
+   theme's background.  Unlayered, like the rule above, so it outranks
+   Tailwind's `@layer utilities` output. */
+.hover\:text-white:hover {
+  color: var(--text-primary);
+}
+
 /* Smooth transitions for theme changes */
 .bg-bambu-dark,
 .bg-bambu-dark-secondary,

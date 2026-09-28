@@ -2,9 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.finance import CostCenter, CostCenterMember, UserWallet
-from backend.app.models.settings import Settings as AppSettingModel
 from backend.app.models.user import User
-from backend.app.schemas.settings import AppSettings as AppSettingsSchema
 
 
 async def ensure_user_finance_defaults(db: AsyncSession, user: User) -> bool:
@@ -16,12 +14,7 @@ async def ensure_user_finance_defaults(db: AsyncSession, user: User) -> bool:
 
     wallet = (await db.execute(select(UserWallet).where(UserWallet.user_id == user.id))).scalar_one_or_none()
     if wallet is None:
-        # Respect admin-configured currency if present, otherwise fall back to app default
-        default_currency = AppSettingsSchema().currency
-        result = await db.execute(select(AppSettingModel).where(AppSettingModel.key == "currency"))
-        setting = result.scalar_one_or_none()
-        currency = setting.value if setting and setting.value else default_currency
-        db.add(UserWallet(user_id=user.id, balance=0.0, currency=currency))
+        db.add(UserWallet(user_id=user.id, balance=0.0))
         changed = True
 
     private_center = (

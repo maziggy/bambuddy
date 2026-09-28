@@ -372,6 +372,28 @@ class TestProviderSchema:
                 group_mapping={"op": "   "},
             )
 
+    def test_case_colliding_mapping_keys_rejected(self):
+        """Review round 2: {"Admins": ..., "admins": ...} would silently
+        collapse in the sync's case-insensitive lookup — rejected at save."""
+        with pytest.raises(ValidationError):
+            OIDCProviderCreate(
+                name="t",
+                issuer_url="https://id.example.com",
+                client_id="a",
+                client_secret="b",
+                group_mapping={"Admins": "Administrators", "admins": "Viewers"},
+            )
+
+    def test_case_colliding_keys_same_target_also_rejected(self):
+        with pytest.raises(ValidationError):
+            OIDCProviderCreate(
+                name="t",
+                issuer_url="https://id.example.com",
+                client_id="a",
+                client_secret="b",
+                group_mapping={"Admins": "Operators", "admins": "Operators"},
+            )
+
     def test_update_none_leaves_unchanged(self):
         from backend.app.schemas.auth import OIDCProviderUpdate
 

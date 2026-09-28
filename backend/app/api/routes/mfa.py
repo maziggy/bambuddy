@@ -2123,12 +2123,15 @@ async def oidc_callback(
                 )
                 # Post-rollback guard, not token freshness: nothing below reads
                 # user.groups (the callback only puts the username on the exchange
-                # token; /oidc/exchange re-selects the user with selectinload). The
-                # refresh exists so a sync that raised and rolled back leaves the
-                # in-memory user.groups holding database truth instead of the
-                # pre-rollback mutation. Inside the mapping branch so sync-off
-                # installs do not pay two extra queries per login.
-                await db.refresh(user, attribute_names=["groups"])
+                # token; /oidc/exchange re-selects the user with selectinload).
+                # ALL attributes, not just groups: a sync that raised called
+                # db.rollback(), which expires every loaded object in the
+                # session — the next username=user.username below would then
+                # lazy-load and raise MissingGreenlet, landing the user on
+                # ?oidc_error=user_resolution_failed, i.e. a failed sync would
+                # block the login after all. Inside the mapping branch so
+                # sync-off installs do not pay the query.
+                await db.refresh(user)
 
             # Issue an OIDC exchange token (short-lived, single-use) stored in DB.
             # I7: Opportunistically prune expired exchange tokens to keep the table small.

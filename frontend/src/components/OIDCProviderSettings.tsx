@@ -69,6 +69,11 @@ function ProviderForm({
     if (isEdit && !secretChanged) {
       delete (payload as Partial<OIDCProviderCreate>).client_secret;
     }
+    // #3107 review: default the group claim on save, not on change —
+    // snapping it back mid-edit means the field can only be typed over.
+    if (!payload.group_claim || !payload.group_claim.trim()) {
+      payload.group_claim = 'groups';
+    }
     // #3107 — blank IdP-group name or unselected Bambuddy group means the row
     // isn't finished yet; drop it rather than saving a half-filled mapping.
     const mapping: Record<string, string> = {};
@@ -217,7 +222,7 @@ function ProviderForm({
         <input
           className={inputCls}
           value={form.group_claim ?? 'groups'}
-          onChange={(e) => set('group_claim', e.target.value || 'groups')}
+          onChange={(e) => set('group_claim', e.target.value)}
           placeholder="groups"
         />
         <p className="text-bambu-gray text-xs mt-1">{t('settings.oidc.form.groupClaimDesc')}</p>

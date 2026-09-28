@@ -370,25 +370,38 @@ def _validate_group_mapping(v: dict[str, str]) -> dict[str, str]:
     the schema layer has no session. Keys are left as-is apart from stripping:
     IdP group values are opaque strings (DNs, UUIDs, names) and must match the
     claim byte-for-byte, so any normalisation beyond whitespace would silently
-    break the lookup. Case sensitivity matches the LDAP mapping, which compares
-    the directory side case-insensitively; here the IdP side keeps its case
-    because two IdP groups differing only by case mapping to one Bambuddy group
-    is a legitimate configuration, while the reverse would be ambiguous.
+    break the lookup.
+
+    Keys colliding case-insensitively are rejected: the sync matches the IdP
+    side case-insensitively, so {"Admins": "Administrators", "admins":
+    "Viewers"} would silently collapse to whichever entry the dict happens to
+    keep last — a member of "Admins" could end up in Viewers. Rejecting the
+    pair at save time (here, so the env path gets the same answer) turns an
+    undiagnosable runtime behaviour into a form error. Two keys differing only
+    by case and mapping to the SAME group are pointless but harmless, and are
+    rejected too for the same reason: they read as a mistake.
     """
     if not isinstance(v, dict):
         raise ValueError("group_mapping must be a JSON object")
     if len(v) > 100:
         raise ValueError("group_mapping must have at most 100 entries")
     cleaned: dict[str, str] = {}
+    seen_ci: dict[str, str] = {}
     for key, value in v.items():
         if not isinstance(key, str) or not key.strip():
             raise ValueError("group_mapping keys must be non-empty strings")
         if not isinstance(value, str) or not value.strip():
             raise ValueError("group_mapping values must be non-empty group names")
-        cleaned[key.strip()] = value.strip()
-    # Two keys differing only by case folding to the same group is fine (both
-    # IdP spellings grant it); the reverse — one key spelling two groups — is
-    # impossible by construction because dict keys are unique.
+        k = key.strip()
+        ci = k.lower()
+        if ci in seen_ci:
+            raise ValueError(
+                f"group_mapping has two IdP groups differing only by case: "
+                f"'{seen_ci[ci]}' and '{k}' — the sync matches case-insensitively, "
+                f"so both cannot be honored"
+            )
+        seen_ci[ci] = k
+        cleaned[k] = value.strip()
     return cleaned
 
 

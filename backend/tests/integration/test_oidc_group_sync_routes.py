@@ -421,6 +421,8 @@ class TestCallbackAppliesMappingEndToEnd:
         )
         callback = await self._run_callback(async_client, db_session, provider_id, id_token, nonce, jwks, issuer)
         assert callback.status_code == 302, callback.text
+        # 302 alone is not enough — the error path also 302s (review #1):
+        # assert the exchange token, i.e. the login actually succeeded.
         assert "oidc_token=" in callback.headers.get("location", "")
 
         user = (await db_session.execute(select(User).where(User.email == "gse2e@example.com"))).scalar_one()
@@ -459,6 +461,7 @@ class TestCallbackAppliesMappingEndToEnd:
         id_token = self._id_token(private_pem, issuer, client_id, nonce, ["idp-ops"], "gs-sub-2", "gse2e2@example.com")
         cb = await self._run_callback(async_client, db_session, provider_id, id_token, nonce, jwks, issuer)
         assert cb.status_code == 302
+        assert "oidc_token=" in cb.headers.get("location", "")
 
         user = (await db_session.execute(select(User).where(User.email == "gse2e2@example.com"))).scalar_one()
         # Creation assigns the default group (Viewers) per the existing
@@ -479,9 +482,70 @@ class TestCallbackAppliesMappingEndToEnd:
         id_token2 = self._id_token(private_pem, issuer, client_id, nonce2, [], "gs-sub-2", "gse2e2@example.com")
         cb2 = await self._run_callback(async_client, db_session, provider_id, id_token2, nonce2, jwks, issuer)
         assert cb2.status_code == 302, cb2.text
+        assert "oidc_token=" in cb2.headers.get("location", ""), (
+            "login 2 must succeed (and carry an exchange token), not error out"
+        )
 
         await db_session.refresh(user, attribute_names=["groups"])
         assert {g.id for g in user.groups} == {manual.id, viewers.id}, (
             "revoked mapped group must be removed; the creation-default group "
             "and the manual assignment must both survive"
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_sync_failure_does_not_block_login(
+        self, async_client: AsyncClient, db_session: AsyncSession, monkeypatch
+    ):
+        """Review blocker #1: a mid-sync failure must not take the login down.
+
+        sync_oidc_user_groups catches the exception and calls db.rollback(),
+        which expires every loaded object in the session. If the callback then
+        reads user.username for the exchange token, that lazy-load raises
+        MissingGreenlet and the user lands on ?oidc_error=user_resolution_failed
+        — a failed sync blocking the login after all. The post-sync
+        db.refresh(user) (all attributes) is what prevents it; this test
+        fails with user_resolution_failed if that refresh is narrowed again.
+        Asserts the exchange token in the Location, which a 302 alone cannot
+        distinguish from the error redirect.
+        """
+        operators = await _get_or_make_group(db_session, "Operators")
+        private_pem, jwks = _make_test_rsa_key()
+        issuer = "https://e2e-gsfail.test.example.com"
+        client_id = "gs-e2e-client-fail"
+        nonce = secrets.token_urlsafe(16)
+
+        resp = await _create_provider(
+            async_client,
+            name="E2E-GroupSync-Fail-IdP",
+            issuer_url=issuer,
+            client_id=client_id,
+            client_secret="sec",
+            group_claim="groups",
+            group_mapping={"idp-ops": "Operators"},
+        )
+        assert resp.status_code == 201, resp.text
+        provider_id = resp.json()["id"]
+
+        id_token = self._id_token(
+            private_pem, issuer, client_id, nonce, ["idp-ops"], "gs-sub-fail", "gsfaile@example.com"
+        )
+
+        from backend.app.services import oidc_group_sync as sync_module
+
+        async def _explode(*args, **kwargs):
+            raise RuntimeError("simulated mid-sync failure")
+
+        monkeypatch.setattr(sync_module, "resolve_oidc_group_mapping", _explode)
+        # The callback imports the name lazily inside the function, so patch
+        # the module attribute the callback resolves it from.
+        import backend.app.api.routes.mfa as mfa_module  # noqa: F401  (sanity: module importable)
+
+        callback = await self._run_callback(async_client, db_session, provider_id, id_token, nonce, jwks, issuer)
+
+        location = callback.headers.get("location", "")
+        assert "oidc_error=" not in location, f"a failed sync must not turn into a login error: {location}"
+        assert "oidc_token=" in location, "the login must succeed and issue an exchange token despite the sync failure"
+        # The user exists, and kept the groups they had (none mapped).
+        user = (await db_session.execute(select(User).where(User.email == "gsfaile@example.com"))).scalar_one()
+        assert operators.id not in {g.id for g in user.groups}

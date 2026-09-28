@@ -19,6 +19,13 @@ vi.mock('react-router-dom', async (importActual) => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
+// The setup file's Location proxy. Several tests below swap window.location
+// for a plain object so the OIDC redirect's href write can be read back.
+// Everything restored in the afterEach below used to leak into whichever test
+// ran next: a stale location object hid the URL it set with pushState, and a
+// token left by a successful login signed in a visitor meant to be anonymous.
+const realLocation = window.location;
+
 describe('LoginPage', () => {
   beforeEach(() => {
     server.use(
@@ -26,6 +33,12 @@ describe('LoginPage', () => {
         return HttpResponse.json({ auth_enabled: true, requires_setup: false });
       })
     );
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', { configurable: true, writable: true, value: realLocation });
+    setAuthToken(null);
+    sessionStorage.clear();
   });
 
   describe('rendering', () => {
@@ -744,9 +757,12 @@ describe('LoginPage', () => {
 
       await user.click(screen.getByRole('button', { name: /Authentik/i }));
 
+      // The flag starts out null, so wait for the redirect itself before
+      // asserting on it -- otherwise this passes before the click is handled.
       await waitFor(() => {
-        expect(sessionStorage.getItem('auth_remember_me')).toBeNull();
+        expect(window.location.href).toBe('https://auth.test/authorize?state=xyz');
       });
+      expect(sessionStorage.getItem('auth_remember_me')).toBeNull();
     });
 
     it('cleans up stale auth_remember_me flag if Remember Me is unchecked before SSO redirect', async () => {
@@ -766,9 +782,70 @@ describe('LoginPage', () => {
       // Clicking SSO without checking Remember Me should remove the stale flag
       await user.click(screen.getByRole('button', { name: /Authentik/i }));
 
+      // The flag starts out null, so wait for the redirect itself before
+      // asserting on it -- otherwise this passes before the click is handled.
       await waitFor(() => {
-        expect(sessionStorage.getItem('auth_remember_me')).toBeNull();
+        expect(window.location.href).toBe('https://auth.test/authorize?state=xyz');
       });
+      expect(sessionStorage.getItem('auth_remember_me')).toBeNull();
+    });
+  });
+
+  // #1589 autologin: the page redirects to the IdP on mount, so the
+  // destination the user was sent to /login from has to be stashed first, or
+  // the round-trip lands them on "/" instead (#2784 review).
+  describe('OIDC autologin keeps the post-login destination', () => {
+    beforeEach(() => {
+      sessionStorage.clear();
+      server.use(
+        http.get('/api/v1/auth/advanced-auth/status', () =>
+          HttpResponse.json({
+            advanced_auth_enabled: true,
+            smtp_configured: false,
+            local_login_enabled: false,
+            autologin_provider_id: 101,
+          })
+        ),
+        http.get('/api/v1/auth/oidc/providers', () => HttpResponse.json([])),
+        http.get('/api/v1/auth/oidc/authorize/101', () =>
+          HttpResponse.json({ auth_url: 'https://auth.test/authorize?state=xyz' })
+        )
+      );
+    });
+
+    afterEach(() => {
+      window.history.replaceState(null, '', '/');
+    });
+
+    // BrowserRouter reads router state from history.state.usr, which is where
+    // ProtectedRoute's navigate('/login', { state: { from } }) puts it.
+    function arriveAtLogin(from?: { pathname: string; search?: string }) {
+      window.history.replaceState(from ? { usr: { from }, key: 'test', idx: 0 } : null, '', '/login');
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        writable: true,
+        value: { ...window.location, href: 'http://localhost:3000/login' },
+      });
+    }
+
+    it('stashes the page the user was sent from before redirecting to the IdP', async () => {
+      arriveAtLogin({ pathname: '/archives', search: '?id=5' });
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(window.location.href).toBe('https://auth.test/authorize?state=xyz');
+      });
+      expect(sessionStorage.getItem('auth_post_login_redirect')).toBe('/archives?id=5');
+    });
+
+    it('stashes nothing when the user opened /login directly', async () => {
+      arriveAtLogin();
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(window.location.href).toBe('https://auth.test/authorize?state=xyz');
+      });
+      expect(sessionStorage.getItem('auth_post_login_redirect')).toBeNull();
     });
   });
 

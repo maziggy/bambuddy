@@ -10,10 +10,9 @@
  * - P13-6b:  Slot-assigned-only Spoolman spool produces a fill bar
  * - P13-6c:  SlotActionPicker hides Link button when slot has SpoolmanSlotAssignment
  *
- * SpoolSlot tiles render as <div onClick=... title="AMS Slot N">; tests target
- * them via getByTitle which is a stable, semantic selector. Buttons inside the
- * SlotActionPicker are addressed by their visible text (translated via the
- * mocked react-i18next; t-fallback returns the second arg).
+ * SpoolSlot tiles are selected through a language-independent test id. Buttons
+ * inside the SlotActionPicker are addressed by their visible text (translated
+ * via the mocked react-i18next; t-fallback returns the second arg).
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -187,6 +186,11 @@ function setupDefaultApiResponses() {
   };
 }
 
+async function findAmsSlot(slotNumber: number): Promise<HTMLElement> {
+  const slots = await screen.findAllByTestId('ams-slot');
+  return slots[slotNumber - 1];
+}
+
 describe('SpoolBuddyAmsPage Phase 13', () => {
   beforeEach(() => {
     assignSpoolModalCalls.length = 0;
@@ -206,7 +210,7 @@ describe('SpoolBuddyAmsPage Phase 13', () => {
       // gate doesn't suppress the Assign-Spool action. Slot 1 carries
       // blDefault with a non-zero tray_uuid in buildPrinterStatus, which
       // is correctly recognized as BL-RFID and offers Configure only.
-      const slot2 = await screen.findByTitle('AMS Slot 2');
+      const slot2 = await findAmsSlot(2);
       fireEvent.click(slot2);
 
       // SlotActionPicker opens; click the Assign-Spool action ("Track a spool from your inventory")
@@ -235,7 +239,7 @@ describe('SpoolBuddyAmsPage Phase 13', () => {
       // to the modal showing both inventories. With the fix, in spoolman
       // mode the prop is true (we'd see no local-list rendered if any
       // assign-modal opened — which it can't from this picker in this mode).
-      const slot1 = await screen.findByTitle('AMS Slot 1');
+      const slot1 = await findAmsSlot(1);
       fireEvent.click(slot1);
       // The picker opens with the Configure button (always visible)
       await screen.findByText('Set filament preset, K-profile, and color');
@@ -268,7 +272,7 @@ describe('SpoolBuddyAmsPage Phase 13', () => {
       const qc = lastQueryClient!;
       const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
 
-      const slot1 = await screen.findByTitle('AMS Slot 1');
+      const slot1 = await findAmsSlot(1);
       fireEvent.click(slot1);
 
       const unlinkBtn = await screen.findByText('Remove Spoolman link from this slot');
@@ -297,7 +301,7 @@ describe('SpoolBuddyAmsPage Phase 13', () => {
       renderPage();
 
       // Wait for the page to settle and queries to fire
-      await screen.findByTitle('AMS Slot 1');
+      await findAmsSlot(1);
       await waitFor(() => {
         expect(apiCallCounts.getSpoolmanSlotAssignments ?? 0).toBeGreaterThan(0);
         expect(apiCallCounts.getSpoolmanInventorySpools ?? 0).toBeGreaterThan(0);
@@ -308,7 +312,7 @@ describe('SpoolBuddyAmsPage Phase 13', () => {
       spoolmanStatusValue = { enabled: false, connected: false };
       renderPage();
 
-      await screen.findByTitle('AMS Slot 1');
+      await findAmsSlot(1);
       // Wait an extra tick for any pending queries that might fire
       await new Promise(r => setTimeout(r, 100));
       expect(apiCallCounts.getSpoolmanSlotAssignments ?? 0).toBe(0);
@@ -332,7 +336,7 @@ describe('SpoolBuddyAmsPage Phase 13', () => {
       renderPage();
 
       // Click slot 2 (tray_id=1, second slot) — has SpoolmanSlotAssignment but no tag link.
-      const slot2 = await screen.findByTitle('AMS Slot 2');
+      const slot2 = await findAmsSlot(2);
       fireEvent.click(slot2);
 
       // Configure button is always visible
@@ -351,7 +355,7 @@ describe('SpoolBuddyAmsPage Phase 13', () => {
       renderPage();
 
       // Click slot 2 (empty)
-      const slot2 = await screen.findByTitle('AMS Slot 2');
+      const slot2 = await findAmsSlot(2);
       fireEvent.click(slot2);
 
       // Link button SHOULD appear in this case
@@ -383,7 +387,7 @@ describe('SpoolBuddyAmsPage P13-1d — Empty slot Local-Assign in local mode', (
     renderPage();
 
     // Slot 2 (tray_id=1) is empty by default in buildPrinterStatus()
-    const emptySlot = await screen.findByTitle('AMS Slot 2');
+    const emptySlot = await findAmsSlot(2);
     fireEvent.click(emptySlot);
 
     // The Assign-Spool action must be visible in the picker
@@ -421,7 +425,7 @@ describe('SpoolBuddyAmsPage Phase 14 — SlotActionPicker BL-detection in local 
     // Slot 0 is BL-RFID by default (buildPrinterStatus blDefault has 32-hex tray_uuid)
     renderPage();
 
-    const blSlot = await screen.findByTitle('AMS Slot 1');
+    const blSlot = await findAmsSlot(1);
     fireEvent.click(blSlot);
 
     // Configure must remain — it's a legitimate operation on BL-RFID slots.
@@ -439,7 +443,7 @@ describe('SpoolBuddyAmsPage Phase 14 — SlotActionPicker BL-detection in local 
     // Slot 2 (tray_id=1) is empty (tray_type=''), which means the SlotActionPicker
     // sees tray=null per handleAmsSlotClick. isBambuLabSpool(null) returns false,
     // so the Assign action must still appear.
-    const emptySlot = await screen.findByTitle('AMS Slot 2');
+    const emptySlot = await findAmsSlot(2);
     fireEvent.click(emptySlot);
 
     await screen.findByText('Track a spool from your inventory');

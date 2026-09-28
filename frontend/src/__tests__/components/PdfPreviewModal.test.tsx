@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PdfPreviewModal } from '../../components/PdfPreviewModal';
 
@@ -68,7 +68,9 @@ describe('PdfPreviewModal', () => {
   it('shows the page indicator once the document loads', async () => {
     renderModal();
     expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
-    expect(pdfjsMocks.render).toHaveBeenCalled();
+    // The indicator appears when the document loads; the page is drawn a step
+    // later, after getPage() resolves in an effect, so wait for it.
+    await waitFor(() => expect(pdfjsMocks.render).toHaveBeenCalled());
   });
 
   it('navigates between pages', async () => {

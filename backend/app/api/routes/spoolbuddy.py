@@ -427,6 +427,10 @@ async def nfc_tag_scanned(
                             # the colour catalog over "Silk+" (#3090).
                             "color_name_is_synthesized": mapped["color_name_is_synthesized"],
                             "rgba": mapped["rgba"],
+                            # The kiosk paints the disc from these, as the
+                            # Filament page does (#3033).
+                            "extra_colors": mapped["extra_colors"],
+                            "effect_type": mapped["effect_type"],
                             "brand": mapped["brand"],
                             "label_weight": mapped["label_weight"],
                             "core_weight": mapped["core_weight"],
@@ -494,6 +498,8 @@ async def nfc_tag_scanned(
                         # set, and nothing else — never a stand-in (#3090).
                         "color_name_is_synthesized": False,
                         "rgba": spool.rgba,
+                        "extra_colors": spool.extra_colors,
+                        "effect_type": spool.effect_type,
                         "brand": spool.brand,
                         "label_weight": spool.label_weight,
                         "core_weight": spool.core_weight,

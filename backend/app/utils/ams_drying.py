@@ -21,6 +21,15 @@ from typing import Any
 # should still reach the user, so it must never read as "expected heat".
 ACTIVE_DRY_STATUSES = frozenset({1, 2, 3})  # Checking, Drying, Cooling
 
+# A live drying countdown ticks down once per minute. A ``dry_time`` that has
+# not changed for this long — with no active ``dry_status`` phase vouching for
+# the cycle — is a timer with no cycle running behind it. Usually one that never
+# started (seen on an H2D mid-print with two AMS-HT cycles already active: the
+# third unit's timer froze at its full duration and no heating ever began), but a
+# cycle paused partway reads the same. 150 s allows two full missed ticks plus
+# jitter before the countdown is called stalled.
+DRY_COUNTDOWN_STALL_SECONDS = 150
+
 
 def is_drying_active(ams_data: Any) -> bool:
     """True when this AMS unit reports a drying cycle in progress.
@@ -29,8 +38,14 @@ def is_drying_active(ams_data: Any) -> bool:
     is minutes remaining and reads 0 through the cooling phase that closes a
     cycle; ``dry_status`` covers that phase but is only present when the
     firmware sent a parseable ``info`` field.
+
+    A parked countdown (``dry_countdown_stalled``, see is_countdown_parked) is
+    not a cycle in progress: the AMS is not heating, so nothing it reports is
+    "expected heat" from drying.
     """
     if not isinstance(ams_data, Mapping):
+        return False
+    if ams_data.get("dry_countdown_stalled"):
         return False
     try:
         if int(ams_data.get("dry_time") or 0) > 0:
@@ -40,6 +55,22 @@ def is_drying_active(ams_data: Any) -> bool:
     try:
         return int(ams_data["dry_status"]) in ACTIVE_DRY_STATUSES
     except (KeyError, TypeError, ValueError):
+        return False
+
+
+def is_countdown_parked(ams_data: Any) -> bool:
+    """True when this AMS unit holds a drying timer that is not running.
+
+    The MQTT layer sets ``dry_countdown_stalled`` once ``dry_time`` has stayed
+    unchanged past DRY_COUNTDOWN_STALL_SECONDS with no active ``dry_status``
+    phase. Such a timer never reaches 0 on its own, so anything that waits for
+    drying to finish must not wait on it.
+    """
+    if not isinstance(ams_data, Mapping) or not ams_data.get("dry_countdown_stalled"):
+        return False
+    try:
+        return int(ams_data.get("dry_time") or 0) > 0
+    except (TypeError, ValueError):
         return False
 
 

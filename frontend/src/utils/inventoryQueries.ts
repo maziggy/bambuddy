@@ -7,6 +7,13 @@ export function invalidateInventoryLocations(queryClient: QueryClient) {
   return queryClient.invalidateQueries({ queryKey: inventoryLocationsQueryKey });
 }
 
+/** React Query key for GET /inventory/suppliers (master list + spool counts). */
+export const inventorySuppliersQueryKey = ['inventory-suppliers'] as const;
+
+export function invalidateInventorySuppliers(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({ queryKey: inventorySuppliersQueryKey });
+}
+
 /** Refresh spool list and location counts after inventory mutations. */
 export function invalidateSpoolAndLocationQueries(
   queryClient: QueryClient,

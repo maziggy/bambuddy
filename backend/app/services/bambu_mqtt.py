@@ -22,8 +22,8 @@ from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
 
 from backend.app.services.hms_actions import HMSAction, get_actions_for_error_code
-from backend.app.services.hms_errors import describe_fault
-from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES
+from backend.app.services.hms_errors import alert_level_from_print_error, describe_fault
+from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES, DRY_COUNTDOWN_STALL_SECONDS
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.paho_teardown import retire_paho_client
 
@@ -703,12 +703,14 @@ class HMSError:
     code: str
     attr: int  # Attribute value for constructing wiki URL
     module: int
-    severity: int  # 1=fatal, 2=serious, 3=common, 4=info
+    # Bambu's alert level: 1 error (task stopped), 2 warning (task paused),
+    # 3 notification, 0 invalid. From `code >> 16` for `hms[]` faults, and from
+    # the error's first hex digit for `print_error` (#2728).
+    severity: int
     # The bundled catalogue's sentence for this fault, resolved once here so
     # every surface that reports it — the status response, the WebSocket
     # broadcast, the completion payload, notifications — says the same thing.
-    # None when the catalogue does not cover the code; `describe_fault` documents
-    # the lookup and why the lossy `hms[]` collapse is kept as it was.
+    # None when Bambu publishes no text for the code; see `describe_fault`.
     # Replaces a `message` field that was never set or read anywhere.
     description: str | None = None
     # User-facing remediation actions from the bundled HMS catalog (e.g. "RESUME_PRINTING",
@@ -1311,6 +1313,15 @@ class BambuMQTTClient:
         # Per-AMS previous dry_time, used to detect the falling edge above.
         # Seeded lazily as we observe each AMS unit.
         self._previous_dry_times: dict[int, int] = {}
+        # Per-AMS monotonic stamp of the last time dry_time CHANGED value.
+        # A live cycle's countdown ticks once a minute; a command the firmware
+        # accepted but never actually started (observed on an H2D mid-print
+        # with two AMS-HT cycles already running: the third unit's timer sat
+        # frozen at its full duration) never ticks. dry_time > 0 with no tick
+        # for DRY_COUNTDOWN_STALL_SECONDS and no active dry_status phase is
+        # reported as dry_countdown_stalled so the UI can stop claiming an
+        # active cycle that is not running.
+        self._dry_time_changed_at: dict[int, float] = {}
         # Per-AMS active-cycle target params (filament + temp) we sent on the
         # last start. Bambu does not echo these back in the per-tick AMS push
         # — only the dry_time countdown — so we cache what we sent to drive
@@ -3634,6 +3645,11 @@ class BambuMQTTClient:
                 continue
             if ams_id < 0:
                 continue
+            # The firmware phase outranks the stalled-countdown heuristic even
+            # on a transient-zero frame, which the completion guard below skips.
+            # Clear a previously raised flag before that early continue.
+            if ams_unit.get("dry_status") in ACTIVE_DRY_STATUSES:
+                ams_unit["dry_countdown_stalled"] = False
             # Only evaluate the edge when this update carries an explicit
             # dry_time. An absent / unparseable value is NOT zero — treating
             # it as 0 lets a tray-only partial fake a drying-complete edge
@@ -3669,6 +3685,18 @@ class BambuMQTTClient:
                 continue
             previous = self._previous_dry_times.get(ams_id, 0)
             self._previous_dry_times[ams_id] = current
+            # Stall detection: stamp value CHANGES only — a live countdown
+            # decrements once a minute, so repeats of the same value within
+            # the minute must not refresh the stamp, and a frame without a
+            # dry_time never reaches here (the absent-value skip above).
+            now_mono = time.monotonic()
+            if current != previous or ams_id not in self._dry_time_changed_at:
+                self._dry_time_changed_at[ams_id] = now_mono
+            ams_unit["dry_countdown_stalled"] = bool(
+                current > 0
+                and ams_unit.get("dry_status") not in ACTIVE_DRY_STATUSES
+                and now_mono - self._dry_time_changed_at[ams_id] > DRY_COUNTDOWN_STALL_SECONDS
+            )
             if previous > 0 and current == 0:
                 self._log_drying_cycle_end(ams_id, previous, ams_unit, self._drying_targets.pop(ams_id, None))
                 if self.on_drying_complete:
@@ -4831,13 +4859,20 @@ class BambuMQTTClient:
                             attr = int(attr.replace("0x", ""), 16) if attr else 0
                         if isinstance(code, str):
                             code = int(code.replace("0x", ""), 16) if code else 0
-                        # Severity is in attr byte 1 (bits 8-15)
-                        severity = (attr >> 8) & 0xF
+                        # attr is module, module no., part, part no. (a byte each);
+                        # code is the alert level (high 16 bits) then the error
+                        # (low 16). The level is 1 error (task stopped), 2 warning
+                        # (task paused), 3 notification; 0 is invalid. This is how
+                        # Bambu Studio decodes it (DevHMSItem::parse_hms_info). It
+                        # used to be read from attr bits 8-15, which is the part
+                        # byte (#2728).
+                        severity = (code >> 16) & 0xFFFF
                         # Module is in attr byte 3 (bits 24-31)
                         module = (attr >> 24) & 0xFF
-                        # Skip non-error status codes — all real HMS errors
-                        # have code >= 0x4000. Lower values are status/phase
-                        # indicators that some firmware sends during normal printing.
+                        # Skip non-error status codes. A real fault has a level of
+                        # at least 1 in the high half, so its code is >= 0x10000
+                        # and clears this; lower values are status/phase
+                        # indicators some firmware sends during normal printing.
                         if code < 0x4000:
                             continue
                         # Skip user-action echoes — the printer firmware emits these
@@ -4848,11 +4883,11 @@ class BambuMQTTClient:
                         short_code = f"{(attr >> 16) & 0xFFFF:04X}_{code & 0xFFFF:04X}"
                         if short_code in _HMS_USER_ACTION_CODES:
                             continue
-                        # Catalog has both 8-char keys (base class) and 16-char keys
-                        # (specific variants). The full 16-char identifier preserves
-                        # the 32 bits of `attr_low` + `code_high` that the short_code
-                        # discards — that's the firmware's matching key, so try it
-                        # first and fall back to the short form.
+                        # The full 16-char identifier is the firmware's matching key
+                        # and the HMS catalogue's key for this kind of fault; the
+                        # short code discards the part and alert-level groups. The
+                        # action table still has some short-form entries, so that
+                        # lookup falls back to it.
                         full_code = f"{attr:08X}{code:08X}"
                         if full_code == HMS_MQTT_VERIFY_FAILED:
                             verify_failed = True
@@ -4864,11 +4899,13 @@ class BambuMQTTClient:
                                 code=f"0x{code:x}" if code else "0x0",
                                 attr=attr,
                                 module=module,
-                                severity=severity if severity > 0 else 2,
+                                # No fallback: 0 is Bambu's "invalid" level, and
+                                # promoting it would render it as a fault.
+                                severity=severity,
                                 actions=actions,
                                 job_id=self.state.subtask_id,
                                 full_code=full_code,
-                                description=describe_fault(full_code),
+                                description=describe_fault(full_code, self.serial_number[:3]),
                             )
                         )
             self._apply_mqtt_verify_state(verify_failed)
@@ -4938,13 +4975,15 @@ class BambuMQTTClient:
                                     code=f"0x{error:x}",
                                     attr=print_error,  # Store full value for display
                                     module=module >> 8,  # High byte of module (e.g., 0x05)
-                                    severity=3,  # Warning level for print_error
+                                    # print_error has no level field; its error
+                                    # number's first digit carries it instead.
+                                    severity=alert_level_from_print_error(error),
                                     actions=actions,
                                     job_id=job_id,
                                     # print_error is already 32-bit — `f"{print_error:08X}"`
                                     # is the firmware's matching key with no truncation.
                                     full_code=f"{print_error:08X}",
-                                    description=describe_fault(f"{print_error:08X}"),
+                                    description=describe_fault(f"{print_error:08X}", self.serial_number[:3]),
                                 )
                             )
 
@@ -5529,6 +5568,9 @@ class BambuMQTTClient:
                         "attr": e.attr,
                         "module": e.module,
                         "severity": e.severity,
+                        # Lets the queue's failure reason label an `hms[]` fault
+                        # with its full code rather than a lossy short one (#2728).
+                        "full_code": e.full_code,
                         # Carried so the queue's failure reason quotes the same
                         # sentence the status response and the broadcast do,
                         # rather than resolving the code a fourth time (#2926).

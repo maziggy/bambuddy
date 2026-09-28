@@ -18,6 +18,7 @@ its header-authenticated siblings.
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -108,7 +109,11 @@ async def _mint_camera_token(async_client: AsyncClient, jwt: str) -> str:
 # The routes resolve thumbnails relative to ``settings.base_dir``, so the
 # fixtures have to write there rather than into tmp_path. Keep them in one
 # subdirectory and delete it after every test so a run leaves the tree clean.
-_THUMB_DIR = "test_thumbs_3025"
+#
+# ``base_dir`` is shared by every xdist worker, so the subdirectory is per
+# process: with one shared name, a worker's teardown deleted the thumbnails
+# another worker's test was about to serve, and that test got a 404.
+_THUMB_DIR = f"test_thumbs_3025_{os.getpid()}"
 
 
 @pytest.fixture(autouse=True)

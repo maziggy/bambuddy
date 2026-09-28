@@ -27,7 +27,7 @@ async def api_key_with_settings_read(db_session):
 
 @pytest.fixture
 async def sensitive_settings(db_session):
-    """Seed all 5 sensitive settings fields with non-empty values."""
+    """Seed all 6 sensitive settings fields with non-empty values."""
     from backend.app.models.settings import Settings
 
     # Keys listed separately so no single line pairs a credential-looking name
@@ -38,6 +38,7 @@ async def sensitive_settings(db_session):
         "prometheus_token",
         "virtual_printer_access_code",
         "ldap_bind_password",
+        "bedcheck_ai_api_key",
     ]
     for key in _credential_keys:
         db_session.add(Settings(key=key, value="testdata"))
@@ -46,7 +47,7 @@ async def sensitive_settings(db_session):
 
 
 class TestSettingsScrubForApiKey:
-    """T-Gap 1: GET /settings must blank all 5 sensitive fields for API-key callers."""
+    """T-Gap 1: GET /settings must blank all 6 sensitive fields for API-key callers."""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -68,6 +69,7 @@ class TestSettingsScrubForApiKey:
         assert data["prometheus_token"] == ""
         assert data["virtual_printer_access_code"] == ""
         assert data["ldap_bind_password"] == ""
+        assert data["bedcheck_ai_api_key"] == ""
 
     @pytest.mark.asyncio
     @pytest.mark.integration

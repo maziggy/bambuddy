@@ -421,6 +421,8 @@ export interface Printer {
   camera_rotation: number;  // 0, 90, 180, 270 degrees
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
+  // Per-printer bed-check backend; null = follow the global bedcheck_backend setting.
+  bedcheck_backend_override?: 'opencv' | 'ai' | null;
   created_at: string;
   updated_at: string;
 }
@@ -722,6 +724,8 @@ export interface PrinterCreate {
   camera_rotation?: number;
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
+  // Omit to leave unchanged; null clears the override (follow global setting).
+  bedcheck_backend_override?: 'opencv' | 'ai' | null;
 }
 
 // Plate Detection
@@ -735,7 +739,8 @@ export interface PlateDetectionROI {
 export interface PlateDetectionResult {
   is_empty: boolean;
   confidence: number;
-  difference_percent: number;
+  // null for AI-backend results (the AI backend doesn't do pixel diffing).
+  difference_percent: number | null;
   message: string;
   has_debug_image: boolean;
   debug_image_url?: string;
@@ -744,6 +749,20 @@ export interface PlateDetectionResult {
   reference_count?: number;
   max_references?: number;
   roi?: PlateDetectionROI;
+  // Which backend produced the verdict; absent on servers predating the
+  // AI bed-check feature, so treat undefined as 'opencv'.
+  backend?: 'opencv' | 'ai';
+  // The vision model's stated reason (AI backend only).
+  ai_reason?: string | null;
+  // How the check actually went: 'ok' = normal verdict, 'unavailable' = the
+  // AI backend couldn't be reached/parsed and the check fell back open (no
+  // real verdict — is_empty/confidence are fail-open placeholders, not to be
+  // trusted), 'degraded' = got a verdict but had to fall back to a reduced
+  // JSON mode. Absent on payloads predating this field → treat as 'ok'.
+  outcome?: 'ok' | 'unavailable' | 'degraded';
+  // The AI backend's stated confidence (AI backend only); null when not
+  // provided by the model.
+  ai_confidence?: number | null;
 }
 
 export interface PlateDetectionStatus {
@@ -1536,6 +1555,10 @@ export interface AppSettings {
   obico_action: 'notify' | 'pause' | 'pause_and_off';
   obico_poll_interval: number;
   obico_enabled_printers: string;
+  bedcheck_backend: 'opencv' | 'ai';
+  bedcheck_ai_base_url: string;
+  bedcheck_ai_model: string;
+  bedcheck_ai_api_key: string;
   // Inventory forecasting global lead time
   forecast_global_lead_time_days: number;
   location_sensor_poll_interval: number;
@@ -3406,6 +3429,34 @@ export interface ObicoTestConnection {
   // Whether the ML API accepted the token. null = not determined (the health
   // check failed first, or the token probe itself errored).
   auth_ok: boolean | null;
+}
+
+export interface BedcheckAiTestConnection {
+  ok: boolean;
+  error: string | null;
+  latency_ms: number | null;
+  verdict: { is_empty: boolean; confidence: number; reason: string } | null;
+  // Whether the model call used the strict JSON-schema mode or fell back to
+  // the looser JSON-object mode. Present on success; the failure branches in
+  // bedcheck_ai.test_connection() return before it's known, so it's absent
+  // (not null) on any failure path.
+  request_mode?: 'json_schema' | 'json_object';
+}
+
+// One printer's most recent AI bed-check outcome, as tracked by the backend
+// since app start. Printers with no AI check yet are simply absent from
+// BedcheckAiHealth.printers.
+export interface BedcheckAiHealthEntry {
+  outcome: 'ok' | 'unavailable' | 'degraded';
+  reason: string | null;
+  // UTC ISO timestamp of the last AI check.
+  at: string;
+  request_mode: 'json_schema' | 'json_object';
+}
+
+export interface BedcheckAiHealth {
+  // Keyed by printer id (as a string, per JSON object-key semantics).
+  printers: Record<string, BedcheckAiHealthEntry>;
 }
 
 export interface GitHubTestConnectionResponse {
@@ -7789,6 +7840,22 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(token === undefined ? { url } : { url, token }),
     }),
+
+  // Omitting apiKey makes the backend fall back to the saved key; "" tests with no key at all.
+  testBedcheckAiConnection: (baseUrl: string, model: string, apiKey?: string) =>
+    request<BedcheckAiTestConnection>('/bedcheck-ai/test-connection', {
+      method: 'POST',
+      body: JSON.stringify({
+        base_url: baseUrl,
+        model,
+        ...(apiKey === undefined ? {} : { api_key: apiKey }),
+      }),
+    }),
+
+  // Per-printer AI bed-check health snapshot, settings-read gated. Printers
+  // with no AI check since app start are absent from the response.
+  getBedcheckAiHealth: () =>
+    request<BedcheckAiHealth>('/bedcheck-ai/health'),
 
   // Slicer API — slice in the background. Both endpoints return 202 + a
   // job_id; poll /slice-jobs/{id} until status is `completed` or `failed`.

@@ -7,8 +7,10 @@ a reference image of the empty plate.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,15 @@ def _get_calibration_dir() -> Path:
     return settings.plate_calibration_dir
 
 
+def get_calibration_reference_count(printer_id: int) -> int:
+    """Count stored OpenCV references without requiring OpenCV to be installed."""
+    calibration_dir = _get_calibration_dir()
+    calibration_dir.mkdir(parents=True, exist_ok=True)
+    return sum(
+        (calibration_dir / f"printer_{printer_id}_ref_{i}.jpg").exists() for i in range(PlateDetector.MAX_REFERENCES)
+    )
+
+
 class PlateDetectionResult:
     """Result of plate detection analysis."""
 
@@ -38,26 +49,60 @@ class PlateDetectionResult:
         self,
         is_empty: bool,
         confidence: float,
-        difference_percent: float,
+        difference_percent: float | None,
         message: str,
         debug_image: bytes | None = None,
         needs_calibration: bool = False,
+        backend: str = "opencv",
+        ai_reason: str | None = None,
+        ai_confidence: float | None = None,
+        outcome: str = "ok",
     ):
         self.is_empty = is_empty
         self.confidence = confidence  # 0.0 to 1.0
-        self.difference_percent = difference_percent  # How different from reference
+        # How different from the calibration reference -- an OpenCV-only,
+        # pixel-diff concept. None for the AI backend, which has no reference
+        # image to diff against (see ai_confidence for its equivalent).
+        self.difference_percent = difference_percent
         self.message = message
         self.debug_image = debug_image  # Optional annotated image for debugging
         self.needs_calibration = needs_calibration  # True if no reference image exists
+        # Which backend produced this verdict ('opencv' | 'ai'). Structured so
+        # the UI can render the decision breakdown without parsing `message`.
+        # Defaults to 'opencv' so every pre-existing construction site keeps
+        # its meaning unmodified.
+        self.backend = backend
+        # The vision model's own stated reason (AI backend only, None for
+        # OpenCV) -- surfaced verbatim in the plate-check modal.
+        self.ai_reason = ai_reason
+        # The vision model's own confidence in its verdict (AI backend only,
+        # None for OpenCV and for a fail-open AI result). Distinct field from
+        # `confidence` (which every backend populates) so a caller that wants
+        # "did the AI actually score this" doesn't have to also check
+        # `backend` first.
+        self.ai_confidence = ai_confidence
+        # Coarse health signal for this verdict: 'ok' (normal), 'degraded'
+        # (AI backend only -- a real verdict, but obtained via a reduced
+        # request shape after shape discovery fell back), or 'unavailable'
+        # (AI backend only -- fail-open, no verdict was actually obtained).
+        # Every OpenCV construction site passes no outcome kwarg, so the
+        # default keeps them all reporting 'ok' unmodified.
+        self.outcome = outcome
 
     def to_dict(self) -> dict:
         return {
             "is_empty": bool(self.is_empty),
             "confidence": float(round(self.confidence, 2)),
-            "difference_percent": float(round(self.difference_percent, 2)),
+            "difference_percent": (
+                None if self.difference_percent is None else float(round(self.difference_percent, 2))
+            ),
             "message": self.message,
             "has_debug_image": self.debug_image is not None,
             "needs_calibration": bool(self.needs_calibration),
+            "backend": self.backend,
+            "ai_reason": self.ai_reason,
+            "ai_confidence": (None if self.ai_confidence is None else float(round(self.ai_confidence, 2))),
+            "outcome": self.outcome,
         }
 
 
@@ -385,7 +430,7 @@ class PlateDetector:
 
     def get_calibration_count(self, printer_id: int) -> int:
         """Get the number of calibration references for a printer."""
-        return len(self._get_reference_paths(printer_id))
+        return get_calibration_reference_count(printer_id)
 
     def has_calibration(self, printer_id: int, plate_type: str | None = None) -> bool:
         """Check if a printer has any calibration reference images."""
@@ -580,6 +625,39 @@ class PlateDetector:
             )
 
 
+async def get_bedcheck_backend() -> str:
+    """Read the bedcheck_backend setting. Absent row / unrecognized value / DB
+    read failure all resolve to 'opencv' (matches the pre-feature behavior
+    exactly — existing installs see zero change).
+
+    Wrapped in try/except deliberately: check_plate_empty() today performs zero
+    DB work before capturing a frame. Letting a DB hiccup (pool exhaustion,
+    locked SQLite, disconnected engine) raise out of this function would be a
+    fail-CLOSED regression on camera.py's manual-check route, which holds no
+    try/except around its call to check_plate_empty (verified: no try/except
+    wraps `result = await do_check(...)` at camera.py:1520 on dev, identical to
+    main) -- a DB blip there would turn a normal plate check into an HTTP 500
+    instead of silently falling back to the OpenCV path it always used before
+    this feature existed. main.py's call site is already protected by its own
+    blanket `except Exception as plate_err` (dev main.py:3121-3123), but this
+    function must not rely on the caller for that.
+    """
+    from sqlalchemy import select
+
+    from backend.app.core.database import async_session
+    from backend.app.models.settings import Settings
+
+    try:
+        async with async_session() as db:
+            result = await db.execute(select(Settings).where(Settings.key == "bedcheck_backend"))
+            row = result.scalar_one_or_none()
+        value = row.value if row else "opencv"
+    except Exception as e:
+        logger.warning("bedcheck_backend read failed, defaulting to opencv: %s", e)
+        return "opencv"
+    return value if value in ("opencv", "ai") else "opencv"
+
+
 async def capture_camera_image(
     printer_id: int,
     ip_address: str,
@@ -671,7 +749,7 @@ async def capture_camera_image(
     return image_data, camera_source
 
 
-async def check_plate_empty(
+async def _check_plate_empty_opencv(
     printer_id: int,
     ip_address: str,
     access_code: str,
@@ -736,6 +814,113 @@ async def check_plate_empty(
     result.message = f"[{camera_source}] {result.message}"
 
     return result
+
+
+async def check_plate_empty(
+    printer_id: int,
+    ip_address: str,
+    access_code: str,
+    model: str,
+    plate_type: str | None = None,
+    include_debug_image: bool = False,
+    external_camera_url: str | None = None,
+    external_camera_type: str | None = None,
+    use_external: bool = False,
+    roi: tuple[float, float, float, float] | None = None,
+    external_camera_snapshot_url: str | None = None,
+    backend_override: str | None = None,
+    deadline_seconds: float | None = None,
+) -> PlateDetectionResult:
+    """Check if the build plate is empty for a printer.
+
+    Dispatches on the bedcheck_backend setting ('opencv' | 'ai', default
+    'opencv' -- an absent row, or a DB read failure, behaves identically to
+    'opencv', so existing installs see zero behavior change on upgrade):
+
+    - 'opencv': calibration-based pixel-difference detection, unchanged
+      (_check_plate_empty_opencv). deadline_seconds is not meaningful for
+      this backend and is ignored.
+    - 'ai': one snapshot sent to a configured OpenAI-compatible vision model
+      (services/bedcheck_ai.py). Fails open (is_empty=True) on any error.
+      deadline_seconds, when given, bounds camera capture plus AI analysis -- used by
+      the print-start call site (main.py) via
+      bedcheck_ai.PRINT_START_DEADLINE_SECONDS; the manual-check
+      (camera.py) and test-connection paths pass nothing, keeping the
+      current DEFAULT_TIMEOUT-per-request-plus-one-retry behavior.
+
+    Same args and return shape regardless of backend.
+    """
+    # When backend == 'ai', this opens the first of two short, sequential DB
+    # sessions for one check -- this one (bedcheck_backend), then a second
+    # inside bedcheck_ai._analyze_frame_ai -> _load_ai_settings (the 3
+    # connection keys). Deliberate, not an oversight: each is a narrow,
+    # independently-committed `async with async_session()` read, same shape as
+    # obico_detection.py's own settings read, and neither is held open across
+    # the camera-capture I/O between them, so there's no long-lived connection
+    # held open across blocking work.
+    # Per-printer override wins over the global setting; anything but a valid
+    # value (None from an un-overridden printer, or a stale/garbage string)
+    # falls through to the global read, which itself defaults to 'opencv'.
+    if backend_override in ("opencv", "ai"):
+        backend = backend_override
+    else:
+        backend = await get_bedcheck_backend()
+
+    if backend == "opencv":
+        return await _check_plate_empty_opencv(
+            printer_id,
+            ip_address,
+            access_code,
+            model,
+            plate_type,
+            include_debug_image,
+            external_camera_url,
+            external_camera_type,
+            use_external,
+            roi,
+            external_camera_snapshot_url=external_camera_snapshot_url,
+        )
+
+    # backend == "ai" -- needs one captured frame, independent of OPENCV_AVAILABLE.
+    from backend.app.services.bedcheck_ai import check_bed_ai, unavailable_result
+
+    started = time.monotonic()
+    capture = capture_camera_image(
+        printer_id,
+        ip_address,
+        access_code,
+        model,
+        external_camera_url,
+        external_camera_type,
+        use_external,
+        external_camera_snapshot_url=external_camera_snapshot_url,
+    )
+    try:
+        image_data, camera_source = (
+            await asyncio.wait_for(capture, timeout=deadline_seconds) if deadline_seconds is not None else await capture
+        )
+    except asyncio.TimeoutError:
+        return unavailable_result(printer_id, "camera", "request timed out")
+    except Exception:
+        logger.warning("AI bed-check camera capture failed for printer %s", printer_id, exc_info=True)
+        return unavailable_result(printer_id, "camera", "camera capture failed")
+    if image_data is None:
+        return unavailable_result(printer_id, camera_source, "camera capture failed")
+
+    if deadline_seconds is None:
+        return await check_bed_ai(printer_id, image_data, camera_source)
+    remaining = deadline_seconds - (time.monotonic() - started)
+    if remaining <= 0:
+        return unavailable_result(printer_id, camera_source, "request timed out")
+    try:
+        # The service bounds its HTTP request, while this outer guard also
+        # covers settings I/O and image conversion before the request starts.
+        return await asyncio.wait_for(
+            check_bed_ai(printer_id, image_data, camera_source, deadline_seconds=remaining),
+            timeout=remaining,
+        )
+    except asyncio.TimeoutError:
+        return unavailable_result(printer_id, camera_source, "request timed out")
 
 
 async def calibrate_plate(

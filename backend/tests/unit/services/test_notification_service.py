@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.app.models.notification import NotificationProvider
+from backend.app.schemas.notification_template import EVENT_VARIABLES
 from backend.app.services.notification_service import NotificationService
 
 
@@ -2328,6 +2329,140 @@ class TestPlateNotEmptyNotifications:
 
             assert captured_variables["printer"] == "X1 Carbon"
             assert captured_variables["difference_percent"] == "3.5"
+
+    @pytest.mark.asyncio
+    async def test_on_plate_not_empty_difference_percent_none_renders_na(self, service, mock_provider, mock_db):
+        """The AI backend never sets difference_percent (it has no pixel-diff
+        concept) -- the template variable must render "N/A", not raise on
+        formatting None with `:.1f`."""
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_plate_not_empty(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                db=mock_db,
+                difference_percent=None,
+            )
+
+            assert captured_variables["difference_percent"] == "N/A"
+
+    @pytest.mark.asyncio
+    async def test_on_plate_not_empty_difference_percent_zero_renders_zero_not_na(
+        self, service, mock_provider, mock_db
+    ):
+        """Red-proof for the falsy-0.0 bug: a genuine 0.0% diff is a valid
+        (if unusual) reading and must render "0.0". The pre-fix
+        `if difference_percent else "N/A"` treats 0.0 as falsy and would
+        wrongly render "N/A" here -- this is the case that catches it."""
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_plate_not_empty(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                db=mock_db,
+                difference_percent=0.0,
+            )
+
+            assert captured_variables["difference_percent"] == "0.0"
+
+    @pytest.mark.asyncio
+    async def test_on_plate_not_empty_includes_ai_confidence_variable(self, service, mock_provider, mock_db):
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_plate_not_empty(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                db=mock_db,
+                ai_confidence=0.873,
+            )
+
+            assert captured_variables["ai_confidence"] == "0.87"
+
+    @pytest.mark.asyncio
+    async def test_on_plate_not_empty_ai_confidence_none_renders_na(self, service, mock_provider, mock_db):
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_plate_not_empty(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                db=mock_db,
+            )
+
+            assert captured_variables["ai_confidence"] == "N/A"
+
+    @pytest.mark.asyncio
+    async def test_event_variables_matches_the_rendered_template_variables(self, service, mock_provider, mock_db):
+        """The editor's "Available Variables" picker is driven by
+        EVENT_VARIABLES, so a variable the service renders but the dict omits
+        is undiscoverable (plate_not_empty had no entry at all: an empty
+        picker), and one the dict declares but the service never renders
+        inserts a placeholder that always resolves blank.
+
+        _get_template returns None so the real _build_message_from_template
+        runs and adds the common timestamp/app_name variables -- the assertion
+        is against the full set the event actually renders.
+        """
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_get_template", new_callable=AsyncMock, return_value=None),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_plate_not_empty(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                db=mock_db,
+                difference_percent=5.2,
+                ai_confidence=0.87,
+            )
+
+        rendered = mock_send.call_args.kwargs["variables"]
+        assert sorted(rendered) == sorted(EVENT_VARIABLES["plate_not_empty"])
 
 
 class TestBedCooledNotifications:

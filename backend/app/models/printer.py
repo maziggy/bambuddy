@@ -38,6 +38,9 @@ class Printer(Base):
     camera_rotation: Mapped[int] = mapped_column(default=0)  # 0, 90, 180, 270 degrees
     # Plate detection - check if build plate is empty before starting print
     plate_detection_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Per-printer bed-check backend override ('opencv' | 'ai'); NULL = follow
+    # the global bedcheck_backend setting. Validated at the schema layer.
+    bedcheck_backend_override: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # ROI for plate detection (percentages: 0.0-1.0)
     plate_detection_roi_x: Mapped[float | None] = mapped_column(Float, nullable=True)  # X start %
     plate_detection_roi_y: Mapped[float | None] = mapped_column(Float, nullable=True)  # Y start %

@@ -1753,6 +1753,7 @@ class NotificationService:
         printer_name: str,
         db: AsyncSession,
         difference_percent: float | None = None,
+        ai_confidence: float | None = None,
     ):
         """Handle plate not empty event - objects detected on build plate before print."""
         providers = await self._get_providers_for_event(db, "on_plate_not_empty", printer_id)
@@ -1761,7 +1762,13 @@ class NotificationService:
 
         variables = {
             "printer": printer_name,
-            "difference_percent": f"{difference_percent:.1f}" if difference_percent else "N/A",
+            # `is not None`, not truthiness -- a genuine 0.0% diff is a valid
+            # (if unusual) reading and must render "0.0", not fall through to
+            # "N/A" as a falsy 0.0 would with a plain `if difference_percent`.
+            "difference_percent": f"{difference_percent:.1f}" if difference_percent is not None else "N/A",
+            # AI backend only -- None for opencv (which has no model
+            # confidence concept) or an AI fail-open result.
+            "ai_confidence": f"{ai_confidence:.2f}" if ai_confidence is not None else "N/A",
         }
 
         title, message = await self._build_message_from_template(db, "plate_not_empty", variables)

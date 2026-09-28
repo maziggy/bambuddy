@@ -77,6 +77,17 @@ class PrinterUpdate(BaseModel):
     camera_rotation: int | None = None  # 0, 90, 180, 270 degrees
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
+    # 'opencv' | 'ai' | None (None/null = follow the global bedcheck_backend
+    # setting). exclude_unset semantics: omit the field to leave it unchanged,
+    # send null to clear the override.
+    bedcheck_backend_override: str | None = None
+
+    @field_validator("bedcheck_backend_override")
+    @classmethod
+    def validate_bedcheck_backend_override(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("opencv", "ai"):
+            raise ValueError("bedcheck_backend_override must be 'opencv', 'ai', or null")
+        return v
 
 
 class PrinterResponse(PrinterBase):
@@ -96,6 +107,7 @@ class PrinterResponse(PrinterBase):
     camera_rotation: int = 0  # 0, 90, 180, 270 degrees
     plate_detection_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
+    bedcheck_backend_override: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -123,6 +135,7 @@ class PrinterResponse(PrinterBase):
             "supports_nozzle_flow_type": supports_nozzle_flow_type(printer.model),
             "print_hours_offset": printer.print_hours_offset,
             "plate_detection_enabled": printer.plate_detection_enabled,
+            "bedcheck_backend_override": printer.bedcheck_backend_override,
             "created_at": printer.created_at,
             "updated_at": printer.updated_at,
         }

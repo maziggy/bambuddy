@@ -76,6 +76,8 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     "billing_charge_failed": ["printer", "filename", "archive_id", "error", "timestamp", "app_name"],
     "printer_offline": ["printer", "timestamp", "app_name"],
     "printer_error": ["printer", "error_type", "error_detail", "timestamp", "app_name"],
+    # difference_percent is OpenCV-only and ai_confidence is AI-only -- whichever backend did not run renders "N/A".
+    "plate_not_empty": ["printer", "difference_percent", "ai_confidence", "timestamp", "app_name"],
     "filament_low": ["printer", "slot", "remaining_percent", "color", "timestamp", "app_name"],
     "maintenance_due": ["printer", "items", "timestamp", "app_name"],
     "ams_humidity_high": ["printer", "ams_label", "humidity", "threshold", "timestamp", "app_name"],
@@ -187,6 +189,13 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "printer": "Bambu X1C",
         "error_type": "AMS Error",
         "error_detail": "Filament slot 1 jammed",
+        "timestamp": "2024-01-15 14:30",
+        "app_name": "Bambuddy",
+    },
+    "plate_not_empty": {
+        "printer": "Bambu X1C",
+        "difference_percent": "5.2",
+        "ai_confidence": "0.87",
         "timestamp": "2024-01-15 14:30",
         "app_name": "Bambuddy",
     },

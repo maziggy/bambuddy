@@ -517,6 +517,60 @@ class TestCameraAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    @pytest.mark.parametrize("override", ["ai", None])
+    async def test_ai_manual_check_works_without_opencv(self, async_client: AsyncClient, printer_factory, override):
+        """The OpenCV availability gate must not reject an AI manual check."""
+        printer = await printer_factory(bedcheck_backend_override=override)
+        mock_result = MagicMock()
+        mock_result.debug_image = None
+        mock_result.to_dict.return_value = {
+            "is_empty": False,
+            "confidence": 0.9,
+            "difference_percent": None,
+            "ai_confidence": 0.9,
+            "backend": "ai",
+            "outcome": "ok",
+            "message": "Objects detected",
+        }
+        with (
+            # Patch the real constructor guard: the route previously
+            # instantiated PlateDetector after AI inference and returned 500.
+            patch("backend.app.services.plate_detection.OPENCV_AVAILABLE", False),
+            patch(
+                "backend.app.services.plate_detection.get_bedcheck_backend", new_callable=AsyncMock
+            ) as global_backend,
+            patch("backend.app.services.plate_detection.check_plate_empty", new_callable=AsyncMock) as check,
+        ):
+            global_backend.return_value = "ai"
+            check.return_value = mock_result
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/check-plate")
+
+        assert response.status_code == 200
+        assert response.json()["backend"] == "ai"
+        assert response.json()["max_references"] == 5
+        assert response.json()["reference_count"] >= 0
+        check.assert_awaited_once()
+        assert check.await_args.kwargs["backend_override"] == "ai"
+        if override == "ai":
+            global_backend.assert_not_awaited()
+        else:
+            global_backend.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_opencv_manual_check_still_requires_opencv(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(bedcheck_backend_override="opencv")
+        with (
+            patch("backend.app.services.plate_detection.OPENCV_AVAILABLE", False),
+            patch("backend.app.services.plate_detection.check_plate_empty", new_callable=AsyncMock) as check,
+        ):
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/camera/check-plate")
+
+        assert response.status_code == 503
+        check.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_calibrate_plate_printer_not_found(self, async_client: AsyncClient):
         """Verify 404 when calibrating plate for non-existent printer."""
         response = await async_client.post("/api/v1/printers/99999/camera/plate-detection/calibrate")

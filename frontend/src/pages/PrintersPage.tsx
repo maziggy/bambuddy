@@ -2317,7 +2317,8 @@ function PrinterCard({
   const [plateCheckResult, setPlateCheckResult] = useState<{
     is_empty: boolean;
     confidence: number;
-    difference_percent: number;
+    // null for AI-backend results (the AI backend doesn't do pixel diffing).
+    difference_percent: number | null;
     message: string;
     debug_image_url?: string;
     needs_calibration: boolean;
@@ -2325,6 +2326,16 @@ function PrinterCard({
     reference_count?: number;
     max_references?: number;
     roi?: { x: number; y: number; w: number; h: number };
+    // Absent on servers predating the AI bed-check feature → treat as 'opencv'.
+    backend?: 'opencv' | 'ai';
+    ai_reason?: string | null;
+    // How the check actually went; absent on old payloads → treat as 'ok'.
+    // 'unavailable' = the AI backend fell back open — is_empty/confidence are
+    // fail-open placeholders, not a real verdict. 'degraded' = got a real
+    // verdict, but via the reduced JSON mode.
+    outcome?: 'ok' | 'unavailable' | 'degraded';
+    // The AI backend's stated confidence (AI backend only); null if absent.
+    ai_confidence?: number | null;
   } | null>(null);
   const [isCheckingPlate, setIsCheckingPlate] = useState(false);
   const [isCalibrating, setIsCalibrating] = useState(false);
@@ -3151,6 +3162,17 @@ function PrinterCard({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['printers'] });
       showToast(plateDetectionMutation.variables ? t('printers.toast.plateCheckEnabled') : t('printers.toast.plateCheckDisabled'));
+    },
+    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToUpdateSetting'), 'error'),
+  });
+
+  // Per-printer bed-check backend override; null = follow the global setting.
+  const bedcheckBackendMutation = useMutation({
+    mutationFn: (backendOverride: 'opencv' | 'ai' | null) =>
+      api.updatePrinter(printer.id, { bedcheck_backend_override: backendOverride }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['printers'] });
+      showToast(t('printers.plateDetection.decision.modeSaved'));
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToUpdateSetting'), 'error'),
   });
@@ -6848,6 +6870,8 @@ function PrinterCard({
               <div className="flex items-center gap-2">
                 {plateCheckResult.needs_calibration ? (
                   <ScanSearch className="w-[var(--pc-i5,1.25rem)] h-[var(--pc-i5,1.25rem)] text-blue-500" />
+                ) : plateCheckResult.outcome === 'unavailable' ? (
+                  <AlertTriangle className="w-[var(--pc-i5,1.25rem)] h-[var(--pc-i5,1.25rem)] text-amber-500" />
                 ) : plateCheckResult.is_empty ? (
                   <CheckCircle className="w-[var(--pc-i5,1.25rem)] h-[var(--pc-i5,1.25rem)] text-green-500" />
                 ) : (
@@ -6885,13 +6909,106 @@ function PrinterCard({
                 </>
               ) : (
                 <>
-                  <div className={`p-3 rounded-lg ${plateCheckResult.is_empty ? 'bg-green-100 dark:bg-green-500/20 border border-green-300 dark:border-green-500/50' : 'bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-300 dark:border-yellow-500/50'}`}>
-                    <p className={`font-medium ${plateCheckResult.is_empty ? 'text-green-700 dark:text-green-400' : 'text-yellow-700 dark:text-yellow-400'}`}>
-                      {plateCheckResult.is_empty ? t('printers.plateDetection.plateEmpty') : t('printers.plateDetection.objectsDetected')}
+                  {plateCheckResult.outcome === 'unavailable' ? (
+                    // Fail-open: the AI backend couldn't be reached/parsed, so
+                    // is_empty/confidence below are just placeholders that let
+                    // the print proceed — never present them as a real verdict.
+                    <div className="p-3 rounded-lg bg-amber-100 dark:bg-amber-500/20 border border-amber-300 dark:border-amber-500/50">
+                      <p className="font-medium text-amber-700 dark:text-amber-400 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                        {t('printers.plateDetection.decision.aiUnavailableTitle')}
+                      </p>
+                      <p className="text-sm text-amber-700/90 dark:text-amber-300/90 mt-1">
+                        {plateCheckResult.ai_reason || t('printers.plateDetection.decision.aiUnavailableGenericReason')}
+                      </p>
+                      <p className="text-xs text-amber-700/80 dark:text-amber-300/80 mt-1">
+                        {t('printers.plateDetection.decision.aiUnavailableHint')}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className={`p-3 rounded-lg ${plateCheckResult.is_empty ? 'bg-green-100 dark:bg-green-500/20 border border-green-300 dark:border-green-500/50' : 'bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-300 dark:border-yellow-500/50'}`}>
+                      <p className={`font-medium ${plateCheckResult.is_empty ? 'text-green-700 dark:text-green-400' : 'text-yellow-700 dark:text-yellow-400'}`}>
+                        {plateCheckResult.is_empty ? t('printers.plateDetection.plateEmpty') : t('printers.plateDetection.objectsDetected')}
+                      </p>
+                    </div>
+                  )}
+                  {/* Decision matrix — how the active backend reached this verdict.
+                      `backend` is absent on servers predating the AI bed-check
+                      feature; treat undefined as the OpenCV path (the only one
+                      that existed then). Skipped entirely when the check fell
+                      back open (`outcome === 'unavailable'`) — there is no real
+                      decision to show. */}
+                  {plateCheckResult.outcome !== 'unavailable' && (
+                    <div className="rounded-lg border border-bambu-dark-tertiary overflow-hidden">
+                      <div className="px-3 py-2 bg-bambu-dark-tertiary/50 flex items-center gap-2">
+                        <p className="text-sm font-medium text-white">{t('printers.plateDetection.decision.title')}</p>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${plateCheckResult.backend === 'ai' ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'}`}>
+                          {plateCheckResult.backend === 'ai' ? t('printers.plateDetection.decision.backendAi') : t('printers.plateDetection.decision.backendOpencv')}
+                        </span>
+                      </div>
+                      <div className="divide-y divide-bambu-dark-tertiary text-sm">
+                        <div className="grid grid-cols-[8rem_1fr] gap-2 px-3 py-1.5">
+                          <span className="text-bambu-gray">{t('printers.plateDetection.decision.verdict')}</span>
+                          <span className="text-white">{plateCheckResult.is_empty ? t('printers.plateDetection.plateEmpty') : t('printers.plateDetection.objectsDetected')}</span>
+                        </div>
+                        {plateCheckResult.backend === 'ai' ? (
+                          plateCheckResult.ai_confidence != null && (
+                            <div className="grid grid-cols-[8rem_1fr] gap-2 px-3 py-1.5">
+                              <span className="text-bambu-gray">{t('printers.plateDetection.confidence')}</span>
+                              <span className="text-white">{Math.round(plateCheckResult.ai_confidence * 100)}%</span>
+                            </div>
+                          )
+                        ) : (
+                          <div className="grid grid-cols-[8rem_1fr] gap-2 px-3 py-1.5">
+                            <span className="text-bambu-gray">{t('printers.plateDetection.confidence')}</span>
+                            <span className="text-white">{Math.round(plateCheckResult.confidence * 100)}%</span>
+                          </div>
+                        )}
+                        {plateCheckResult.backend !== 'ai' && plateCheckResult.difference_percent != null && (
+                          <div className="grid grid-cols-[8rem_1fr] gap-2 px-3 py-1.5">
+                            <span className="text-bambu-gray">{t('printers.plateDetection.difference')}</span>
+                            <span className="text-white">{plateCheckResult.difference_percent.toFixed(1)}%</span>
+                          </div>
+                        )}
+                        {plateCheckResult.backend === 'ai' && plateCheckResult.ai_reason && (
+                          <div className="grid grid-cols-[8rem_1fr] gap-2 px-3 py-1.5">
+                            <span className="text-bambu-gray">{t('printers.plateDetection.decision.reason')}</span>
+                            <span className="text-white">{plateCheckResult.ai_reason}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {plateCheckResult.backend === 'ai' && plateCheckResult.outcome !== 'unavailable' && (
+                    <p className="text-xs text-bambu-gray">
+                      {t('printers.plateDetection.decision.aiConfigHint')}
                     </p>
-                    <p className="text-sm text-bambu-gray mt-1">
-                      {t('printers.plateDetection.confidence')}: {Math.round(plateCheckResult.confidence * 100)}% | {t('printers.plateDetection.difference')}: {plateCheckResult.difference_percent.toFixed(1)}%
+                  )}
+                  {plateCheckResult.outcome === 'degraded' && (
+                    <p className="text-xs text-bambu-gray italic">
+                      {t('printers.plateDetection.decision.degradedNote')}
                     </p>
+                  )}
+                  {/* Per-printer backend mode — writes printers.bedcheck_backend_override */}
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-sm text-bambu-gray" htmlFor={`bedcheck-mode-${printer.id}`}>
+                      {t('printers.plateDetection.decision.modeLabel')}
+                    </label>
+                    <select
+                      id={`bedcheck-mode-${printer.id}`}
+                      value={printer.bedcheck_backend_override ?? ''}
+                      disabled={bedcheckBackendMutation.isPending || !hasPermission('printers:update')}
+                      onChange={(e) =>
+                        bedcheckBackendMutation.mutate(
+                          e.target.value === '' ? null : (e.target.value as 'opencv' | 'ai')
+                        )
+                      }
+                      className="bg-bambu-dark border border-bambu-dark-tertiary rounded-lg px-2 py-1 text-sm text-white"
+                    >
+                      <option value="">{t('printers.plateDetection.decision.modeGlobal')}</option>
+                      <option value="opencv">{t('printers.plateDetection.decision.backendOpencv')}</option>
+                      <option value="ai">{t('printers.plateDetection.decision.backendAi')}</option>
+                    </select>
                   </div>
                   {plateCheckResult.debug_image_url && (
                     <div>

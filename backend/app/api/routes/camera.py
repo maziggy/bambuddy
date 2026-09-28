@@ -1441,13 +1441,22 @@ async def check_plate_empty(
         Dict with detection results:
         - is_empty: bool - Whether plate appears empty
         - confidence: float - Confidence level (0.0 to 1.0)
-        - difference_percent: float - How different from calibration reference
+        - difference_percent: float | None - How different from calibration
+          reference (opencv backend only; always None for the ai backend)
+        - ai_confidence: float | None - The vision model's own confidence
+          (ai backend only; None for opencv and for an ai fail-open result)
         - message: str - Human-readable result message
         - needs_calibration: bool - True if calibration is required
         - light_warning: bool - True if chamber light is off
+        - backend: str - Which backend produced this result ('opencv' | 'ai')
+        - outcome: str - 'ok' | 'degraded' | 'unavailable' (see
+          services/bedcheck_ai.py's health registry -- opencv always 'ok')
     """
     from backend.app.services.plate_detection import (
+        PlateDetector,
         check_plate_empty as do_check,
+        get_bedcheck_backend,
+        get_calibration_reference_count,
         is_plate_detection_available,
     )
     from backend.app.services.printer_manager import printer_manager
@@ -1460,7 +1469,14 @@ async def check_plate_empty(
             printer.external_camera_enabled and printer.external_camera_url and printer.external_camera_type
         )
 
-    if not is_plate_detection_available():
+    # AI inference does not use OpenCV. Resolve the same per-printer/global
+    # selector as check_plate_empty before applying the OpenCV-only 503 gate.
+    backend = (
+        printer.bedcheck_backend_override
+        if printer.bedcheck_backend_override in ("opencv", "ai")
+        else await get_bedcheck_backend()
+    )
+    if backend == "opencv" and not is_plate_detection_available():
         raise HTTPException(
             status_code=503,
             detail="Plate detection not available. Install opencv-python-headless to enable.",
@@ -1471,8 +1487,6 @@ async def check_plate_empty(
     state = printer_manager.get_status(printer_id)
     if state and not state.chamber_light:
         light_warning = True
-
-    from backend.app.services.plate_detection import PlateDetector
 
     # Build ROI tuple from printer settings if available
     roi = None
@@ -1503,16 +1517,18 @@ async def check_plate_empty(
         use_external=use_external,
         roi=roi,
         external_camera_snapshot_url=printer.external_camera_snapshot_url if printer.external_camera_enabled else None,
+        # Reuse the backend resolved for the availability gate above. A global
+        # setting change between two reads must not switch backends mid-check.
+        backend_override=backend,
     )
 
     # Get reference count for the response
-    detector = PlateDetector()
-    ref_count = detector.get_calibration_count(printer.id)
+    ref_count = get_calibration_reference_count(printer.id)
 
     response = result.to_dict()
     response["light_warning"] = light_warning
     response["reference_count"] = ref_count
-    response["max_references"] = detector.MAX_REFERENCES
+    response["max_references"] = PlateDetector.MAX_REFERENCES
     # Include current ROI in response
     if roi:
         response["roi"] = {"x": roi[0], "y": roi[1], "w": roi[2], "h": roi[3]}

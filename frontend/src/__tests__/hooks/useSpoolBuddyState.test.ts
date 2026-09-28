@@ -113,6 +113,27 @@ describe('useSpoolBuddyState', () => {
     expect(result.current.unknownTagUid).toBeNull();
   });
 
+  it('TAG_MATCHED keeps the extra colours and effect the disc is painted with (#3033)', () => {
+    const { result } = renderHook(() => useSpoolBuddyState());
+    const spool = { id: 23, material: 'PLA', rgba: '044482FF', label_weight: 1000, core_weight: 250, weight_used: 0 };
+
+    act(() => {
+      dispatchCustomEvent('spoolbuddy-tag-matched', {
+        tag_uid: 'AA',
+        spool: { ...spool, extra_colors: '044482,f8d008', effect_type: 'dual-color' },
+      });
+    });
+    expect(result.current.matchedSpool!.extra_colors).toBe('044482,f8d008');
+    expect(result.current.matchedSpool!.effect_type).toBe('dual-color');
+
+    // A backend from before #3033 sends neither field.
+    act(() => {
+      dispatchCustomEvent('spoolbuddy-tag-matched', { tag_uid: 'BB', spool });
+    });
+    expect(result.current.matchedSpool!.extra_colors).toBeNull();
+    expect(result.current.matchedSpool!.effect_type).toBeNull();
+  });
+
   it('UNKNOWN_TAG sets unknownTagUid and clears matchedSpool', () => {
     const { result } = renderHook(() => useSpoolBuddyState());
 

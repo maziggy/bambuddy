@@ -5,6 +5,7 @@ import os
 import secrets
 import time
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
@@ -480,28 +481,38 @@ def _check_apikey_permissions(
         raise last_failure
 
 
-def require_energy_cost_update():
-    """Dependency for ``POST /settings/electricity-price`` (#1356).
+@dataclass(frozen=True)
+class ScopedCaller:
+    """Who passed a scoped door: an API key, a user, or nobody (auth disabled)."""
 
-    Bypasses the ``_APIKEY_DENIED_PERMISSIONS`` ``SETTINGS_UPDATE`` block for
-    API keys that explicitly opt into ``can_update_energy_cost``. Full
-    ``SETTINGS_UPDATE`` for API keys stays denied — this is a narrowly-scoped
-    door for the Home Assistant dynamic-tariff use case documented in
-    ``wiki/features/energy.md``, not a general settings-write capability.
+    api_key: APIKey | None = None
+    user: User | None = None
+
+
+def require_api_key_scope(
+    scope_attr: str, scope_name: str, user_permission: Permission, *, owner_needs_permission: bool = False
+):
+    """A narrow door for API keys that carry one explicit scope flag.
+
+    For routes an API key may call only when its ``scope_attr`` flag is set,
+    where the matching user permission stays out of the general API-key
+    mapping (``_APIKEY_DENIED_PERMISSIONS`` / the allowlist).
 
     Accepts:
-      * Auth disabled  → always allowed (matches other settings routes)
-      * JWT user with ``SETTINGS_UPDATE`` permission
-      * API key with ``can_update_energy_cost = True``
+      * Auth disabled  → always allowed (matches the other routes)
+      * JWT user with ``user_permission``
+      * API key with ``scope_attr`` set; fails closed when its owner was deactivated,
+        and with ``owner_needs_permission`` also when its owner lacks
+        ``user_permission`` (so a key can't do what its owner may not)
     """
 
     async def permission_checker(
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
         x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
-    ) -> User | None:
+    ) -> ScopedCaller:
         async with async_session() as db:
             if not await is_auth_enabled(db):
-                return None
+                return ScopedCaller()
 
             credentials_exception = HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -524,18 +535,28 @@ def require_energy_cost_update():
                         detail="Invalid API key",
                         headers={"WWW-Authenticate": "Bearer"},
                     )
-                # Fails closed if the owner has been deactivated. The scope
-                # flag itself is not narrowed against the owner's permissions
-                # the way the general gate is: this door exists precisely
-                # because no user permission maps to it (SETTINGS_UPDATE stays
-                # denied for keys even when the owner is an administrator).
-                await resolve_apikey_owner(db, api_key)
-                if not api_key.can_update_energy_cost:
+                # Fails closed if the owner has been deactivated. For the
+                # energy-cost door the scope flag is deliberately not narrowed
+                # against the owner's permissions: no user permission maps to it
+                # (SETTINGS_UPDATE stays denied for keys even when the owner is
+                # an administrator). Doors that do have a matching user
+                # permission pass ``owner_needs_permission``.
+                owner = await resolve_apikey_owner(db, api_key)
+                if (
+                    owner_needs_permission
+                    and owner is not None
+                    and not owner.has_all_permissions(user_permission.value)
+                ):
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="API key does not have 'update_energy_cost' permission",
+                        detail=f"The API key's owner lacks the permission: {user_permission.value}",
                     )
-                return None
+                if not getattr(api_key, scope_attr):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"API key does not have '{scope_name}' permission",
+                    )
+                return ScopedCaller(api_key=api_key)
 
             # JWT path
             if credentials is None:
@@ -558,14 +579,35 @@ def require_energy_cost_update():
                 raise credentials_exception
             if not _is_token_fresh(iat, user):
                 raise credentials_exception
-            if not user.has_all_permissions(Permission.SETTINGS_UPDATE.value):
+            if not user.has_all_permissions(user_permission.value):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Missing required permissions: {Permission.SETTINGS_UPDATE.value}",
+                    detail=f"Missing required permissions: {user_permission.value}",
                 )
-            return user
+            return ScopedCaller(user=user)
 
     return permission_checker
+
+
+def require_energy_cost_update():
+    """Dependency for ``POST /settings/electricity-price`` (#1356).
+
+    Bypasses the ``_APIKEY_DENIED_PERMISSIONS`` ``SETTINGS_UPDATE`` block for
+    API keys that explicitly opt into ``can_update_energy_cost``. Full
+    ``SETTINGS_UPDATE`` for API keys stays denied — this is a narrowly-scoped
+    door for the Home Assistant dynamic-tariff use case documented in
+    ``wiki/features/energy.md``, not a general settings-write capability.
+    """
+    return require_api_key_scope("can_update_energy_cost", "update_energy_cost", Permission.SETTINGS_UPDATE)
+
+
+def require_notification_send():
+    """Dependency for ``POST /notifications/app-message``: another application
+    sending a message through the channels that accept app messages. API keys
+    need ``can_send_notifications``; users need ``NOTIFICATIONS_UPDATE``."""
+    return require_api_key_scope(
+        "can_send_notifications", "send_notifications", Permission.NOTIFICATIONS_UPDATE, owner_needs_permission=True
+    )
 
 
 # Password hashing

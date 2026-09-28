@@ -141,6 +141,7 @@ function isAlwaysAllowedIdentical(value) {
 // German loanwords / cognates from English are extensive. Most short technical
 // UI labels are identical in DE. List below curates the legitimate ones.
 const DE_COGNATES = [
+  'Apps',  // notifications badge for messages from connected apps — same word
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the DE term too
   'Auto',  // calibrationMode_auto — German UI uses the loanword (matches BambuStudio DE)
   'Name', 'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Modus',
@@ -179,6 +180,7 @@ const DE_COGNATES = [
 
 // French cognates — many UI labels overlap with English exactly.
 const FR_COGNATES = [
+  'Apps',  // notifications badge for messages from connected apps — same word
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Filament',
@@ -222,6 +224,7 @@ const FR_COGNATES = [
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   'Simple', 'Expert',  // slicer settings visibility tiers — identical words in French
   'Support',  // same word in French
+  'Photos', '{{count}} photo', '{{count}} photos',  // file details photo strip (#3077) — same word in French
 ];
 
 // Italian cognates.
@@ -275,6 +278,7 @@ const JA_COGNATES = [
 
 // Portuguese (BR) cognates.
 const PT_BR_COGNATES = [
+  'Apps',  // notifications badge for messages from connected apps — same word
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the PT-BR term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
@@ -350,6 +354,7 @@ const KO_COGNATES = [
 
 // Spanish cognates — words/phrases that are genuinely identical in Spanish.
 const ES_COGNATES = [
+  'Apps',  // notifications badge for messages from connected apps — same word
   '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the ES term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
@@ -440,6 +445,7 @@ const UK_COGNATES = [
 // are used untranslated by Dutch slicer users. Each entry below was
 // checked individually against the Dutch translation in #2891.
 const NL_COGNATES = [
+  'Apps',  // notifications badge for messages from connected apps — same word
   '1 printer', '{{n}} printers',
   '1 week', '(25%, 50%, 75%)', 'Accent', 'AMS Filament Backup',
   '{{ams}} Slot {{slot}}', 'Auto', 'Auto Home', 'Bambu Cloud',

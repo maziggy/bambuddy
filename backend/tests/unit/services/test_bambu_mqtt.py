@@ -5484,17 +5484,18 @@ class TestHMSFullCode:
         assert len(mqtt_client.state.hms_errors) == 1
         assert mqtt_client.state.hms_errors[0].description is None
 
-    def test_hms_array_path_resolves_via_the_short_key(self, mqtt_client):
-        """`hms[]` faults resolve through the G1_G4 collapse — the same lookup
-        the notification path and the frontend modal have always used. 0500_4038
-        is the nozzle-size mismatch behind #1111 and it arrives in this shape."""
-        mqtt_client._update_state({"hms": [{"attr": 0x05000000, "code": 0x00004038}]})
+    def test_hms_array_path_resolves_by_the_full_code(self, mqtt_client):
+        """A real P2S fault from #2728, verbatim from the report topic. It resolves
+        through its full 16-char code, which is how Bambu Studio keys its HMS
+        texts, and says what the reporter found: a module/firmware mismatch."""
+        mqtt_client._update_state({"hms": [{"attr": 83886848, "code": 131086}]})
         assert len(mqtt_client.state.hms_errors) == 1
-        assert "nozzle diameter" in (mqtt_client.state.hms_errors[0].description or "")
+        error = mqtt_client.state.hms_errors[0]
+        assert error.full_code == "050003000002000E"
+        assert error.description.startswith("Some modules are incompatible with the printer's firmware version")
 
-    def test_hms_array_leaves_description_none_when_uncatalogued(self, mqtt_client):
-        """A real P2S fault (#2728) whose collapse is "0500_000A" — not a
-        catalogue key, since none has an error group below 0x4000. The fault is
+    def test_hms_array_leaves_description_none_when_bambu_publishes_no_text(self, mqtt_client):
+        """A real P2S fault (#2728) that Bambu lists with empty text. The fault is
         still reported; only the text is absent."""
         mqtt_client._update_state({"hms": [{"attr": 0x05000200, "code": 0x0003000A}]})
         assert len(mqtt_client.state.hms_errors) == 1
@@ -6410,6 +6411,86 @@ class TestAmsFilamentSettingExternalSpoolEncoding:
         assert cmd["slot_id"] == 0
 
 
+class TestDryCountdownStall:
+    """A ``dry_time`` the firmware set but whose countdown never ticks is a
+    parked command, not a running cycle — ``dry_countdown_stalled`` is how the
+    UI stops showing an active-drying badge for it. Live countdowns decrement
+    once a minute; the stall threshold (150 s) is two missed ticks plus jitter.
+    Found on an H2D mid-print: two AMS-HT cycles running, the third unit's
+    timer frozen at its full 720 while the AMS never heated."""
+
+    @pytest.fixture
+    def mqtt_client(self, monkeypatch):
+        from backend.app.services import bambu_mqtt as mod
+
+        clock = {"now": 1000.0}
+        monkeypatch.setattr(mod.time, "monotonic", lambda: clock["now"])
+        client = mod.BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST-STALL",
+            access_code="12345678",
+        )
+        client._test_clock = clock  # Expose for tests to advance
+        return client
+
+    def _unit(self, mqtt_client, ams_id=0):
+        for u in mqtt_client.state.raw_data["ams"]:
+            if int(u["id"]) == ams_id:
+                return u
+        raise AssertionError(f"AMS {ams_id} not in raw_data")
+
+    def test_frozen_countdown_flags_stalled(self, mqtt_client):
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 720, "tray": []}]})
+        assert self._unit(mqtt_client)["dry_countdown_stalled"] is False
+        mqtt_client._test_clock["now"] += 151
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 720, "tray": []}]})
+        assert self._unit(mqtt_client)["dry_countdown_stalled"] is True
+
+    def test_ticking_countdown_never_flags(self, mqtt_client):
+        """A live cycle decrements every minute; repeats of the same value
+        inside the minute must not flag either."""
+        for dt, value in ((0, 720), (60, 719), (100, 719), (120, 718)):
+            mqtt_client._test_clock["now"] = 1000.0 + dt
+            mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": value, "tray": []}]})
+            assert self._unit(mqtt_client)["dry_countdown_stalled"] is False, dt
+
+    def test_active_dry_status_vouches_for_frozen_countdown(self, mqtt_client):
+        """When the firmware's own info phase says Drying, a frozen countdown
+        is trusted as live — the phase field outranks the tick heuristic."""
+        # info bits 4-7 = 2 (Drying) -> 0x20
+        frame = {"ams": [{"id": "0", "dry_time": 720, "info": "20", "tray": []}]}
+        mqtt_client._handle_ams_data(frame)
+        mqtt_client._test_clock["now"] += 300
+        mqtt_client._handle_ams_data(frame)
+        assert self._unit(mqtt_client)["dry_countdown_stalled"] is False
+
+    def test_active_phase_clears_stall_on_transient_zero(self, mqtt_client):
+        """A Checking/Drying phase is authoritative even when its transient
+        dry_time=0 frame is ignored for completion-edge tracking (#2759)."""
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 720, "tray": []}]})
+        mqtt_client._test_clock["now"] += 151
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 720, "tray": []}]})
+        assert self._unit(mqtt_client)["dry_countdown_stalled"] is True
+
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "info": "20", "tray": []}]})
+        assert self._unit(mqtt_client)["dry_countdown_stalled"] is False
+        assert mqtt_client._previous_dry_times[0] == 720
+
+    def test_fresh_start_gets_grace_before_flagging(self, mqtt_client):
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        mqtt_client._test_clock["now"] += 30
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 720, "tray": []}]})
+        mqtt_client._test_clock["now"] += 30
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 720, "tray": []}]})
+        assert self._unit(mqtt_client)["dry_countdown_stalled"] is False
+
+    def test_finished_cycle_never_reads_stalled(self, mqtt_client):
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 1, "tray": []}]})
+        mqtt_client._test_clock["now"] += 200
+        mqtt_client._handle_ams_data({"ams": [{"id": "0", "dry_time": 0, "tray": []}]})
+        assert self._unit(mqtt_client)["dry_countdown_stalled"] is False
+
+
 class TestDryingCompleteCallback:
     """#1349 — fires ``on_drying_complete(ams_id)`` on a dry_time falling edge."""
 
@@ -7039,11 +7120,12 @@ class TestTrayNowH2SExternalSpoolOverride:
     instead of 254 when the active feed is the external spool.
 
     Bambuddy detects the all-external case via the slicer-captured
-    ams_mapping (every entry == -1) and promotes tray_now to 254 so the
-    UI active-tray highlight matches the real feed.
+    ams_mapping (every entry 254, or -1 when the command carried no
+    ams_mapping2 to resolve it from, #3166) and promotes tray_now to 254 so
+    the UI active-tray highlight matches the real feed.
 
     The override is intentionally narrow:
-      * only fires when ams_mapping is captured AND every entry is -1
+      * only fires when ams_mapping is captured AND every entry is external
       * does not touch mixed prints ([5, -1]) or AMS-only prints ([5])
       * does not fire when no ams_mapping is captured (printer-screen start)
     """
@@ -7069,6 +7151,14 @@ class TestTrayNowH2SExternalSpoolOverride:
         """Multi-filament print, every filament mapped to external. Still
         all-external -> still promotes."""
         mqtt_client._captured_ams_mapping = [-1, -1, -1]
+        mqtt_client._process_message(_ams_payload(0))
+        assert mqtt_client.state.tray_now == 254
+
+    def test_resolved_external_mapping_promotes(self, mqtt_client):
+        """Since #3166 the capture resolves the external spool from
+        ams_mapping2, so a single-nozzle all-external print arrives as [254]
+        rather than [-1]. The override must still fire."""
+        mqtt_client._captured_ams_mapping = [254]
         mqtt_client._process_message(_ams_payload(0))
         assert mqtt_client.state.tray_now == 254
 

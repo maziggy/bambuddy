@@ -62,6 +62,7 @@ import {
   Ban,
   PlayCircle,
   Workflow,
+  ThumbsUp,
 } from 'lucide-react';
 import { api, ApiError } from '../api/client';
 import { PipelineRunsView } from './PipelineRunsPage';
@@ -156,6 +157,7 @@ function BulkEditModal({
   const [layerInspect, setLayerInspect] = useState<boolean | 'unchanged'>('unchanged');
   const [timelapse, setTimelapse] = useState<boolean | 'unchanged'>('unchanged');
   const [useAms, setUseAms] = useState<boolean | 'unchanged'>('unchanged');
+  const [confirmOutcome, setConfirmOutcome] = useState<boolean | 'unchanged'>('unchanged');
   const [nozzleOffsetCali, setNozzleOffsetCali] = useState<CalibrationMode | 'unchanged'>('unchanged');
 
   // Show the dual-nozzle-only toggle when the user has at least one
@@ -176,6 +178,7 @@ function BulkEditModal({
     if (layerInspect !== 'unchanged') data.layer_inspect = layerInspect;
     if (timelapse !== 'unchanged') data.timelapse = timelapse;
     if (useAms !== 'unchanged') data.use_ams = useAms;
+    if (confirmOutcome !== 'unchanged') data.confirm_outcome = confirmOutcome;
     if (nozzleOffsetCali !== 'unchanged') data.nozzle_offset_cali = nozzleOffsetCali;
     onSave(data);
   };
@@ -183,7 +186,7 @@ function BulkEditModal({
   const hasChanges = printerId !== 'unchanged' || manualStart !== 'unchanged' || autoOffAfter !== 'unchanged' ||
     requirePreviousSuccess !== 'unchanged' || bedLevelling !== 'unchanged' || flowCali !== 'unchanged' ||
     vibrationCali !== 'unchanged' || layerInspect !== 'unchanged' || timelapse !== 'unchanged' || useAms !== 'unchanged' ||
-    nozzleOffsetCali !== 'unchanged' || gcodeInjection !== 'unchanged';
+    confirmOutcome !== 'unchanged' || nozzleOffsetCali !== 'unchanged' || gcodeInjection !== 'unchanged';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -249,6 +252,7 @@ function BulkEditModal({
               <TriStateToggle label={t('queue.bulkEdit.layerInspection')} value={layerInspect} onChange={setLayerInspect} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.timelapse')} value={timelapse} onChange={setTimelapse} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.useAms')} value={useAms} onChange={setUseAms} t={t} />
+              <TriStateToggle label={t('queue.bulkEdit.confirmOutcome')} value={confirmOutcome} onChange={setConfirmOutcome} t={t} />
               {hasDualNozzlePrinter && (
                 <CalibrationModeToggle label={t('queue.bulkEdit.nozzleOffsetCali')} value={nozzleOffsetCali} onChange={setNozzleOffsetCali} t={t} />
               )}
@@ -714,6 +718,15 @@ function SortableQueueItem({
               <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 rounded-full border border-emerald-200 dark:border-emerald-500/20 flex items-center gap-1">
                 <Code className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                 {t('queue.badges.gcodeInjection')}
+              </span>
+            )}
+            {item.confirm_outcome && (
+              <span
+                title={t('queue.badges.confirmOutcomeTitle')}
+                className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400 rounded-full border border-green-200 dark:border-green-500/20 flex items-center gap-1"
+              >
+                <ThumbsUp className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                {t('queue.badges.confirmOutcome')}
               </span>
             )}
           </div>
@@ -1463,11 +1476,18 @@ export function QueuePage() {
   // History tab renders unconditionally so this no longer drives the UI.
   // Tabbed page structure: Active queue stays as the main view; History
   // and Timeline split off. Persists per-user via localStorage.
+  // /queue?batch=<id>: a link to one batch (e.g. from Bambuddy Orders), read once.
+  const [focusBatchId] = useState<number | null>(() => {
+    const id = Number(new URLSearchParams(window.location.search).get('batch'));
+    return Number.isInteger(id) && id > 0 ? id : null;
+  });
   const [activeTab, setActiveTab] = useState<'queue' | 'batches' | 'history' | 'timeline' | 'pipelines'>(() => {
     // URL deep-link wins so the legacy /pipelines/runs redirect lands on the
     // right tab. localStorage holds the per-user last-selected fallback.
     const search = new URLSearchParams(window.location.search);
     const url = search.get('tab');
+    // A link to one batch (/queue?batch=<id>) opens the tab that shows it.
+    if (search.get('batch')) return 'batches';
     if (url === 'pipelines' || url === 'history' || url === 'timeline' || url === 'queue' || url === 'batches') {
       return url;
     }
@@ -2532,7 +2552,7 @@ export function QueuePage() {
       {activeTab === 'pipelines' ? (
         <PipelineRunsView />
       ) : activeTab === 'batches' ? (
-        <BatchOrdersView hasPermission={hasPermission} t={t} />
+        <BatchOrdersView hasPermission={hasPermission} t={t} focusBatchId={focusBatchId} />
       ) : isLoading ? (
         <div className="text-center py-12 text-bambu-gray">{t('common.loading')}</div>
       ) : queue?.length === 0 ? (

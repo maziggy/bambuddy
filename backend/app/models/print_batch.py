@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -21,6 +21,7 @@ class PrintBatch(Base):
     """
 
     __tablename__ = "print_batches"
+    __table_args__ = (Index("uq_print_batches_external", "external_source", "external_ref", unique=True),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
@@ -44,6 +45,14 @@ class PrintBatch(Base):
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
     due_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Link to the record in another system that asked for this batch, e.g. a
+    # shop order an integration turned into prints. ``external_ref`` identifies
+    # this batch within ``external_source`` and is unique there, so a client
+    # that retries a create after a lost response gets a 409 instead of a
+    # second batch printing the same order twice. Both set or both null.
+    external_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    external_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

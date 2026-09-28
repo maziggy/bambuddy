@@ -15,6 +15,7 @@ import {
 } from '../../api/client';
 import { getCurrencySymbol } from '../../utils/currency';
 import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
+import { spoolSwatchStyle } from '../../components/spoolbuddy/spoolPaint';
 import { useColorCatalogVersion } from '../../hooks/useColorCatalogVersion';
 
 /**
@@ -412,7 +413,7 @@ function SpoolListItem({ spool, selected, showTag, onClick }: {
           a checkerboard instead of collapsing to solid black (#1545). */}
       <div
         className="w-8 h-8 rounded-full shrink-0 border border-white/10"
-        style={spool.rgba ? getSwatchStyle(spool.rgba) : { backgroundColor: '#666' }}
+        style={spoolSwatchStyle(spool) ?? (spool.rgba ? getSwatchStyle(spool.rgba) : { backgroundColor: '#666' })}
       />
 
       {/* Info */}
@@ -844,7 +845,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
           <div className="flex flex-col items-center justify-center h-full p-6 text-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
             <div
               className="w-12 h-12 rounded-full mb-4 border border-white/10"
-              style={selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' }}
+              style={spoolSwatchStyle(selectedSpool, 'preview') ?? (selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' })}
             />
             <p className="text-white font-medium">
               {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
@@ -1037,7 +1038,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
         <div className="flex flex-col items-center justify-center p-4 text-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
           <div
             className="w-12 h-12 rounded-full mb-4 border border-white/10"
-            style={selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' }}
+            style={spoolSwatchStyle(selectedSpool, 'preview') ?? (selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' })}
           />
           <p className="text-white font-medium">
             {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
@@ -1158,7 +1159,9 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
   // Spool selected — show summary + write button. Use getSwatchStyle so
   // transparent (Clear) spools render a checkerboard rather than collapsing
   // to solid black (#1545).
-  const spoolColorStyle = selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' };
+  const spoolColorStyle =
+    spoolSwatchStyle(selectedSpool, 'preview') ??
+    (selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' });
 
   return (
     <div className="flex flex-col items-center text-center space-y-4 w-full">

@@ -93,7 +93,7 @@ export function SpoolInfoCard({ spool, scaleWeight, onClose, onSyncWeight, onAss
       <div className="flex items-start gap-5">
         {/* Spool visualization */}
         <div className="relative shrink-0">
-          <SpoolIcon color={colorHex} isEmpty={false} size={100} />
+          <SpoolIcon color={colorHex} isEmpty={false} size={100} spool={spool} />
           {fillPercent !== null && (
             <div
               className="absolute -bottom-2 -right-2 px-2 py-0.5 rounded-full text-xs font-bold text-white shadow-lg"

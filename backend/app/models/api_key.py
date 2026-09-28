@@ -51,6 +51,10 @@ class APIKey(Base):
     # granting full SETTINGS_UPDATE (which is denied for API keys because it
     # could rewrite SMTP/LDAP/MQTT credentials).
     can_update_energy_cost: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Send a message through the notification channels that accept app
+    # messages (POST /notifications/app-message). Nothing else: no reading or
+    # changing the channels themselves.
+    can_send_notifications: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Optional scope limits
     printer_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)  # null = all printers

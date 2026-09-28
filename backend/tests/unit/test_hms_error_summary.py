@@ -76,3 +76,27 @@ def test_masking_lets_a_32_bit_code_resolve_its_description():
 def test_accepts_an_integer_code():
     """`_hms_short_code` takes both shapes; the raw MQTT payload carries ints."""
     assert _format([{"code": 0x4038, "attr": 0x05000000, "module": 5, "severity": 1}]).startswith("[0500_4038] ")
+
+
+def test_an_hms_array_fault_is_labelled_with_its_full_code() -> None:
+    """The short code of an `hms[]` fault ("0500_000E") drops the part and level
+    groups and is not a code anyone can look up; the printer screen and Bambu's
+    wiki write it as four groups (#2728)."""
+    summary = _format(
+        [
+            {
+                "code": "0x2000e",
+                "attr": 0x05000300,
+                "module": 5,
+                "severity": 2,
+                "full_code": "050003000002000E",
+                "description": "Some modules are incompatible.",
+            }
+        ]
+    )
+    assert summary == "[0500-0300-0002-000E] Some modules are incompatible."
+
+
+def test_a_print_error_keeps_its_short_label() -> None:
+    summary = _format([{"code": "0x8004", "attr": 0x03008004, "module": 3, "severity": 2, "full_code": "03008004"}])
+    assert summary.startswith("[0300_8004] Filament ran out")

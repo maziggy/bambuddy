@@ -106,6 +106,41 @@ class PrintArchive(Base):
     failure_reason: Mapped[str | None] = mapped_column(String(100))  # For failed prints
     quantity: Mapped[int] = mapped_column(Integer, default=1)  # Number of items printed
 
+    # Post-print outcome confirmation (#1898). user_verdict is the USER's
+    # quality judgement ('good' / 'reject'), deliberately orthogonal to the
+    # machine-reported `status`: completed + reject means "printer finished
+    # it, part is scrap". confirm_requested is copied from the queue item's
+    # opt-in flag at dispatch (like plate_id) and drives the prompt + the
+    # "unconfirmed" badge; confirm_token is a per-archive capability for the
+    # one-tap verdict links in push notifications, minted when the prompt
+    # fires. A landed verdict RETIRES the token by stamping
+    # confirm_token_used_at rather than clearing the value: the link stays
+    # resolvable so a second tap can say "already answered, here is what was
+    # recorded" instead of the bare "invalid or already used" 404.
+    # user_verdict_source records how the verdict arrived ('dialog', 'link',
+    # 'plate_clear', 'printer_card', 'api', 'reaction') so the UI can explain
+    # a verdict nobody remembers giving.
+    user_verdict: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    user_verdict_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # When the verdict on file was recorded (#1898). Written with every verdict,
+    # unlike `confirm_token_used_at`, which marks the one moment the one-tap
+    # capability was spent — a verdict changed later in the app must not be
+    # dated by that older event.
+    user_verdict_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Nullable to match the ALTER that adds it to an existing install: a fresh
+    # database would otherwise get NOT NULL while an upgraded one gets a
+    # nullable column, and the two would disagree about the same table. The
+    # default still means every row written by Bambuddy is True or False; only
+    # `is_(True)` and truthiness read it, both of which treat NULL as off.
+    confirm_requested: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=False, server_default="0")
+    # Indexed and unique: the one-tap route is reachable with no credential
+    # at all, so an unindexed lookup would let anyone turn a stream of
+    # garbage tokens into a stream of full scans of this table. Uniqueness
+    # costs nothing (the only writer is secrets.token_urlsafe(32)) and keeps
+    # scalar_one_or_none from ever raising MultipleResultsFound.
+    confirm_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    confirm_token_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+
     # Energy tracking
     energy_kwh: Mapped[float | None] = mapped_column(Float)  # Energy consumed in kWh
     energy_cost: Mapped[float | None] = mapped_column(Float)  # Cost of energy consumed

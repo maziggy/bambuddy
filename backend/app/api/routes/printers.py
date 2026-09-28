@@ -90,6 +90,7 @@ from backend.app.services.printer_media import (
 )
 from backend.app.services.slicer_filament_resolver import _ORCA_PROFILE_ID
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
+from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.filament_ids import filament_id_to_setting_id
 from backend.app.utils.filament_types import is_material_name, printer_filament_type
 from backend.app.utils.fts_routing import slot_extruder
@@ -586,22 +587,11 @@ async def get_printer_status(
                         exists=tray_data.get("exists"),
                     )
                 )
-            # Prefer humidity_raw (percentage) over humidity (index 1-5)
-            # humidity_raw is the actual percentage value from the sensor
-            humidity_raw = ams_data.get("humidity_raw")
-            humidity_idx = ams_data.get("humidity")
-            humidity_value = None
-
-            if humidity_raw is not None:
-                try:
-                    humidity_value = int(humidity_raw)
-                except (ValueError, TypeError):
-                    pass  # Skip unparseable humidity; will try index fallback
-            if humidity_value is None and humidity_idx is not None:
-                try:
-                    humidity_value = int(humidity_idx)
-                except (ValueError, TypeError):
-                    pass  # Skip unparseable humidity index; humidity remains None
+            # Percentage only. The 1-5 ``humidity`` index is never substituted
+            # for one -- it is inverted, so it would read as the opposite of
+            # what it means (#3140). See utils/ams_humidity.
+            humidity_pct = ams_humidity_percent(ams_data)
+            humidity_value = int(round(humidity_pct)) if humidity_pct is not None else None
             # AMS-HT has 1 tray, regular AMS has 4 trays
             is_ams_ht = len(trays) == 1
 
@@ -638,6 +628,7 @@ async def get_printer_status(
                     sw_ver=str(ams_data.get("sw_ver") or ""),
                     # Drying: dry_time > 0 means drying is active (minutes remaining)
                     dry_time=int(ams_data.get("dry_time") or 0),
+                    dry_countdown_stalled=bool(ams_data.get("dry_countdown_stalled") or False),
                     dry_target_temp=dry_target_temp,
                     dry_filament=dry_filament,
                     module_type=str(ams_data.get("module_type") or ""),
@@ -893,7 +884,7 @@ async def get_overlay_status(
 
     A token-authenticated sibling of ``get_printer_status`` for embeds with no
     login session — OBS loads ``/overlay/{id}?token=...`` and this feeds it.
-    Deliberately flat and minimal (name, camera rotation, live print state, and
+    Deliberately flat and minimal (name, model, camera rotation, live print state, and
     the one setting the overlay reads) rather than the full ``PrinterStatus``:
     a token holder gets exactly the fields the overlay renders, nothing more.
 
@@ -917,6 +908,7 @@ async def get_overlay_status(
         return {
             "id": printer_id,
             "name": printer.name,
+            "model": printer.model,
             "camera_rotation": printer.camera_rotation or 0,
             "connected": False,
             "state": None,
@@ -934,6 +926,7 @@ async def get_overlay_status(
     return {
         "id": printer_id,
         "name": printer.name,
+        "model": printer.model,
         "camera_rotation": printer.camera_rotation or 0,
         "connected": state.connected,
         "state": state.state,
@@ -3546,6 +3539,21 @@ async def clear_plate(
         )
 
     printer_manager.set_awaiting_plate_clear(printer_id, False)
+
+    # #1898: releasing the plate without answering the outcome prompt can
+    # count as "good" (opt-in setting) — this is the moment the operator
+    # moves on, so an unanswered prompt would otherwise linger unconfirmed.
+    from backend.app.api.routes.settings import get_setting, setting_is_true
+
+    # setting_is_true rather than a comparison of our own: one reader deciding
+    # for itself what "on" spells is how two parts of the app end up
+    # disagreeing about the same row.
+    if setting_is_true(await get_setting(db, "confirm_default_good_on_plate_clear")):
+        from backend.app.services.print_confirmation import resolve_pending_confirmation_as_good
+
+        resolved = await resolve_pending_confirmation_as_good(db, printer_id)
+        if resolved is not None:
+            await db.commit()
 
     return {"success": True, "message": "Plate cleared, next print will start shortly"}
 

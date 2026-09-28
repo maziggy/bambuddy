@@ -27,6 +27,7 @@ route's own token check ever ran.
 
 from __future__ import annotations
 
+import os
 import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -38,8 +39,10 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 # Same reasoning as #3025's fixtures: the routes resolve paths relative to
 # ``settings.base_dir``, which under test is the project root, so everything
-# goes in one subdirectory that is removed after each test.
-_FILE_DIR = "test_files_3029"
+# goes in one subdirectory that is removed after each test. Per process for the
+# same reason too: every xdist worker shares ``base_dir``, and with one shared
+# name a worker's teardown deleted files another worker's test was serving.
+_FILE_DIR = f"test_files_3029_{os.getpid()}"
 
 
 @pytest.fixture(autouse=True)

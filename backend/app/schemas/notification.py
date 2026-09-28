@@ -82,11 +82,20 @@ class NotificationProviderBase(BaseModel):
         default=False, description="Notify when a finished print is waiting for plate-clear confirmation"
     )
 
+    # Event triggers - Post-print outcome confirmation (#1898)
+    on_print_confirm_request: bool = Field(
+        default=True,
+        description="Notify with one-tap verdict links when a print that opted in asks for its outcome",
+    )
+
     # Event triggers - Bed cooled
     on_bed_cooled: bool = Field(default=False, description="Notify when bed cools after print")
 
     # Event triggers - First layer complete
     on_first_layer_complete: bool = Field(default=False, description="Notify when first layer completes")
+
+    # Messages from connected apps (POST /notifications/app-message)
+    on_app_message: bool = Field(default=False, description="Deliver messages other applications send")
 
     # Event triggers - Inventory stock alerts
     # Missing from this schema until now, so every payload naming them was
@@ -188,11 +197,17 @@ class NotificationProviderUpdate(BaseModel):
     on_plate_not_empty: bool | None = None
     on_plate_clear_required: bool | None = None
 
+    # Event triggers - Post-print outcome confirmation (#1898)
+    on_print_confirm_request: bool | None = None
+
     # Event triggers - Bed cooled
     on_bed_cooled: bool | None = None
 
     # Event triggers - First layer complete
     on_first_layer_complete: bool | None = None
+
+    # Messages from connected apps
+    on_app_message: bool | None = None
 
     # Event triggers - Inventory stock alerts
     on_stock_reorder_alert: bool | None = None
@@ -270,6 +285,42 @@ class NotificationProviderResponse(NotificationProviderBase):
         from_attributes = True
 
 
+class AppMessage(BaseModel):
+    """A message another application sends through Bambuddy's notification channels."""
+
+    title: str = Field(min_length=1, max_length=120)
+    message: str = Field(min_length=1, max_length=2000)
+    url: str | None = Field(default=None, max_length=500, description="A link the message points to (http or https)")
+
+    @field_validator("title", "message")
+    @classmethod
+    def _plain_text(cls, value: str) -> str:
+        # Plain text: no control characters beyond line breaks and tabs.
+        cleaned = "".join(ch for ch in value if ch in "\n\t" or ch.isprintable()).strip()
+        if not cleaned:
+            raise ValueError("must not be empty")
+        return cleaned
+
+    @field_validator("url")
+    @classmethod
+    def _http_url(cls, value: str | None) -> str | None:
+        if value is None or value.strip() == "":
+            return None
+        value = value.strip()
+        if not value.lower().startswith(("http://", "https://")) or any(c.isspace() for c in value):
+            raise ValueError("must be an http or https address")
+        return value
+
+
+class AppMessageResult(BaseModel):
+    channels: int = Field(description="How many channels the message was handed to")
+
+
+class AppMessageChannel(BaseModel):
+    name: str
+    provider_type: str
+
+
 class NotificationTestRequest(BaseModel):
     """Schema for testing notification configuration."""
 
@@ -301,9 +352,11 @@ class NtfyConfig(BaseModel):
     event_priorities: dict[str, int] | None = Field(
         default=None,
         description=(
-            "Per-event priority override. Keys are event names (e.g. 'on_print_failed'); "
-            "values are ntfy priorities 1-5 (1=min, 2=low, 3=default, 4=high, 5=urgent). "
-            "Events without an entry use ntfy's server-side default."
+            "Per-event priority override. Keys are event names, either the provider's "
+            "toggle column ('on_print_failed', what the UI writes) or the bare event "
+            "name ('print_failed'); both are accepted. Values are ntfy priorities 1-5 "
+            "(1=min, 2=low, 3=default, 4=high, 5=urgent). Events without an entry use "
+            "ntfy's server-side default."
         ),
     )
 

@@ -8,6 +8,7 @@ import { AmsUnitCard, NozzleBadge } from './AmsUnitCard';
 import type { AmsThresholds } from './AmsUnitCard';
 import { getFillBarColor } from '../../utils/amsHelpers';
 import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
+import { spoolSwatchStyle } from './spoolPaint';
 
 function getAmsName(id: number): string {
   if (id <= 3) return `AMS ${String.fromCharCode(65 + id)}`;
@@ -366,7 +367,7 @@ export function AssignToAmsModal({ isOpen, onClose, spool, printerId, spoolmanMo
 
   if (!isOpen) return null;
 
-  const colorStyle = getSwatchStyle(spool.rgba);
+  const colorStyle = spoolSwatchStyle(spool) ?? getSwatchStyle(spool.rgba);
 
   return (
     <>

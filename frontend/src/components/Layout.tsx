@@ -14,6 +14,7 @@ import { useColorCatalogVersion } from '../hooks/useColorCatalogVersion';
 import { useSponsorPrompt } from '../hooks/useSponsorPrompt';
 import { useUnknownTagPrompt } from '../hooks/useUnknownTagPrompt';
 import { UnknownSpoolModal } from './UnknownSpoolModal';
+import { ConfirmOutcomeDialog } from './ConfirmOutcomeDialog';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Card, CardHeader, CardContent } from './Card';
@@ -100,7 +101,7 @@ export function Layout() {
   // catalog fetched — and cached HSL-fallback color names during their first
   // render — refresh with the real catalog names. See #857.
   useColorCatalogVersion();
-  const { user, authEnabled, logout, hasPermission } = useAuth();
+  const { user, authEnabled, logout, hasPermission, hasAnyPermission, loading: authLoading } = useAuth();
   const { showToast } = useToast();
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [changePasswordData, setChangePasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -124,6 +125,9 @@ export function Layout() {
     printer_name: string;
     message: string;
   } | null>(null);
+  // Post-print outcome confirmation (#1898): archive waiting for a verdict,
+  // set by the print_confirm_request WebSocket event.
+  const [confirmOutcomeArchiveId, setConfirmOutcomeArchiveId] = useState<number | null>(null);
 
   // Check for updates
   const { data: versionInfo } = useQuery({
@@ -459,6 +463,43 @@ export function Layout() {
     window.addEventListener('plate-not-empty', handlePlateNotEmpty);
     return () => window.removeEventListener('plate-not-empty', handlePlateNotEmpty);
   }, [hasPermission]);
+
+  // A completed print asked for its outcome verdict (#1898). Same CustomEvent
+  // relay as plate-not-empty, and gated the same way: the PATCH route decides
+  // who may record a verdict, so a user who cannot should not be handed a
+  // dialog whose only outcome is a 403.
+  // Held until the auth state has landed: while it is loading, `authEnabled`
+  // is still false and every permission check answers yes, which would open
+  // the dialog for exactly the user this gate exists to spare.
+  const canConfirmOutcome = !authLoading && hasAnyPermission('archives:update_all', 'archives:update_own');
+  useEffect(() => {
+    const handleConfirmRequest = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (typeof detail?.archive_id === 'number') {
+        setConfirmOutcomeArchiveId(detail.archive_id);
+      }
+    };
+    window.addEventListener('print-confirm-request', handleConfirmRequest);
+    return () => window.removeEventListener('print-confirm-request', handleConfirmRequest);
+  }, []);
+
+  // The ?confirm=<id> deep link a push notification carries (#1898). It is read
+  // here and not on ArchivesPage because that page renders inside this Layout's
+  // <Outlet />: React flushes a child's effects before its parent's, so a page
+  // dispatching `print-confirm-request` on mount fired before the listener above
+  // existed — which is exactly the cold load a notification tap produces. The
+  // parameter is stripped afterwards so a reload does not re-open the dialog.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const confirmId = params.get('confirm');
+    if (!confirmId || !/^\d+$/.test(confirmId)) {
+      return;
+    }
+    setConfirmOutcomeArchiveId(Number(confirmId));
+    params.delete('confirm');
+    const rest = params.toString();
+    navigate({ pathname: location.pathname, search: rest ? `?${rest}` : '' }, { replace: true });
+  }, [location.pathname, location.search, navigate]);
 
   // Global keyboard shortcuts for navigation
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -1019,6 +1060,20 @@ export function Layout() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Post-print outcome confirmation (#1898) */}
+      {/* The dialog's only outcome for a user who may not record a verdict is
+          a 403 from the PATCH, so it is gated on the permissions that route
+          enforces — the names the June migration left in the default groups.
+          Gated on the render rather than on the two ways a request arrives:
+          one of them can land before /auth/me has answered, and a check made
+          then would drop it for everybody. */}
+      {canConfirmOutcome && confirmOutcomeArchiveId !== null && (
+        <ConfirmOutcomeDialog
+          archiveId={confirmOutcomeArchiveId}
+          onClose={() => setConfirmOutcomeArchiveId(null)}
+        />
       )}
 
       {/* Change Password Modal */}

@@ -15,6 +15,7 @@ from backend.app.services.bambu_mqtt import (
     PrinterState,
     get_stage_name,
 )
+from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.kprofile_lookup import build_slot_k_resolver
 
 logger = logging.getLogger(__name__)
@@ -1399,22 +1400,10 @@ def printer_state_to_dict(
                         "exists": tray.get("exists"),
                     }
                 )
-            # Prefer humidity_raw (actual percentage) over humidity (index 1-5)
-            humidity_raw = ams_data.get("humidity_raw")
-            humidity_idx = ams_data.get("humidity")
-            humidity_value = None
-
-            if humidity_raw is not None:
-                try:
-                    humidity_value = int(humidity_raw)
-                except (ValueError, TypeError):
-                    pass  # Skip unparseable humidity; will try index fallback
-            # Fall back to index if no raw value (index is 1-5, not percentage)
-            if humidity_value is None and humidity_idx is not None:
-                try:
-                    humidity_value = int(humidity_idx)
-                except (ValueError, TypeError):
-                    pass  # Skip unparseable humidity index; humidity remains None
+            # Percentage only — the 1-5 index is inverted and must never stand
+            # in for one (#3140). See utils/ams_humidity.
+            humidity_pct = ams_humidity_percent(ams_data)
+            humidity_value = int(round(humidity_pct)) if humidity_pct is not None else None
 
             # AMS-HT has 1 tray, regular AMS has 4 trays
             is_ams_ht = len(trays) == 1
@@ -1457,6 +1446,15 @@ def printer_state_to_dict(
                     "sw_ver": str(ams_data.get("sw_ver") or ""),
                     # Drying: dry_time > 0 means drying is active (minutes remaining)
                     "dry_time": int(ams_data.get("dry_time") or 0),
+                    # Stall flag stamped onto raw_data by the MQTT layer: the
+                    # firmware set the countdown but it never ticked. The REST
+                    # serializer already emits it (routes/printers.py); without
+                    # it here the WS shallow-merge replaces the REST-seeded ams
+                    # object a second later, the field reads undefined, and the
+                    # card falls back to the amber "active cycle" badge — so the
+                    # neutral "Drying not started" state would never be reachable
+                    # in the live UI. Same failure mode as `exists` in #2670.
+                    "dry_countdown_stalled": bool(ams_data.get("dry_countdown_stalled") or False),
                     # Drying status from info hex bits (0=Off, 1=Checking, 2=Drying, 3=Cooling, etc.)
                     "dry_status": int(ams_data.get("dry_status") or 0),
                     "dry_sub_status": int(ams_data.get("dry_sub_status") or 0),

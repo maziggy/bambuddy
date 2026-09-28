@@ -36,6 +36,7 @@ class ScheduledDryingResponse(BaseModel):
     status: str
     waiting_reason: str | None
     error_message: str | None
+    error_code: str | None = None
     created_at: UTCDatetime
     started_at: UTCDatetime
     completed_at: UTCDatetime

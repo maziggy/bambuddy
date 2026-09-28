@@ -13,11 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import (
     RequirePermissionIfAuthEnabled,
+    ScopedCaller,
     caller_is_api_key,
     require_auth_if_enabled,
     require_energy_cost_update,
 )
-from backend.app.core.config import settings as app_settings
+from backend.app.core.config import APP_VERSION, settings as app_settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.settings import Settings
@@ -129,6 +130,22 @@ def normalize_str_setting(key: str, value: object) -> str:
     raise HTTPException(400, f"{key} must be a string; got {type(value).__name__}")
 
 
+async def get_external_base_url(db: AsyncSession) -> str:
+    """Base URL for links Bambuddy hands to the outside world (no trailing slash).
+
+    ``external_url`` is optional and has no default, so anything that must be
+    absolute — a login link in an e-mail, the one-tap outcome verdict links
+    (#1898), whose Telegram/ntfy buttons are dropped for a relative URL — falls
+    back to APP_URL and finally to the dev origin.
+    """
+    import os
+
+    external_url = await get_setting(db, "external_url")
+    if external_url:
+        return external_url.rstrip("/")
+    return os.environ.get("APP_URL", "http://localhost:5173").rstrip("/")
+
+
 async def get_external_login_url(db: AsyncSession) -> str:
     """Get the external URL for the login page.
 
@@ -140,14 +157,7 @@ async def get_external_login_url(db: AsyncSession) -> str:
     Returns:
         Full URL to the login page
     """
-    import os
-
-    external_url = await get_setting(db, "external_url")
-    if external_url:
-        external_url = external_url.rstrip("/")
-    else:
-        external_url = os.environ.get("APP_URL", "http://localhost:5173")
-    return external_url + "/login"
+    return await get_external_base_url(db) + "/login"
 
 
 async def set_setting(db: AsyncSession, key: str, value: str) -> None:
@@ -155,6 +165,96 @@ async def set_setting(db: AsyncSession, key: str, value: str) -> None:
     from backend.app.core.db_dialect import upsert_setting
 
     await upsert_setting(db, Settings, key, value)
+
+
+# Settings stored as booleans / numbers. Storage is a VARCHAR column, so
+# _build_settings_response() parses these back, and update_settings() refuses
+# an explicit null for them: a null is stored as the literal "None", which
+# reads back as False for a boolean and is not a number at all.
+_BOOL_SETTING_KEYS = frozenset(
+    {
+        "auto_archive",
+        "save_thumbnails",
+        "capture_finish_photo",
+        "finish_photo_restore_plate",
+        "spoolman_enabled",
+        "spoolman_disable_weight_sync",
+        "spoolman_report_partial_usage",
+        "auto_add_unknown_rfid",
+        "disable_filament_warnings",
+        "prefer_lowest_filament",
+        "check_updates",
+        "check_printer_firmware",
+        "include_beta_updates",
+        "virtual_printer_enabled",
+        "ftp_retry_enabled",
+        "mqtt_enabled",
+        "mqtt_use_tls",
+        "ha_enabled",
+        "per_printer_mapping_expanded",
+        "prometheus_enabled",
+        "user_notifications_enabled",
+        "queue_drying_enabled",
+        "queue_drying_block",
+        "ambient_drying_enabled",
+        "print_drying_enabled",
+        "require_plate_clear",
+        "queue_shortest_first",
+        # default_bed_levelling / default_flow_cali / default_nozzle_offset_cali
+        # are tri-state strings (off/on/auto) — parsed via the raw-string else
+        # branch; the TriState validator coerces legacy "true"/"false" rows.
+        "default_vibration_cali",
+        "default_layer_inspect",
+        "default_timelapse",
+        "default_confirm_outcome",
+        "confirm_outcome_external_prints",
+        "confirm_default_good_on_plate_clear",
+        "billing_enabled",
+        "printer_kill_switch_enabled",
+        "ldap_enabled",
+        "ldap_auto_provision",
+        "local_login_enabled",
+        "preheat_enabled",
+        "queue_keep_bed_warm",
+    }
+)
+
+_FLOAT_SETTING_KEYS = frozenset(
+    {
+        "default_filament_cost",
+        "energy_cost_per_kwh",
+        "ams_temp_good",
+        "ams_temp_fair",
+        "library_disk_warning_gb",
+        "low_stock_threshold",
+    }
+)
+
+_INT_SETTING_KEYS = frozenset(
+    {
+        "ams_humidity_good",
+        "ams_humidity_fair",
+        "ams_history_retention_days",
+        "printer_sensor_history_retention_days",
+        "ftp_retry_count",
+        "ftp_retry_delay",
+        "ftp_timeout",
+        "mqtt_port",
+        "stagger_group_size",
+        "stagger_interval_minutes",
+        "forecast_global_lead_time_days",
+        "location_sensor_poll_interval",
+        "finance_budget_reset_day",
+        "session_max_hours",
+        "pipeline_max_copies",
+        "preheat_max_wait_seconds",
+        "preheat_soak_seconds",
+        "queue_keep_warm_bed_temp",
+        "queue_keep_warm_max_minutes",
+        "queue_max_concurrent_uploads",
+        "ambient_drying_sustained_minutes",
+    }
+)
 
 
 async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -> AppSettings:
@@ -165,91 +265,27 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
     for setting in result.scalars().all():
         if setting.key not in settings_dict:
             continue
-        if setting.key in [
-            "auto_archive",
-            "save_thumbnails",
-            "capture_finish_photo",
-            "finish_photo_restore_plate",
-            "spoolman_enabled",
-            "spoolman_disable_weight_sync",
-            "spoolman_report_partial_usage",
-            "auto_add_unknown_rfid",
-            "disable_filament_warnings",
-            "prefer_lowest_filament",
-            "check_updates",
-            "check_printer_firmware",
-            "include_beta_updates",
-            "virtual_printer_enabled",
-            "ftp_retry_enabled",
-            "mqtt_enabled",
-            "mqtt_use_tls",
-            "ha_enabled",
-            "per_printer_mapping_expanded",
-            "prometheus_enabled",
-            "user_notifications_enabled",
-            "queue_drying_enabled",
-            "queue_drying_block",
-            "ambient_drying_enabled",
-            "print_drying_enabled",
-            "require_plate_clear",
-            "queue_shortest_first",
-            # default_bed_levelling / default_flow_cali / default_nozzle_offset_cali
-            # are tri-state strings (off/on/auto) — parsed via the raw-string else
-            # branch; the TriState validator coerces legacy "true"/"false" rows.
-            "default_vibration_cali",
-            "default_layer_inspect",
-            "default_timelapse",
-            "billing_enabled",
-            "printer_kill_switch_enabled",
-            "ldap_enabled",
-            "ldap_auto_provision",
-            "local_login_enabled",
-            "preheat_enabled",
-            "queue_keep_bed_warm",
-        ]:
+        if setting.key in _BOOL_SETTING_KEYS:
             settings_dict[setting.key] = setting.value.lower() == "true"
-        elif setting.key in [
-            "default_filament_cost",
-            "energy_cost_per_kwh",
-            "ams_temp_good",
-            "ams_temp_fair",
-            "library_disk_warning_gb",
-            "low_stock_threshold",
-        ]:
-            settings_dict[setting.key] = float(setting.value)
+        elif setting.key in _FLOAT_SETTING_KEYS or setting.key in _INT_SETTING_KEYS:
+            # A value that does not parse (the literal "None" from an old
+            # null save, or a hand-edited row) keeps the default instead of
+            # taking the whole settings response down with it.
+            parse = int if setting.key in _INT_SETTING_KEYS else float
+            try:
+                settings_dict[setting.key] = parse(setting.value)
+            except (TypeError, ValueError):
+                logger.warning("Setting %s has an unparseable value; using the default", setting.key)
         elif setting.key in [
             # Nullable floats. Settings storage stringifies None to the literal
-            # "None", so these cannot go in the list above -- float("None")
-            # raises and would take the whole settings response with it (#2905).
+            # "None", which must read back as null here -- not as the default
+            # the _FLOAT_SETTING_KEYS branch above falls back to (#2905).
             "ams_temp_alarm",
         ]:
             try:
                 settings_dict[setting.key] = float(setting.value)
             except (TypeError, ValueError):
                 settings_dict[setting.key] = None
-        elif setting.key in [
-            "ams_humidity_good",
-            "ams_humidity_fair",
-            "ams_history_retention_days",
-            "printer_sensor_history_retention_days",
-            "ftp_retry_count",
-            "ftp_retry_delay",
-            "ftp_timeout",
-            "mqtt_port",
-            "stagger_group_size",
-            "stagger_interval_minutes",
-            "forecast_global_lead_time_days",
-            "location_sensor_poll_interval",
-            "finance_budget_reset_day",
-            "session_max_hours",
-            "pipeline_max_copies",
-            "preheat_max_wait_seconds",
-            "preheat_soak_seconds",
-            "queue_keep_warm_bed_temp",
-            "queue_keep_warm_max_minutes",
-            "queue_max_concurrent_uploads",
-        ]:
-            settings_dict[setting.key] = int(setting.value)
         elif setting.key == "default_printer_id":
             settings_dict[setting.key] = int(setting.value) if setting.value and setting.value != "None" else None
         elif setting.key == "open_in_slicer":
@@ -293,6 +329,16 @@ async def update_settings(
 ):
     """Update application settings."""
     update_data = settings_update.model_dump(exclude_unset=True)
+
+    # An explicit null for a boolean or numeric setting has no meaning -- these
+    # are not clearable -- and would be stored as the literal "None".
+    null_keys = sorted(
+        key
+        for key, value in update_data.items()
+        if value is None and key in (_BOOL_SETTING_KEYS | _FLOAT_SETTING_KEYS | _INT_SETTING_KEYS)
+    )
+    if null_keys:
+        raise HTTPException(status_code=422, detail=f"These settings cannot be null: {', '.join(null_keys)}")
 
     # Safety refusals on disabling local login (#1589). Two failure modes
     # would otherwise lock everyone out of the install:
@@ -397,7 +443,7 @@ class ElectricityPriceUpdate(BaseModel):
 async def update_electricity_price(
     payload: ElectricityPriceUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_energy_cost_update()),
+    _: ScopedCaller = Depends(require_energy_cost_update()),
     _is_api_key: bool = Depends(caller_is_api_key),
 ):
     """Update the per-kWh electricity cost used by the energy-tracking pipeline.
@@ -792,6 +838,20 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
                 except PermissionError as e:
                     logger.warning("Permission denied copying %s: %s", name, e)
 
+        # Say which version made this, so a restore that cannot import it can
+        # name the versions rather than a list of columns. Backups from before
+        # this existed simply have no manifest, and restore treats the version
+        # as unknown.
+        import json as _json
+
+        manifest = {
+            "format": 1,
+            "app_version": APP_VERSION,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "database": "sqlite" if is_sqlite() else "postgresql",
+        }
+        (temp_path / "manifest.json").write_text(_json.dumps(manifest, indent=2) + "\n")
+
         # Include the MFA encryption key as a ZIP top-level entry alongside
         # bambuddy.db. Without it, encrypted client_secret / TOTP secret rows
         # would be unrecoverable after restore on a host without MFA_ENCRYPTION_KEY set.
@@ -853,6 +913,119 @@ async def create_backup(
         )
 
 
+class BackupSchemaIncompatible(Exception):
+    """The backup has no value for a column this version requires.
+
+    A backup carries the schema of the install that made it. Restoring it into
+    a different version means the destination can have NOT NULL columns the
+    backup never heard of -- either because that version is older and still has
+    a column since removed (``user_wallets.currency``, dropped in #3123), or
+    because it is newer and has added one. Most such columns have a default and
+    can simply be filled. The ones that cannot are what this reports, and it has
+    to be reported BEFORE the restore drops anything: the Postgres import wipes
+    every table in the first transaction, so a failure halfway leaves the
+    install with an empty schema and the previous data gone.
+    """
+
+
+def _missing_required_columns(pg_table, src_columns: set[str]):
+    """Split the destination's NOT NULL columns that the backup lacks.
+
+    Returns ``(injectable, db_filled, unfillable)``:
+
+    * ``injectable`` -- ``{name: value}`` from the model's Python-side default.
+      These are invisible to the import's raw SQL: SQLAlchemy applies a
+      ``default=`` on ORM and Core inserts, never on ``text()``, and
+      ``create_all`` emits no DDL default for one. So a column like
+      ``currency VARCHAR(3) NOT NULL`` with ``default="EUR"`` arrives with
+      nothing to put in it unless we put it there.
+    * ``db_filled`` -- has a server default or is the autoincrement key; the
+      database fills it when the column is left out of the INSERT.
+    * ``unfillable`` -- nothing can supply a value. The backup is incompatible.
+    """
+    injectable: dict = {}
+    db_filled: list[str] = []
+    unfillable: list[str] = []
+
+    for col in pg_table.columns:
+        if col.nullable or col.name in src_columns:
+            continue
+        if col.default is not None:
+            arg = col.default.arg
+            injectable[col.name] = arg(None) if callable(arg) else arg
+        elif col.server_default is not None or col.primary_key:
+            db_filled.append(col.name)
+        else:
+            unfillable.append(col.name)
+
+    return injectable, db_filled, unfillable
+
+
+def check_backup_schema_compatible(sqlite_path: Path, backup_version: str | None = None) -> None:
+    """Raise if this version cannot import that backup. Touches nothing.
+
+    Only the cross-engine path needs this. A SQLite install restores by copying
+    the backup's pages, schema included, and `init_db()` migrates it forward
+    afterwards; the Postgres import instead recreates the schema from THIS
+    process's ORM and then inserts the backup's columns into it.
+    """
+    import sqlite3
+
+    from backend.app.core.database import Base
+
+    src = sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True)
+    try:
+        src_tables = {
+            row[0]
+            for row in src.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'archive_fts%'"
+            )
+        }
+        problems: list[str] = []
+        # metadata.tables, not sorted_tables: the latter warns about the
+        # library_files/library_folders/print_archives cycle, and nothing here
+        # depends on the order.
+        for name, pg_table in Base.metadata.tables.items():
+            if name not in src_tables:
+                continue
+            # An empty table inserts nothing, so a column it cannot supply
+            # cannot fail. Refusing a restore over one would be a false alarm.
+            if src.execute(f'SELECT 1 FROM "{name}" LIMIT 1').fetchone() is None:  # noqa: S608  # nosec B608 — name comes from ORM metadata
+                continue
+            src_columns = {row[1] for row in src.execute(f'PRAGMA table_info("{name}")')}
+            _, _, unfillable = _missing_required_columns(pg_table, src_columns)
+            problems.extend(f"{name}.{col}" for col in unfillable)
+    finally:
+        src.close()
+
+    if not problems:
+        return
+
+    made_by = f"The backup was made by Bambuddy {backup_version}, " if backup_version else "The backup "
+    raise BackupSchemaIncompatible(
+        "This backup cannot be restored by this version of Bambuddy. It carries no value for "
+        f"{len(problems)} column(s) this version requires and cannot default: {', '.join(sorted(problems))}. "
+        f"{made_by}and this install runs {APP_VERSION}. Restore it on the version that made it, or "
+        "upgrade this install to that version. Nothing has been changed."
+    )
+
+
+def _read_backup_manifest(temp_path: Path) -> dict:
+    """The backup's manifest.json, or {} for a backup made before it existed."""
+    import json
+
+    path = temp_path / "manifest.json"
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        logger.warning("Ignoring unreadable backup manifest: %s", exc)
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 async def _import_sqlite_to_postgres(sqlite_path: Path, postgres_url: str):
     """Import data from a SQLite database file into the current PostgreSQL database.
 
@@ -864,6 +1037,11 @@ async def _import_sqlite_to_postgres(sqlite_path: Path, postgres_url: str):
     from sqlalchemy import text
 
     from backend.app.core.database import Base, _create_engine
+
+    # Before anything is dropped. The route checks this too, earlier and with
+    # the backup's version in the message; this call is what makes the guarantee
+    # a property of the import itself rather than of one caller.
+    check_backup_schema_compatible(sqlite_path)
 
     # Create a temporary engine for the import (current engine was disposed)
     pg_engine = _create_engine()
@@ -973,8 +1151,24 @@ async def _import_sqlite_to_postgres(sqlite_path: Path, postgres_url: str):
                 if not columns:
                     continue
 
-                col_list = ", ".join(columns)
-                param_list = ", ".join(f":{c}" for c in columns)
+                # Columns this schema requires that the backup does not have at
+                # all. The block below handles a column PRESENT in the backup
+                # with a NULL in it; one the backup never had is not in
+                # `columns` and so never reached it -- which is how a backup
+                # from an install without `user_wallets.currency` died on
+                # NotNullViolationError against a version that still had it.
+                injected, _db_filled, _unfillable = _missing_required_columns(pg_table, set(src_columns))
+                if injected:
+                    logger.info(
+                        "Filling %s column(s) absent from the backup in %s: %s",
+                        len(injected),
+                        table_name,
+                        ", ".join(sorted(injected)),
+                    )
+
+                insert_columns = columns + list(injected)
+                col_list = ", ".join(insert_columns)
+                param_list = ", ".join(f":{c}" for c in insert_columns)
                 # ON CONFLICT DO NOTHING handles duplicate rows from SQLite (which doesn't enforce unique constraints)
                 insert_sql = text(f"INSERT INTO {table_name} ({col_list}) VALUES ({param_list}) ON CONFLICT DO NOTHING")  # noqa: S608  # nosec B608
 
@@ -1015,9 +1209,15 @@ async def _import_sqlite_to_postgres(sqlite_path: Path, postgres_url: str):
                 now = dt.now()
 
                 def _convert_row(
-                    row, cols=columns, bools=bool_columns, dts=datetime_columns, nn_defaults=not_null_defaults, _now=now
+                    row,
+                    cols=columns,
+                    bools=bool_columns,
+                    dts=datetime_columns,
+                    nn_defaults=not_null_defaults,
+                    _now=now,
+                    inject=injected,
                 ):
-                    result = {}
+                    result = dict(inject)
                     for c in cols:
                         val = row[c]
                         if val is None and c in nn_defaults:
@@ -1148,6 +1348,30 @@ async def restore_backup(
         backup_db = temp_path / "bambuddy.db"
         if not backup_db.exists():
             raise HTTPException(400, "Invalid backup: missing bambuddy.db")
+
+        # 2b. Can this version import this backup at all?
+        #
+        # Deliberately here: everything below has a side effect. The virtual
+        # printer stops, background services stop, the MFA key file is
+        # overwritten with the backup's -- and then the Postgres import drops
+        # every table in its first transaction. A backup rejected at the INSERT
+        # took the install's data with it and left the encrypted secrets under a
+        # key that no longer matches. Nothing above this line has touched
+        # anything.
+        import sqlite3
+
+        manifest = _read_backup_manifest(temp_path)
+        backup_version = manifest.get("app_version")
+        if backup_version:
+            logger.info("Backup was created by Bambuddy %s; this install runs %s", backup_version, APP_VERSION)
+        if not is_sqlite():
+            try:
+                check_backup_schema_compatible(backup_db, backup_version)
+            except BackupSchemaIncompatible as exc:
+                logger.error("Refusing backup: %s", exc)
+                raise HTTPException(400, str(exc)) from exc
+            except sqlite3.DatabaseError as exc:
+                raise HTTPException(400, f"Invalid backup: bambuddy.db is not readable ({exc})") from exc
 
         try:
             import asyncio

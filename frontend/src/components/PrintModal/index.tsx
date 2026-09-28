@@ -1,5 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, AlertTriangle, Loader2, Pencil, Printer, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Loader2, Pencil, Printer, ThumbsUp, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { CostCenterSummary, PrintQueueItemCreate, PrintQueueItemUpdate, SlotMaterial } from '../../api/client';
@@ -40,6 +40,39 @@ import type {
   ScheduleType,
 } from './types';
 import { DEFAULT_PRINT_OPTIONS, DEFAULT_SCHEDULE_OPTIONS } from './types';
+
+/** Same filament: type ignoring case, colour as RRGGBB ignoring `#`, case and alpha. */
+function isSameFilament(a: { type: string; color: string }, b: { type: string; color: string }): boolean {
+  const hex = (c: string) => (c || '').replace('#', '').toLowerCase().slice(0, 6);
+  return (a.type || '').toUpperCase() === (b.type || '').toUpperCase() && hex(a.color) === hex(b.color);
+}
+
+/**
+ * The filament list as the tray matcher should see it: each overridden slot
+ * asks for the override's type and colour, not the 3MF's (#3133). Mirrors the
+ * scheduler's `_apply_filament_overrides` for a manual override — the 3MF's
+ * `tray_info_idx` names the replaced spool's SKU, so it is dropped and matching
+ * falls back to type + colour. An entry naming the slot's own filament is no
+ * swap — a virtual printer's force-colour entries are exactly that — so the
+ * slot keeps its idx and with it the PLA-variant pin (#2650). Slots with no
+ * override pass through unchanged.
+ */
+function withFilamentOverrides(
+  reqs: FilamentReqsData | undefined,
+  overrides: Record<number, { type: string; color: string }>,
+): FilamentReqsData | undefined {
+  const isSwap = (f: FilamentReqsData['filaments'][number]) => {
+    const override = overrides[f.slot_id];
+    return !!override && !isSameFilament(override, f);
+  };
+  if (!reqs?.filaments || !reqs.filaments.some(isSwap)) return reqs;
+  return {
+    ...reqs,
+    filaments: reqs.filaments.map((f) =>
+      isSwap(f) ? { ...f, type: overrides[f.slot_id].type, color: overrides[f.slot_id].color, tray_info_idx: '' } : f,
+    ),
+  };
+}
 
 /**
  * Unified PrintModal component that handles queue item creation and editing.
@@ -142,6 +175,7 @@ export function PrintModal({
         layer_inspect: queueItem.layer_inspect ?? DEFAULT_PRINT_OPTIONS.layer_inspect,
         timelapse: queueItem.timelapse ?? DEFAULT_PRINT_OPTIONS.timelapse,
         nozzle_offset_cali: queueItem.nozzle_offset_cali ?? DEFAULT_PRINT_OPTIONS.nozzle_offset_cali,
+        confirm_outcome: queueItem.confirm_outcome ?? DEFAULT_PRINT_OPTIONS.confirm_outcome,
         preheat_override: queueItem.preheat_override ?? DEFAULT_PRINT_OPTIONS.preheat_override,
         preheat_chamber_target_override: queueItem.preheat_chamber_target_override ?? DEFAULT_PRINT_OPTIONS.preheat_chamber_target_override,
       };
@@ -292,6 +326,7 @@ export function PrintModal({
       layer_inspect: settings.default_layer_inspect ?? DEFAULT_PRINT_OPTIONS.layer_inspect,
       timelapse: settings.default_timelapse ?? DEFAULT_PRINT_OPTIONS.timelapse,
       nozzle_offset_cali: settings.default_nozzle_offset_cali ?? DEFAULT_PRINT_OPTIONS.nozzle_offset_cali,
+      confirm_outcome: settings.default_confirm_outcome ?? DEFAULT_PRINT_OPTIONS.confirm_outcome,
       preheat_override: DEFAULT_PRINT_OPTIONS.preheat_override,
       preheat_chamber_target_override: DEFAULT_PRINT_OPTIONS.preheat_chamber_target_override,
     });
@@ -460,6 +495,16 @@ export function PrintModal({
   // Combine filament requirements from either source
   const effectiveFilamentReqs = isLibraryFile ? libraryFilamentReqs : archiveFilamentReqs;
 
+  // What the tray matching works from. An override chosen in model mode stays
+  // in force when the job is moved to a specific printer (#3133), so that
+  // printer's trays are matched against the requested filament rather than the
+  // one the 3MF was sliced with. The override panel keeps the original list —
+  // it shows "sliced brown, print Bone White".
+  const mappingFilamentReqs = useMemo(
+    () => withFilamentOverrides(effectiveFilamentReqs, filamentOverrides),
+    [effectiveFilamentReqs, filamentOverrides],
+  );
+
   // Fetch available filaments for model-based assignment (for filament override UI)
   const { data: availableFilaments } = useQuery({
     queryKey: ['available-filaments', targetModel, targetLocation],
@@ -540,7 +585,7 @@ export function PrintModal({
 
   // Get AMS mapping from hook (only when single printer selected)
   const { amsMapping } = useFilamentMapping(
-    effectiveFilamentReqs,
+    mappingFilamentReqs,
     printerStatus,
     manualMappings,
     singlePrinterPreferLowest,
@@ -597,6 +642,16 @@ export function PrintModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPlateIds, perPlateReqQueries.map((q) => q.dataUpdatedAt).join('|')]);
 
+  // Per-plate twin of `mappingFilamentReqs`: slot ids are global to the file, so
+  // one override applies to every plate that prints that slot (#3133).
+  const mappingPerPlateReqs = useMemo(() => {
+    const byPlate = new Map<number, FilamentReqsData>();
+    for (const [plateId, reqs] of perPlateReqs) {
+      byPlate.set(plateId, withFilamentOverrides(reqs, filamentOverrides) ?? reqs);
+    }
+    return byPlate;
+  }, [perPlateReqs, filamentOverrides]);
+
   // Manual slot overrides are per plate: slot 3 of plate 1 and slot 3 of plate 2
   // are different prints and may want different trays.
   const [manualMappingsByPlate, setManualMappingsByPlate] = useState<Record<number, Record<number, number>>>({});
@@ -629,7 +684,7 @@ export function PrintModal({
     const inventoryByTrayId = inventoryByTrayIdPerPrinter.get(effectivePrinterId);
 
     for (const plateId of selectedPlateIds) {
-      const reqs = perPlateReqs.get(plateId);
+      const reqs = mappingPerPlateReqs.get(plateId);
       if (!reqs) continue;
       const comparison = buildFilamentComparison(
         reqs,
@@ -648,7 +703,7 @@ export function PrintModal({
     printerStatus,
     inventoryByTrayIdPerPrinter,
     selectedPlateIds,
-    perPlateReqs,
+    mappingPerPlateReqs,
     manualMappingsByPlate,
     singlePrinterPreferLowest,
     selectedPrinters.length,
@@ -658,7 +713,7 @@ export function PrintModal({
   const multiPrinterMapping = useMultiPrinterFilamentMapping(
     selectedPrinters,
     printers,
-    effectiveFilamentReqs,
+    mappingFilamentReqs,
     manualMappings,
     perPrinterConfigs,
     setPerPrinterConfigs,
@@ -716,18 +771,27 @@ export function PrintModal({
     }
   }, [mode, selectedPrinters, selectedPlate, initialPrinterIds, initialPlateId]);
 
-  // Clear filament overrides when target model or plate changes (but not on initial mount for edit mode)
+  // Clear filament overrides when target model or plate changes (but not on initial mount for edit mode).
+  // `prevTargetModel` is the last model actually targeted, so it skips nulls:
+  // "Any P2S" -> "Specific Printer" empties targetModel without naming another
+  // model, and the override is the job's filament, not a tray on some printer —
+  // it survives the switch and is matched against the chosen printer (#3133).
+  // Going P2S -> (none) -> X1C still compares P2S with X1C and clears.
   const [prevTargetModel, setPrevTargetModel] = useState(targetModel);
   const [prevPlateForOverrides, setPrevPlateForOverrides] = useState(selectedPlate);
   useEffect(() => {
-    if (targetModel !== prevTargetModel || selectedPlate !== prevPlateForOverrides) {
-      setPrevTargetModel(targetModel);
-      setPrevPlateForOverrides(selectedPlate);
-      // Don't clear on initial render in edit mode (values are initialized from queueItem)
-      if (mode !== 'edit-queue-item' || prevTargetModel !== null) {
-        setFilamentOverrides({});
-        setForceColorMatch({});
-      }
+    const modelChanged = targetModel !== null && targetModel !== prevTargetModel;
+    const plateChanged = selectedPlate !== prevPlateForOverrides;
+    if (!modelChanged && !plateChanged) return;
+    if (modelChanged) setPrevTargetModel(targetModel);
+    if (plateChanged) setPrevPlateForOverrides(selectedPlate);
+    // A first model after none is a choice, not a change: nothing was picked
+    // against another model's filaments. That also covers the initial render in
+    // edit mode, where the values are initialized from queueItem.
+    if (modelChanged && !plateChanged && prevTargetModel === null) return;
+    if (mode !== 'edit-queue-item' || prevTargetModel !== null) {
+      setFilamentOverrides({});
+      setForceColorMatch({});
     }
   }, [targetModel, selectedPlate, prevTargetModel, prevPlateForOverrides, mode]);
 
@@ -1016,8 +1080,22 @@ export function PrintModal({
     // Convert filament overrides from Record to array format for API.
     // Include all slots that either have a user override or have force_color_match enabled
     // (which is the default for model-based assignment).
+    // The dialog keeps an override as type + colour only, so an entry that comes
+    // back unchanged gets the variant id the item already carried re-attached. A
+    // virtual printer writes force-colour entries with the 3MF's tray_info_idx to
+    // tell Basic, Matte and Silk PLA apart (#2650); saving the item — which a
+    // specific-printer edit now does for the overrides too (#3133) — must not
+    // quietly drop that pin. A changed entry is a swap and has no idx to keep.
+    const storedOverrideBySlot = new Map(
+      (mode === 'edit-queue-item' ? queueItem?.filament_overrides ?? [] : []).map((o) => [o.slot_id, o]),
+    );
+    const storedVariantFor = (slotId: number, type: string, color: string) => {
+      const stored = storedOverrideBySlot.get(slotId);
+      return stored?.tray_info_idx && isSameFilament(stored, { type, color }) ? { tray_info_idx: stored.tray_info_idx } : {};
+    };
+
     const buildFilamentOverridesArray = (reqs: FilamentReqsData | undefined) => {
-      const entries: Array<{ slot_id: number; type: string; color: string; color_name: string; force_color_match: boolean }> = [];
+      const entries: Array<{ slot_id: number; type: string; color: string; color_name: string; tray_info_idx?: string; force_color_match: boolean }> = [];
 
       // Process all slots from filament requirements (to capture force_color_match defaults)
       if (reqs?.filaments) {
@@ -1029,7 +1107,7 @@ export function PrintModal({
 
           // Include slot if user changed the filament OR force_color_match is enabled
           if (userOverride || isForceColor) {
-            entries.push({ slot_id: req.slot_id, type: effectiveType, color: effectiveColor, color_name: getColorName(effectiveColor), force_color_match: isForceColor });
+            entries.push({ slot_id: req.slot_id, type: effectiveType, color: effectiveColor, color_name: getColorName(effectiveColor), ...storedVariantFor(req.slot_id, effectiveType, effectiveColor), force_color_match: isForceColor });
           }
         }
       } else {
@@ -1037,7 +1115,7 @@ export function PrintModal({
         for (const [slotId, { type, color }] of Object.entries(filamentOverrides)) {
           const id = parseInt(slotId, 10);
           const isForceColor = forceColorMatch[id] ?? false;
-          entries.push({ slot_id: id, type, color, color_name: getColorName(color), force_color_match: isForceColor });
+          entries.push({ slot_id: id, type, color, color_name: getColorName(color), ...storedVariantFor(id, type, color), force_color_match: isForceColor });
         }
       }
 
@@ -1056,6 +1134,16 @@ export function PrintModal({
       isMultiPlateSelection && plateId !== null
         ? buildFilamentOverridesArray(perPlateReqs.get(plateId))
         : filamentOverridesArray;
+
+    // A specific-printer job carries only the slots the user actually changed
+    // (#3133): the tray mapping was matched against them, and they are what the
+    // scheduler needs if it has to recompute that mapping at dispatch. The
+    // force-colour flags on their own stay behind — printer mode never sent
+    // them, and changing that is not what this is for.
+    const printerOverridesForPlate = (plateId: number | null) => {
+      const entries = overridesForPlate(plateId)?.filter((o) => filamentOverrides[o.slot_id]);
+      return entries && entries.length > 0 ? entries : undefined;
+    };
 
     // Cross-model alternatives (#671): ONE item carrying a candidate per file,
     // in the order the user arranged. This returns before the plate/printer
@@ -1175,7 +1263,7 @@ export function PrintModal({
       printer_id: assignmentMode === 'printer' ? printerId : null,
       target_model: assignmentMode === 'model' ? targetModel : null,
       target_location: assignmentMode === 'model' ? targetLocation : null,
-      filament_overrides: assignmentMode === 'model' ? overridesForPlate(plateId) : undefined,
+      filament_overrides: assignmentMode === 'model' ? overridesForPlate(plateId) : printerOverridesForPlate(plateId),
       // Use library_file_id for library files, archive_id for archives
       archive_id: isLibraryFile ? undefined : archiveId,
       library_file_id: isLibraryFile ? libraryFileId : undefined,
@@ -1280,6 +1368,10 @@ export function PrintModal({
                 printer_id: printerId,
                 target_model: null,
                 target_location: null,
+                // null, not undefined: omitting the field left a model job's
+                // overrides on the row after it moved to a printer, whatever the
+                // user did with them here (#3133).
+                filament_overrides: printerOverridesForPlate(plateId) ?? null,
                 require_previous_success: scheduleOptions.requirePreviousSuccess,
                 auto_off_after: scheduleOptions.autoOffAfter,
                 gcode_injection: scheduleOptions.gcodeInjection,
@@ -1667,7 +1759,7 @@ export function PrintModal({
                 // fan-out across printers ships no mapping at all (the scheduler maps
                 // each plate against the printer it picks), so the editor would be
                 // collecting tray choices it then throws away. Withhold its input.
-                filamentReqs={isMultiPlateSelection ? undefined : effectiveFilamentReqs}
+                filamentReqs={isMultiPlateSelection ? undefined : mappingFilamentReqs}
                 onAutoConfigurePrinter={multiPrinterMapping.autoConfigurePrinter}
                 onUpdatePrinterConfig={multiPrinterMapping.updatePrinterConfig}
                 assignmentMode={assignmentMode}
@@ -1767,7 +1859,7 @@ export function PrintModal({
             {showFilamentMapping && !archiveDataMissing && selectedPrinters.length === 1 && (
               <FilamentMapping
                 printerId={effectivePrinterId!}
-                filamentReqs={effectiveFilamentReqs}
+                filamentReqs={mappingFilamentReqs}
                 manualMappings={manualMappings}
                 onManualMappingChange={setManualMappings}
                 onEstimatedCostChange={setEstimatedCost}
@@ -1790,7 +1882,7 @@ export function PrintModal({
                 own print with its own slots, so it gets its own AMS mapping. */}
             {showPerPlateFilamentMapping && !archiveDataMissing && selectedPlateIds.map((plateId) => {
               const plate = plates.find((p) => p.index === plateId);
-              const plateReqs = perPlateReqs.get(plateId);
+              const plateReqs = mappingPerPlateReqs.get(plateId);
               if (!plateReqs) return null;
               return (
                 <FilamentMapping
@@ -1887,6 +1979,24 @@ export function PrintModal({
               printerCount={selectedPrinters.length}
               hasGcodeSnippets={!!settings?.gcode_snippets}
             />
+
+            {/* Outcome prompt (#1898) sits outside the collapsed Print Options
+                panel so it is discoverable; it edits the same printOptions
+                field as the row inside the panel. */}
+            <button
+              type="button"
+              aria-pressed={printOptions.confirm_outcome}
+              title={t('printModal.askForOutcomeTitle')}
+              onClick={() => setPrintOptions((prev) => ({ ...prev, confirm_outcome: !prev.confirm_outcome }))}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm transition-colors ${
+                printOptions.confirm_outcome
+                  ? 'bg-bambu-green/20 border-bambu-green text-bambu-green'
+                  : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
+              }`}
+            >
+              <ThumbsUp className="w-4 h-4" />
+              {t('printModal.askForOutcome')}
+            </button>
 
             {/* Error message */}
             {updateQueueMutation.isError && (

@@ -9,6 +9,7 @@ from pathlib import Path
 import defusedxml.ElementTree as ET
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, func, inspect, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -471,6 +472,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "timelapse": item.timelapse,
         "use_ams": item.use_ams,
         "nozzle_offset_cali": item.nozzle_offset_cali,
+        "confirm_outcome": item.confirm_outcome,
         "preheat_override": item.preheat_override,
         "preheat_chamber_target_override": item.preheat_chamber_target_override,
         "status": item.status,
@@ -906,29 +908,34 @@ async def add_to_queue(
     # Extract filament types for model-based assignment (used by scheduler for validation)
     required_filament_types = None
     file_path = None
+    # Get file path from archive or library file
+    if archive:
+        file_path = settings.base_dir / archive.file_path
+    elif library_file:
+        lib_path = Path(library_file.file_path)
+        file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
     if target_model_norm:
-        # Get file path from archive or library file
-        if archive:
-            file_path = settings.base_dir / archive.file_path
-        elif library_file:
-            lib_path = Path(library_file.file_path)
-            file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
-
         if file_path and file_path.exists():
             filament_types = _extract_filament_types_from_3mf(file_path, data.plate_id)
             if filament_types:
                 required_filament_types = json.dumps(filament_types)
                 logger.info("Extracted filament types for model-based queue: %s", filament_types)
 
-    # If filament overrides are provided, update required_filament_types to match override types
+    # If filament overrides are provided, update required_filament_types to match override types.
+    # A specific-printer job keeps its overrides too (#3133): an override chosen for
+    # "Any P2S" survives the switch to one P2S in the print dialog, and when the
+    # dialog could not resolve every tray the scheduler recomputes the mapping at
+    # dispatch — against the 3MF's filament, unless the row still says otherwise.
+    # The type list below stays model-only; it gates which printer of a model is
+    # eligible, which a printer-targeted job has already settled.
     filament_overrides_json = None
-    if data.filament_overrides and target_model_norm:
+    if data.filament_overrides and (target_model_norm or data.printer_id is not None):
         plate_overrides = overrides_for_plate(data.filament_overrides, file_path, data.plate_id)
         if plate_overrides:
             filament_overrides_json = json.dumps(plate_overrides)
             # Update required_filament_types from overrides so scheduler validates against overridden types
             override_types = sorted({o["type"] for o in plate_overrides if "type" in o})
-            if override_types:
+            if override_types and target_model_norm:
                 # Merge with existing types (overrides may only cover some slots)
                 existing_types = set(json.loads(required_filament_types)) if required_filament_types else set()
                 # Replace types for overridden slots, keep others
@@ -1187,6 +1194,7 @@ async def add_to_queue(
             timelapse=data.timelapse,
             use_ams=data.use_ams,
             nozzle_offset_cali=data.nozzle_offset_cali,
+            confirm_outcome=data.confirm_outcome,
             preheat_override=data.preheat_override,
             preheat_chamber_target_override=data.preheat_chamber_target_override,
             gcode_injection=data.gcode_injection,
@@ -1419,6 +1427,12 @@ async def _load_batch_for_write(
     return batch
 
 
+# Deliberately without the existing batch's id: the caller may not be allowed
+# to read it. They can look it up by the pair, which applies the usual
+# ownership rules.
+_EXTERNAL_REF_TAKEN = "A batch for this external_source and external_ref already exists"
+
+
 @router.post("/batches", response_model=PrintBatchResponse)
 async def create_batch(
     data: PrintBatchCreate,
@@ -1444,6 +1458,15 @@ async def create_batch(
 
     plate_targets = _validate_plate_targets(data.plates)
     await _validate_batch_project(db, data.project_id, current_user)
+    if data.external_source is not None:
+        existing = await db.execute(
+            select(PrintBatch.id).where(
+                PrintBatch.external_source == data.external_source,
+                PrintBatch.external_ref == data.external_ref,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            raise HTTPException(409, _EXTERNAL_REF_TAKEN)
 
     batch = PrintBatch(
         name=data.name.strip()[:255],
@@ -1455,9 +1478,17 @@ async def create_batch(
         project_id=data.project_id,
         due_date=data.due_date,
         notes=data.notes,
+        external_source=data.external_source,
+        external_ref=data.external_ref,
     )
     db.add(batch)
-    await db.flush()  # Need batch.id before assigning to items
+    try:
+        await db.flush()  # Need batch.id before assigning to items
+    except IntegrityError:
+        # Lost a race with a concurrent create for the same external record:
+        # the unique index caught what the lookup above could not.
+        await db.rollback()
+        raise HTTPException(409, _EXTERNAL_REF_TAKEN) from None
 
     if plate_targets is not None:
         for target in plate_targets:
@@ -1658,6 +1689,8 @@ async def ungroup_batch(
 @router.get("/batches", response_model=list[PrintBatchResponse])
 async def list_batches(
     status: str | None = Query(None, description="Filter by status (active, completed, cancelled)"),
+    external_source: str | None = Query(None, description="Filter by the integration that created the batch"),
+    external_ref: str | None = Query(None, description="Filter by the external record the batch fulfils"),
     db: AsyncSession = Depends(get_db),
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(
@@ -1685,6 +1718,10 @@ async def list_batches(
     )
     if status:
         query = query.where(PrintBatch.status == status)
+    if external_source is not None:
+        query = query.where(PrintBatch.external_source == external_source)
+    if external_ref is not None:
+        query = query.where(PrintBatch.external_ref == external_ref)
     if current_user is not None and not can_read_all:
         query = query.where(PrintBatch.created_by_id == current_user.id)
     result = await db.execute(query)
@@ -1803,6 +1840,8 @@ async def _build_batch_response(
         project_id=batch.project_id,
         due_date=batch.due_date,
         notes=batch.notes,
+        external_source=batch.external_source,
+        external_ref=batch.external_ref,
         pending_count=progress.pending,
         printing_count=progress.printing,
         completed_count=progress.completed,

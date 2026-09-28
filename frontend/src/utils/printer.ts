@@ -70,7 +70,8 @@ import type { PrinterStatus, PrintQueueItem } from '../api/client';
 export function isPrinterCurrentlyDispatchable(status: PrinterStatus | undefined): boolean {
   if (!status?.connected) return false;
   if (status.awaiting_plate_clear) return false;
-  if (status.ams?.some((ams) => ams.dry_time > 0)) return false;
+  // A parked drying timer (#2896) never ends, so it does not hold a print back.
+  if (status.ams?.some((ams) => ams.dry_time > 0 && !ams.dry_countdown_stalled)) return false;
   return ['IDLE', 'FINISH', 'FAILED'].includes(status.state ?? '');
 }
 
@@ -95,6 +96,13 @@ export function filterCompatibleQueueItems(
   loadedVariants?: Set<string>
 ): PrintQueueItem[] {
   return items.filter(item => {
+    // A job bound to one printer has no printer left to choose, and the backend
+    // never gates it on filament: the scheduler maps its trays at dispatch. Such
+    // a job can carry overrides — one moved from "Any P2S" to a specific P2S
+    // keeps its colour (#3133) — and filtering on them would hide a job that is
+    // going to run from the card of the printer it is going to run on.
+    if (item.printer_id != null) return true;
+
     // Type check: all required filament types must be loaded
     if (item.required_filament_types && item.required_filament_types.length > 0 && loadedFilamentTypes !== undefined) {
       if (!item.required_filament_types.every((t: string) => loadedFilamentTypes.has(t.toUpperCase()))) {

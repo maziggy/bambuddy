@@ -56,6 +56,20 @@ DEFAULT_TEMPLATES = [
         "body_template": "{printer}: {filename}\nRemaining: {remaining_time}",
     },
     {
+        # Post-print outcome confirmation (#1898). The body carries
+        # {confirm_url}, which only opens the archive in Bambuddy: anything
+        # that walks a URL out of a message body — a preview card, a mail
+        # gateway, a proxy — then reaches a page that changes nothing.
+        # {good_url} / {reject_url} are the single-use capability links and
+        # stay available as variables, but they travel by default only in the
+        # affordances nothing prefetches: the ntfy action buttons and the
+        # Telegram inline keyboard, both built in notification_service.
+        "event_type": "print_confirm_request",
+        "name": "Print Outcome Confirmation",
+        "title_template": "How did your print come out?",
+        "body_template": "{printer}: {filename}\nConfirm: {confirm_url}",
+    },
+    {
         "event_type": "print_missing_spool_assignment",
         "name": "Missing Spool Assignment",
         "title_template": "Missing Spool Assignment",

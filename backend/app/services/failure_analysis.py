@@ -103,6 +103,29 @@ class FailureAnalysisService:
         outcome_prints = successful_prints + failed_prints
         failure_rate = (failed_prints / outcome_prints * 100) if outcome_prints > 0 else 0
 
+        # Quality dimension (#1898): a completed print the user marked as
+        # reject is machine-success but scrap. Kept OUT of failure_rate — that
+        # number stays the machine's — and reported separately, with a yield
+        # rate that treats rejects as non-good output.
+        rejected_result = await self.db.execute(
+            select(func.count(PrintLogEntry.id)).where(
+                and_(*base_filter, PrintLogEntry.status == "completed", PrintLogEntry.user_verdict == "reject")
+            )
+        )
+        rejected_prints = rejected_result.scalar() or 0
+        yield_rate = ((successful_prints - rejected_prints) / outcome_prints * 100) if outcome_prints > 0 else 0
+
+        rejects_reason_result = await self.db.execute(
+            select(
+                PrintLogEntry.failure_reason,
+                func.count(PrintLogEntry.id).label("count"),
+            )
+            .where(and_(*base_filter, PrintLogEntry.status == "completed", PrintLogEntry.user_verdict == "reject"))
+            .group_by(PrintLogEntry.failure_reason)
+            .order_by(func.count(PrintLogEntry.id).desc())
+        )
+        rejects_by_reason = {(row[0] or "Unknown"): row[1] for row in rejects_reason_result.fetchall()}
+
         # Failures by reason
         reason_result = await self.db.execute(
             select(
@@ -257,6 +280,9 @@ class FailureAnalysisService:
             "total_prints": total_prints,
             "failed_prints": failed_prints,
             "failure_rate": round(failure_rate, 1),
+            "rejected_prints": rejected_prints,
+            "yield_rate": round(yield_rate, 1),
+            "rejects_by_reason": rejects_by_reason,
             "failures_by_reason": failures_by_reason,
             "failures_by_filament": failures_by_filament,
             "failures_by_printer": failures_by_printer,

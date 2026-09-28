@@ -146,6 +146,7 @@ class TestOverlayFeedPayload:
         assert set(entry) == {
             "id",
             "name",
+            "model",
             "camera_rotation",
             "connected",
             "state",
@@ -169,6 +170,7 @@ class TestOverlayFeedPayload:
 
         response = await async_client.get(f"/api/v1/printers/{printer_row.id}/overlay-status?token={overlay_token}")
         entry = response.json()
+        assert entry["model"] == "P1S"
         assert entry["connected"] is False
         assert entry["state"] is None
         assert entry["current_print"] is None
@@ -212,6 +214,7 @@ class TestOverlayFeedPayload:
         overlay_token = await _mint(async_client, jwt, scope="overlay")
 
         response = await async_client.get(f"/api/v1/printers/{printer_row.id}/overlay-status?token={overlay_token}")
+        assert response.json()["model"] == "P1S"
         temps = response.json()["temperatures"]
 
         assert temps["nozzle"] == 219.7
@@ -222,6 +225,15 @@ class TestOverlayFeedPayload:
         assert "chamber" not in temps
         assert "nozzle_heating" not in temps
         assert "_nozzle_target_set_time" not in temps
+
+    async def test_unknown_model_is_null(self, async_client: AsyncClient, printer_row, db_session):
+        printer_row.model = None
+        await db_session.commit()
+        jwt = await _setup_admin(async_client, suffix="_nomodel")
+        overlay_token = await _mint(async_client, jwt, scope="overlay")
+        response = await async_client.get(f"/api/v1/printers/{printer_row.id}/overlay-status?token={overlay_token}")
+        assert response.status_code == 200
+        assert response.json()["model"] is None
 
     async def test_unknown_printer_is_404_not_401(self, async_client: AsyncClient):
         """A valid token for a printer id that doesn't exist is a 404 — the token

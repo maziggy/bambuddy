@@ -4,26 +4,37 @@ import { api } from '../api/client';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
 
-interface PhotoGalleryModalProps {
-  archiveId: number;
+// Archive photos resolve through `archiveId`; any other owner (a library
+// file, #3077) passes `getPhotoUrl` instead. Exactly one of the two is
+// required so a caller cannot silently end up requesting archive 0.
+type PhotoSource =
+  | { archiveId: number; getPhotoUrl?: undefined }
+  | { archiveId?: undefined; getPhotoUrl: (filename: string) => string };
+
+type PhotoGalleryModalProps = PhotoSource & {
   archiveName: string;
   photos: string[];
+  // Which photo to open on. A caller that opens the gallery from a per-photo
+  // grid passes the clicked index (#3077); one with a single "view photos"
+  // button leaves it at the first.
+  initialIndex?: number;
   onClose: () => void;
   onDelete?: (filename: string) => void;
-}
+};
 
-export function PhotoGalleryModal({
-  archiveId,
-  archiveName,
-  photos,
-  onClose,
-  onDelete,
-}: PhotoGalleryModalProps) {
-  const [currentIndex, setCurrentIndex] = useState(0);
+export function PhotoGalleryModal(props: PhotoGalleryModalProps) {
+  const { archiveName, photos, initialIndex, onClose, onDelete } = props;
+  const [currentIndex, setCurrentIndex] = useState(() =>
+    Math.min(Math.max(initialIndex ?? 0, 0), Math.max(photos.length - 1, 0))
+  );
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  // Keyboard navigation
+  // Keyboard navigation. Stands down while the delete confirmation is up:
+  // that has its own Escape handler, so one press would cancel the prompt and
+  // close the gallery underneath it, and arrow keys would move the selection
+  // out from under a confirmation already naming a photo.
   useEffect(() => {
+    if (showDeleteConfirm) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
       if (e.key === 'ArrowLeft') setCurrentIndex((i) => Math.max(0, i - 1));
@@ -31,7 +42,7 @@ export function PhotoGalleryModal({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, photos.length]);
+  }, [onClose, photos.length, showDeleteConfirm]);
 
   // Reset index if photos change
   useEffect(() => {
@@ -45,8 +56,11 @@ export function PhotoGalleryModal({
     return null;
   }
 
+  const resolvePhotoUrl = (filename: string) =>
+    props.getPhotoUrl ? props.getPhotoUrl(filename) : api.getArchivePhotoUrl(props.archiveId, filename);
+
   const currentPhoto = photos[currentIndex];
-  const photoUrl = api.getArchivePhotoUrl(archiveId, currentPhoto);
+  const photoUrl = resolvePhotoUrl(currentPhoto);
 
   const handleDownload = () => {
     const link = document.createElement('a');
@@ -61,10 +75,18 @@ export function PhotoGalleryModal({
     }
   };
 
+  // The gallery can be rendered inside another modal's overlay, and that
+  // overlay closes on a backdrop click (#3077). Dismissing the gallery must
+  // not bubble up and take the parent — and its unsaved edits — with it.
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onClose();
+  };
+
   return (
     <div
       className="fixed inset-0 bg-black/90 flex items-center justify-center z-50"
-      onClick={onClose}
+      onClick={handleBackdropClick}
     >
       <div
         className="relative w-full h-full flex flex-col"
@@ -142,7 +164,7 @@ export function PhotoGalleryModal({
                 }`}
               >
                 <img
-                  src={api.getArchivePhotoUrl(archiveId, photo)}
+                  src={resolvePhotoUrl(photo)}
                   alt={`Thumbnail ${index + 1}`}
                   className="w-full h-full object-cover"
                 />
@@ -152,19 +174,24 @@ export function PhotoGalleryModal({
         )}
       </div>
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Confirmation Modal. Wrapped so that cancelling it by clicking
+          its backdrop cancels only the confirmation — the click would
+          otherwise reach the gallery backdrop below it and close the gallery
+          as well. */}
       {showDeleteConfirm && (
-        <ConfirmModal
-          title="Delete Photo"
-          message="Delete this photo? This cannot be undone."
-          confirmText="Delete"
-          variant="danger"
-          onConfirm={() => {
-            onDelete?.(currentPhoto);
-            setShowDeleteConfirm(false);
-          }}
-          onCancel={() => setShowDeleteConfirm(false)}
-        />
+        <div onClick={(e) => e.stopPropagation()}>
+          <ConfirmModal
+            title="Delete Photo"
+            message="Delete this photo? This cannot be undone."
+            confirmText="Delete"
+            variant="danger"
+            onConfirm={() => {
+              onDelete?.(currentPhoto);
+              setShowDeleteConfirm(false);
+            }}
+            onCancel={() => setShowDeleteConfirm(false)}
+          />
+        </div>
       )}
     </div>
   );

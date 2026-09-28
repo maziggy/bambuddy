@@ -638,6 +638,36 @@ class TestPrintQueueAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_add_to_queue_keeps_overrides_on_a_specific_printer_job(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """An override picked for "Any P2S" survives the dialog's switch to one
+        P2S (#3133). The row must keep it: when the dialog could not resolve
+        every tray, the scheduler recomputes the mapping at dispatch, and without
+        the override it would match the 3MF's colour again. It used to be
+        dropped whenever the item had no target model.
+        """
+        printer = await printer_factory()
+        archive = await archive_factory()
+
+        data = {
+            "printer_id": printer.id,
+            "archive_id": archive.id,
+            "filament_overrides": [{"slot_id": 1, "type": "PLA", "color": "#F5F5DC"}],
+        }
+        response = await async_client.post("/api/v1/queue/", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["filament_overrides"] == [{"slot_id": 1, "type": "PLA", "color": "#F5F5DC"}]
+        # The type list gates which printer of a model may take the job; a job
+        # for one printer has no such choice left to make.
+        from backend.app.models.print_queue import PrintQueueItem
+
+        row = await db_session.get(PrintQueueItem, result["id"])
+        assert row.required_filament_types is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_queue_response_flags_saved_mapping_only_for_its_own_printer(
         self, async_client: AsyncClient, printer_factory, archive_factory, db_session
     ):

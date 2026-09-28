@@ -1028,3 +1028,74 @@ class TestOrderSourcePreservation:
         assert deleted.json()["deleted"] is True
         db_session.expire_all()
         assert await db_session.get(PrintQueueItem, stray["id"]) is None
+
+
+class TestBatchExternalLink:
+    """A batch can carry the external record (e.g. a shop order) it fulfils."""
+
+    async def test_link_round_trips_and_filters(self, async_client, archive_factory):
+        archive = await archive_factory()
+        order = await _create_order(
+            async_client,
+            archive.id,
+            [{"plate_id": 1, "quantity_target": 2}],
+            external_source="shopify",
+            external_ref="shop.example/orders/1042/file/7",
+        )
+        assert order["external_source"] == "shopify"
+        assert order["external_ref"] == "shop.example/orders/1042/file/7"
+        await _create_order(async_client, archive.id, [{"plate_id": 1, "quantity_target": 1}])
+
+        by_source = (await async_client.get("/api/v1/queue/batches", params={"external_source": "shopify"})).json()
+        assert [b["id"] for b in by_source] == [order["id"]]
+        by_ref = (
+            await async_client.get(
+                "/api/v1/queue/batches",
+                params={"external_source": "shopify", "external_ref": "shop.example/orders/1042/file/7"},
+            )
+        ).json()
+        assert [b["id"] for b in by_ref] == [order["id"]]
+
+    async def test_second_create_for_the_same_record_is_refused(self, async_client, archive_factory):
+        """A retried create must not produce a second batch printing the order twice."""
+        archive = await archive_factory()
+        link = {"external_source": "shopify", "external_ref": "shop.example/orders/1042/file/7"}
+        await _create_order(async_client, archive.id, [{"plate_id": 1, "quantity_target": 1}], **link)
+
+        response = await async_client.post(
+            "/api/v1/queue/batches",
+            json={"name": "Retry", "archive_id": archive.id, "plates": [{"plate_id": 1, "quantity_target": 1}], **link},
+        )
+        assert response.status_code == 409
+        listed = (await async_client.get("/api/v1/queue/batches", params=link)).json()
+        assert len(listed) == 1
+
+    async def test_same_ref_under_another_source_is_a_different_record(self, async_client, archive_factory):
+        archive = await archive_factory()
+        plates = [{"plate_id": 1, "quantity_target": 1}]
+        await _create_order(async_client, archive.id, plates, external_source="shopify", external_ref="1042")
+        await _create_order(async_client, archive.id, plates, external_source="etsy", external_ref="1042")
+
+    async def test_unlinked_batches_never_collide(self, async_client, archive_factory):
+        """NULL pairs are exempt from the unique index."""
+        archive = await archive_factory()
+        plates = [{"plate_id": 1, "quantity_target": 1}]
+        await _create_order(async_client, archive.id, plates)
+        await _create_order(async_client, archive.id, plates)
+
+    @pytest.mark.parametrize(
+        "link",
+        [
+            {"external_source": "shopify"},
+            {"external_ref": "1042"},
+            {"external_source": "Shop ify", "external_ref": "1042"},
+            {"external_source": "shopify", "external_ref": ""},
+        ],
+    )
+    async def test_incomplete_or_malformed_link_is_rejected(self, async_client, archive_factory, link):
+        archive = await archive_factory()
+        response = await async_client.post(
+            "/api/v1/queue/batches",
+            json={"name": "Order", "archive_id": archive.id, "plates": [{"plate_id": 1, "quantity_target": 1}], **link},
+        )
+        assert response.status_code == 422

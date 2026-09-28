@@ -59,9 +59,13 @@ from backend.app.services.printer_manager import (
     supports_drying_while_printing,
 )
 from backend.app.services.smart_plug_manager import smart_plug_manager
+from backend.app.utils.ams_drying import is_countdown_parked
+from backend.app.utils.ams_humidity import ams_humidity_percent
+from backend.app.utils.archive_paths import archive_photos_dir
 from backend.app.utils.color_utils import perceptual_color_distance
 from backend.app.utils.filament_types import canonical_filament_type
 from backend.app.utils.filename import derive_remote_filename
+from backend.app.utils.library_paths import move_library_photos
 from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.printer_models import (
     is_dual_nozzle_model,
@@ -191,6 +195,13 @@ class _KeepWarmEntry:
 # manual or firmware-run dry is untouched.
 AUTO_DRY_REARM_COOLDOWN_SECONDS = 30 * 60
 AUTO_DRY_MAX_UNPRODUCTIVE_CYCLES = 2
+# Sustained-humidity wait (#2518): an above-threshold streak is only
+# "continuous" if some pass observed it within the gap ceiling. A unit that
+# goes unobserved longer (print running, printer disconnected, sensor silent)
+# restarts its streak rather than inheriting a stale one. The ceiling is
+# derived from the scheduler cadence — four missed passes — with this floor so
+# a fast-polling configuration does not void streaks on a single hiccup.
+AUTO_DRY_SUSTAINED_GAP_FLOOR_SECONDS = 120
 
 # How long a finished scheduled drying row is kept before it is pruned.
 SCHEDULED_DRYING_RETENTION_DAYS = 7
@@ -903,6 +914,16 @@ class PrintScheduler:
         #                  still above the threshold
         #   suspended    — we have stopped arming this unit and said so
         self._auto_dry_units: dict[tuple[int, int], dict[str, object]] = {}
+        # Sustained-humidity streaks for the ambient-drying wait (#2518). Keyed
+        # like _auto_dry_units but deliberately a SEPARATE dict: membership in
+        # _auto_dry_units means "Bambuddy armed a cycle on this unit", and the
+        # print-takes-priority stop, the manual-cycle adoption guard, and the
+        # arming setdefault all act on that meaning -- a unit that is merely
+        # waiting out its streak must not become stoppable or judgeable.
+        #   since -- monotonic stamp when the current continuous above-threshold
+        #            streak began
+        #   last  -- monotonic stamp of the last pass that observed the streak
+        self._auto_dry_above: dict[tuple[int, int], dict[str, float]] = {}
         # Printers with a "running" scheduled drying row (#2638). Rebuilt from the
         # DB on every _check_scheduled_dryings call so route-side cancels show up.
         # Auto-drying's stop-all branches must not stop or untrack these printers;
@@ -1621,8 +1642,12 @@ class PrintScheduler:
                     # Drying blocks the queue, if the user asked it to. A hold
                     # is a skip like any other, so it belongs here with the
                     # rest of the availability checks.
-                    if self._drying_in_progress.get(item.printer_id) and await self._get_bool_setting(
-                        db, "queue_drying_block"
+                    # A parked timer (#2896) never ends, so it must not hold the
+                    # queue; it stays tracked so the stop paths still reach it.
+                    if (
+                        self._drying_in_progress.get(item.printer_id)
+                        and not self._drying_is_only_parked(item.printer_id)
+                        and await self._get_bool_setting(db, "queue_drying_block")
                     ):
                         # Busy-shaped on purpose: the cycle ends on its own and
                         # the job goes out, so there is nothing to alert about.
@@ -4165,6 +4190,17 @@ class PrintScheduler:
         queue_drying_enabled = await self._get_bool_setting(db, "queue_drying_enabled")
         ambient_drying_enabled = await self._get_bool_setting(db, "ambient_drying_enabled")
         print_drying_enabled = await self._get_bool_setting(db, "print_drying_enabled")
+        sustained_minutes = await self._get_int_setting(db, "ambient_drying_sustained_minutes", default=0)
+        # The wait belongs to ambient drying: the settings UI only shows it while
+        # ambient drying is on, so a value left behind when ambient is turned off
+        # must not keep delaying the one path that still reaches the wait gate
+        # without it (a mid-print start under print_drying).
+        sustained_wait_active = sustained_minutes > 0 and ambient_drying_enabled
+        # Clear every streak as soon as the wait is inactive. An early return (or
+        # an already-drying unit) may otherwise skip the per-unit cleanup and let
+        # a quick toggle-on inherit an old streak.
+        if not sustained_wait_active:
+            self._auto_dry_above.clear()
         if not queue_drying_enabled and not ambient_drying_enabled:
             # Stop active drying on all printers if both features disabled
             if self._drying_in_progress:
@@ -4297,21 +4333,12 @@ class PrintScheduler:
 
                 dry_time = int(ams_data.get("dry_time") or 0)
 
-                # Read humidity — prefer humidity_raw (actual %) over humidity (index 1-5)
-                humidity = None
-                h_raw = ams_data.get("humidity_raw")
-                if h_raw is not None:
-                    try:
-                        humidity = int(h_raw)
-                    except (ValueError, TypeError):
-                        pass
-                if humidity is None:
-                    h_idx = ams_data.get("humidity")
-                    if h_idx is not None:
-                        try:
-                            humidity = int(h_idx)
-                        except (ValueError, TypeError):
-                            pass
+                # Read humidity as a percentage. The 1-5 index is never
+                # substituted: it is inverted, and being unable to exceed any
+                # threshold it would read as "dry" forever (#3140). ``None``
+                # already means "skip this unit" everywhere below.
+                humidity_pct = ams_humidity_percent(ams_data)
+                humidity = int(round(humidity_pct)) if humidity_pct is not None else None
                 unit_key = (pid, ams_id)
                 unit_state = self._auto_dry_units.get(unit_key)
 
@@ -4358,6 +4385,11 @@ class PrintScheduler:
                 # values from reading as progress every other cycle.
                 if unit_state is not None and unit_state.pop("running", False):
                     unit_state["ended_at"] = time.monotonic()
+                    # The streak that armed this cycle is spent; the next one
+                    # starts fresh (and accumulates through the re-arm cooldown
+                    # below, so the wait overlaps the cooldown, never stacks on
+                    # top of it).
+                    self._auto_dry_above.pop(unit_key, None)
                     if humidity is not None and humidity > humidity_threshold:
                         best = unit_state.get("best_end_humidity")
                         if isinstance(best, int) and humidity < best:
@@ -4408,6 +4440,24 @@ class PrintScheduler:
                         unit_state.pop("suspended", None)
                         unit_state.pop("unproductive", None)
                         unit_state.pop("best_end_humidity", None)
+                    # A real below-threshold reading ends any sustained-wait
+                    # streak (#2518) -- "continuously above" means exactly that.
+                    # An absent reading (humidity is None) is no-information and
+                    # leaves the streak alone; the observation-gap guard handles
+                    # a prolonged sensor silence.
+                    if humidity is not None:
+                        _above = self._auto_dry_above.pop(unit_key, None)
+                        if _above is not None and sustained_wait_active:
+                            logger.info(
+                                "Auto-drying: printer %d AMS %d — humidity fell back to %s%% after "
+                                "%.0fs of the required %dm above the %d%% threshold; not drying",
+                                pid,
+                                ams_id,
+                                humidity,
+                                time.monotonic() - _above["since"],
+                                sustained_minutes,
+                                humidity_threshold,
+                            )
                     logger.debug(
                         "Auto-drying: printer %d AMS %d skipped — humidity %s <= threshold %d",
                         pid,
@@ -4416,6 +4466,42 @@ class PrintScheduler:
                         humidity_threshold,
                     )
                     continue
+
+                # Sustained-humidity streak (#2518): updated on every pass that
+                # observes the reading above the threshold, BEFORE the
+                # suspension/cooldown gates below -- a suspended or cooling-down
+                # unit still accumulates streak time, so the wait overlaps those
+                # gates instead of stacking after them. Inert when the feature
+                # is off: no entries are written, and an entry left over from a
+                # toggle-off is dropped so it cannot seed a stale streak later.
+                if sustained_wait_active:
+                    _now = time.monotonic()
+                    # Four missed scheduler passes, floored: a single slow pass
+                    # must not void a streak, but the ceiling has to scale with
+                    # the cadence or a slow loop silently restarts every streak.
+                    _gap_ceiling = max(4 * self._check_interval, AUTO_DRY_SUSTAINED_GAP_FLOOR_SECONDS)
+                    _above = self._auto_dry_above.get(unit_key)
+                    if _above is None:
+                        self._auto_dry_above[unit_key] = {"since": _now, "last": _now}
+                    elif _now - _above["last"] > _gap_ceiling:
+                        # Restart, and say so at the same level as the dip
+                        # reset: a silent restart voids the streak invisibly,
+                        # and a user who set a long wait and never gets a dry
+                        # has no way to see why.
+                        logger.info(
+                            "Auto-drying: printer %d AMS %d — sustained-humidity streak restarted after a "
+                            "%.0fs observation gap (ceiling %ds); the %dm wait starts over",
+                            pid,
+                            ams_id,
+                            _now - _above["last"],
+                            _gap_ceiling,
+                            sustained_minutes,
+                        )
+                        self._auto_dry_above[unit_key] = {"since": _now, "last": _now}
+                    else:
+                        _above["last"] = _now
+                else:
+                    self._auto_dry_above.pop(unit_key, None)
 
                 if unit_state is not None:
                     if unit_state.get("suspended"):
@@ -4458,7 +4544,9 @@ class PrintScheduler:
                         )
                         continue
 
-                # Check cannot-dry reasons (power constraints etc.)
+                # Check cannot-dry reasons (power constraints etc.). Sits
+                # ahead of the sustained wait so a unit the firmware refuses
+                # to dry never logs a wait it was never going to cash in.
                 sf_reasons = ams_data.get("dry_sf_reason", [])
                 if sf_reasons:
                     logger.debug(
@@ -4468,6 +4556,32 @@ class PrintScheduler:
                         sf_reasons,
                     )
                     continue
+
+                # Sustained-humidity wait (#2518): ambient-triggered starts
+                # wait; only a printer with a scheduled queue item pending
+                # keeps the instant behavior, because that drying has a real
+                # deadline. Mid-print is deliberately NOT exempt while ambient
+                # drying is on: a humidity start on a printer that happens to be
+                # printing is as vulnerable to a lid-open spike as one on an idle
+                # printer (proven live: a 2-point threshold crossing mid-print
+                # bought a parked 12h command). Inactive when ambient drying is
+                # off: print_drying then still starts mid-print cycles on its own
+                # (#1816, "regardless of queue state"), and those stay instant.
+                if sustained_wait_active and pid not in printers_with_scheduled:
+                    _above = self._auto_dry_above.get(unit_key)
+                    _waited = time.monotonic() - _above["since"] if _above else 0.0
+                    if _waited < sustained_minutes * 60:
+                        logger.debug(
+                            "Auto-drying: printer %d AMS %d waiting — humidity %s%% above the %d%% "
+                            "threshold for %.0fs of the required %dm",
+                            pid,
+                            ams_id,
+                            humidity,
+                            humidity_threshold,
+                            _waited,
+                            sustained_minutes,
+                        )
+                        continue
 
                 # Get conservative drying params for mixed filaments
                 params = self._get_conservative_drying_params(trays, module_type, presets)
@@ -4565,6 +4679,9 @@ class PrintScheduler:
         if state is not None:
             state.pop("running", None)
             state["ended_at"] = time.monotonic()
+        # A stopped cycle spends the streak that armed it, same as a completed
+        # one (#2518).
+        self._auto_dry_above.pop((printer_id, ams_id), None)
 
     def _sync_drying_state(self):
         """Drop printers from ``_drying_in_progress`` that are no longer drying.
@@ -4599,6 +4716,31 @@ class PrintScheduler:
         # inherit a suspension it never earned.
         for key in [k for k in self._auto_dry_units if printer_manager.get_status(k[0]) is None]:
             self._auto_dry_units.pop(key, None)
+        # Same for sustained-wait streaks (#2518): a deleted-and-re-added
+        # printer starts a fresh wait, and vanished printers do not leak
+        # entries.
+        for key in [k for k in self._auto_dry_above if printer_manager.get_status(k[0]) is None]:
+            self._auto_dry_above.pop(key, None)
+
+    @staticmethod
+    def _drying_is_only_parked(printer_id: int) -> bool:
+        """True when every AMS unit with a drying timer on this printer is parked.
+
+        A parked timer (#2896: the command was taken but the countdown never
+        runs) does not end on its own, so nothing may wait on it. False when no
+        unit reports a timer yet -- a command just sent that the firmware has not
+        reported back is real drying about to begin.
+        """
+        state = printer_manager.get_status(printer_id)
+        units = [a for a in ((state.raw_data or {}).get("ams") or [] if state else []) if isinstance(a, dict)]
+        timed = []
+        for unit in units:
+            try:
+                if int(unit.get("dry_time") or 0) > 0:
+                    timed.append(unit)
+            except (TypeError, ValueError):
+                continue
+        return bool(timed) and all(is_countdown_parked(unit) for unit in timed)
 
     async def _drying_may_continue_through_print(self, db: AsyncSession, printer_id: int) -> bool:
         """True when a running cycle can be left alone while the next print runs.
@@ -4729,11 +4871,14 @@ class PrintScheduler:
             if unsupported:
                 row.status = "failed"
                 row.error_message = unsupported
+                row.error_code = drying_preflight.DETAIL_CODES.get(unsupported)
                 row.completed_at = now
                 logger.warning("Scheduled drying %d: %s", row.id, unsupported)
                 continue
 
-            if self._drying_in_progress.get(row.printer_id) or row.printer_id in running_printer_ids:
+            if (
+                self._drying_in_progress.get(row.printer_id) and not self._drying_is_only_parked(row.printer_id)
+            ) or row.printer_id in running_printer_ids:
                 row.waiting_reason = "already_drying"
                 continue
             if not self._is_printer_idle(row.printer_id, require_plate_clear=False):
@@ -4825,6 +4970,34 @@ class PrintScheduler:
             dry_time = int(target.get("dry_time") or 0) if target else 0
         except (TypeError, ValueError):
             dry_time = 0
+        if dry_time > 0 and is_countdown_parked(target):
+            # The printer took the command but the countdown is not running
+            # (#2896) and will never reach 0, so the run would stay "running"
+            # forever. A print in progress is the likely cause (the power budget
+            # is spent), so re-queue it like any interruption; the next start
+            # waits for the printer to be idle. Parked on an idle printer is a
+            # refusal, not something a retry fixes. The timer itself is left on
+            # the printer: it may yet start once power frees up.
+            if not self._is_printer_idle(row.printer_id, require_plate_clear=False):
+                logger.info(
+                    "Scheduled drying %d: AMS %d countdown is not running during a print; re-queued",
+                    row.id,
+                    row.ams_id,
+                )
+                row.status = "pending"
+                row.started_at = None
+                row.waiting_reason = "interrupted"
+            else:
+                logger.warning(
+                    "Scheduled drying %d: printer accepted the command but AMS %d never started drying",
+                    row.id,
+                    row.ams_id,
+                )
+                row.status = "failed"
+                row.error_message = drying_preflight.DID_NOT_START_DETAIL
+                row.error_code = drying_preflight.DETAIL_CODES[drying_preflight.DID_NOT_START_DETAIL]
+                row.completed_at = now
+            return
         if dry_time > 0:
             return
 
@@ -6359,6 +6532,10 @@ class PrintScheduler:
         file_path = None
         filename = None
         cleanup_disk_paths: list[Path] = []
+        # Set when a dispatch consumes its library file, so the photos can be
+        # carried over after the commit that removes the row (#3077).
+        consumed_library_file_id: int | None = None
+        consumed_photos: list[str] = []
 
         if item.archive_id:
             # Print from archive
@@ -6380,6 +6557,12 @@ class PrintScheduler:
             # queue row.
             if archive.plate_id is None and item.plate_id is not None:
                 archive.plate_id = item.plate_id
+
+            # Ask-for-outcome opt-in rides from the queue item to the archive
+            # the same way (#1898); never cleared here so a reprint of an
+            # archive that already asked keeps asking.
+            if item.confirm_outcome:
+                archive.confirm_requested = True
 
             file_path = settings.base_dir / archive.file_path
             filename = archive.filename
@@ -6441,6 +6624,8 @@ class PrintScheduler:
                 )
                 if archive:
                     item.archive_id = archive.id
+                    if item.confirm_outcome:
+                        archive.confirm_requested = True  # ask-for-outcome opt-in (#1898)
                     if budget_reservation is not None:
                         budget_reservation.print_archive_id = archive.id
                     if item.cleanup_library_after_dispatch and not library_file.is_external:
@@ -6460,6 +6645,9 @@ class PrintScheduler:
                             archive_id=archive.id,
                             dispatched_item_id=item.id,
                         )
+                        # Read while the row is still here; the photos move
+                        # below, once the delete has actually committed.
+                        consumed_photos = list(library_file.photos or [])
                         await db.delete(library_file)
                         file_path = settings.base_dir / archive.file_path
                         filename = archive.filename
@@ -6500,6 +6688,68 @@ class PrintScheduler:
                 logger.error("Queue item %s: Archive creation from library file returned no archive", item.id)
                 await self._power_off_if_needed(db, item)
                 return
+
+            # The photos follow the file into the archive that replaces it, for
+            # the same reason the siblings do (#3077). After the commit above,
+            # never before it: that commit can fail ("database is locked",
+            # #1853) and roll the library row back, and photos already moved
+            # would leave it naming a directory that no longer exists. The
+            # file and thumbnail unlinks are deferred for the same reason.
+            if consumed_library_file_id is not None and consumed_photos:
+                # Held as a plain int, read here while the session is still
+                # healthy, because the handler below may not touch an ORM
+                # instance at all. The commit it exists for fails inside the
+                # FLUSH, not at COMMIT: SQLite takes the write lock at the
+                # first DML statement, so a busy writer surfaces as "database
+                # is locked" on the UPDATE (#1853). SQLAlchemy rolls that back
+                # internally through safe_reraise before re-raising, which
+                # expires every loaded instance and leaves the session in
+                # pending-rollback state -- so `archive.id` inside the except
+                # would itself raise PendingRollbackError and the rollback
+                # below would never be reached.
+                archive_id = archive.id
+                try:
+                    carried_photos = move_library_photos(
+                        consumed_library_file_id,
+                        consumed_photos,
+                        archive_photos_dir(archive),
+                    )
+                    if carried_photos:
+                        archive.photos = list(archive.photos or []) + carried_photos
+                        await db.commit()
+                except Exception as e:
+                    # The archive and the delete are already committed; the
+                    # print goes ahead either way. Worst case the pictures sit
+                    # unnamed in the archive's own directory.
+                    #
+                    # Ints only until the rollback has run, per the note above,
+                    # which is why this logs queue_item_id and not item.id --
+                    # the sibling handler forty lines up does the same.
+                    logger.warning(
+                        "Queue item %s: failed to carry library photos into archive %s: %s",
+                        queue_item_id,
+                        archive_id,
+                        e,
+                    )
+                    await db.rollback()
+                    # rollback() expires every loaded instance, and in async
+                    # SQLAlchemy the next plain attribute read is lazy IO
+                    # outside the greenlet -- MissingGreenlet, which would turn
+                    # this cosmetic failure into a dispatch crash in exactly the
+                    # "database is locked" case the block exists for (#1853).
+                    # The nozzle guard, the upload and the start all keep
+                    # reading item, archive and printer, so all three go back
+                    # into the session before falling through.
+                    item = await db.get(PrintQueueItem, queue_item_id)
+                    archive = await db.get(PrintArchive, archive_id)
+                    printer = await db.get(Printer, item.printer_id) if item else None
+                    if not item or not archive or not printer:
+                        logger.error(
+                            "Queue item %s: item, archive %s or printer gone after the photo rollback",
+                            queue_item_id,
+                            archive_id,
+                        )
+                        return
 
         else:
             # Neither archive nor library file specified
@@ -6905,6 +7155,16 @@ class PrintScheduler:
 
         # Clear the awaiting-plate-clear flag now that we're starting a new print
         printer_manager.set_awaiting_plate_clear(item.printer_id, False)
+
+        # #1898: with the opt-in default-good setting, moving on to the next
+        # print resolves the previous print's unanswered outcome prompt as
+        # "good" — this path also covers the camera-based plate detection,
+        # which releases the gate by allowing dispatch rather than by an
+        # explicit acknowledgment. Rides on the dispatch transaction.
+        if await self._get_bool_setting(db, "confirm_default_good_on_plate_clear", default=False):
+            from backend.app.services.print_confirmation import resolve_pending_confirmation_as_good
+
+            await resolve_pending_confirmation_as_good(db, item.printer_id)
         logger.info("Queue item %s: Status set to 'printing', sending print command...", item.id)
 
         # Capture state before dispatch so the watchdog can detect whether the

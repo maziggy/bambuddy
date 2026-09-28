@@ -10,6 +10,16 @@ from backend.app.services.printer_manager import drying_screen_only, supports_dr
 SCREEN_ONLY_DETAIL = "This printer only supports AMS drying from its own screen"
 UNSUPPORTED_DETAIL = "Drying not supported for this printer model or firmware version"
 
+# Codes stored on a failed scheduled drying (ScheduledDrying.error_code) so the
+# UI can show the reason translated. check_drying_supported() returns one of the
+# two details above; DETAIL_CODES maps it to its code.
+DID_NOT_START_DETAIL = "The printer accepted the drying command, but the AMS did not start drying"
+DETAIL_CODES = {
+    SCREEN_ONLY_DETAIL: "screen_only",
+    UNSUPPORTED_DETAIL: "unsupported",
+    DID_NOT_START_DETAIL: "did_not_start",
+}
+
 # Firmware dry_sf_reason codes, as surfaced by the AMS status payload.
 DRY_SF_REASON_MESSAGES = {
     0: "Printer is busy",

@@ -87,6 +87,44 @@ class TestAMSHistoryAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_an_average_of_zero_is_reported_as_zero(
+        self, async_client: AsyncClient, ams_history_factory, printer_factory, db_session
+    ):
+        """A window whose readings are all 0 has an average of 0, not "no data".
+
+        The response used to test the average for truthiness, so min and max
+        reported 0.0 while the average beside them came back null and the card
+        showed an em dash (#3140). Zero is rare but real -- a warm unit part way
+        through a drying cycle reaches it.
+        """
+        printer = await printer_factory()
+        await ams_history_factory(printer_id=printer.id, humidity=0.0, temperature=0.0)
+        await ams_history_factory(printer_id=printer.id, humidity=0.0, temperature=0.0)
+
+        response = await async_client.get(f"/api/v1/ams-history/{printer.id}/0")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["min_humidity"] == 0.0
+        assert data["avg_humidity"] == 0.0
+        assert data["avg_temperature"] == 0.0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_empty_window_still_has_no_average(self, async_client: AsyncClient, printer_factory):
+        """The one case that genuinely has no answer must stay null."""
+        printer = await printer_factory()
+
+        response = await async_client.get(f"/api/v1/ams-history/{printer.id}/0")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["data"] == []
+        assert data["avg_humidity"] is None
+        assert data["avg_temperature"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_get_ams_history_with_hours_filter(
         self, async_client: AsyncClient, ams_history_factory, printer_factory, db_session
     ):

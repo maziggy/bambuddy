@@ -180,7 +180,7 @@ function KnownSpoolView({ spool, scaleWeight, weightStable, syncing, synced, onS
       {/* Spool info */}
       <div className="flex items-start gap-5 mb-5">
         <div className="relative shrink-0">
-          <SpoolIcon color={colorHex} isEmpty={false} size={100} />
+          <SpoolIcon color={colorHex} isEmpty={false} size={100} spool={spool} />
           {fillPercent !== null && (
             <div
               className="absolute -bottom-2 -right-2 px-2 py-0.5 rounded-full text-xs font-bold text-white shadow-lg"

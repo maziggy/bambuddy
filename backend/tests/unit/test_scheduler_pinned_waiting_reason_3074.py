@@ -215,6 +215,22 @@ class TestThePinnedItemSaysWhyItIsWaiting:
         launched.assert_not_called()
         assert (await _item(ctx, item_id)).waiting_reason == "Busy: X1C-01 (drying)"
 
+    @pytest.mark.asyncio
+    async def test_a_parked_drying_timer_does_not_block_the_queue(self, ctx):
+        """#2896: a timer the printer took but never runs does not reach 0 on
+        its own, so "block the queue until drying finishes" would hold the job
+        forever. The printer stays tracked as drying, but the hold lets go."""
+        await _set(ctx, "queue_drying_block", "true")
+        item_id = await _add_item(ctx)
+        scheduler = PrintScheduler()
+        scheduler._drying_in_progress[1] = True
+
+        with patch.object(PrintScheduler, "_drying_is_only_parked", staticmethod(lambda printer_id: True)):
+            launched = await _run(ctx, scheduler, idle=True)
+
+        launched.assert_called_once()
+        assert (await _item(ctx, item_id)).waiting_reason is None
+
 
 class TestTheReasonNeverOutlivesTheThingItDescribes:
     """Every exit from the branch writes, so no pass can leave a stale reason."""

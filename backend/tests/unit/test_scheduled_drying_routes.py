@@ -156,6 +156,7 @@ async def test_failed_rows_are_listed_and_dismissable(async_client, printer_fact
         duration_hours=8,
         status="failed",
         error_message="Drying not supported for this printer model or firmware version",
+        error_code="unsupported",
     )
     db_session.add(row)
     await db_session.commit()
@@ -164,6 +165,8 @@ async def test_failed_rows_are_listed_and_dismissable(async_client, printer_fact
     listed = await async_client.get(f"/api/v1/scheduled-dryings?printer_id={printer.id}")
     assert [r["id"] for r in listed.json()] == [row.id]
     assert listed.json()[0]["error_message"].startswith("Drying not supported")
+    # The code the card translates the reason from.
+    assert listed.json()[0]["error_code"] == "unsupported"
 
     resp = await async_client.delete(f"/api/v1/scheduled-dryings/{row.id}")
     assert resp.status_code == 200
@@ -172,6 +175,23 @@ async def test_failed_rows_are_listed_and_dismissable(async_client, printer_fact
     assert (await async_client.get(f"/api/v1/scheduled-dryings?printer_id={printer.id}")).json() == []
     # Dismissing twice is a 404, not a second dismiss: the row is gone.
     assert (await async_client.delete(f"/api/v1/scheduled-dryings/{row.id}")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_a_row_without_an_error_code_lists_it_as_null(async_client, printer_factory, db_session):
+    """Rows that failed before codes existed carry none; the card then shows
+    their English error_message."""
+    from backend.app.models.scheduled_drying import ScheduledDrying
+
+    printer = await printer_factory()
+    db_session.add(
+        ScheduledDrying(printer_id=printer.id, temp=65, duration_hours=8, status="failed", error_message="old reason")
+    )
+    await db_session.commit()
+
+    listed = (await async_client.get(f"/api/v1/scheduled-dryings?printer_id={printer.id}")).json()
+    assert listed[0]["error_code"] is None
+    assert listed[0]["error_message"] == "old reason"
 
 
 @pytest.mark.asyncio

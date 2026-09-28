@@ -6998,7 +6998,6 @@ export default {
       assign: "Призначити",
       assigning: "Призначення...",
       assignSuccess: "Призначено!",
-      assignSuccessColorUpdateFailed: "Котушку призначено, але її колір не вдалося зберегти.",
       assignPendingInsert: "Призначений. Слот буде налаштовано, коли ви вставите котушку.",
       assignError: "Не вдалося призначити котушку. Спробуйте ще раз.",
       noPrinterSelected: "Виберіть принтер...",

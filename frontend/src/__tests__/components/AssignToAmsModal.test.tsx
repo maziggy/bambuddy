@@ -17,7 +17,6 @@ vi.mock('../../api/client', () => ({
     assignSpool: vi.fn(),
     assignSpoolmanSlot: vi.fn(),
     updateSpool: vi.fn(),
-    updateSpoolmanInventorySpool: vi.fn(),
     getAuthStatus: vi.fn().mockResolvedValue({ auth_enabled: false }),
     getAssignments: vi.fn().mockResolvedValue([]),
     getSpoolmanSlotAssignments: vi.fn().mockResolvedValue([]),
@@ -101,7 +100,6 @@ describe('AssignToAmsModal', () => {
     vi.mocked(api.assignSpool).mockResolvedValue({} as never);
     vi.mocked(api.assignSpoolmanSlot).mockResolvedValue({} as never);
     vi.mocked(api.updateSpool).mockResolvedValue({} as never);
-    vi.mocked(api.updateSpoolmanInventorySpool).mockResolvedValue({} as never);
   });
 
   it('renders modal when open', async () => {
@@ -181,7 +179,6 @@ describe('AssignToAmsModal', () => {
         onClose={vi.fn()}
         spool={SPOOL as never}
         printerId={null}
-        showColorEditor={true}
         spoolmanMode={false}
       />
     );
@@ -207,43 +204,6 @@ describe('AssignToAmsModal', () => {
     });
   });
 
-  it('persists an explicitly changed spool colour after assigning from inventory (#2978)', async () => {
-    const user = userEvent.setup();
-    render(
-      <AssignToAmsModal
-        isOpen={true}
-        onClose={vi.fn()}
-        spool={SPOOL as never}
-        printerId={null}
-        showColorEditor={true}
-        spoolmanMode={false}
-      />
-    );
-
-    const printerSelect = await screen.findByLabelText(/select printer/i);
-    await screen.findByRole('option', { name: 'Farm Printer 7' });
-    await user.selectOptions(printerSelect, '7');
-    await waitFor(() => {
-      expect(screen.queryAllByTestId('ams-slot').length).toBeGreaterThan(0);
-    });
-
-    await user.click(screen.getByRole('button', { name: 'Blue' }));
-    await user.click(screen.queryAllByTestId('ams-slot')[0]);
-    await user.click(screen.getByRole('button', { name: /assign spool/i }));
-
-    await waitFor(() => {
-      expect(api.updateSpool).toHaveBeenCalledWith(42, {
-        rgba: '0066FFFF',
-        color_name: 'Blue',
-      });
-      expect(api.assignSpool).toHaveBeenCalledWith(
-        expect.objectContaining({ spool_id: 42, printer_id: 7 })
-      );
-    });
-    expect(vi.mocked(api.assignSpool).mock.invocationCallOrder[0])
-      .toBeLessThan(vi.mocked(api.updateSpool).mock.invocationCallOrder[0]);
-  });
-
   it.each([
     {
       caseName: 'missing colour name resolved from the catalog',
@@ -265,7 +225,6 @@ describe('AssignToAmsModal', () => {
         onClose={vi.fn()}
         spool={{ ...SPOOL, ...spool } as never}
         printerId={null}
-        showColorEditor={true}
         spoolmanMode={false}
       />
     );
@@ -282,101 +241,6 @@ describe('AssignToAmsModal', () => {
 
     await waitFor(() => expect(api.assignSpool).toHaveBeenCalled());
     expect(api.updateSpool).not.toHaveBeenCalled();
-  });
-
-  it('does not save a colour edit when assignment fails', async () => {
-    const user = userEvent.setup();
-    vi.mocked(api.assignSpool).mockRejectedValueOnce(new Error('Slot busy'));
-
-    render(
-      <AssignToAmsModal
-        isOpen={true}
-        onClose={vi.fn()}
-        spool={SPOOL as never}
-        printerId={null}
-        showColorEditor={true}
-        spoolmanMode={false}
-      />
-    );
-
-    const printerSelect = await screen.findByLabelText(/select printer/i);
-    await screen.findByRole('option', { name: 'Farm Printer 7' });
-    await user.selectOptions(printerSelect, '7');
-    await waitFor(() => {
-      expect(screen.queryAllByTestId('ams-slot').length).toBeGreaterThan(0);
-    });
-
-    await user.click(screen.getByRole('button', { name: 'Blue' }));
-    await user.click(screen.queryAllByTestId('ams-slot')[0]);
-    await user.click(screen.getByRole('button', { name: /assign spool/i }));
-
-    expect(await screen.findByText('Slot busy')).toBeInTheDocument();
-    expect(api.updateSpool).not.toHaveBeenCalled();
-  });
-
-  it('stores a derived colour name instead of a custom hex value', async () => {
-    const user = userEvent.setup();
-    render(
-      <AssignToAmsModal
-        isOpen={true}
-        onClose={vi.fn()}
-        spool={SPOOL as never}
-        printerId={null}
-        showColorEditor={true}
-        spoolmanMode={false}
-      />
-    );
-
-    const printerSelect = await screen.findByLabelText(/select printer/i);
-    await screen.findByRole('option', { name: 'Farm Printer 7' });
-    await user.selectOptions(printerSelect, '7');
-    await waitFor(() => {
-      expect(screen.queryAllByTestId('ams-slot').length).toBeGreaterThan(0);
-    });
-
-    const colorPicker = document.querySelector<HTMLInputElement>('input[type="color"]');
-    expect(colorPicker).not.toBeNull();
-    fireEvent.change(colorPicker!, { target: { value: '#ff00aa' } });
-    await user.click(screen.queryAllByTestId('ams-slot')[0]);
-    await user.click(screen.getByRole('button', { name: /assign spool/i }));
-
-    await waitFor(() => {
-      expect(api.updateSpool).toHaveBeenCalledWith(42, {
-        rgba: 'FF00AAFF',
-        color_name: 'Pink',
-      });
-    });
-  });
-
-  it('does not persist the grey display fallback when only a colour name changes', async () => {
-    const user = userEvent.setup();
-    render(
-      <AssignToAmsModal
-        isOpen={true}
-        onClose={vi.fn()}
-        spool={{ ...SPOOL, color_name: null, rgba: null } as never}
-        printerId={null}
-        showColorEditor={true}
-        spoolmanMode={false}
-      />
-    );
-
-    const printerSelect = await screen.findByLabelText(/select printer/i);
-    await screen.findByRole('option', { name: 'Farm Printer 7' });
-    await user.selectOptions(printerSelect, '7');
-    await waitFor(() => {
-      expect(screen.queryAllByTestId('ams-slot').length).toBeGreaterThan(0);
-    });
-
-    await user.type(screen.getByLabelText(/color name/i), 'Ocean');
-    await user.click(screen.queryAllByTestId('ams-slot')[0]);
-    await user.click(screen.getByRole('button', { name: /assign spool/i }));
-
-    await waitFor(() => {
-      expect(api.updateSpool).toHaveBeenCalledWith(42, {
-        color_name: 'Ocean',
-      });
-    });
   });
 
   it('keeps the kiosk layout full-screen while selecting a printer', async () => {
@@ -398,7 +262,7 @@ describe('AssignToAmsModal', () => {
     expect(screen.queryByLabelText(/color name/i)).not.toBeInTheDocument();
   });
 
-  it('starts the editable colour name with Bambuddy\'s catalog-resolved name (#3090)', async () => {
+  it('names the spool by Bambuddy\'s catalog-resolved colour in the header (#3090)', async () => {
     setColorCatalog({ d02727: 'Candy Red' });
 
     render(
@@ -412,13 +276,12 @@ describe('AssignToAmsModal', () => {
           rgba: 'D02727FF',
         } as never}
         printerId={null}
-        showColorEditor={true}
         spoolmanMode={false}
       />
     );
 
-    expect(await screen.findByLabelText(/color name/i)).toHaveValue('Candy Red');
-    expect(screen.getAllByText('Candy Red').length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/Candy Red/)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Silk\+/)).toBeNull();
   });
 
   it('labels and assigns the left external slot correctly on dual-nozzle printers', async () => {

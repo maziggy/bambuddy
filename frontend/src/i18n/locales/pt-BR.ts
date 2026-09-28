@@ -6944,7 +6944,6 @@ export default {
       assign: 'Atribuir',
       assigning: 'Atribuindo...',
       assignSuccess: 'Atribuído!',
-      assignSuccessColorUpdateFailed: 'Carretel atribuído, mas não foi possível salvar a cor.',
       assignPendingInsert: 'Atribuído. O slot será configurado quando você inserir o carretel.',
       assignError: 'Falha ao atribuir carretel. Tente novamente.',
       noPrinterSelected: 'Selecionar uma impressora...',

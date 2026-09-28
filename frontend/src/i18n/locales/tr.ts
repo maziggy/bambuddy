@@ -6899,7 +6899,6 @@ export default {
       assign: 'Ata',
       assigning: 'Atanıyor...',
       assignSuccess: 'Atandı!',
-      assignSuccessColorUpdateFailed: 'Makara atandı ancak rengi kaydedilemedi.',
       assignPendingInsert: 'Atandı. Makarayı yerleştirdiğinizde yuva yapılandırılacak.',
       assignError: 'Makara atanamadı. Lütfen tekrar deneyin.',
       noPrinterSelected: 'Bir yazıcı seçin...',

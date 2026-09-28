@@ -695,7 +695,6 @@ export function SpoolBuddyDashboard() {
           spool={effectiveModalSpool}
           printerId={selectedPrinterId}
           variant="kiosk"
-          showColorEditor={false}
           spoolmanMode={spoolmanMode}
         />
       )}

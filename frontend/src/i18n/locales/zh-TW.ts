@@ -6942,7 +6942,6 @@ export default {
       assign: '分配',
       assigning: '分配中...',
       assignSuccess: '已分配！',
-      assignSuccessColorUpdateFailed: '線材捲已指派，但無法儲存其顏色。',
       assignPendingInsert: '已分配。插入耗材後將設定槽位。',
       assignError: '分配耗材失敗。請重試。',
       noPrinterSelected: '選擇印表機...',

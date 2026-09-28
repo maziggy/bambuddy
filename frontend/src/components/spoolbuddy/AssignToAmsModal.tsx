@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Loader2, Check, CheckCircle, XCircle, Layers, Palette } from 'lucide-react';
+import { X, Loader2, Check, CheckCircle, XCircle, Layers } from 'lucide-react';
 import { api, type InventorySpool, type PrinterStatus, type AMSTray } from '../../api/client';
 import { ConfirmModal } from '../ConfirmModal';
 import { AmsUnitCard, NozzleBadge } from './AmsUnitCard';
 import type { AmsThresholds } from './AmsUnitCard';
-import { QUICK_COLORS } from '../spool-form/constants';
 import { getFillBarColor } from '../../utils/amsHelpers';
-import { getColorName, getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
+import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
 import { spoolSwatchStyle } from './spoolPaint';
 
 function getAmsName(id: number): string {
@@ -24,13 +23,6 @@ function isTrayEmpty(tray: AMSTray): boolean {
 function trayColorToCSS(color: string | null): string {
   if (!color) return '#808080';
   return `#${color.slice(0, 6)}`;
-}
-
-function normalizeRgba(color: string | null | undefined): string {
-  const clean = (color ?? '').replace(/^#/, '').toUpperCase();
-  if (/^[0-9A-F]{8}$/.test(clean)) return clean;
-  if (/^[0-9A-F]{6}$/.test(clean)) return `${clean}FF`;
-  return '808080FF';
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -81,7 +73,6 @@ interface AssignToAmsModalProps {
   spool: InventorySpool;
   printerId: number | null;
   variant?: 'dialog' | 'kiosk';
-  showColorEditor?: boolean;
   spoolmanMode?: boolean;
 }
 
@@ -91,7 +82,6 @@ export function AssignToAmsModal({
   spool,
   printerId,
   variant = 'dialog',
-  showColorEditor = false,
   spoolmanMode = false,
 }: AssignToAmsModalProps) {
   const { t } = useTranslation();
@@ -99,12 +89,6 @@ export function AssignToAmsModal({
   const dialogRef = useRef<HTMLDivElement>(null);
   const [selectedPrinterId, setSelectedPrinterId] = useState<number | null>(printerId);
   const [selectedSlot, setSelectedSlot] = useState<{ amsId: number; trayId: number } | null>(null);
-  const [selectedRgba, setSelectedRgba] = useState(() => normalizeRgba(spool.rgba));
-  const [selectedColorName, setSelectedColorName] = useState(
-    () => resolveSpoolColorName(spool.color_name, spool.rgba, spool.color_name_is_synthesized) ?? ''
-  );
-  const [colorTouched, setColorTouched] = useState(false);
-  const [rgbaTouched, setRgbaTouched] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusType, setStatusType] = useState<'info' | 'success' | 'error' | null>(null);
   const [showMismatchConfirm, setShowMismatchConfirm] = useState(false);
@@ -127,24 +111,17 @@ export function AssignToAmsModal({
     if (isOpen) {
       setSelectedPrinterId(printerId);
       setSelectedSlot(null);
-      setSelectedRgba(normalizeRgba(spool.rgba));
-      setSelectedColorName(
-        resolveSpoolColorName(spool.color_name, spool.rgba, spool.color_name_is_synthesized) ?? ''
-      );
-      setColorTouched(false);
-      setRgbaTouched(false);
       setStatusMessage(null);
       setStatusType(null);
       setShowMismatchConfirm(false);
       setMismatchDetails(null);
       setPendingSlot(null);
     }
-  }, [isOpen, printerId, spool.id, spool.rgba, spool.color_name, spool.color_name_is_synthesized]);
+  }, [isOpen, printerId, spool.id]);
 
-  // Printer selection, visual presentation, and colour editing are separate
-  // concerns. In particular, the SpoolBuddy kiosk must stay full-screen when
-  // no printer is online, while the editor-hosted dialog must not duplicate
-  // the editor's own colour controls.
+  // Printer selection and visual presentation are separate concerns: the
+  // SpoolBuddy kiosk must stay full-screen even when no printer is online and
+  // the picker is shown.
   const showPrinterPicker = printerId === null;
   const requiresSlotConfirmation = showPrinterPicker;
   const targetPrinterId = printerId ?? selectedPrinterId;
@@ -317,76 +294,30 @@ export function AssignToAmsModal({
   // later inserted. The response's `pending_config` flag distinguishes that
   // from the immediate-apply path so we can adjust the success toast.
   const configureMutation = useMutation({
-    mutationFn: async ({
-      amsId,
-      trayId,
-      rgba,
-      colorName,
-      colorTouched,
-      rgbaTouched,
-    }: {
-      amsId: number;
-      trayId: number;
-      rgba: string;
-      colorName: string;
-      colorTouched: boolean;
-      rgbaTouched: boolean;
-    }) => {
+    mutationFn: async ({ amsId, trayId }: { amsId: number; trayId: number }) => {
       if (!targetPrinterId) throw new Error('No printer selected');
 
-      const assignment = spoolmanMode
-        ? await api.assignSpoolmanSlot({
-            spoolman_spool_id: spool.id,
-            printer_id: targetPrinterId,
-            ams_id: amsId,
-            tray_id: trayId,
-          })
-        : await api.assignSpool({
-            spool_id: spool.id,
-            printer_id: targetPrinterId,
-            ams_id: amsId,
-            tray_id: trayId,
-          });
-
-      // The resolved colour name is display-only until the user edits the colour.
-      // Persisting it unconditionally would replace null names or Bambu colour codes
-      // merely by assigning a spool. Assign first so a failed assignment cannot leave
-      // an unrelated colour edit behind.
-      let colorUpdateError: unknown = null;
-      if (showColorEditor && colorTouched) {
-        const colorUpdate: { color_name: string | null; rgba?: string } = {
-          color_name: colorName.trim() || null,
-        };
-        // Editing only the name of a spool without rgba must not turn the
-        // display fallback (grey) into stored data.
-        if (rgbaTouched) colorUpdate.rgba = rgba;
-        try {
-          if (spoolmanMode) {
-            await api.updateSpoolmanInventorySpool(spool.id, colorUpdate);
-          } else {
-            await api.updateSpool(spool.id, colorUpdate);
-          }
-        } catch (error) {
-          colorUpdateError = error;
-        }
+      if (spoolmanMode) {
+        return await api.assignSpoolmanSlot({
+          spoolman_spool_id: spool.id,
+          printer_id: targetPrinterId,
+          ams_id: amsId,
+          tray_id: trayId,
+        });
       }
-
-      return { assignment, colorUpdateError };
+      return await api.assignSpool({
+        spool_id: spool.id,
+        printer_id: targetPrinterId,
+        ams_id: amsId,
+        tray_id: trayId,
+      });
     },
-    onSuccess: ({ assignment, colorUpdateError }) => {
+    onSuccess: (assignment) => {
       setStatusType('success');
       // pending_config only exists on SpoolAssignment (the local-inventory path);
       // the Spoolman path returns InventorySpool which always implies immediate apply.
       const pendingConfig = assignment && 'pending_config' in assignment && assignment.pending_config;
-      if (colorUpdateError) {
-        setStatusType('error');
-        setStatusMessage(
-          t(
-            'spoolbuddy.modal.assignSuccessColorUpdateFailed',
-            'Spool assigned, but its colour could not be saved.',
-          ),
-        );
-      } else if (pendingConfig) {
+      if (pendingConfig) {
         setStatusMessage(
           t(
             'spoolbuddy.modal.assignPendingInsert',
@@ -402,7 +333,7 @@ export function AssignToAmsModal({
       queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments-all'] });
       queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
       queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
-      setTimeout(() => onClose(), colorUpdateError ? 3500 : pendingConfig ? 2500 : 1500);
+      setTimeout(() => onClose(), pendingConfig ? 2500 : 1500);
     },
     onError: (err) => {
       setStatusType('error');
@@ -434,15 +365,8 @@ export function AssignToAmsModal({
   const doAssign = useCallback((amsId: number, trayId: number) => {
     setStatusType('info');
     setStatusMessage(t('spoolbuddy.modal.assigning', 'Configuring slot...'));
-    configureMutation.mutate({
-      amsId,
-      trayId,
-      rgba: selectedRgba,
-      colorName: selectedColorName,
-      colorTouched,
-      rgbaTouched,
-    });
-  }, [configureMutation, selectedRgba, selectedColorName, colorTouched, rgbaTouched, t]);
+    configureMutation.mutate({ amsId, trayId });
+  }, [configureMutation, t]);
 
   const prepareAssignment = useCallback((amsId: number, trayId: number) => {
     if (isWaiting) return;
@@ -560,12 +484,7 @@ export function AssignToAmsModal({
 
   if (!isOpen) return null;
 
-  // Keep the richer multi-colour/effect swatch from current dev until the user
-  // explicitly chooses a replacement colour in this dialog.
-  const colorStyle = rgbaTouched
-    ? getSwatchStyle(selectedRgba)
-    : spoolSwatchStyle(spool) ?? getSwatchStyle(selectedRgba);
-  const selectedHex = selectedRgba.slice(0, 6);
+  const colorStyle = spoolSwatchStyle(spool) ?? getSwatchStyle(spool.rgba);
   const selectedSlotLabel = selectedSlot
     ? getSlotLocationLabel(selectedSlot.amsId, selectedSlot.trayId)
     : null;
@@ -574,7 +493,7 @@ export function AssignToAmsModal({
     ? 'fixed inset-0 z-[60] flex items-center justify-center bg-black/45 dark:bg-black/70 p-2 sm:p-4 backdrop-blur-sm animate-fade-in'
     : 'fixed inset-0 z-[60] bg-bambu-dark';
   const dialogClasses = isDialogVariant
-    ? `bg-bambu-dark-secondary text-white font-sans w-full ${showColorEditor ? 'max-w-5xl' : 'max-w-3xl'} h-[calc(100vh-1rem)] sm:h-[calc(100vh-2rem)] max-h-[820px] border border-[var(--border-color)] rounded-xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-slide-up`
+    ? 'bg-bambu-dark-secondary text-white font-sans w-full max-w-3xl h-[calc(100vh-1rem)] sm:h-[calc(100vh-2rem)] max-h-[820px] border border-[var(--border-color)] rounded-xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-slide-up'
     : 'w-full h-full bg-bambu-dark flex flex-col';
 
   return (
@@ -600,7 +519,8 @@ export function AssignToAmsModal({
             <h2 id="assign-to-ams-title" className="text-sm font-semibold text-white truncate">
               {t('spoolbuddy.modal.assignToAmsTitle', 'Assign to AMS')}
               <span className="font-normal text-bambu-gray-light ml-2">
-                {selectedColorName || t('spoolbuddy.spool.unknownColor')} &bull; {spool.brand} {spool.material}
+                {resolveSpoolColorName(spool.color_name, spool.rgba, spool.color_name_is_synthesized) ||
+                  t('spoolbuddy.spool.unknownColor')} &bull; {spool.brand} {spool.material}
                 {spool.subtype && ` ${spool.subtype}`}
               </span>
               <span className="text-[10px] font-mono text-bambu-gray ml-2 shrink-0">#{spool.id}</span>
@@ -674,7 +594,7 @@ export function AssignToAmsModal({
         </div>
       )}
 
-      <div className={`flex-1 min-h-0 ${showColorEditor ? 'grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_19rem] overflow-y-auto lg:overflow-hidden' : 'flex flex-col'}`}>
+      <div className="flex-1 min-h-0 flex flex-col">
         {/* AMS slots */}
         <section className="flex min-h-[18rem] flex-col gap-3 bg-bambu-dark p-4 lg:min-h-0 lg:overflow-y-auto">
           {showPrinterPicker && (
@@ -796,92 +716,6 @@ export function AssignToAmsModal({
             </>
           )}
         </section>
-
-        {/* The inventory flow may update the spool colour after a successful assignment. */}
-        {showColorEditor && (
-          <aside className="border-t border-[var(--border-color)] bg-bambu-dark-tertiary p-4 lg:overflow-y-auto lg:border-l lg:border-t-0">
-            <div className="flex items-center gap-2 text-sm font-medium text-white mb-3">
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-bambu-green text-[11px] font-bold text-[#ffffff]">3</span>
-              {t('inventory.color')}
-            </div>
-
-            <div className="flex items-center gap-3 rounded-xl border border-[var(--border-color)] bg-bambu-dark-secondary p-3 mb-4">
-              <div className="h-14 w-14 shrink-0 rounded-xl border border-black/15 dark:border-white/20 shadow-inner" style={colorStyle} />
-              <div className="min-w-0">
-                <div className="truncate font-medium text-white">{selectedColorName || t('common.unknown')}</div>
-                <div className="font-mono text-xs text-bambu-gray">#{selectedHex}</div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-7 gap-2 mb-4">
-              {QUICK_COLORS.map((color) => {
-                const rgba = normalizeRgba(color.hex);
-                const isSelected = selectedRgba === rgba;
-                return (
-                  <button
-                    key={`${color.name}-${color.hex}`}
-                    type="button"
-                    title={color.name}
-                    aria-label={color.name}
-                    aria-pressed={isSelected}
-                    onClick={() => {
-                      setSelectedRgba(rgba);
-                      setSelectedColorName(color.name);
-                      setColorTouched(true);
-                      setRgbaTouched(true);
-                    }}
-                    className={`relative aspect-square min-h-7 rounded-full border transition-transform hover:scale-110 ${
-                      isSelected
-                        ? 'ring-2 ring-bambu-green ring-offset-2 ring-offset-[var(--bg-tertiary)] border-black/30 dark:border-white/70'
-                        : 'border-black/20 dark:border-white/20'
-                    }`}
-                    style={getSwatchStyle(color.hex)}
-                  >
-                    {isSelected && <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-[#ffffff] drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]" />}
-                  </button>
-                );
-              })}
-            </div>
-
-            <label htmlFor="assign-spool-color-name" className="block text-xs font-medium text-white mb-1.5">
-              {t('inventory.colorName')}
-            </label>
-            <input
-              id="assign-spool-color-name"
-              type="text"
-              value={selectedColorName}
-              onChange={(event) => {
-                setSelectedColorName(event.target.value);
-                setColorTouched(true);
-              }}
-              placeholder={t('inventory.colorNamePlaceholder')}
-              className="w-full rounded-lg border border-[var(--border-color)] bg-bambu-dark-secondary px-3 py-2 text-sm text-white placeholder:text-bambu-gray focus:border-bambu-green focus:outline-none"
-            />
-
-            <div className="flex items-center gap-2 mt-3">
-              <label className="relative flex min-h-[40px] flex-1 items-center justify-center gap-2 rounded-lg border border-[var(--border-color)] bg-bambu-dark-secondary px-3 py-2 text-sm text-white hover:bg-bambu-dark">
-                <Palette className="h-4 w-4 text-bambu-green" />
-                {t('inventory.pickColor')}
-                <input
-                  type="color"
-                  aria-label={t('inventory.pickColor')}
-                  value={`#${selectedHex}`}
-                  onChange={(event) => {
-                    const customHex = event.target.value.replace('#', '').toUpperCase();
-                    setSelectedRgba(`${customHex}FF`);
-                    setSelectedColorName(getColorName(customHex));
-                    setColorTouched(true);
-                    setRgbaTouched(true);
-                  }}
-                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                />
-              </label>
-              <span className="rounded-lg border border-[var(--border-color)] bg-bambu-dark-secondary px-2.5 py-2 font-mono text-xs text-bambu-gray-light">
-                #{selectedHex}
-              </span>
-            </div>
-          </aside>
-        )}
       </div>
 
       {/* Footer */}

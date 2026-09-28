@@ -6965,7 +6965,6 @@ export default {
       assign: 'Asignar',
       assigning: 'Asignando...',
       assignSuccess: '¡Asignada!',
-      assignSuccessColorUpdateFailed: 'Bobina asignada, pero no se pudo guardar su color.',
       assignPendingInsert: 'Asignada. La ranura se configurará cuando inserte la bobina.',
       assignError: 'Error al asignar la bobina. Inténtelo de nuevo.',
       noPrinterSelected: 'Seleccionar una impresora...',

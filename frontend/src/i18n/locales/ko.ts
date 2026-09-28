@@ -6601,7 +6601,6 @@ export default {
       assign: '할당',
       assigning: '할당 중...',
       assignSuccess: '할당됨!',
-      assignSuccessColorUpdateFailed: '스풀은 할당되었지만 색상을 저장하지 못했습니다.',
       assignPendingInsert: '할당됨. 스풀을 삽입하면 슬롯이 구성됩니다.',
       assignError: '스풀 할당 실패. 다시 시도하세요.',
       noPrinterSelected: '프린터 선택...',

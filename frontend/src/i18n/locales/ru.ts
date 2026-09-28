@@ -6589,7 +6589,6 @@ export default {
       assign: "Назначить",
       assigning: "Назначение...",
       assignSuccess: "Назначено!",
-      assignSuccessColorUpdateFailed: "Катушка назначена, но сохранить её цвет не удалось.",
       assignPendingInsert: "Назначено. Слот будет настроен после установки катушки.",
       assignError: "Не удалось назначить катушку. Повторите попытку.",
       noPrinterSelected: "Выберите принтер...",

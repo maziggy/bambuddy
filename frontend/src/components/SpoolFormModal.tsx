@@ -1305,7 +1305,6 @@ export function SpoolFormModal({
         spool={spool}
         printerId={null}
         variant="dialog"
-        showColorEditor={false}
         spoolmanMode={spoolmanMode}
       />
     )}

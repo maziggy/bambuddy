@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy import select
 
+from backend.app.models.notification import NotificationProvider
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.spool import Spool
@@ -35,9 +36,12 @@ async def _printer(db, name: str = "X2D") -> Printer:
     return p
 
 
-async def _assigned_spool(db, printer, *, weight_used: float, threshold_pct: int | None = None, ams=0, tray=0):
+async def _assigned_spool(
+    db, printer, *, weight_used: float, threshold_pct: int | None = None, ams=0, tray=0, color_name=None
+):
     spool = Spool(
         material="PLA",
+        color_name=color_name,
         label_weight=1000,
         core_weight=250,
         weight_used=weight_used,
@@ -113,8 +117,15 @@ async def _pass(scheduler, db):
 
 @pytest.fixture
 def notify():
+    """The service, replaced, with one provider that wants the event.
+
+    Every test below that is about the producer assumes someone wants the alert;
+    the provider guard in front of the check has its own tests further down,
+    which run the real provider query.
+    """
     with patch("backend.app.services.print_scheduler.notification_service") as ns:
         ns.on_filament_low = AsyncMock()
+        ns._get_providers_for_event = AsyncMock(return_value=[MagicMock()])
         yield ns
 
 
@@ -132,6 +143,20 @@ async def test_fires_when_an_assigned_spool_is_below_the_threshold(db_session, s
     assert args[1] == "X2D"
     assert args[2] == "A1"
     assert args[3] == 15
+
+
+@pytest.mark.asyncio
+async def test_the_spool_colour_is_passed_for_the_template(db_session, scheduler, notify):
+    """on_filament_low has always accepted color= and the filament_low template
+    lists {color} as a variable; with nothing passing it, the variable rendered
+    empty in every custom template."""
+    printer = await _printer(db_session)
+    await _assigned_spool(db_session, printer, weight_used=850.0, color_name="Jade White")
+    await db_session.commit()
+
+    await _pass(scheduler, db_session)
+
+    assert notify.on_filament_low.await_args.kwargs["color"] == "Jade White"
 
 
 @pytest.mark.asyncio
@@ -297,13 +322,16 @@ async def test_an_archived_spool_is_not_stock(db_session, scheduler, notify):
 # -- Spoolman mode ----------------------------------------------------------
 
 
-def _spoolman_spool(spool_id: int, remaining_weight: float, label_weight: int = 1000) -> dict:
+def _spoolman_spool(spool_id: int, remaining_weight: float, label_weight: int = 1000, color_name=None) -> dict:
     """A raw Spoolman spool, in the shape _map_spoolman_spool reads."""
+    filament = {"id": 1, "name": "PLA Basic", "material": "PLA", "weight": label_weight, "vendor": {"name": "X"}}
+    if color_name is not None:
+        filament["color_name"] = color_name
     return {
         "id": spool_id,
         "remaining_weight": remaining_weight,
         "used_weight": label_weight - remaining_weight,
-        "filament": {"id": 1, "name": "PLA Basic", "material": "PLA", "weight": label_weight, "vendor": {"name": "X"}},
+        "filament": filament,
     }
 
 
@@ -333,7 +361,7 @@ async def test_spoolman_mode_alerts_from_the_collection_read(db_session, schedul
     printer = await _printer(db_session)
     await _spoolman_slot(db_session, printer, 7, ams=0, tray=1)
     await db_session.commit()
-    client = _spoolman_client([_spoolman_spool(7, remaining_weight=150.0)])  # 15% left
+    client = _spoolman_client([_spoolman_spool(7, remaining_weight=150.0, color_name="Jade White")])  # 15% left
 
     with patch("backend.app.services.spoolman.get_spoolman_client", AsyncMock(return_value=client)):
         await _pass(scheduler, db_session)
@@ -342,6 +370,7 @@ async def test_spoolman_mode_alerts_from_the_collection_read(db_session, schedul
     args = notify.on_filament_low.await_args.args
     assert args[2] == "A2"
     assert args[3] == 15
+    assert notify.on_filament_low.await_args.kwargs["color"] == "Jade White"
     # One request for the whole collection, not one per assigned slot.
     client.get_all_spools.assert_awaited_once()
 
@@ -446,6 +475,93 @@ async def test_a_replacement_spool_in_the_same_slot_can_alert(db_session, schedu
     assert notify.on_filament_low.await_args.args[3] == 10
 
 
+# -- nobody wants the alert ------------------------------------------------
+
+
+async def _provider(db, *, enabled: bool, on_filament_low: bool) -> None:
+    db.add(
+        NotificationProvider(
+            name=f"p-{enabled}-{on_filament_low}",
+            provider_type="ntfy",
+            config="{}",
+            enabled=enabled,
+            on_filament_low=on_filament_low,
+        )
+    )
+    await db.flush()
+
+
+@pytest.fixture
+def real_providers():
+    """The real service, with only the send replaced.
+
+    The guard is one query against notification_providers, so these tests run
+    it for real rather than mocking the answer -- otherwise a guard asking about
+    the wrong event, or ignoring ``enabled``, would pass.
+    """
+    from backend.app.services.print_scheduler import notification_service
+
+    with patch.object(notification_service, "on_filament_low", new_callable=AsyncMock) as send:
+        yield send
+
+
+@pytest.mark.asyncio
+async def test_no_spoolman_call_when_no_provider_wants_the_event(db_session, scheduler, real_providers):
+    """on_filament_low defaults to off, so on most installs nobody wants this.
+
+    Unguarded, every Spoolman install with slot assignments read its whole spool
+    collection every interval, forever, for an alert that was switched off. The
+    two providers here are the two ways of not wanting it: enabled with the
+    event off, and the event on but the provider disabled.
+    """
+    printer = await _printer(db_session)
+    await _spoolman_slot(db_session, printer, 7)
+    await _provider(db_session, enabled=True, on_filament_low=False)
+    await _provider(db_session, enabled=False, on_filament_low=True)
+    await db_session.commit()
+    get_client = AsyncMock(return_value=_spoolman_client([_spoolman_spool(7, remaining_weight=150.0)]))
+
+    with patch("backend.app.services.spoolman.get_spoolman_client", get_client):
+        await _pass(scheduler, db_session)
+
+    get_client.assert_not_awaited()
+    real_providers.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_internal_mode_does_no_spool_work_when_no_provider_wants_the_event(db_session, scheduler, real_providers):
+    """Same guard, internal mode: no spool query at all, not just no send."""
+    printer = await _printer(db_session)
+    await _assigned_spool(db_session, printer, weight_used=850.0)
+    await db_session.commit()
+
+    with patch.object(scheduler, "_get_low_stock_threshold", new_callable=AsyncMock) as work:
+        work.return_value = 20.0
+        await _pass(scheduler, db_session)
+
+    work.assert_not_awaited()
+    real_providers.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_one_provider_wanting_the_event_is_enough(db_session, scheduler, real_providers):
+    """The other side of the guard, through the same real query: one enabled
+    provider with the event on and the check runs. Without this, a guard that
+    always returned would pass the two tests above."""
+    printer = await _printer(db_session)
+    await _spoolman_slot(db_session, printer, 7)
+    await _provider(db_session, enabled=True, on_filament_low=False)
+    await _provider(db_session, enabled=True, on_filament_low=True)
+    await db_session.commit()
+    client = _spoolman_client([_spoolman_spool(7, remaining_weight=150.0)])
+
+    with patch("backend.app.services.spoolman.get_spoolman_client", AsyncMock(return_value=client)):
+        await _pass(scheduler, db_session)
+
+    client.get_all_spools.assert_awaited_once()
+    real_providers.assert_awaited_once()
+
+
 # -- the event actually reaches a provider ----------------------------------
 
 
@@ -470,14 +586,15 @@ async def test_the_event_reaches_a_provider_with_the_toggle_on():
         patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
     ):
         mock_get.return_value = [provider]
-        mock_build.return_value = ("Filament Low", "X2D AMS-A T1 is at 15%")
+        mock_build.return_value = ("Filament Low", "X2D A1 is at 15%")
 
-        await service.on_filament_low(1, "X2D", "AMS-A T1", 15, AsyncMock())
+        await service.on_filament_low(1, "X2D", "A1", 15, AsyncMock(), color="Jade White")
 
     mock_get.assert_awaited_once()
     assert mock_get.await_args.args[1] == "on_filament_low"
     mock_send.assert_awaited_once()
     variables = mock_send.await_args.kwargs["variables"]
     assert variables["printer"] == "X2D"
-    assert variables["slot"] == "AMS-A T1"
+    assert variables["slot"] == "A1"
     assert variables["remaining_percent"] == "15"
+    assert variables["color"] == "Jade White"

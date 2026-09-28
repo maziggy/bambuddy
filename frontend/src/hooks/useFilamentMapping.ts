@@ -85,6 +85,9 @@ export function buildLoadedFilaments(
           trayInfoIdx: tray.tray_info_idx || '',
           traySubBrands: tray.tray_sub_brands || '',
           spoolName: spoolDisplayName(identity) ?? undefined,
+          extraColors: identity?.extra_colors ?? undefined,
+          effectType: identity?.effect_type ?? undefined,
+          spoolSubtype: identity?.subtype ?? undefined,
           extruderId: amsExtruderMap?.[String(amsUnit.id)],
           remain: tray.remain ?? -1,
         });
@@ -114,6 +117,9 @@ export function buildLoadedFilaments(
         trayInfoIdx: extTray.tray_info_idx || '',
         traySubBrands: extTray.tray_sub_brands || '',
         spoolName: spoolDisplayName(identity) ?? undefined,
+        extraColors: identity?.extra_colors ?? undefined,
+        effectType: identity?.effect_type ?? undefined,
+        spoolSubtype: identity?.subtype ?? undefined,
         extruderId: hasDualNozzle ? (255 - trayId) : undefined,
         remain: extTray.remain ?? -1,
       });
@@ -184,6 +190,16 @@ export interface LoadedFilament {
   extruderId?: number;
   /** Remaining filament percentage (0-100), -1 = unknown */
   remain: number;
+  /** The bound spool's remaining colour stops and effect overlay, when the
+   *  slot has a binding (#3159). Display only, like `spoolName`: a tray record
+   *  carries one hex, so without these a two-tone spool draws as its base
+   *  colour. Absent for a slot configured on the printer -- the firmware has
+   *  nothing to report, and a solid swatch is then the honest one. */
+  extraColors?: string;
+  effectType?: string;
+  /** The bound spool's subtype ("PLA Silk", "Multicolor"), which decides
+   *  whether the swatch renders its stops as a conic sweep. */
+  spoolSubtype?: string;
 }
 
 /**

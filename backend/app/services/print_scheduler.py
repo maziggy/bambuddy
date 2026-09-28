@@ -60,9 +60,11 @@ from backend.app.services.printer_manager import (
 )
 from backend.app.services.smart_plug_manager import smart_plug_manager
 from backend.app.utils.ams_humidity import ams_humidity_percent
+from backend.app.utils.archive_paths import archive_photos_dir
 from backend.app.utils.color_utils import perceptual_color_distance
 from backend.app.utils.filament_types import canonical_filament_type
 from backend.app.utils.filename import derive_remote_filename
+from backend.app.utils.library_paths import move_library_photos
 from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.printer_models import (
     is_dual_nozzle_model,
@@ -6351,6 +6353,10 @@ class PrintScheduler:
         file_path = None
         filename = None
         cleanup_disk_paths: list[Path] = []
+        # Set when a dispatch consumes its library file, so the photos can be
+        # carried over after the commit that removes the row (#3077).
+        consumed_library_file_id: int | None = None
+        consumed_photos: list[str] = []
 
         if item.archive_id:
             # Print from archive
@@ -6372,6 +6378,12 @@ class PrintScheduler:
             # queue row.
             if archive.plate_id is None and item.plate_id is not None:
                 archive.plate_id = item.plate_id
+
+            # Ask-for-outcome opt-in rides from the queue item to the archive
+            # the same way (#1898); never cleared here so a reprint of an
+            # archive that already asked keeps asking.
+            if item.confirm_outcome:
+                archive.confirm_requested = True
 
             file_path = settings.base_dir / archive.file_path
             filename = archive.filename
@@ -6433,6 +6445,8 @@ class PrintScheduler:
                 )
                 if archive:
                     item.archive_id = archive.id
+                    if item.confirm_outcome:
+                        archive.confirm_requested = True  # ask-for-outcome opt-in (#1898)
                     if budget_reservation is not None:
                         budget_reservation.print_archive_id = archive.id
                     if item.cleanup_library_after_dispatch and not library_file.is_external:
@@ -6452,6 +6466,9 @@ class PrintScheduler:
                             archive_id=archive.id,
                             dispatched_item_id=item.id,
                         )
+                        # Read while the row is still here; the photos move
+                        # below, once the delete has actually committed.
+                        consumed_photos = list(library_file.photos or [])
                         await db.delete(library_file)
                         file_path = settings.base_dir / archive.file_path
                         filename = archive.filename
@@ -6492,6 +6509,68 @@ class PrintScheduler:
                 logger.error("Queue item %s: Archive creation from library file returned no archive", item.id)
                 await self._power_off_if_needed(db, item)
                 return
+
+            # The photos follow the file into the archive that replaces it, for
+            # the same reason the siblings do (#3077). After the commit above,
+            # never before it: that commit can fail ("database is locked",
+            # #1853) and roll the library row back, and photos already moved
+            # would leave it naming a directory that no longer exists. The
+            # file and thumbnail unlinks are deferred for the same reason.
+            if consumed_library_file_id is not None and consumed_photos:
+                # Held as a plain int, read here while the session is still
+                # healthy, because the handler below may not touch an ORM
+                # instance at all. The commit it exists for fails inside the
+                # FLUSH, not at COMMIT: SQLite takes the write lock at the
+                # first DML statement, so a busy writer surfaces as "database
+                # is locked" on the UPDATE (#1853). SQLAlchemy rolls that back
+                # internally through safe_reraise before re-raising, which
+                # expires every loaded instance and leaves the session in
+                # pending-rollback state -- so `archive.id` inside the except
+                # would itself raise PendingRollbackError and the rollback
+                # below would never be reached.
+                archive_id = archive.id
+                try:
+                    carried_photos = move_library_photos(
+                        consumed_library_file_id,
+                        consumed_photos,
+                        archive_photos_dir(archive),
+                    )
+                    if carried_photos:
+                        archive.photos = list(archive.photos or []) + carried_photos
+                        await db.commit()
+                except Exception as e:
+                    # The archive and the delete are already committed; the
+                    # print goes ahead either way. Worst case the pictures sit
+                    # unnamed in the archive's own directory.
+                    #
+                    # Ints only until the rollback has run, per the note above,
+                    # which is why this logs queue_item_id and not item.id --
+                    # the sibling handler forty lines up does the same.
+                    logger.warning(
+                        "Queue item %s: failed to carry library photos into archive %s: %s",
+                        queue_item_id,
+                        archive_id,
+                        e,
+                    )
+                    await db.rollback()
+                    # rollback() expires every loaded instance, and in async
+                    # SQLAlchemy the next plain attribute read is lazy IO
+                    # outside the greenlet -- MissingGreenlet, which would turn
+                    # this cosmetic failure into a dispatch crash in exactly the
+                    # "database is locked" case the block exists for (#1853).
+                    # The nozzle guard, the upload and the start all keep
+                    # reading item, archive and printer, so all three go back
+                    # into the session before falling through.
+                    item = await db.get(PrintQueueItem, queue_item_id)
+                    archive = await db.get(PrintArchive, archive_id)
+                    printer = await db.get(Printer, item.printer_id) if item else None
+                    if not item or not archive or not printer:
+                        logger.error(
+                            "Queue item %s: item, archive %s or printer gone after the photo rollback",
+                            queue_item_id,
+                            archive_id,
+                        )
+                        return
 
         else:
             # Neither archive nor library file specified
@@ -6897,6 +6976,16 @@ class PrintScheduler:
 
         # Clear the awaiting-plate-clear flag now that we're starting a new print
         printer_manager.set_awaiting_plate_clear(item.printer_id, False)
+
+        # #1898: with the opt-in default-good setting, moving on to the next
+        # print resolves the previous print's unanswered outcome prompt as
+        # "good" — this path also covers the camera-based plate detection,
+        # which releases the gate by allowing dispatch rather than by an
+        # explicit acknowledgment. Rides on the dispatch transaction.
+        if await self._get_bool_setting(db, "confirm_default_good_on_plate_clear", default=False):
+            from backend.app.services.print_confirmation import resolve_pending_confirmation_as_good
+
+            await resolve_pending_confirmation_as_good(db, item.printer_id)
         logger.info("Queue item %s: Status set to 'printing', sending print command...", item.id)
 
         # Capture state before dispatch so the watchdog can detect whether the

@@ -945,6 +945,114 @@ class TestLibraryOwnershipPermissions(TestOwnershipPermissionsSetup):
         assert response.status_code == 403
 
     # ========================================================================
+    # Photo routes (#3077). Upload and delete are gated on LIBRARY_UPDATE_*,
+    # so a non-owner is refused with 403 exactly like ``update_file``. The
+    # read path goes through ``_ensure_library_file_visible`` and answers 404
+    # instead, so an id that exists tells an outsider nothing.
+    # ========================================================================
+
+    @pytest.fixture
+    def photo_storage(self, monkeypatch, tmp_path):
+        """Keep uploaded photos out of the real data directory."""
+        from backend.app.core.config import settings as app_settings
+
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+        monkeypatch.setattr(app_settings, "archive_dir", tmp_path / "archive")
+        return tmp_path
+
+    @staticmethod
+    def _photo_upload():
+        import io
+
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", (8, 8), "blue").save(buf, "JPEG")
+        return {"file": ("result.jpg", buf.getvalue(), "image/jpeg")}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_can_upload_photo_to_own_library_file(
+        self, async_client: AsyncClient, auth_setup, library_file_factory, photo_storage
+    ):
+        file = await library_file_factory(created_by_id=auth_setup["operator_user"]["id"])
+
+        response = await async_client.post(
+            f"/api/v1/library/files/{file.id}/photos",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            files=self._photo_upload(),
+        )
+
+        assert response.status_code == 200
+        assert len(response.json()["photos"]) == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_upload_photo_to_others_library_file(
+        self, async_client: AsyncClient, auth_setup, library_file_factory, photo_storage
+    ):
+        from backend.app.utils.library_paths import library_photos_dir
+
+        file = await library_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+
+        response = await async_client.post(
+            f"/api/v1/library/files/{file.id}/photos",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            files=self._photo_upload(),
+        )
+
+        assert response.status_code == 403
+        assert not library_photos_dir(file.id).exists()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_delete_photo_from_others_library_file(
+        self, async_client: AsyncClient, auth_setup, library_file_factory, photo_storage
+    ):
+        from backend.app.utils.library_paths import library_photos_dir
+
+        file = await library_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+        upload = await async_client.post(
+            f"/api/v1/library/files/{file.id}/photos",
+            headers={"Authorization": f"Bearer {auth_setup['operator2_token']}"},
+            files=self._photo_upload(),
+        )
+        filename = upload.json()["filename"]
+
+        response = await async_client.delete(
+            f"/api/v1/library/files/{file.id}/photos/{filename}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 403
+        assert (library_photos_dir(file.id) / filename).is_file()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_reading_others_library_file_photo_gets_404(
+        self, async_client: AsyncClient, auth_setup, library_file_factory, photo_storage
+    ):
+        file = await library_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+        upload = await async_client.post(
+            f"/api/v1/library/files/{file.id}/photos",
+            headers={"Authorization": f"Bearer {auth_setup['operator2_token']}"},
+            files=self._photo_upload(),
+        )
+        filename = upload.json()["filename"]
+
+        owner = await async_client.get(
+            f"/api/v1/library/files/{file.id}/photos/{filename}",
+            headers={"Authorization": f"Bearer {auth_setup['operator2_token']}"},
+        )
+        assert owner.status_code == 200
+
+        stranger = await async_client.get(
+            f"/api/v1/library/files/{file.id}/photos/{filename}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+        assert stranger.status_code == 404
+
+    # ========================================================================
     # Folder deletion (#1781): folders have no ownership tracking, so users
     # with only library:delete_own may delete empty, non-external, non-linked
     # folders. Everything else still requires library:delete_all.

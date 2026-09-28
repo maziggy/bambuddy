@@ -811,6 +811,29 @@ describe('QueuePage', () => {
     });
   });
 
+  describe('outcome prompt badge (#1898)', () => {
+    it('shows the badge only on items with confirm_outcome set', async () => {
+      const items = mockQueueItems.map((item, i) =>
+        i === 0 ? { ...item, confirm_outcome: true } : { ...item, confirm_outcome: false }
+      );
+      server.use(http.get('/api/v1/queue/', () => HttpResponse.json(items)));
+
+      render(<QueuePage />);
+
+      await waitFor(() => expect(screen.getByText('Test Print 1')).toBeInTheDocument());
+      const badges = screen.getAllByText('Outcome prompt');
+      expect(badges).toHaveLength(1);
+      expect(badges[0].closest('span')).toHaveAttribute('title', 'Asks how the print came out after it completes');
+    });
+
+    it('renders nothing when no item asks for an outcome', async () => {
+      render(<QueuePage />);
+
+      await waitFor(() => expect(screen.getByText('Test Print 1')).toBeInTheDocument());
+      expect(screen.queryByText('Outcome prompt')).not.toBeInTheDocument();
+    });
+  });
+
   describe('filament-short ▶ flow (#1496)', () => {
     /**
      * The dispatch pre-flight flags a queue item as filament_short. The user
@@ -1028,6 +1051,53 @@ describe('QueuePage', () => {
       await waitFor(() => expect(patchBody).not.toBeNull());
       expect(patchBody!.manual_start).toBe(true);
       expect('gcode_injection' in patchBody!).toBe(false);
+    });
+  });
+
+  describe('bulk edit ask-for-outcome (#1898)', () => {
+    const openBulkEdit = async () => {
+      render(<QueuePage />);
+      await waitFor(() => expect(screen.getByText('Test Print 1')).toBeInTheDocument());
+      await userEvent.click(screen.getByText('Select All'));
+      await userEvent.click(await screen.findByTitle('Edit Selected'));
+      return screen.getByText('Edit 1 Item').closest('div')!.parentElement!;
+    };
+
+    const captureBulkPatch = () => {
+      const captured: { body: Record<string, unknown> | null } = { body: null };
+      server.use(
+        http.patch('/api/v1/queue/bulk', async ({ request }) => {
+          captured.body = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ updated_count: 1, skipped_count: 0, message: 'Updated 1 items' });
+        }),
+      );
+      return captured;
+    };
+
+    it('sends confirm_outcome with the bulk PATCH once toggled', async () => {
+      const captured = captureBulkPatch();
+      const dialog = await openBulkEdit();
+
+      const row = within(dialog).getByText('Ask for outcome').closest('div')!;
+      await userEvent.click(within(row).getByText('On'));
+      await userEvent.click(within(dialog).getByText('Apply Changes'));
+
+      await waitFor(() => expect(captured.body).not.toBeNull());
+      expect(captured.body!.item_ids).toEqual([1]);
+      expect(captured.body!.confirm_outcome).toBe(true);
+    });
+
+    it('leaves confirm_outcome out of the PATCH while it stays on "no change"', async () => {
+      const captured = captureBulkPatch();
+      const dialog = await openBulkEdit();
+
+      const timelapseRow = within(dialog).getByText('Timelapse').closest('div')!;
+      await userEvent.click(within(timelapseRow).getByText('On'));
+      await userEvent.click(within(dialog).getByText('Apply Changes'));
+
+      await waitFor(() => expect(captured.body).not.toBeNull());
+      expect(captured.body!.timelapse).toBe(true);
+      expect('confirm_outcome' in captured.body!).toBe(false);
     });
   });
 });

@@ -10,12 +10,28 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
+import { screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
 import { server } from '../mocks/server';
 import { FilamentMapping } from '../../components/PrintModal/FilamentMapping';
 import type { PrinterStatus } from '../../api/client';
+
+/**
+ * Open the slot picker and hand back its listbox.
+ *
+ * The picker replaced a native `<select>` (#3159). A `<select>` keeps every
+ * `<option>` mounted whether or not it is open, so these assertions used to
+ * read the closed control; a listbox renders its rows only while open. They
+ * are about what the user is *offered*, so they open it first — and scope to
+ * the listbox, because the chosen slot's label now also appears on the
+ * trigger.
+ */
+async function openSlotPicker(): Promise<HTMLElement> {
+  const trigger = await waitFor(() => screen.getAllByRole('combobox')[0]);
+  fireEvent.click(trigger);
+  return await waitFor(() => screen.getByRole('listbox'));
+}
 
 const mockFilamentReqs = {
   filaments: [
@@ -92,19 +108,18 @@ describe('FilamentMapping — FTS routing', () => {
       />,
     );
 
-    // Both PLA and PETG slots must appear in the dropdown despite ams_extruder_map
-    // being empty and the requirement asking for nozzle 1. Without the FTS guard
-    // the dropdown would render only the "-- Select slot --" placeholder.
-    await waitFor(() => {
-      expect(screen.getByText(/Bambu PLA/)).toBeInTheDocument();
-    });
-    expect(screen.getByText(/Bambu PETG/)).toBeInTheDocument();
+    // Both PLA and PETG slots must be offered despite ams_extruder_map being
+    // empty and the requirement asking for nozzle 1. Without the FTS guard the
+    // picker would offer only the "-- Select slot --" placeholder.
+    const listbox = await openSlotPicker();
+    expect(within(listbox).getByText(/Bambu PLA/)).toBeInTheDocument();
+    expect(within(listbox).getByText(/Bambu PETG/)).toBeInTheDocument();
 
     // Each slot is badged for the switch INLET its AMS is plumbed into, using
     // the same L-for-In-A lettering as the printer card. Both slots are in
     // AMS 0, which is on In-A.
-    expect(screen.getByText(/Bambu PETG/).textContent).toMatch(/\[L\]/);
-    expect(screen.getByText(/Bambu PLA/).textContent).toMatch(/\[L\]/);
+    expect(within(listbox).getByText(/Bambu PETG/).textContent).toMatch(/\[L\]/);
+    expect(within(listbox).getByText(/Bambu PLA/).textContent).toMatch(/\[L\]/);
   });
 
   it('does not badge slots whose AMS has no inlet binding yet', async () => {
@@ -135,10 +150,8 @@ describe('FilamentMapping — FTS routing', () => {
       />,
     );
 
-    await waitFor(() => {
-      expect(screen.getByText(/Bambu PETG/)).toBeInTheDocument();
-    });
-    expect(screen.getByText(/Bambu PETG/).textContent).not.toMatch(/\[[LR]\]/);
+    const listbox = await openSlotPicker();
+    expect(within(listbox).getByText(/Bambu PETG/).textContent).not.toMatch(/\[[LR]\]/);
   });
 
   it('renders the per-slot force-color-match checkbox in printer mode (#1717)', async () => {
@@ -258,12 +271,11 @@ describe('FilamentMapping — FTS routing', () => {
     );
 
     // Required nozzle is 1 (LEFT) and AMS 0 is wired to extruder 0 (RIGHT).
-    // Both slots must STILL appear so the user can pick them — explicitly the
-    // cross-extruder scenario the #1722 fix unblocks.
-    await waitFor(() => {
-      expect(screen.getByText(/Bambu PLA/)).toBeInTheDocument();
-    });
-    expect(screen.getByText(/Bambu PETG/)).toBeInTheDocument();
+    // Both slots must STILL be offered so the user can pick them — explicitly
+    // the cross-extruder scenario the #1722 fix unblocks.
+    const listbox = await openSlotPicker();
+    expect(within(listbox).getByText(/Bambu PLA/)).toBeInTheDocument();
+    expect(within(listbox).getByText(/Bambu PETG/)).toBeInTheDocument();
   });
 
   it('renders sub-brand + material-disambiguated colour on the required side (#1718)', async () => {

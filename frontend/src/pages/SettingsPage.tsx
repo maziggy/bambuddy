@@ -22,6 +22,7 @@ import type { APIKey, AppSettings, AppSettingsUpdate, PrinterHASensor, LocationH
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
 import { SlicerPipelinesPanel } from '../components/SlicerPipelinesPanel';
 import { CameraTokensSection } from './CameraTokensPage';
+import { ConnectedAppsSection } from '../components/ConnectedAppsSection';
 import { StreamOverlayBuilder } from '../components/StreamOverlayBuilder';
 import { Collapsible } from '../components/Collapsible';
 import { CopyButton } from '../components/CopyButton';
@@ -59,7 +60,7 @@ import { availableLanguages } from '../i18n';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, type ThemeStyle, type DarkBackground, type LightBackground, type ThemeAccent } from '../contexts/ThemeContext';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Gauge, Palette } from 'lucide-react';
+import { Gauge, Link2, Palette } from 'lucide-react';
 import { registerSettingsSearch, getSettingsSearchEntries } from '../lib/settingsSearch';
 import type { UsersSubTab } from '../lib/settingsSearch';
 import { availableEngines, hasEngineChoice, resolveEngine, type SliceEngineId } from '../lib/sliceEngines';
@@ -102,6 +103,7 @@ registerSettingsSearch({ labelKey: 'settings.prometheusMetrics', tab: 'network',
 registerSettingsSearch({ labelKey: 'settings.createNewApiKey', tab: 'apikeys', keywords: 'api key create permission scope', anchor: 'card-createapi' });
 registerSettingsSearch({ labelKey: 'settings.webhookEndpoints', tab: 'apikeys', keywords: 'webhook endpoint post http', anchor: 'card-webhooks' });
 registerSettingsSearch({ labelKey: 'settings.apiBrowser', tab: 'apikeys', keywords: 'api browser endpoint documentation test', anchor: 'card-apibrowser' });
+registerSettingsSearch({ labelKey: 'connectedApps.title', tab: 'apikeys', keywords: 'connected app sign in single sign-on sso oauth login orders', anchor: 'card-connected-apps' });
 registerSettingsSearch({ labelKey: 'cameraTokens.title', tab: 'apikeys', keywords: 'camera token long-lived home assistant frigate kiosk stream', anchor: 'card-camera-tokens' });
 registerSettingsSearch({ labelKey: 'settings.tabs.virtualPrinter', tab: 'virtual-printer', keywords: 'virtual printer proxy archive slicer bambustudio orcaslicer ip bind', anchor: 'card-vp' });
 registerSettingsSearch({ labelKey: 'settings.tabs.spoolbuddy', tab: 'spoolbuddy', keywords: 'spoolbuddy device scale nfc rfid kiosk unregister', anchor: 'card-spoolbuddy' });
@@ -297,6 +299,7 @@ export function SettingsPage() {
     can_manage_projects: true,
     can_access_cloud: false,
     can_update_energy_cost: false,
+    can_send_notifications: false,
   });
   const [createdAPIKey, setCreatedAPIKey] = useState<string | null>(null);
   const [showApiKeyQR, setShowApiKeyQR] = useState(false);
@@ -1198,6 +1201,9 @@ export function SettingsPage() {
       (baseline.default_layer_inspect ?? false) !== (localSettings.default_layer_inspect ?? false) ||
       (baseline.default_timelapse ?? false) !== (localSettings.default_timelapse ?? false) ||
       (baseline.default_nozzle_offset_cali ?? 'auto') !== (localSettings.default_nozzle_offset_cali ?? 'auto') ||
+      (baseline.default_confirm_outcome ?? false) !== (localSettings.default_confirm_outcome ?? false) ||
+      (baseline.confirm_outcome_external_prints ?? false) !== (localSettings.confirm_outcome_external_prints ?? false) ||
+      (baseline.confirm_default_good_on_plate_clear ?? false) !== (localSettings.confirm_default_good_on_plate_clear ?? false) ||
       (baseline.stagger_group_size ?? 2) !== (localSettings.stagger_group_size ?? 2) ||
       (baseline.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
       (baseline.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
@@ -1310,6 +1316,9 @@ export function SettingsPage() {
         default_layer_inspect: localSettings.default_layer_inspect,
         default_timelapse: localSettings.default_timelapse,
         default_nozzle_offset_cali: localSettings.default_nozzle_offset_cali,
+        default_confirm_outcome: localSettings.default_confirm_outcome,
+        confirm_outcome_external_prints: localSettings.confirm_outcome_external_prints,
+        confirm_default_good_on_plate_clear: localSettings.confirm_default_good_on_plate_clear,
         stagger_group_size: localSettings.stagger_group_size,
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
@@ -4626,6 +4635,18 @@ export function SettingsPage() {
                           <p className="text-xs text-bambu-gray">{t('settings.updateEnergyCostDescription')}</p>
                         </div>
                       </label>
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newAPIKeyPermissions.can_send_notifications}
+                          onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_send_notifications: e.target.checked }))}
+                          className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
+                        />
+                        <div>
+                          <span className="text-white">{t('settings.sendNotifications')}</span>
+                          <p className="text-xs text-bambu-gray">{t('settings.sendNotificationsDescription')}</p>
+                        </div>
+                      </label>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 pt-2">
@@ -4703,6 +4724,9 @@ export function SettingsPage() {
                             )}
                             {key.can_update_energy_cost && (
                               <span className="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 rounded">{t('settings.energyCostBadge')}</span>
+                            )}
+                            {key.can_send_notifications && (
+                              <span className="px-1.5 py-0.5 bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-400 rounded">{t('settings.sendNotificationsBadge')}</span>
                             )}
                             {key.user_id === null && (
                               <span
@@ -4786,6 +4810,22 @@ export function SettingsPage() {
               </CardContent>
             </Card>
             </>}
+
+            {/* Connected apps: "Sign in with Bambuddy" for external applications.
+                Admin-only, like the settings it sits between. */}
+            {hasPermission('settings:update') && (
+              <Card className="mt-6">
+                <CardHeader>
+                  <h3 className="text-base font-semibold text-white flex items-center gap-2" id="card-connected-apps">
+                    <Link2 className="w-4 h-4 text-bambu-green" />
+                    {t('connectedApps.title')}
+                  </h3>
+                </CardHeader>
+                <CardContent>
+                  <ConnectedAppsSection />
+                </CardContent>
+              </Card>
+            )}
 
             {/* Long-lived camera-stream tokens (#1108) */}
             <Card className="mt-6">
@@ -4921,6 +4961,7 @@ export function SettingsPage() {
                 { key: 'default_layer_inspect' as const, label: t('settings.defaultLayerInspect', 'First Layer Inspection'), desc: t('settings.defaultLayerInspectDesc', 'AI inspection of first layer'), fallback: false, dualNozzleOnly: false, tristate: false },
                 { key: 'default_timelapse' as const, label: t('settings.defaultTimelapse', 'Timelapse'), desc: t('settings.defaultTimelapseDesc', 'Record timelapse video'), fallback: false, dualNozzleOnly: false, tristate: false },
                 { key: 'default_nozzle_offset_cali' as const, label: t('settings.defaultNozzleOffsetCali', 'Nozzle Offset Calibration'), desc: t('settings.defaultNozzleOffsetCaliDesc', 'Calibrate nozzle offsets between extruders'), fallback: true, dualNozzleOnly: true, tristate: true },
+                { key: 'default_confirm_outcome' as const, label: t('settings.defaultConfirmOutcome', 'Ask for Outcome'), desc: t('settings.defaultConfirmOutcomeDesc', 'Ask whether the print came out well after it completes'), fallback: false, dualNozzleOnly: false, tristate: false },
               ]
               .filter(({ dualNozzleOnly }) => !dualNozzleOnly || (printers || []).some(p => p.nozzle_count === 2))
               .map(({ key, label, desc, fallback, tristate }) => (
@@ -4972,6 +5013,27 @@ export function SettingsPage() {
                   )}
                 </div>
               ))}
+              {/* Prints Bambuddy only archived, never dispatched, carry no
+                  queue item to read the ask-for-outcome flag from (#1898). */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1 mr-4">
+                  <p className="text-sm text-white">
+                    {t('settings.confirmOutcomeExternalPrints', 'Also ask for prints started outside Bambuddy')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mt-0.5">
+                    {t('settings.confirmOutcomeExternalPrintsDesc', 'Prints started at the printer, in Bambu Studio or in the Handy app are archived by Bambuddy too. With this on, they get the same outcome prompt as queued prints.')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.confirm_outcome_external_prints ?? false}
+                    onChange={(e) => updateSetting('confirm_outcome_external_prints', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
             </CardContent>
           </Card>
 
@@ -4998,6 +5060,27 @@ export function SettingsPage() {
                     type="checkbox"
                     checked={localSettings.require_plate_clear ?? false}
                     onChange={(e) => updateSetting('require_plate_clear', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+              {/* Post-print outcome confirmation (#1898): default unanswered
+                  prompts to "good" the moment the plate is released. */}
+              <div className="flex items-center justify-between">
+                <div className="flex-1 mr-4">
+                  <p className="text-sm text-white">
+                    {t('settings.confirmDefaultGoodOnPlateClear', 'Count unanswered outcomes as good on plate release')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.confirmDefaultGoodOnPlateClearDescription', 'When the plate is released (manually or by the next queued print) and the print\'s outcome prompt is still unanswered, record it as a good part automatically. The print then counts as good as soon as the plate is released; a Telegram or link answer after that only shows the recorded result.')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.confirm_default_good_on_plate_clear ?? false}
+                    onChange={(e) => updateSetting('confirm_default_good_on_plate_clear', e.target.checked)}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>

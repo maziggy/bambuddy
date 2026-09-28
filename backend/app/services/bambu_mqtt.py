@@ -179,6 +179,40 @@ def a2l_lite_wire_ids(ams_id: int, tray_id: int) -> tuple[int, int, int] | None:
     )
 
 
+def resolve_external_spools_in_mapping(ams_mapping: object, ams_mapping2: object, is_dual_nozzle: bool) -> object:
+    """Put the external spool back into a captured flat ``ams_mapping`` (#3166).
+
+    The firmware rejects 254/255 in the flat list, so BambuStudio and our own
+    dispatch both write an external spool there as -1 -- the same value as a
+    slot that isn't fed at all -- and carry the real target only in
+    ``ams_mapping2`` as ``{ams_id: 254|255, slot_id: 0}``. Capturing the flat
+    list alone turns "printed from the external spool" into "unmapped", and
+    usage then lands on whatever tray the fallback guesses.
+
+    Each -1 whose ``ams_mapping2`` entry names an external spool becomes the
+    global tray the rest of Bambuddy uses: the ams_id itself on dual-nozzle
+    printers (254 = left/deputy, 255 = right/main), 254 on single-nozzle
+    printers, which have one external spool that the wire always calls 255.
+    ``{255, 255}`` is the unmapped marker and stays -1. Every other entry is
+    left exactly as captured. Without a usable ``ams_mapping2`` the input is
+    returned unchanged.
+    """
+    if not isinstance(ams_mapping, list) or not isinstance(ams_mapping2, list):
+        return ams_mapping
+    if len(ams_mapping2) != len(ams_mapping):
+        return ams_mapping
+    resolved = list(ams_mapping)
+    for i, (flat, detail) in enumerate(zip(ams_mapping, ams_mapping2, strict=True)):
+        if flat != -1 or not isinstance(detail, dict):
+            continue
+        ams_id = detail.get("ams_id")
+        slot_id = detail.get("slot_id")
+        if ams_id not in (254, 255) or slot_id == 255:
+            continue
+        resolved[i] = ams_id if is_dual_nozzle else 254
+    return resolved
+
+
 def apply_tray_exist_bits(
     units: list,
     tray_exist_bits_str: str | int | None,
@@ -1988,7 +2022,7 @@ class BambuMQTTClient:
                 self.state.current_project_url = url
                 self.state.last_project_url = url
             if "ams_mapping" in print_data:
-                self._captured_ams_mapping = print_data["ams_mapping"]
+                self._captured_ams_mapping = self._resolve_captured_mapping(print_data)
                 logger.info(
                     "[%s] Captured ams_mapping from print command: %s",
                     self.serial_number,
@@ -2068,12 +2102,23 @@ class BambuMQTTClient:
         # already captured this print's mapping that copy is the slicer's own,
         # and the echo can arrive without the field at all.
         if self._captured_ams_mapping is None and isinstance(print_data.get("ams_mapping"), list):
-            self._captured_ams_mapping = print_data["ams_mapping"]
+            self._captured_ams_mapping = self._resolve_captured_mapping(print_data)
             logger.info(
                 "[%s] Captured ams_mapping from print response: %s",
                 self.serial_number,
                 self._captured_ams_mapping,
             )
+
+    def _resolve_captured_mapping(self, print_data: dict) -> object:
+        """The ``ams_mapping`` of a project_file, with external spools resolved
+        from its ``ams_mapping2`` (#3166)."""
+        from backend.app.utils.printer_models import is_dual_nozzle_model
+
+        return resolve_external_spools_in_mapping(
+            print_data.get("ams_mapping"),
+            print_data.get("ams_mapping2"),
+            self._is_dual_nozzle or is_dual_nozzle_model(self.model),
+        )
 
     @staticmethod
     def _project_file_key(print_data: dict) -> str:
@@ -3185,15 +3230,16 @@ class BambuMQTTClient:
                     # slot (typically 0) when the active feed is actually the
                     # external spool. X1C / P1S / A1 correctly report 254 in
                     # that case; H2S does not. When the slicer-captured
-                    # ams_mapping is all-external (every entry == -1), the
-                    # print can only be feeding from the external spool, so
-                    # promote tray_now to 254. Mixed (e.g. [5, -1]) and
+                    # ams_mapping is all-external (every entry is 254, or -1
+                    # when the command carried no ams_mapping2 to resolve it
+                    # from, #3166), the print can only be feeding from the
+                    # external spool, so promote tray_now to 254. Mixed (e.g. [5, 254]) and
                     # AMS-only mappings are NOT overridden — there's no
                     # evidence the firmware misreports in those cases. Prints
                     # started without a captured mapping (printer-screen start,
                     # or before Bambuddy connected) fall through unchanged.
                     captured = self._captured_ams_mapping
-                    if captured and all(s == -1 for s in captured):
+                    if captured and all(s in (-1, 254, 255) for s in captured):
                         if self.state.tray_now != 254:
                             logger.debug(
                                 f"[{self.serial_number}] tray_now external-spool override (#1822): "

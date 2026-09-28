@@ -206,4 +206,8 @@ class TestGetInventoryRemain:
             "subtype": "Basic",
             "color_name": "Orange",
             "rgba": "FEC600FF",
+            # The rest of the colour, for the slot picker's swatch (#3159).
+            # None here: this spool is a single flat colour.
+            "extra_colors": None,
+            "effect_type": None,
         }

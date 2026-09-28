@@ -1507,6 +1507,24 @@ async def _track_from_3mf(
         mapping_source or "none",
     )
 
+    # A mapping that names no tray for any slot the print used carries no
+    # evidence at all -- typically a flat ams_mapping whose external spool is
+    # -1 and came without an ams_mapping2 to resolve it (#3166). Drop it so the
+    # tray_now evidence below decides, rather than leaving every slot unfed.
+    if slot_to_tray:
+        used_slots = [u.get("slot_id", 0) for u in filament_usage if u.get("used_g", 0) > 0]
+        if used_slots and all(
+            not (0 < s <= len(slot_to_tray) and isinstance(slot_to_tray[s - 1], int) and slot_to_tray[s - 1] >= 0)
+            for s in used_slots
+        ):
+            logger.info(
+                "[UsageTracker] 3MF: mapping %s names no tray for used slots %s — ignoring it",
+                slot_to_tray,
+                used_slots,
+            )
+            slot_to_tray = None
+            mapping_source = None
+
     # 5. For single-filament non-queue prints, use tray_now from printer state
     #    Priority: tray_change_log (multi-tray split) > tray_now_at_start > current tray_now
     #              > last_loaded_tray > vt_tray check
@@ -1779,6 +1797,18 @@ async def _track_from_3mf(
                 mapped = slot_to_tray[slot_id - 1]
                 if isinstance(mapped, int) and mapped >= 0:
                     global_tray_id = mapped
+                elif mapped == -1:
+                    # The mapping says this slot isn't fed from any tray. The
+                    # position-based guess below would hand it the Nth loaded
+                    # tray anyway -- an AMS spool that never moved (#3166), or
+                    # the tray another slot really used, which that slot then
+                    # finds already handled and drops (#2880).
+                    logger.info(
+                        "[UsageTracker] 3MF: slot_id=%d is unmapped (-1) — nothing charged (used_g=%.1f)",
+                        slot_id,
+                        used_g,
+                    )
+                    continue
             # Position-based default: sort available tray IDs so external spools (254/255)
             # naturally follow standard AMS trays, matching slicer slot numbering.
             #

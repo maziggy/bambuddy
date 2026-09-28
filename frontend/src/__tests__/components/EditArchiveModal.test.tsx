@@ -588,4 +588,125 @@ describe('EditArchiveModal', () => {
       expect(Number(field.value)).toBeGreaterThanOrEqual(0);
     });
   });
+
+  // Post-print outcome confirmation (#1898)
+  describe('outcome verdict source', () => {
+    const completed = {
+      ...mockArchive,
+      status: 'completed',
+      user_verdict: 'good',
+      confirm_requested: true,
+    };
+
+    it('explains a verdict the plate-clear default recorded', () => {
+      render(
+        <EditArchiveModal
+          archive={{ ...completed, user_verdict_source: 'plate_clear' }}
+          onClose={mockOnClose}
+          onSave={mockOnSave}
+        />,
+      );
+
+      expect(screen.getByTestId('verdict-source-hint')).toHaveTextContent(
+        'Recorded when the plate was cleared.',
+      );
+    });
+
+    it('shows no hint for a verdict with no recorded source', () => {
+      render(
+        <EditArchiveModal
+          archive={{ ...completed, user_verdict_source: null }}
+          onClose={mockOnClose}
+          onSave={mockOnSave}
+        />,
+      );
+
+      expect(screen.queryByTestId('verdict-source-hint')).not.toBeInTheDocument();
+    });
+
+    it('stamps the dialog as the source when the verdict is changed here', async () => {
+      const user = userEvent.setup();
+      let seen: Record<string, unknown> | null = null;
+      server.use(
+        http.patch('/api/v1/archives/:id', async ({ request }) => {
+          seen = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...completed, ...seen });
+        }),
+      );
+
+      render(
+        <EditArchiveModal
+          archive={{ ...completed, user_verdict_source: 'plate_clear' }}
+          onClose={mockOnClose}
+          onSave={mockOnSave}
+        />,
+      );
+
+      await user.selectOptions(screen.getByLabelText(/outcome verdict/i), 'reject');
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => expect(seen).not.toBeNull());
+      expect(seen!.user_verdict).toBe('reject');
+      expect(seen!.user_verdict_source).toBe('dialog');
+    });
+  });
+
+  describe('failure_reason on a machine status the dropdown cannot show', () => {
+    // The reject reason (#1898) reuses failure_reason, so the clearing branch
+    // grew "|| archive.failure_reason" to drop it when the verdict goes away.
+    // That clause also catches a 'cancelled' archive: print_queue writes
+    // status 'cancelled' with "Stopped by user (printer was offline)" when a
+    // stop is issued to an offline printer, the status dropdown has no
+    // 'cancelled' option, and so opening the editor and pressing Save with
+    // nothing touched wiped a reason the user could not put back.
+    const cancelled = {
+      ...mockArchive,
+      status: 'cancelled',
+      failure_reason: 'Stopped by user (printer was offline)',
+      user_verdict: null,
+    };
+
+    it('keeps the machine-written reason on an untouched save', async () => {
+      const user = userEvent.setup();
+      let seen: Record<string, unknown> | null = null;
+      server.use(
+        http.patch('/api/v1/archives/:id', async ({ request }) => {
+          seen = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...cancelled, ...seen });
+        }),
+      );
+
+      render(<EditArchiveModal archive={cancelled} onClose={mockOnClose} onSave={mockOnSave} />);
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => expect(seen).not.toBeNull());
+      expect(seen!).not.toHaveProperty('failure_reason');
+    });
+
+    it('still drops the reason when a reject verdict is taken back', async () => {
+      // The behaviour the clause was written for, on the archive it was
+      // written for: a completed print whose reject reason no longer applies.
+      const user = userEvent.setup();
+      let seen: Record<string, unknown> | null = null;
+      const rejected = {
+        ...mockArchive,
+        status: 'completed',
+        user_verdict: 'reject',
+        failure_reason: 'warping',
+      };
+      server.use(
+        http.patch('/api/v1/archives/:id', async ({ request }) => {
+          seen = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...rejected, ...seen });
+        }),
+      );
+
+      render(<EditArchiveModal archive={rejected} onClose={mockOnClose} onSave={mockOnSave} />);
+      await user.selectOptions(screen.getByLabelText(/outcome verdict/i), 'good');
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => expect(seen).not.toBeNull());
+      expect(seen!.failure_reason).toBeNull();
+    });
+  });
 });

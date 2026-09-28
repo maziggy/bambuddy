@@ -70,6 +70,10 @@ _PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/api/v1/auth/oidc/authorize/{provider_id}"),
         ("GET", "/api/v1/auth/oidc/callback"),
         ("POST", "/api/v1/auth/oidc/exchange"),
+        # Connected-app token exchange — called by the app's server, not a browser. The client
+        # secret (bcrypt-verified) plus a single-use, 60 s, PKCE-bound code in the body are the auth;
+        # rate-limited per client and per IP. Refuses outright while Bambuddy auth is disabled.
+        ("POST", "/api/v1/connect/token"),
         # 2FA send + verify — issued after password check; pre-auth token in cookie is the auth.
         ("POST", "/api/v1/auth/2fa/email/send"),
         ("POST", "/api/v1/auth/2fa/verify"),
@@ -87,6 +91,12 @@ _PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         # Attached archive media target — validates a token bound to the
         # archive ID before returning the local timelapse.
         ("GET", "/api/v1/archives/{archive_id}/media/dl/{token}/{filename}"),
+        # Outcome-confirmation link (#1898) — the single-use capability token in
+        # the path is the credential; it is retired on the first verdict and
+        # only ever sets one verdict on one archive. The GET renders the
+        # confirmation page and writes nothing; the POST behind it records.
+        ("GET", "/api/v1/archives/confirm/{token}/{verdict}"),
+        ("POST", "/api/v1/archives/confirm/{token}/{verdict}"),
         # Obico cached frame — one-time nonce embedded in <img> tags.
         ("GET", "/api/v1/obico/cached-frame/{nonce}"),
         # MakerWorld thumbnail proxy — fetches external URL; no Bambuddy data exposed.

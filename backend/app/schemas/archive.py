@@ -32,6 +32,14 @@ class ArchiveUpdate(ArchiveBase):
     project_id: int | None = None
     # Allow changing status (e.g., clearing failed flag)
     status: str | None = None
+    # Post-print quality verdict (#1898): 'good' / 'reject'; null clears it.
+    user_verdict: str | None = Field(default=None, pattern="^(good|reject)$")
+    # Which surface the verdict came from, for the "recorded when the plate was
+    # cleared" hint. Only the sources a client can honestly claim are accepted;
+    # 'link', 'plate_clear' and 'reaction' are stamped server-side by the paths
+    # that own them and must not be forgeable over this route. Omitted means
+    # 'api' — some script or integration did it.
+    user_verdict_source: str | None = Field(default=None, pattern="^(dialog|printer_card|api)$")
     # Editable because a print archived without its 3MF has no figure at all,
     # and nothing else can supply one after the fact -- rescan needs a file
     # this archive does not have (#1820). Bounded because it feeds the filament
@@ -108,6 +116,12 @@ class ArchiveResponse(BaseModel):
     photos: list | None
     failure_reason: str | None
     quantity: int = 1  # Number of items printed
+
+    # Post-print outcome confirmation (#1898)
+    user_verdict: str | None = None
+    user_verdict_source: str | None = None
+    user_verdict_at: datetime | None = None
+    confirm_requested: bool = False
 
     # Energy tracking
     energy_kwh: float | None = None

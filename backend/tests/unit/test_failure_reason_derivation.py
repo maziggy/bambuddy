@@ -130,8 +130,13 @@ def test_ai_spaghetti_detection_is_classified() -> None:
     written with failure_reason=None because the map had no row for it. The text
     for the code was already in the tree twice — hms_errors.py and
     HMSErrorModal.tsx — so this was a missing key, not a missing meaning.
+
+    The dict is the one bambu_mqtt.py builds for it: attr holding the whole
+    word is the print_error branch, which is also where severity=3 comes from.
+    That 3 is a constant for every print_error entry, not a level the printer
+    sent, and nothing here depends on it.
     """
-    hms = [{"code": "0x8003", "attr": 50364419, "module": 0x03, "severity": 2}]
+    hms = [{"code": "0x8003", "attr": 50364419, "module": 0x03, "severity": 3}]
     assert derive_failure_reason("failed", hms) == "spaghettiDetached"
 
 
@@ -142,7 +147,7 @@ def test_the_ai_monitors_other_code_is_classified_too() -> None:
     defect", so it is a full short code with a published meaning rather than the
     module-0x0C guessing the map header rules out.
     """
-    hms = [{"code": "0x8042", "attr": 0x0C00_0000, "module": 0x0C, "severity": 2}]
+    hms = [{"code": "0x8042", "attr": 0x0C00_0000, "module": 0x0C}]
     assert derive_failure_reason("failed", hms) == "spaghettiDetached"
 
 
@@ -164,7 +169,7 @@ def test_the_ai_monitors_warnings_are_left_unclassified(short_code: str, attr: i
     on an archive is worse than none, so they stay out and this says so.
     """
     assert short_code not in _HMS_FAILURE_REASONS
-    hms = [{"code": code, "attr": attr, "module": attr >> 24, "severity": 2}]
+    hms = [{"code": code, "attr": attr, "module": attr >> 24}]
     assert derive_failure_reason("failed", hms) is None
 
 
@@ -172,8 +177,8 @@ def test_ai_detection_and_its_runout_neighbour_are_distinct() -> None:
     """0300_8003 and 0300_8004 are one hex digit apart and arrive by the same
     path. The runout side was already mapped; this keeps them from drifting into
     each other."""
-    ai = [{"code": "0x8003", "attr": 0x0300_0000, "module": 0x03, "severity": 2}]
-    runout = [{"code": "0x8004", "attr": 0x0300_0000, "module": 0x03, "severity": 2}]
+    ai = [{"code": "0x8003", "attr": 0x0300_0000, "module": 0x03}]
+    runout = [{"code": "0x8004", "attr": 0x0300_0000, "module": 0x03}]
     assert derive_failure_reason("failed", ai) == "spaghettiDetached"
     assert derive_failure_reason("failed", runout) == "filamentRunout"
 
@@ -248,9 +253,12 @@ def _keys_the_dropdown_offers() -> set[str]:
 def _keys_the_frontend_can_translate() -> set[str]:
     """Every key in the `editArchive.failureReasons` block of en.ts."""
     source = _EN_TS.read_text(encoding="utf-8")
-    block = re.search(r"failureReasons:\s*\{(.*?)\}", source, re.S)
+    # Up to the brace that closes the block on its own line, so a `}` inside a
+    # label (an ICU placeholder, say) does not cut the block short.
+    block = re.search(r"failureReasons:\s*\{(.*?)^\s*\}", source, re.S | re.M)
     assert block is not None, f"no failureReasons block in {_EN_TS}"
-    return set(re.findall(r"^\s*(\w+):\s*'", block.group(1), re.M))
+    # Either quote: a label with an apostrophe is written double-quoted in TS.
+    return set(re.findall(r"^\s*(\w+):\s*['\"]", block.group(1), re.M))
 
 
 @_needs_the_frontend_tree

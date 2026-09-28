@@ -571,11 +571,21 @@ _HMS_FAILURE_REASONS: dict[str, str] = {
     # defect", hms_errors.py). The H2D cancel echo is 0C00_001B, so the two
     # cannot collide.
     #
+    # 0300_8003's own text ends "before continuing your print", but on an X2D
+    # it arrives with the print already paused, offering only
+    # RESUME_PRINTING_DEFECTS / STOP_PRINTING — a halt waiting on the user.
+    #
     # Two neighbours are left out on purpose, so this does not get re-derived:
     #   * 0C00_C004 "Possible spaghetti failure was detected." — "possible"
     #     reads as a warning about a print that is still running, not a halt.
     #   * 0300_800A is AI monitoring too, but it reports a filament pile-up in
     #     the waste chute. That is not the print failing.
+    #
+    # That line is drawn from the text, not from `severity`, because severity
+    # cannot draw it: 0300_8003 reaches us through `print_error`, a bare
+    # module/error word with no level in it, and bambu_mqtt.py gives every
+    # print_error entry a flat severity=3. Matching on the short code alone is
+    # the right shape for derive_failure_reason, not an omission.
     "0300_8003": "spaghettiDetached",
     "0C00_8042": "spaghettiDetached",
 }

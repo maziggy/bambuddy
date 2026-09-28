@@ -1548,4 +1548,58 @@ describe('SpoolFormModal — per-spool tare in Spoolman mode (#2908)', () => {
     const payload = vi.mocked(api.createSpoolmanInventorySpool).mock.calls[0][0] as Record<string, unknown>;
     expect(payload).not.toHaveProperty('core_weight');
   });
+
+  it('loads a 0 g tare as 0, not the 250 fallback', async () => {
+    // A spool-less coil. `|| 250` read the real 0 as missing, so the form
+    // showed 250 and the measured-weight field subtracted it.
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={{ ...spoolmanSpool, core_weight: 0, core_weight_is_inherited: false }}
+        mode="edit"
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+    openColorAndCostTab();
+
+    const tareInput = screen.getAllByRole('spinbutton').find((el) => el.getAttribute('max') === '2000');
+    expect(tareInput).toHaveValue(0);
+  });
+
+  async function copiedPayload(source: InventorySpool) {
+    render(
+      <SpoolFormModal isOpen={true} onClose={vi.fn()} spool={source} mode="copy" currencySymbol="$" spoolmanMode={true} />
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Copy Spool' })).toBeInTheDocument();
+    });
+    const submit = screen
+      .getAllByRole('button', { name: /copy spool/i })
+      .find((btn) => btn.tagName === 'BUTTON' && btn.querySelector('svg.lucide-save'));
+    fireEvent.click(submit!);
+    await waitFor(() => {
+      expect(api.createSpoolmanInventorySpool).toHaveBeenCalledTimes(1);
+    });
+    return vi.mocked(api.createSpoolmanInventorySpool).mock.calls[0][0] as Record<string, unknown>;
+  }
+
+  it('carries a spool\'s own tare onto its copy', async () => {
+    // The copy's form shows 180; left untouched it used to send nothing, and
+    // the copy came out inheriting the filament's 250.
+    const payload = await copiedPayload({ ...spoolmanSpool, core_weight: 180, core_weight_is_inherited: false });
+
+    expect(payload).toHaveProperty('core_weight', 180);
+    expect(payload).not.toHaveProperty('core_weight_catalog_id');
+  });
+
+  it('lets a copy of an inheriting spool keep inheriting', async () => {
+    const payload = await copiedPayload({ ...spoolmanSpool, core_weight: 250, core_weight_is_inherited: true });
+
+    expect(payload).not.toHaveProperty('core_weight');
+  });
 });

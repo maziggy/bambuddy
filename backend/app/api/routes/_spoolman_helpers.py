@@ -32,6 +32,7 @@ class MappedSpoolFields(TypedDict):
     effect_type: None
     label_weight: int | None
     core_weight: int | None
+    core_weight_is_inherited: bool
     core_weight_catalog_id: None
     weight_used: float | None
     weight_used_baseline: float | None
@@ -378,6 +379,11 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         "core_weight": _safe_int(
             spool.get("spool_weight") if spool.get("spool_weight") is not None else filament.get("spool_weight"), 250
         ),
+        # True when the spool has no spool_weight of its own and core_weight is
+        # the filament type's (or the 250 g fallback). The spool form needs it
+        # to copy a spool without dropping an own tare or stamping an
+        # inherited one (#2908).
+        "core_weight_is_inherited": spool.get("spool_weight") is None,
         "core_weight_catalog_id": None,
         "weight_used": used_weight,
         "weight_used_baseline": weight_used_baseline,

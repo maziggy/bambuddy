@@ -991,7 +991,51 @@ class TestSlotSpoolIdentity:
             # naming this slot from the hex is exactly the bug.
             "color_name": "Orange",
             "rgba": "FEC600FF",
+            # A plain single-colour spool: nothing extra to draw (#3159).
+            "extra_colors": None,
+            "effect_type": None,
         }
+
+    @pytest.mark.asyncio
+    async def test_internal_mode_carries_the_rest_of_the_colour(self, db_session, printer_factory):
+        """A tray record holds one hex, so the binding is the only source for the rest.
+
+        Without this the Print dialog's slot picker (#3159) draws a two-tone or
+        glittery spool as its base colour -- the one comparison the picker
+        exists to make, made against the wrong swatch.
+        """
+        from backend.app.services.filament_deficit import build_slot_materials
+
+        printer = await printer_factory(model="H2C")
+        spool = Spool(
+            brand="eSUN",
+            material="PLA",
+            subtype="Multicolor",
+            color_name="Rainbow",
+            rgba="FF0000FF",
+            extra_colors="00FF00,0000FF",
+            effect_type="Glitter",
+            label_weight=1000,
+            weight_used=0.0,
+        )
+        db_session.add(spool)
+        await db_session.commit()
+        await db_session.refresh(spool)
+        await _assign(db_session, printer_id=printer.id, spool_id=spool.id, ams_id=2, tray_id=0)
+
+        patches = TestFilamentDeficitBackupAware._patch_status(printer_id=printer.id, backup_on=False, model="H2C")
+        for p in patches:
+            p.start()
+        try:
+            slots = await build_slot_materials(db_session, printer.id)
+        finally:
+            for p in patches:
+                p.stop()
+
+        identity = slots[0].spool
+        assert identity is not None
+        assert identity.extra_colors == "00FF00,0000FF"
+        assert identity.effect_type == "Glitter"
 
     @pytest.mark.asyncio
     async def test_blank_fields_become_null_so_the_client_can_fall_back(self, db_session, printer_factory):

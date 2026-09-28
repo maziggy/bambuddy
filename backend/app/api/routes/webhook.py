@@ -11,6 +11,7 @@ from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
+from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
 from backend.app.services.printer_manager import printer_manager
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,9 @@ async def webhook_add_to_queue(
         scheduled_time=scheduled_time,
         require_previous_success=data.require_previous_success,
         auto_off_after=data.auto_off_after,
+        # No dialog to pick this per job, so the install-wide default decides
+        # whether the finished print asks for a verdict (#1898).
+        confirm_outcome=await confirm_outcome_for_new_queue_item(db),
         # Attribute to the key's owner so the item shows up under `queue:read_own`
         # for the person whose key it is. Legacy keys predating per-user ownership
         # have no `user_id`, and those rows stay ownerless.

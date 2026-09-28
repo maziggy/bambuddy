@@ -2,18 +2,23 @@
 
 import json
 import logging
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequirePermissionIfAuthEnabled, ScopedCaller, require_notification_send
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.notification import NotificationLog, NotificationProvider
 from backend.app.models.user import User
 from backend.app.schemas.notification import (
+    AppMessage,
+    AppMessageChannel,
+    AppMessageResult,
     NotificationLogResponse,
     NotificationLogStats,
     NotificationProviderCreate,
@@ -66,10 +71,14 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         # Build plate detection
         "on_plate_not_empty": provider.on_plate_not_empty,
         "on_plate_clear_required": provider.on_plate_clear_required,
+        # Post-print outcome confirmation (#1898)
+        "on_print_confirm_request": provider.on_print_confirm_request,
         # Bed cooled
         "on_bed_cooled": provider.on_bed_cooled,
         # First layer complete
         "on_first_layer_complete": provider.on_first_layer_complete,
+        # Messages from connected apps
+        "on_app_message": bool(provider.on_app_message),
         # Inventory stock alerts. Absent here, the toggles above always read
         # back off no matter what the row holds — the same hand-maintained
         # field map the Home Assistant comment warns about.
@@ -158,10 +167,13 @@ async def create_notification_provider(
         # Build plate detection
         on_plate_not_empty=provider_data.on_plate_not_empty,
         on_plate_clear_required=provider_data.on_plate_clear_required,
+        # Post-print outcome confirmation (#1898)
+        on_print_confirm_request=provider_data.on_print_confirm_request,
         # Bed cooled
         on_bed_cooled=provider_data.on_bed_cooled,
         # First layer complete
         on_first_layer_complete=provider_data.on_first_layer_complete,
+        on_app_message=provider_data.on_app_message,
         # Inventory stock alerts
         on_stock_reorder_alert=provider_data.on_stock_reorder_alert,
         on_stock_break_alert=provider_data.on_stock_break_alert,
@@ -395,6 +407,66 @@ async def clear_notification_logs(
 # ============================================================================
 # Provider Instance Routes (parameterized - must come LAST)
 # ============================================================================
+
+
+# Messages from other applications -------------------------------------------
+
+# Per caller, in memory: enough for any real app (Bambuddy Orders sends a few a
+# day), and a buggy or hostile one can't flood the channels.
+APP_MESSAGE_LIMIT = 20
+APP_MESSAGE_WINDOW_SECONDS = 60
+_app_message_times: dict[str, deque[float]] = defaultdict(deque)
+
+
+def _app_sender(caller: ScopedCaller) -> tuple[str, str]:
+    """(rate-limit key, name shown in the log) for whoever sends the message."""
+    if caller.api_key is not None:
+        return f"key:{caller.api_key.id}", caller.api_key.name
+    if caller.user is not None:
+        return f"user:{caller.user.id}", caller.user.username
+    return "anonymous", "app"
+
+
+def _check_app_message_rate(key: str) -> None:
+    times = _app_message_times[key]
+    cutoff = time.monotonic() - APP_MESSAGE_WINDOW_SECONDS
+    while times and times[0] < cutoff:
+        times.popleft()
+    if len(times) >= APP_MESSAGE_LIMIT:
+        raise HTTPException(status_code=429, detail="Too many messages; try again in a minute")
+    times.append(time.monotonic())
+
+
+@router.post("/app-message", response_model=AppMessageResult)
+async def send_app_message(
+    data: AppMessage,
+    db: AsyncSession = Depends(get_db),
+    caller: ScopedCaller = Depends(require_notification_send()),
+):
+    """Send a message through every enabled channel that has "Messages from
+    connected apps" on. For other applications, e.g. Bambuddy Orders; an API
+    key needs the "Send notifications" permission."""
+    key, sender = _app_sender(caller)
+    _check_app_message_rate(key)
+    channels = await notification_service.on_app_message(
+        db, sender=sender, title=data.title, message=data.message, url=data.url
+    )
+    return AppMessageResult(channels=channels)
+
+
+@router.get("/app-message/channels", response_model=list[AppMessageChannel])
+async def app_message_channels(
+    db: AsyncSession = Depends(get_db),
+    _: ScopedCaller = Depends(require_notification_send()),
+):
+    """The enabled channels that deliver app messages: names and types only,
+    so an app can tell its user where its messages will arrive."""
+    rows = await db.execute(
+        select(NotificationProvider)
+        .where(NotificationProvider.enabled.is_(True), NotificationProvider.on_app_message.is_(True))
+        .order_by(NotificationProvider.name)
+    )
+    return [AppMessageChannel(name=p.name, provider_type=p.provider_type) for p in rows.scalars()]
 
 
 @router.get("/{provider_id}", response_model=NotificationProviderResponse)

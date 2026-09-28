@@ -109,6 +109,16 @@ class ConnectionManager:
             }
         )
 
+    async def send_print_confirm_request(self, printer_id: int, data: dict):
+        """Ask connected clients for a post-print outcome verdict (#1898)."""
+        await self.broadcast(
+            {
+                "type": "print_confirm_request",
+                "printer_id": printer_id,
+                "data": data,
+            }
+        )
+
     async def send_archive_created(self, archive: dict):
         """Notify clients that a new archive was created."""
         await self.broadcast(

@@ -8,6 +8,7 @@ import { Button } from './Button';
 import { PrintLogTable } from './PrintLogTable';
 import { invalidateArchiveAndProjectViews } from '../utils/projectQueries';
 import { assignableProjects } from '../utils/projectTree';
+import { verdictSourceKey } from '../utils/verdictSource';
 
 // Keys for failure reasons - translated at render time.
 // Exported so the Print Log per-row classification editor (#1687 part 4)
@@ -89,6 +90,9 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
       ? failureReason
       : null;
   const [status, setStatus] = useState(archive.status);
+  // Post-print quality verdict (#1898): '' = none, 'good' / 'reject'
+  const [userVerdict, setUserVerdict] = useState<string>(archive.user_verdict ?? '');
+  const verdictSourceHintKey = verdictSourceKey(archive.user_verdict_source);
   const [quantity, setQuantity] = useState(archive.quantity ?? 1);
   // Kept as a string so the field can be genuinely empty: a print archived
   // without its 3MF has no figure at all, and "" has to stay distinguishable
@@ -246,6 +250,12 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
       updateData.status = status;
     }
 
+    // Verdict only when touched, same reasoning as status; '' clears it.
+    if (userVerdict !== (archive.user_verdict ?? '')) {
+      updateData.user_verdict = userVerdict === '' ? null : (userVerdict as 'good' | 'reject');
+      updateData.user_verdict_source = 'dialog';
+    }
+
     // Sent only when the user actually touched it, so an ordinary save of an
     // archive that has its 3MF cannot overwrite the sliced figure with a
     // rounded one from the input.
@@ -262,11 +272,19 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
       updateData.filament_used_grams = parsedGrams;
     }
 
-    // Handle failure_reason based on status
+    // Handle failure_reason based on status. A completed-but-rejected print
+    // (#1898) uses the same field as its reject reason.
     if (status === 'failed' || status === 'aborted') {
       updateData.failure_reason = failureReason || undefined;
-    } else if (archive.status === 'failed' || archive.status === 'aborted') {
-      // Clear failure_reason when changing from failed/aborted to another status
+    } else if (status === 'completed' && userVerdict === 'reject') {
+      updateData.failure_reason = failureReason || undefined;
+    } else if (archive.status === 'failed' || archive.status === 'aborted' || archive.user_verdict === 'reject') {
+      // Clear failure_reason when neither a failure nor a reject carries one.
+      // Gated on the archive having held a reject verdict rather than on the
+      // field merely being populated: a 'cancelled' or 'stopped' archive is
+      // neither failed nor aborted, its reason is written by the machine
+      // ("Stopped by user (printer was offline)"), and the status dropdown has
+      // no option that would let the user put it back.
       updateData.failure_reason = null;
     }
 
@@ -529,8 +547,37 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
             </select>
           </div>
 
-          {/* Failure Reason - only show for failed/aborted prints */}
-          {(status === 'failed' || status === 'aborted') && (
+          {/* Outcome verdict (#1898) - only meaningful on completed prints */}
+          {status === 'completed' && (
+            <div>
+              <label htmlFor="user-verdict-select" className="block text-sm text-bambu-gray mb-1">
+                {t('editArchive.userVerdict')}
+              </label>
+              <select
+                id="user-verdict-select"
+                value={userVerdict}
+                onChange={(e) => setUserVerdict(e.target.value)}
+                className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              >
+                <option value="">{t('editArchive.verdicts.none')}</option>
+                <option value="good">{t('editArchive.verdicts.good')}</option>
+                <option value="reject">{t('editArchive.verdicts.reject')}</option>
+              </select>
+              {/* How the stored verdict got here (#1898) — hidden once the
+                  select no longer shows that verdict, since the hint would
+                  then describe an answer the user is replacing. */}
+              {verdictSourceHintKey && userVerdict === (archive.user_verdict ?? '') && (
+                <p className="text-xs text-bambu-gray/70 mt-1" data-testid="verdict-source-hint">
+                  {t(verdictSourceHintKey)}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Failure Reason - shown for failed/aborted prints and for
+              completed-but-rejected ones (#1898: the reject reason reuses
+              this field and vocabulary) */}
+          {(status === 'failed' || status === 'aborted' || (status === 'completed' && userVerdict === 'reject')) && (
             <div>
               <label htmlFor="failure-reason-select" className="block text-sm text-bambu-gray mb-1">{t('editArchive.failureReason')}</label>
               <select

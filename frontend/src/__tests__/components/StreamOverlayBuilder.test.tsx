@@ -48,6 +48,26 @@ describe('StreamOverlayBuilder', () => {
     expect(shownUrl()).not.toContain('token=');
   });
 
+  it('keeps the model opt-in and updates the URL and preview when toggled', async () => {
+    const user = userEvent.setup();
+    render(<StreamOverlayBuilder />);
+
+    const model = await screen.findByLabelText('Printer model');
+    expect(model).not.toBeChecked();
+    const originalUrl = shownUrl();
+    await user.click(model);
+    expect(new URL(shownUrl()).searchParams.get('show')).toBe('model,filename,status,progress,layers,eta');
+    await user.click(screen.getByLabelText('Printer name'));
+    expect(new URL(shownUrl()).searchParams.get('show')).toBe('printer,model,filename,status,progress,layers,eta');
+    await user.click(screen.getByRole('button', { name: 'Show preview' }));
+    expect(screen.getByTitle('Overlay preview')).toHaveAttribute('src', shownUrl());
+
+    await user.click(model);
+    await user.click(screen.getByLabelText('Printer name'));
+    expect(shownUrl()).toBe(originalUrl);
+    expect(screen.getByTitle('Overlay preview')).toHaveAttribute('src', originalUrl);
+  });
+
   it('switches printer', async () => {
     const user = userEvent.setup();
     render(<StreamOverlayBuilder />);

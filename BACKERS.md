@@ -74,6 +74,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@g7ufo](https://github.com/g7ufo)
 - [@MorganMLGman](https://github.com/MorganMLGman)
 - [@NeighborGeek](https://github.com/NeighborGeek)
+- [@frantiseklorenc](https://github.com/frantiseklorenc)
 
 ---
 

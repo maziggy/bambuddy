@@ -49,6 +49,8 @@ export function PrintOptionsPanel({
     { key: 'layer_inspect', label: t('settings.defaultLayerInspect'), desc: t('settings.defaultLayerInspectDesc') },
     { key: 'timelapse', label: t('settings.defaultTimelapse'), desc: t('settings.defaultTimelapseDesc') },
     { key: 'nozzle_offset_cali', label: t('settings.defaultNozzleOffsetCali'), desc: t('settings.defaultNozzleOffsetCaliDesc'), dualNozzleOnly: true, tristate: true },
+    // Post-print outcome confirmation (#1898) — same settings.default* reuse.
+    { key: 'confirm_outcome', label: t('settings.defaultConfirmOutcome'), desc: t('settings.defaultConfirmOutcomeDesc') },
   ];
 
   const visibleOptions = printOptionsConfig.filter(o => !o.dualNozzleOnly || showDualNozzleOptions);

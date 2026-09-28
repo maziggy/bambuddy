@@ -118,6 +118,9 @@ class PrintQueueItem(Base):
     use_ams: Mapped[bool] = mapped_column(Boolean, default=True)
     # Nozzle offset calibration — dual-nozzle printers only, MQTT-gated (#1682)
     nozzle_offset_cali: Mapped[str] = mapped_column(String(8), default="auto")
+    # Ask for a post-print outcome verdict when this job completes (#1898).
+    # Copied onto the archive as confirm_requested at dispatch, like plate_id.
+    confirm_outcome: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
     # Preheat / heat-soak override (#1468). 'inherit' uses the global
     # preheat_enabled setting; 'on' / 'off' force the per-item decision. The

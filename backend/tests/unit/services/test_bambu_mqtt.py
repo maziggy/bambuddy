@@ -7039,11 +7039,12 @@ class TestTrayNowH2SExternalSpoolOverride:
     instead of 254 when the active feed is the external spool.
 
     Bambuddy detects the all-external case via the slicer-captured
-    ams_mapping (every entry == -1) and promotes tray_now to 254 so the
-    UI active-tray highlight matches the real feed.
+    ams_mapping (every entry 254, or -1 when the command carried no
+    ams_mapping2 to resolve it from, #3166) and promotes tray_now to 254 so
+    the UI active-tray highlight matches the real feed.
 
     The override is intentionally narrow:
-      * only fires when ams_mapping is captured AND every entry is -1
+      * only fires when ams_mapping is captured AND every entry is external
       * does not touch mixed prints ([5, -1]) or AMS-only prints ([5])
       * does not fire when no ams_mapping is captured (printer-screen start)
     """
@@ -7069,6 +7070,14 @@ class TestTrayNowH2SExternalSpoolOverride:
         """Multi-filament print, every filament mapped to external. Still
         all-external -> still promotes."""
         mqtt_client._captured_ams_mapping = [-1, -1, -1]
+        mqtt_client._process_message(_ams_payload(0))
+        assert mqtt_client.state.tray_now == 254
+
+    def test_resolved_external_mapping_promotes(self, mqtt_client):
+        """Since #3166 the capture resolves the external spool from
+        ams_mapping2, so a single-nozzle all-external print arrives as [254]
+        rather than [-1]. The override must still fire."""
+        mqtt_client._captured_ams_mapping = [254]
         mqtt_client._process_message(_ams_payload(0))
         assert mqtt_client.state.tray_now == 254
 

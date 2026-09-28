@@ -4,6 +4,7 @@ import logging
 import math
 import os
 import posixpath
+import re
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -27,6 +28,7 @@ from backend.app.api.routes import (
     camera,
     camwall,
     cloud,
+    connected_apps,
     discovery,
     external_links,
     filaments,
@@ -3395,6 +3397,190 @@ def _schedule_fallback_3mf_retry(
     )
 
 
+async def _ask_outcome_for_external_print(db, printer_id: int, observed_name: str | None = None) -> bool:
+    """Whether an archive created here should ask for the print's outcome (#1898).
+
+    Only a print Bambuddy did not dispatch reaches the archive-*creating*
+    branches below: a queued job already has its archive and takes the
+    expected-print branch, where the queue item's own ``confirm_outcome``
+    decides. The queue is still consulted, because a restart mid-print empties
+    ``_expected_prints`` — without the check the setting could override a queue
+    item that deliberately has the flag off. Any failure answers "don't ask":
+    an unwanted prompt is worse than a missing one, and this must never be the
+    reason a print goes unarchived.
+
+    A ``printing`` row is not proof on its own, though: Bambuddy deliberately
+    leaves one behind when a completion cannot be matched to it
+    (``_completion_belongs_to_queue_item``), and the scheduler's stranded sweep
+    only takes it back once the printer has sat connected and terminal for
+    minutes. Until then every screen-started print on that printer would
+    silently lose its prompt, so the row is held against ``observed_name`` by
+    the same comparison a completion uses: a positive disagreement means the row
+    is about some other run and this print is external after all.
+    """
+    logger = logging.getLogger(__name__)
+    try:
+        # A savepoint rather than a rollback of the caller's transaction on
+        # failure: a failed statement leaves the transaction unusable, but a
+        # full rollback also expires every object the caller has loaded (the
+        # printer, the archive it just created), and on an async session the
+        # next attribute read then raises instead of reloading. Everything here
+        # is a read, so undoing the savepoint loses nothing.
+        async with db.begin_nested():
+            return await _decide_outcome_for_external_print(db, printer_id, observed_name, logger)
+    except Exception as e:
+        logger.warning("[CALLBACK] Could not decide the outcome prompt for printer %s: %s", printer_id, e)
+        return False
+
+
+async def _decide_outcome_for_external_print(db, printer_id: int, observed_name: str | None, logger) -> bool:
+    """The reads behind ``_ask_outcome_for_external_print``; see there."""
+    from backend.app.api.routes.settings import get_setting, setting_is_true
+
+    if not setting_is_true(await get_setting(db, "confirm_outcome_external_prints")):
+        return False
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    dispatched_here = await db.scalar(
+        select(PrintQueueItem)
+        .where(
+            PrintQueueItem.printer_id == printer_id,
+            PrintQueueItem.status == "printing",
+        )
+        .limit(1)
+    )
+    if dispatched_here is None:
+        return True
+
+    expected = await _queue_item_dispatched_name(db, dispatched_here)
+    observed = (observed_name or "").strip()
+    if not expected or not observed or _subtask_names_match(expected, observed):
+        logger.info(
+            "[CALLBACK] Not asking for the outcome on printer %s: queue item %s is still printing, so "
+            "Bambuddy dispatched this run and the item's own ask-for-outcome flag decides.",
+            printer_id,
+            dispatched_here.id,
+        )
+        return False
+
+    logger.info(
+        "[CALLBACK] Queue item %s is still marked printing on printer %s but was dispatched as %r, not "
+        "%r; treating this as an externally started print.",
+        dispatched_here.id,
+        printer_id,
+        expected,
+        observed,
+    )
+    return True
+
+
+async def _dispatch_outcome_confirmation_safely(
+    db,
+    printer_id: int,
+    printer_name: str,
+    data: dict,
+    archive_id: int,
+    archive_data: dict | None = None,
+) -> None:
+    """``dispatch_outcome_confirmation`` for a caller that has more to do on ``db``.
+
+    The completion task sends the per-user print email on the same session
+    right after the prompt. A failed statement in the prompt leaves that
+    session needing a rollback, and without one the email step fails with
+    PendingRollbackError; the prompt is the optional part, so it must not be
+    the reason the email never goes out.
+    """
+    try:
+        await dispatch_outcome_confirmation(db, printer_id, printer_name, data, archive_id, archive_data)
+    except Exception as e:
+        logging.getLogger(__name__).error("[NOTIFY-BG] Outcome-confirmation dispatch failed: %s", e, exc_info=True)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+
+
+async def dispatch_outcome_confirmation(
+    db,
+    printer_id: int,
+    printer_name: str,
+    data: dict,
+    archive_id: int,
+    archive_data: dict | None = None,
+) -> bool:
+    """Emit the post-print outcome prompt for a completed archive (#1898).
+
+    Gated on the archive itself: ``confirm_requested`` is the opt-in (from the
+    queue item, or from ``confirm_outcome_external_prints`` for a print
+    Bambuddy did not start) and ``user_verdict`` being unset is what makes the
+    question still open. Mints the per-archive capability token the one-tap
+    verdict links carry.
+
+    Lives here rather than inline in ``on_print_complete``'s notification task
+    because that task swallows every exception: extracted, the gate and the two
+    emissions can be driven by a test, which is the only thing standing between
+    a regression here and a farm that quietly stops asking.
+
+    Returns whether a prompt was sent.
+    """
+    logger = logging.getLogger(__name__)
+    from backend.app.models.archive import PrintArchive
+
+    confirm_archive = (await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))).scalar_one_or_none()
+    if not (confirm_archive and confirm_archive.confirm_requested and confirm_archive.user_verdict is None):
+        return False
+
+    import secrets as _secrets
+
+    # A spent token stays on the row so the one-tap route can recognise it, so
+    # "has a token" no longer means "answerable". A prompt going out now needs a
+    # live one: mint a new token whenever the stored one is already spent, or
+    # every button in the new message would land on the already-answered page.
+    if not confirm_archive.confirm_token or confirm_archive.confirm_token_used_at is not None:
+        confirm_archive.confirm_token = _secrets.token_urlsafe(32)
+        confirm_archive.confirm_token_used_at = None
+        await db.commit()
+
+    from backend.app.api.routes.settings import get_external_base_url, get_setting
+
+    base = await get_external_base_url(db)
+    if not await get_setting(db, "external_url"):
+        # Both the Telegram inline keyboard and the ntfy action buttons need an
+        # absolute URL, so an unconfigured install used to get a message body
+        # with two unusable relative paths and no buttons at all. The shared
+        # fallback at least produces tappable links; say which setting makes
+        # them resolve from a phone.
+        logger.warning(
+            "[#1898] No external_url configured — the outcome prompt's Good/Reject links point at %s. "
+            "Set Settings → External URL so they resolve away from this host.",
+            base,
+        )
+    token = confirm_archive.confirm_token
+    good_url = f"{base}/api/v1/archives/confirm/{token}/good"
+    reject_url = f"{base}/api/v1/archives/confirm/{token}/reject"
+    confirm_url = f"{base}/archives?confirm={archive_id}"
+
+    await ws_manager.send_print_confirm_request(
+        printer_id,
+        {
+            "archive_id": archive_id,
+            "print_name": confirm_archive.print_name or confirm_archive.filename,
+        },
+    )
+    await notification_service.on_print_confirm_request(
+        printer_id,
+        printer_name,
+        data,
+        db,
+        archive_data=archive_data,
+        good_url=good_url,
+        reject_url=reject_url,
+        confirm_url=confirm_url,
+    )
+    return True
+
+
 async def on_print_start(printer_id: int, data: dict):
     """Handle print start - archive the 3MF file immediately."""
     logger = logging.getLogger(__name__)
@@ -3718,6 +3904,18 @@ async def on_print_start(printer_id: int, data: dict):
                 # Update archive status to printing
                 archive.status = "printing"
                 archive.started_at = datetime.now(timezone.utc)
+
+                # The previous run's answer is still on this row and the
+                # completion prompt is gated on ``user_verdict is None`` (#1898),
+                # so without a reset the second run inherits the first run's
+                # verdict: no prompt at all, and a green "good" badge on a run
+                # nobody ever judged.
+                if archive.confirm_requested:
+                    archive.user_verdict = None
+                    archive.user_verdict_source = None
+                    archive.user_verdict_at = None
+                    archive.confirm_token = None
+                    archive.confirm_token_used_at = None
 
                 # Reprint of an archive reuses the source row. Without resetting
                 # ``timelapse_path`` _scan_for_timelapse_with_retries early-returns
@@ -4527,6 +4725,7 @@ async def on_print_start(printer_id: int, data: dict):
                     status="printing",
                     started_at=datetime.now(timezone.utc),
                     subtask_id=subtask_id,
+                    confirm_requested=await _ask_outcome_for_external_print(db, printer_id, subtask_name),
                     filament_type=mqtt_filament_meta.get("filament_type"),
                     filament_color=mqtt_filament_meta.get("filament_color"),
                     extra_data={
@@ -4660,6 +4859,35 @@ async def on_print_start(printer_id: int, data: dict):
             )
 
             if archive:
+                # Ask-for-outcome for a print Bambuddy did not dispatch (#1898).
+                # Set on the row rather than passed to archive_print, which also
+                # serves the queue dispatcher — there the queue item decides.
+                # Guarded because this branch has no ``except``: an unhandled
+                # write error would take the _active_prints registration, the
+                # start notification, the energy reading and the timelapse
+                # baseline below it with it, and a missing prompt is by far the
+                # cheaper failure.
+                archive_id = archive.id
+                try:
+                    if await _ask_outcome_for_external_print(db, printer_id, subtask_name):
+                        archive.confirm_requested = True
+                        await db.commit()
+                except Exception as e:
+                    logger.warning("Could not flag archive %s for the outcome prompt: %s", archive_id, e)
+                    # The rollback expires every loaded object, and on an async
+                    # session reading one afterwards raises instead of
+                    # reloading, so the two this branch goes on to use are
+                    # fetched again. The archive itself was committed by
+                    # archive_print; only the flag is lost.
+                    try:
+                        await db.rollback()
+                        archive = await db.get(PrintArchive, archive_id)
+                        printer = await db.get(Printer, printer_id)
+                    except Exception as reload_error:
+                        logger.warning(
+                            "Could not reload archive %s after the failed flag write: %s", archive_id, reload_error
+                        )
+
                 # Track this active print (use both original filename and downloaded filename)
                 _active_prints[(printer_id, downloaded_filename)] = archive.id
                 if filename and filename != downloaded_filename:
@@ -6220,6 +6448,23 @@ def _subtask_names_match(expected: str, observed: str) -> bool:
     return False
 
 
+async def _queue_item_dispatched_name(db, item) -> str:
+    """The subtask name *item* was dispatched under, or "" when unknowable.
+
+    A row with no archive, or an archive with no file name, is unverifiable
+    rather than wrong; every caller answers that with its permissive branch.
+    """
+    if item.archive_id is None:
+        return ""
+
+    from backend.app.models.archive import PrintArchive
+
+    archive = await db.get(PrintArchive, item.archive_id)
+    if archive is None or not archive.filename:
+        return ""
+    return _subtask_name_from_filename(archive.filename)
+
+
 async def _completion_belongs_to_queue_item(db, item, data: dict) -> bool:
     """Whether this completion event is plausibly about *item*'s print.
 
@@ -7678,6 +7923,14 @@ async def on_print_complete(printer_id: int, data: dict):
                     )
                 else:
                     logger.info("[NOTIFY-BG] Skipped duplicate kill-switch provider notification")
+
+                # Post-print outcome confirmation (#1898). Runs in this
+                # background task so the finish photo fetched above rides
+                # along with the prompt.
+                if print_status == "completed" and archive_id:
+                    await _dispatch_outcome_confirmation_safely(
+                        db, printer_id, printer_name, data, archive_id, archive_data
+                    )
 
                 # Send user-specific email notification
                 if archive_data:
@@ -9471,6 +9724,9 @@ PUBLIC_API_ROUTES = {
     "/api/v1/auth/oidc/providers",  # Public list of enabled providers
     "/api/v1/auth/oidc/callback",  # Redirect target from OIDC provider
     "/api/v1/auth/oidc/exchange",  # Exchange short-lived OIDC token for JWT
+    # Connected apps: the app's server swaps a code for the user's identity,
+    # authenticated by its client secret rather than a login token.
+    "/api/v1/connect/token",
     # Version check for updates (no sensitive data)
     "/api/v1/updates/version",
     # Metrics endpoint handles its own prometheus_token authentication
@@ -9499,6 +9755,12 @@ PUBLIC_API_PREFIXES = [
     "/api/v1/ws",
     # OIDC authorize redirects — include provider_id in path
     "/api/v1/auth/oidc/authorize/",
+    # One-tap outcome-verdict links from push notifications (#1898). Tapped on
+    # a phone with no session, so no header can carry a JWT — the single-use
+    # capability token in the path IS the credential (same reasoning as the
+    # /dl/ slicer downloads below). The route grants nothing beyond writing
+    # good/reject on the one archive the token was minted for.
+    "/api/v1/archives/confirm/",
 ]
 
 # Route patterns that are public (read-only display data)
@@ -9609,6 +9871,12 @@ def _frame_ancestors(default_value: str) -> str:
     return f"frame-ancestors {default_value};"
 
 
+# The Vite-emitted STEP preview worker chunk (#2976): src/workers/
+# stepPreview.worker.ts becomes /assets/stepPreview.worker-<hash>.js. Matched
+# exactly so the eval-relaxed CSP below can never apply to any other asset.
+_STEP_WORKER_ASSET_RE = re.compile(r"^/assets/stepPreview\.worker-[\w-]+\.js$")
+
+
 @app.middleware("http")
 async def security_headers_middleware(request, call_next):
     """Add standard HTTP security headers to every response."""
@@ -9622,6 +9890,10 @@ async def security_headers_middleware(request, call_next):
     # script passes the policy without us needing 'unsafe-inline'. See
     # https://developers.cloudflare.com/cloudflare-challenges/challenge-types/javascript-detections/#if-you-have-a-content-security-policy-csp
     csp_nonce = secrets.token_urlsafe(16)
+    # Routes that render their own HTML need it too, or their inline script is
+    # blocked by the policy below. The outcome-confirmation page (#1898) is the
+    # one that does: it submits its own form so a verdict still costs one tap.
+    request.state.csp_nonce = csp_nonce
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     # X-Frame-Options is the legacy cross-origin embedding control. Modern
@@ -9655,6 +9927,23 @@ async def security_headers_middleware(request, call_next):
             "object-src 'none'; "
             "base-uri 'self'; " + _frame_ancestors("'none'")
         )
+    elif _STEP_WORKER_ASSET_RE.match(request.url.path):
+        # The STEP preview worker (#2976) runs OpenCascade compiled to WASM;
+        # its emscripten/embind glue generates invoker functions with `new
+        # Function(...)`, which needs 'unsafe-eval'. Per CSP3 a dedicated
+        # worker is governed by the policy delivered with the WORKER SCRIPT's
+        # own response — not the document's — so relaxing it here confines
+        # eval to that DOM-less worker context. The document policy below
+        # stays nonce-strict, and this response header has no effect when the
+        # file is merely fetched (a fetch's CSP is enforced against the
+        # requesting document, not the resource's own headers).
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; "
+            "connect-src 'self'; "
+            "object-src 'none'; "
+            "base-uri 'self'; " + _frame_ancestors("'none'")
+        )
     else:
         # The streaming overlay is embedded same-origin by the URL builder's
         # preview in Settings (#1422), so this branch allows 'self'.
@@ -9667,10 +9956,23 @@ async def security_headers_middleware(request, call_next):
         # overlay — Home Assistant on another port — remains what
         # TRUSTED_FRAME_ORIGINS is for, and _frame_ancestors already folds that
         # allowlist in.
-        embeddable_same_origin = request.url.path.startswith("/overlay/")
+        #
+        # The connected-app consent page (/connect/authorize) gets the same
+        # 'self': an app opened from Bambuddy's sidebar runs in an iframe, and
+        # its "Sign in with Bambuddy" navigates that iframe to this page. With
+        # 'none' the browser refuses to show it even inside Bambuddy. 'self'
+        # requires every ancestor to be this origin, so a foreign page -- a
+        # sidebar link's site included -- still cannot frame the consent
+        # screen to bait a click.
+        embeddable_same_origin = request.url.path.startswith("/overlay/") or request.url.path == "/connect/authorize"
+        # 'wasm-unsafe-eval' permits WebAssembly compilation ONLY — it does
+        # not allow eval()/Function() for JS, unlike 'unsafe-eval'. Needed by
+        # the STEP preview, which triangulates in the browser via OpenCascade
+        # compiled to WASM (#2976). Browsers that predate the keyword ignore
+        # it and simply keep blocking wasm, so this never widens JS execution.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            f"script-src 'self' 'nonce-{csp_nonce}'; "
+            f"script-src 'self' 'wasm-unsafe-eval' 'nonce-{csp_nonce}'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: blob:; "
             "media-src 'self' blob:; "
@@ -9910,6 +10212,7 @@ app.include_router(slicer_presets.router, prefix=app_settings.api_prefix)
 app.include_router(archive_purge.router, prefix=app_settings.api_prefix)
 app.include_router(makerworld.router, prefix=app_settings.api_prefix)
 app.include_router(api_keys.router, prefix=app_settings.api_prefix)
+app.include_router(connected_apps.router, prefix=app_settings.api_prefix)
 app.include_router(webhook.router, prefix=app_settings.api_prefix)
 app.include_router(ams_history.router, prefix=app_settings.api_prefix)
 app.include_router(printer_sensor_history.router, prefix=app_settings.api_prefix)

@@ -1,10 +1,12 @@
+import logging
 from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import backend.app.models  # noqa: F401 - populate Base.metadata
@@ -15,6 +17,8 @@ from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
 from backend.app.models.printer import Printer
 from backend.app.services.print_scheduler import PrintScheduler
+from backend.app.utils.archive_paths import archive_photos_dir
+from backend.app.utils.library_paths import library_photos_dir
 from backend.tests._fixtures.background_tasks import discarding_spawn_patch
 
 
@@ -27,12 +31,13 @@ async def queue_factory(tmp_path):
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
     case_counter = 0
 
-    async def make_case(*, cleanup=True, is_external=False, thumbnail_path=None, siblings=()):
+    async def make_case(*, cleanup=True, is_external=False, thumbnail_path=None, siblings=(), photos=()):
         nonlocal case_counter
         case_counter += 1
 
         base_dir = tmp_path / f"case-{case_counter}"
         base_dir.mkdir()
+        archive_dir = base_dir / "archive"
         source_path = base_dir / "library" / f"source-{case_counter}.3mf"
         source_path.parent.mkdir()
         source_path.write_bytes(b"library source")
@@ -70,9 +75,20 @@ async def queue_factory(tmp_path):
                 thumbnail_path=thumbnail_db_path,
                 file_metadata=None,
                 is_external=is_external,
+                photos=list(photos) or None,
             )
             db.add_all([printer, library_file])
             await db.flush()
+
+            # Photos of the printed result (#3077). Written through the real
+            # helper so the test cannot drift from the layout the code uses.
+            photos_dir = None
+            if photos:
+                with patch.object(scheduler_module.settings, "archive_dir", archive_dir):
+                    photos_dir = library_photos_dir(library_file.id)
+                photos_dir.mkdir(parents=True, exist_ok=True)
+                for name in photos:
+                    (photos_dir / name).write_bytes(f"photo {name}".encode())
 
             item = PrintQueueItem(
                 printer_id=printer.id,
@@ -152,7 +168,10 @@ async def queue_factory(tmp_path):
             return SimpleNamespace(
                 session_maker=session_maker,
                 base_dir=base_dir,
+                archive_dir=archive_dir,
                 source_path=source_path,
+                photos_dir=photos_dir,
+                photo_names=list(photos),
                 thumbnail_path=thumbnail_actual_path,
                 printer_id=printer.id,
                 library_file_id=library_file.id,
@@ -170,7 +189,14 @@ async def queue_factory(tmp_path):
         await engine.dispose()
 
 
-async def _dispatch_library_item(ctx, *, archive_failure=False, unlink_side_effect=None):
+async def _dispatch_library_item(
+    ctx,
+    *,
+    archive_failure=False,
+    unlink_side_effect=None,
+    cleanup_commit_failure=False,
+    photo_commit_failure=False,
+):
     scheduler = PrintScheduler()
 
     async def archive_print(
@@ -213,6 +239,7 @@ async def _dispatch_library_item(ctx, *, archive_failure=False, unlink_side_effe
 
     patches = [
         patch.object(scheduler_module.settings, "base_dir", ctx.base_dir),
+        patch.object(scheduler_module.settings, "archive_dir", ctx.archive_dir),
         patch("backend.app.services.archive.ArchiveService.archive_print", new=archive_print),
         patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=True)),
         patch("backend.app.services.print_scheduler.printer_manager.get_status", MagicMock(return_value=None)),
@@ -239,8 +266,97 @@ async def _dispatch_library_item(ctx, *, archive_failure=False, unlink_side_effe
             stack.enter_context(patcher)
 
         async with ctx.session_maker() as db:
+            if cleanup_commit_failure:
+                _arm_commit_failure_on_library_delete(db)
+            if photo_commit_failure:
+                _arm_commit_failure_on_photo_move(db, stack)
             item = await db.get(PrintQueueItem, ctx.queue_item_id)
             await scheduler._start_print(db, item)
+
+
+def _fail_inside_the_next_flush(db, statement):
+    """Make the next flush on this session fail, once, the way SQLite does.
+
+    Raising *instead of* calling `db.commit()` does not reproduce a failed
+    commit and is not the dangerous case: the session stays ACTIVE, nothing is
+    expired, and every loaded instance still reads out of `__dict__`. What a
+    busy writer actually gives you is a statement error raised inside the
+    flush — SQLite takes the write lock at the first DML statement, not at
+    COMMIT, so "database is locked" surfaces there (#1853). SQLAlchemy rolls
+    that back internally through `safe_reraise` before re-raising, which
+    expires every loaded instance and leaves the session in pending-rollback
+    state: the next ORM attribute read raises PendingRollbackError, *before*
+    the handler's own rollback can run. That is the state a handler on this
+    path has to survive, so it is the state these tests have to produce.
+    """
+    sync_session = db.sync_session
+    fired = False
+
+    def after_flush(session, flush_context):
+        nonlocal fired
+        if fired:
+            return
+        fired = True
+        raise OperationalError(statement, {}, Exception("database is locked"))
+
+    event.listen(sync_session, "after_flush", after_flush)
+
+
+def _arm_commit_failure_on_library_delete(db):
+    """Make the one commit that removes the library row fail, once.
+
+    Stands in for the "database is locked" cascades the commit's own comment
+    cites (#1853). Armed by the delete rather than by a call count so it
+    cannot drift onto a different commit.
+    """
+    original_delete = db.delete
+    original_commit = db.commit
+    armed = False
+
+    async def delete(obj):
+        nonlocal armed
+        if isinstance(obj, LibraryFile):
+            armed = True
+        return await original_delete(obj)
+
+    async def commit():
+        nonlocal armed
+        if armed:
+            armed = False
+            _fail_inside_the_next_flush(db, "DELETE FROM library_files WHERE library_files.id = ?")
+        return await original_commit()
+
+    db.delete = delete
+    db.commit = commit
+
+
+def _arm_commit_failure_on_photo_move(db, stack):
+    """Make the commit that records the carried photos fail, once.
+
+    The second commit of this path (#3077): the archive and the delete are
+    already committed, the pictures are already on disk under the archive,
+    and only `archive.photos` is pending. Armed by the move itself so it
+    cannot drift onto the delete's commit.
+    """
+    original_commit = db.commit
+    original_move = scheduler_module.move_library_photos
+    armed = False
+
+    def move_library_photos(file_id, photos, destination):
+        nonlocal armed
+        carried = original_move(file_id, photos, destination)
+        armed = bool(carried)
+        return carried
+
+    async def commit():
+        nonlocal armed
+        if armed:
+            armed = False
+            _fail_inside_the_next_flush(db, "UPDATE print_archives SET photos=? WHERE print_archives.id = ?")
+        return await original_commit()
+
+    stack.enter_context(patch.object(scheduler_module, "move_library_photos", move_library_photos))
+    db.commit = commit
 
 
 async def _queue_snapshot(ctx):
@@ -277,6 +393,115 @@ async def test_external_library_file_skips_cleanup(queue_factory):
     assert item.archive_id == archive.id
     assert library_file is not None
     assert ctx.source_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_moves_the_photos_into_the_archive(queue_factory):
+    """Photos follow the consumed file into the archive that replaces it (#3077).
+
+    The row is hard-deleted here, so leaving the photo directory alone
+    orphaned it under an id nothing points at any more — and the pictures
+    of a print that still has a record disappeared from the UI.
+    """
+    ctx = await queue_factory(cleanup=True, photos=["a1b2c3d4.jpg", "e5f6a7b8.png"])
+
+    await _dispatch_library_item(ctx)
+
+    _, library_file, archive = await _queue_snapshot(ctx)
+    assert library_file is None
+    assert not ctx.photos_dir.exists()
+    assert archive.photos == ctx.photo_names
+    with patch.object(scheduler_module.settings, "base_dir", ctx.base_dir):
+        destination = archive_photos_dir(archive)
+    for name in ctx.photo_names:
+        assert (destination / name).read_bytes() == f"photo {name}".encode()
+
+
+@pytest.mark.asyncio
+async def test_external_library_file_keeps_its_photos(queue_factory):
+    ctx = await queue_factory(cleanup=True, is_external=True, photos=["a1b2c3d4.jpg"])
+
+    await _dispatch_library_item(ctx)
+
+    _, library_file, archive = await _queue_snapshot(ctx)
+    assert library_file is not None
+    assert (ctx.photos_dir / "a1b2c3d4.jpg").is_file()
+    assert archive.photos is None
+
+
+@pytest.mark.asyncio
+async def test_archive_creation_failure_keeps_the_photos(queue_factory):
+    ctx = await queue_factory(cleanup=True, photos=["a1b2c3d4.jpg"])
+
+    await _dispatch_library_item(ctx, archive_failure=True)
+
+    _, library_file, archive = await _queue_snapshot(ctx)
+    assert archive is None
+    assert library_file is not None
+    assert (ctx.photos_dir / "a1b2c3d4.jpg").is_file()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_commit_failure_keeps_the_photos_with_the_library_file(queue_factory):
+    """The photos move after the delete commits, not before it (#3077).
+
+    The commit that removes the library row can fail; the except branch rolls
+    it back and the file is in the library again. Photos moved ahead of that
+    commit would be gone from under it — the row would name a directory that
+    no longer exists, and the pictures would sit under an archive that was
+    rolled back too.
+    """
+    ctx = await queue_factory(cleanup=True, photos=["a1b2c3d4.jpg"])
+
+    await _dispatch_library_item(ctx, cleanup_commit_failure=True)
+
+    item, library_file, archive = await _queue_snapshot(ctx)
+    assert item.status == "failed"
+    assert archive is None
+    assert library_file is not None
+    assert library_file.photos == ["a1b2c3d4.jpg"]
+    assert (ctx.photos_dir / "a1b2c3d4.jpg").read_bytes() == b"photo a1b2c3d4.jpg"
+    assert not (ctx.base_dir / "archives" / "photos").exists()
+
+
+@pytest.mark.asyncio
+async def test_photo_commit_failure_still_dispatches_the_print(queue_factory, caplog):
+    """A failed photos commit must not take the dispatch down with it (#3077).
+
+    The archive and the delete are committed by then, so the print goes ahead
+    and the pictures sit unnamed under the archive.
+
+    The commit fails inside the flush, which is where a locked SQLite fails —
+    see `_fail_inside_the_next_flush`. That expires every loaded instance
+    twice over: once by SQLAlchemy's internal rollback, before the handler
+    runs at all, and again at the handler's own `rollback()`. So the handler
+    may not read an ORM attribute on either side of that rollback. Before it,
+    a read raises PendingRollbackError; after it, MissingGreenlet — the nozzle
+    guard's `archive.nozzle_diameter` and the upload's `printer.name` are the
+    ones that used to die.
+    """
+    ctx = await queue_factory(cleanup=True, photos=["a1b2c3d4.jpg"])
+
+    with caplog.at_level(logging.WARNING, logger="backend.app.services.print_scheduler"):
+        await _dispatch_library_item(ctx, photo_commit_failure=True)
+
+    item, library_file, archive = await _queue_snapshot(ctx)
+    # The handler absorbed it rather than the failure being skipped: it names
+    # the queue item and the archive from ints it held before the commit.
+    assert any(
+        f"Queue item {ctx.queue_item_id}: failed to carry library photos into archive {item.archive_id}"
+        in record.message
+        for record in caplog.records
+    )
+    assert item.status == "printing"
+    assert item.archive_id == archive.id
+    assert library_file is None
+    assert not archive.photos
+    ctx.upload.assert_awaited()
+    ctx.start_print.assert_called()
+    with patch.object(scheduler_module.settings, "base_dir", ctx.base_dir):
+        destination = archive_photos_dir(archive)
+    assert (destination / "a1b2c3d4.jpg").read_bytes() == b"photo a1b2c3d4.jpg"
 
 
 @pytest.mark.asyncio

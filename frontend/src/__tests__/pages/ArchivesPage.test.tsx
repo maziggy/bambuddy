@@ -618,4 +618,92 @@ describe('ArchivesPage', () => {
       });
     });
   });
+
+  // #1898: the "outcome?" badge on a print still waiting for its verdict opens
+  // the dialog. The PATCH behind it checks archives:update against the owner,
+  // like the menu item beside it, so for anyone else the badge is a status only.
+  describe('awaiting-outcome badge', () => {
+    const awaiting = { ...mockArchives[0], confirm_requested: true, user_verdict: null, created_by_id: 7 };
+
+    const signInWith = (permissions: string[]) => {
+      setAuthToken('verdict-token', 'session');
+      server.use(
+        http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('/api/v1/auth/me', () => HttpResponse.json({
+          id: 7,
+          username: 'operator',
+          is_active: true,
+          is_admin: false,
+          groups: [],
+          permissions,
+          created_at: '2026-08-18T00:00:00Z',
+        })),
+        http.get('/api/v1/archives/', () => HttpResponse.json([awaiting])),
+      );
+    };
+
+    afterEach(() => {
+      window.localStorage.removeItem('archiveViewMode');
+    });
+
+    it('is a status only for a user who may not update the archive', async () => {
+      signInWith(['archives:read_all']);
+      render(<ArchivesPage />);
+
+      const badge = await screen.findByRole('button', { name: 'outcome?' });
+      await waitFor(() => expect(badge).toBeDisabled());
+      expect(badge).toHaveAttribute('title', 'You do not have permission to update archives');
+      fireEvent.click(badge);
+      expect(screen.queryByTestId('confirm-outcome-dialog')).toBeNull();
+    });
+
+    it('is a status only in the list view too', async () => {
+      window.localStorage.setItem('archiveViewMode', 'list');
+      signInWith(['archives:read_all']);
+      render(<ArchivesPage />);
+
+      const badge = await screen.findByRole('button', { name: 'outcome?' });
+      await waitFor(() => expect(badge).toBeDisabled());
+      expect(badge).toHaveAttribute('title', 'You do not have permission to update archives');
+    });
+
+    it('is disabled on somebody else\'s print for a user who may update only their own', async () => {
+      signInWith(['archives:read_all', 'archives:update_own']);
+      server.use(http.get('/api/v1/archives/', () => HttpResponse.json([{ ...awaiting, created_by_id: 8 }])));
+      render(<ArchivesPage />);
+
+      const badge = await screen.findByRole('button', { name: 'outcome?' });
+      await waitFor(() => expect(badge).toBeDisabled());
+    });
+
+    it('opens the dialog for the owner', async () => {
+      signInWith(['archives:read_all', 'archives:update_own']);
+      render(<ArchivesPage />);
+
+      const badge = await screen.findByRole('button', { name: 'outcome?' });
+      await waitFor(() => expect(badge).toBeEnabled());
+      fireEvent.click(badge);
+      expect(await screen.findByTestId('confirm-outcome-dialog')).toBeInTheDocument();
+    });
+  });
+
+  describe('unconfirmed filter', () => {
+    afterEach(() => {
+      window.localStorage.removeItem('archiveFilterUnconfirmed');
+    });
+
+    it('is cleared by Reset like every other top filter', async () => {
+      render(<ArchivesPage />);
+      await screen.findByText('Benchy');
+
+      fireEvent.click(screen.getByTitle('Show only prints still waiting for their outcome verdict'));
+      // Neither fixture archive is waiting for a verdict, so the filter empties the list.
+      await waitFor(() => expect(screen.queryByText('Benchy')).not.toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+
+      expect(await screen.findByText('Benchy')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Reset' })).not.toBeInTheDocument();
+    });
+  });
 });

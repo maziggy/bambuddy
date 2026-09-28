@@ -643,7 +643,7 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         try:
             from urllib.parse import urlparse
 
-            from backend.app.services.camera import create_tls_proxy
+            from backend.app.services.camera import close_tls_proxy, create_tls_proxy
 
             parsed = urlparse(safe_url)
             target_port = parsed.port or 322
@@ -722,8 +722,7 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
         return None
     finally:
         if proxy_server:
-            proxy_server.close()
-            await proxy_server.wait_closed()
+            await close_tls_proxy(proxy_server)
 
 
 def _transcode_to_jpeg(data: bytes) -> bytes | None:
@@ -1076,7 +1075,7 @@ async def _stream_rtsp(
         try:
             from urllib.parse import urlparse
 
-            from backend.app.services.camera import create_tls_proxy
+            from backend.app.services.camera import close_tls_proxy, create_tls_proxy
 
             parsed = urlparse(safe_url)
             target_port = parsed.port or 322
@@ -1113,10 +1112,18 @@ async def _stream_rtsp(
         "1024000",
         "-max_delay",
         "500000",
-        "-probesize",
-        "32",
-        "-analyzeduration",
-        "0",
+        # No probe cap here (#3082). The input is whatever camera the user
+        # owns, so there is no stream to tune a fast-start probe against: a
+        # 32-byte probe expires before a source that carries SPS/PPS in-band
+        # rather than in its SDP has sent them, and ffmpeg then starts no
+        # H.264 decoder and emits nothing at all. ffmpeg's defaults are a
+        # ceiling rather than a wait, so a camera that announces itself in the
+        # first packet still starts as fast as it ever did.
+        #
+        # `_capture_rtsp_frame` has always run on those defaults, which is how
+        # a camera could pass the connection test and still show a black live
+        # view. The printer path is the opposite case — a known Bambu camera
+        # per model — and keeps its tuning in `camera_profiles.py`.
         "-fflags",
         "nobuffer",
         "-flags",
@@ -1204,8 +1211,7 @@ async def _stream_rtsp(
                 process.kill()
                 await process.wait()
         if proxy_server:
-            proxy_server.close()
-            await proxy_server.wait_closed()
+            await close_tls_proxy(proxy_server)
 
 
 async def _stream_usb(

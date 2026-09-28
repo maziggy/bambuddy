@@ -101,9 +101,17 @@ class NotificationProvider(Base):
     # Off by default: fires after every print, alongside the print-complete alert (#2525)
     on_plate_clear_required = Column(Boolean, default=False)  # Print ended, queue gated until plate is confirmed clear
 
+    # Print asked for an outcome verdict (#1898). Defaults ON: it only ever
+    # fires for prints where the user opted in per-job, so the provider-level
+    # toggle exists to silence a channel, not to enable the feature.
+    on_print_confirm_request = Column(Boolean, default=True)
+
     # Event triggers - Bed cooled after print
     on_bed_cooled = Column(Boolean, default=False)  # Bed cooled below threshold after print
     on_first_layer_complete = Column(Boolean, default=False)  # First layer finished printing
+    # Messages another application sends through Bambuddy (POST /notifications/app-message),
+    # e.g. Bambuddy Orders' "an order needs you". Off by default: nothing new arrives on upgrade.
+    on_app_message = Column(Boolean, default=False)
 
     # Event triggers - Inventory stock alerts
     on_stock_reorder_alert = Column(Boolean, default=False)  # SKU hits reorder point

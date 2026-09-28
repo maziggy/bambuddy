@@ -144,6 +144,16 @@ class AppSettings(BaseModel):
         default=False,
         description="Automatically dry AMS filament on idle printers when humidity exceeds threshold, regardless of queue",
     )
+    ambient_drying_sustained_minutes: int = Field(
+        default=0,
+        ge=0,
+        le=240,
+        description=(
+            "Minutes the humidity must stay above the threshold before an ambient "
+            "auto-dry starts (0 = start immediately). Rides out the reading spike "
+            "from opening the AMS lid instead of buying a dry cycle for it."
+        ),
+    )
     print_drying_enabled: bool = Field(
         default=False,
         description=(
@@ -396,6 +406,24 @@ class AppSettings(BaseModel):
     default_nozzle_offset_cali: TriState = Field(
         default="auto",
         description="Default nozzle offset calibration option for new prints (dual-nozzle printers only)",
+    )
+    default_confirm_outcome: bool = Field(
+        default=False,
+        description="Default for asking for a post-print outcome verdict on new prints (#1898)",
+    )
+    confirm_outcome_external_prints: bool = Field(
+        default=False,
+        description=(
+            "Also ask for the outcome of prints Bambuddy archived but did not dispatch — started at "
+            "the printer, in Bambu Studio or in the Handy app (#1898)"
+        ),
+    )
+    confirm_default_good_on_plate_clear: bool = Field(
+        default=False,
+        description=(
+            "When the build plate is released (manual acknowledgment or next dispatch) with the "
+            "outcome prompt still unanswered, record the print as a good part (#1898)"
+        ),
     )
 
     # Staggered batch start for multi-printer jobs
@@ -682,6 +710,7 @@ class AppSettingsUpdate(BaseModel):
     queue_drying_enabled: bool | None = None
     queue_drying_block: bool | None = None
     ambient_drying_enabled: bool | None = None
+    ambient_drying_sustained_minutes: int | None = Field(default=None, ge=0, le=240)
     print_drying_enabled: bool | None = None
     drying_presets: str | None = None
     ams_humidity_thresholds: str | None = None
@@ -737,6 +766,9 @@ class AppSettingsUpdate(BaseModel):
     default_layer_inspect: bool | None = None
     default_timelapse: bool | None = None
     default_nozzle_offset_cali: TriState | None = None
+    default_confirm_outcome: bool | None = None
+    confirm_outcome_external_prints: bool | None = None
+    confirm_default_good_on_plate_clear: bool | None = None
     stagger_group_size: int | None = Field(default=None, ge=1, le=50)
     stagger_interval_minutes: int | None = Field(default=None, ge=1, le=60)
     billing_enabled: bool | None = None

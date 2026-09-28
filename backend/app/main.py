@@ -4,6 +4,7 @@ import logging
 import math
 import os
 import posixpath
+import re
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -27,6 +28,7 @@ from backend.app.api.routes import (
     camera,
     camwall,
     cloud,
+    connected_apps,
     discovery,
     external_links,
     filaments,
@@ -115,6 +117,7 @@ from backend.app.services.obico_detection import obico_detection_service
 from backend.app.services.print_cost_estimate import plate_scoped_run_estimate as _plate_scoped_run_estimate
 from backend.app.services.print_scheduler import scheduler as print_scheduler
 from backend.app.services.print_storage import (
+    REASON_FTP_TRANSFER_FAILED,
     REASON_FTPS_COOLOFF,
     external_storage_present,
     ftp_probe_paths,
@@ -146,6 +149,7 @@ from backend.app.services.spoolman_tracking import (
 )
 from backend.app.services.tasmota import tasmota_service
 from backend.app.utils.ams_drying import is_drying_active, temperature_alarm_suppressed
+from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.filament_types import printer_filament_type
 from backend.app.utils.fts_routing import extruder_for_inlet
 from backend.app.utils.local_time import utcnow_naive
@@ -509,7 +513,7 @@ _printer_offline_notify_tasks: dict[int, asyncio.Task] = {}
 _PRINTER_OFFLINE_NOTIFY_DEBOUNCE_SECONDS = 60.0
 
 
-# HMS short-code → human-readable failure reason. Used by _dispatch_archive_update
+# HMS short-code → failure_reason key. Used by _dispatch_archive_update
 # when status="failed" to label the print's failure_reason in archives.
 #
 # Earlier code matched on `module` alone (e.g. "any module 0x0C HMS → Layer shift"),
@@ -557,6 +561,35 @@ _HMS_FAILURE_REASONS: dict[str, str] = {
     "0701_8007": "cloggedNozzle",
     "0701_8013": "cloggedNozzle",
     "0702_8003": "cloggedNozzle",
+    # AI print monitoring — spaghetti / the model coming off the plate.
+    # `spaghettiDetached` is a key the archive editor already offers for this
+    # failure mode, not a new one, so a derived reason opens the dropdown on
+    # that option rather than blank — and survives the next save, which clears
+    # any value the editor does not recognise.
+    #
+    # A module-0x0C row is safe here despite the warning above: that warning is
+    # about matching on the module alone, and 0C00_8042 is a full short code
+    # with a documented meaning ("The AI print monitor has detected a spaghetti
+    # defect", hms_errors.py). The H2D cancel echo is 0C00_001B, so the two
+    # cannot collide.
+    #
+    # 0300_8003's own text ends "before continuing your print", but on an X2D
+    # it arrives with the print already paused, offering only
+    # RESUME_PRINTING_DEFECTS / STOP_PRINTING — a halt waiting on the user.
+    #
+    # Two neighbours are left out on purpose, so this does not get re-derived:
+    #   * 0C00_C004 "Possible spaghetti failure was detected." — "possible"
+    #     reads as a warning about a print that is still running, not a halt.
+    #   * 0300_800A is AI monitoring too, but it reports a filament pile-up in
+    #     the waste chute. That is not the print failing.
+    #
+    # That line is drawn from the text, not from `severity`, because severity
+    # cannot draw it: 0300_8003 reaches us through `print_error`, a bare
+    # module/error word with no level in it, and bambu_mqtt.py gives every
+    # print_error entry a flat severity=3. Matching on the short code alone is
+    # the right shape for derive_failure_reason, not an omission.
+    "0300_8003": "spaghettiDetached",
+    "0C00_8042": "spaghettiDetached",
 }
 
 
@@ -571,11 +604,13 @@ def _hms_short_code(attr: int, code: int | str) -> str:
 
 
 def derive_failure_reason(status: str, hms_errors: list[dict] | None) -> str | None:
-    """Derive a human-readable failure_reason for an archived print.
+    """Derive the failure_reason key for an archived print.
 
-    Returns "User cancelled" for cancelled/aborted prints; for failed prints,
-    returns the first matching reason from _HMS_FAILURE_REASONS, or None when
-    no HMS code matches (don't guess — null is honest).
+    Returns "userCancelled" for cancelled/aborted prints; for failed prints,
+    returns the first matching key from _HMS_FAILURE_REASONS, or None when
+    no HMS code matches (don't guess — null is honest). The keys are the
+    archive editor's vocabulary (_FAILURE_REASON_KEYS in print_log.py) and are
+    translated at render time.
     """
     if status in ("aborted", "cancelled"):
         return "userCancelled"
@@ -1300,9 +1335,11 @@ def _format_hms_error_summary(hms_errors: list[dict]) -> str | None:
     — since #2926 — the description the parser already resolved, which is preferred
     when present so the queue's failure reason reads the same as the status
     response. The short code still produces the bracketed label, and still
-    resolves the sentence for a caller whose entries predate the field. Falls back
-    to the bare short code when no description is on file. Returns None for an
-    empty list so callers can leave error_message unset.
+    resolves the sentence for a caller whose entries predate the field. An entry
+    with a 16-char ``full_code`` is labelled with it instead, since the short code
+    of an ``hms[]`` fault is not a code anyone can look up. Falls back to the bare
+    label when no description is on file. Returns None for an empty list so
+    callers can leave error_message unset.
     """
     if not hms_errors:
         return None
@@ -1320,7 +1357,12 @@ def _format_hms_error_summary(hms_errors: list[dict]) -> str | None:
         except (TypeError, ValueError):
             continue
         description = err.get("description") or get_error_description(short_code)
-        parts.append(f"[{short_code}] {description}" if description else f"[{short_code}]")
+        # An `hms[]` fault's short code ("0500_000E") drops the part and level
+        # groups and is not a code anyone can look up; its full code in the
+        # printer screen's four groups is (#2728).
+        full_code = str(err.get("full_code") or "")
+        label = "-".join(full_code[i : i + 4] for i in range(0, 16, 4)) if len(full_code) == 16 else short_code
+        parts.append(f"[{label}] {description}" if description else f"[{label}]")
     return "; ".join(parts) if parts else None
 
 
@@ -1402,6 +1444,65 @@ async def _maybe_notify_printer_offline(printer_id: int) -> None:
         logger.warning("Printer offline notification failed for printer %s: %s", printer_id, e)
     finally:
         _printer_offline_notify_tasks.pop(printer_id, None)
+
+
+def _hms_notify_key(error) -> str:
+    """What identifies a fault for notification de-duplication.
+
+    The full code, which is unique per fault. ``attr`` alone used to be the key:
+    unique for a ``print_error``, but for an ``hms[]`` fault it is only the
+    module and part, so two faults on one part (#1840's H2C held 0500-0600-0002-0005
+    and -0006 together) shared a key and only the first was ever notified. An
+    entry without a full code falls back to attr and code together.
+    """
+    full_code = getattr(error, "full_code", "") or ""
+    if full_code:
+        return full_code.upper()
+    return f"{error.attr:08X}:{error.code}"
+
+
+def _hms_fault_counts(error) -> bool:
+    """Whether a fault counts as a problem: the same rule the frontend's
+    ``filterKnownHMSErrors`` applies to the printer card, badge and camera wall.
+
+    It counts when Bambu publishes text for it or it offers action buttons, and
+    its level is a real one. An ``hms[]`` fault at level 3 (notification) with
+    no actions does not count: those are things like "the top cover is open" or
+    "the chamber is hot, fan speed increased", which a printer can hold through
+    a whole print. A ``print_error`` at the same level (0xCxxx) still counts, as
+    it always has; those are prompts such as "unable to start drying" (#2728).
+    """
+    if error.severity < 1:
+        return False
+    has_actions = bool(getattr(error, "actions", None))
+    is_hms_notice = len(getattr(error, "full_code", "") or "") == 16 and error.severity == 3
+    return has_actions or (bool(getattr(error, "description", None)) and not is_hms_notice)
+
+
+def _hms_errors_to_notify(errors: list, new_error_codes: set[str]) -> list:
+    """The new faults that count (see ``_hms_fault_counts``).
+
+    These go to the MQTT relay; the caller also needs a description before it
+    sends a notification. Level 0, Bambu's "invalid" level, never counts. This
+    used to read ``severity >= 2`` when severity held the part byte; on the real
+    level that would drop the task-stopping errors (#2728).
+    """
+    return [e for e in errors if _hms_notify_key(e) in new_error_codes and _hms_fault_counts(e)]
+
+
+def _take_new_hms_faults(printer_id: int, errors: list) -> list:
+    """The faults on this printer not notified yet, and record them as notified.
+
+    Tracking is updated before anything is sent, so concurrent status callbacks
+    cannot notify the same fault twice. The set is replaced, not extended: a
+    fault that clears and later returns is notified again, and the grace period
+    in the caller keeps a fault that flickers off for a moment from doing that.
+    """
+    current = {_hms_notify_key(e) for e in errors}
+    new = current - _notified_hms_errors.get(printer_id, set())
+    _notified_hms_errors[printer_id] = current
+    _hms_last_seen[printer_id] = time.time()
+    return _hms_errors_to_notify(errors, new)
 
 
 async def on_printer_status_change(printer_id: int, state: PrinterState):
@@ -1524,8 +1625,21 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
 
     # Include tray_now and vt_tray hash so external spool changes trigger broadcasts
     vt_tray_key = hash(str(state.raw_data.get("vt_tray", []))) if state.raw_data else 0
-    # Include AMS dry_time and tray state values so drying/slot changes trigger broadcasts
-    ams_dry_key = tuple(a.get("dry_time", 0) for a in (state.raw_data.get("ams") or [])) if state.raw_data else ()
+    # Include AMS dry_time and tray state values so drying/slot changes trigger broadcasts.
+    #
+    # dry_countdown_stalled rides along because it is the one drying signal the
+    # countdown itself cannot carry: the MQTT layer raises it precisely BECAUSE
+    # dry_time stopped moving, so on the frame that flips it every other member
+    # of this key is identical and the push would be deduplicated away. Mid-print
+    # a temperature would eventually break the tie, but a parked command on an
+    # idle machine changes nothing else at all — AMS temp and humidity are not in
+    # the key — so the badge could sit unreachable indefinitely. The flag flips at
+    # most once per drying cycle, so it costs no mid-print broadcast traffic.
+    ams_dry_key = (
+        tuple((a.get("dry_time", 0), bool(a.get("dry_countdown_stalled"))) for a in (state.raw_data.get("ams") or []))
+        if state.raw_data
+        else ()
+    )
     # Include tray states so load/unload transitions (state 11→10) trigger broadcasts (#784)
     #
     # The filament identity fields are here because Configure Slot writes
@@ -1760,22 +1874,9 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     # Check for new HMS errors and send notifications
     current_hms_errors = getattr(state, "hms_errors", []) or []
     if current_hms_errors:
-        # Build set of current error codes (using attr for uniqueness)
-        current_error_codes = {f"{e.attr:08x}" for e in current_hms_errors}
-        previously_notified = _notified_hms_errors.get(printer_id, set())
+        new_errors = _take_new_hms_faults(printer_id, current_hms_errors)
 
-        # Find new errors that haven't been notified yet
-        new_error_codes = current_error_codes - previously_notified
-
-        # Update tracking immediately to prevent duplicate notifications from concurrent callbacks
-        _notified_hms_errors[printer_id] = current_error_codes
-        _hms_last_seen[printer_id] = time.time()
-
-        if new_error_codes:
-            # Get the actual new errors for the notification
-            # Filter to severity >= 2 (skip informational/status messages like H2D sends)
-            new_errors = [e for e in current_hms_errors if f"{e.attr:08x}" in new_error_codes and e.severity >= 2]
-
+        if new_errors:
             try:
                 from backend.app.models.printer import Printer
 
@@ -1813,10 +1914,10 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                         error_code_masked = error_code_int & 0xFFFF
                         short_code = f"{(error.attr >> 16) & 0xFFFF:04X}_{error_code_masked:04X}"
 
-                        # Only notify for errors with known descriptions — printers
-                        # send many undocumented/phantom codes that aren't real errors.
-                        # Resolved at parse time (#2926); short_code is still needed
-                        # for the suppression set below.
+                        # Only notify for errors Bambu publishes text for — printers
+                        # send undocumented codes that aren't real errors, and Bambu
+                        # lists some with empty text. Resolved at parse time (#2926);
+                        # short_code is still needed for the suppression set below.
                         description = error.description
                         if not description or short_code in _HMS_NOTIFICATION_SUPPRESS:
                             continue
@@ -1834,7 +1935,8 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                             f"[HMS] Sent notification for {sent_count} error(s) on printer {printer_id}"
                         )
 
-                # Also publish to MQTT relay (no DB).
+                # Also publish to MQTT relay (no DB): every new fault that
+                # counts, with or without text, the same set the UI counts.
                 printer_info = printer_manager.get_printer(printer_id)
                 if printer_info:
                     errors_data = [
@@ -2021,6 +2123,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
             from backend.app.api.routes.inventory import _find_tray_in_ams_data
             from backend.app.models.spool import Spool as _Spool
             from backend.app.models.spool_assignment import SpoolAssignment as SA
+            from backend.app.services.ams_slot_presence import spool_present
             from backend.app.services.inventory_mode import spoolman_owns_assignments
 
             # Built-in assignments only. Since #2812 they survive a switch to
@@ -2137,7 +2240,18 @@ async def on_ams_change(printer_id: int, ams_data: list):
                     # (#1322). The state ∉ {9,10} guard keeps the firmware's
                     # explicit "empty" signals authoritative over any stale
                     # tray_type that might survive the relay's auto-clearing.
-                    loaded = cur_state == 11 or (cur_state not in (9, 10) and cur_type.strip())
+                    #
+                    # tray_exist_bits comes first because that guard cannot tell
+                    # a firmware "empty" from Bambuddy's own: apply_tray_exist_bits
+                    # writes state=9 when the bit is 0 and leaves it there when the
+                    # bit returns. A non-RFID spool inserted into a pre-assigned
+                    # slot brings no tray_type with it, so the stale 9 made this
+                    # expression false forever and the deferred config never fired
+                    # — the deadlock #1322 removed from the assign path, still in
+                    # place here (#3084, #3100).
+                    loaded = spool_present(current_tray) is True or (
+                        cur_state == 11 or (cur_state not in (9, 10) and cur_type.strip())
+                    )
                     if not fp_type.strip() and loaded and assignment.spool:
                         try:
                             from backend.app.api.routes.inventory import (
@@ -2182,6 +2296,23 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             logger.info(
                                 "Auto-unlink skipped: spool %d AMS%d-T%d — tray data cleared during a running print "
                                 "(runout?)",
+                                assignment.spool_id,
+                                assignment.ams_id,
+                                assignment.tray_id,
+                            )
+                            continue
+                        # Same reasoning off the print, on firmware's own say-so:
+                        # a blank tray report from a slot whose tray_exist_bits
+                        # bit is set describes a spool the AMS cannot identify —
+                        # a non-RFID one, or one whose slot was reset — not a
+                        # spool that was taken out. Deleting the assignment there
+                        # threw away the identity the user had supplied, which is
+                        # the only place it existed (#3100). A slot the bit calls
+                        # empty, or one that carries no bit at all, still unlinks.
+                        if spool_present(current_tray) is True and not cur_color.strip() and not cur_type.strip():
+                            logger.info(
+                                "Auto-unlink skipped: spool %d AMS%d-T%d — slot still occupied, "
+                                "tray reports no filament data yet",
                                 assignment.spool_id,
                                 assignment.ams_id,
                                 assignment.tray_id,
@@ -2593,6 +2724,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
 
             from backend.app.models.spool_assignment import SpoolAssignment
             from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+            from backend.app.services.ams_slot_presence import spool_present
             from backend.app.services.inventory_mode import spoolman_owns_assignments
 
             # Built-in remaining weight, used by sync_ams_tray only when the
@@ -2661,7 +2793,16 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         # completion (#1459), so deleting the row mid-print
                         # loses the runout segment's usage — the same failure
                         # the internal inventory's auto-unlink had.
-                        if not printing_now:
+                        #
+                        # Nor when firmware's presence bit says the slot is
+                        # occupied. parse_ams_tray calls a tray with no type or
+                        # no colour empty, and a spool the AMS cannot read has
+                        # neither until something configures it — so a tag-less
+                        # spool assigned through the UI had its row deleted by
+                        # the first idle push after it was inserted. Same
+                        # deletion as the internal inventory's in #3100, same
+                        # answer, so the two modes stay in step.
+                        if not printing_now and spool_present(tray_data) is not True:
                             empty_slots.append((ams_id, tray_id_raw))
                         _clear_unknown_tag_dedup(printer_id, ams_id, tray_id_raw)
                         continue
@@ -2774,6 +2915,26 @@ async def on_ams_change(printer_id: int, ams_data: list):
                 except Exception as e:
                     await db.rollback()
                     logger.error("Error persisting Spoolman slot assignments for printer %s: %s", printer_id, e)
+                else:
+                    # Tell open browsers the slot changed. This loop rewrites
+                    # slot_preset_mappings via upsert_slot_preset_for_spoolman_spool
+                    # above, and the AMS slot card reads that row ahead of the
+                    # live tray_info_idx -- so with no event the card keeps
+                    # showing the previous spool's preset name. Internal mode
+                    # raises spool_auto_assigned for the same reason; this loop
+                    # broadcast nothing at all, which made Spoolman mode the
+                    # worse half of the same bug. On the else branch so a
+                    # failed commit stays silent and a broadcast failure cannot
+                    # roll back rows that are already committed.
+                    for ams_id, tray_id, *_ in (*slot_changes, *empty_slots):
+                        await ws_manager.broadcast(
+                            {
+                                "type": "spool_assignment_changed",
+                                "printer_id": printer_id,
+                                "ams_id": ams_id,
+                                "tray_id": tray_id,
+                            }
+                        )
 
     except Exception as e:
         logging.getLogger(__name__).error("Spoolman AMS sync failed for printer %s: %s", printer_id, e)
@@ -3072,6 +3233,14 @@ async def _restore_printable_objects(printer_id: int, state, db, logger) -> None
 # armed a fresh one. Module-level so tests can shrink them.
 _FALLBACK_3MF_RETRY_DELAYS_SECONDS: tuple[float, ...] = (310.0, 620.0)
 
+# Retry ladder for the other temporary give-up: the file service answered and
+# the transfer still did not finish, which at print start is usually the printer
+# serving MQTT, the camera and a job upload at the same time (#3063). Nothing has
+# to expire here, so the first attempt comes early -- #3063's reporter had the
+# same 19MB file complete 48 seconds after the download budget ran out. The later
+# two cover a printer that stays busy well into the print.
+_FALLBACK_3MF_TRANSFER_RETRY_DELAYS_SECONDS: tuple[float, ...] = (60.0, 240.0, 600.0)
+
 # printer_id -> the in-flight retry task, so print completion can cancel it.
 _fallback_3mf_retry_tasks: dict[int, asyncio.Task] = {}
 
@@ -3240,16 +3409,36 @@ async def try_recover_fallback_archive(printer_id: int, name: str, path: Path) -
         return False
 
 
-def _schedule_fallback_3mf_retry(printer_id: int, archive_id: int, filenames: list[str]) -> None:
-    """Re-attempt the 3MF download after the printer's FTPS cool-off clears."""
+def _schedule_fallback_3mf_retry(
+    printer_id: int,
+    archive_id: int,
+    filenames: list[str],
+    delays: tuple[float, ...] | None = None,
+    reason: str = REASON_FTPS_COOLOFF,
+) -> None:
+    """Re-attempt the 3MF download after a temporary give-up.
+
+    ``reason`` says which give-up this is, and picks the default ladder: an
+    FTPS cool-off has to be waited out, while a transfer that timed out under
+    contention is worth asking about again straight away (#3063). It is only
+    read for the ladder and the log line -- the retry itself is identical, since
+    in both cases the file is on the printer and the last attempt at it failed
+    for a reason that does not last.
+    """
 
     logger = logging.getLogger(__name__)
+    if delays is None:
+        delays = (
+            _FALLBACK_3MF_TRANSFER_RETRY_DELAYS_SECONDS
+            if reason == REASON_FTP_TRANSFER_FAILED
+            else _FALLBACK_3MF_RETRY_DELAYS_SECONDS
+        )
 
     async def _retry() -> None:
         from backend.app.models.archive import PrintArchive
         from backend.app.models.printer import Printer
 
-        for delay in _FALLBACK_3MF_RETRY_DELAYS_SECONDS:
+        for delay in delays:
             await asyncio.sleep(delay)
 
             async with async_session() as db:
@@ -3333,10 +3522,196 @@ def _schedule_fallback_3mf_retry(printer_id: int, archive_id: int, filenames: li
     task = asyncio.create_task(_guarded())
     _fallback_3mf_retry_tasks[printer_id] = task
     logger.info(
-        "[RECOVER] Archive %s has no 3MF because printer %s was in its FTPS cool-off; will retry",
+        "[RECOVER] Archive %s has no 3MF (%s) and the file should still be on printer %s; will retry in %s",
         archive_id,
+        reason,
         printer_id,
+        ", ".join(f"{d:g}s" for d in delays),
     )
+
+
+async def _ask_outcome_for_external_print(db, printer_id: int, observed_name: str | None = None) -> bool:
+    """Whether an archive created here should ask for the print's outcome (#1898).
+
+    Only a print Bambuddy did not dispatch reaches the archive-*creating*
+    branches below: a queued job already has its archive and takes the
+    expected-print branch, where the queue item's own ``confirm_outcome``
+    decides. The queue is still consulted, because a restart mid-print empties
+    ``_expected_prints`` — without the check the setting could override a queue
+    item that deliberately has the flag off. Any failure answers "don't ask":
+    an unwanted prompt is worse than a missing one, and this must never be the
+    reason a print goes unarchived.
+
+    A ``printing`` row is not proof on its own, though: Bambuddy deliberately
+    leaves one behind when a completion cannot be matched to it
+    (``_completion_belongs_to_queue_item``), and the scheduler's stranded sweep
+    only takes it back once the printer has sat connected and terminal for
+    minutes. Until then every screen-started print on that printer would
+    silently lose its prompt, so the row is held against ``observed_name`` by
+    the same comparison a completion uses: a positive disagreement means the row
+    is about some other run and this print is external after all.
+    """
+    logger = logging.getLogger(__name__)
+    try:
+        # A savepoint rather than a rollback of the caller's transaction on
+        # failure: a failed statement leaves the transaction unusable, but a
+        # full rollback also expires every object the caller has loaded (the
+        # printer, the archive it just created), and on an async session the
+        # next attribute read then raises instead of reloading. Everything here
+        # is a read, so undoing the savepoint loses nothing.
+        async with db.begin_nested():
+            return await _decide_outcome_for_external_print(db, printer_id, observed_name, logger)
+    except Exception as e:
+        logger.warning("[CALLBACK] Could not decide the outcome prompt for printer %s: %s", printer_id, e)
+        return False
+
+
+async def _decide_outcome_for_external_print(db, printer_id: int, observed_name: str | None, logger) -> bool:
+    """The reads behind ``_ask_outcome_for_external_print``; see there."""
+    from backend.app.api.routes.settings import get_setting, setting_is_true
+
+    if not setting_is_true(await get_setting(db, "confirm_outcome_external_prints")):
+        return False
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    dispatched_here = await db.scalar(
+        select(PrintQueueItem)
+        .where(
+            PrintQueueItem.printer_id == printer_id,
+            PrintQueueItem.status == "printing",
+        )
+        .limit(1)
+    )
+    if dispatched_here is None:
+        return True
+
+    expected = await _queue_item_dispatched_name(db, dispatched_here)
+    observed = (observed_name or "").strip()
+    if not expected or not observed or _subtask_names_match(expected, observed):
+        logger.info(
+            "[CALLBACK] Not asking for the outcome on printer %s: queue item %s is still printing, so "
+            "Bambuddy dispatched this run and the item's own ask-for-outcome flag decides.",
+            printer_id,
+            dispatched_here.id,
+        )
+        return False
+
+    logger.info(
+        "[CALLBACK] Queue item %s is still marked printing on printer %s but was dispatched as %r, not "
+        "%r; treating this as an externally started print.",
+        dispatched_here.id,
+        printer_id,
+        expected,
+        observed,
+    )
+    return True
+
+
+async def _dispatch_outcome_confirmation_safely(
+    db,
+    printer_id: int,
+    printer_name: str,
+    data: dict,
+    archive_id: int,
+    archive_data: dict | None = None,
+) -> None:
+    """``dispatch_outcome_confirmation`` for a caller that has more to do on ``db``.
+
+    The completion task sends the per-user print email on the same session
+    right after the prompt. A failed statement in the prompt leaves that
+    session needing a rollback, and without one the email step fails with
+    PendingRollbackError; the prompt is the optional part, so it must not be
+    the reason the email never goes out.
+    """
+    try:
+        await dispatch_outcome_confirmation(db, printer_id, printer_name, data, archive_id, archive_data)
+    except Exception as e:
+        logging.getLogger(__name__).error("[NOTIFY-BG] Outcome-confirmation dispatch failed: %s", e, exc_info=True)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+
+
+async def dispatch_outcome_confirmation(
+    db,
+    printer_id: int,
+    printer_name: str,
+    data: dict,
+    archive_id: int,
+    archive_data: dict | None = None,
+) -> bool:
+    """Emit the post-print outcome prompt for a completed archive (#1898).
+
+    Gated on the archive itself: ``confirm_requested`` is the opt-in (from the
+    queue item, or from ``confirm_outcome_external_prints`` for a print
+    Bambuddy did not start) and ``user_verdict`` being unset is what makes the
+    question still open. Mints the per-archive capability token the one-tap
+    verdict links carry.
+
+    Lives here rather than inline in ``on_print_complete``'s notification task
+    because that task swallows every exception: extracted, the gate and the two
+    emissions can be driven by a test, which is the only thing standing between
+    a regression here and a farm that quietly stops asking.
+
+    Returns whether a prompt was sent.
+    """
+    logger = logging.getLogger(__name__)
+    from backend.app.models.archive import PrintArchive
+
+    confirm_archive = (await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))).scalar_one_or_none()
+    if not (confirm_archive and confirm_archive.confirm_requested and confirm_archive.user_verdict is None):
+        return False
+
+    import secrets as _secrets
+
+    # A spent token stays on the row so the one-tap route can recognise it, so
+    # "has a token" no longer means "answerable". A prompt going out now needs a
+    # live one: mint a new token whenever the stored one is already spent, or
+    # every button in the new message would land on the already-answered page.
+    if not confirm_archive.confirm_token or confirm_archive.confirm_token_used_at is not None:
+        confirm_archive.confirm_token = _secrets.token_urlsafe(32)
+        confirm_archive.confirm_token_used_at = None
+        await db.commit()
+
+    from backend.app.api.routes.settings import get_external_base_url, get_setting
+
+    base = await get_external_base_url(db)
+    if not await get_setting(db, "external_url"):
+        # Both the Telegram inline keyboard and the ntfy action buttons need an
+        # absolute URL, so an unconfigured install used to get a message body
+        # with two unusable relative paths and no buttons at all. The shared
+        # fallback at least produces tappable links; say which setting makes
+        # them resolve from a phone.
+        logger.warning(
+            "[#1898] No external_url configured — the outcome prompt's Good/Reject links point at %s. "
+            "Set Settings → External URL so they resolve away from this host.",
+            base,
+        )
+    token = confirm_archive.confirm_token
+    good_url = f"{base}/api/v1/archives/confirm/{token}/good"
+    reject_url = f"{base}/api/v1/archives/confirm/{token}/reject"
+    confirm_url = f"{base}/archives?confirm={archive_id}"
+
+    await ws_manager.send_print_confirm_request(
+        printer_id,
+        {
+            "archive_id": archive_id,
+            "print_name": confirm_archive.print_name or confirm_archive.filename,
+        },
+    )
+    await notification_service.on_print_confirm_request(
+        printer_id,
+        printer_name,
+        data,
+        db,
+        archive_data=archive_data,
+        good_url=good_url,
+        reject_url=reject_url,
+        confirm_url=confirm_url,
+    )
+    return True
 
 
 async def on_print_start(printer_id: int, data: dict):
@@ -3662,6 +4037,18 @@ async def on_print_start(printer_id: int, data: dict):
                 # Update archive status to printing
                 archive.status = "printing"
                 archive.started_at = datetime.now(timezone.utc)
+
+                # The previous run's answer is still on this row and the
+                # completion prompt is gated on ``user_verdict is None`` (#1898),
+                # so without a reset the second run inherits the first run's
+                # verdict: no prompt at all, and a green "good" badge on a run
+                # nobody ever judged.
+                if archive.confirm_requested:
+                    archive.user_verdict = None
+                    archive.user_verdict_source = None
+                    archive.user_verdict_at = None
+                    archive.confirm_token = None
+                    archive.confirm_token_used_at = None
 
                 # Reprint of an archive reuses the source row. Without resetting
                 # ``timelapse_path`` _scan_for_timelapse_with_retries early-returns
@@ -4035,6 +4422,23 @@ async def on_print_start(printer_id: int, data: dict):
         # in minutes with the file still sitting on the printer.
         blocked_by_ftps_cooloff = False
 
+        # Set when a probe reached the printer and still came back without the
+        # file -- a timeout mid-transfer, a refused connection, anything that is
+        # not a clean "not here". A 550 raises FileNotOnPrinterError and is
+        # caught by name below, so a file that genuinely is not on the card
+        # leaves this False and schedules nothing. Anything else means the
+        # transfer, not the file, is what failed, and that does not last (#3063).
+        ftp_transfer_failed = False
+
+        # The print's name, for a fallback archive whose `subtask_name` the
+        # plate guard below had to disown. Display only, and deliberately kept
+        # apart from `subtask_name`: that variable is what every file lookup
+        # here is built from, and once a name has been shown to fetch another
+        # plate's 3MF it must not key `_active_prints` either, or the cover
+        # endpoint hands the same contradicted file to
+        # `_recover_fallback_archive` and fills the row in with it (#3126).
+        display_name_after_plate_reject: str | None = None
+
         # Get FTP retry settings
         ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
 
@@ -4174,11 +4578,17 @@ async def on_print_start(printer_id: int, data: dict):
                         # runs next) doesn't refetch the same 36MB over FTP.
                         cache_3mf_download(printer_id, try_filename, temp_path)
                         break
+                    # with_ftp_retry returns None once it has spent its budget,
+                    # and download_file_async returns False on a timeout, so an
+                    # exhausted transfer arrives here rather than as an
+                    # exception (#3063).
+                    ftp_transfer_failed = True
                 except FileNotOnPrinterError:
                     # 550 — file isn't at this path. Advance to next candidate
                     # without burning the retry budget.
                     logger.debug("3MF not at %s (550), trying next path", remote_path)
                 except Exception as e:
+                    ftp_transfer_failed = True
                     logger.debug("FTP download failed for %s: %s", remote_path, e)
 
             if downloaded_filename or ftps_handshake_blocked(printer.ip_address):
@@ -4251,6 +4661,9 @@ async def on_print_start(printer_id: int, data: dict):
                                 logger.info("Found and downloaded from %s: %s", search_dir, fname)
                                 cache_3mf_download(printer_id, fname, temp_path)
                                 break
+                            # The listing named the file, so it is on the card;
+                            # only the transfer failed (#3063).
+                            ftp_transfer_failed = True
                 except Exception as e:
                     logger.debug("Failed to list %s: %s", search_dir, e)
 
@@ -4355,13 +4768,33 @@ async def on_print_start(printer_id: int, data: dict):
                         pass
                     temp_path = None
                     downloaded_filename = None
-                    # Override the stale subtask_name so the fallback archive's
-                    # print_name reflects the correct plate. Prefer the swapped
-                    # name when we have one; otherwise let filename win.
-                    if corrected_subtask:
-                        subtask_name = corrected_subtask
-                    else:
-                        subtask_name = ""
+                    # Whatever the sweep's transport did earlier, it is not why
+                    # this archive ends up empty: a 3MF downloaded fine, it was
+                    # just the wrong plate. Retrying would re-fetch that same
+                    # contradicted file under the same stale names and hand it
+                    # to _recover_fallback_archive, which checks that a
+                    # candidate is a readable 3MF but not which plate it is --
+                    # so the row would be filled in with another plate's
+                    # filament and cost, the exact swap #2957 removed (#3063).
+                    ftp_transfer_failed = False
+                    # Disown the name for *lookups*: it has just been shown to
+                    # fetch another plate's 3MF, and it keys `_active_prints`
+                    # below, where the cover endpoint's own download of that
+                    # same name would find this archive and fill it in with the
+                    # file we are discarding here.
+                    #
+                    # Keep it for the *title*, which is a separate question.
+                    # ``swap_plate_suffix`` returns None both for a name that
+                    # carries no "- Plate N" / "_plate_N" suffix and for no
+                    # name at all, and those are not the same situation: a name
+                    # without a suffix holds no stale plate number to be wrong
+                    # about. Blanking both uses at once dropped the project
+                    # name too, and the row fell through to the gcode_file path
+                    # titled "plate_1" though the real name was in hand.
+                    # #1204's own premise is consecutive plates *of the same
+                    # model*, so the project part is right either way (#3126).
+                    display_name_after_plate_reject = corrected_subtask or subtask_name or None
+                    subtask_name = corrected_subtask or ""
 
         if not downloaded_filename or not temp_path:
             logger.warning("Could not find 3MF file for print: %s", filename or subtask_name)
@@ -4370,8 +4803,25 @@ async def on_print_start(printer_id: int, data: dict):
             try:
                 from backend.app.models.archive import PrintArchive
 
-                # Derive print name from subtask_name or filename
-                print_name = subtask_name or filename
+                # Why the card is empty. The two temporary causes outrank the
+                # storage verdict because they say the sweep never got a fair
+                # answer: a cool-off skipped it at the transport, and a failed
+                # transfer reached the printer but never finished. Either way
+                # the file is still on the card, so reporting where the printer
+                # files its jobs would describe a setting that is not the
+                # problem (#2957, #3063).
+                if blocked_by_ftps_cooloff:
+                    no_3mf_reason = REASON_FTPS_COOLOFF
+                elif storage.reachable and ftp_transfer_failed:
+                    no_3mf_reason = REASON_FTP_TRANSFER_FAILED
+                else:
+                    no_3mf_reason = storage.reason
+
+                # Derive print name from subtask_name or filename. The
+                # plate guard's disowned name comes second: it is a real name
+                # for a real print, and only the gcode_file path is left
+                # otherwise -- which titles the row "plate_1" (#3126).
+                print_name = subtask_name or display_name_after_plate_reject or filename
                 if print_name:
                     # Clean up the name (remove extensions, path parts)
                     print_name = print_name.split("/")[-1]
@@ -4408,19 +4858,17 @@ async def on_print_start(printer_id: int, data: dict):
                     status="printing",
                     started_at=datetime.now(timezone.utc),
                     subtask_id=subtask_id,
+                    confirm_requested=await _ask_outcome_for_external_print(db, printer_id, subtask_name),
                     filament_type=mqtt_filament_meta.get("filament_type"),
                     filament_color=mqtt_filament_meta.get("filament_color"),
                     extra_data={
                         "no_3mf_available": True,
-                        # Why the card is empty, when we know. The banner reads
-                        # this to stop telling H2/P2 owners to switch on a
-                        # setting that is already on and would not help (#2780).
-                        # A cool-off outranks the storage verdict: the sweep was
-                        # skipped at the transport, so the verdict never got to
-                        # be tested, and reporting it would blame the SD card
-                        # for a TLS handshake (#2957).
-                        "no_3mf_reason": REASON_FTPS_COOLOFF if blocked_by_ftps_cooloff else storage.reason,
-                        "original_subtask": subtask_name,
+                        # Why the card is empty, when we know -- see above. The
+                        # banner reads this to stop telling H2/P2 owners to
+                        # switch on a setting that is already on and would not
+                        # have helped (#2780).
+                        "no_3mf_reason": no_3mf_reason,
+                        "original_subtask": subtask_name or display_name_after_plate_reject or "",
                         "_print_data": data,
                     },
                 )
@@ -4482,13 +4930,15 @@ async def on_print_start(printer_id: int, data: dict):
                 except Exception as e:
                     logger.debug("[SPOOLMAN] Could not store tracking for fallback archive: %s", e)
 
-                # A cool-off give-up is temporary and the file is on the
-                # printer — come back for it once the handshake block clears
-                # (#2957). Deliberately not scheduled for a storage verdict:
-                # a file on internal eMMC will not appear at any FTPS path
-                # however long we wait, and retrying it is exactly the sweep
-                # #2780 removed.
-                if blocked_by_ftps_cooloff and possible_names:
+                # Both temporary give-ups are worth coming back for, and for
+                # the same reason: the file is on the printer and the last look
+                # failed at the transport rather than finding nothing. One waits
+                # out the handshake block (#2957), the other waits for the
+                # printer to stop being busy (#3063). Deliberately not scheduled
+                # for a storage verdict: a file on internal eMMC will not appear
+                # at any FTPS path however long we wait, and retrying it is
+                # exactly the sweep #2780 removed.
+                if no_3mf_reason in (REASON_FTPS_COOLOFF, REASON_FTP_TRANSFER_FAILED) and possible_names:
                     # `possible_names`, not the raw MQTT strings: it is the exact
                     # list this flow just tried, already stripped of any path
                     # (`filename` arrives as "/data/Metadata/plate_1.gcode" on
@@ -4497,6 +4947,7 @@ async def on_print_start(printer_id: int, data: dict):
                         printer_id=printer_id,
                         archive_id=fallback_archive.id,
                         filenames=list(possible_names),
+                        reason=no_3mf_reason,
                     )
 
                 # Send notification without archive data (file not found)
@@ -4543,6 +4994,35 @@ async def on_print_start(printer_id: int, data: dict):
             )
 
             if archive:
+                # Ask-for-outcome for a print Bambuddy did not dispatch (#1898).
+                # Set on the row rather than passed to archive_print, which also
+                # serves the queue dispatcher — there the queue item decides.
+                # Guarded because this branch has no ``except``: an unhandled
+                # write error would take the _active_prints registration, the
+                # start notification, the energy reading and the timelapse
+                # baseline below it with it, and a missing prompt is by far the
+                # cheaper failure.
+                archive_id = archive.id
+                try:
+                    if await _ask_outcome_for_external_print(db, printer_id, subtask_name):
+                        archive.confirm_requested = True
+                        await db.commit()
+                except Exception as e:
+                    logger.warning("Could not flag archive %s for the outcome prompt: %s", archive_id, e)
+                    # The rollback expires every loaded object, and on an async
+                    # session reading one afterwards raises instead of
+                    # reloading, so the two this branch goes on to use are
+                    # fetched again. The archive itself was committed by
+                    # archive_print; only the flag is lost.
+                    try:
+                        await db.rollback()
+                        archive = await db.get(PrintArchive, archive_id)
+                        printer = await db.get(Printer, printer_id)
+                    except Exception as reload_error:
+                        logger.warning(
+                            "Could not reload archive %s after the failed flag write: %s", archive_id, reload_error
+                        )
+
                 # Track this active print (use both original filename and downloaded filename)
                 _active_prints[(printer_id, downloaded_filename)] = archive.id
                 if filename and filename != downloaded_filename:
@@ -6103,6 +6583,23 @@ def _subtask_names_match(expected: str, observed: str) -> bool:
     return False
 
 
+async def _queue_item_dispatched_name(db, item) -> str:
+    """The subtask name *item* was dispatched under, or "" when unknowable.
+
+    A row with no archive, or an archive with no file name, is unverifiable
+    rather than wrong; every caller answers that with its permissive branch.
+    """
+    if item.archive_id is None:
+        return ""
+
+    from backend.app.models.archive import PrintArchive
+
+    archive = await db.get(PrintArchive, item.archive_id)
+    if archive is None or not archive.filename:
+        return ""
+    return _subtask_name_from_filename(archive.filename)
+
+
 async def _completion_belongs_to_queue_item(db, item, data: dict) -> bool:
     """Whether this completion event is plausibly about *item*'s print.
 
@@ -7562,6 +8059,14 @@ async def on_print_complete(printer_id: int, data: dict):
                 else:
                     logger.info("[NOTIFY-BG] Skipped duplicate kill-switch provider notification")
 
+                # Post-print outcome confirmation (#1898). Runs in this
+                # background task so the finish photo fetched above rides
+                # along with the prompt.
+                if print_status == "completed" and archive_id:
+                    await _dispatch_outcome_confirmation_safely(
+                        db, printer_id, printer_name, data, archive_id, archive_data
+                    )
+
                 # Send user-specific email notification
                 if archive_data:
                     created_by_id = archive_data.get("created_by_id")
@@ -7730,6 +8235,11 @@ _ams_cleanup_counter = 0  # Track recordings to trigger periodic cleanup
 # Track alarm cooldowns (printer_id:ams_id:type -> last_alarm_time)
 _ams_alarm_cooldown: dict[str, datetime] = {}
 AMS_ALARM_COOLDOWN_MINUTES = 60  # Don't send same alarm more than once per hour
+# (printer_id, ams_id) already reported as sending the drop index and no
+# percentage. Logged once each so a supported printer that turns out to do this
+# shows up in a support bundle rather than as a user wondering where the
+# humidity reading went -- see the note at the read site below (#3140).
+_ams_index_only_logged: set[tuple[int, int]] = set()
 
 
 def _resolve_temp_alarm_threshold(fair_threshold: float, raw_alarm_value: str | None) -> float:
@@ -7967,20 +8477,30 @@ async def record_ams_history():
                     for ams_data in raw_data["ams"]:
                         ams_id = int(ams_data.get("id", 0))
 
-                        # Get humidity (prefer humidity_raw)
-                        humidity_raw = ams_data.get("humidity_raw")
-                        humidity_idx = ams_data.get("humidity")
-                        humidity = None
-                        if humidity_raw is not None:
-                            try:
-                                humidity = float(humidity_raw)
-                            except (ValueError, TypeError):
-                                pass  # Skip unparseable humidity; will try fallback
-                        if humidity is None and humidity_idx is not None:
-                            try:
-                                humidity = float(humidity_idx)
-                            except (ValueError, TypeError):
-                                pass  # Skip unparseable humidity index value
+                        # Percentage only. The 1-5 index is inverted, so
+                        # charting it as a percentage drew the wettest units as
+                        # the driest (#3140); a unit that reports no percentage
+                        # leaves a gap in the chart instead. See
+                        # utils/ams_humidity.
+                        humidity = ams_humidity_percent(ams_data)
+
+                        # No supported printer is known to send the index
+                        # alone -- the report came from unsupported firmware,
+                        # and no install has been seen using the old fallback.
+                        # "Known" is doing work there, so say so once per unit:
+                        # the alternative is a silent blank card.
+                        if humidity is None and ams_data.get("humidity") is not None:
+                            unit_key = (printer.id, ams_id)
+                            if unit_key not in _ams_index_only_logged:
+                                _ams_index_only_logged.add(unit_key)
+                                logger.info(
+                                    "[%s] AMS %d reports the 1-5 humidity index but no usable humidity_raw "
+                                    "percentage. The index is inverted and is not shown as a percentage "
+                                    "(#3140), so this unit has no humidity reading, chart or alarm. "
+                                    "Please report this with the printer and AMS firmware versions.",
+                                    printer.name,
+                                    ams_id,
+                                )
 
                         # Get temperature
                         temperature = None
@@ -8000,7 +8520,12 @@ async def record_ams_history():
                             printer_id=printer.id,
                             ams_id=ams_id,
                             humidity=humidity,
-                            humidity_raw=float(humidity_raw) if humidity_raw else None,
+                            # Both columns hold the same reading now that the
+                            # index can no longer reach ``humidity``. Writing it
+                            # through the same value also stops a genuine 0%
+                            # from being stored as NULL, which the old truthiness
+                            # test did.
+                            humidity_raw=humidity,
                             temperature=temperature,
                         )
                         db.add(history)
@@ -8784,9 +9309,13 @@ async def lifespan(app: FastAPI):
     # Startup
     # Install Windows-only asyncio Proactor cleanup-RST filter (#1113) before
     # anything else can spawn tasks that might trip it.
-    from backend.app.core.asyncio_handlers import install_proactor_reset_filter
+    from backend.app.core.asyncio_handlers import install_proactor_reset_filter, warn_if_running_on_uvloop
 
     install_proactor_reset_filter()
+
+    # Before init_db, so the warning is near the top of the log rather than
+    # below a migration run. See warn_if_running_on_uvloop for what is at stake.
+    warn_if_running_on_uvloop()
 
     await init_db()
 
@@ -8828,7 +9357,7 @@ async def lifespan(app: FastAPI):
     import httpx as _httpx
 
     from backend.app.services.bambu_cloud import set_shared_http_client
-    from backend.app.services.makerworld import (
+    from backend.app.services.model_providers.makerworld.service import (
         set_shared_http_client as set_shared_makerworld_http_client,
     )
     from backend.app.services.orca_cloud import (
@@ -9330,6 +9859,9 @@ PUBLIC_API_ROUTES = {
     "/api/v1/auth/oidc/providers",  # Public list of enabled providers
     "/api/v1/auth/oidc/callback",  # Redirect target from OIDC provider
     "/api/v1/auth/oidc/exchange",  # Exchange short-lived OIDC token for JWT
+    # Connected apps: the app's server swaps a code for the user's identity,
+    # authenticated by its client secret rather than a login token.
+    "/api/v1/connect/token",
     # Version check for updates (no sensitive data)
     "/api/v1/updates/version",
     # Metrics endpoint handles its own prometheus_token authentication
@@ -9358,6 +9890,12 @@ PUBLIC_API_PREFIXES = [
     "/api/v1/ws",
     # OIDC authorize redirects — include provider_id in path
     "/api/v1/auth/oidc/authorize/",
+    # One-tap outcome-verdict links from push notifications (#1898). Tapped on
+    # a phone with no session, so no header can carry a JWT — the single-use
+    # capability token in the path IS the credential (same reasoning as the
+    # /dl/ slicer downloads below). The route grants nothing beyond writing
+    # good/reject on the one archive the token was minted for.
+    "/api/v1/archives/confirm/",
 ]
 
 # Route patterns that are public (read-only display data)
@@ -9388,6 +9926,11 @@ PUBLIC_API_PATTERNS = [
     # orcaslicer://) cannot send auth headers. These endpoints validate a short-lived
     # download token in the URL path instead.
     "/dl/",  # /archives/{id}/dl/{token}/{filename}, /library/files/{id}/dl/{token}/{filename}
+    # Same family, but the segment is "source-dl" — which does NOT contain "/dl/",
+    # and these patterns match by substring. Without its own entry the middleware
+    # 401s the slicer's header-less request before the route's token check runs,
+    # so "Open source 3MF in slicer" failed whenever auth was enabled (#3029).
+    "/source-dl/",  # /archives/{id}/source-dl/{token}/{filename}
     # Obico ML API fetches JPEG frames by one-shot nonce (issue #172 follow-up).
     # The nonce itself is the credential: 32-byte random, single-use, ~30s TTL.
     "/obico/cached-frame/",  # /obico/cached-frame/{nonce}
@@ -9463,6 +10006,12 @@ def _frame_ancestors(default_value: str) -> str:
     return f"frame-ancestors {default_value};"
 
 
+# The Vite-emitted STEP preview worker chunk (#2976): src/workers/
+# stepPreview.worker.ts becomes /assets/stepPreview.worker-<hash>.js. Matched
+# exactly so the eval-relaxed CSP below can never apply to any other asset.
+_STEP_WORKER_ASSET_RE = re.compile(r"^/assets/stepPreview\.worker-[\w-]+\.js$")
+
+
 @app.middleware("http")
 async def security_headers_middleware(request, call_next):
     """Add standard HTTP security headers to every response."""
@@ -9476,6 +10025,10 @@ async def security_headers_middleware(request, call_next):
     # script passes the policy without us needing 'unsafe-inline'. See
     # https://developers.cloudflare.com/cloudflare-challenges/challenge-types/javascript-detections/#if-you-have-a-content-security-policy-csp
     csp_nonce = secrets.token_urlsafe(16)
+    # Routes that render their own HTML need it too, or their inline script is
+    # blocked by the policy below. The outcome-confirmation page (#1898) is the
+    # one that does: it submits its own form so a verdict still costs one tap.
+    request.state.csp_nonce = csp_nonce
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     # X-Frame-Options is the legacy cross-origin embedding control. Modern
@@ -9509,6 +10062,23 @@ async def security_headers_middleware(request, call_next):
             "object-src 'none'; "
             "base-uri 'self'; " + _frame_ancestors("'none'")
         )
+    elif _STEP_WORKER_ASSET_RE.match(request.url.path):
+        # The STEP preview worker (#2976) runs OpenCascade compiled to WASM;
+        # its emscripten/embind glue generates invoker functions with `new
+        # Function(...)`, which needs 'unsafe-eval'. Per CSP3 a dedicated
+        # worker is governed by the policy delivered with the WORKER SCRIPT's
+        # own response — not the document's — so relaxing it here confines
+        # eval to that DOM-less worker context. The document policy below
+        # stays nonce-strict, and this response header has no effect when the
+        # file is merely fetched (a fetch's CSP is enforced against the
+        # requesting document, not the resource's own headers).
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; "
+            "connect-src 'self'; "
+            "object-src 'none'; "
+            "base-uri 'self'; " + _frame_ancestors("'none'")
+        )
     else:
         # The streaming overlay is embedded same-origin by the URL builder's
         # preview in Settings (#1422), so this branch allows 'self'.
@@ -9521,10 +10091,23 @@ async def security_headers_middleware(request, call_next):
         # overlay — Home Assistant on another port — remains what
         # TRUSTED_FRAME_ORIGINS is for, and _frame_ancestors already folds that
         # allowlist in.
-        embeddable_same_origin = request.url.path.startswith("/overlay/")
+        #
+        # The connected-app consent page (/connect/authorize) gets the same
+        # 'self': an app opened from Bambuddy's sidebar runs in an iframe, and
+        # its "Sign in with Bambuddy" navigates that iframe to this page. With
+        # 'none' the browser refuses to show it even inside Bambuddy. 'self'
+        # requires every ancestor to be this origin, so a foreign page -- a
+        # sidebar link's site included -- still cannot frame the consent
+        # screen to bait a click.
+        embeddable_same_origin = request.url.path.startswith("/overlay/") or request.url.path == "/connect/authorize"
+        # 'wasm-unsafe-eval' permits WebAssembly compilation ONLY — it does
+        # not allow eval()/Function() for JS, unlike 'unsafe-eval'. Needed by
+        # the STEP preview, which triangulates in the browser via OpenCascade
+        # compiled to WASM (#2976). Browsers that predate the keyword ignore
+        # it and simply keep blocking wasm, so this never widens JS execution.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            f"script-src 'self' 'nonce-{csp_nonce}'; "
+            f"script-src 'self' 'wasm-unsafe-eval' 'nonce-{csp_nonce}'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: blob:; "
             "media-src 'self' blob:; "
@@ -9764,6 +10347,7 @@ app.include_router(slicer_presets.router, prefix=app_settings.api_prefix)
 app.include_router(archive_purge.router, prefix=app_settings.api_prefix)
 app.include_router(makerworld.router, prefix=app_settings.api_prefix)
 app.include_router(api_keys.router, prefix=app_settings.api_prefix)
+app.include_router(connected_apps.router, prefix=app_settings.api_prefix)
 app.include_router(webhook.router, prefix=app_settings.api_prefix)
 app.include_router(ams_history.router, prefix=app_settings.api_prefix)
 app.include_router(printer_sensor_history.router, prefix=app_settings.api_prefix)

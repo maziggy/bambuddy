@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
-import { api, type InventorySpool, type Printer, type PrinterStatus } from '../../api/client';
+import { api, ApiError, type InventorySpool, type Printer, type PrinterStatus } from '../../api/client';
 import type { MatchedSpool } from '../../hooks/useSpoolBuddyState';
 import { useToast } from '../../contexts/ToastContext';
 import { SpoolIcon } from '../../components/spoolbuddy/SpoolIcon';
@@ -293,6 +293,7 @@ export function SpoolBuddyDashboard() {
       material: m.material,
       subtype: m.subtype,
       color_name: m.color_name,
+      color_name_is_synthesized: m.color_name_is_synthesized,
       rgba: m.rgba,
       brand: m.brand,
       label_weight: m.label_weight,
@@ -362,8 +363,22 @@ export function SpoolBuddyDashboard() {
           showToast(t('spoolman.linkFailed'), 'error');
           return;
         }
-        const { id, material, subtype, color_name, rgba, brand, label_weight, core_weight, weight_used } = updated;
-        setJustLinkedSpool({ id, material, subtype, color_name, rgba, brand, label_weight, core_weight, weight_used });
+        const { id, material, subtype, color_name, color_name_is_synthesized, rgba, brand, label_weight, core_weight, weight_used } =
+          updated;
+        // color_name_is_synthesized travels with color_name or the card
+        // shows "Silk+" where the catalog knows the colour (#3090).
+        setJustLinkedSpool({
+          id,
+          material,
+          subtype,
+          color_name,
+          color_name_is_synthesized,
+          rgba,
+          brand,
+          label_weight,
+          core_weight,
+          weight_used,
+        });
         showToast(t('spoolman.linkSuccess'), 'success');
       } else {
         await api.linkTagToSpool(spool.id, {
@@ -375,7 +390,18 @@ export function SpoolBuddyDashboard() {
       refetchSpools();
     } catch (e) {
       console.error('Failed to link tag:', e);
-      showToast(t('spoolman.linkFailed'), 'error');
+      // The tag is already on another spool -- name it, so the operator can
+      // walk to that spool instead of retrying a scan that cannot succeed.
+      // Both inventory modes answer this with the same structured 409 (#3110);
+      // every other failure keeps the generic toast.
+      const holder =
+        e instanceof ApiError && e.status === 409 && e.code === 'tag_already_linked'
+          ? e.detail?.spool_id
+          : undefined;
+      showToast(
+        typeof holder === 'number' ? t('inventory.tagAlreadyLinked', { id: holder }) : t('spoolman.linkFailed'),
+        'error',
+      );
     } finally {
       setShowLinkModal(false);
     }
@@ -387,6 +413,11 @@ export function SpoolBuddyDashboard() {
     try {
       const weight = liveWeight ?? displayedWeight;
       if (spoolmanMode) {
+        // No tare is sent. The quick-create has no input for one, so the 250
+        // that used to go here was a placeholder, not a user's choice -- and
+        // since #2908 a sent value is written to the spool's own spool_weight,
+        // which would stamp every spool the kiosk creates and stop it
+        // inheriting the filament type's.
         const created = await api.createSpoolmanInventorySpool({
           material: 'PLA',
           subtype: null,
@@ -396,8 +427,6 @@ export function SpoolBuddyDashboard() {
           effect_type: null,
           brand: null,
           label_weight: 1000,
-          core_weight: 250,
-          core_weight_catalog_id: null,
           weight_used: 0,
           slicer_filament: null,
           slicer_filament_name: null,
@@ -416,7 +445,7 @@ export function SpoolBuddyDashboard() {
           last_weighed_at: weight !== null ? new Date().toISOString() : null,
           category: null,
           low_stock_threshold_pct: null,
-        });
+        } as Parameters<typeof api.createSpoolmanInventorySpool>[0]);
         await api.linkTagToSpoolmanSpool(created.id, {
           tag_uid: sbState.unknownTagUid || undefined,
           tray_uuid: (!sbState.unknownTagUid && sbState.unknownTrayUuid) ? sbState.unknownTrayUuid : undefined,
@@ -619,6 +648,7 @@ export function SpoolBuddyDashboard() {
                       material: s.material,
                       subtype: s.subtype,
                       color_name: s.color_name,
+                      color_name_is_synthesized: s.color_name_is_synthesized,
                       rgba: s.rgba,
                       brand: s.brand,
                       label_weight: s.label_weight,

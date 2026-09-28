@@ -36,7 +36,7 @@ import ssl
 
 import pytest
 
-from backend.app.services.camera import close_tls_proxy, create_tls_proxy
+from backend.app.services.camera import _proxy_handlers, close_tls_proxy, create_tls_proxy
 
 
 @pytest.fixture(scope="module")
@@ -148,8 +148,8 @@ class TestTheHandlerIsHeldWhileItRuns:
             port, proxy = await create_tls_proxy("127.0.0.1", upstream_port)
             try:
                 _, writer = await asyncio.open_connection("127.0.0.1", port)
-                assert await _wait_for(lambda: len(proxy._bambuddy_proxy_handlers) == 1)
-                assert not next(iter(proxy._bambuddy_proxy_handlers)).done()
+                assert await _wait_for(lambda: len(_proxy_handlers[proxy]) == 1)
+                assert not next(iter(_proxy_handlers[proxy])).done()
 
                 writer.close()
             finally:
@@ -166,11 +166,11 @@ class TestTheHandlerIsHeldWhileItRuns:
             port, proxy = await create_tls_proxy("127.0.0.1", upstream_port)
             try:
                 _, writer = await asyncio.open_connection("127.0.0.1", port)
-                assert await _wait_for(lambda: len(proxy._bambuddy_proxy_handlers) == 1)
+                assert await _wait_for(lambda: len(_proxy_handlers[proxy]) == 1)
 
                 writer.close()
 
-                assert await _wait_for(lambda: proxy._bambuddy_proxy_handlers == set())
+                assert await _wait_for(lambda: _proxy_handlers[proxy] == set())
             finally:
                 await _close(proxy)
         finally:
@@ -187,11 +187,14 @@ class TestCloseDoesNotDependOnThePeer:
         try:
             port, proxy = await create_tls_proxy("127.0.0.1", upstream_port)
             _, writer = await asyncio.open_connection("127.0.0.1", port)
-            assert await _wait_for(lambda: len(proxy._bambuddy_proxy_handlers) == 1)
+            assert await _wait_for(lambda: len(_proxy_handlers[proxy]) == 1)
 
             await _close(proxy)
 
-            assert proxy._bambuddy_proxy_handlers == set()
+            # Stronger than "the set is empty": since #3001 the handler set
+            # lives in a module-level registry rather than on the server, and
+            # close_tls_proxy retires the whole entry.
+            assert proxy not in _proxy_handlers
             writer.close()
         finally:
             await _shutdown(upstream)
@@ -204,8 +207,8 @@ class TestCloseDoesNotDependOnThePeer:
         try:
             port, proxy = await create_tls_proxy("127.0.0.1", upstream_port)
             _, writer = await asyncio.open_connection("127.0.0.1", port)
-            assert await _wait_for(lambda: len(proxy._bambuddy_proxy_handlers) == 1)
-            handler = next(iter(proxy._bambuddy_proxy_handlers))
+            assert await _wait_for(lambda: len(_proxy_handlers[proxy]) == 1)
+            handler = next(iter(_proxy_handlers[proxy]))
 
             with caplog.at_level(logging.ERROR, logger="asyncio"):
                 await _close(proxy)

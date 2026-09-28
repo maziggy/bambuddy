@@ -23,18 +23,17 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from backend.app.api.routes.cloud import (
+from backend.app.api.routes.cloud import clear_token, store_token
+from backend.app.models.settings import Settings
+from backend.app.services import bambu_cloud as bc
+from backend.app.services.bambu_cloud import BambuCloudService
+from backend.app.services.bambu_cloud_credentials import (
     CLOUD_EMAIL_KEY,
     CLOUD_REGION_KEY,
     CLOUD_TOKEN_INVALID_KEY,
     CLOUD_TOKEN_KEY,
-    clear_token,
     is_cloud_token_invalid,
-    store_token,
 )
-from backend.app.models.settings import Settings
-from backend.app.services import bambu_cloud as bc
-from backend.app.services.bambu_cloud import BambuCloudService
 
 
 @pytest.fixture(autouse=True)

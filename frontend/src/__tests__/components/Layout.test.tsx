@@ -2,10 +2,11 @@
  * Tests for the Layout component.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { screen, waitFor } from '@testing-library/react';
 import { render } from '../utils';
 import { Layout } from '../../components/Layout';
+import { getAuthToken, setAuthToken } from '../../api/client';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY, SIDEBAR_ORDER_KEY } from '../../utils/sidebarLayout';
@@ -37,6 +38,16 @@ describe('Layout', () => {
           check_updates: false,
           check_printer_firmware: false,
           auto_archive: true,
+        });
+      }),
+      // What the sidebar actually gates on. Layout used to read these from
+      // /settings/, which a non-admin cannot fetch (#3023).
+      http.get('/api/v1/settings/ui-flags', () => {
+        return HttpResponse.json({
+          check_updates: false,
+          billing_enabled: false,
+          user_notifications_enabled: true,
+          currency: 'EUR',
         });
       }),
       http.get('/api/v1/external-links/', () => {
@@ -173,12 +184,12 @@ describe('Layout', () => {
 
     it('appears between Statistics and Settings once billing is on', async () => {
       server.use(
-        http.get('/api/v1/settings/', () =>
+        http.get('/api/v1/settings/ui-flags', () =>
           HttpResponse.json({
             check_updates: false,
-            check_printer_firmware: false,
-            auto_archive: true,
             billing_enabled: true,
+            user_notifications_enabled: true,
+            currency: 'EUR',
           }),
         ),
       );
@@ -193,6 +204,127 @@ describe('Layout', () => {
       const hrefs = Array.from(sidebar?.querySelectorAll('a[href]') ?? []).map((a) => a.getAttribute('href'));
       expect(hrefs.indexOf('/finance')).toBeGreaterThan(hrefs.indexOf('/stats'));
       expect(hrefs.indexOf('/finance')).toBeLessThan(hrefs.indexOf('/settings'));
+    });
+  });
+
+  describe('Sidebar gates survive a user who cannot read /settings (#3023)', () => {
+    // Every gate below used to be fed by GET /settings, which requires
+    // settings:read. A non-admin gets 403 there, so the value arrived
+    // undefined and each gate silently took its fallback -- in opposite
+    // directions, which is why only one of the two was ever reported.
+    let priorToken: string | null = null;
+
+    const asNonAdmin = (permissions: string[]) => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false }),
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 2,
+            username: 'operator',
+            role: 'user',
+            is_active: true,
+            is_admin: false,
+            groups: [{ id: 2, name: 'Operators' }],
+            permissions,
+            created_at: '2026-01-01T00:00:00Z',
+          }),
+        ),
+        // The 403 that started it. Layout must not need this call at all.
+        http.get('/api/v1/settings/', () =>
+          HttpResponse.json({ detail: 'Not enough permissions' }, { status: 403 }),
+        ),
+      );
+      // localStorage is a no-op mock in setup.ts, so writing the key there
+      // authenticates nobody. Set the client's token directly.
+      priorToken = getAuthToken();
+      setAuthToken('test-token', 'session');
+    };
+
+    afterEach(() => {
+      setAuthToken(priorToken, 'session');
+      priorToken = null;
+    });
+
+    it('shows Finance to a user with cost_centers:read_own and no settings:read', async () => {
+      asNonAdmin(['cost_centers:read_own']);
+      server.use(
+        http.get('/api/v1/settings/ui-flags', () =>
+          HttpResponse.json({ billing_enabled: true, user_notifications_enabled: true }),
+        ),
+      );
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(document.querySelector('aside a[href="/finance"]')).toBeInTheDocument();
+      });
+    });
+
+    it('still hides Finance from that user when billing is off', async () => {
+      // Waits on Notifications appearing rather than on the sidebar existing.
+      // Asserting absence the moment <aside> renders passes before the flags
+      // query has even resolved, which makes the assertion prove nothing.
+      asNonAdmin(['cost_centers:read_own', 'notifications:user_email']);
+      server.use(
+        http.get('/api/v1/auth/advanced-auth/status', () =>
+          HttpResponse.json({ advanced_auth_enabled: true }),
+        ),
+        http.get('/api/v1/settings/ui-flags', () =>
+          HttpResponse.json({ billing_enabled: false, user_notifications_enabled: true }),
+        ),
+      );
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(document.querySelector('aside a[href="/notifications"]')).toBeInTheDocument();
+      });
+      expect(document.querySelector('aside a[href="/finance"]')).toBeNull();
+    });
+
+    it('hides Notifications from that user when user notifications are off', async () => {
+      // The same 403, landing the other way up: this gate tests `=== false`,
+      // which undefined never satisfies, so an administrator who switched user
+      // notifications off still left the entry showing to the non-admins it
+      // governs. Unreported, and invisible to an admin testing it.
+      asNonAdmin(['notifications:user_email', 'cost_centers:read_own']);
+      server.use(
+        http.get('/api/v1/auth/advanced-auth/status', () =>
+          HttpResponse.json({ advanced_auth_enabled: true }),
+        ),
+        http.get('/api/v1/settings/ui-flags', () =>
+          HttpResponse.json({ billing_enabled: true, user_notifications_enabled: false }),
+        ),
+      );
+
+      render(<Layout />);
+
+      // Finance appearing is the proof that the flags arrived; only then does
+      // the absence of Notifications mean anything.
+      await waitFor(() => {
+        expect(document.querySelector('aside a[href="/finance"]')).toBeInTheDocument();
+      });
+      expect(document.querySelector('aside a[href="/notifications"]')).toBeNull();
+    });
+
+    it('shows Notifications to that user when they are on', async () => {
+      asNonAdmin(['notifications:user_email']);
+      server.use(
+        http.get('/api/v1/auth/advanced-auth/status', () =>
+          HttpResponse.json({ advanced_auth_enabled: true }),
+        ),
+        http.get('/api/v1/settings/ui-flags', () =>
+          HttpResponse.json({ billing_enabled: false, user_notifications_enabled: true }),
+        ),
+      );
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(document.querySelector('aside a[href="/notifications"]')).toBeInTheDocument();
+      });
     });
   });
 
@@ -597,6 +729,159 @@ describe('Layout', () => {
       expect(sidebarLink('/files')).toBeNull();
       expect(sidebarLink('/archives')).toBeNull();
       expect(sidebarLink('/queue')).toBeNull();
+    });
+  });
+  describe('outcome confirmation deep link (#1898)', () => {
+    // The URL a Pushover / Bark notification opens in a brand new tab. Layout
+    // is the PARENT of the page that renders at /archives, and React flushes a
+    // child's effects before its parent's — so while the page owned this deep
+    // link it dispatched `print-confirm-request` before Layout had added the
+    // listener, and then stripped the parameter, leaving nothing to recover.
+    // These tests pin the read where the dialog state lives.
+    const archive = {
+      id: 42,
+      printer_id: 1,
+      filename: 'bracket.gcode.3mf',
+      print_name: 'Bracket',
+      status: 'completed',
+      photos: null,
+      user_verdict: null,
+      user_verdict_source: null,
+      confirm_requested: true,
+    };
+
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/archives/42', () => HttpResponse.json(archive))
+      );
+    });
+
+    afterEach(() => {
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('opens the dialog on a cold load, with no page mounted to relay the event', async () => {
+      window.history.replaceState({}, '', '/archives?confirm=42');
+
+      render(<Layout />);
+
+      expect(await screen.findByTestId('confirm-outcome-dialog')).toBeInTheDocument();
+    });
+
+    it('strips the parameter but keeps the rest of the query', async () => {
+      window.history.replaceState({}, '', '/archives?confirm=42&status=completed');
+
+      render(<Layout />);
+
+      await screen.findByTestId('confirm-outcome-dialog');
+      await waitFor(() => {
+        expect(window.location.search).toBe('?status=completed');
+      });
+      expect(window.location.pathname).toBe('/archives');
+    });
+
+    it('ignores a confirm parameter that is not an archive id', async () => {
+      window.history.replaceState({}, '', '/archives?confirm=not-an-id');
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(document.querySelector('aside')).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId('confirm-outcome-dialog')).toBeNull();
+      // Nothing was consumed, so nothing is rewritten either.
+      expect(window.location.search).toBe('?confirm=not-an-id');
+    });
+
+    // Round 4: the dialog's only outcome for a user who may not record a
+    // verdict is a 403 from the PATCH, so it is gated like plate-not-empty —
+    // on archives:update_all / archives:update_own, the names the June
+    // permission migration left in the default groups.
+    describe('without permission to record a verdict', () => {
+      const withPermissions = (permissions: string[]) => {
+        server.use(
+          http.get('/api/v1/auth/status', () =>
+            HttpResponse.json({ auth_enabled: true, requires_setup: false }),
+          ),
+          http.get('/api/v1/auth/me', () =>
+            HttpResponse.json({
+              id: 1,
+              username: 'tester',
+              role: 'user',
+              is_active: true,
+              is_admin: false,
+              groups: [{ id: 2, name: 'Standard Users' }],
+              permissions,
+              created_at: '2026-01-01T00:00:00Z',
+            }),
+          ),
+        );
+        // localStorage is a mock in this suite, so the token goes through the
+        // client the way the app sets it — AuthProvider will not fetch
+        // /auth/me without one, and the permissions would stay empty.
+        setAuthToken('test-token');
+      };
+
+      afterEach(() => {
+        setAuthToken(null);
+      });
+
+      it('ignores the event', async () => {
+        withPermissions(['archives:read_all']);
+        render(<Layout />);
+
+        await waitFor(() => {
+          expect(document.querySelector('aside')).toBeInTheDocument();
+        });
+        window.dispatchEvent(
+          new CustomEvent('print-confirm-request', { detail: { archive_id: 42 } })
+        );
+
+        await waitFor(() => {
+          expect(screen.queryByTestId('confirm-outcome-dialog')).toBeNull();
+        });
+      });
+
+      it('consumes the deep link without opening anything', async () => {
+        withPermissions(['archives:read_all']);
+        window.history.replaceState({}, '', '/archives?confirm=42');
+
+        render(<Layout />);
+
+        // The parameter still goes: a link that can open nothing should not
+        // survive a reload either.
+        await waitFor(() => {
+          expect(window.location.search).toBe('');
+        });
+        expect(screen.queryByTestId('confirm-outcome-dialog')).toBeNull();
+      });
+
+      it('opens for a user who may update their own archives', async () => {
+        withPermissions(['archives:read_own', 'archives:update_own']);
+        render(<Layout />);
+
+        await waitFor(() => {
+          expect(document.querySelector('aside')).toBeInTheDocument();
+        });
+        window.dispatchEvent(
+          new CustomEvent('print-confirm-request', { detail: { archive_id: 42 } })
+        );
+
+        expect(await screen.findByTestId('confirm-outcome-dialog')).toBeInTheDocument();
+      });
+    });
+
+    it('still opens from the WebSocket event, which carries no URL', async () => {
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(document.querySelector('aside')).toBeInTheDocument();
+      });
+      window.dispatchEvent(
+        new CustomEvent('print-confirm-request', { detail: { archive_id: 42 } })
+      );
+
+      expect(await screen.findByTestId('confirm-outcome-dialog')).toBeInTheDocument();
     });
   });
 });

@@ -85,6 +85,11 @@ async def list_camwall_printers(
                             "module": e.module,
                             "severity": e.severity,
                             "actions": e.actions or [],
+                            # The wall counts a fault only when Bambu publishes
+                            # text for it or it offers actions, the same rule as
+                            # the printer card, so it needs the text (#2728).
+                            "full_code": e.full_code,
+                            "description": e.description,
                         }
                         for e in (state.hms_errors or [])
                     ],

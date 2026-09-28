@@ -838,6 +838,7 @@ class VirtualPrinterInstance:
             from backend.app.models.print_queue import PrintQueueItem
             from backend.app.services.archive import ArchiveService
             from backend.app.services.filament_requirements import extract_filament_requirements
+            from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
 
             async with self._session_factory() as db:
                 name_source = await get_setting(db, "virtual_printer_archive_name_source")
@@ -904,6 +905,14 @@ class VirtualPrinterInstance:
                     "layer_inspect", _bool_setting(await get_setting(db, "default_layer_inspect"), False)
                 )
                 timelapse = _slicer_or("timelapse", _bool_setting(await get_setting(db, "default_timelapse"), False))
+
+                # "Ask for Outcome" is a default print option like the ones
+                # above. A plate sent here from Bambu Studio is also one of the
+                # prints `confirm_outcome_external_prints` names — but it
+                # arrives with a queue item, so on_print_start resumes the
+                # archive created below instead of treating it as external, and
+                # without this the setting could never reach it (#1898).
+                confirm_outcome = await confirm_outcome_for_new_queue_item(db, started_outside_bambuddy=True)
 
                 # H2C dual-nozzle-rack slicer-pick preservation (#1780).
                 # BambuStudio's project_file MQTT command for rack-swap models
@@ -1133,6 +1142,7 @@ class VirtualPrinterInstance:
                             vibration_cali=vibration_cali,
                             layer_inspect=layer_inspect,
                             timelapse=timelapse,
+                            confirm_outcome=confirm_outcome,
                             # Per-VP opt-in for auto-print G-code injection (#1516).
                             # Default off; when on, the scheduler still no-ops unless
                             # gcode_snippets are configured for the target model, so it's

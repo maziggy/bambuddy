@@ -904,6 +904,39 @@ class TestArchivesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_items_printed_accepts_zero_for_a_ruined_plate(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """A jam can ruin every part on the plate while the printer still
+        reports success (#3051). The project's completed-items count sums this
+        column, so zero has to be storable, not floored to one.
+        """
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, quantity=4)
+
+        response = await async_client.patch(f"/api/v1/archives/{archive.id}", json={"quantity": 0})
+
+        assert response.status_code == 200, response.text
+        assert response.json()["quantity"] == 0
+        await db_session.refresh(archive)
+        assert archive.quantity == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_items_printed_refuses_a_negative_count(
+        self, async_client: AsyncClient, archive_factory, printer_factory
+    ):
+        """Zero means "nothing came off the plate"; below that would subtract
+        from the project totals this column feeds."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, quantity=4)
+
+        response = await async_client.patch(f"/api/v1/archives/{archive.id}", json={"quantity": -1})
+
+        assert response.status_code == 422, response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_update_archive_failure_reason_mirrors_to_print_log_entry(
         self, async_client: AsyncClient, archive_factory, printer_factory, db_session
     ):
@@ -1504,6 +1537,106 @@ class TestNo3MFWarningReason:
         response = await async_client.get("/api/v1/archives/no-3mf-warning")
 
         assert response.json() == {"has_fallback": False, "reason": None}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_refused_handshake_is_reported(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#2957 stamps this slug and #2780 never taught the banner about it, so
+        an install whose only empty archives came from a printer refusing TLS on
+        port 990 was told the slicer had not written the file to the card. The
+        slicer had; nothing could read it back. The reporter could see the file
+        on the stick from his own computer, which is exactly why the advice read
+        as Bambuddy being broken.
+        """
+        printer = await printer_factory()
+        await archive_factory(
+            printer.id,
+            extra_data={"no_3mf_available": True, "no_3mf_reason": "ftps_cooloff"},
+        )
+
+        response = await async_client.get("/api/v1/archives/no-3mf-warning")
+
+        assert response.json() == {"has_fallback": True, "reason": "ftps_cooloff"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_refused_handshake_outranks_every_settled_cause(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """The other three describe an install working as configured. This one
+        reports a printer doing something we cannot yet explain, and the banner
+        dismisses one-shot into localStorage -- so a reason ranked below another
+        is not deferred, it is never shown to that user at all.
+        """
+        printer = await printer_factory()
+        for reason in ("internal_storage", "no_external_storage", "internal_history"):
+            await archive_factory(printer.id, extra_data={"no_3mf_available": True, "no_3mf_reason": reason})
+        await archive_factory(printer.id, extra_data={"no_3mf_available": True, "no_3mf_reason": "ftps_cooloff"})
+
+        response = await async_client.get("/api/v1/archives/no-3mf-warning")
+
+        assert response.json() == {"has_fallback": True, "reason": "ftps_cooloff"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_settled_causes_keep_their_order_behind_it(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Adding a new leader must not disturb the ranking underneath it: an
+        install with no refused handshake still gets exactly what it got before.
+        """
+        printer = await printer_factory()
+        await archive_factory(printer.id, extra_data={"no_3mf_available": True, "no_3mf_reason": "internal_history"})
+        await archive_factory(printer.id, extra_data={"no_3mf_available": True, "no_3mf_reason": "no_external_storage"})
+
+        response = await async_client.get("/api/v1/archives/no-3mf-warning")
+
+        assert response.json() == {"has_fallback": True, "reason": "no_external_storage"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_transfer_that_ran_out_of_time_is_reported(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#3063's P1S had the file on its card and served it three times in the
+        two minutes after the archive flow gave up on it. Told to switch on
+        "Store sent files on external storage", that reporter would be switching
+        on a setting that was already on and had already worked.
+        """
+        printer = await printer_factory()
+        await archive_factory(
+            printer.id,
+            extra_data={"no_3mf_available": True, "no_3mf_reason": "ftp_transfer_failed"},
+        )
+
+        response = await async_client.get("/api/v1/archives/no-3mf-warning")
+
+        assert response.json() == {"has_fallback": True, "reason": "ftp_transfer_failed"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_slow_transfer_outranks_the_settled_causes_but_not_a_refused_handshake(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Both temporary causes describe a file still sitting on the card, so
+        both outrank the three that describe an install working as configured.
+        Between the two, a printer that will not complete a TLS handshake is the
+        worse fault and keeps the banner.
+        """
+        printer = await printer_factory()
+        for reason in ("internal_storage", "no_external_storage", "internal_history"):
+            await archive_factory(printer.id, extra_data={"no_3mf_available": True, "no_3mf_reason": reason})
+        await archive_factory(printer.id, extra_data={"no_3mf_available": True, "no_3mf_reason": "ftp_transfer_failed"})
+
+        response = await async_client.get("/api/v1/archives/no-3mf-warning")
+        assert response.json() == {"has_fallback": True, "reason": "ftp_transfer_failed"}
+
+        await archive_factory(printer.id, extra_data={"no_3mf_available": True, "no_3mf_reason": "ftps_cooloff"})
+
+        response = await async_client.get("/api/v1/archives/no-3mf-warning")
+        assert response.json() == {"has_fallback": True, "reason": "ftps_cooloff"}
 
 
 class TestPrintLogEntryDelete:

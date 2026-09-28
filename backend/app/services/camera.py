@@ -14,6 +14,7 @@ import ssl
 import struct
 import subprocess
 import uuid
+import weakref
 from datetime import datetime
 from pathlib import Path
 
@@ -54,6 +55,28 @@ _active_capture_pids: set[int] = set()
 # and they all do, from 10s to 30s — would never coalesce, which is exactly
 # the Obico-vs-snapshot pair from the report.
 _inflight_captures: dict[str, asyncio.Task[bytes | None]] = {}
+
+# In-flight connection handlers for each live TLS proxy server (#3001).
+#
+# This belongs on the server object, and for one release it lived there as an
+# instance attribute. That works on asyncio's own Server and raises
+# AttributeError on uvloop's, which is a Cython cdef class with no __dict__.
+# Every launch path this repo ships pins --loop asyncio (added for #1896), so
+# none of them could hit it -- but requirements.txt pins uvicorn[standard],
+# which installs uvloop, so anything launched without that flag gets uvloop
+# from --loop auto and loses every RTSP camera. That is real deployments: the
+# Proxmox VE Helper-Scripts LXC writes its own unit, and native installs
+# predating the #1896 pin never get it either, since update.sh does not rewrite
+# unit files. So the loop is not ours to assume, and this must not depend on it.
+# The test suite could not see it either: conftest builds the loop from the
+# default policy, so it only ever exercised the loop where the assignment is
+# legal.
+#
+# Keyed weakly so a server that is dropped without close_tls_proxy() -- an
+# exception between create and close -- takes its entry with it. Keying on
+# id(server) instead would leak those entries forever and, worse, hand a later
+# server a dead one's handler set once CPython recycles the address.
+_proxy_handlers: "weakref.WeakKeyDictionary[asyncio.Server, set[asyncio.Task]]" = weakref.WeakKeyDictionary()
 
 
 def get_ffmpeg_path() -> str | None:
@@ -249,6 +272,8 @@ async def create_tls_proxy(target_host: str, target_port: int) -> tuple[int, "as
     # pointing here and no indication that it is a teardown race rather than a
     # camera fault. Holding the set also gives close_tls_proxy something to
     # cancel, so shutdown stops depending on ffmpeg having dropped its end.
+    # The set is published in _proxy_handlers once the server exists; see the
+    # note there for why it is not an attribute on the server itself.
     handlers: set[asyncio.Task] = set()
 
     async def _handle(client_reader: asyncio.StreamReader, client_writer: asyncio.StreamWriter):
@@ -341,7 +366,7 @@ async def create_tls_proxy(target_host: str, target_port: int) -> tuple[int, "as
 
     server = await asyncio.start_server(_handle, "127.0.0.1", 0)
     _local_port[0] = server.sockets[0].getsockname()[1]
-    server._bambuddy_proxy_handlers = handlers  # type: ignore[attr-defined]
+    _proxy_handlers[server] = handlers
     logger.debug("TLS proxy for %s:%s listening on 127.0.0.1:%s", target_host, target_port, _local_port[0])
     return _local_port[0], server
 
@@ -357,12 +382,14 @@ async def close_tls_proxy(server: "asyncio.Server") -> None:
     way to guarantee no handler outlives the server that owns it.
 
     ``Server.close_clients()`` would do this natively, but it landed in Python
-    3.13 and Bambuddy supports 3.10, so the handler set is tracked by hand.
+    3.13 and Bambuddy supports 3.10, so the handler set is tracked by hand in
+    ``_proxy_handlers``.
 
-    Safe to call on a plain ``asyncio.Server`` from anywhere else: without the
-    attribute it degrades to the close/wait it replaces.
+    Safe to call on any ``asyncio.Server`` from anywhere else: a server that
+    was not created here is simply absent from the registry, and this degrades
+    to the close/wait it replaces.
     """
-    handlers: set[asyncio.Task] = getattr(server, "_bambuddy_proxy_handlers", set())
+    handlers: set[asyncio.Task] = _proxy_handlers.pop(server, set())
     server.close()
     for task in list(handlers):
         task.cancel()

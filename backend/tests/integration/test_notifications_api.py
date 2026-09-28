@@ -7,6 +7,8 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 
+from backend.tests._fixtures.notification_toggles import EVENT_TOGGLE_COLUMNS, TOGGLE_TARGET
+
 
 class TestNotificationsAPI:
     """Integration tests for /api/v1/notifications/ endpoints."""
@@ -60,14 +62,21 @@ class TestNotificationsAPI:
         provider = await notification_provider_factory(name="Legacy Provider")
 
         flags = ["on_stock_reorder_alert", "on_stock_break_alert"]
+        # nosec B608 - the only interpolated fragments are built from `flags`,
+        # the literal list directly above. A column name cannot be a bind
+        # parameter, which is why it is written into the string at all; the id,
+        # which is the one caller-supplied value here, is bound.
+        null_assignments = ", ".join(f"{f} = NULL" for f in flags)
         await db_session.execute(
-            text(f"UPDATE notification_providers SET {', '.join(f'{f} = NULL' for f in flags)} WHERE id = :id"),
+            text(f"UPDATE notification_providers SET {null_assignments} WHERE id = :id"),  # nosec B608
             {"id": provider.id},
         )
         await db_session.commit()
 
+        columns = ", ".join(flags)
         stored = await db_session.execute(
-            text(f"SELECT {', '.join(flags)} FROM notification_providers WHERE id = :id"), {"id": provider.id}
+            text(f"SELECT {columns} FROM notification_providers WHERE id = :id"),  # nosec B608
+            {"id": provider.id},
         )
         assert all(value is None for value in stored.one()), "row under test must actually hold NULLs"
 
@@ -493,7 +502,7 @@ class TestNotificationsAPI:
         response = await async_client.get(f"/api/v1/notifications/{provider.id}")
         assert response.json()["on_billing_charge_failed"] is False
 
-    # Per-event toggles that live only in these hand-maintained field maps.
+    # Every per-event toggle, across the hand-maintained field maps.
     #
     # These have to be exercised through the route, not the ORM: both
     # directions of notifications.py are hand-maintained field-by-field maps,
@@ -511,52 +520,61 @@ class TestNotificationsAPI:
     # the toggles could not be turned on at all.
     @pytest.mark.asyncio
     @pytest.mark.integration
-    @pytest.mark.parametrize(
-        "field",
-        ["on_ha_sensor_alert", "on_location_ha_sensor_alert", "on_stock_reorder_alert", "on_stock_break_alert"],
-    )
+    @pytest.mark.parametrize("field", EVENT_TOGGLE_COLUMNS)
     async def test_create_persists_and_returns_the_toggle(self, async_client: AsyncClient, field: str):
+        # Driven to whatever the column does not default to. Nine of these
+        # default to True on the model and on the response schema, so sending
+        # True and asserting True is answered by the default alone -- a field
+        # dropped by the create constructor still reads back True, and the
+        # mutation that would prove the constructor load-bearing survives.
+        target = TOGGLE_TARGET[field]
+
         response = await async_client.post(
             "/api/v1/notifications/",
             json={
                 "name": "Sensor Alert Test",
                 "provider_type": "ntfy",
                 "config": {"server": "https://ntfy.sh", "topic": "test"},
-                field: True,
+                field: target,
             },
         )
 
         assert response.status_code == 200
-        assert response.json()[field] is True
+        assert response.json()[field] is target
 
         # Re-read it: a value dropped by the create constructor but echoed
         # from the request body would still pass the assertion above.
         provider_id = response.json()["id"]
         response = await async_client.get(f"/api/v1/notifications/{provider_id}")
-        assert response.json()[field] is True
+        assert response.json()[field] is target
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    @pytest.mark.parametrize(
-        "field",
-        ["on_ha_sensor_alert", "on_location_ha_sensor_alert", "on_stock_reorder_alert", "on_stock_break_alert"],
-    )
+    @pytest.mark.parametrize("field", EVENT_TOGGLE_COLUMNS)
     async def test_patch_is_reflected_by_every_read_route(
         self, async_client: AsyncClient, notification_provider_factory, field: str
     ):
-        """PATCH already persisted (generic setattr loop) — the reads were the broken half."""
-        provider = await notification_provider_factory(**{field: False})
+        """PATCH already persisted (generic setattr loop) — the reads were the broken half.
 
-        response = await async_client.patch(f"/api/v1/notifications/{provider.id}", json={field: True})
+        Seeded at the target's opposite and driven to the target, so the value
+        asserted is never the one the column would have supplied on its own.
+        With ``True`` on both sides the nine True-default columns could not see
+        the half this test exists for: deleting a column from the read map left
+        them passing.
+        """
+        target = TOGGLE_TARGET[field]
+        provider = await notification_provider_factory(**{field: not target})
+
+        response = await async_client.patch(f"/api/v1/notifications/{provider.id}", json={field: target})
         assert response.status_code == 200
-        assert response.json()[field] is True
+        assert response.json()[field] is target
 
         response = await async_client.get(f"/api/v1/notifications/{provider.id}")
-        assert response.json()[field] is True
+        assert response.json()[field] is target
 
         response = await async_client.get("/api/v1/notifications/")
         listed = next(p for p in response.json() if p["id"] == provider.id)
-        assert listed[field] is True
+        assert listed[field] is target
 
 
 class TestNotificationTemplatesAPI:

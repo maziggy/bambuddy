@@ -118,13 +118,17 @@ Example:
 
 1. Update version in `pyproject.toml`
 2. Update `CHANGELOG.md`
-3. Create a PR with these changes
-4. After merge, tag the release:
+3. If Bambu Studio has updated its HMS files since the last release, run
+   `python scripts/generate_hms_catalog.py /path/to/BambuStudio` and review the
+   diff of `backend/app/data/hms_catalog.json` (added codes, changed texts, codes
+   that lost their text)
+4. Create a PR with these changes
+5. After merge, tag the release:
    ```bash
    git tag v0.1.x
    git push origin v0.1.x
    ```
-5. Run `docker-publish.sh` to publish Docker image
+6. Run `docker-publish.sh` to publish Docker image
 
 ## Dependabot (Optional)
 

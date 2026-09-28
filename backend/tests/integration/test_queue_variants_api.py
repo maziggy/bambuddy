@@ -295,3 +295,28 @@ class TestQueueWithVariants:
         assert len(item_ids) == 3
         total = (await db_session.execute(select(PrintQueueVariant))).scalars().all()
         assert len(total) == 6
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_quantity_batch_is_named_after_the_first_candidate(
+        self, async_client, db_session, sliced_file_factory, printer_factory
+    ):
+        """A cross-model job has no archive_id and no library_file_id -- the
+        candidates are the files -- so the batch name has to come from one of
+        them or every such order reads "Batch" in the Batches tab (#3101)."""
+        from backend.app.models.print_batch import PrintBatch
+
+        await printer_factory(model="H2S")
+        await printer_factory(model="H2C")
+        h2s = await sliced_file_factory("H2S", filename="bloom.gcode.3mf")
+        h2c = await sliced_file_factory("H2C")
+
+        r = await _queue_variants(async_client, h2s.id, h2c.id, quantity=4)
+        assert r.status_code == 200
+
+        batch = (await db_session.execute(select(PrintBatch))).scalars().one()
+        assert batch.name == "bloom ×4"
+        # Both stay null: the row cannot name one source without disowning the
+        # others, and every consumer derives progress from the items instead.
+        assert batch.archive_id is None
+        assert batch.library_file_id is None

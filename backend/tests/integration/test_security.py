@@ -1912,6 +1912,27 @@ class TestEncryptionRoundtrip:
 # ============================================================================
 
 
+def _minimal_sqlite_backup() -> bytes:
+    """A real, if empty, SQLite database to stand in for a backup's bambuddy.db.
+
+    Restore now refuses a bambuddy.db it cannot open, and refuses it before it
+    stops services or overwrites the MFA key file -- a corrupt or truncated
+    backup used to be found only by the Postgres import, which by then had
+    dropped every table in the live database. These tests are about the key
+    handling around the swap, so they need a file that opens; what is in it does
+    not matter.
+    """
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT)")
+        conn.commit()
+        return conn.serialize()
+    finally:
+        conn.close()
+
+
 class TestBackupKeyFiles:
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1980,7 +2001,7 @@ class TestBackupKeyFiles:
         # Build a minimal ZIP with a stub DB and the key file.
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
-            zf.writestr("bambuddy.db", b"SQLite format 3")
+            zf.writestr("bambuddy.db", _minimal_sqlite_backup())
             zf.writestr(".mfa_encryption_key", "test-restored-key")
         buf.seek(0)
 
@@ -2020,7 +2041,7 @@ class TestBackupKeyFiles:
 
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
-            zf.writestr("bambuddy.db", b"SQLite format 3")
+            zf.writestr("bambuddy.db", _minimal_sqlite_backup())
             # Intentionally no .mfa_encryption_key entry.
         buf.seek(0)
 
@@ -2061,7 +2082,7 @@ class TestBackupKeyFiles:
         # Build ZIP with a key file that we will fail to write to DATA_DIR.
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
-            zf.writestr("bambuddy.db", b"SQLite format 3 backup data")
+            zf.writestr("bambuddy.db", _minimal_sqlite_backup())
             zf.writestr(".mfa_encryption_key", "backup-key-content")
         buf.seek(0)
 
@@ -2141,7 +2162,7 @@ class TestBackupKeyFiles:
         assert new_key != old_key
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
-            zf.writestr("bambuddy.db", b"SQLite format 3 backup data")
+            zf.writestr("bambuddy.db", _minimal_sqlite_backup())
             zf.writestr(".mfa_encryption_key", new_key)
         buf.seek(0)
 

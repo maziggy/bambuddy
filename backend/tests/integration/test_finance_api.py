@@ -1191,3 +1191,80 @@ class TestFinanceUserDefaults:
 
         wallet = await db_session.scalar(select(UserWallet).where(UserWallet.user_id == user.id))
         assert wallet is not None
+
+
+class TestFinanceCurrency(TestFinanceAPI):
+    """#3123: every balance is reported in the install's configured currency.
+
+    Wallets used to carry a currency of their own, which three of its four
+    writers filled with a hardcoded "EUR" and the Finance page rendered as it
+    found it -- so an install set to AUD showed a euro balance. The column is
+    gone; these tests pin what replaced it.
+    """
+
+    @pytest.fixture
+    async def aud_install(self, db_session):
+        existing = await db_session.scalar(select(Settings).where(Settings.key == "currency"))
+        if existing is None:
+            db_session.add(Settings(key="currency", value="AUD"))
+        else:
+            existing.value = "AUD"
+        await db_session.commit()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_balance_reports_the_configured_currency_without_a_wallet(
+        self,
+        async_client: AsyncClient,
+        auth_headers: dict[str, str],
+        db_session,
+        admin_user,
+        aud_install,
+    ):
+        """The read-only path used to answer a flat "EUR" when no wallet row existed."""
+        assert await db_session.scalar(select(UserWallet).where(UserWallet.user_id == admin_user.id)) is None
+
+        response = await async_client.get("/api/v1/finance/me/balance", headers=auth_headers)
+
+        assert response.status_code == 200
+        assert response.json()["currency"] == "AUD"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_existing_wallet_is_reported_in_the_configured_currency(
+        self,
+        async_client: AsyncClient,
+        auth_headers: dict[str, str],
+        db_session,
+        admin_user,
+        aud_install,
+    ):
+        """The reporter's case: a wallet created back when the install said EUR."""
+        db_session.add(UserWallet(user_id=admin_user.id, balance=12.34))
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/finance/me/balance", headers=auth_headers)
+
+        assert response.status_code == 200
+        assert response.json()["balance"] == 12.34
+        assert response.json()["currency"] == "AUD"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_adjustment_answers_in_the_configured_currency(
+        self,
+        async_client: AsyncClient,
+        auth_headers: dict[str, str],
+        db_session,
+        admin_user,
+        aud_install,
+    ):
+        """_get_or_create_wallet is the path that used to write EUR into the database."""
+        response = await async_client.post(
+            f"/api/v1/finance/users/{admin_user.id}/deposit",
+            json={"amount": 5.0, "description": "currency check"},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["balance"]["currency"] == "AUD"

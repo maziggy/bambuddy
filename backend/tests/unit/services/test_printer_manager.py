@@ -1104,6 +1104,34 @@ class TestPrinterStateToDict:
         assert ht_tray["exists"] is False
         assert reg_tray["exists"] is True
 
+    def test_dry_countdown_stalled_is_serialized_for_websocket(self, mock_state):
+        """The WS status payload must carry ``dry_countdown_stalled`` — the REST
+        serializer already does (routes/printers.py). The frontend merges a WS
+        frame over the cached status with a top-level shallow spread, so the ~1/s
+        frame replaces the REST-seeded ``ams`` array wholesale. Omit the flag here
+        and it reads undefined a second after load, the card falls back to the
+        amber "Drying - 45m left" badge, and the neutral "Drying not started"
+        state is unreachable in the live UI. Same failure mode as `exists`/#2670.
+        """
+        mock_state.raw_data = {
+            "ams": [
+                # Parked command: timer set, countdown never ticked.
+                {"id": 0, "dry_time": 720, "dry_countdown_stalled": True, "tray": []},
+                # Genuinely running cycle.
+                {"id": 1, "dry_time": 45, "dry_countdown_stalled": False, "tray": []},
+                # Pre-flag raw_data (a unit the MQTT layer has not stamped yet)
+                # must serialize False, never None/absent — the REST shape is a
+                # non-optional bool and the two surfaces must not disagree.
+                {"id": 2, "dry_time": 0, "tray": []},
+            ]
+        }
+
+        result = printer_state_to_dict(mock_state)
+
+        assert result["ams"][0]["dry_countdown_stalled"] is True
+        assert result["ams"][1]["dry_countdown_stalled"] is False
+        assert result["ams"][2]["dry_countdown_stalled"] is False
+
     def test_vt_tray_parsing(self, mock_state):
         """Verify virtual tray is parsed correctly as a list."""
         mock_state.raw_data = {
@@ -1699,48 +1727,6 @@ class TestSupportsChamberTemp:
         assert supports_chamber_temp("N2S") is False
         # A1 Mini
         assert supports_chamber_temp("N1") is False
-
-
-class TestIsBedSlinger:
-    """Tests for is_bed_slinger helper function (#1334)."""
-
-    def test_a1_series_is_bed_slinger(self):
-        """A1 / A1 Mini are open-frame bed-slingers — Z axis is the toolhead."""
-        from backend.app.services.printer_manager import is_bed_slinger
-
-        assert is_bed_slinger("A1") is True
-        assert is_bed_slinger("A1 Mini") is True
-        assert is_bed_slinger("A1MINI") is True
-        assert is_bed_slinger("A1-MINI") is True
-
-    def test_a1_internal_codes_recognised(self):
-        """Internal MQTT/SSDP codes for A1 family must also classify as bed-slinger."""
-        from backend.app.services.printer_manager import is_bed_slinger
-
-        # A1 Mini
-        assert is_bed_slinger("N1") is True
-        # A1
-        assert is_bed_slinger("N2S") is True
-
-    def test_bed_on_z_models_not_bed_slingers(self):
-        """X1 / P1 / H2 / H2C / H2D / H2S / P2S all have the bed on Z."""
-        from backend.app.services.printer_manager import is_bed_slinger
-
-        for model in ("X1", "X1C", "X1E", "P1P", "P1S", "P2S", "H2C", "H2D", "H2DPRO", "H2S"):
-            assert is_bed_slinger(model) is False, f"{model} should NOT be classified as bed-slinger"
-
-    def test_none_model_returns_false(self):
-        from backend.app.services.printer_manager import is_bed_slinger
-
-        assert is_bed_slinger(None) is False
-        assert is_bed_slinger("") is False
-
-    def test_case_insensitive(self):
-        from backend.app.services.printer_manager import is_bed_slinger
-
-        assert is_bed_slinger("a1") is True
-        assert is_bed_slinger("a1 mini") is True
-        assert is_bed_slinger("x1c") is False
 
 
 class TestSupportsDrying:

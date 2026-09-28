@@ -1983,7 +1983,7 @@ class TestAdvertiseAddressOverride:
     def test_wildcard_override_falls_through_to_auto_resolve(self, monkeypatch):
         """0.0.0.0 is a bind address, never a destination — treat it as unset
         rather than encoding it and sending the slicer to 0.0.0.0."""
-        monkeypatch.setenv(self.ENV, "0.0.0.0")
+        monkeypatch.setenv(self.ENV, "0.0.0.0")  # nosec B104
         bridge = self._bound_bridge("0.0.0.0")  # nosec B104
         with patch(
             "backend.app.services.virtual_printer.mqtt_bridge._resolve_host_interface_for_target",

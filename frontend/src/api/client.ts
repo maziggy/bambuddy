@@ -64,9 +64,21 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
-// Stream token for image/video URLs loaded via <img>/<video> tags
-// (these can't send Authorization headers, so a query param token is used)
+// Query-param tokens for <img>/<video> src URLs, which can't carry an
+// Authorization header. There are two, and which one a URL takes is decided
+// by what the URL points at, not by convenience:
+//
+//   streamToken — live camera only. Minting one costs camera:view.
+//   mediaToken  — thumbnails, previews, timelapses, covers, icons. Minted by
+//                 any signed-in user and carries their identity, so those
+//                 routes can apply the same ownership rules as everywhere else.
+//
+// Before #3025 the stream token served both, which meant a user could not see
+// a library thumbnail without also being granted the live feed of the room the
+// printer sits in — and, because a stream token names nobody, those routes had
+// no identity to scope by and served any row to any holder.
 let streamToken: string | null = null;
+let mediaToken: string | null = null;
 
 export function setStreamToken(token: string | null) {
   streamToken = token;
@@ -76,11 +88,26 @@ export function getStreamToken(): string | null {
   return streamToken;
 }
 
-/** Append the stream token to a URL if available (for <img>/<video> src). */
+export function setMediaToken(token: string | null) {
+  mediaToken = token;
+}
+
+export function getMediaToken(): string | null {
+  return mediaToken;
+}
+
+/** Append the camera stream token to a URL if available (live camera only). */
 export function withStreamToken(url: string): string {
   if (!streamToken) return url;
   const sep = url.includes('?') ? '&' : '?';
   return `${url}${sep}token=${encodeURIComponent(streamToken)}`;
+}
+
+/** Append the media token to a URL if available (for <img>/<video> src). */
+export function withMediaToken(url: string): string {
+  if (!mediaToken) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}token=${encodeURIComponent(mediaToken)}`;
 }
 
 function parseContentDispositionFilename(header: string | null): string | null {
@@ -308,6 +335,25 @@ export interface LongLivedCameraToken {
   token: string | null;
 }
 
+// An external application that signs users in with their Bambuddy account.
+// `client_secret` is present only in the create / rotate responses.
+export interface ConnectedApp {
+  id: number;
+  name: string;
+  client_id: string;
+  redirect_uri: string;
+  enabled: boolean;
+  created_at: string;
+  last_used_at: string | null;
+  client_secret?: string;
+}
+
+export interface ConnectAuthorizeInfo {
+  app_name: string;
+  username: string;
+  already_granted: boolean;
+}
+
 // One row of the token-authenticated Cam Wall feed (#2531). Deliberately
 // smaller than PrinterStatus: no serial, no IP, no print filename — a kiosk URL
 // is not a secret, so the payload behind it must not be either.
@@ -331,6 +377,7 @@ export interface CamWallPrinter {
 export interface OverlayStatus {
   id: number;
   name: string;
+  model: string | null;
   camera_rotation: number;
   connected: boolean;
   state: string | null;
@@ -382,7 +429,9 @@ export interface HMSError {
   code: string;
   attr: number;  // Attribute value for constructing wiki URL
   module: number;
-  severity: number;  // 1=fatal, 2=serious, 3=common, 4=info
+  // Bambu's alert level: 1 error (task stopped), 2 warning (task paused),
+  // 3 notification, 0 invalid (#2728).
+  severity: number;
   actions?: string[];  // List of user-facing action keys (e.g. "CHECK_FILAMENT")
   job_id?: string;  // Optional job ID for actions that require it (e.g. "CHECK_ASSISTANT")
   // Canonical hex identifier the firmware matches against — 8 chars for
@@ -390,11 +439,10 @@ export interface HMSError {
   // this back as HmsActionBody.print_error so we don't truncate the 64-bit
   // identifier into the silent-rejection short code (#1830).
   full_code?: string;
-  // The backend's resolved catalogue sentence for this fault (#2926). English
-  // only, and null when the catalogue does not cover the code. Resolved with the
-  // same lookup order this file's consumers use (full_code, then the G1_G4
-  // collapse), so it agrees with what HMSErrorModal renders — the modal still
-  // resolves its own text, and this is here for parity with the API.
+  // The backend's catalogue sentence for this fault (#2926), from the table
+  // generated out of Bambu Studio for this printer model (#2728). English only.
+  // Null when Bambu publishes no text for the code. The frontend has no table of
+  // its own: this field decides both the text and whether the fault counts.
   description?: string | null;
 }
 
@@ -433,6 +481,7 @@ export interface AMSUnit {
   serial_number: string;  // AMS unit serial number (from MQTT sn field)
   sw_ver: string;         // AMS firmware version (from get_version info.module ams/* entry)
   dry_time: number;       // Minutes remaining (0 = not drying, >0 = drying active)
+  dry_countdown_stalled?: boolean; // Timer set but countdown not ticking (never started or paused)
   dry_status: number;     // 0=Off, 1=Checking, 2=Drying, 3=Cooling, 4=Stopping, 5=Error
   dry_sub_status: number; // 0=Off, 1=Heating, 2=Dehumidify
   dry_sf_reason: number[]; // Cannot-dry reasons (1=InsufficientPower, 8=NeedPluginPower)
@@ -453,6 +502,9 @@ export interface ScheduledDrying {
   status: string;
   waiting_reason: string | null;
   error_message: string | null;
+  // Why a failed run failed (screen_only / unsupported / did_not_start); null on
+  // rows that failed before codes existed, which show error_message instead.
+  error_code?: string | null;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
@@ -744,6 +796,9 @@ export interface ArchivePrinterMedia {
   warnings: Array<'printer_missing' | 'timelapse_unavailable' | 'ipcam_unavailable' | 'printer_files_forbidden'>;
 }
 
+/** How a post-print outcome verdict reached the archive (#1898). */
+export type VerdictSource = 'dialog' | 'link' | 'plate_clear' | 'printer_card' | 'api' | 'reaction';
+
 export interface Archive {
   id: number;
   printer_id: number | null;
@@ -790,6 +845,13 @@ export interface Archive {
   cost: number | null;
   photos: string[] | null;
   failure_reason: string | null;
+  // Post-print outcome confirmation (#1898)
+  user_verdict: 'good' | 'reject' | null;
+  // How the verdict arrived; 'reaction' is written by the Telegram reaction
+  // handler (#3046) and is labelled here so it reads correctly once that lands.
+  user_verdict_source: VerdictSource | null;
+  user_verdict_at: string | null;
+  confirm_requested: boolean;
   quantity: number;
   energy_kwh: number | null;
   energy_cost: number | null;
@@ -884,6 +946,11 @@ export interface FailureAnalysis {
   total_prints: number;
   failed_prints: number;
   failure_rate: number;
+  // Quality dimension (#1898): completed prints the user rejected. Optional
+  // so a frontend build against an older backend degrades gracefully.
+  rejected_prints?: number;
+  yield_rate?: number;
+  rejects_by_reason?: Record<string, number>;
   failures_by_reason: Record<string, number>;
   failures_by_filament: Record<string, number>;
   failures_by_printer: Record<string, number>;
@@ -1232,6 +1299,7 @@ export interface APIKey {
   can_manage_projects: boolean;
   can_access_cloud: boolean;
   can_update_energy_cost: boolean;
+  can_send_notifications: boolean;
   printer_ids: number[] | null;
   enabled: boolean;
   last_used: string | null;
@@ -1251,6 +1319,7 @@ export interface APIKeyCreate {
   can_manage_projects?: boolean;
   can_access_cloud?: boolean;
   can_update_energy_cost?: boolean;
+  can_send_notifications?: boolean;
   printer_ids?: number[] | null;
   expires_at?: string | null;
 }
@@ -1271,6 +1340,7 @@ export interface APIKeyUpdate {
   can_manage_projects?: boolean;
   can_access_cloud?: boolean;
   can_update_energy_cost?: boolean;
+  can_send_notifications?: boolean;
   printer_ids?: number[] | null;
   enabled?: boolean;
   expires_at?: string | null;
@@ -1315,6 +1385,7 @@ export interface AppSettings {
   queue_drying_enabled: boolean;  // Auto-dry AMS between queued prints
   queue_drying_block: boolean;  // Block queue until drying completes
   ambient_drying_enabled: boolean;  // Auto-dry idle printers based on humidity regardless of queue
+  ambient_drying_sustained_minutes: number;  // Minutes humidity must stay above threshold before ambient auto-dry starts (0 = instant)
   print_drying_enabled: boolean;  // Continue drying while a print is running on capable hardware
   drying_presets: string;  // JSON blob of drying presets per filament type
   ams_humidity_thresholds: string;  // JSON blob of per-filament humidity thresholds (#1605)
@@ -1411,6 +1482,12 @@ export interface AppSettings {
   default_layer_inspect: boolean;
   default_timelapse: boolean;
   default_nozzle_offset_cali: CalibrationMode;
+  // Default for the per-job "ask for outcome afterwards" toggle (#1898)
+  default_confirm_outcome: boolean;
+  // Also ask for prints Bambuddy archived but did not dispatch (#1898)
+  confirm_outcome_external_prints: boolean;
+  // Count unanswered outcome prompts as "good" when the plate is released (#1898)
+  confirm_default_good_on_plate_clear: boolean;
   // Staggered batch start defaults
   stagger_group_size: number;
   stagger_interval_minutes: number;
@@ -2506,7 +2583,7 @@ export interface PrintQueueItem {
   target_model: string | null;  // Target printer model for model-based assignment
   target_location: string | null;  // Target location filter for model-based assignment
   required_filament_types: string[] | null;  // Required filament types for model-based assignment
-  waiting_reason: string | null;  // Why a model-based job hasn't started yet
+  waiting_reason: string | null;  // Why this job hasn't started yet (empty once it can)
   // Cross-model alternatives (#671), in priority order. Empty for ordinary
   // items. Present until dispatch resolves one, after which library_file_id and
   // target_model name the candidate that actually ran.
@@ -2550,6 +2627,8 @@ export interface PrintQueueItem {
   timelapse: boolean;
   use_ams: boolean;
   nozzle_offset_cali: CalibrationMode;
+  // Ask for a post-print outcome verdict when this job completes (#1898)
+  confirm_outcome: boolean;
   preheat_override: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override: number | null;
   status: 'pending' | 'printing' | 'completed' | 'failed' | 'skipped' | 'cancelled';
@@ -2631,6 +2710,9 @@ export interface PrintBatch {
   project_id: number | null;
   due_date: string | null;
   notes: string | null;
+  /** Set when an integration (e.g. a shop connector) created the batch. */
+  external_source: string | null;
+  external_ref: string | null;
   pending_count: number;
   printing_count: number;
   completed_count: number;
@@ -2655,7 +2737,7 @@ export interface PrintQueueItemCreate {
   printer_id?: number | null;  // null = unassigned
   target_model?: string | null;  // Target printer model (mutually exclusive with printer_id)
   target_location?: string | null;  // Target location filter (only used with target_model)
-  filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;
+  filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;
   archive_id?: number | null;
   library_file_id?: number | null;
   scheduled_time?: string | null;
@@ -2677,6 +2759,8 @@ export interface PrintQueueItemCreate {
   timelapse?: boolean;
   use_ams?: boolean;
   nozzle_offset_cali?: CalibrationMode;
+  // Ask for a post-print outcome verdict when this job completes (#1898)
+  confirm_outcome?: boolean;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -2710,7 +2794,7 @@ export interface QueueVariantCreate {
   plate_id?: number | null;
   ams_mapping?: number[] | null;
   nozzle_mapping?: number[] | null;
-  filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;
+  filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;
 }
 
 export interface PrintBatchCreate {
@@ -2749,7 +2833,7 @@ export interface PrintQueueItemUpdate {
   printer_id?: number | null;  // null = unassign
   target_model?: string | null;  // Target printer model (mutually exclusive with printer_id)
   target_location?: string | null;  // Target location filter (only used with target_model)
-  filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;
+  filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;
   position?: number;
   scheduled_time?: string | null;
   require_previous_success?: boolean;
@@ -2765,6 +2849,8 @@ export interface PrintQueueItemUpdate {
   timelapse?: boolean;
   use_ams?: boolean;
   nozzle_offset_cali?: CalibrationMode;
+  // Ask for a post-print outcome verdict when this job completes (#1898)
+  confirm_outcome?: boolean;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -2792,6 +2878,8 @@ export interface PrintQueueBulkUpdate {
   timelapse?: boolean;
   use_ams?: boolean;
   nozzle_offset_cali?: CalibrationMode;
+  // Ask for a post-print outcome verdict when this job completes (#1898)
+  confirm_outcome?: boolean;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -2932,12 +3020,15 @@ export interface NotificationProvider {
   // Build plate detection
   on_plate_not_empty: boolean;
   on_plate_clear_required: boolean;
+  // Post-print outcome confirmation (#1898)
+  on_print_confirm_request: boolean;
   // Bed cooled
   on_bed_cooled: boolean;
   on_ha_sensor_alert: boolean;
   on_location_ha_sensor_alert: boolean;
   // First layer complete
   on_first_layer_complete: boolean;
+  on_app_message: boolean;
   // Inventory stock alerts
   on_stock_reorder_alert: boolean;
   on_stock_break_alert: boolean;
@@ -2996,12 +3087,15 @@ export interface NotificationProviderCreate {
   // Build plate detection
   on_plate_not_empty?: boolean;
   on_plate_clear_required?: boolean;
+  // Post-print outcome confirmation (#1898)
+  on_print_confirm_request?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
   on_ha_sensor_alert?: boolean;
   on_location_ha_sensor_alert?: boolean;
   // First layer complete
   on_first_layer_complete?: boolean;
+  on_app_message?: boolean;
   // Inventory stock alerts
   on_stock_reorder_alert?: boolean;
   on_stock_break_alert?: boolean;
@@ -3053,12 +3147,15 @@ export interface NotificationProviderUpdate {
   // Build plate detection
   on_plate_not_empty?: boolean;
   on_plate_clear_required?: boolean;
+  // Post-print outcome confirmation (#1898)
+  on_print_confirm_request?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
   on_ha_sensor_alert?: boolean;
   on_location_ha_sensor_alert?: boolean;
   // First layer complete
   on_first_layer_complete?: boolean;
+  on_app_message?: boolean;
   // Inventory stock alerts
   on_stock_reorder_alert?: boolean;
   on_stock_break_alert?: boolean;
@@ -3529,6 +3626,9 @@ export interface InventorySpool {
   brand: string | null;
   label_weight: number;
   core_weight: number;
+  // Spoolman-backed inventory only: true when the spool has no tare of its
+  // own and core_weight is the filament type's. Absent for local spools (#2908).
+  core_weight_is_inherited?: boolean;
   core_weight_catalog_id: number | null;
   weight_used: number;
   // Anchor for the resettable "Total Consumed" display (#1390). The
@@ -3561,6 +3661,61 @@ export interface InventorySpool {
   k_profiles?: SpoolKProfile[];
   storage_location?: string | null;
   location_id?: number | null;
+  // Supplier assignments (#2988). Absent in Spoolman mode — Spoolman's
+  // vendor is the manufacturer, not the seller, so there is no mapping.
+  suppliers?: SpoolSupplierLink[];
+}
+
+// ── Suppliers (#2988) ──────────────────────────────────────────────────────
+
+/** Where filament is bought — distinct from brand (who made it). */
+export interface Supplier {
+  id: number;
+  name: string;
+  website: string | null;
+  customer_number: string | null;
+  note: string | null;
+  /** Spools referencing this supplier; a referenced supplier cannot be deleted. */
+  spool_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupplierInput {
+  name: string;
+  website?: string | null;
+  customer_number?: string | null;
+  note?: string | null;
+}
+
+/** One spool-to-supplier assignment as written by the spool dialog. */
+export interface SpoolSupplierLinkInput {
+  supplier_id: number;
+  /** The supplier's own article number — NOT the internal material number. */
+  supplier_article_number?: string | null;
+  /** Quoted price for comparison — never the cost basis (spool.cost_per_kg). */
+  quoted_price_per_kg?: number | null;
+  /** Marks where this concrete spool was actually bought. */
+  is_purchase_source?: boolean;
+}
+
+export interface SpoolSupplierLink {
+  id: number;
+  supplier_id: number;
+  supplier_name: string;
+  supplier_article_number: string | null;
+  quoted_price_per_kg: number | null;
+  is_purchase_source: boolean;
+}
+
+/** Per-supplier inventory aggregate (#2988), purchase-source spools only. */
+export interface SupplierStats {
+  supplier_id: number;
+  supplier_name: string;
+  spool_count: number;
+  remaining_g: number;
+  consumed_g: number;
+  cost: number;
 }
 
 export interface SpoolmanBulkCreateResult {
@@ -3703,6 +3858,15 @@ export interface SlotSpoolIdentity {
   subtype: string | null;
   color_name: string | null;
   rgba: string | null;
+  /** Comma-separated hex stops for a multi-colour spool, and the effect
+   *  overlay — the two things a tray record cannot carry, so a slot swatch
+   *  can be drawn the way the inventory row draws it (#3159).
+   *
+   *  Optional rather than required: the backend sends both keys on every
+   *  binding, but a frontend running against an older one gets neither, and
+   *  every reader here already falls back to a solid swatch. */
+  extra_colors?: string | null;
+  effect_type?: string | null;
 }
 
 export interface InventoryRemainResponse {
@@ -4890,7 +5054,7 @@ export const api = {
       is_multi_plate: boolean;
     }>(`/printers/${printerId}/files/plates?path=${encodeURIComponent(path)}`),
   getPrinterFilePlateThumbnail: (printerId: number, plateIndex: number, path: string) =>
-    withStreamToken(`${API_BASE}/printers/${printerId}/files/plate-thumbnail/${plateIndex}?path=${encodeURIComponent(path)}`),
+    withMediaToken(`${API_BASE}/printers/${printerId}/files/plate-thumbnail/${plateIndex}?path=${encodeURIComponent(path)}`),
   downloadPrinterFilesAsZip: async (
     printerId: number,
     paths: string[],
@@ -5024,7 +5188,13 @@ export const api = {
   getNo3MFWarning: () =>
     request<{
       has_fallback: boolean;
-      reason: 'internal_storage' | 'no_external_storage' | 'internal_history' | null;
+      reason:
+        | 'ftps_cooloff'
+        | 'ftp_transfer_failed'
+        | 'internal_storage'
+        | 'no_external_storage'
+        | 'internal_history'
+        | null;
     }>(
       '/archives/no-3mf-warning',
     ),
@@ -5041,6 +5211,11 @@ export const api = {
     quantity?: number;
     external_url?: string | null;
     filament_used_grams?: number | null;
+    // Post-print outcome verdict (#1898); null clears it
+    user_verdict?: 'good' | 'reject' | null;
+    // Which surface answered. The backend only accepts the sources a client
+    // can honestly claim and defaults to 'api' when none is given.
+    user_verdict_source?: 'dialog' | 'printer_card';
   }) =>
     request<Archive>(`/archives/${id}`, {
       method: 'PATCH',
@@ -5193,9 +5368,9 @@ export const api = {
     request<{ updated: number; errors: Array<{ id: number; error: string }> }>('/archives/backfill-hashes', {
       method: 'POST',
     }),
-  getArchiveThumbnail: (id: number) => withStreamToken(`${API_BASE}/archives/${id}/thumbnail?v=${Date.now()}`),
+  getArchiveThumbnail: (id: number) => withMediaToken(`${API_BASE}/archives/${id}/thumbnail?v=${Date.now()}`),
   getArchivePlateThumbnail: (id: number, plateIndex: number) =>
-    withStreamToken(`${API_BASE}/archives/${id}/plate-thumbnail/${plateIndex}`),
+    withMediaToken(`${API_BASE}/archives/${id}/plate-thumbnail/${plateIndex}`),
   getArchiveDownload: (id: number) => `${API_BASE}/archives/${id}/download`,
   downloadArchive: async (id: number, filename?: string): Promise<void> => {
     const headers: Record<string, string> = {};
@@ -5220,8 +5395,8 @@ export const api = {
     window.URL.revokeObjectURL(url);
   },
   getArchiveGcode: (id: number) => `${API_BASE}/archives/${id}/gcode`,
-  getArchivePlatePreview: (id: number) => withStreamToken(`${API_BASE}/archives/${id}/plate-preview`),
-  getArchiveTimelapse: (id: number) => withStreamToken(`${API_BASE}/archives/${id}/timelapse?v=${Date.now()}`),
+  getArchivePlatePreview: (id: number) => withMediaToken(`${API_BASE}/archives/${id}/plate-preview`),
+  getArchiveTimelapse: (id: number) => withMediaToken(`${API_BASE}/archives/${id}/timelapse?v=${Date.now()}`),
   downloadArchiveTimelapse: async (id: number, filename: string): Promise<void> => {
     const prepared = await request<{ token: string; filename: string }>(
       `/archives/${id}/media-download-token`,
@@ -5329,7 +5504,7 @@ export const api = {
   },
   // Photos
   getArchivePhotoUrl: (archiveId: number, filename: string) =>
-    withStreamToken(`${API_BASE}/archives/${archiveId}/photos/${encodeURIComponent(filename)}`),
+    withMediaToken(`${API_BASE}/archives/${archiveId}/photos/${encodeURIComponent(filename)}`),
   uploadArchivePhoto: async (archiveId: number, file: File): Promise<{ status: string; filename: string; photos: string[] }> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -5460,7 +5635,7 @@ export const api = {
 
   // QR Code
   getArchiveQRCodeUrl: (archiveId: number, size = 200) =>
-    withStreamToken(`${API_BASE}/archives/${archiveId}/qrcode?size=${size}`),
+    withMediaToken(`${API_BASE}/archives/${archiveId}/qrcode?size=${size}`),
   getArchiveCapabilities: (id: number) =>
     request<{
       has_model: boolean;
@@ -5507,7 +5682,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getArchiveProjectImageUrl: (archiveId: number, imagePath: string) =>
-    withStreamToken(`${API_BASE}/archives/${archiveId}/project-image/${encodeURIComponent(imagePath)}`),
+    withMediaToken(`${API_BASE}/archives/${archiveId}/project-image/${encodeURIComponent(imagePath)}`),
   getArchiveForSlicer: (id: number, filename: string) => {
     const safe = filename.replace(/[/\\?#]/g, '_');
     return `${API_BASE}/archives/${id}/file/${encodeURIComponent(safe.endsWith('.3mf') ? safe : safe + '.3mf')}`;
@@ -5620,7 +5795,7 @@ export const api = {
     if (params?.sortDir) searchParams.set('sort_dir', params.sortDir);
     return request<PrintLogResponse>(`/print-log/?${searchParams}`);
   },
-  getPrintLogThumbnail: (id: number) => withStreamToken(`${API_BASE}/print-log/${id}/thumbnail`),
+  getPrintLogThumbnail: (id: number) => withMediaToken(`${API_BASE}/print-log/${id}/thumbnail`),
   clearPrintLog: () =>
     request<{ deleted: number }>('/print-log/', { method: 'DELETE' }),
   deletePrintLogEntry: (id: number) =>
@@ -5664,6 +5839,20 @@ export const api = {
       chamber_temp_presets?: string;
       fan_speed_presets?: string;
     }>('/settings/ui-preferences'),
+  // Install configuration the app shell needs, for any signed-in user. Separate
+  // from getUiPreferences: that endpoint is public because its fields are
+  // defaults shipped with the app, while these describe how this deployment is
+  // configured. Neither requires settings:read -- which is the point, since a
+  // non-admin reading GET /settings gets a 403 and every gate that consults it
+  // silently takes its fallback (#3023). Keep in sync with _UI_FLAG_FIELDS in
+  // backend/app/api/routes/settings.py.
+  getUiFlags: () =>
+    request<{
+      billing_enabled?: boolean;
+      user_notifications_enabled?: boolean;
+      currency?: string;
+      check_updates?: boolean;
+    }>('/settings/ui-flags'),
   updateSettings: (data: AppSettingsUpdate) =>
     request<AppSettings>('/settings/', {
       method: 'PUT',
@@ -5712,10 +5901,23 @@ export const api = {
       headers,
       body: formData,
     });
-    return response.json() as Promise<{
+    const data = (await response.json().catch(() => null)) as {
+      success?: boolean;
+      message?: string;
+      detail?: string;
+    } | null;
+    // A refused restore is an HTTPException, so the body is {detail}, not
+    // {success, message}. Returning it unmapped made `success` undefined and
+    // `message` undefined too — the modal then raised an empty error toast,
+    // which is the one case where the reason matters most (e.g. a backup this
+    // version cannot import names the columns and both versions).
+    if (!response.ok) {
+      return { success: false, message: data?.detail ?? data?.message ?? '' };
+    }
+    return (data ?? { success: false, message: '' }) as {
       success: boolean;
       message: string;
-    }>;
+    };
   },
   checkFfmpeg: () =>
     request<{ installed: boolean; path: string | null }>('/settings/check-ffmpeg'),
@@ -6515,6 +6717,36 @@ export const api = {
     request<{ deleted: number }>('/inventory/catalog/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
   resetSpoolCatalog: () =>
     request<{ status: string }>('/inventory/catalog/reset', { method: 'POST' }),
+  // ── Suppliers (#2988) — inventory master data, Locations pattern ─────────
+  getSuppliers: () =>
+    request<Supplier[]>('/inventory/suppliers'),
+  createSupplier: (data: SupplierInput) =>
+    request<Supplier>('/inventory/suppliers', { method: 'POST', body: JSON.stringify(data) }),
+  updateSupplier: (id: number, data: Partial<SupplierInput>) =>
+    request<Supplier>(`/inventory/suppliers/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteSupplier: (id: number) =>
+    request<{ status: string }>(`/inventory/suppliers/${id}`, { method: 'DELETE' }),
+  setSpoolSuppliers: (spoolId: number, links: SpoolSupplierLinkInput[]) =>
+    request<SpoolSupplierLink[]>(`/inventory/spools/${spoolId}/suppliers`, {
+      method: 'PUT',
+      body: JSON.stringify(links),
+    }),
+  // Spoolman parity: the assignment rows live Bambuddy-side, keyed by the
+  // remote spool id — same request/response shape as the built-in inventory.
+  setSpoolmanSpoolSuppliers: (spoolmanSpoolId: number, links: SpoolSupplierLinkInput[]) =>
+    request<SpoolSupplierLink[]>(`/spoolman/inventory/spools/${spoolmanSpoolId}/suppliers`, {
+      method: 'PUT',
+      body: JSON.stringify(links),
+    }),
+  // date_from/date_to scope the usage half only, so the widget can follow the
+  // dashboard timeframe; stock stays point-in-time.
+  getSupplierStats: (dateFrom?: string, dateTo?: string) => {
+    const params = new URLSearchParams();
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    const qs = params.toString();
+    return request<SupplierStats[]>(`/inventory/stats/suppliers${qs ? `?${qs}` : ''}`);
+  },
   getLocations: () =>
     request<StorageLocation[]>('/inventory/locations'),
   createLocation: (data: { name: string; identifier?: string | null }) =>
@@ -6773,11 +7005,41 @@ export const api = {
   getCameraStreamToken: () =>
     request<{ token: string }>('/printers/camera/stream-token', { method: 'POST' }),
 
+  // Media token (#3025) — the credential for thumbnails, plate previews,
+  // timelapses, cover images and link icons. Minted behind plain auth rather
+  // than camera:view, and identified, so those routes gate on the resource's
+  // own permission and ownership instead of on the camera.
+  getMediaToken: () => request<{ token: string }>('/auth/media-token', { method: 'POST' }),
+
   // WebSocket auth (GHSA-r2qv follow-up) — mint a short-lived token for
   // the /ws connection. Browsers can't attach Authorization headers to a
   // WebSocket handshake, so the token rides in the ?token= query param.
   getWebSocketToken: () =>
     request<{ token: string }>('/auth/ws-token', { method: 'POST' }),
+
+  // Connected apps: sign-in to external applications with Bambuddy
+  listConnectedApps: () => request<ConnectedApp[]>('/connect/apps'),
+  createConnectedApp: (payload: { name: string; redirect_uri: string }) =>
+    request<ConnectedApp>('/connect/apps', { method: 'POST', body: JSON.stringify(payload) }),
+  updateConnectedApp: (id: number, payload: { name?: string; redirect_uri?: string; enabled?: boolean }) =>
+    request<ConnectedApp>(`/connect/apps/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  rotateConnectedAppSecret: (id: number) =>
+    request<ConnectedApp>(`/connect/apps/${id}/rotate-secret`, { method: 'POST' }),
+  deleteConnectedApp: (id: number) => request<void>(`/connect/apps/${id}`, { method: 'DELETE' }),
+  getConnectAuthorizeInfo: (clientId: string, redirectUri: string) =>
+    request<ConnectAuthorizeInfo>(
+      `/connect/authorize/info?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`,
+    ),
+  connectAuthorize: (payload: {
+    client_id: string;
+    redirect_uri: string;
+    code_challenge: string;
+    code_challenge_method: 'S256';
+  }) =>
+    request<{ code: string; redirect_uri: string }>('/connect/authorize', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 
   // Long-lived camera tokens (#1108, #2531)
   createLongLivedCameraToken: (payload: {
@@ -6933,7 +7195,7 @@ export const api = {
   },
   deleteExternalLinkIcon: (id: number) =>
     request<ExternalLink>(`/external-links/${id}/icon`, { method: 'DELETE' }),
-  getExternalLinkIconUrl: (id: number) => withStreamToken(`${API_BASE}/external-links/${id}/icon`),
+  getExternalLinkIconUrl: (id: number) => withMediaToken(`${API_BASE}/external-links/${id}/icon`),
 
   // Projects
   getProjects: (status?: string) => {
@@ -7010,8 +7272,16 @@ export const api = {
   // #1155: Cover image
   // Browsers can't attach `Authorization: Bearer ...` to `<img src>`, so we
   // append the stream-token query string the same way archive thumbnails do.
-  getProjectCoverImageUrl: (projectId: number) =>
-    withStreamToken(`${API_BASE}/projects/${projectId}/cover-image`),
+  // `version` cache-busts the browser copy after a re-upload. It has to go on
+  // before the token does: callers used to append their own `?v=` to the
+  // returned URL, which already ended in `?token=…`, so the second `?` landed
+  // inside the token value and the image 401'd whenever auth was enabled.
+  getProjectCoverImageUrl: (projectId: number, version?: string | number) =>
+    withMediaToken(
+      `${API_BASE}/projects/${projectId}/cover-image${
+        version === undefined ? '' : `?v=${encodeURIComponent(String(version))}`
+      }`
+    ),
   uploadProjectCoverImage: async (
     projectId: number,
     file: File
@@ -7395,9 +7665,55 @@ export const api = {
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
   },
-  getLibraryFileThumbnailUrl: (id: number) => withStreamToken(`${API_BASE}/library/files/${id}/thumbnail`),
+  getLibraryFileThumbnailUrl: (id: number) => withMediaToken(`${API_BASE}/library/files/${id}/thumbnail`),
+  // Client-rendered preview thumbnail upload (#2976). STEP/PDF/spreadsheet
+  // previews render in the browser; the first render is posted back so the
+  // grid gets a thumbnail without a server-side renderer for those formats.
+  uploadLibraryPreviewThumbnail: async (fileId: number, thumbnail: Blob): Promise<{ updated: boolean }> => {
+    const formData = new FormData();
+    formData.append('thumbnail', thumbnail, 'preview.png');
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    const response = await fetch(`${API_BASE}/library/files/${fileId}/preview-thumbnail`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.json();
+  },
   getLibraryFilePlateThumbnail: (id: number, plateIndex: number) =>
-    withStreamToken(`${API_BASE}/library/files/${id}/plate-thumbnail/${plateIndex}`),
+    withMediaToken(`${API_BASE}/library/files/${id}/plate-thumbnail/${plateIndex}`),
+  // Photos of the printed result (#3077) — same shape as the archive photo API.
+  getLibraryFilePhotoUrl: (fileId: number, filename: string) =>
+    withMediaToken(`${API_BASE}/library/files/${fileId}/photos/${encodeURIComponent(filename)}`),
+  uploadLibraryFilePhoto: async (fileId: number, file: File): Promise<{ status: string; filename: string; photos: string[] }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    const response = await fetch(`${API_BASE}/library/files/${fileId}/photos`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    return response.json();
+  },
+  deleteLibraryFilePhoto: (fileId: number, filename: string) =>
+    request<{ status: string; photos: string[] }>(`/library/files/${fileId}/photos/${encodeURIComponent(filename)}`, {
+      method: 'DELETE',
+    }),
   getLibraryFileGcodeUrl: (id: number) => `${API_BASE}/library/files/${id}/gcode`,
   moveLibraryFiles: (fileIds: number[], folderId: number | null) =>
     request<{ status: string; moved: number }>('/library/files/move', {
@@ -7963,6 +8279,11 @@ export interface LibraryFile {
   print_count: number;
   last_printed_at: string | null;
   notes: string | null;
+  // User link + photos of the printed result (#3077); source_url is the
+  // read-only import provenance (MakerWorld).
+  external_url: string | null;
+  photos: string[];
+  source_url: string | null;
   duplicates: LibraryFileDuplicate[] | null;
   duplicate_count: number;
   // User tracking (Issue #206)
@@ -8013,6 +8334,11 @@ export interface LibraryFileListItem {
   // matching rows on screen. 0 when the file is not grouped.
   variant_group_id?: number | null;
   variant_count?: number;
+  // Metadata indicators (#3077). Optional for the same reason as `tags`: older
+  // mocks construct list items without them. Read sites default to falsy.
+  external_url?: string | null;
+  has_notes?: boolean;
+  photo_count?: number;
 }
 
 // Variant groups (#671 / #2570): the same job sliced for different printers.
@@ -8050,6 +8376,7 @@ export interface LibraryFileUpdate {
   folder_id?: number | null;
   project_id?: number | null;
   notes?: string | null;
+  external_url?: string | null;
 }
 
 // Library trash (#1008)

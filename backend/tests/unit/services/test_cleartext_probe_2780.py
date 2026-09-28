@@ -125,6 +125,13 @@ def _fast_probe(monkeypatch):
 def test_a_cleartext_banner_is_what_produces_wrong_version_number(cleartext_printer):
     """The exact error the affected farm logs, from a non-TLS answer."""
     ctx = ssl.create_default_context()
+    # `create_default_context()` leaves `minimum_version` at MINIMUM_SUPPORTED,
+    # which is the build's floor rather than a guarantee -- the same reason
+    # every context in `backend/app` pins it, and the reason the TLS-13 case
+    # further down this file already does. The listener answers with a plain
+    # FTP banner and speaks no TLS at all, so the floor cannot change what this
+    # measures; it only stops the file asking for a protocol we would refuse.
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     raw = socket.create_connection(("127.0.0.1", cleartext_printer.port), 5)

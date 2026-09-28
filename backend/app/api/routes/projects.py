@@ -11,12 +11,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import case, func, select, update
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.library import get_library_dir
-from backend.app.core.auth import RequireCameraStreamTokenIfAuthEnabled, RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_media_token_permission
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -53,6 +53,12 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 _FAILURE_STATUSES = ("failed", "aborted", "cancelled", "stopped")
+
+# A completed run whose user verdict is 'reject' (#1898) finished on the
+# machine but produced scrap — everywhere a project counts good parts, that
+# run must not contribute. NULL verdict (never asked / not answered) counts
+# as good, matching behaviour before the feature existed.
+_NOT_REJECTED = or_(PrintLogEntry.user_verdict.is_(None), PrintLogEntry.user_verdict != "reject")
 
 # Soft-deleted archives (#1343) keep their row — and therefore their
 # ``project_id`` — after their files have been removed from disk, so that global
@@ -140,8 +146,12 @@ async def _load_totals(db: AsyncSession, project_ids: Sequence[int]) -> dict[int
             func.coalesce(func.sum(PrintLogEntry.energy_kwh), 0).label("total_energy"),
             func.coalesce(func.sum(PrintLogEntry.energy_cost), 0).label("total_energy_cost"),
             func.coalesce(func.sum(PrintArchive.quantity), 0).label("total_items"),
+            # A completed run the user marked as reject (#1898) produced no
+            # usable parts — keep it out of the good-parts count.
             func.coalesce(
-                func.sum(case((PrintLogEntry.status == "completed", PrintArchive.quantity), else_=0)),
+                func.sum(
+                    case((and_(PrintLogEntry.status == "completed", _NOT_REJECTED), PrintArchive.quantity), else_=0)
+                ),
                 0,
             ).label("completed_items"),
             func.coalesce(
@@ -423,7 +433,9 @@ async def list_projects(
                 func.count(PrintLogEntry.id).label("archive_count"),
                 func.coalesce(func.sum(PrintArchive.quantity), 0).label("total_items"),
                 func.coalesce(
-                    func.sum(case((PrintLogEntry.status == "completed", PrintArchive.quantity), else_=0)),
+                    func.sum(
+                        case((and_(PrintLogEntry.status == "completed", _NOT_REJECTED), PrintArchive.quantity), else_=0)
+                    ),
                     0,
                 ).label("completed_count"),
                 func.coalesce(
@@ -1009,7 +1021,12 @@ async def get_project_file_progress(
             func.count(PrintLogEntry.id),
         )
         .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
-        .where(PrintArchive.project_id == project_id, PrintLogEntry.status == "completed", _LIVE_ARCHIVE)
+        .where(
+            PrintArchive.project_id == project_id,
+            PrintLogEntry.status == "completed",
+            _NOT_REJECTED,
+            _LIVE_ARCHIVE,
+        )
         .group_by(PrintArchive.library_file_id, PrintArchive.content_hash, PrintArchive.filename)
     )
 
@@ -1412,13 +1429,19 @@ async def upload_project_cover_image(
 async def get_project_cover_image(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    _: None = RequireCameraStreamTokenIfAuthEnabled,
+    _: User | None = Depends(require_media_token_permission(Permission.PROJECTS_READ)),
 ):
     """Stream the project's cover image (#1155).
 
     Browsers can't attach `Authorization: Bearer ...` to `<img src>` requests,
-    so this route accepts the same `?token=` stream-credential as
-    /archives/{id}/thumbnail. The frontend wraps URLs with `withStreamToken`."""
+    so this route accepts a `?token=` media credential, the same one
+    /archives/{id}/thumbnail takes. The frontend wraps URLs with `withMediaToken`.
+
+    Gated on ``projects:read`` like every other project route. It used to take
+    the camera-stream token, which required ``camera:view`` instead -- an
+    unrelated permission that a user could hold without any project access, and
+    that a project reader could easily lack (#3025). Projects carry no
+    ``created_by_id``, so there is no per-row owner to check beyond that."""
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project:

@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Clock, Layers, Printer as PrinterIcon } from 'lucide-react';
 import { formatDuration, parseUTCDate } from '../utils/date';
+import { compareQueueOrder, queueLaneKey } from '../utils/queueOrder';
+import { isBusyOnlyWaitingReason } from '../utils/waitingReason';
 import type { PrintQueueItem, Printer } from '../api/client';
 import { api } from '../api/client';
 import { Button } from './Button';
@@ -32,6 +34,10 @@ interface QueueTimelineViewProps {
   queueItems: PrintQueueItem[];
   printers: Printer[];
   printerStatuses: Record<number, { progress?: number; remaining_time?: number; state?: string }>;
+  /** `queue_shortest_first`. The bars chain in dispatch order, and dispatch
+   *  order depends on it, so without it the timeline drew a queue the
+   *  scheduler had no intention of running (#3043). */
+  sjfEnabled: boolean;
   onItemClick: (item: PrintQueueItem) => void;
   t: (key: string, options?: Record<string, unknown>) => string;
 }
@@ -57,6 +63,7 @@ export function QueueTimelineView({
   queueItems,
   printers,
   printerStatuses,
+  sjfEnabled,
   onItemClick,
   t,
 }: QueueTimelineViewProps) {
@@ -85,8 +92,11 @@ export function QueueTimelineView({
   //  • pending with explicit scheduled_time → at that time
   //  • pending ASAP that chain behind a print actually running on the same
   //    lane → forecast
-  // Staged (manual_start) and waiting (waiting_reason) items are not on the
-  // timeline because they won't auto-dispatch — they'd be misleading bars.
+  // Staged (manual_start) and blocked items are not on the timeline because
+  // they won't auto-dispatch — they'd be misleading bars. "Blocked" is not the
+  // same as "has a waiting_reason": since #3074 an item queued behind a running
+  // print carries one too ("Busy: X1C-01"), and that is the chain this view
+  // exists to forecast. Only a reason that needs the user takes an item off.
   // Idle-printer ASAP queues also stay off until something starts on them.
   const events = useMemo<ScheduleEvent[]>(() => {
     const result: ScheduleEvent[] = [];
@@ -96,12 +106,6 @@ export function QueueTimelineView({
     const lanesWithActive = new Set<string>();
     // Chain-end timestamp per lane (where the next pending item's bar starts).
     const chainEndByLane = new Map<string, number>();
-
-    const laneKeyOf = (item: PrintQueueItem): string => {
-      if (item.printer_id != null) return `printer:${item.printer_id}`;
-      if (item.target_model) return `model:${item.target_model}`;
-      return 'unassigned';
-    };
 
     for (const item of queueItems) {
       if (item.status === 'printing') {
@@ -124,15 +128,17 @@ export function QueueTimelineView({
           progress: status?.progress ?? undefined,
           type: 'printing',
         });
-        const lk = laneKeyOf(item);
+        const lk = queueLaneKey(item);
         lanesWithActive.add(lk);
         chainEndByLane.set(lk, Math.max(chainEndByLane.get(lk) ?? nowMs, endTime.getTime()));
       } else if (item.status === 'pending') {
-        // Skip un-committed pending shapes — staged items and waiting items
-        // won't auto-dispatch, so a bar would lie.
+        // Skip un-committed pending shapes — staged items and blocked items
+        // won't auto-dispatch, so a bar would lie. An item merely waiting its
+        // turn behind a print does auto-dispatch, and is the whole point of the
+        // chain forecast below.
         if (item.manual_start) continue;
-        if (item.waiting_reason) continue;
-        const lk = laneKeyOf(item);
+        if (item.waiting_reason && !isBusyOnlyWaitingReason(item.waiting_reason)) continue;
+        const lk = queueLaneKey(item);
         if (!pendingByLaneKey.has(lk)) pendingByLaneKey.set(lk, []);
         pendingByLaneKey.get(lk)!.push(item);
       }
@@ -140,7 +146,7 @@ export function QueueTimelineView({
 
     const sixMonthsFromNow = Date.now() + 180 * 24 * HOUR_MS;
     for (const [lk, items] of pendingByLaneKey) {
-      items.sort((a, b) => a.position - b.position);
+      items.sort((a, b) => compareQueueOrder(a, b, sjfEnabled));
       const hasActive = lanesWithActive.has(lk);
       // A lane is timelineable when EITHER it has an active print (chain
       // forecast off its end) OR its first pending item is scheduled (a
@@ -167,7 +173,7 @@ export function QueueTimelineView({
       }
     }
     return result;
-  }, [queueItems, printerStatuses, nowMs]);
+  }, [queueItems, printerStatuses, nowMs, sjfEnabled]);
 
   // Lanes: every printer + every distinct target_model with queue activity
   // + an "unassigned" lane if needed. Printers that have NO events queued

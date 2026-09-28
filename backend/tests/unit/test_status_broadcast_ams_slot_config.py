@@ -52,12 +52,17 @@ def _tray(**overrides) -> dict:
     return tray
 
 
-def _state(trays: list[dict]) -> SimpleNamespace:
+def _state(trays: list[dict], ams_extra: dict | None = None) -> SimpleNamespace:
     """Minimal PrinterState stub carrying one AMS unit.
 
     Idle and unheated, so the handler runs straight from the dedup check to the
     broadcast without touching progress milestones, HMS notifications or the DB.
+
+    ``ams_extra`` sets unit-level (not per-tray) fields such as the drying pair
+    ``dry_time`` / ``dry_countdown_stalled``.
     """
+    ams_unit = {"id": "0", "dry_time": 0, "tray": trays}
+    ams_unit.update(ams_extra or {})
     return SimpleNamespace(
         connected=True,
         state="IDLE",
@@ -65,7 +70,7 @@ def _state(trays: list[dict]) -> SimpleNamespace:
         layer_num=0,
         temperatures={},
         nozzles=[],
-        raw_data={"ams": [{"id": "0", "dry_time": 0, "tray": trays}]},
+        raw_data={"ams": [ams_unit]},
         stg_cur=0,
         # Real PrinterState always carries these; the status-broadcast dedup
         # key reads them so a Filament Track Switch rebind reaches the card.
@@ -98,7 +103,7 @@ def _reset_edge_state():
     main_module._printer_reconciled_since_connect.clear()
 
 
-async def _push(ws_mgr, trays: list[dict]) -> None:
+async def _push(ws_mgr, trays: list[dict], ams_extra: dict | None = None) -> None:
     """Deliver one status push to the handler."""
     relay = MagicMock()
     relay.on_printer_status = AsyncMock()
@@ -113,7 +118,7 @@ async def _push(ws_mgr, trays: list[dict]) -> None:
         _spawn_patch(),
         patch("backend.app.main.printer_state_to_dict", return_value={}),
     ):
-        await main_module.on_printer_status_change(1, _state(trays))
+        await main_module.on_printer_status_change(1, _state(trays, ams_extra))
 
 
 @pytest.fixture
@@ -320,5 +325,56 @@ class TestFilamentTrackSwitchBroadcasts:
         """Dict iteration order must not masquerade as a rebind."""
         await self._push_state(ws_mgr, self._fts_state({"0": "A", "1": "B"}))
         await self._push_state(ws_mgr, self._fts_state({"1": "B", "0": "A"}))
+
+        assert ws_mgr.send_printer_status.await_count == 1
+
+
+class TestDryCountdownStallBroadcasts:
+    """#2896: a parked drying command must be able to reach the card.
+
+    ``dry_countdown_stalled`` is the one drying signal the countdown cannot
+    carry, because the MQTT layer raises it exactly when ``dry_time`` has
+    STOPPED moving. On the frame that flips it, every other member of the dedup
+    key is identical, so unless the flag is itself in the key the handler
+    returns before broadcasting. Mid-print a temperature change would eventually
+    break the tie, but a command parked on an idle machine moves nothing else —
+    AMS temp and humidity are not in the key — so the grey "Drying not started"
+    badge would sit unreachable.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_stall_flip_broadcasts(self, ws_mgr):
+        await _push(ws_mgr, [_tray()], {"dry_time": 720})
+        assert ws_mgr.send_printer_status.await_count == 1
+
+        # Same frozen countdown again: genuinely nothing changed.
+        await _push(ws_mgr, [_tray()], {"dry_time": 720})
+        assert ws_mgr.send_printer_status.await_count == 1
+
+        # 150s of no tick later the MQTT layer stamps the stall. dry_time is
+        # unchanged by definition — only the flag can break the key.
+        await _push(ws_mgr, [_tray()], {"dry_time": 720, "dry_countdown_stalled": True})
+
+        assert ws_mgr.send_printer_status.await_count == 2, (
+            "the stall flag did not reach the frontend — the card would keep "
+            "claiming an active 12h drying cycle that is not running"
+        )
+
+    @pytest.mark.asyncio
+    async def test_clearing_the_stall_broadcasts(self, ws_mgr):
+        """The recovery edge matters too: the firmware finally starts the cycle,
+        the countdown ticks, and the badge must go back to amber."""
+        await _push(ws_mgr, [_tray()], {"dry_time": 720, "dry_countdown_stalled": True})
+
+        await _push(ws_mgr, [_tray()], {"dry_time": 719})
+
+        assert ws_mgr.send_printer_status.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_a_steady_stalled_unit_does_not_reflood(self, ws_mgr):
+        """Once flagged, repeats of the flagged frame stay deduplicated — the
+        flag flips once per cycle, so widening the key costs no traffic."""
+        await _push(ws_mgr, [_tray()], {"dry_time": 720, "dry_countdown_stalled": True})
+        await _push(ws_mgr, [_tray()], {"dry_time": 720, "dry_countdown_stalled": True})
 
         assert ws_mgr.send_printer_status.await_count == 1

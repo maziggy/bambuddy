@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.routes.cloud import get_stored_token, resolve_api_key_cloud_owner
+from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
 from backend.app.api.routes.orca_cloud import (
     _ORCA_TYPE_TO_BAMBU,
     _build_authenticated_service as _build_orca_service,
@@ -43,6 +43,7 @@ from backend.app.services.bambu_cloud import (
     BambuCloudError,
     BambuCloudService,
 )
+from backend.app.services.bambu_cloud_credentials import get_stored_token
 from backend.app.services.orca_cloud import (
     OrcaCloudAuthError,
     OrcaCloudError,

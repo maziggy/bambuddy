@@ -1,0 +1,29 @@
+{
+ "_comment": "print_error texts Bambu Studio does not ship, kept from the ha-bambulab table Bambuddy used before #2728. scripts/generate_hms_catalog.py adds them only where Studio has no entry. Keys are the 8-hex print_error value.",
+ "error": {
+  "03008002": "First layer defects were detected by the Micro Lidar. Please check the quality of the printed model before continuing your print.",
+  "03008004": "Filament ran out. Please load new filament.",
+  "03008006": "The build plate marker was not detected. Please confirm the build plate is correctly positioned on the heatbed with all four corners aligned, and the marker is visible.",
+  "03008011": "Detected build plate is not the same as the Gcode file. Please adjust slicer settings or use the correct plate.",
+  "0300801B": "Nozzle temperature problem detected. Refer to Assistant to re-connect the hotend connector. POWER OFF the printer before this operation to avoid short circuits.",
+  "03008057": "The rotary attachment is disconnected. Please ensure it is properly installed and the cable is securely plugged in.",
+  "03008058": "The rotary attachment is detected. Please remove it before continuing.",
+  "050040A3": "AMS(or AMS lite) A communication is abnormal. Please reconnect the module cable or restart the printer.",
+  "050040A4": "The current firmware only supports 1 AMS Lite. Please remove all AMS units before reconnecting the supported AMS Lite device.",
+  "050040A5": "The current firmware only supports AMS/AMS 2 Pro/AMS HT, with a maximum of 4 units. Please remove all AMS units before reconnecting the supported one.",
+  "05008048": "The module on the toolhead is not calibrated. Please cancel the task to perform calibration or switch to a calibrated module.",
+  "050140A3": "AMS(or AMS lite) B communication is abnormal. Please reconnect the module cable or restart the printer.",
+  "050240A3": "AMS(or AMS lite) C communication is abnormal. Please reconnect the module cable or restart the printer.",
+  "050340A3": "AMS(or AMS lite) D communication is abnormal. Please reconnect the module cable or restart the printer.",
+  "058040A2": "AMS-HT A communication is abnormal. Please reconnect the module cable or restart the printer.",
+  "058140A2": "AMS-HT B communication is abnormal. Please reconnect the module cable or restart the printer.",
+  "058240A2": "AMS-HT C communication is abnormal. Please reconnect the module cable or restart the printer.",
+  "058340A2": "AMS-HT D communication is abnormal. Please reconnect the module cable or restart the printer.",
+  "058440A2": "AMS-HT E communication is abnormal. Please reconnect the module cable or restart the printer.",
+  "058540A2": "AMS-HT F communication is abnormal. Please reconnect the module cable or restart the printer.",
+  "058640A2": "AMS-HT G communication is abnormal. Please reconnect the module cable or restart the printer.",
+  "058740A2": "AMS-HT H communication is abnormal. Please reconnect the module cable or restart the printer.",
+  "0C008001": "First layer defects were detected. If the defects are acceptable, select 'Resume' to resume the print job.",
+  "0C00C003": "Possible defects were detected in the first layer."
+ }
+}

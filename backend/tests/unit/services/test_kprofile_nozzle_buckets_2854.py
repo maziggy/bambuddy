@@ -190,6 +190,105 @@ class TestSlotKResolver:
         assert resolve(3, 0, 0) is None
 
 
+class TestASlotWhoseExtruderClaimsNoProfile:
+    """#3044: an X2D showed K on its first AMS and nothing on its second.
+
+    The printer does not always file a profile per hotend. In the reporter's
+    capture the second AMS's slots pointed at the same table entries as the
+    first -- B1 read the K of A4, B3 the K of A1 -- and those entries carry one
+    extruder. Requiring the slot's own extruder to match therefore found
+    nothing for every slot on the right-hand AMS.
+
+    BambuStudio, filling the same card, does not scope by extruder at all:
+    ``AMSItem.cpp`` resolves through ``get_pa_k_n_value_by_cali_idx``, which
+    takes the first entry with a matching ``cali_idx``.
+    """
+
+    def test_a_shared_profile_resolves_on_the_other_extruder(self):
+        resolve = build_slot_k_resolver(
+            _state(
+                [_profile(3, "0.021000", "0.4", extruder=0)],
+                ams_extruder_map={"0": 0, "1": 1},
+            )
+        )
+
+        assert resolve(3, 0, 0) == pytest.approx(0.021)
+        assert resolve(3, 1, 0) == pytest.approx(0.021)
+
+    def test_the_slots_own_extruder_still_wins_over_the_fallback(self):
+        """The H2C case has to keep winning: the fallback is a last resort, not
+        a replacement. Index 3 exists on both hotends with different K."""
+        resolve = build_slot_k_resolver(
+            _state(
+                [_profile(3, "0.020000", "0.4", extruder=0), _profile(3, "0.018000", "0.4", extruder=1)],
+                ams_extruder_map={"0": 1, "1": 0},
+            )
+        )
+
+        assert resolve(3, 0, 0) == pytest.approx(0.018)
+        assert resolve(3, 1, 0) == pytest.approx(0.020)
+
+    def test_two_entries_agreeing_on_one_k_is_not_an_ambiguity(self):
+        """Both hotends calibrated to the same number says nothing is in doubt."""
+        resolve = build_slot_k_resolver(
+            _state(
+                [_profile(3, "0.021000", "0.4", extruder=0), _profile(3, "0.021000", "0.6", extruder=0)],
+                nozzles=("0.4", "0.6"),
+                ams_extruder_map={"0": 1},
+            )
+        )
+
+        assert resolve(3, 0, 0) == pytest.approx(0.021)
+
+    def test_the_fallback_still_prefers_the_nozzle_that_is_fitted(self):
+        """A table left behind by a swapped-out nozzle loses to the live one."""
+        resolve = build_slot_k_resolver(
+            _state(
+                [_profile(3, "0.020000", "0.4", extruder=0), _profile(3, "0.017000", "0.6", extruder=0)],
+                nozzles=("0.6",),
+                ams_extruder_map={"0": 1},
+            )
+        )
+
+        assert resolve(3, 0, 0) == pytest.approx(0.017)
+
+    def test_the_fallback_refuses_when_the_candidates_disagree(self):
+        """Blank still beats confidently printing one of two different numbers."""
+        resolve = build_slot_k_resolver(
+            _state(
+                [_profile(3, "0.020000", "0.4", extruder=0), _profile(3, "0.017000", "0.6", extruder=0)],
+                nozzles=("0.4", "0.6"),
+                ams_extruder_map={"0": 1},
+            )
+        )
+
+        assert resolve(3, 0, 0) is None
+
+    def test_a_hotend_with_its_own_profiles_does_not_borrow_the_others(self):
+        """The H2C guard, which the fallback must not reopen.
+
+        Index 16 is the left hotend's entry and index 15 the right's. A
+        right-hand slot bound to 16 means "entry 16 of the right nozzle's
+        table", which this printer does not have -- and the left's entry 16 is
+        a different profile, not a stand-in. Blank is the honest answer.
+        """
+        resolve = build_slot_k_resolver(
+            _state(
+                [_profile(16, "0.018000", "0.4", extruder=1), _profile(15, "0.020000", "0.4", extruder=0)],
+                ams_extruder_map={"0": 0, "1": 1},
+            )
+        )
+
+        assert resolve(16, 0, 0) is None
+        assert resolve(15, 0, 0) == pytest.approx(0.020)
+        assert resolve(16, 1, 0) == pytest.approx(0.018)
+
+    def test_an_index_no_profile_holds_is_still_nothing(self):
+        resolve = build_slot_k_resolver(_state([_profile(3, "0.020000", "0.4", extruder=0)], ams_extruder_map={"0": 1}))
+
+        assert resolve(9, 0, 0) is None
+
+
 class TestPrimeKProfileTable:
     """Nothing used to read the calibration table on connect.
 

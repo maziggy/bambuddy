@@ -14,7 +14,27 @@ import {
   type SpoolCatalogEntry,
 } from '../../api/client';
 import { getCurrencySymbol } from '../../utils/currency';
-import { getSwatchStyle } from '../../utils/colors';
+import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
+import { spoolSwatchStyle } from '../../components/spoolbuddy/spoolPaint';
+import { useColorCatalogVersion } from '../../hooks/useColorCatalogVersion';
+
+/**
+ * The colour name to show for a spool, which is not the one it stores.
+ *
+ * A Bambu tag often carries no colour name, or an internal code, and Spoolman
+ * has no field for one at all — so `color_name` is regularly empty or the
+ * subtype standing in for it, and the catalog resolves the swatch's hex
+ * instead (#3090, #857). The edit form below deliberately does NOT go through
+ * here: what it offers for editing has to be what is stored, or the user saves
+ * a name we made up as though they had typed it.
+ */
+function displayColorName(spool: {
+  color_name: string | null;
+  rgba: string | null;
+  color_name_is_synthesized?: boolean;
+}): string | null {
+  return resolveSpoolColorName(spool.color_name, spool.rgba, spool.color_name_is_synthesized);
+}
 import { FilamentSection } from '../../components/spool-form/FilamentSection';
 import { ColorSection } from '../../components/spool-form/ColorSection';
 import { AdditionalSection } from '../../components/spool-form/AdditionalSection';
@@ -40,6 +60,9 @@ const SIMPLE_COMMON_MATERIALS = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PA', 'PC',
 
 export function SpoolBuddyWriteTagPage() {
   const { t } = useTranslation();
+  // The search below resolves colour names through the catalog, so its memo
+  // has to recompute when the catalog finishes loading (#3090).
+  const colorCatalogVersion = useColorCatalogVersion();
   const { showToast } = useToast();
   const { sbState } = useOutletContext<SpoolBuddyOutletContext>();
 
@@ -95,6 +118,11 @@ export function SpoolBuddyWriteTagPage() {
 
   // Filter spools based on tab
   const filteredSpools = useMemo(() => {
+    // Named here so the memo actually depends on it: the search below resolves
+    // colour names through the catalog, which `displayColorName` reads from
+    // module state the linter cannot follow. Without this the list keeps the
+    // names it resolved before the catalog finished loading (#3090).
+    void colorCatalogVersion;
     let list: InventorySpool[];
     if (activeTab === 'existing') {
       list = spools.filter(s => !s.tag_uid && !s.archived_at);
@@ -108,6 +136,9 @@ export function SpoolBuddyWriteTagPage() {
       const q = searchQuery.toLowerCase();
       list = list.filter(s =>
         (s.material?.toLowerCase().includes(q)) ||
+        // Both: the resolved name is what the list shows, the stored one is
+        // what a user who knows Bambu's internal codes might type (#3090).
+        (displayColorName(s)?.toLowerCase().includes(q)) ||
         (s.color_name?.toLowerCase().includes(q)) ||
         (s.brand?.toLowerCase().includes(q)) ||
         (s.subtype?.toLowerCase().includes(q))
@@ -115,7 +146,7 @@ export function SpoolBuddyWriteTagPage() {
     }
 
     return list;
-  }, [spools, activeTab, searchQuery]);
+  }, [spools, activeTab, searchQuery, colorCatalogVersion]);
 
   // Listen for tag events
   const handleUnknownTag = useCallback((e: Event) => {
@@ -382,7 +413,7 @@ function SpoolListItem({ spool, selected, showTag, onClick }: {
           a checkerboard instead of collapsing to solid black (#1545). */}
       <div
         className="w-8 h-8 rounded-full shrink-0 border border-white/10"
-        style={spool.rgba ? getSwatchStyle(spool.rgba) : { backgroundColor: '#666' }}
+        style={spoolSwatchStyle(spool) ?? (spool.rgba ? getSwatchStyle(spool.rgba) : { backgroundColor: '#666' })}
       />
 
       {/* Info */}
@@ -394,7 +425,7 @@ function SpoolListItem({ spool, selected, showTag, onClick }: {
           <span className="text-[10px] font-mono text-zinc-500 shrink-0">#{spool.id}</span>
         </div>
         <div className="flex items-center gap-2 text-xs text-zinc-400">
-          {spool.color_name && <span>{spool.color_name}</span>}
+          {displayColorName(spool) && <span>{displayColorName(spool)}</span>}
           <span>{remaining}g / {spool.label_weight}g ({pct}%)</span>
         </div>
         {showTag && spool.tag_uid && (
@@ -439,6 +470,10 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
   const [viewMode, setViewMode] = useState<NewSpoolViewMode>('simple');
   const [activeSubTab, setActiveSubTab] = useState<NewSpoolSubTab>('filament');
   const [formData, setFormData] = useState<SpoolFormData>(defaultFormData);
+  // The empty spool weight picker is on screen in Spoolman mode too. Track
+  // whether the user reached for it, so an untouched form does not send its
+  // default (issue #2908).
+  const [coreWeightTouched, setCoreWeightTouched] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof SpoolFormData, string>>>({});
   const [quickAdd, setQuickAdd] = useState(false);
   const [quantity, setQuantity] = useState(1);
@@ -640,6 +675,9 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
 
   const updateField = <K extends keyof SpoolFormData>(key: K, value: SpoolFormData[K]) => {
     setFormData(prev => ({ ...prev, [key]: value }));
+    if (key === 'core_weight') {
+      setCoreWeightTouched(true);
+    }
     if (errors[key]) {
       setErrors(prev => ({ ...prev, [key]: undefined }));
     }
@@ -705,7 +743,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
     }
 
     const presetName = selectedPresetOption?.displayName || presetInputValue || null;
-    const payload = {
+    const payload: Record<string, unknown> = {
       material: formData.material,
       subtype: formData.subtype || null,
       brand: formData.brand || null,
@@ -714,8 +752,15 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
       extra_colors: formData.extra_colors || null,
       effect_type: formData.effect_type || null,
       label_weight: formData.label_weight,
-      core_weight: formData.core_weight,
-      core_weight_catalog_id: formData.core_weight_catalog_id,
+      // Only send a per-spool tare in Spoolman mode when the user actually set
+      // one here; otherwise let it keep inheriting from the filament type.
+      // The catalogue id has no field on the Spoolman side, so a catalogue
+      // selection does not round-trip there; only the weight does.
+      ...(spoolmanMode
+        ? coreWeightTouched
+          ? { core_weight: formData.core_weight }
+          : {}
+        : { core_weight: formData.core_weight, core_weight_catalog_id: formData.core_weight_catalog_id }),
       weight_used: formData.weight_used,
       slicer_filament: formData.slicer_filament || null,
       slicer_filament_name: presetName,
@@ -743,8 +788,8 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
         // internal bulk returns InventorySpool[]. Mirrors SpoolFormModal's
         // duck-typed handling so partial failures surface as a warning toast.
         const raw = spoolmanMode
-          ? await api.bulkCreateSpoolmanInventorySpools(payload, quantity)
-          : await api.bulkCreateSpools(payload, quantity);
+          ? await api.bulkCreateSpoolmanInventorySpools(payload as Parameters<typeof api.bulkCreateSpoolmanInventorySpools>[0], quantity)
+          : await api.bulkCreateSpools(payload as Parameters<typeof api.bulkCreateSpools>[0], quantity);
         const created: InventorySpool[] =
           spoolmanMode && raw && typeof raw === 'object' && 'created' in raw
             ? (raw as { created: InventorySpool[] }).created
@@ -755,8 +800,8 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
         if (created.length > 0) onCreated(created[0]);
       } else {
         const created = spoolmanMode
-          ? await api.createSpoolmanInventorySpool(payload)
-          : await api.createSpool(payload);
+          ? await api.createSpoolmanInventorySpool(payload as Parameters<typeof api.createSpoolmanInventorySpool>[0])
+          : await api.createSpool(payload as Parameters<typeof api.createSpool>[0]);
         await saveKProfiles(created.id);
         onCreated(created);
       }
@@ -800,12 +845,14 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
           <div className="flex flex-col items-center justify-center h-full p-6 text-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
             <div
               className="w-12 h-12 rounded-full mb-4 border border-white/10"
-              style={selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' }}
+              style={spoolSwatchStyle(selectedSpool, 'preview') ?? (selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' })}
             />
             <p className="text-white font-medium">
               {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
             </p>
-            {selectedSpool.color_name && <p className="text-zinc-400 text-sm">{selectedSpool.color_name}</p>}
+            {displayColorName(selectedSpool) && (
+              <p className="text-zinc-400 text-sm">{displayColorName(selectedSpool)}</p>
+            )}
             <p className="text-zinc-500 text-xs mt-1">{selectedSpool.label_weight}g</p>
             <p className="text-bambu-green text-sm mt-4">{t('spoolbuddy.writeTag.spoolCreated', 'Spool created! Ready to write.')}</p>
           </div>
@@ -991,12 +1038,14 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
         <div className="flex flex-col items-center justify-center p-4 text-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
           <div
             className="w-12 h-12 rounded-full mb-4 border border-white/10"
-            style={selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' }}
+            style={spoolSwatchStyle(selectedSpool, 'preview') ?? (selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' })}
           />
           <p className="text-white font-medium">
             {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
           </p>
-          {selectedSpool.color_name && <p className="text-zinc-400 text-sm">{selectedSpool.color_name}</p>}
+          {displayColorName(selectedSpool) && (
+            <p className="text-zinc-400 text-sm">{displayColorName(selectedSpool)}</p>
+          )}
           <p className="text-zinc-500 text-xs mt-1">{selectedSpool.label_weight}g</p>
           <p className="text-bambu-green text-sm mt-4">{t('spoolbuddy.writeTag.spoolCreated', 'Spool created! Ready to write.')}</p>
         </div>
@@ -1037,7 +1086,7 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
           <p className="text-zinc-400 text-sm">
             {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
             {selectedSpool.subtype ? ` ${selectedSpool.subtype}` : ''}
-            {selectedSpool.color_name ? ` - ${selectedSpool.color_name}` : ''}
+            {displayColorName(selectedSpool) ? ` - ${displayColorName(selectedSpool)}` : ''}
           </p>
         )}
       </div>
@@ -1110,7 +1159,9 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
   // Spool selected — show summary + write button. Use getSwatchStyle so
   // transparent (Clear) spools render a checkerboard rather than collapsing
   // to solid black (#1545).
-  const spoolColorStyle = selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' };
+  const spoolColorStyle =
+    spoolSwatchStyle(selectedSpool, 'preview') ??
+    (selectedSpool.rgba ? getSwatchStyle(selectedSpool.rgba) : { backgroundColor: '#666' });
 
   return (
     <div className="flex flex-col items-center text-center space-y-4 w-full">
@@ -1150,7 +1201,9 @@ function NfcStatusPanel({ writeStatus, writeMessage, selectedSpool, tagOnReader,
             <p className="text-white text-sm font-medium truncate">
               {selectedSpool.brand ? `${selectedSpool.brand} ` : ''}{selectedSpool.material}
             </p>
-            {selectedSpool.color_name && <p className="text-zinc-400 text-xs">{selectedSpool.color_name}</p>}
+            {displayColorName(selectedSpool) && (
+              <p className="text-zinc-400 text-xs">{displayColorName(selectedSpool)}</p>
+            )}
           </div>
         </div>
         <div className="text-xs text-zinc-500">{selectedSpool.label_weight}g</div>

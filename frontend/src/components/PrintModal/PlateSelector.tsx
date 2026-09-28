@@ -2,7 +2,7 @@ import { Layers, Check, AlertTriangle, Square, CheckSquare } from 'lucide-react'
 import { useTranslation } from 'react-i18next';
 import type { PlateSelectorProps } from './types';
 import { formatDuration } from '../../utils/date';
-import { withStreamToken } from '../../api/client';
+import { withMediaToken } from '../../api/client';
 import { getBedTypeInfo } from '../../utils/bedType';
 
 /**
@@ -90,7 +90,7 @@ export function PlateSelector({
               )}
               {plate.has_thumbnail && plate.thumbnail_url != null ? (
                 <img
-                  src={withStreamToken(plate.thumbnail_url)}
+                  src={withMediaToken(plate.thumbnail_url)}
                   alt={`Plate ${plate.index}`}
                   className="w-10 h-10 rounded object-cover bg-bambu-dark-tertiary"
                 />

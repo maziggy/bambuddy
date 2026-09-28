@@ -7,6 +7,7 @@ import zipfile
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
+from html import escape as html_escape
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -16,11 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core import database
 from backend.app.core.auth import (
-    RequireCameraStreamTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
     check_printer_access,
     current_api_key_if_present,
     probe_permissions_if_auth_enabled,
+    require_media_token_ownership,
     require_ownership_permission,
 )
 from backend.app.core.config import settings
@@ -39,7 +40,15 @@ from backend.app.services.archive import ArchiveService
 from backend.app.services.bambu_ftp import ftps_handshake_blocked, list_files_result_async
 from backend.app.services.design_settings import overrides_from_config
 from backend.app.services.filament_requirements import annotate_rack_groups
+from backend.app.services.print_confirmation import (
+    is_one_tap_request,
+    is_unattended_fetch,
+    retire_confirm_token,
+    stamp_verdict,
+)
 from backend.app.services.print_storage import (
+    REASON_FTP_TRANSFER_FAILED,
+    REASON_FTPS_COOLOFF,
     REASON_INTERNAL_HISTORY,
     REASON_INTERNAL_STORAGE,
     REASON_NO_EXTERNAL_STORAGE,
@@ -53,6 +62,7 @@ from backend.app.utils.threemf_tools import (
     extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
+    names_carry_gcode,
     select_plate_gcode_name,
 )
 
@@ -363,6 +373,14 @@ def archive_to_response(
         "cost": archive.cost,
         "photos": archive.photos,
         "failure_reason": archive.failure_reason,
+        # Post-print outcome confirmation (#1898). confirm_token stays
+        # server-side — it is a capability and never belongs in a response.
+        "user_verdict": archive.user_verdict,
+        "user_verdict_source": archive.user_verdict_source,
+        "user_verdict_at": archive.user_verdict_at,
+        # bool() because the column is nullable to match the migration; the
+        # response contract stays a strict bool either way.
+        "confirm_requested": bool(archive.confirm_requested),
         "quantity": archive.quantity,
         "energy_kwh": archive.energy_kwh,
         "energy_cost": archive.energy_cost,
@@ -536,8 +554,8 @@ async def no_3mf_warning(
     single-cause wording sent people the wrong way. Historically the only
     known cause was install step 4 ("Store sent files on external storage")
     being off in the slicer, so the banner said so unconditionally. On
-    H2-series and P2S that advice is actively wrong: the setting is already on
-    and turning it on again changes nothing, because the printer keeps the
+    H2-series, P2S and X2D that advice is actively wrong: the setting is already
+    on and turning it on again changes nothing, because the printer keeps the
     sliced file on internal storage that FTPS does not serve at all (#2780).
 
     ``reason`` is the slug from :mod:`print_storage` when we recorded one,
@@ -580,12 +598,41 @@ async def no_3mf_warning(
     # all, so an install with one H2C and three older printers still gets the
     # H2C explanation rather than the generic one.
     #
+    # REASON_FTPS_COOLOFF leads, and it is the only one of these that reports a
+    # fault rather than a choice: the printer's file service refused a TLS
+    # handshake, so the sweep never ran and nothing about where the file went
+    # was ever tested. The other three describe an install working as
+    # configured, and each ends in something the operator can change. This one
+    # ends in "your printer is doing something we cannot yet explain", which is
+    # both the more urgent thing to say and the thing that produces a useful
+    # report. It also has to outrank them because the banner dismisses one-shot
+    # into localStorage: a reason ranked below another is not merely deferred,
+    # it is never shown to that user again (#2780).
+    #
+    # Ranking it first cannot mask a permanent cause, because a cool-off row is
+    # not permanent. The retry #2957 schedules clears the row's markers when it
+    # lands, so a row still carrying this slug is one where the retry failed too
+    # -- a printer whose file service is still refusing, days later.
+    #
+    # REASON_FTP_TRANSFER_FAILED sits second for the same reasons and one more:
+    # it is the only slug here whose remedy is a Bambuddy setting rather than a
+    # slicer one or a card. It ranks below the cool-off because a printer that
+    # will not complete a TLS handshake is the worse fault of the two, and its
+    # own retry (#3063) clears the row the same way, so a row still carrying
+    # this slug is one where three later attempts also ran out of time.
+    #
     # REASON_INTERNAL_HISTORY comes last on purpose, even though it is the
     # narrowest: it is the one cause with no remedy at all -- the file was
     # already on the printer, in an area port 990 does not serve. The two ahead
     # of it each end in something the operator can do, so when an install has
     # both, the actionable explanation is the one worth the banner (#1820).
-    for candidate in (REASON_INTERNAL_STORAGE, REASON_NO_EXTERNAL_STORAGE, REASON_INTERNAL_HISTORY):
+    for candidate in (
+        REASON_FTPS_COOLOFF,
+        REASON_FTP_TRANSFER_FAILED,
+        REASON_INTERNAL_STORAGE,
+        REASON_NO_EXTERNAL_STORAGE,
+        REASON_INTERNAL_HISTORY,
+    ):
         if candidate in reasons:
             return {"has_fallback": True, "reason": candidate}
     return {"has_fallback": True, "reason": None}
@@ -1730,8 +1777,22 @@ async def update_archive(
     previous_filament_grams = archive.filament_used_grams
 
     update_payload = update_data.model_dump(exclude_unset=True)
+    # #1898: how the verdict arrived is recorded with it, never on its own.
+    verdict_source = update_payload.pop("user_verdict_source", None)
     for field, value in update_payload.items():
         setattr(archive, field, value)
+
+    # #1898: a landed verdict retires the one-tap capability token from the
+    # push notification — the links stop changing anything once someone
+    # decided, and report the recorded verdict instead. Clearing the verdict
+    # drops the provenance but leaves the token spent: it was used.
+    if "user_verdict" in update_payload:
+        if update_payload["user_verdict"] is None:
+            archive.user_verdict_source = None
+            archive.user_verdict_at = None
+        else:
+            stamp_verdict(archive, verdict_source or "api")
+            retire_confirm_token(archive)
 
     # #1444: Mirror per-run classification fields to the most recent
     # PrintLogEntry for this archive. PrintLogEntry.failure_reason is captured
@@ -1748,7 +1809,7 @@ async def update_archive(
     # ENTRY's grams, not the archive's, so correcting only the archive would fix
     # the card and leave every aggregate reading the old figure -- or, for a
     # print that archived without its 3MF, no figure at all.
-    mirror_fields = {"failure_reason", "status", "filament_used_grams"}
+    mirror_fields = {"failure_reason", "status", "filament_used_grams", "user_verdict"}
     to_mirror = {k: v for k, v in update_payload.items() if k in mirror_fields}
     if to_mirror:
         from backend.app.models.print_log import PrintLogEntry
@@ -2290,13 +2351,15 @@ async def download_archive_for_slicer(
 ):
     """Download 3MF file using a slicer download token.
 
-    Token-authenticated (no auth headers needed). The token is short-lived
-    and single-use, created by POST /{archive_id}/slicer-token.
+    Token-authenticated (no auth headers needed). The token is short-lived and
+    archive-bound, created by POST /{archive_id}/slicer-token, and redeemable
+    for the rest of its TTL rather than exactly once -- the slicer is a separate
+    process that may fetch the URL more than once (#3029).
     Filename is at the end of the URL so slicers can detect the file format.
     """
     from backend.app.core.auth import verify_slicer_download_token
 
-    if not await verify_slicer_download_token(token, "archive", archive_id):
+    if not await verify_slicer_download_token(token, "archive", archive_id, single_use=False):
         raise HTTPException(403, "Invalid or expired download token")
 
     service = ArchiveService(db)
@@ -2319,15 +2382,22 @@ async def download_archive_for_slicer(
 async def get_thumbnail(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: None = RequireCameraStreamTokenIfAuthEnabled,
+    auth_result: tuple[User | None, bool] = Depends(
+        require_media_token_ownership(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Get the thumbnail image.
 
-    Requires a stream token query param (?token=xxx) when auth is enabled.
+    Requires a media token query param (?token=xxx) when auth is enabled, and
+    returns 404 for an archive the caller may not read (#3025).
     """
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive or not archive.thumbnail_path:
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
+    if not archive.thumbnail_path:
         raise HTTPException(404, "Thumbnail not found")
 
     thumb_path = settings.base_dir / archive.thumbnail_path
@@ -2548,15 +2618,22 @@ async def download_archive_media_with_token(
 async def get_timelapse(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: None = RequireCameraStreamTokenIfAuthEnabled,
+    auth_result: tuple[User | None, bool] = Depends(
+        require_media_token_ownership(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Get the timelapse video.
 
-    Requires a stream token query param (?token=xxx) when auth is enabled.
+    Requires a media token query param (?token=xxx) when auth is enabled, and
+    returns 404 for an archive the caller may not read (#3025).
     """
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive or not archive.timelapse_path:
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
+    if not archive.timelapse_path:
         raise HTTPException(404, "Timelapse not found")
 
     timelapse_path = settings.base_dir / archive.timelapse_path
@@ -3264,16 +3341,21 @@ async def get_photo(
     archive_id: int,
     filename: str,
     db: AsyncSession = Depends(get_db),
-    _: None = RequireCameraStreamTokenIfAuthEnabled,
+    auth_result: tuple[User | None, bool] = Depends(
+        require_media_token_ownership(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Get a specific photo.
 
-    Requires a stream token query param (?token=xxx) when auth is enabled.
+    Requires a media token query param (?token=xxx) when auth is enabled, and
+    returns 404 for an archive the caller may not read (#3025).
     """
+    user, can_read_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_read_all)
 
     # Membership check first — UUID-generated names on upload mean any URL
     # filename that doesn't appear here is by definition not a real photo.
@@ -3342,6 +3424,246 @@ async def delete_photo(
 
 
 # ============================================
+# Post-print outcome confirmation (#1898)
+# ============================================
+
+# English-only on purpose: this page is rendered by the backend for a phone
+# browser that carries no session and therefore no language preference.
+_VERDICT_LABELS = {"good": "Good part", "reject": "Rejected"}
+_VERDICT_SOURCE_PHRASES = {
+    "dialog": "in the app",
+    "link": "with a one-tap link",
+    "plate_clear": "automatically when the print plate was cleared",
+    "printer_card": "from the printer card",
+    "api": "through the API",
+    "reaction": "with a reaction in chat",
+}
+
+
+def _confirm_page(glyph: str, heading: str, body: str) -> str:
+    """The small HTML page every one-tap outcome link renders."""
+    return (
+        "<!doctype html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>Bambuddy</title></head>"
+        "<body style='font-family: system-ui, sans-serif; background:#1a1d21; color:#fff; display:flex;"
+        " align-items:center; justify-content:center; min-height:90vh; margin:0'>"
+        f"<div style='text-align:center; padding:0 1.5rem; max-width:32rem'>"
+        f"<div style='font-size:3rem'>{glyph}</div><h2>{heading}</h2>{body}</div></body></html>"
+    )
+
+
+async def _render_already_answered_page(db: AsyncSession, archive: PrintArchive) -> str:
+    """Explain a spent one-tap link instead of calling it invalid.
+
+    The plate-clear default, the app and the other link all answer the same
+    prompt, so the button in a push notification is routinely tapped after the
+    question is settled. Report the verdict on file, when and how it landed,
+    and where to change it.
+    """
+    from backend.app.api.routes.settings import get_external_base_url
+
+    name = html_escape(archive.print_name or archive.filename or "")
+    # The verdict's own timestamp, not the moment the token was spent: a
+    # verdict changed later in the app would otherwise be dated by the older
+    # event. Pre-#1898 rows have neither, and then the page omits the date.
+    used_at = archive.user_verdict_at or archive.confirm_token_used_at
+    if used_at is not None and used_at.tzinfo is not None:
+        used_at = used_at.astimezone(timezone.utc)
+    when = used_at.strftime("%Y-%m-%d %H:%M UTC") if used_at else None
+    how = _VERDICT_SOURCE_PHRASES.get(archive.user_verdict_source or "")
+    label = _VERDICT_LABELS.get(archive.user_verdict or "")
+
+    if label:
+        recorded = f"Recorded as <strong>{label}</strong>"
+        if how:
+            recorded += f" {how}"
+        if when:
+            recorded += f" on {when}"
+        recorded += "."
+    else:
+        # The verdict was cleared again in the app; the link stays spent.
+        recorded = "This prompt was already answered and the verdict has since been cleared."
+
+    base = await get_external_base_url(db)
+    link = html_escape(f"{base}/archives?confirm={archive.id}", quote=True)
+    glyph = "&#10003;" if archive.user_verdict == "good" else "&#10007;" if archive.user_verdict else "&#8505;"
+    return _confirm_page(
+        glyph,
+        "Already answered",
+        f"<p style='color:#9ca3af'>{name}</p>"
+        f"<p style='color:#9ca3af'>{recorded}</p>"
+        f"<p><a style='color:#00ae42' href='{link}'>Open this print in Bambuddy</a> to change it.</p>",
+    )
+
+
+def _render_confirm_prompt_page(request: Request, archive: PrintArchive, verdict: str) -> str:
+    """The page a one-tap verdict link opens. It has recorded nothing yet.
+
+    GET is where link unfurlers, mail-security scanners and browser prefetchers
+    arrive, uninvited and within seconds of the message being sent, so GET
+    writes nothing at all -- the verdict is recorded by the form below, over
+    POST, which none of them issue.
+
+    The form submits itself only for a page opened from a notification button,
+    which is what keeps the operator at one tap. The marker for that
+    (``?tap=1``) is put on the Telegram inline keyboard's URLs and nowhere else
+    -- never on a URL that travels in message text -- so a mail-security
+    sandbox that renders HTML and runs JavaScript cannot press the button for
+    the operator: it only ever sees the unmarked URL out of the body. The
+    User-Agent heuristic still runs on top of that, but it is no longer the
+    only thing between a scanner and the write; it cannot be, because such a
+    sandbox sends an ordinary Chrome string.
+
+    Every other arrival -- an unmarked link somebody typed or mailed, a browser
+    with JavaScript off -- gets the same page and presses the button.
+    """
+    name = html_escape(archive.print_name or archive.filename or "")
+    label = _VERDICT_LABELS.get(verdict, verdict)
+    # No action attribute: the form posts back to the URL the page was loaded
+    # from, so it works behind a reverse proxy and on a host external_url does
+    # not name.
+    form = (
+        "<form method='post' id='confirm-form'>"
+        "<button type='submit' style='font: inherit; font-size:1.1rem; padding:0.9rem 2rem;"
+        " border:0; border-radius:0.5rem; background:#00ae42; color:#fff'>Yes, record it</button>"
+        "</form>"
+    )
+    # The SPA's CSP allows inline scripts only with the per-request nonce the
+    # security-headers middleware mints (main.py). Without one -- no middleware,
+    # an unmarked URL, or an unattended-looking caller -- the page simply waits
+    # for the button.
+    nonce = getattr(request.state, "csp_nonce", None)
+    script = ""
+    if nonce and is_one_tap_request(request.query_params) and not is_unattended_fetch(request.method, request.headers):
+        script = (
+            f"<script nonce='{html_escape(nonce, quote=True)}'>"
+            "document.getElementById('confirm-form').submit();</script>"
+        )
+    return _confirm_page(
+        "&#63;",
+        "Confirm this outcome",
+        f"<p style='color:#9ca3af'>{name}</p>"
+        f"<p style='color:#9ca3af'>Record this print as <strong>{label}</strong>?</p>"
+        f"{form}{script}",
+    )
+
+
+def _confirm_response(html: str):
+    """The one-tap pages, never cached.
+
+    A proxy holding on to "Saved" or to the prompt would answer a later tap
+    from its cache, and the prompt page is a capability URL either way.
+    """
+    from fastapi.responses import HTMLResponse
+
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+async def _load_confirmable_archive(db: AsyncSession, token: str, verdict: str) -> PrintArchive:
+    """Resolve a one-tap capability token, or raise the route's 400/404."""
+    if verdict not in ("good", "reject"):
+        raise HTTPException(400, "Verdict must be 'good' or 'reject'")
+
+    result = await db.execute(
+        select(PrintArchive).where(PrintArchive.confirm_token == token, PrintArchive.confirm_token.isnot(None))
+    )
+    archive = result.scalar_one_or_none()
+    if not archive:
+        raise HTTPException(404, "Confirmation link is invalid or was already used")
+    return archive
+
+
+@router.get("/confirm/{token}/{verdict}")
+async def confirm_outcome_page(
+    request: Request,
+    token: str,
+    verdict: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Open a one-tap verdict link. Reads only — the verdict is recorded by POST.
+
+    This used to be the route that recorded, and that was the defect: a GET
+    that changes state is answered by everything that walks a URL. Telegram
+    and Slack fetch the links in a message body to build a preview card, mail
+    gateways detonate them before delivery, browsers prefetch them — any one
+    of those spent the single-use token and settled the outcome before the
+    operator had read the question, always in the "good" direction because
+    good_url came first. Suppressing previews per channel does not cover the
+    proxies and scanners in between; only removing the write from GET does.
+
+    So GET now hands back the prompt page and nothing else. The page's form
+    POSTs to this same URL, and :func:`confirm_outcome_by_token` records it.
+    The human cost is zero for the path the feature is built around: a URL
+    opened from a notification button carries ``?tap=1`` and the page submits
+    itself, so that tap is still the only tap. Nothing else gets that script,
+    including a scanner that runs JavaScript -- the marker is on the buttons,
+    not in the message text a scanner reads.
+    """
+    archive = await _load_confirmable_archive(db, token, verdict)
+
+    if archive.confirm_token_used_at is not None:
+        # Answered already — by hand, by the other link, by the plate-clear
+        # default or by a reaction. Report what is on file and change nothing.
+        return _confirm_response(await _render_already_answered_page(db, archive))
+
+    return _confirm_response(_render_confirm_prompt_page(request, archive, verdict))
+
+
+@router.post("/confirm/{token}/{verdict}")
+async def confirm_outcome_by_token(
+    token: str,
+    verdict: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Record a print-outcome verdict via the capability token from a push notification.
+
+    Deliberately unauthenticated: the token IS the credential. It is a 256-bit
+    per-archive capability, minted when the confirmation prompt fires, and it
+    only ever grants writing good/reject on that one archive, exactly once.
+    "Exactly once" is enforced by ``confirm_token_used_at`` rather than by
+    dropping the token value, so a link for a print that was already answered
+    can be recognised and explained instead of looking broken.
+
+    POST is what keeps the capability the operator's: unfurlers, scanners and
+    prefetchers issue GET, and the GET route above writes nothing. The two
+    callers that reach here are the prompt page's form and the ntfy action
+    button, which performs its own request from the phone and is configured
+    with ``method=POST``. Returns a small HTML page for the phone browser.
+    """
+    archive = await _load_confirmable_archive(db, token, verdict)
+
+    if archive.confirm_token_used_at is not None:
+        return _confirm_response(await _render_already_answered_page(db, archive))
+
+    archive.user_verdict = verdict
+    stamp_verdict(archive, "link")
+    retire_confirm_token(archive)
+
+    # Same mirror as the PATCH route (#1444): verdict-aware statistics read
+    # print_log_entries, so the latest run must carry the verdict too.
+    from backend.app.models.print_log import PrintLogEntry
+
+    latest_entry = await db.scalar(
+        select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id).order_by(PrintLogEntry.id.desc()).limit(1)
+    )
+    if latest_entry is not None:
+        latest_entry.user_verdict = verdict
+
+    await db.commit()
+
+    label = "Good part" if verdict == "good" else "Rejected"
+    name = archive.print_name or archive.filename
+    return _confirm_response(
+        _confirm_page(
+            "&#10003;" if verdict == "good" else "&#10007;",
+            label,
+            f"<p style='color:#9ca3af'>{html_escape(name)}</p>"
+            "<p style='color:#9ca3af'>Saved &mdash; you can close this page.</p>",
+        )
+    )
+
+
+# ============================================
 # QR Code Endpoint
 # ============================================
 
@@ -3352,12 +3674,19 @@ async def get_qrcode(
     request: Request,
     size: int = 200,
     db: AsyncSession = Depends(get_db),
-    _: None = RequireCameraStreamTokenIfAuthEnabled,
+    auth_result: tuple[User | None, bool] = Depends(
+        require_media_token_ownership(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Generate a QR code that links to this archive.
 
-    Requires a stream token query param (?token=xxx) when auth is enabled.
+    Requires a media token query param (?token=xxx) when auth is enabled, and
+    returns 404 for an archive the caller may not read (#3025).
     """
+    user, can_read_all = auth_result
     try:
         import qrcode
         from PIL import Image as PILImage
@@ -3365,9 +3694,7 @@ async def get_qrcode(
         raise HTTPException(500, "QR code generation not available - qrcode package not installed")
 
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_read_all)
 
     # Build URL to archive download
     base_url = str(request.base_url).rstrip("/")
@@ -3522,8 +3849,10 @@ async def get_archive_capabilities(
         with zipfile.ZipFile(file_path, "r") as zf:
             names = zf.namelist()
 
-            # Check for G-code in the sliced file
-            has_gcode = any(n.startswith("Metadata/") and n.endswith(".gcode") for n in names)
+            # Check for G-code in the sliced file. Shared with the library's
+            # file-type classification so the card's badge and what the File
+            # Manager makes of the same file cannot disagree (#2993).
+            has_gcode = names_carry_gcode(names)
 
             # Check for 3D model in sliced file (fallback if no source)
             if not has_model:
@@ -3691,19 +4020,24 @@ async def get_gcode(
 async def get_plate_preview(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: None = RequireCameraStreamTokenIfAuthEnabled,
+    auth_result: tuple[User | None, bool] = Depends(
+        require_media_token_ownership(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Get the plate preview image from the 3MF file.
 
     Returns the slicer-generated plate thumbnail which shows the model
     with correct colors and positioning.
 
-    Requires a stream token query param (?token=xxx) when auth is enabled.
+    Requires a media token query param (?token=xxx) when auth is enabled, and
+    returns 404 for an archive the caller may not read (#3025).
     """
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
 
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():
@@ -4224,16 +4558,21 @@ async def get_plate_thumbnail(
     archive_id: int,
     plate_index: int,
     db: AsyncSession = Depends(get_db),
-    _: None = RequireCameraStreamTokenIfAuthEnabled,
+    auth_result: tuple[User | None, bool] = Depends(
+        require_media_token_ownership(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Get the thumbnail image for a specific plate.
 
-    Requires a stream token query param (?token=xxx) when auth is enabled.
+    Requires a media token query param (?token=xxx) when auth is enabled, and
+    returns 404 for an archive the caller may not read (#3025).
     """
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
 
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():
@@ -4675,18 +5014,23 @@ async def get_project_image(
     archive_id: int,
     image_path: str,
     db: AsyncSession = Depends(get_db),
-    _: None = RequireCameraStreamTokenIfAuthEnabled,
+    auth_result: tuple[User | None, bool] = Depends(
+        require_media_token_ownership(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Get an image from the 3MF project page.
 
-    Requires a stream token query param (?token=xxx) when auth is enabled.
+    Requires a media token query param (?token=xxx) when auth is enabled, and
+    returns 404 for an archive the caller may not read (#3025).
     """
+    user, can_read_all = auth_result
     from backend.app.services.archive import ProjectPageParser
 
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
 
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():
@@ -4907,12 +5251,13 @@ async def download_source_3mf_for_slicer_with_token(
 ):
     """Download source 3MF using a slicer download token.
 
-    Token-authenticated (no auth headers needed). The token is short-lived
-    and single-use, created by POST /{archive_id}/source-slicer-token.
+    Token-authenticated (no auth headers needed). The token is short-lived and
+    archive-bound, created by POST /{archive_id}/source-slicer-token, and
+    redeemable for the rest of its TTL rather than exactly once (#3029).
     """
     from backend.app.core.auth import verify_slicer_download_token
 
-    if not await verify_slicer_download_token(token, "source", archive_id):
+    if not await verify_slicer_download_token(token, "source", archive_id, single_use=False):
         raise HTTPException(403, "Invalid or expired download token")
 
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))

@@ -180,6 +180,7 @@ class TestSchemaValidatesFromOrmRow:
         # Non-null so `test_every_declared_field_is_carried` can assert that
         # nothing falls back to its default.
         row.failure_reason = "warping"
+        row.user_verdict = "good"
         row.thumbnail_path = "archives/1/x/thumbnail.png"
         row.created_by_id = 2
         row.created_by_username = "martin"

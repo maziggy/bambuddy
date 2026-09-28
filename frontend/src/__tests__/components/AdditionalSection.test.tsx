@@ -21,25 +21,9 @@ const baseProps = {
 };
 
 describe('AdditionalSection', () => {
-  it('renders SpoolWeightPicker when spoolmanMode is false', () => {
-    render(<AdditionalSection {...baseProps} spoolmanMode={false} />);
-    // SpoolWeightPicker renders the 'inventory.coreWeight' label
-    expect(screen.getByText('inventory.coreWeight')).toBeTruthy();
-    // Info notice must NOT be present
-    expect(screen.queryByText('inventory.spoolWeightManagedBySpoolman')).toBeNull();
-  });
-
-  it('hides SpoolWeightPicker and shows info notice when spoolmanMode is true', () => {
-    render(<AdditionalSection {...baseProps} spoolmanMode={true} />);
-    // Info notice must appear
-    expect(screen.getByText('inventory.spoolWeightManagedBySpoolman')).toBeTruthy();
-    // SpoolWeightPicker must NOT be rendered
-    expect(screen.queryByText('inventory.coreWeight')).toBeNull();
-  });
-
-  it('defaults to spoolmanMode=false when prop is omitted', () => {
+  it('renders SpoolWeightPicker', () => {
     render(<AdditionalSection {...baseProps} />);
-    // SpoolWeightPicker present by default
+    // SpoolWeightPicker renders the 'inventory.coreWeight' label
     expect(screen.getByText('inventory.coreWeight')).toBeTruthy();
   });
 });

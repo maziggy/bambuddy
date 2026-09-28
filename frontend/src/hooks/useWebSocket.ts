@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '../contexts/ToastContext';
 import { useTranslation } from 'react-i18next';
 import { api, ApiError } from '../api/client';
-import { inventoryLocationsQueryKey } from '../utils/inventoryQueries';
+import { inventoryLocationsQueryKey, inventorySuppliersQueryKey } from '../utils/inventoryQueries';
 
 // The only auth-failure close code /api/v1/ws emits (websocket.py
 // _WS_CLOSE_UNAUTHORIZED). A 4401 means the ws-token was missing / invalid /
@@ -288,6 +288,20 @@ export function useWebSocket() {
     }, 3000);
   }, [queryClient]);
 
+  // Slot changes skip the cascade debounce above. That debounce exists for
+  // print completion, where one event fans out across half the app; a spool
+  // swap touches one slot and the user is standing at the printer looking at
+  // the card. Waiting 3s of quiet and then staggering the keys 500ms apart put
+  // several seconds of visibly wrong data on screen for no benefit, and the
+  // timer restarts on every further event, so a busy moment could defer it
+  // indefinitely. React Query coalesces repeat invalidations of one key, so a
+  // Spoolman sync reporting a dozen slots at once still costs three refetches.
+  const invalidateSlotQueries = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
+    queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
+    queryClient.invalidateQueries({ queryKey: ['slotPresets'] });
+  }, [queryClient]);
+
   const handleMessage = useCallback((message: WebSocketMessage) => {
     switch (message.type) {
       case 'printer_status':
@@ -339,6 +353,17 @@ export function useWebSocket() {
         debouncedInvalidate('archiveStats');
         break;
 
+      case 'print_confirm_request': {
+        // #1898: a completed print asked for its outcome verdict. Handed to
+        // the globally mounted ConfirmOutcomeDialog in Layout via the same
+        // CustomEvent relay plate_not_empty uses.
+        const detail = (message as unknown as { data?: { archive_id?: number; print_name?: string } }).data;
+        if (detail?.archive_id != null) {
+          window.dispatchEvent(new CustomEvent('print-confirm-request', { detail }));
+        }
+        break;
+      }
+
       case 'kill_switch_triggered': {
         const printer = message.printer_name || `Printer ${message.printer_id ?? '?'}`;
         const filename = message.filename || t('common.unknown');
@@ -383,12 +408,14 @@ export function useWebSocket() {
         debouncedInvalidate('inventory-spools');
         debouncedInvalidate('spoolman-inventory-spools');
         debouncedInvalidate(inventoryLocationsQueryKey[0]);
+        debouncedInvalidate(inventorySuppliersQueryKey[0]);
         break;
 
       case 'spool_assignment_changed':
-        // Spool assigned/unassigned - refresh assignment data across all tabs
-        debouncedInvalidate('spool-assignments');
-        debouncedInvalidate('slotPresets');
+        // Spool assigned/unassigned - refresh assignment data across all tabs.
+        // Both inventory modes: the Spoolman AMS sync raises this event too, and
+        // its slot rows live under their own query keys.
+        invalidateSlotQueries();
         break;
 
       case 'spool_assignment_verified': {
@@ -417,9 +444,15 @@ export function useWebSocket() {
       }
 
       case 'spool_auto_assigned':
-        // RFID tag matched - refresh inventory and assignment data
+        // RFID tag matched - refresh inventory and assignment data.
+        // slotPresets is not optional here: auto-assigning rewrites the slot's
+        // slot_preset_mappings row, and the AMS slot card reads that row ahead
+        // of the live tray_info_idx. Leave it cached and swapping a spool keeps
+        // the *previous* spool's preset name on the card -- the rest of the
+        // card updates off the status push, so it reads as one wrong line
+        // rather than a stale card. Only the manual assign path invalidated it.
         debouncedInvalidate('inventory-spools');
-        debouncedInvalidate('spool-assignments');
+        invalidateSlotQueries();
         break;
 
       case 'spool_usage_logged':
@@ -526,7 +559,7 @@ export function useWebSocket() {
         }
         break;
     }
-  }, [queryClient, debouncedInvalidate, throttledPrinterStatusUpdate, showToast, t]);
+  }, [queryClient, debouncedInvalidate, invalidateSlotQueries, throttledPrinterStatusUpdate, showToast, t]);
 
   // Keep the ref updated with latest handleMessage
   useEffect(() => {

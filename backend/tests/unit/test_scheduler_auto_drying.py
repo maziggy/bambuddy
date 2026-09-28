@@ -8,6 +8,7 @@ Covers:
 - Sync drying state after restart
 """
 
+import re
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -16,6 +17,7 @@ import pytest
 from backend.app.services.print_scheduler import (
     AUTO_DRY_MAX_UNPRODUCTIVE_CYCLES,
     AUTO_DRY_REARM_COOLDOWN_SECONDS,
+    AUTO_DRY_SUSTAINED_GAP_FLOOR_SECONDS,
     PrintScheduler,
 )
 
@@ -99,6 +101,143 @@ class TestConservativeDryingParams:
         custom = {"PLA": {"n3f": 50, "n3s": 50, "n3f_hours": 6, "n3s_hours": 6}}
         result = scheduler._get_conservative_drying_params(trays, "n3f", custom)
         assert result == (50, 6, "PLA")
+
+
+class TestCompositesResolveToTheirBaseMaterial:
+    """#3067: a composite spool was skipped by auto-drying entirely.
+
+    The preset key came from ``tray_type.split()[0].upper()``, which splits on
+    spaces only -- so "PA6-CF" stayed "PA6-CF", found no row in an 8-key table,
+    and the tray contributed nothing. Every caller reads "no row" as "nothing to
+    dry here", so the AMS was passed over on every scheduler pass, silently.
+
+    It was never only PA. Of the 41 types a printer can report, 33 had no row
+    under that rule and 20 of them have a base material sitting right there:
+    every -CF, -GF and -AERO variant of PLA, PETG, ABS, ASA, PC and PA.
+
+    The reporter could still dry the same spool by hand, because the drying
+    popover has resolved composites since #2774 -- these tests pin the two ends
+    to the same answer.
+    """
+
+    @pytest.fixture
+    def scheduler(self):
+        return PrintScheduler()
+
+    @pytest.mark.parametrize(
+        ("tray_type", "expected_key"),
+        [
+            # The reported spool, and the rest of the polyamide spellings. Bambu
+            # labels nylon "PA" and spells its own composites out, so none of
+            # these match a PA row without the alias map.
+            ("PA6-CF", "PA"),
+            ("PA6-GF", "PA"),
+            ("PA12-CF", "PA"),
+            ("PAHT-CF", "PA"),
+            ("PA-CF", "PA"),
+            ("Nylon", "PA"),
+            # Polyphthalamide is a distinct polymer, not a nylon grade, so this
+            # one is a judgement: an aromatic polyamide that takes up moisture
+            # the same way, dried on the hottest row the table has.
+            ("PPA-CF", "PA"),
+            ("PPA-GF", "PA"),
+            # ...and the variants of everything else, which were equally skipped.
+            ("PLA-CF", "PLA"),
+            ("PLA-GF", "PLA"),
+            ("PLA-AERO", "PLA"),
+            ("PLA-S", "PLA"),
+            ("PETG-CF", "PETG"),
+            ("ABS-GF", "ABS"),
+            ("ASA-CF", "ASA"),
+            ("ASA-AERO", "ASA"),
+            ("PC-CF", "PC"),
+            # Already worked, and must keep working.
+            ("PLA", "PLA"),
+            ("PLA Basic", "PLA"),
+            ("TPU for AMS", "TPU"),
+        ],
+    )
+    def test_the_tray_reaches_its_base_materials_preset(self, scheduler, tray_type, expected_key):
+        result = scheduler._get_conservative_drying_params(
+            [{"tray_type": tray_type}], "n3s", PrintScheduler.DEFAULT_DRYING_PRESETS
+        )
+        assert result is not None, f"{tray_type} is still skipped by auto-drying"
+        assert result[2] == expected_key
+        assert result[0] == PrintScheduler.DEFAULT_DRYING_PRESETS[expected_key]["n3s"]
+
+    def test_the_reported_spool_gets_nylons_temperature(self, scheduler):
+        """The whole point of resolving it rather than defaulting: PA6-CF wants
+        PA's 85C on an AMS-HT. Landing on PLA's 45 would run a cycle that dries
+        nothing, which is worse than the skip it replaces -- it looks like it
+        worked."""
+        result = scheduler._get_conservative_drying_params(
+            [{"tray_type": "PA6-CF"}], "n3s", PrintScheduler.DEFAULT_DRYING_PRESETS
+        )
+        assert result == (85, 12, "PA")
+
+    @pytest.mark.parametrize("tray_type", ["PPS-CF", "PET-CF", "PEEK", "PP", "PE", "wildly unknown"])
+    def test_a_material_with_no_base_row_is_still_skipped(self, scheduler, tray_type):
+        """Nothing here invents a drying profile. A material with no row and no
+        alias keeps the behaviour it has today rather than being dried at a
+        number nobody chose.
+
+        This is deliberately where the backend parts company with the drying
+        popover, which falls back to PLA because a dropdown has to show
+        something. A scheduler does not.
+        """
+        result = scheduler._get_conservative_drying_params(
+            [{"tray_type": tray_type}], "n3s", PrintScheduler.DEFAULT_DRYING_PRESETS
+        )
+        assert result is None
+
+    def test_a_user_row_for_the_exact_type_wins_over_the_base(self, scheduler):
+        """Someone who has added PA6-CF to their own table meant it."""
+        custom = {
+            **PrintScheduler.DEFAULT_DRYING_PRESETS,
+            "PA6-CF": {"n3f": 70, "n3s": 90, "n3f_hours": 10, "n3s_hours": 10},
+        }
+        result = scheduler._get_conservative_drying_params([{"tray_type": "PA6-CF"}], "n3s", custom)
+        assert result == (90, 10, "PA6-CF")
+
+    def test_a_mixed_load_still_takes_the_coolest_row(self, scheduler):
+        """Resolving more types must not disturb the conservative choice: a
+        PA6-CF spool sharing the unit with PLA still gets PLA's 45C, because
+        85 would deform the PLA."""
+        result = scheduler._get_conservative_drying_params(
+            [{"tray_type": "PA6-CF"}, {"tray_type": "PLA"}], "n3s", PrintScheduler.DEFAULT_DRYING_PRESETS
+        )
+        assert result[0] == 45
+
+    def test_an_empty_preset_row_still_means_skip(self, scheduler):
+        """The table is user-editable JSON and nothing validates a row, so one
+        can be present and empty. Resolving the key is not the same as having a
+        preset: the temp/hours reads each fall back to 55C/12h, which would dry
+        a PLA spool at 55 degrees because somebody left a row blank."""
+        custom = {**PrintScheduler.DEFAULT_DRYING_PRESETS, "PLA": {}}
+        assert scheduler._get_conservative_drying_params([{"tray_type": "PLA"}], "n3s", custom) is None
+        # And it does not quietly fall through to some other row either.
+        assert scheduler._get_conservative_drying_params([{"tray_type": "PLA-CF"}], "n3s", custom) is None
+
+    def test_a_zero_valued_row_is_a_row(self, scheduler):
+        """The resolver tests key presence, not truthiness. It is shared with the
+        chamber-preheat map, where 0 is the correct target for PLA, PETG, TPU and
+        PVA -- reading those as "no row" would send every one of them to the
+        catch-all."""
+        targets = PrintScheduler._bundled_preheat_targets()
+        assert targets["PLA"] == 0
+        assert PrintScheduler._resolve_filament_key("PLA", targets) == "PLA"
+        assert scheduler._target_for_tray_type("PLA", targets) == 0
+        assert scheduler._target_for_tray_type("PLA-CF", targets) == 0
+
+    def test_a_whitespace_only_tray_type_is_not_a_material(self, scheduler):
+        """Truthy, and splits to nothing. The old normaliser indexed the split
+        after testing the string, so this raised IndexError rather than reading
+        as an empty tray."""
+        assert PrintScheduler._normalize_filament_type("   ") == ""
+        result = scheduler._get_conservative_drying_params(
+            [{"tray_type": "   "}], "n3s", PrintScheduler.DEFAULT_DRYING_PRESETS
+        )
+        assert result is None
 
 
 class TestDryingPresets:
@@ -1068,6 +1207,26 @@ class TestResolveHumidityThreshold:
         )
         assert result == 50
 
+    def test_a_composite_takes_its_base_materials_threshold(self):
+        """Same lookup, same gap (#3067): a PA6-CF spool read as an unknown type
+        and took the default, so the override the user set for nylon -- the
+        material most worth a low threshold -- never applied to the spool they
+        set it for."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": "PA6-CF"}],
+            {"default": 60, "PA": 20},
+            60,
+        )
+        assert result == 20
+
+    def test_a_composite_with_its_own_threshold_row_keeps_it(self):
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": "PETG-CF"}],
+            {"default": 60, "PETG": 55, "PETG-CF": 40},
+            60,
+        )
+        assert result == 40
+
     def test_mixed_load_picks_lowest(self):
         """Mixed PLA (60) + Nylon (20) → most restrictive = 20."""
         result = PrintScheduler.resolve_humidity_threshold(
@@ -1729,3 +1888,608 @@ class TestAutoDryProgressKeepsItGoing(_DryingTestBase):
 
         assert scheduler._auto_dry_units[(1, 0)]["suspended"] is True
         mock_notify.on_ams_drying_suspended.assert_awaited_once()
+
+
+class TestAmbientDryingSustainedDelay(_DryingTestBase):
+    """#2518 — ambient auto-drying waits for CONTINUOUSLY-above-threshold humidity.
+
+    ``ambient_drying_sustained_minutes`` (default 0 = instant, matching the
+    pre-#2518 behavior) makes a pure-ambient start wait for the reading to sit
+    above the threshold for that many minutes straight before drying begins.
+    The streak lives in ``scheduler._auto_dry_above``, keyed like
+    ``_auto_dry_units`` by (printer_id, ams_id), but deliberately a separate
+    dict: arming a streak must never look like a Bambuddy-started cycle to
+    ``_auto_dry_units``, which is what ``_stop_drying`` and the manual-cycle
+    immunity in #2801 key off of.
+    """
+
+    UNIT_KEY = (1, 0)
+
+    @pytest.fixture
+    def scheduler(self):
+        return PrintScheduler()
+
+    @staticmethod
+    def _ams_unit(dry_time=0, humidity="75", include_humidity=True):
+        ams = {
+            "id": 0,
+            "module_type": "n3f",
+            "dry_time": dry_time,
+            "dry_sf_reason": [],
+            "tray": [{"tray_type": "PLA"}],
+        }
+        if include_humidity:
+            ams["humidity_raw"] = humidity
+        return ams
+
+    @classmethod
+    def _state(cls, dry_time=0, humidity="75", include_humidity=True):
+        state = MagicMock()
+        state.raw_data = {"ams": [cls._ams_unit(dry_time, humidity, include_humidity)]}
+        state.firmware_version = "01.09.00.00"
+        return state
+
+    def _db(self, sustained_minutes=None, queue_enabled="false", ambient_enabled="true"):
+        settings = {
+            "queue_drying_enabled": self._make_setting(queue_enabled),
+            "ambient_drying_enabled": self._make_setting(ambient_enabled),
+            "ams_humidity_fair": self._make_setting("60"),
+            "queue_drying_block": self._make_setting("false"),
+            "drying_presets": None,
+        }
+        if sustained_minutes is not None:
+            settings["ambient_drying_sustained_minutes"] = self._make_setting(str(sustained_minutes))
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings))
+        return db
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_setting_absent_dries_immediately(self, mock_sd, mock_pm, scheduler):
+        """No ``ambient_drying_sustained_minutes`` row → default 0 → instant dry,
+        same as ambient mode before #2518."""
+        mock_pm.get_status.return_value = self._state()
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        mock_pm.send_drying_command.return_value = True
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+
+        await scheduler._check_auto_drying(self._db(sustained_minutes=None), [], set())
+
+        mock_pm.send_drying_command.assert_called_once_with(1, 0, 45, 12, mode=1, filament="PLA")
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_first_above_threshold_pass_arms_but_does_not_dry(self, mock_sd, mock_pm, scheduler):
+        """First observation above threshold arms the streak instead of drying."""
+        mock_pm.get_status.return_value = self._state()
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+
+        await scheduler._check_auto_drying(self._db(sustained_minutes=5), [], set())
+
+        mock_pm.send_drying_command.assert_not_called()
+        assert self.UNIT_KEY in scheduler._auto_dry_above
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_matured_streak_dries_on_next_pass(self, mock_sd, mock_pm, scheduler):
+        """Once the streak's age clears the configured minutes, the next pass dries."""
+        mock_pm.get_status.return_value = self._state()
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        mock_pm.send_drying_command.return_value = True
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+        db = self._db(sustained_minutes=5)
+
+        await scheduler._check_auto_drying(db, [], set())
+        mock_pm.send_drying_command.assert_not_called()
+
+        # Age the streak past the 5-minute requirement, keeping "last" recent
+        # so the observation-gap guard doesn't treat it as a fresh streak.
+        scheduler._auto_dry_above[self.UNIT_KEY]["since"] = time.monotonic() - (5 * 60 + 5)
+        scheduler._auto_dry_above[self.UNIT_KEY]["last"] = time.monotonic() - 5
+
+        await scheduler._check_auto_drying(db, [], set())
+
+        mock_pm.send_drying_command.assert_called_once_with(1, 0, 45, 12, mode=1, filament="PLA")
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_dip_below_threshold_clears_streak(self, mock_sd, mock_pm, scheduler):
+        """A below-threshold reading between passes clears the streak — the wait restarts."""
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+        db = self._db(sustained_minutes=5)
+
+        mock_pm.get_status.return_value = self._state(humidity="75")
+        await scheduler._check_auto_drying(db, [], set())
+        assert self.UNIT_KEY in scheduler._auto_dry_above
+
+        mock_pm.get_status.return_value = self._state(humidity="40")  # below the 60% threshold
+        await scheduler._check_auto_drying(db, [], set())
+
+        assert self.UNIT_KEY not in scheduler._auto_dry_above
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_missing_humidity_does_not_clear_armed_streak(self, mock_sd, mock_pm, scheduler):
+        """No humidity_raw/humidity in the AMS payload is no-information, not a dip below threshold."""
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+        db = self._db(sustained_minutes=5)
+
+        mock_pm.get_status.return_value = self._state(humidity="75")
+        await scheduler._check_auto_drying(db, [], set())
+        assert self.UNIT_KEY in scheduler._auto_dry_above
+
+        mock_pm.get_status.return_value = self._state(include_humidity=False)
+        await scheduler._check_auto_drying(db, [], set())
+
+        assert self.UNIT_KEY in scheduler._auto_dry_above
+        mock_pm.send_drying_command.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_manual_cycle_immunity(self, mock_sd, mock_pm, scheduler):
+        """Arming a streak must never create a ``_auto_dry_units`` entry — that dict is
+        reserved for cycles Bambuddy itself started (#2801's manual-cycle immunity). A
+        unit already drying by the user's own hand (dry_time > 0) with a streak still
+        present is left alone: no command sent, no entry created, streak untouched.
+        """
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+        db = self._db(sustained_minutes=5)
+
+        # First pass: nothing drying yet, arms the streak.
+        mock_pm.get_status.return_value = self._state(dry_time=0)
+        await scheduler._check_auto_drying(db, [], set())
+        assert self.UNIT_KEY not in scheduler._auto_dry_units
+        assert self.UNIT_KEY in scheduler._auto_dry_above
+
+        # A manual cycle is now running on the same unit — dry_time > 0.
+        mock_pm.get_status.return_value = self._state(dry_time=120)
+        await scheduler._check_auto_drying(db, [], set())
+
+        mock_pm.send_drying_command.assert_not_called()
+        assert self.UNIT_KEY not in scheduler._auto_dry_units
+        assert self.UNIT_KEY in scheduler._auto_dry_above
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_scheduled_queue_item_dries_immediately(self, mock_sd, mock_pm, scheduler):
+        """A printer with a scheduled (non-manual) queue item dries instantly —
+        the sustained wait applies only to pure-ambient starts."""
+        mock_pm.get_status.return_value = self._state()
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        mock_pm.send_drying_command.return_value = True
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+        db = self._db(sustained_minutes=5, queue_enabled="true", ambient_enabled="false")
+
+        item = MagicMock()
+        item.printer_id = 1
+        item.scheduled_time = MagicMock()
+        item.manual_start = False
+
+        await scheduler._check_auto_drying(db, [item], set())
+
+        mock_pm.send_drying_command.assert_called_once_with(1, 0, 45, 12, mode=1, filament="PLA")
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_observation_gap_restarts_the_streak(self, mock_sd, mock_pm, scheduler):
+        """A streak whose last observation is older than the gap ceiling
+        can no longer claim "continuously above" — it is treated as fresh and the
+        pass must not dry, even though 'since' alone clears the required minutes."""
+        mock_pm.get_status.return_value = self._state()
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+
+        old_since = time.monotonic() - (5 * 60 + 100)
+        scheduler._auto_dry_above[self.UNIT_KEY] = {
+            "since": old_since,
+            "last": time.monotonic() - (AUTO_DRY_SUSTAINED_GAP_FLOOR_SECONDS + 10),
+        }
+
+        await scheduler._check_auto_drying(self._db(sustained_minutes=5), [], set())
+
+        mock_pm.send_drying_command.assert_not_called()
+        # The streak was restarted, not left at its stale (matured) age.
+        assert scheduler._auto_dry_above[self.UNIT_KEY]["since"] > old_since + 90
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_suspension_wins_over_a_matured_streak(self, mock_sd, mock_pm, scheduler):
+        """A suspended unit (#2770) stays suspended even once the sustained wait matures."""
+        mock_pm.get_status.return_value = self._state()
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+
+        scheduler._auto_dry_units[self.UNIT_KEY] = {
+            "unproductive": AUTO_DRY_MAX_UNPRODUCTIVE_CYCLES,
+            "suspended": True,
+            "ended_at": None,
+        }
+        scheduler._auto_dry_above[self.UNIT_KEY] = {
+            "since": time.monotonic() - (5 * 60 + 5),
+            "last": time.monotonic() - 5,
+        }
+
+        await scheduler._check_auto_drying(self._db(sustained_minutes=5), [], set())
+
+        mock_pm.send_drying_command.assert_not_called()
+        assert scheduler._auto_dry_units[self.UNIT_KEY]["suspended"] is True
+
+    def test_forget_auto_dry_cycle_pops_the_streak(self, scheduler):
+        """``forget_auto_dry_cycle`` (the route-side stop path) also spends the
+        streak that armed the cycle (#2518). The other cycle-end path — the
+        in-loop branch inside ``_check_auto_drying`` that pops ``running`` when
+        firmware reports ``dry_time == 0`` — is covered separately by
+        ``test_in_loop_cycle_end_restarts_the_streak``."""
+        scheduler._auto_dry_units[self.UNIT_KEY] = {
+            "running": True,
+            "unproductive": 0,
+            "suspended": False,
+            "ended_at": None,
+        }
+        scheduler._auto_dry_above[self.UNIT_KEY] = {"since": time.monotonic(), "last": time.monotonic()}
+
+        scheduler.forget_auto_dry_cycle(*self.UNIT_KEY)
+
+        assert self.UNIT_KEY not in scheduler._auto_dry_above
+        assert "running" not in scheduler._auto_dry_units[self.UNIT_KEY]
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_in_loop_cycle_end_restarts_the_streak(self, mock_sd, mock_pm, scheduler):
+        """When the in-loop cycle-end branch fires (a Bambuddy-armed cycle whose
+        ``dry_time`` has gone to 0), the matured streak that armed it is spent —
+        the pass re-arms a FRESH streak rather than keeping the old ``since``.
+        Without the pop, a matured pre-cycle streak would survive the cycle and
+        reduce the sustained wait to the re-arm cooldown on every re-arm."""
+        mock_pm.get_status.return_value = self._state()
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+        scheduler._auto_dry_units[self.UNIT_KEY] = {"running": True}
+        old_since = time.monotonic() - (60 * 60)
+        scheduler._auto_dry_above[self.UNIT_KEY] = {"since": old_since, "last": time.monotonic() - 5}
+
+        before = time.monotonic()
+        await scheduler._check_auto_drying(self._db(sustained_minutes=5), [], set())
+
+        # The cycle-end pass never dries (its own ended_at starts the cooldown)...
+        mock_pm.send_drying_command.assert_not_called()
+        # ...and the streak now on file must be fresh, not the pre-cycle one.
+        assert scheduler._auto_dry_above[self.UNIT_KEY]["since"] >= before
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_streak_arms_during_the_rearm_cooldown(self, mock_sd, mock_pm, scheduler):
+        """The wait OVERLAPS the 30-minute re-arm cooldown instead of stacking
+        after it: a pass blocked by the cooldown still arms/advances the streak,
+        so a streak matured inside the cooldown dries at cooldown expiry."""
+        mock_pm.get_status.return_value = self._state()
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        mock_pm.send_drying_command.return_value = True
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+        db = self._db(sustained_minutes=5)
+        scheduler._auto_dry_units[self.UNIT_KEY] = {"ended_at": time.monotonic() - 60}
+
+        await scheduler._check_auto_drying(db, [], set())
+        mock_pm.send_drying_command.assert_not_called()
+        # The cooldown blocked the start, but the streak armed anyway.
+        assert self.UNIT_KEY in scheduler._auto_dry_above
+
+        # Cooldown over; the streak that matured inside it satisfies the wait.
+        scheduler._auto_dry_units[self.UNIT_KEY]["ended_at"] = time.monotonic() - (AUTO_DRY_REARM_COOLDOWN_SECONDS + 5)
+        scheduler._auto_dry_above[self.UNIT_KEY]["since"] = time.monotonic() - (5 * 60 + 5)
+        scheduler._auto_dry_above[self.UNIT_KEY]["last"] = time.monotonic() - 5
+
+        await scheduler._check_auto_drying(db, [], set())
+        mock_pm.send_drying_command.assert_called_once_with(1, 0, 45, 12, mode=1, filament="PLA")
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    async def test_mid_print_ambient_start_waits_like_any_ambient_start(self, mock_pm, scheduler):
+        """With ambient drying on, a humidity start on a printer that happens to
+        be printing must serve the sustained wait like one on an idle printer.
+        (The original exemption here was disproven live — a 2-point threshold
+        crossing mid-print bought a parked 12h command instantly.)"""
+        state = self._state()
+        state.state = "RUNNING"
+        mock_pm.get_status.return_value = state
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "H2D"
+        mock_pm.send_drying_command.return_value = True
+        scheduler._is_printer_idle = MagicMock(return_value=False)
+        state.firmware_version = "01.03.00.00"
+
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("false"),
+            "ambient_drying_enabled": self._make_setting("true"),
+            "print_drying_enabled": self._make_setting("true"),
+            "ambient_drying_sustained_minutes": self._make_setting("5"),
+            "ams_humidity_fair": self._make_setting("60"),
+            "queue_drying_block": self._make_setting("false"),
+            "drying_presets": None,
+        }
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+
+        # First pass: the streak arms; no instant start.
+        await scheduler._check_auto_drying(db, [], {1})
+        mock_pm.send_drying_command.assert_not_called()
+        assert self.UNIT_KEY in scheduler._auto_dry_above
+
+        # Streak matured: the start fires, at the mid-print capped
+        # temperature max(40, 45 - 5) = 40.
+        scheduler._auto_dry_above[self.UNIT_KEY]["since"] = time.monotonic() - (5 * 60 + 5)
+        scheduler._auto_dry_above[self.UNIT_KEY]["last"] = time.monotonic() - 5
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+        await scheduler._check_auto_drying(db, [], {1})
+        mock_pm.send_drying_command.assert_called_once_with(1, 0, 40, 12, mode=1, filament="PLA")
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    async def test_mid_print_with_scheduled_item_stays_instant(self, mock_pm, scheduler):
+        """The instant exemption keys on the pending schedule — a printer
+        drying ahead of a scheduled job keeps it whether idle or printing."""
+        state = self._state()
+        state.state = "RUNNING"
+        mock_pm.get_status.return_value = state
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "H2D"
+        mock_pm.send_drying_command.return_value = True
+        scheduler._is_printer_idle = MagicMock(return_value=False)
+        state.firmware_version = "01.03.00.00"
+
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("false"),
+            "ambient_drying_enabled": self._make_setting("true"),
+            "print_drying_enabled": self._make_setting("true"),
+            "ambient_drying_sustained_minutes": self._make_setting("5"),
+            "ams_humidity_fair": self._make_setting("60"),
+            "queue_drying_block": self._make_setting("false"),
+            "drying_presets": None,
+        }
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+
+        item = MagicMock()
+        item.printer_id = 1
+        item.scheduled_time = MagicMock()
+        item.manual_start = False
+
+        await scheduler._check_auto_drying(db, [item], {1})
+        mock_pm.send_drying_command.assert_called_once_with(1, 0, 40, 12, mode=1, filament="PLA")
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    async def test_stored_wait_is_inert_while_ambient_drying_is_off(self, mock_pm, scheduler):
+        """The settings UI hides the wait while ambient drying is off, so a value
+        left behind must not keep delaying a mid-print start under print_drying
+        (queue mode on, no scheduled item): that start stays instant, and no
+        streak entry is written for it."""
+        state = self._state()
+        state.state = "RUNNING"
+        mock_pm.get_status.return_value = state
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "H2D"
+        mock_pm.send_drying_command.return_value = True
+        scheduler._is_printer_idle = MagicMock(return_value=False)
+        state.firmware_version = "01.03.00.00"
+
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("true"),
+            "ambient_drying_enabled": self._make_setting("false"),
+            "print_drying_enabled": self._make_setting("true"),
+            "ambient_drying_sustained_minutes": self._make_setting("15"),
+            "ams_humidity_fair": self._make_setting("60"),
+            "queue_drying_block": self._make_setting("false"),
+            "drying_presets": None,
+        }
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+        # A streak left over from when ambient drying was on is dropped too.
+        scheduler._auto_dry_above[self.UNIT_KEY] = {"since": time.monotonic(), "last": time.monotonic()}
+
+        await scheduler._check_auto_drying(db, [], {1})
+        mock_pm.send_drying_command.assert_called_once_with(1, 0, 40, 12, mode=1, filament="PLA")
+        assert scheduler._auto_dry_above == {}
+
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    def test_sync_drying_state_prunes_streaks_of_vanished_printers(self, mock_pm, scheduler):
+        """A printer that has gone away takes its streak with it — a deleted and
+        re-added printer starts a fresh wait, and entries do not leak."""
+        mock_pm.get_status.return_value = None
+        scheduler._auto_dry_above[(99, 0)] = {"since": time.monotonic(), "last": time.monotonic()}
+        scheduler._auto_dry_units[(99, 0)] = {"unproductive": 1}
+
+        scheduler._sync_drying_state()
+
+        assert (99, 0) not in scheduler._auto_dry_above
+        assert (99, 0) not in scheduler._auto_dry_units
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_dip_below_threshold_logs_the_discard_at_info(self, mock_sd, mock_pm, scheduler, caplog):
+        """Discarding an armed streak on a real below-threshold reading is logged
+        at INFO — it is the only way an operator can tell why an ambient dry
+        never started."""
+        import logging
+
+        mock_pm.get_status.return_value = self._state()
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+        db = self._db(sustained_minutes=5)
+
+        await scheduler._check_auto_drying(db, [], set())
+        assert self.UNIT_KEY in scheduler._auto_dry_above
+
+        mock_pm.get_status.return_value = self._state(humidity="50")
+        with caplog.at_level(logging.INFO, logger="backend.app.services.print_scheduler"):
+            await scheduler._check_auto_drying(db, [], set())
+
+        assert self.UNIT_KEY not in scheduler._auto_dry_above
+        assert any("fell back" in rec.getMessage() for rec in caplog.records if rec.levelno == logging.INFO)
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_observation_gap_restart_logs_at_info(self, mock_sd, mock_pm, scheduler, caplog):
+        """Restarting a streak on an observation gap is logged at INFO with the
+        measured gap — the silent twin of the dip reset, and the only way a
+        user who set a long wait can see why it never matures."""
+        import logging
+
+        mock_pm.get_status.return_value = self._state()
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+
+        scheduler._auto_dry_above[self.UNIT_KEY] = {
+            "since": time.monotonic() - (5 * 60 + 100),
+            "last": time.monotonic() - (AUTO_DRY_SUSTAINED_GAP_FLOOR_SECONDS + 10),
+        }
+
+        with caplog.at_level(logging.INFO, logger="backend.app.services.print_scheduler"):
+            await scheduler._check_auto_drying(self._db(sustained_minutes=5), [], set())
+
+        restarts = [
+            rec for rec in caplog.records if rec.levelno == logging.INFO and "streak restarted" in rec.getMessage()
+        ]
+        assert len(restarts) == 1
+        # The measured gap is in the message, not just the fact of a restart.
+        assert re.search(r"\d+s observation gap", restarts[0].getMessage())
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_gap_ceiling_scales_with_the_check_interval(self, mock_sd, mock_pm, scheduler):
+        """The ceiling is max(4 * check_interval, floor): a scheduler polling
+        slower than the default must not void streaks it structurally cannot
+        observe often enough (review on #2895)."""
+        mock_pm.get_status.return_value = self._state()
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        mock_pm.send_drying_command.return_value = True
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+        scheduler._check_interval = 100  # ceiling 400s, well above the 120s floor
+
+        scheduler._auto_dry_above[self.UNIT_KEY] = {
+            "since": time.monotonic() - (5 * 60 + 100),
+            # Over the floor, under 4 * check_interval: must NOT restart.
+            "last": time.monotonic() - (AUTO_DRY_SUSTAINED_GAP_FLOOR_SECONDS + 50),
+        }
+
+        await scheduler._check_auto_drying(self._db(sustained_minutes=5), [], set())
+
+        # The streak survived the slow pass and had already matured.
+        mock_pm.send_drying_command.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_streak_tracking_is_inert_when_the_feature_is_off(self, mock_sd, mock_pm, scheduler):
+        """sustained_minutes 0 must not write streak entries — every install
+        would otherwise pay the bookkeeping for a feature nobody enabled
+        (review on #2895)."""
+        mock_pm.get_status.return_value = self._state()
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        mock_pm.send_drying_command.return_value = True
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+
+        await scheduler._check_auto_drying(self._db(sustained_minutes=0), [], set())
+
+        mock_pm.send_drying_command.assert_called_once()
+        assert scheduler._auto_dry_above == {}
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_toggle_off_drops_a_leftover_streak_entry(self, mock_sd, mock_pm, scheduler):
+        """An entry armed while the feature was on is dropped once it is off,
+        so toggling back on later cannot inherit a stale streak."""
+        mock_pm.get_status.return_value = self._state()
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        mock_pm.send_drying_command.return_value = True
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+
+        scheduler._auto_dry_above[self.UNIT_KEY] = {
+            "since": time.monotonic() - 30,
+            "last": time.monotonic() - 1,
+        }
+
+        await scheduler._check_auto_drying(self._db(sustained_minutes=0), [], set())
+
+        assert self.UNIT_KEY not in scheduler._auto_dry_above
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_disabling_all_auto_drying_drops_streak_before_early_return(self, mock_sd, mock_pm, scheduler):
+        """A quick disable/re-enable must start a fresh wait, even though the
+        disabled pass returns before visiting individual AMS units."""
+        mock_pm.get_status.return_value = self._state()
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        mock_pm.send_drying_command.return_value = True
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+        scheduler._auto_dry_above[self.UNIT_KEY] = {
+            "since": time.monotonic() - 360,
+            "last": time.monotonic() - 1,
+        }
+
+        await scheduler._check_auto_drying(self._db(sustained_minutes=5, ambient_enabled="false"), [], set())
+        assert self.UNIT_KEY not in scheduler._auto_dry_above
+
+        await scheduler._check_auto_drying(self._db(sustained_minutes=5), [], set())
+        mock_pm.send_drying_command.assert_not_called()
+        assert self.UNIT_KEY in scheduler._auto_dry_above
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_firmware_refusal_skips_before_the_wait_logs(self, mock_sd, mock_pm, scheduler, caplog):
+        """A unit the firmware refuses to dry (dry_sf_reason set) hits its skip
+        before the sustained wait, so it never logs "waiting" for a dry it was
+        never going to get (review nit on #2895)."""
+        import logging
+
+        state = self._state()
+        state.raw_data["ams"][0]["dry_sf_reason"] = ["8"]
+        mock_pm.get_status.return_value = state
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+
+        with caplog.at_level(logging.DEBUG, logger="backend.app.services.print_scheduler"):
+            await scheduler._check_auto_drying(self._db(sustained_minutes=5), [], set())
+
+        messages = [rec.getMessage() for rec in caplog.records]
+        assert any("cannot dry reasons" in m for m in messages)
+        assert not any("waiting" in m for m in messages)

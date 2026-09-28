@@ -1532,7 +1532,7 @@ export function GitHubBackupSettings() {
               if (result.success) {
                 showToast(t('backup.backupRestoredRestart'), 'success');
               } else {
-                showToast(result.message, 'error');
+                showToast(result.message || t('backup.failedToRestore'), 'error');
               }
             } catch (e) {
               const message = e instanceof Error ? e.message : t('backup.failedToRestore');

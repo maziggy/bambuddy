@@ -176,3 +176,22 @@ describe('filterCompatibleQueueItems — force-color PLA variant (#2650)', () =>
     expect(filterCompatibleQueueItems([noIdxJob], loadedTypes, loaded, variants)).toHaveLength(1);
   });
 });
+
+describe('filterCompatibleQueueItems — printer-targeted jobs (#3133)', () => {
+  // A job moved from "Any P2S" to one P2S keeps its override. The printer is
+  // already chosen, so a colour it has not loaded must not hide the job from
+  // that printer's card — the scheduler maps the trays at dispatch.
+  const boneWhite = [{ slot_id: 1, type: 'PLA', color: '#F5F5DC', force_color_match: false }];
+  const loadedTypes = new Set(['PLA']);
+  const loadedBrown = new Set(['PLA:8b4513']);
+
+  it('keeps a specific-printer job whose override colour is not loaded', () => {
+    const item = { id: 1, printer_id: 3, filament_overrides: boneWhite } as unknown as PrintQueueItem;
+    expect(filterCompatibleQueueItems([item], loadedTypes, loadedBrown)).toHaveLength(1);
+  });
+
+  it('still filters the same job while it targets any printer of a model', () => {
+    const item = { id: 1, printer_id: null, target_model: 'P2S', filament_overrides: boneWhite } as unknown as PrintQueueItem;
+    expect(filterCompatibleQueueItems([item], loadedTypes, loadedBrown)).toHaveLength(0);
+  });
+});

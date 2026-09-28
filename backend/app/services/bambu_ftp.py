@@ -554,6 +554,9 @@ class BambuFTPClient:
         # operation and cannot be overwritten by work against another printer.
         self.last_failure: FtpFailure | None = None
         self._ftp: ImplicitFTP_TLS | None = None
+        # When the control socket to the printer was opened, so the close log
+        # can say how long the session was held (#3009).
+        self._connected_at: float | None = None
 
     def _is_a1_model(self) -> bool:
         """Check if this is an A1 series printer."""
@@ -656,6 +659,10 @@ class BambuFTPClient:
                 cap_tls_v1_2=profile.cap_tls_v1_2,
             )
             self._ftp.connect(self.ip_address, self.FTP_PORT, timeout=self.timeout)
+            # Stamped here rather than after login: the socket exists from this
+            # point on, and a session that dies during login is exactly the one
+            # whose lifetime someone reading the log wants accounted for.
+            self._connected_at = time.monotonic()
             logger.debug("FTP connected, logging in as bblp")
             self._ftp.login("bblp", self.access_code)
             if use_prot_c:
@@ -677,12 +684,12 @@ class BambuFTPClient:
         except ftplib.error_perm as e:
             logger.warning("FTP connection permission error to %s: %s", self.ip_address, e)
             self.last_failure = FtpFailure(FtpFailureKind.AUTH, str(e), _ftp_reply_code(e))
-            self._abandon_connection()
+            self._abandon_connection("login rejected")
             return False
         except TimeoutError as e:
             logger.warning("FTP connection timed out to %s: %s", self.ip_address, e)
             self.last_failure = FtpFailure(FtpFailureKind.TIMEOUT, str(e))
-            self._abandon_connection()
+            self._abandon_connection("connect timed out")
             return False
         except ssl.SSLError as e:
             # Not a transient failure and not something another path or another
@@ -711,7 +718,7 @@ class BambuFTPClient:
             # holding a failed handshake open across that is the exact thing
             # #2780's cleanup was added to stop. Idempotent, so the call that
             # used to sit at the end of this branch simply moved up.
-            self._abandon_connection()
+            self._abandon_connection("TLS handshake failed")
 
             # Ask the printer what it actually said, once per cool-off window.
             # Checked before the deadline below is written, so a live entry here
@@ -743,10 +750,21 @@ class BambuFTPClient:
         except (OSError, ftplib.Error) as e:
             logger.warning("FTP connection failed to %s: %s (type: %s)", self.ip_address, e, type(e).__name__)
             self.last_failure = FtpFailure(FtpFailureKind.NETWORK, str(e), _ftp_reply_code(e))
-            self._abandon_connection()
+            self._abandon_connection("connect failed")
             return False
 
-    def _abandon_connection(self) -> None:
+    def _held_for(self) -> str:
+        """How long the control socket has been open, for the close log.
+
+        "unknown" when :meth:`connect` never got as far as opening one -- the
+        cool-off skip and a DNS/refused failure both land in
+        :meth:`_abandon_connection` without a socket ever existing.
+        """
+        if self._connected_at is None:
+            return "unknown"
+        return f"{time.monotonic() - self._connected_at:.1f}s"
+
+    def _abandon_connection(self, reason: str = "connection never became usable") -> None:
         """Drop a connection that never became usable, closing its socket.
 
         Every failure path in :meth:`connect` used to clear ``self._ftp`` and
@@ -765,24 +783,50 @@ class BambuFTPClient:
         """
         ftp = self._ftp
         self._ftp = None
+        held = self._held_for()
+        self._connected_at = None
         if ftp is None:
             return
         try:
             ftp.close()
         except (OSError, ftplib.Error, EOFError):
             pass  # Best-effort; the socket may already be gone
+        # See the note in ``disconnect``: every session that opens a socket
+        # says how it closed, so the log carries matched pairs (#3009).
+        logger.debug(
+            "FTP session to %s closed without QUIT (%s), held %s",
+            self.ip_address,
+            reason,
+            held,
+        )
 
     def disconnect(self):
         """Disconnect from the FTP server."""
         if self._ftp:
+            held = self._held_for()
             try:
                 self._ftp.quit()
-            except (OSError, ftplib.Error, EOFError):
+            except (OSError, ftplib.Error, EOFError) as e:
                 # ``quit()`` sends QUIT and only then closes; when the send
                 # raises, ftplib never reaches its own close and the socket
                 # stays open. Close it here rather than leaving it to the GC.
-                self._abandon_connection()
+                self._abandon_connection(f"QUIT failed: {e}")
+            else:
+                # One line per session, at DEBUG. Neither this method nor
+                # ``_abandon_connection`` used to log anything at any level, so
+                # a session closed cleanly and a socket genuinely left open
+                # produced identical logs -- nothing. #3009 read that silence
+                # after a print as proof the connections were never closed, and
+                # nothing in the log could have shown otherwise. Now every
+                # connect has a matching close, so the next person can settle it
+                # from a support bundle instead of by inference.
+                logger.debug(
+                    "FTP session to %s closed after QUIT, held %s",
+                    self.ip_address,
+                    held,
+                )
             self._ftp = None
+            self._connected_at = None
 
     def list_files(self, path: str = "/", *, raise_on_error: bool = False) -> list[dict]:
         """List files in a directory."""

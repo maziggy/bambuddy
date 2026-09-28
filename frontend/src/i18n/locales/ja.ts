@@ -342,6 +342,7 @@ export default {
     // Printer card
     readyToPrint: '印刷可能',
     external: '外部',
+    ext: '外部',
     extL: 'Ext-L',
     extR: 'Ext-R',
     deleteArchives: '印刷アーカイブを削除',

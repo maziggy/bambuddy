@@ -343,6 +343,7 @@ export default {
     // Printer card
     readyToPrint: "Готовий до друку",
     external: "Зовнішній",
+    ext: "Зовнішня",
     extL: "Ext-L",
     extR: "Ext-R",
     deleteArchives: "Видалити архіви друку",

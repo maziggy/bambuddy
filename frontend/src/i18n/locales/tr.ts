@@ -343,6 +343,7 @@ export default {
     // Yazıcı kartı
     readyToPrint: 'Baskıya hazır',
     external: 'Harici',
+    ext: 'Harici',
     extL: 'Ext-L',
     extR: 'Ext-R',
     deleteArchives: 'Baskı arşivlerini sil',

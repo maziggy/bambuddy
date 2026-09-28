@@ -343,6 +343,7 @@ export default {
     // Printer card
     readyToPrint: 'Redo att skriva ut',
     external: 'Extern',
+    ext: 'Extern',
     extL: 'Ext-V',
     extR: 'Ext-H',
     deleteArchives: 'Ta bort utskriftsarkiv',

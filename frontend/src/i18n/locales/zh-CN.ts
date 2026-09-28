@@ -343,6 +343,7 @@ export default {
     // Printer card
     readyToPrint: '准备打印',
     external: '外部',
+    ext: '外置',
     extL: '外置左',
     extR: '外置右',
     deleteArchives: '删除打印归档',

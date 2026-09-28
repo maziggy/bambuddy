@@ -327,6 +327,7 @@ export default {
     },
     readyToPrint: '인쇄 준비 완료',
     external: '외부',
+    ext: '외부',
     extL: '외부-L',
     extR: '외부-R',
     deleteArchives: '인쇄 아카이브 삭제',

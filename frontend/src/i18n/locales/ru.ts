@@ -332,6 +332,7 @@ export default {
     },
     readyToPrint: "Готов к печати",
     external: "Внешняя подача",
+    ext: "Внешняя",
     extL: "Внешняя, левое",
     extR: "Внешняя, правое",
     deleteArchives: "Удалить архивы печати",

@@ -343,6 +343,7 @@ export default {
     // Printer card
     readyToPrint: 'Pronta a stampare',
     external: 'Esterna',
+    ext: 'Esterno',
     extL: 'Ext-L',
     extR: 'Ext-R',
     deleteArchives: 'Elimina archivi stampa',

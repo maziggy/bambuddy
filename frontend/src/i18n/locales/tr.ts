@@ -2970,6 +2970,8 @@ export default {
         groupMappingAddRow: 'Eşleme ekle',
         groupMappingDeletedGroupOption: '{{group}} (silindi)',
         groupMappingDeletedGroupWarning: 'Bu Bambuddy grubu silinmiş. Bir yenisini seçin veya bu eşlemeyi kaldırın.',
+        groupMappingIncompleteRow: 'Kimlik sağlayıcıdaki grubu girin ve bir Bambuddy grubu seçin ya da bu eşlemeyi kaldırın.',
+        groupMappingDuplicateRow: 'Bu kimlik sağlayıcı grubu yukarıda zaten eşlenmiş. Grup adları büyük/küçük harf ayrımı yapılmadan karşılaştırılır.',
       },
     },
 

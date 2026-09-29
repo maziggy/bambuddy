@@ -2986,6 +2986,8 @@ export default {
         groupMappingAddRow: 'Додати зіставлення',
         groupMappingDeletedGroupOption: '{{group}} (видалено)',
         groupMappingDeletedGroupWarning: 'Цю групу Bambuddy було видалено. Виберіть заміну або видаліть це зіставлення.',
+        groupMappingIncompleteRow: 'Вкажіть групу постачальника ідентичності та виберіть групу Bambuddy або видаліть це зіставлення.',
+        groupMappingDuplicateRow: 'Цю групу постачальника ідентичності вже зіставлено вище. Назви груп порівнюються без урахування регістру.',
       },
     },
 

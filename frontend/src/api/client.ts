@@ -4409,6 +4409,16 @@ export interface TwoFAVerifyRequest {
 export type SameOriginUrl = string & { readonly __brand: 'SameOriginUrl' };
 
 // OIDC interfaces
+/** What the unauthenticated GET /auth/oidc/providers returns (#3107): only
+ *  what the login page renders. The full provider, group sync config
+ *  included, needs the admin-only /auth/oidc/providers/all. */
+export interface OIDCProviderPublic {
+  id: number;
+  name: string;
+  has_icon: boolean;
+  is_autologin: boolean;
+}
+
 export interface OIDCProvider {
   id: number;
   name: string;
@@ -4666,7 +4676,7 @@ export const api = {
     request<{ message: string }>(`/auth/2fa/admin/${userId}`, { method: 'DELETE' }),
 
   // OIDC providers (public list)
-  getOIDCProviders: () => request<OIDCProvider[]>('/auth/oidc/providers'),
+  getOIDCProviders: () => request<OIDCProviderPublic[]>('/auth/oidc/providers'),
 
   // OIDC providers (admin)
   getOIDCProvidersAll: () => request<OIDCProvider[]>('/auth/oidc/providers/all'),

@@ -134,6 +134,56 @@ describe('OIDC group sync form', () => {
     expect(savedPayload!.group_mapping).toEqual({});
   });
 
+  it('flags a row with no Bambuddy group and keeps Save disabled instead of dropping it', async () => {
+    mockCreate();
+    render(<OIDCProviderSettings />);
+    await openCreateForm();
+    await fillRequiredFields();
+
+    await userEvent.click(screen.getByRole('button', { name: /Add Mapping/i }));
+    await userEvent.type(screen.getByPlaceholderText(/Identity provider group name/i), 'idp-ops');
+
+    expect(screen.getByText(/pick a Bambuddy group, or remove this mapping/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Save$/i })).toBeDisabled();
+
+    await userEvent.selectOptions(screen.getAllByDisplayValue(/Select Bambuddy group/i)[0], 'Operators');
+    expect(screen.queryByText(/pick a Bambuddy group, or remove this mapping/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Save$/i })).toBeEnabled();
+  });
+
+  it('flags a second row for the same IdP group, ignoring case', async () => {
+    mockCreate();
+    render(<OIDCProviderSettings />);
+    await openCreateForm();
+    await fillRequiredFields();
+
+    await userEvent.click(screen.getByRole('button', { name: /Add Mapping/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Add Mapping/i }));
+    const idpInputs = screen.getAllByPlaceholderText(/Identity provider group name/i);
+    await userEvent.type(idpInputs[0], 'Admins');
+    await userEvent.type(idpInputs[1], 'admins');
+    const selects = screen.getAllByDisplayValue(/Select Bambuddy group/i);
+    await userEvent.selectOptions(selects[0], 'Administrators');
+    await userEvent.selectOptions(selects[1], 'Operators');
+
+    expect(screen.getAllByText(/already mapped above/i)).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /^Save$/i })).toBeDisabled();
+  });
+
+  it('skips a row that was added but left completely empty', async () => {
+    mockCreate();
+    render(<OIDCProviderSettings />);
+    await openCreateForm();
+    await fillRequiredFields();
+
+    await userEvent.click(screen.getByRole('button', { name: /Add Mapping/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^Save$/i }));
+    await waitFor(() => {
+      expect(savedPayload).not.toBeNull();
+    });
+    expect(savedPayload!.group_mapping).toEqual({});
+  });
+
   it('shows the stale group as a deleted option when the mapping names a removed group', async () => {
     server.use(
       http.get('/api/v1/auth/oidc/providers/all', () =>

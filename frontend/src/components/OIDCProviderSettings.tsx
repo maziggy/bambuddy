@@ -89,6 +89,22 @@ function ProviderForm({
 
   const groupNames = new Set(groups.map((g) => g.name));
 
+  // A row with only one side filled in is unfinished, and a second row for an
+  // IdP group already mapped above would be collapsed into one entry (the
+  // backend compares IdP names ignoring case). Either way the saved mapping
+  // would differ from what the form shows -- dropping the only row turns
+  // group sync off -- so the row is flagged and Save stays disabled instead.
+  // A row with both sides empty is a fresh "Add Mapping" and is just skipped.
+  const mappingRowErrors = mappingRows.map((row, i) => {
+    const idpGroup = row.idpGroup.trim();
+    if (!idpGroup && !row.bambuddyGroup) return null;
+    if (!idpGroup || !row.bambuddyGroup) return 'incomplete' as const;
+    const key = idpGroup.toLowerCase();
+    if (mappingRows.slice(0, i).some((prev) => prev.idpGroup.trim().toLowerCase() === key)) return 'duplicate' as const;
+    return null;
+  });
+  const hasMappingErrors = mappingRowErrors.some((e) => e !== null);
+
   const autoLinkOn = form.auto_link_existing_accounts === true;
   const emailVerifiedOn = form.require_email_verified ?? true;
   let requireEmailVerifiedDesc: ReactNode;
@@ -275,6 +291,13 @@ function ProviderForm({
                     {t('settings.oidc.form.groupMappingDeletedGroupWarning')}
                   </p>
                 )}
+                {mappingRowErrors[i] && (
+                  <p className="text-red-700 dark:text-red-400 text-xs mt-1">
+                    {mappingRowErrors[i] === 'incomplete'
+                      ? t('settings.oidc.form.groupMappingIncompleteRow')
+                      : t('settings.oidc.form.groupMappingDuplicateRow')}
+                  </p>
+                )}
               </div>
             );
           })}
@@ -293,7 +316,7 @@ function ProviderForm({
         <Button
           variant="primary"
           className="flex-1"
-          disabled={!form.name || !form.issuer_url || !form.client_id || (!isEdit && !form.client_secret) || (isEdit && secretChanged && !form.client_secret) || isPending}
+          disabled={!form.name || !form.issuer_url || !form.client_id || (!isEdit && !form.client_secret) || (isEdit && secretChanged && !form.client_secret) || hasMappingErrors || isPending}
           onClick={handleSave}
         >
           {isPending ? t('common.saving') : t('common.save')}

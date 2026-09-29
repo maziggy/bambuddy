@@ -2989,6 +2989,8 @@ export default {
         groupMappingAddRow: 'Koppeling toevoegen',
         groupMappingDeletedGroupOption: '{{group}} (verwijderd)',
         groupMappingDeletedGroupWarning: 'Deze Bambuddy-groep is verwijderd. Kies een vervanging of verwijder deze koppeling.',
+        groupMappingIncompleteRow: 'Vul de groep bij de identiteitsprovider in en kies een Bambuddy-groep, of verwijder deze koppeling.',
+        groupMappingDuplicateRow: 'Deze groep van de identiteitsprovider is hierboven al gekoppeld. Groepsnamen worden vergeleken zonder op hoofdletters te letten.',
       },
     },
 

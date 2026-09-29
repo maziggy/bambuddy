@@ -2987,6 +2987,8 @@ export default {
         groupMappingAddRow: 'Add Mapping',
         groupMappingDeletedGroupOption: '{{group}} (deleted)',
         groupMappingDeletedGroupWarning: 'This Bambuddy group has been deleted. Pick a replacement or remove this mapping.',
+        groupMappingIncompleteRow: 'Enter the identity provider group and pick a Bambuddy group, or remove this mapping.',
+        groupMappingDuplicateRow: 'This identity provider group is already mapped above. Group names are compared ignoring case.',
         groupSync: 'Group Sync',
         groupSyncOn: 'On',
       },

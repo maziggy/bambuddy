@@ -2970,6 +2970,8 @@ export default {
         groupMappingAddRow: 'Añadir mapeo',
         groupMappingDeletedGroupOption: '{{group}} (eliminado)',
         groupMappingDeletedGroupWarning: 'Este grupo de Bambuddy ha sido eliminado. Elige un reemplazo o quita este mapeo.',
+        groupMappingIncompleteRow: 'Escribe el grupo del proveedor de identidad y elige un grupo de Bambuddy, o quita este mapeo.',
+        groupMappingDuplicateRow: 'Este grupo del proveedor de identidad ya está mapeado más arriba. Los nombres de grupo se comparan sin distinguir mayúsculas y minúsculas.',
       },
     },
 

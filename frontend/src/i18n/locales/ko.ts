@@ -2811,6 +2811,8 @@ export default {
         groupMappingAddRow: '매핑 추가',
         groupMappingDeletedGroupOption: '{{group}} (삭제됨)',
         groupMappingDeletedGroupWarning: '이 Bambuddy 그룹은 삭제되었습니다. 다른 그룹을 선택하거나 이 매핑을 제거하세요.',
+        groupMappingIncompleteRow: 'IdP의 그룹 이름을 입력하고 Bambuddy 그룹을 선택하거나 이 매핑을 제거하세요.',
+        groupMappingDuplicateRow: '이 IdP 그룹은 위에서 이미 매핑되었습니다. 그룹 이름은 대소문자를 구분하지 않고 비교됩니다.',
       },
       refreshIcon: '아이콘 새로고침',
       removeIcon: '아이콘 제거',

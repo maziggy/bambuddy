@@ -2819,6 +2819,8 @@ export default {
         groupMappingAddRow: 'Добавить сопоставление',
         groupMappingDeletedGroupOption: '{{group}} (удалена)',
         groupMappingDeletedGroupWarning: 'Эта группа Bambuddy была удалена. Выберите замену или удалите это сопоставление.',
+        groupMappingIncompleteRow: 'Укажите группу провайдера идентификации и выберите группу Bambuddy или удалите это сопоставление.',
+        groupMappingDuplicateRow: 'Эта группа провайдера идентификации уже сопоставлена выше. Названия групп сравниваются без учёта регистра.',
       },
     },
     encryption: {

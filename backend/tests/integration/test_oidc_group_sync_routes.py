@@ -15,6 +15,7 @@ and the schema. This file covers the three gaps from PR #3122 review:
 
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 import time
@@ -267,6 +268,39 @@ class TestEnvGroupMapping:
             await db_session.execute(select(OIDCProvider).where(OIDCProvider.name == "EnvIdP-BadJson"))
         ).scalar_one_or_none()
         assert row is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "mapping", ['{"staff": null}', '{"staff": 5}', '{"Admins": "Viewers", "admins": "Viewers"}']
+    )
+    async def test_env_mapping_bad_value_is_named_in_the_log(
+        self, db_session: AsyncSession, monkeypatch, caplog, mapping
+    ):
+        """A malformed value is refused by name, not as a bare TypeError from
+        the group lookup it would otherwise reach."""
+        monkeypatch.setenv("BAMBUDDY_OIDC_NAME", "EnvIdP-BadValue")
+        monkeypatch.setenv("BAMBUDDY_OIDC_ISSUER_URL", "https://env5.test.example.com")
+        monkeypatch.setenv("BAMBUDDY_OIDC_CLIENT_ID", "env-client")
+        monkeypatch.setenv("BAMBUDDY_OIDC_CLIENT_SECRET", "env-secret")
+        monkeypatch.setenv("BAMBUDDY_OIDC_GROUP_MAPPING", mapping)
+        for key in (
+            "BAMBUDDY_OIDC_DEFAULT_GROUP",
+            "BAMBUDDY_OIDC_SCOPES",
+            "BAMBUDDY_OIDC_ENABLED",
+            "BAMBUDDY_OIDC_GROUP_CLAIM",
+        ):
+            monkeypatch.delenv(key, raising=False)
+
+        with caplog.at_level(logging.ERROR, logger="backend.app.core.oidc_env"):
+            await apply_env_oidc_provider(db_session)
+
+        row = (
+            await db_session.execute(select(OIDCProvider).where(OIDCProvider.name == "EnvIdP-BadValue"))
+        ).scalar_one_or_none()
+        assert row is None
+        assert "BAMBUDDY_OIDC_GROUP_MAPPING is invalid" in caplog.text
+        assert "TypeError" not in caplog.text
 
     @pytest.mark.asyncio
     @pytest.mark.integration

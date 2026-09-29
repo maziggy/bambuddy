@@ -2967,6 +2967,8 @@ export default {
         groupMappingAddRow: 'マッピングを追加',
         groupMappingDeletedGroupOption: '{{group}}（削除済み）',
         groupMappingDeletedGroupWarning: 'この Bambuddy グループは削除されました。代替を選ぶか、このマッピングを削除してください。',
+        groupMappingIncompleteRow: 'IdP のグループ名を入力して Bambuddy グループを選ぶか、このマッピングを削除してください。',
+        groupMappingDuplicateRow: 'この IdP グループは上で既にマッピングされています。グループ名は大文字と小文字を区別せずに比較されます。',
       },
     },
 

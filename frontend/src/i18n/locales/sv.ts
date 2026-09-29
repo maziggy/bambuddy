@@ -2988,6 +2988,8 @@ export default {
         groupMappingAddRow: 'Lägg till mappning',
         groupMappingDeletedGroupOption: '{{group}} (borttagen)',
         groupMappingDeletedGroupWarning: 'Denna Bambuddy-grupp har tagits bort. Välj en ersättning eller ta bort denna mappning.',
+        groupMappingIncompleteRow: 'Ange gruppen hos identitetsleverantören och välj en Bambuddy-grupp, eller ta bort denna mappning.',
+        groupMappingDuplicateRow: 'Den här gruppen hos identitetsleverantören är redan mappad ovan. Gruppnamn jämförs utan hänsyn till versaler och gemener.',
       },
     },
 

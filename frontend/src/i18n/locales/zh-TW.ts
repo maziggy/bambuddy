@@ -2954,6 +2954,8 @@ export default {
         groupMappingAddRow: '新增對應',
         groupMappingDeletedGroupOption: '{{group}}（已刪除）',
         groupMappingDeletedGroupWarning: '此 Bambuddy 群組已被刪除。請選擇替代群組或移除此對應。',
+        groupMappingIncompleteRow: '請輸入身分提供者中的群組名稱並選擇一個 Bambuddy 群組，或移除此對應。',
+        groupMappingDuplicateRow: '此身分提供者群組已在上方對應。群組名稱比對時不區分大小寫。',
       },
     },
 

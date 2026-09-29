@@ -2968,6 +2968,8 @@ export default {
         groupMappingAddRow: 'Zuordnung hinzufügen',
         groupMappingDeletedGroupOption: '{{group}} (gelöscht)',
         groupMappingDeletedGroupWarning: 'Diese Bambuddy-Gruppe wurde gelöscht. Wählen Sie einen Ersatz oder entfernen Sie diese Zuordnung.',
+        groupMappingIncompleteRow: 'Geben Sie die Gruppe beim Identitätsanbieter ein und wählen Sie eine Bambuddy-Gruppe, oder entfernen Sie diese Zuordnung.',
+        groupMappingDuplicateRow: 'Diese Gruppe des Identitätsanbieters ist oben bereits zugeordnet. Gruppennamen werden ohne Beachtung der Groß-/Kleinschreibung verglichen.',
       },
     },
 

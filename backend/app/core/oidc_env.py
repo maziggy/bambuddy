@@ -52,13 +52,24 @@ def _env_group_mapping() -> dict[str, str]:
         raise EnvOIDCConfigError(f"BAMBUDDY_OIDC_GROUP_MAPPING is not valid JSON ({exc.lineno}:{exc.colno})") from exc
     if not isinstance(parsed, dict):
         raise EnvOIDCConfigError("BAMBUDDY_OIDC_GROUP_MAPPING must be a JSON object")
-    return parsed
+    # Shape-checked here, before apply looks the values up as group names: a
+    # null or a number would otherwise reach that query and surface only as
+    # "could not be applied: TypeError", naming neither the variable nor why.
+    # Imported here for the same cycle reason as in _apply_env_oidc_provider.
+    from backend.app.schemas.auth import _validate_group_mapping
+
+    try:
+        return _validate_group_mapping(parsed)
+    except ValueError as exc:
+        raise EnvOIDCConfigError(f"BAMBUDDY_OIDC_GROUP_MAPPING is invalid: {exc}") from exc
 
 
 class EnvOIDCConfigError(Exception):
     """A BAMBUDDY_OIDC_* value the reader cannot interpret. Only ever carries a
-    boolean variable's name and value -- booleans are not secret, so the message
-    is safe to log in full (unlike client_secret, which never reaches here)."""
+    boolean variable's name and value, or a GROUP_MAPPING problem (a JSON parse
+    position, or the IdP group names involved) -- none of it is secret, so the
+    message is safe to log in full (unlike client_secret, which never reaches
+    here)."""
 
 
 def env_bool(key: str, default: bool, *, strict: bool = True) -> bool:
@@ -186,7 +197,7 @@ async def _apply_env_oidc_provider(db: AsyncSession) -> None:
     except EnvOIDCConfigError as exc:
         # Same disposition as a ValidationError or an unmatched DEFAULT_GROUP:
         # log clearly and leave any running provider as it was. Safe to log the
-        # full message -- EnvOIDCConfigError only ever carries a boolean var.
+        # full message -- EnvOIDCConfigError never carries a secret (see its docstring).
         logger.error("BAMBUDDY_OIDC_* config rejected, provider not applied: %s", exc)
         return
 

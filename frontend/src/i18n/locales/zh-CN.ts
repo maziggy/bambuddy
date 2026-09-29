@@ -2954,6 +2954,8 @@ export default {
         groupMappingAddRow: '添加映射',
         groupMappingDeletedGroupOption: '{{group}}（已删除）',
         groupMappingDeletedGroupWarning: '此 Bambuddy 组已被删除。请选择替代组或移除此映射。',
+        groupMappingIncompleteRow: '请输入身份提供者中的组名并选择一个 Bambuddy 组，或移除此映射。',
+        groupMappingDuplicateRow: '此身份提供者组已在上方映射。组名比较时不区分大小写。',
       },
     },
 

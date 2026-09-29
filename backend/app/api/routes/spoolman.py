@@ -21,6 +21,7 @@ from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.models.user import User
+from backend.app.services import slot_unlink_grace
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.slicer_filament_resolver import resolve_slicer_filament
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
@@ -898,6 +899,7 @@ async def link_spool(
                 {"printer_id": p_id, "ams_id": a_id, "tray_id": t_id, "spool_id": spool_id},
             )
             await db.commit()
+            slot_unlink_grace.forget_slot(p_id, a_id, t_id)
         except Exception as e:
             await db.rollback()
             logger.error(
@@ -1321,6 +1323,7 @@ async def create_spool_from_slot(
                 },
             )
             await db.commit()
+            slot_unlink_grace.forget_slot(req.printer_id, req.ams_id, req.tray_id)
         except Exception as exc:
             await db.rollback()
             logger.exception("Failed to persist Spoolman slot assignment")

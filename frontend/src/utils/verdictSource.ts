@@ -3,8 +3,8 @@
 // clicking can say where it came from — the live case being the plate-clear
 // default answering a prompt before the operator reached the phone.
 //
-// 'reaction' is written by the Telegram reaction handler (#3046), which lands
-// separately; it is mapped here so it reads correctly the day it does.
+// 'reaction' is written when a thumbs-up/down on the Telegram prompt answers
+// it (#3046, the backend's telegram_reactions poller).
 
 import type { VerdictSource } from '../api/client';
 

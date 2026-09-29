@@ -1281,6 +1281,7 @@ function ShoppingListPanel({
           added_full: null, last_used: null, encode_time: null,
           category: 'Stock',
           low_stock_threshold_pct: null,
+          material_number: null,
         };
         await api.bulkCreateSpools(spoolBase, item.quantity_spools);
         await api.removeFromShoppingList(id);

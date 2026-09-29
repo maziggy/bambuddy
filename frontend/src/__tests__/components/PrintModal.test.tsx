@@ -1205,6 +1205,49 @@ describe('PrintModal', () => {
       await user.keyboard('5');
       expect(input.value).toBe('5');
     });
+
+    it('quantity can be erased and retyped instead of snapping back to 1 (#3182)', async () => {
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="create"
+          archiveId={1}
+          archiveName="Benchy"
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      const input = screen.getByLabelText('Quantity') as HTMLInputElement;
+      await user.click(input);
+      await user.keyboard('{Backspace}');
+      expect(input.value).toBe('');
+
+      await user.keyboard('6');
+      expect(input.value).toBe('6');
+      expect(screen.getByText('Creates 6 queue items')).toBeInTheDocument();
+    });
+
+    it('an emptied quantity settles back to 1 when the field is left', async () => {
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="create"
+          archiveId={1}
+          archiveName="Benchy"
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      const input = screen.getByLabelText('Quantity') as HTMLInputElement;
+      await user.click(input);
+      await user.keyboard('{Backspace}');
+      await user.tab();
+      expect(input.value).toBe('1');
+    });
   });
 
   describe('reprint G-code injection dispatch (#422 / auto-eject)', () => {

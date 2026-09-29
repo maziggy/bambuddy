@@ -972,7 +972,14 @@ class TestOIDCProviders:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_default_group_id_in_public_and_admin_list(self, async_client: AsyncClient, db_session: AsyncSession):
-        """default_group_id appears in both the public and admin list responses."""
+        """default_group_id appears in the admin list response.
+
+        #3107 review: the public list now serves the slim login-page shape
+        (id, name, has_icon, is_autologin) so group sync config and other
+        provider internals stay behind the permission gate — the previous
+        expectation of default_group_id on the public list is what let the
+        group mapping leak to anonymous callers.
+        """
         from sqlalchemy import select
 
         from backend.app.models.group import Group
@@ -1005,7 +1012,8 @@ class TestOIDCProviders:
         pub_resp = await async_client.get("/api/v1/auth/oidc/providers")
         pub_match = next((p for p in pub_resp.json() if p["id"] == provider_id), None)
         assert pub_match is not None
-        assert pub_match["default_group_id"] == operators.id
+        # Slim public shape: the config fields live on the admin response.
+        assert set(pub_match.keys()) == {"id", "name", "has_icon", "is_autologin"}
 
 
 # ===========================================================================

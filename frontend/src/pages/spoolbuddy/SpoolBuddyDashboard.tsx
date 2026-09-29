@@ -480,6 +480,7 @@ export function SpoolBuddyDashboard() {
           last_weighed_at: weight !== null ? new Date().toISOString() : null,
           category: null,
           low_stock_threshold_pct: null,
+          material_number: null,
         });
       }
     } catch (e) {

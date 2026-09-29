@@ -33,6 +33,7 @@ from backend.app.models.supplier import SpoolmanSpoolSupplier, SpoolSupplier, Su
 from backend.app.models.user import User
 from backend.app.schemas.location import LocationCreate, LocationResponse, LocationUpdate
 from backend.app.schemas.spool import (
+    MaterialNumberStats,
     SpoolAssignmentCreate,
     SpoolAssignmentResponse,
     SpoolBulkCreate,
@@ -55,6 +56,7 @@ from backend.app.schemas.supplier import (
     SupplierStats,
     SupplierUpdate,
 )
+from backend.app.services import slot_unlink_grace
 from backend.app.services.ams_slot_presence import spool_present
 from backend.app.services.location_service import (
     DUPLICATE_LOCATION_NAME,
@@ -66,6 +68,7 @@ from backend.app.services.location_service import (
     prepare_internal_spool_payload,
     rename_location as rename_location_record,
 )
+from backend.app.services.material_number import apply_material_number_inheritance
 from backend.app.services.slicer_filament_resolver import resolve_slicer_filament
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_csv import (
@@ -1466,6 +1469,10 @@ async def import_spools_csv(
     created = 0
     for row in preview.rows:
         if row.status == "valid" and row.spool is not None:
+            # Deliberately no material-number inheritance here (#2870), unlike
+            # the other create paths: the file is authoritative. A CSV that
+            # leaves the column blank is stating "no number", not asking for
+            # one to be guessed from whatever else is in the inventory.
             spool = Spool(**row.spool)
             db.add(spool)
             # Supplier assignments resolved by name during parsing (#2988).
@@ -1562,6 +1569,8 @@ async def create_spool(
         payload = await prepare_internal_spool_payload(db, spool_data.model_dump(), set(spool_data.model_fields_set))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # A new spool of an already-numbered product inherits its material number (#2870).
+    payload = await apply_material_number_inheritance(db, payload)
     spool = Spool(**payload)
     db.add(spool)
     await db.flush()
@@ -1588,6 +1597,8 @@ async def bulk_create_spools(
         payload = await prepare_internal_spool_payload(db, data.spool.model_dump(), fields_set)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # A new spool of an already-numbered product inherits its material number (#2870).
+    payload = await apply_material_number_inheritance(db, payload)
     for _ in range(data.quantity):
         spool = Spool(**payload)
         db.add(spool)
@@ -2195,6 +2206,7 @@ async def assign_spool(
     db.add(assignment)
     await db.commit()
     await db.refresh(assignment)
+    slot_unlink_grace.forget_slot(data.printer_id, data.ams_id, data.tray_id)
 
     # 4. Auto-configure AMS slot via MQTT.
     #
@@ -2593,6 +2605,87 @@ async def get_supplier_stats(
     # Name breaks ties: a narrow date range leaves most rows at 0 g consumed,
     # and those would otherwise come back in GROUP BY order.
     return sorted(stats.values(), key=lambda s: (-s.consumed_g, supplier_name_key(s.supplier_name)))
+
+
+@router.get("/stats/material-numbers", response_model=list[MaterialNumberStats])
+async def get_material_number_stats(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """Aggregate the inventory by material number (#2870).
+
+    The material number is the internal purchasing identifier shared by all
+    spools of a product, so this is the grouping the business actually costs
+    by — unlike brand+material+colour. Two queries: active-spool counts and
+    remaining weight from the spool table, consumption and cost from the
+    recorded usage history (archived spools included — their consumption
+    happened).
+
+    ``date_from``/``date_to`` narrow the usage half only, so the widget can
+    follow the dashboard timeframe the rest of the stats page uses. Stock is
+    point-in-time by nature and stays unfiltered — "how much do I hold" has
+    no date range. Sorted by consumption, heaviest first, then by number so
+    a range where nothing was consumed still lists in a stable order.
+    """
+    from backend.app.models.spool_usage_history import SpoolUsageHistory
+
+    # material_number is normalised to NULL-or-non-empty by the schema
+    # validator, so NULL is the only "unset" state to exclude here.
+    has_number = Spool.material_number.is_not(None)
+
+    usage_filters = [has_number]
+    if date_from:
+        usage_filters.append(SpoolUsageHistory.created_at >= datetime.combine(date_from, time.min, tzinfo=timezone.utc))
+    if date_to:
+        usage_filters.append(SpoolUsageHistory.created_at <= datetime.combine(date_to, time.max, tzinfo=timezone.utc))
+
+    # Clamped PER SPOOL, like every other remaining-weight computation in the
+    # codebase: a spool whose weight_used overshot its label_weight holds 0 g,
+    # it does not subtract from the other spools sharing the number.
+    per_spool_remaining = func.coalesce(Spool.label_weight, 0) - func.coalesce(Spool.weight_used, 0)
+    inventory_rows = await db.execute(
+        select(
+            Spool.material_number,
+            func.count(Spool.id),
+            func.sum(case((per_spool_remaining > 0, per_spool_remaining), else_=0.0)),
+        )
+        .where(has_number, Spool.archived_at.is_(None))
+        .group_by(Spool.material_number)
+    )
+
+    usage_rows = await db.execute(
+        select(
+            Spool.material_number,
+            func.sum(SpoolUsageHistory.weight_used),
+            func.sum(SpoolUsageHistory.cost),
+        )
+        .join(Spool, SpoolUsageHistory.spool_id == Spool.id)
+        .where(*usage_filters)
+        .group_by(Spool.material_number)
+    )
+
+    stats: dict[str, MaterialNumberStats] = {}
+    for number, count, remaining in inventory_rows.all():
+        stats[number] = MaterialNumberStats(
+            material_number=number,
+            spool_count=count,
+            remaining_g=float(remaining or 0),
+            consumed_g=0.0,
+            cost=0.0,
+        )
+    for number, consumed, cost in usage_rows.all():
+        entry = stats.get(number)
+        if entry is None:
+            entry = MaterialNumberStats(
+                material_number=number, spool_count=0, remaining_g=0.0, consumed_g=0.0, cost=0.0
+            )
+            stats[number] = entry
+        entry.consumed_g = float(consumed or 0)
+        entry.cost = float(cost or 0)
+
+    return sorted(stats.values(), key=lambda s: (-s.consumed_g, s.material_number))
 
 
 @router.get("/usage", response_model=list[SpoolUsageHistoryResponse])

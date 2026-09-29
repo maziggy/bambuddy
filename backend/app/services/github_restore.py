@@ -1313,6 +1313,17 @@ class GitHubRestoreService:
                 "archived_at": _parse_dt(entry.get("archived_at")),
             }
 
+            # The user's own bookkeeping on the spool: purchasing number
+            # (#2870), category and low-stock override (#729), free-text
+            # storage. Added to the backup format after the fields above, so
+            # they are applied only when the file actually carries them —
+            # an older backup must not wipe what the live row holds.
+            # `location_id` is deliberately absent: the locations table is
+            # not backed up, so the ID would point at whatever owns it here.
+            for late_field in ("material_number", "category", "low_stock_threshold_pct", "storage_location"):
+                if late_field in entry:
+                    fields[late_field] = entry[late_field]
+
             if existing is not None:
                 if old_id is not None:
                     spool_id_map[old_id] = existing.id

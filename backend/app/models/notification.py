@@ -105,6 +105,12 @@ class NotificationProvider(Base):
     # fires for prints where the user opted in per-job, so the provider-level
     # toggle exists to silence a channel, not to enable the feature.
     on_print_confirm_request = Column(Boolean, default=True)
+    # How a Telegram provider collects that verdict (#3046): inline URL
+    # buttons ("buttons", the original behaviour), a thumbs-up/down reaction
+    # on the message ("reactions"), or both. Reactions need no inbound
+    # connectivity — the poller fetches them — so they work without an
+    # external_url. Ignored for every other provider type.
+    telegram_verdict_mode = Column(String(16), default="buttons")
 
     # Event triggers - Bed cooled after print
     on_bed_cooled = Column(Boolean, default=False)  # Bed cooled below threshold after print
@@ -151,3 +157,38 @@ class NotificationProvider(Base):
     printer = relationship("Printer", back_populates="notification_providers")
     logs = relationship("NotificationLog", back_populates="provider", cascade="all, delete-orphan")
     digest_queue = relationship("NotificationDigestQueue", back_populates="provider", cascade="all, delete-orphan")
+    # ORM-level cascade like the two above: SQLite ships with foreign keys
+    # off, so the column's ON DELETE CASCADE alone would leave rows behind.
+    pending_verdicts = relationship("TelegramPendingVerdict", back_populates="provider", cascade="all, delete-orphan")
+
+
+class TelegramPendingVerdict(Base):
+    """A Telegram outcome prompt still waiting for a thumbs-up/down reaction (#3046).
+
+    One row per delivered ``print_confirm_request`` message on a provider in
+    "reactions" or "both" mode. The reaction poller matches incoming
+    ``message_reaction`` updates against (provider, chat, message) and deletes
+    the row once a verdict landed; rows older than a week are pruned.
+    """
+
+    __tablename__ = "telegram_pending_verdicts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider_id = Column(Integer, ForeignKey("notification_providers.id", ondelete="CASCADE"), nullable=False)
+    chat_id = Column(String(64), nullable=False)
+    message_id = Column(Integer, nullable=False)
+    archive_id = Column(Integer, ForeignKey("print_archives.id", ondelete="CASCADE"), nullable=False)
+    # The archive's confirm_token when the prompt went out. A reaction counts
+    # only while that is still the archive's live token, i.e. exactly as long
+    # as the prompt's one-tap links would: a reprint clears the token, so an
+    # earlier run's message can no longer answer the new run.
+    confirm_token = Column(String(64), nullable=True)
+    # sendPhoto messages carry the prompt as a caption, which is edited with a
+    # different Bot API method than a plain text message.
+    has_caption = Column(Boolean, default=False)
+    # The Markdown we sent, so the confirmation edit can append to it — the
+    # reaction update does not carry the message body.
+    message_text = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    provider = relationship("NotificationProvider", back_populates="pending_verdicts")

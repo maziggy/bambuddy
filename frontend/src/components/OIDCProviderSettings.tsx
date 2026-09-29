@@ -21,6 +21,8 @@ const EMPTY_FORM: OIDCProviderCreate = {
   auto_link_existing_accounts: false,
   email_claim: 'email',
   require_email_verified: true,
+  group_claim: 'groups',
+  group_mapping: {},
   icon_url: undefined,
   default_group_id: null,
   is_autologin: false,
@@ -45,6 +47,16 @@ function ProviderForm({
   const { t } = useTranslation();
   const [form, setForm] = useState<OIDCProviderCreate>(initial);
   const [secretChanged, setSecretChanged] = useState(false);
+  // #3107 — each row is an { idpGroup -> bambuddyGroup } pair, edited directly
+  // instead of as JSON. The Bambuddy side is a <select> sourced from `groups`,
+  // so an invalid group name can't be entered in the first place.
+  const [mappingRows, setMappingRows] = useState<{ idpGroup: string; bambuddyGroup: string }[]>(() =>
+    Object.entries(initial.group_mapping ?? {}).map(([idpGroup, bambuddyGroup]) => ({ idpGroup, bambuddyGroup }))
+  );
+  const addMappingRow = () => setMappingRows((prev) => [...prev, { idpGroup: '', bambuddyGroup: '' }]);
+  const removeMappingRow = (i: number) => setMappingRows((prev) => prev.filter((_, idx) => idx !== i));
+  const updateMappingRow = (i: number, patch: Partial<{ idpGroup: string; bambuddyGroup: string }>) =>
+    setMappingRows((prev) => prev.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
   const set = (key: keyof OIDCProviderCreate, value: unknown) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
@@ -57,8 +69,41 @@ function ProviderForm({
     if (isEdit && !secretChanged) {
       delete (payload as Partial<OIDCProviderCreate>).client_secret;
     }
+    // #3107 review: default the group claim on save, not on change —
+    // snapping it back mid-edit means the field can only be typed over.
+    if (!payload.group_claim || !payload.group_claim.trim()) {
+      payload.group_claim = 'groups';
+    }
+    // #3107 — blank IdP-group name or unselected Bambuddy group means the row
+    // isn't finished yet; drop it rather than saving a half-filled mapping.
+    const mapping: Record<string, string> = {};
+    for (const row of mappingRows) {
+      const idpGroup = row.idpGroup.trim();
+      if (idpGroup && row.bambuddyGroup) {
+        mapping[idpGroup] = row.bambuddyGroup;
+      }
+    }
+    payload.group_mapping = mapping;
     onSave(payload);
   };
+
+  const groupNames = new Set(groups.map((g) => g.name));
+
+  // A row with only one side filled in is unfinished, and a second row for an
+  // IdP group already mapped above would be collapsed into one entry (the
+  // backend compares IdP names ignoring case). Either way the saved mapping
+  // would differ from what the form shows -- dropping the only row turns
+  // group sync off -- so the row is flagged and Save stays disabled instead.
+  // A row with both sides empty is a fresh "Add Mapping" and is just skipped.
+  const mappingRowErrors = mappingRows.map((row, i) => {
+    const idpGroup = row.idpGroup.trim();
+    if (!idpGroup && !row.bambuddyGroup) return null;
+    if (!idpGroup || !row.bambuddyGroup) return 'incomplete' as const;
+    const key = idpGroup.toLowerCase();
+    if (mappingRows.slice(0, i).some((prev) => prev.idpGroup.trim().toLowerCase() === key)) return 'duplicate' as const;
+    return null;
+  });
+  const hasMappingErrors = mappingRowErrors.some((e) => e !== null);
 
   const autoLinkOn = form.auto_link_existing_accounts === true;
   const emailVerifiedOn = form.require_email_verified ?? true;
@@ -188,6 +233,82 @@ function ProviderForm({
         <p className="text-bambu-gray text-xs mt-1">{t('settings.oidc.form.defaultGroupDesc')}</p>
       </div>
 
+      <div>
+        <label className={labelCls}>{t('settings.oidc.form.groupClaim')}</label>
+        <input
+          className={inputCls}
+          value={form.group_claim ?? 'groups'}
+          onChange={(e) => set('group_claim', e.target.value)}
+          placeholder="groups"
+        />
+        <p className="text-bambu-gray text-xs mt-1">{t('settings.oidc.form.groupClaimDesc')}</p>
+      </div>
+
+      <div>
+        <label className={labelCls}>{t('settings.oidc.form.groupMapping')}</label>
+        <div className="space-y-2">
+          {mappingRows.map((row, i) => {
+            // A row can point at a group name that's since been deleted
+            // (deleting a group doesn't touch any provider's mapping — see
+            // #3107 follow-up). Left alone, that value doesn't match any
+            // <option> and the select just renders as if nothing were
+            // chosen, so the broken row looks identical to an unset one.
+            // Injecting the stale name as its own (disabled) option keeps it
+            // visibly selected, and the row is flagged red until the admin
+            // repoints it or removes it.
+            const isOrphaned = row.bambuddyGroup !== '' && !groupNames.has(row.bambuddyGroup);
+            return (
+              <div key={i}>
+                <div className="flex items-center gap-2">
+                  <input
+                    className={inputCls}
+                    value={row.idpGroup}
+                    onChange={(e) => updateMappingRow(i, { idpGroup: e.target.value })}
+                    placeholder={t('settings.oidc.form.groupMappingIdpGroupPlaceholder')}
+                  />
+                  <span className="text-bambu-gray text-sm shrink-0">&rarr;</span>
+                  <select
+                    className={`${inputCls} ${isOrphaned ? 'border-red-700 dark:border-red-400 text-red-700 dark:text-red-400' : ''}`}
+                    value={row.bambuddyGroup}
+                    onChange={(e) => updateMappingRow(i, { bambuddyGroup: e.target.value })}
+                  >
+                    <option value="">{t('settings.oidc.form.groupMappingSelectGroup')}</option>
+                    {isOrphaned && (
+                      <option value={row.bambuddyGroup}>
+                        {t('settings.oidc.form.groupMappingDeletedGroupOption', { group: row.bambuddyGroup })}
+                      </option>
+                    )}
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.name}>{g.name}</option>
+                    ))}
+                  </select>
+                  <Button variant="secondary" size="sm" onClick={() => removeMappingRow(i)} title={t('common.remove')}>
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+                {isOrphaned && (
+                  <p className="text-red-700 dark:text-red-400 text-xs mt-1">
+                    {t('settings.oidc.form.groupMappingDeletedGroupWarning')}
+                  </p>
+                )}
+                {mappingRowErrors[i] && (
+                  <p className="text-red-700 dark:text-red-400 text-xs mt-1">
+                    {mappingRowErrors[i] === 'incomplete'
+                      ? t('settings.oidc.form.groupMappingIncompleteRow')
+                      : t('settings.oidc.form.groupMappingDuplicateRow')}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+          <Button variant="secondary" size="sm" onClick={addMappingRow} className="inline-flex items-center gap-2">
+            <Plus className="w-4 h-4" />
+            {t('settings.oidc.form.groupMappingAddRow')}
+          </Button>
+        </div>
+        <p className="text-bambu-gray text-xs mt-1">{t('settings.oidc.form.groupMappingDesc')}</p>
+      </div>
+
       <div className="flex gap-3 pt-2">
         <Button variant="secondary" onClick={onCancel} className="flex-1">
           {t('common.cancel')}
@@ -195,7 +316,7 @@ function ProviderForm({
         <Button
           variant="primary"
           className="flex-1"
-          disabled={!form.name || !form.issuer_url || !form.client_id || (!isEdit && !form.client_secret) || (isEdit && secretChanged && !form.client_secret) || isPending}
+          disabled={!form.name || !form.issuer_url || !form.client_id || (!isEdit && !form.client_secret) || (isEdit && secretChanged && !form.client_secret) || hasMappingErrors || isPending}
           onClick={handleSave}
         >
           {isPending ? t('common.saving') : t('common.save')}
@@ -472,6 +593,8 @@ export function OIDCProviderSettings() {
                     auto_link_existing_accounts: provider.auto_link_existing_accounts,
                     email_claim: provider.email_claim,
                     require_email_verified: provider.require_email_verified,
+                    group_claim: provider.group_claim ?? 'groups',
+                    group_mapping: provider.group_mapping ?? {},
                     icon_url: provider.icon_url ?? undefined,
                     default_group_id: provider.default_group_id ?? null,
                     is_autologin: provider.is_autologin,
@@ -512,6 +635,10 @@ export function OIDCProviderSettings() {
                   <dd className="text-white font-mono">{provider.email_claim}</dd>
                 </div>
                 <div>
+                  <dt className="text-bambu-gray">{t('settings.oidc.form.groupClaim')}</dt>
+                  <dd className="text-white font-mono">{provider.group_claim ?? 'groups'}</dd>
+                </div>
+                <div>
                   <dt className="text-bambu-gray">{t('settings.oidc.form.requireEmailVerified')}</dt>
                   <dd className={provider.require_email_verified ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
                     {provider.require_email_verified ? t('common.yes') : t('common.no')}
@@ -523,6 +650,14 @@ export function OIDCProviderSettings() {
                     {provider.default_group_id
                       ? (groups.find((g) => g.id === provider.default_group_id)?.name ?? t('settings.oidc.form.defaultGroupViewersFallback'))
                       : t('settings.oidc.form.defaultGroupViewersFallback')}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-bambu-gray">{t('settings.oidc.form.groupSync')}</dt>
+                  <dd className={provider.group_mapping && Object.keys(provider.group_mapping).length > 0 ? 'text-green-700 dark:text-green-400' : 'text-bambu-gray'}>
+                    {provider.group_mapping && Object.keys(provider.group_mapping).length > 0
+                      ? t('settings.oidc.form.groupSyncOn')
+                      : t('common.off')}
                   </dd>
                 </div>
               </dl>

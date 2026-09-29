@@ -34,8 +34,9 @@ from backend.app.schemas.spool import SpoolCreate
 # import — `weight_used` is the source of truth, and accepting both would let
 # them contradict. `last_used` is a timestamp the model carries but SpoolCreate
 # does not, so import applies it to the ORM object directly (see persist path).
-# `storage_location`, `category` and `low_stock_threshold_pct` are SpoolCreate
-# fields included so a round-trip preserves them (they'd otherwise be lost).
+# `storage_location`, `category`, `low_stock_threshold_pct` and
+# `material_number` (#2870) are SpoolCreate fields included so a round-trip
+# preserves them (they'd otherwise be lost).
 CSV_COLUMNS = [
     "material",
     "brand",
@@ -55,6 +56,7 @@ CSV_COLUMNS = [
     "storage_location",
     "category",
     "low_stock_threshold_pct",
+    "material_number",
     # Supplier assignments (#2988): `suppliers` is the "; "-joined names of
     # all assigned suppliers, `purchase_supplier` the one this spool was
     # actually bought from (or empty). Import matches names against the
@@ -382,7 +384,15 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
         row_error: str | None = None
 
         # Plain text passthrough columns.
-        for field in ("subtype", "effect_type", "extra_colors", "note", "storage_location", "category"):
+        for field in (
+            "subtype",
+            "effect_type",
+            "extra_colors",
+            "note",
+            "storage_location",
+            "category",
+            "material_number",
+        ):
             value = cell(raw_row, field)
             if value:
                 data[field] = value

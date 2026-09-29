@@ -316,31 +316,39 @@ async def test_spa_csp_nonce_changes_per_request(async_client: AsyncClient):
     assert len(nonces) == 5, f"nonces should be per-request, got {nonces!r}"
 
 
-# ─── #2976: STEP preview needs WebAssembly, and only WebAssembly ─────────
+# ─── #2976: WebAssembly is confined to the two preview workers ───────────
+
+
+def _script_src_tokens(resp) -> list[str]:
+    """The script-src directive of a response's CSP, split into whole tokens.
+
+    Whole tokens, because 'wasm-unsafe-eval' contains the text "unsafe-eval"
+    and a substring check would read as a pass either way.
+    """
+    csp = resp.headers.get("Content-Security-Policy", "")
+    directive = next(
+        (d.strip() for d in csp.split(";") if d.strip().startswith("script-src")),
+        "",
+    )
+    return directive.split()
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_spa_csp_allows_wasm_but_not_eval(async_client: AsyncClient):
-    """script-src must carry 'wasm-unsafe-eval' but never 'unsafe-eval' (#2976).
+async def test_spa_csp_permits_no_kind_of_eval(async_client: AsyncClient):
+    """The document policy allows neither wasm compilation nor JS eval (#2976).
 
-    The STEP preview triangulates in the browser via OpenCascade compiled to
-    WASM; without 'wasm-unsafe-eval' the nonce-based CSP blocks
-    WebAssembly.instantiate() and the preview dies with a CompileError.
-    'wasm-unsafe-eval' permits wasm compilation only — JS eval()/Function()
-    stay blocked, which is what the second assertion pins.
+    Nothing on the main thread compiles WebAssembly: the STEP preview and
+    pdf.js's image decoders both run in dedicated workers, which get their own
+    policies below. So the SPA document stays exactly as strict as it was
+    before the previews landed.
     """
     resp = await async_client.get("/api/v1/auth/status")
-    csp = resp.headers.get("Content-Security-Policy", "")
-    script_src = next(
-        (d.strip() for d in csp.split(";") if d.strip().startswith("script-src")),
-        "",
-    )
-    assert "'wasm-unsafe-eval'" in script_src, f"script-src must allow wasm compilation: {script_src!r}"
-    # Substring check must not be fooled by 'wasm-unsafe-eval' containing
-    # "unsafe-eval" — compare whole tokens.
-    tokens = script_src.split()
-    assert "'unsafe-eval'" not in tokens, f"script-src must not allow JS eval: {script_src!r}"
+    tokens = _script_src_tokens(resp)
+
+    assert tokens, "the SPA response must carry a script-src directive"
+    assert "'wasm-unsafe-eval'" not in tokens, f"document must not compile wasm: {tokens!r}"
+    assert "'unsafe-eval'" not in tokens, f"document must not allow JS eval: {tokens!r}"
 
 
 @pytest.mark.asyncio
@@ -355,20 +363,35 @@ async def test_step_worker_asset_csp_relaxes_eval_only_for_that_file(async_clien
     SPA document itself — must stay nonce-strict. Both requests 404 in the
     test checkout; the security middleware stamps headers regardless.
     """
-
-    def script_src_tokens(resp) -> list[str]:
-        csp = resp.headers.get("Content-Security-Policy", "")
-        directive = next(
-            (d.strip() for d in csp.split(";") if d.strip().startswith("script-src")),
-            "",
-        )
-        return directive.split()
-
     worker = await async_client.get("/assets/stepPreview.worker-Ck9aB12c.js")
-    assert "'unsafe-eval'" in script_src_tokens(worker), "step worker script must be allowed to eval"
+    assert "'unsafe-eval'" in _script_src_tokens(worker), "step worker script must be allowed to eval"
 
     other = await async_client.get("/assets/index-Ck9aB12c.js")
-    assert "'unsafe-eval'" not in script_src_tokens(other), "ordinary assets must stay eval-free"
+    assert "'unsafe-eval'" not in _script_src_tokens(other), "ordinary assets must stay eval-free"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_pdf_worker_asset_csp_allows_wasm_without_eval(async_client: AsyncClient):
+    """pdf.js's worker may compile wasm, and nothing more (#2976).
+
+    Its JPEG2000/JBIG2/ICC decoders are WebAssembly fetched from
+    /assets/pdfjs/wasm/; without 'wasm-unsafe-eval' on the worker script's own
+    response they fail to compile and those images and colour spaces silently
+    drop out. JS eval stays blocked — unlike the STEP worker, pdf.js needs
+    none.
+    """
+    worker = await async_client.get("/assets/pdf.worker.min-Ck9aB12c.js")
+    tokens = _script_src_tokens(worker)
+
+    assert "'wasm-unsafe-eval'" in tokens, f"pdf worker must be allowed to compile wasm: {tokens!r}"
+    assert "'unsafe-eval'" not in tokens, f"pdf worker must not be allowed to eval JS: {tokens!r}"
+
+    # Only the worker: pdf.js's own chunk and the modal that loads it run on
+    # the page, whose policy stays wasm-free.
+    for path in ("/assets/pdf-Ck9aB12c.js", "/assets/PdfPreviewModal-Ck9aB12c.js"):
+        other = await async_client.get(path)
+        assert "'wasm-unsafe-eval'" not in _script_src_tokens(other), f"{path} must not get the worker's policy"
 
 
 # ─── #1460: HEAD on PWA bootstrap routes (manifest / sw / sw-register) ───

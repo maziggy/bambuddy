@@ -1424,7 +1424,7 @@ class TestSliceArchiveResliceModel:
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
                 status_code=200,
-                content=_make_sliced_3mf("C11"),  # X1C — same model as source
+                content=_make_sliced_3mf("BL-P001"),  # X1C — same model as source
                 headers={
                     "x-print-time-seconds": "600",
                     "x-filament-used-g": "5.0",

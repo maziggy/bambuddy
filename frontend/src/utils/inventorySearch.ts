@@ -35,6 +35,7 @@ export function spoolMatchesQuery(spool: InventorySpool, query: string): boolean
     (spool.note?.toLowerCase().includes(q) ?? false) ||
     (spool.slicer_filament_name?.toLowerCase().includes(q) ?? false) ||
     (spool.storage_location?.toLowerCase().includes(q) ?? false) ||
+    (spool.material_number?.toLowerCase().includes(q) ?? false) ||
     (spool.suppliers?.some(
       (link) =>
         link.supplier_name.toLowerCase().includes(q) ||

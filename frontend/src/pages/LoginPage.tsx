@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { X, Mail, Shield, Smartphone, Key } from 'lucide-react';
-import { api, type LoginResponse, type OIDCProvider, type TokenPersistence } from '../api/client';
+import { api, type LoginResponse, type OIDCProviderPublic, type TokenPersistence } from '../api/client';
 import { Card, CardHeader, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 
@@ -79,7 +79,7 @@ function OIDCProviderButton({
   onClick,
   disabled,
 }: {
-  provider: OIDCProvider;
+  provider: OIDCProviderPublic;
   onClick: () => void;
   disabled: boolean;
 }) {

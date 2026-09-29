@@ -13,8 +13,8 @@ from backend.app.models.print_log import PrintLogEntry
 logger = logging.getLogger(__name__)
 
 # How a verdict reached the archive. 'reaction' is written by the Telegram
-# reaction handler (#3046), which lives on its own branch — listed here so the
-# vocabulary is complete and the UI can label it the day that lands.
+# reaction poller (#3046, services/telegram_reactions.py) through
+# apply_outcome_verdict below.
 VERDICT_SOURCES = ("dialog", "link", "plate_clear", "printer_card", "api", "reaction")
 
 # Link-preview unfurlers and mail-security scanners fetch every URL they find in
@@ -124,6 +124,42 @@ def retire_confirm_token(archive: PrintArchive) -> None:
     """
     if archive.confirm_token and archive.confirm_token_used_at is None:
         archive.confirm_token_used_at = datetime.now(timezone.utc)
+
+
+VERDICTS = ("good", "reject")
+
+
+async def apply_outcome_verdict(db: AsyncSession, archive: PrintArchive, verdict: str, *, source: str) -> bool:
+    """Record a verdict on an archive that has not been answered yet.
+
+    For verdict paths that arrive with nobody looking at the archive, like the
+    Telegram reaction poller (#3046). It writes what every verdict write in
+    this module writes: the archive's user_verdict with its provenance stamp,
+    the same value mirrored onto the latest PrintLogEntry (verdict-aware
+    statistics read the log, the #1444 mirror), and the one-tap capability
+    token spent.
+
+    First verdict wins. An archive that already carries one is left exactly
+    as it is and False is returned, so a late reaction cannot flip a decision
+    somebody made in the meantime. Deliberately does NOT commit.
+    """
+    if verdict not in VERDICTS:
+        raise ValueError(f"Verdict must be one of {VERDICTS}, got {verdict!r}")
+    if source not in VERDICT_SOURCES:
+        raise ValueError(f"Verdict source must be one of {VERDICT_SOURCES}, got {source!r}")
+    if archive.user_verdict is not None:
+        return False
+
+    archive.user_verdict = verdict
+    stamp_verdict(archive, source)
+    retire_confirm_token(archive)
+
+    latest_entry = await db.scalar(
+        select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id).order_by(PrintLogEntry.id.desc()).limit(1)
+    )
+    if latest_entry is not None:
+        latest_entry.user_verdict = verdict
+    return True
 
 
 async def resolve_pending_confirmation_as_good(db: AsyncSession, printer_id: int) -> int | None:

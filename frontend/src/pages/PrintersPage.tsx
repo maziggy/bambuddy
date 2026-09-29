@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { compareFwVersions } from '../utils/firmwareVersion';
+import { mapModelCode } from '../utils/printerModel';
 import { formatPrintName } from '../utils/printName';
 import { isBedSlinger } from '../utils/bedSlinger';
 import { computePopoverPosition, type PopoverPosition } from '../utils/popoverPosition';
@@ -200,6 +201,7 @@ import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
 import { Collapsible } from '../components/Collapsible';
 import { ConnectionDiagnosticModal, DiagnosticChecklist } from '../components/ConnectionDiagnostic';
 import { getColorName, parseFilamentColor, isLightColor } from '../utils/colors';
+import { NumberInput } from '../components/NumberInput';
 
 // The status filter's options, and the only values it may hold. One list so a
 // saved filter cannot be validated against a set the dropdown has since moved
@@ -1745,51 +1747,6 @@ const MODELS_WITH_EXHAUST_LABEL: ReadonlySet<string> = new Set([
   'P2S',
   'X2D',
 ]);
-
-// Map SSDP model codes to display names
-function mapModelCode(ssdpModel: string | null): string {
-  if (!ssdpModel) return '';
-  const modelMap: Record<string, string> = {
-    // H2 Series
-    'O1D': 'H2D',
-    'O1E': 'H2D Pro',
-    'O2D': 'H2D Pro',
-    'O1C': 'H2C',
-    'O1C2': 'H2C',
-    'O1S': 'H2S',
-    // X1 Series
-    'BL-P001': 'X1C',
-    'BL-P002': 'X1',
-    'BL-P003': 'X1E',
-    // X2 Series
-    'N6': 'X2D',
-    // A2 Series
-    'N9': 'A2L',
-    // P Series
-    'C11': 'P1S',
-    'C12': 'P1P',
-    'C13': 'P2S',
-    // A1 Series
-    'N2S': 'A1',
-    'N1': 'A1 Mini',
-    // Direct matches
-    'X1C': 'X1C',
-    'X1': 'X1',
-    'X1E': 'X1E',
-    'X2D': 'X2D',
-    'P1S': 'P1S',
-    'P1P': 'P1P',
-    'P2S': 'P2S',
-    'A1': 'A1',
-    'A1 Mini': 'A1 Mini',
-    'A2L': 'A2L',
-    'H2D': 'H2D',
-    'H2D Pro': 'H2D Pro',
-    'H2C': 'H2C',
-    'H2S': 'H2S',
-  };
-  return modelMap[ssdpModel] || ssdpModel;
-}
 
 // ─── AMS Name Hover Card ──────────────────────────────────────────────────────
 // Wraps the AMS label (e.g. "AMS-A") and shows a popup with:
@@ -7507,12 +7464,12 @@ function PrinterCard({
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-[length:var(--pc-t10,10px)] text-white/70 font-medium">{t('printers.drying.temperature')}</label>
                     <div className="flex items-center gap-1">
-                      <input
-                        type="number"
+                      <NumberInput
                         min={45}
                         max={maxTemp}
                         value={dryingTemp}
-                        onChange={e => setDryingTemp(Math.min(maxTemp, Math.max(45, Number(e.target.value) || 45)))}
+                        onChange={setDryingTemp}
+                        fallback={45}
                         className="w-12 px-1 py-0.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-[length:var(--pc-t11,11px)] text-center focus:outline-none focus:border-bambu-green [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                       <span className="text-[length:var(--pc-t10,10px)] text-bambu-gray">°C</span>
@@ -7536,12 +7493,12 @@ function PrinterCard({
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-[length:var(--pc-t10,10px)] text-white/70 font-medium">{t('printers.drying.duration')}</label>
                     <div className="flex items-center gap-1">
-                      <input
-                        type="number"
+                      <NumberInput
                         min={1}
                         max={24}
                         value={dryingDuration}
-                        onChange={e => setDryingDuration(Math.min(24, Math.max(1, Number(e.target.value) || 1)))}
+                        onChange={setDryingDuration}
+                        fallback={1}
                         className="w-10 px-1 py-0.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-[length:var(--pc-t11,11px)] text-center focus:outline-none focus:border-bambu-green [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                       <span className="text-[length:var(--pc-t10,10px)] text-bambu-gray">{t('printers.drying.hours')}</span>

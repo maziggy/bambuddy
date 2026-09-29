@@ -103,3 +103,5 @@ test_pipeline_run_1.3mf
 .coverage
 .coverage.*
 htmlcov/
+
+feature_votes.sh

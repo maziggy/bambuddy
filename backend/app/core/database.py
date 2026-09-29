@@ -1851,6 +1851,17 @@ async def run_migrations(conn):
     # Migration: Add is_favorite column to print_archives
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN is_favorite BOOLEAN DEFAULT 0")
 
+    # Migration: Add OIDC group sync columns (#3107). group_claim defaults to
+    # 'groups'; group_mapping defaults to '{}' (empty JSON object = sync off,
+    # the pre-#3107 behaviour). NOT NULL DEFAULT explicitly so an upgraded
+    # database matches what create_all builds on a fresh install (the model
+    # columns are non-nullable with server defaults) — a bare DEFAULT would
+    # leave the column nullable on the ALTER path and the two installs would
+    # disagree on the schema. Existing rows backfill the default on both
+    # SQLite and PostgreSQL.
+    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN group_claim VARCHAR(64) NOT NULL DEFAULT 'groups'")
+    await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN group_mapping JSON NOT NULL DEFAULT '{}'")
+
     # Migration: Add wallet_charge_skipped column to print_archives so deleted print charges stay deleted
     if is_sqlite():
         await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN wallet_charge_skipped BOOLEAN DEFAULT 0")
@@ -5061,6 +5072,47 @@ async def run_migrations(conn):
     # sending the verdict links as body text for every channel.
     await _migrate_confirm_prompt_body_template(conn)
 
+    # Migration: Telegram verdict-by-reaction (#3046). Per-provider mode plus
+    # the table of delivered prompts the reaction poller matches updates
+    # against. create_all covers fresh installs; this covers upgrades.
+    await _safe_execute(
+        conn, "ALTER TABLE notification_providers ADD COLUMN telegram_verdict_mode VARCHAR(16) DEFAULT 'buttons'"
+    )
+    await _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS telegram_pending_verdicts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider_id INTEGER NOT NULL REFERENCES notification_providers(id) ON DELETE CASCADE,
+            chat_id VARCHAR(64) NOT NULL,
+            message_id INTEGER NOT NULL,
+            archive_id INTEGER NOT NULL REFERENCES print_archives(id) ON DELETE CASCADE,
+            confirm_token VARCHAR(64),
+            has_caption BOOLEAN DEFAULT FALSE,
+            message_text TEXT,
+            created_at DATETIME
+        )
+        """
+        if is_sqlite()
+        else """
+        CREATE TABLE IF NOT EXISTS telegram_pending_verdicts (
+            id SERIAL PRIMARY KEY,
+            provider_id INTEGER NOT NULL REFERENCES notification_providers(id) ON DELETE CASCADE,
+            chat_id VARCHAR(64) NOT NULL,
+            message_id INTEGER NOT NULL,
+            archive_id INTEGER NOT NULL REFERENCES print_archives(id) ON DELETE CASCADE,
+            confirm_token VARCHAR(64),
+            has_caption BOOLEAN DEFAULT FALSE,
+            message_text TEXT,
+            created_at TIMESTAMP
+        )
+        """,
+    )
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_telegram_pending_verdicts_created_at ON telegram_pending_verdicts (created_at)",
+    )
+
     # Migration: rename the ha_sensor_alert template (#2824). "Home Assistant
     # Sensor Alert" was fine as a name while it was the only such template;
     # next to the new "Storage Location Sensor Alert" it no longer says which
@@ -5079,6 +5131,12 @@ async def run_migrations(conn):
     # Migration: supplier master list + spool assignments (#2988).
     # create_all() covers fresh installs; this covers upgrades.
     await _migrate_create_supplier_tables(conn)
+
+    # Migration: Add material_number to spool (#2870). Nullable free text —
+    # the internal purchasing/article number a business costs by, shared by
+    # all spools of the same product. VARCHAR(64) is spelled identically on
+    # SQLite and Postgres.
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN material_number VARCHAR(64)")
 
     # Migration: repair the tare of spools the RFID auto-add gave the wrong
     # Bambu spool row (#2909). Runs last so the spool catalogue it reads is

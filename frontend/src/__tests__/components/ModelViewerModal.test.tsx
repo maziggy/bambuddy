@@ -202,10 +202,54 @@ describe('ModelViewerModal', () => {
         // Look for the maximize icon button
         const buttons = screen.getAllByRole('button');
         const fullscreenButton = buttons.find(
-          (btn) => btn.querySelector('.lucide-maximize-2') || btn.title === 'Enter fullscreen'
+          (btn) => btn.querySelector('.lucide-maximize-2') || btn.title === 'Fullscreen'
         );
         expect(fullscreenButton).toBeInTheDocument();
       });
+    });
+
+    it('double-click on the viewer requests fullscreen for the panel (#2976)', async () => {
+      const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(document, 'fullscreenEnabled', { configurable: true, value: true });
+      Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', { configurable: true, value: requestFullscreen });
+      try {
+        render(
+          <ModelViewerModal
+            archiveId={1}
+            title="Test Model"
+            onClose={mockOnClose}
+          />
+        );
+        const viewer = await screen.findByTestId('model-viewer-area');
+
+        fireEvent.doubleClick(viewer);
+
+        expect(requestFullscreen).toHaveBeenCalledTimes(1);
+        const panel = screen.getByText('Test Model').closest('.flex-col');
+        expect(requestFullscreen.mock.instances[0]).toBe(panel);
+      } finally {
+        delete (document as { fullscreenEnabled?: boolean }).fullscreenEnabled;
+        delete (HTMLElement.prototype as { requestFullscreen?: () => Promise<void> }).requestFullscreen;
+      }
+    });
+
+    it('fills the viewport as a fallback where the Fullscreen API is missing', async () => {
+      render(
+        <ModelViewerModal
+          archiveId={1}
+          title="Test Model"
+          onClose={mockOnClose}
+        />
+      );
+      const viewer = await screen.findByTestId('model-viewer-area');
+      const panel = screen.getByText('Test Model').closest('.flex-col') as HTMLElement;
+      // Windowed: the size every preview shares (#2976), not a per-modal max-w.
+      expect(panel.className).toContain('w-[min(1800px,96vw)]');
+
+      fireEvent.doubleClick(viewer);
+
+      expect(panel.className).toContain('max-w-none');
+      expect(screen.getByTitle('Exit fullscreen')).toBeInTheDocument();
     });
   });
 

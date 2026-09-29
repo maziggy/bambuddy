@@ -75,6 +75,20 @@ function spoolGroupKey(s: InventorySpool): string {
 // Column definitions for the inventory table
 const COLUMN_CONFIG_KEY = 'bambuddy-inventory-columns';
 
+// Sentinel for the "no material number" slot in the filter dropdown (#2870).
+// The other chips use a readable '__none__', but a material number is free
+// text and could literally be '__none__'. SpoolBase caps the column at 64
+// characters, so a 65-character sentinel is one no spool can ever carry.
+const MATERIAL_NUMBER_NONE = 'none'.padStart(65, '_');
+
+// Sort key for the material-number column (#2870). The table compares sort
+// values with plain < / >, which puts "15" before "2"; padding every digit run
+// to the column's 64-character cap makes that comparison numeric-aware, so the
+// column orders the same way as the filter chip and the dialog suggestions.
+function materialNumberSortKey(value: string | null): string {
+  return (value || '').toLowerCase().replace(/\d+/g, (digits) => digits.padStart(64, '0'));
+}
+
 const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'id', label: '#', visible: true },
   { id: 'added_time', label: 'Added', visible: true },
@@ -99,6 +113,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'printed_total', label: 'Printed Total', visible: false },
   { id: 'printed_since_weight', label: 'Printed Since Weight', visible: false },
   { id: 'note', label: 'Note', visible: false },
+  { id: 'material_number', label: 'Material No.', visible: false },
   { id: 'suppliers', label: 'Suppliers', visible: false },
   { id: 'pa_k', label: 'PA(K)', visible: true },
   { id: 'tag_id', label: 'Tag ID', visible: false },
@@ -229,6 +244,7 @@ const columnHeaders: Record<string, (t: TFn) => string> = {
   printed_total: () => 'Printed Total',
   printed_since_weight: () => 'Printed Since Weight',
   note: (t) => t('inventory.note'),
+  material_number: (t) => t('inventory.materialNumber'),
   suppliers: (t) => t('inventory.suppliers.label'),
   pa_k: () => 'PA(K)',
   tag_id: () => 'Tag ID',
@@ -369,6 +385,9 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
   ),
   note: ({ spool }) => (
     <span className="text-sm text-bambu-gray max-w-[150px] truncate block" title={spool.note || undefined}>{spool.note || '-'}</span>
+  ),
+  material_number: ({ spool }) => (
+    <span className="text-sm text-bambu-gray">{spool.material_number || '-'}</span>
   ),
   // Supplier chips (#2988): purchase source first and highlighted; the
   // others read as alternative sources. Tooltip carries the supplier's
@@ -541,6 +560,7 @@ const columnSortValues: Record<
   used: (s) => s.weight_used,
   remaining: (s) => s.label_weight > 0 ? Math.max(0, s.label_weight - s.weight_used) / s.label_weight : 0,
   note: (s) => (s.note || '').toLowerCase(),
+  material_number: (s) => materialNumberSortKey(s.material_number),
   // Sorts on the purchase-source supplier, falling back to the first
   // assignment — a spool has to sit in exactly one place in the list.
   suppliers: (s) => {
@@ -638,6 +658,8 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   const [materialFilter, setMaterialFilter] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  // Filter on the internal material number (#2870), same shape as category.
+  const [materialNumberFilter, setMaterialNumberFilter] = useState('');
   // Filter on an assigned supplier (#2988), same shape as category.
   const [supplierFilter, setSupplierFilter] = useState('');
   const [spoolFilter, setSpoolFilter] = useState('');
@@ -674,7 +696,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   // honest vs. what the user is actually looking at.
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [archiveFilter, usageFilter, materialFilter, brandFilter, categoryFilter, supplierFilter, spoolFilter, stockFilter, search]);
+  }, [archiveFilter, usageFilter, materialFilter, brandFilter, categoryFilter, materialNumberFilter, supplierFilter, spoolFilter, stockFilter, search]);
 
   // Pagination state (pageSize persisted to localStorage)
   const [pageIndex, setPageIndex] = useState(0);
@@ -1312,6 +1334,16 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
       }
     }
 
+    // Material number dropdown (#2870). The sentinel finds spools that have
+    // no number assigned yet.
+    if (materialNumberFilter) {
+      if (materialNumberFilter === MATERIAL_NUMBER_NONE) {
+        filtered = filtered.filter((s) => !s.material_number?.trim());
+      } else {
+        filtered = filtered.filter((s) => s.material_number === materialNumberFilter);
+      }
+    }
+
     // Supplier dropdown (#2988): "everything from supplier X" matches ANY
     // assignment, purchase source or alternative; `__none__` finds spools
     // without supplier assignments.
@@ -1359,7 +1391,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     }
 
     return filtered;
-  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, categoryFilter, supplierFilter, spoolFilter, stockFilter, storageLocationFilter, search, lowStockThreshold, storageLocations, colorCatalogVersion]);
+  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, categoryFilter, materialNumberFilter, supplierFilter, spoolFilter, stockFilter, storageLocationFilter, search, lowStockThreshold, storageLocations, colorCatalogVersion]);
 
   // Reset page on filter changes
   const resetPage = () => setPageIndex(0);
@@ -1380,6 +1412,10 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   const uniqueBrands = [...new Set(spools?.map((s) => s.brand).filter(Boolean) || [])].sort() as string[];
   const uniqueCategories = [...new Set(spools?.map((s) => s.category?.trim()).filter(Boolean) as string[] || [])].sort();
   const hasUncategorized = (spools ?? []).some((s) => !s.category);
+  // #2870: distinct material numbers, numeric-aware sort ("2" before "15").
+  const uniqueMaterialNumbers = [...new Set(spools?.map((s) => s.material_number?.trim()).filter(Boolean) as string[] || [])]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const hasUnnumbered = (spools ?? []).some((s) => !s.material_number?.trim());
   // #2988: suppliers seen across the inventory, for the filter dropdown.
   const uniqueSuppliers = useMemo(() => {
     const byId = new Map<number, string>();
@@ -1401,7 +1437,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   const hasUnsetStorageLocation = (spools ?? []).some((s) => !s.location_id && !s.storage_location?.trim());
 
   // Check if any filters are non-default
-  const hasActiveFilters = archiveFilter !== 'active' || usageFilter !== 'all' || !!materialFilter || !!brandFilter || !!categoryFilter || !!supplierFilter || !!spoolFilter || !!storageLocationFilter || stockFilter !== 'all' || !!search;
+  const hasActiveFilters = archiveFilter !== 'active' || usageFilter !== 'all' || !!materialFilter || !!brandFilter || !!categoryFilter || !!materialNumberFilter || !!supplierFilter || !!spoolFilter || !!storageLocationFilter || stockFilter !== 'all' || !!search;
 
   const handleColumnConfigSave = (config: ColumnConfig[]) => {
     setColumnConfig(config);
@@ -1523,6 +1559,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     setMaterialFilter('');
     setBrandFilter('');
     setCategoryFilter('');
+    setMaterialNumberFilter('');
     setSupplierFilter('');
     setSpoolFilter('');
     setStockFilter('all');
@@ -1984,6 +2021,28 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
             ))}
             {hasUncategorized && (
               <option value="__none__">{t('inventory.categoryNone')}</option>
+            )}
+          </select>
+        )}
+
+        {/* Material number dropdown chip (#2870) — same render rule as the
+            category chip: hidden until at least one spool carries a number. */}
+        {(uniqueMaterialNumbers.length > 0 || materialNumberFilter) && (
+          <select
+            value={materialNumberFilter}
+            onChange={(e) => { setMaterialNumberFilter(e.target.value); resetPage(); }}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer focus:outline-none ${
+              materialNumberFilter
+                ? 'bg-bambu-green/20 text-bambu-green border-bambu-green/30'
+                : 'bg-transparent text-bambu-gray border-bambu-dark-tertiary hover:bg-bambu-dark-tertiary'
+            }`}
+          >
+            <option value="">{t('inventory.materialNumber')}</option>
+            {uniqueMaterialNumbers.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+            {hasUnnumbered && (
+              <option value={MATERIAL_NUMBER_NONE}>{t('inventory.materialNumberNone')}</option>
             )}
           </select>
         )}
@@ -2550,8 +2609,10 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         availableSubtypes={dedupeAndSort((spools ?? []).map((s) => s.subtype))}
         availableBrands={dedupeAndSort((spools ?? []).map((s) => s.brand))}
         availableCategories={dedupeAndSort((spools ?? []).map((s) => s.category))}
+        availableMaterialNumbers={dedupeAndSort((spools ?? []).map((s) => s.material_number))}
         availableSlicerFilaments={dedupeAndSort((spools ?? []).map((s) => s.slicer_filament))}
         availableSlicerFilamentNames={dedupeAndSort((spools ?? []).map((s) => s.slicer_filament_name))}
+        spoolmanMode={spoolmanMode}
         onClose={() => setBulkEditOpen(false)}
         onApply={(patch) => bulkUpdateMutation.mutate({ ids: [...selectedIds], update: patch })}
       />

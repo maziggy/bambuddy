@@ -7,6 +7,7 @@ types, and never replacing an existing thumbnail.
 """
 
 import io
+import zlib
 
 import pytest
 from httpx import AsyncClient
@@ -14,12 +15,29 @@ from PIL import Image
 
 from backend.app.core.config import settings as app_settings
 from backend.app.models.library import LibraryFile
+from backend.tests.integration.test_ownership_permissions import TestOwnershipPermissionsSetup
 
 
 def _png_bytes(size: tuple[int, int] = (300, 300), color: str = "red") -> bytes:
     buf = io.BytesIO()
     Image.new("RGB", size, color).save(buf, "PNG")
     return buf.getvalue()
+
+
+def _png_claiming(width: int, height: int) -> bytes:
+    """A ~70-byte PNG whose IHDR declares a canvas it never delivers.
+
+    This is the shape that costs memory: the header is what a decoder sizes
+    its buffer from, and the payload stays small enough to pass any upload cap.
+    """
+    raw = bytearray(_png_bytes(size=(1, 1)))
+    # 8-byte signature, then IHDR: length(4) type(4) data(13) crc(4).
+    ihdr = raw[8:33]
+    ihdr[8:12] = width.to_bytes(4, "big")
+    ihdr[12:16] = height.to_bytes(4, "big")
+    ihdr[21:25] = zlib.crc32(bytes(ihdr[4:21])).to_bytes(4, "big")
+    raw[8:33] = ihdr
+    return bytes(raw)
 
 
 @pytest.fixture
@@ -169,3 +187,139 @@ class TestPreviewThumbnailUpload:
             files={"thumbnail": ("preview.png", _png_bytes(), "image/png")},
         )
         assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_rejects_a_canvas_it_would_have_to_allocate(
+        self, async_client: AsyncClient, db_session, file_factory, isolated_storage
+    ):
+        """12000x7000 is under PIL's bomb limit and would decode for real.
+
+        A few KB of upload turns into ~340 MB of pixels, so the declared size
+        has to be refused from the header, before load() is ever reached.
+        """
+        library_file = await file_factory(file_type="step")
+
+        response = await async_client.post(
+            f"/api/v1/library/files/{library_file.id}/preview-thumbnail",
+            files={"thumbnail": ("preview.png", _png_claiming(12000, 7000), "image/png")},
+        )
+
+        assert response.status_code == 400
+        await db_session.refresh(library_file)
+        assert library_file.thumbnail_path is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_rejects_a_decompression_bomb_header(
+        self, async_client: AsyncClient, file_factory, isolated_storage
+    ):
+        """PIL raises DecompressionBombError straight off Exception.
+
+        It is neither an OSError nor a ValueError, so it escaped the decode
+        guard and surfaced as a 500 — it is a bad request like any other.
+        """
+        library_file = await file_factory(file_type="pdf", filename="doc.pdf", file_path="library/files/doc.pdf")
+
+        response = await async_client.post(
+            f"/api/v1/library/files/{library_file.id}/preview-thumbnail",
+            files={"thumbnail": ("preview.png", _png_claiming(20000, 20000), "image/png")},
+        )
+
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_storage_failure_is_not_reported_as_a_bad_image(
+        self, async_client: AsyncClient, monkeypatch, file_factory, isolated_storage
+    ):
+        """A full disk is ours to own, not "Invalid thumbnail image"."""
+
+        payload = _png_bytes()
+        library_file = await file_factory(file_type="xlsx")
+
+        def _no_space(*args, **kwargs):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(Image.Image, "save", _no_space)
+
+        response = await async_client.post(
+            f"/api/v1/library/files/{library_file.id}/preview-thumbnail",
+            files={"thumbnail": ("preview.png", payload, "image/png")},
+        )
+
+        assert response.status_code == 500
+        assert response.json()["detail"] != "Invalid thumbnail image"
+
+
+class TestPreviewThumbnailOwnership(TestOwnershipPermissionsSetup):
+    """The ownership branch of the upload route (#2976).
+
+    Reuses the shared auth setup: Operators hold library:update_own only, so
+    they are the group that can tell the two branches apart.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_can_upload_for_their_own_file(
+        self, async_client: AsyncClient, db_session, auth_setup, file_factory, isolated_storage
+    ):
+        library_file = await file_factory(file_type="step", created_by_id=auth_setup["operator_user"]["id"])
+
+        response = await async_client.post(
+            f"/api/v1/library/files/{library_file.id}/preview-thumbnail",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            files={"thumbnail": ("preview.png", _png_bytes(), "image/png")},
+        )
+
+        assert response.status_code == 200
+        await db_session.refresh(library_file)
+        assert library_file.thumbnail_path
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_upload_for_someone_elses_file(
+        self, async_client: AsyncClient, db_session, auth_setup, file_factory, isolated_storage
+    ):
+        library_file = await file_factory(file_type="step", created_by_id=auth_setup["operator2_user"]["id"])
+
+        response = await async_client.post(
+            f"/api/v1/library/files/{library_file.id}/preview-thumbnail",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            files={"thumbnail": ("preview.png", _png_bytes(), "image/png")},
+        )
+
+        assert response.status_code == 403
+        await db_session.refresh(library_file)
+        assert library_file.thumbnail_path is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_upload_for_an_ownerless_file(
+        self, async_client: AsyncClient, auth_setup, file_factory, isolated_storage
+    ):
+        """created_by_id is NULL — an *_own permission owns nothing here."""
+        library_file = await file_factory(file_type="step", created_by_id=None)
+
+        response = await async_client.post(
+            f"/api/v1/library/files/{library_file.id}/preview-thumbnail",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            files={"thumbnail": ("preview.png", _png_bytes(), "image/png")},
+        )
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_can_upload_for_an_ownerless_file(
+        self, async_client: AsyncClient, auth_setup, file_factory, isolated_storage
+    ):
+        library_file = await file_factory(file_type="step", created_by_id=None)
+
+        response = await async_client.post(
+            f"/api/v1/library/files/{library_file.id}/preview-thumbnail",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+            files={"thumbnail": ("preview.png", _png_bytes(), "image/png")},
+        )
+
+        assert response.status_code == 200

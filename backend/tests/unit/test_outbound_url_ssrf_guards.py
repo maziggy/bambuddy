@@ -328,7 +328,15 @@ def test_no_user_supplied_host_provider_formats_the_body_inline():
     a webhook-prefix allowlist), so there is no trust boundary to cross.
     """
     src = inspect.getsource(ns).split("\n")
-    host_pinned = {"_send_callmebot", "_send_pushover", "_send_telegram", "_send_discord"}
+    # _send_telegram_message is the api.telegram.org call itself (#3046);
+    # _send_telegram wraps it.
+    host_pinned = {
+        "_send_callmebot",
+        "_send_pushover",
+        "_send_telegram",
+        "_send_telegram_message",
+        "_send_discord",
+    }
 
     current = None
     offenders = []

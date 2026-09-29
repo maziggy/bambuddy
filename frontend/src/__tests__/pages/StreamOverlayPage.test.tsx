@@ -150,6 +150,17 @@ describe('StreamOverlayPage', () => {
       if (query === '?show=model') expect(screen.queryByText(/X1 Carbon/)).not.toBeInTheDocument();
     });
 
+    it.each([
+      ['BL-P001', 'X1C'],
+      ['O1D', 'H2D'],
+      ['H2D', 'H2D'],
+      ['Future printer', 'Future printer'],
+    ])('displays the saved model %s as %s', async (model, displayName) => {
+      server.use(http.get('/api/v1/printers/:id', () => HttpResponse.json({ ...mockPrinter, model })));
+      renderOverlayPage(1, '?show=model');
+      expect(await screen.findByText(displayName)).toBeInTheDocument();
+    });
+
     it.each([null, ''])('omits a missing model without adding a separator (%s)', async (model) => {
       server.use(http.get('/api/v1/printers/:id', () => HttpResponse.json({ ...mockPrinter, model })));
       renderOverlayPage(1, '?show=printer,model');
@@ -157,7 +168,7 @@ describe('StreamOverlayPage', () => {
       expect(screen.queryByText(/·/)).not.toBeInTheDocument();
     });
 
-    it.each([['H2D', 'Workshop · H2D'], [null, 'Workshop'], ['', 'Workshop']] as const)('reads the model (%s) from the OBS token feed without requesting printer details', async (model, identity) => {
+    it.each([['H2D', 'H2D'], ['BL-P001', 'X1C'], ['O1D', 'H2D'], [null, ''], ['', '']] as const)('reads the model %s from the OBS token feed without requesting printer details', async (model, displayName) => {
       let printerHit = false;
       server.use(
         http.get('/api/v1/printers/:id/overlay-status', () => HttpResponse.json({
@@ -170,7 +181,7 @@ describe('StreamOverlayPage', () => {
         }),
       );
       renderOverlayPage(1, '?token=obs-tok&show=printer,model');
-      expect(await screen.findByText(identity)).toBeInTheDocument();
+      expect(await screen.findByText(displayName ? `Workshop · ${displayName}` : 'Workshop')).toBeInTheDocument();
       expect(printerHit).toBe(false);
       if (!model) expect(screen.queryByText(/·/)).not.toBeInTheDocument();
     });

@@ -72,9 +72,11 @@ def test_normalization_spaces_dashes_case():
 
 def test_internal_codes_resolve_to_short_names():
     # slice_info printer_model_id codes compare equal to their short names.
-    assert is_gcode_compatible("C11", "X1C")
+    assert is_gcode_compatible("BL-P001", "X1C")
+    assert is_gcode_compatible("C11", "P1P")
+    assert is_gcode_compatible("N7", "P2S")
     assert is_gcode_compatible("O1D", "H2D")
-    assert is_gcode_compatible("C11", "P1S")  # X1C → family with P1S
+    assert is_gcode_compatible("C11", "X1C")  # P1P → family with X1C
     assert not is_gcode_compatible("C11", "H2D")
 
 

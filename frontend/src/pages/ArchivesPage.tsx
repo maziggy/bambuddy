@@ -3601,8 +3601,12 @@ export function ArchivesPage() {
       const matchesHideFailed = collection === 'failed' || !hideFailed || (a.status !== 'failed' && a.status !== 'aborted');
 
       // Unconfirmed-outcome filter (#1898): archives that asked for a verdict
-      // and are still waiting for one.
-      const matchesUnconfirmed = !filterUnconfirmed || (a.confirm_requested && a.user_verdict == null);
+      // and are still waiting for one. Completed prints only, like the badge
+      // and the menu entry — confirm_requested is copied on at dispatch and
+      // never cleared, so a print that failed or is still running would
+      // otherwise sit here forever with no way to answer it.
+      const matchesUnconfirmed = !filterUnconfirmed ||
+        (a.status === 'completed' && a.confirm_requested && a.user_verdict == null);
 
       // Hide duplicates filter (don't apply when viewing duplicates collection)
       const matchesHideDuplicates =

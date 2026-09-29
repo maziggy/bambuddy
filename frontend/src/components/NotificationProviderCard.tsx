@@ -129,6 +129,12 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             {provider.on_print_confirm_request && (
               <span className="px-2 py-0.5 bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-400 text-xs rounded">{t('notifications.printConfirmRequest')}</span>
             )}
+            {provider.provider_type === 'telegram' && provider.on_print_confirm_request && provider.telegram_verdict_mode === 'reactions' && (
+              <span className="px-2 py-0.5 bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-400 text-xs rounded">{t('notifications.telegramVerdictBadgeReactions')}</span>
+            )}
+            {provider.provider_type === 'telegram' && provider.on_print_confirm_request && provider.telegram_verdict_mode === 'both' && (
+              <span className="px-2 py-0.5 bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-400 text-xs rounded">{t('notifications.telegramVerdictBadgeBoth')}</span>
+            )}
             {provider.on_print_failed && (
               <span className="px-2 py-0.5 bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 text-xs rounded">{t('notifications.failed')}</span>
             )}

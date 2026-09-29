@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Layers, Clock, Timer, Printer, Flame, Square, Box } from 'lucide-react';
 import { api, ApiError, withStreamToken } from '../api/client';
 import { formatDuration, formatETA, type TimeFormat } from '../utils/date';
+import { mapModelCode } from '../utils/printerModel';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
@@ -217,7 +218,7 @@ export function StreamOverlayPage() {
   );
   const printerIdentity = [
     config.showPrinter ? printer?.name : null,
-    config.showModel ? printer?.model : null,
+    config.showModel ? mapModelCode(printer?.model ?? null) : null,
   ].filter(Boolean).join(' · ');
   const status = kiosk ? overlay : statusData;
   const timeFormat: TimeFormat = (kiosk ? overlay?.time_format : settings?.time_format) || 'system';

@@ -46,6 +46,7 @@ from backend.app.models.user import User
 from backend.app.schemas.spool import SpoolFilamentPresetBase, SpoolKProfileBase
 from backend.app.schemas.spoolman import SpoolmanFilamentPatch, SpoolmanSlotAssignmentEnriched
 from backend.app.schemas.supplier import SpoolSupplierLinkInput
+from backend.app.services import slot_unlink_grace
 from backend.app.services.location_service import (
     enrich_spool_dicts_with_location_id,
     maybe_sync_spoolman_locations,
@@ -1539,6 +1540,7 @@ async def assign_spoolman_slot(
             },
         )
         await db.commit()
+        slot_unlink_grace.forget_slot(body.printer_id, body.ams_id, body.tray_id)
     except Exception as exc:
         await db.rollback()
         logger.error("Failed to persist slot assignment: %s", exc)

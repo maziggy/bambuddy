@@ -2989,6 +2989,8 @@ export interface Filament {
 
 // Notification Provider types
 export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook' | 'homeassistant' | 'bark';
+// How a Telegram provider collects the outcome verdict (#3046)
+export type TelegramVerdictMode = 'buttons' | 'reactions' | 'both';
 
 export interface NotificationProvider {
   id: number;
@@ -3022,6 +3024,7 @@ export interface NotificationProvider {
   on_plate_clear_required: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request: boolean;
+  telegram_verdict_mode: TelegramVerdictMode;
   // Bed cooled
   on_bed_cooled: boolean;
   on_ha_sensor_alert: boolean;
@@ -3089,6 +3092,7 @@ export interface NotificationProviderCreate {
   on_plate_clear_required?: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request?: boolean;
+  telegram_verdict_mode?: TelegramVerdictMode;
   // Bed cooled
   on_bed_cooled?: boolean;
   on_ha_sensor_alert?: boolean;
@@ -3149,6 +3153,7 @@ export interface NotificationProviderUpdate {
   on_plate_clear_required?: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request?: boolean;
+  telegram_verdict_mode?: TelegramVerdictMode;
   // Bed cooled
   on_bed_cooled?: boolean;
   on_ha_sensor_alert?: boolean;
@@ -3658,6 +3663,9 @@ export interface InventorySpool {
   // User-defined category + per-spool low-stock threshold override (#729).
   category: string | null;
   low_stock_threshold_pct: number | null;
+  // Internal material / article number (#2870) — the purchasing identifier
+  // shared by all spools of the same product.
+  material_number: string | null;
   k_profiles?: SpoolKProfile[];
   storage_location?: string | null;
   location_id?: number | null;
@@ -3712,6 +3720,15 @@ export interface SpoolSupplierLink {
 export interface SupplierStats {
   supplier_id: number;
   supplier_name: string;
+  spool_count: number;
+  remaining_g: number;
+  consumed_g: number;
+  cost: number;
+}
+
+/** Per-material-number inventory aggregate (#2870). */
+export interface MaterialNumberStats {
+  material_number: string;
   spool_count: number;
   remaining_g: number;
   consumed_g: number;
@@ -4397,6 +4414,16 @@ export interface TwoFAVerifyRequest {
 export type SameOriginUrl = string & { readonly __brand: 'SameOriginUrl' };
 
 // OIDC interfaces
+/** What the unauthenticated GET /auth/oidc/providers returns (#3107): only
+ *  what the login page renders. The full provider, group sync config
+ *  included, needs the admin-only /auth/oidc/providers/all. */
+export interface OIDCProviderPublic {
+  id: number;
+  name: string;
+  has_icon: boolean;
+  is_autologin: boolean;
+}
+
 export interface OIDCProvider {
   id: number;
   name: string;
@@ -4408,6 +4435,9 @@ export interface OIDCProvider {
   auto_link_existing_accounts: boolean;
   email_claim: string;
   require_email_verified: boolean;
+  // #3107 — group sync. Empty mapping = sync off (default).
+  group_claim?: string;
+  group_mapping?: Record<string, string>;
   icon_url?: string | null;
   default_group_id?: number | null;
   // True when the backend has cached icon bytes for this provider.
@@ -4439,6 +4469,9 @@ export interface OIDCProviderCreate {
   auto_link_existing_accounts?: boolean;
   email_claim?: string;
   require_email_verified?: boolean;
+  // #3107 — group sync. Omit both to leave them unchanged on update.
+  group_claim?: string;
+  group_mapping?: Record<string, string>;
   icon_url?: string | null;
   default_group_id?: number | null;
   is_autologin?: boolean;  // #1589
@@ -4648,7 +4681,7 @@ export const api = {
     request<{ message: string }>(`/auth/2fa/admin/${userId}`, { method: 'DELETE' }),
 
   // OIDC providers (public list)
-  getOIDCProviders: () => request<OIDCProvider[]>('/auth/oidc/providers'),
+  getOIDCProviders: () => request<OIDCProviderPublic[]>('/auth/oidc/providers'),
 
   // OIDC providers (admin)
   getOIDCProvidersAll: () => request<OIDCProvider[]>('/auth/oidc/providers/all'),
@@ -6798,6 +6831,15 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+  // Per-material-number inventory aggregate (#2870). The date range narrows
+  // the usage half only — stock is point-in-time.
+  getMaterialNumberStats: (options?: { dateFrom?: string; dateTo?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.dateFrom) params.set('date_from', options.dateFrom);
+    if (options?.dateTo) params.set('date_to', options.dateTo);
+    const qs = params.toString();
+    return request<MaterialNumberStats[]>(`/inventory/stats/material-numbers${qs ? `?${qs}` : ''}`);
+  },
   getSpoolUsageHistory: (spoolId: number, limit = 50) =>
     request<SpoolUsageRecord[]>(`/inventory/spools/${spoolId}/usage?limit=${limit}`),
   getAllUsageHistory: (limit = 100, printerId?: number) =>

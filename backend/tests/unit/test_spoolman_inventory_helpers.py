@@ -107,6 +107,22 @@ class TestMapSpoolmanSpool:
         assert result["weight_used_baseline"] == pytest.approx(0.0)
         assert result["data_origin"] == "spoolman"
 
+    def test_article_number_maps_to_material_number(self):
+        """Spoolman's filament.article_number is the material number (#2870)."""
+        spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "article_number": "15"}}
+        assert _map_spoolman_spool(spool)["material_number"] == "15"
+
+    def test_missing_or_blank_article_number_maps_to_none(self):
+        assert _map_spoolman_spool(MINIMAL_SPOOL)["material_number"] is None
+        for value in ("", "   "):
+            blank = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "article_number": value}}
+            assert _map_spoolman_spool(blank)["material_number"] is None
+
+    def test_padded_article_number_is_trimmed(self):
+        """The filter chip matches exactly against trimmed options (#2870)."""
+        spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "article_number": " 15 "}}
+        assert _map_spoolman_spool(spool)["material_number"] == "15"
+
     def test_remaining_weight_drives_synthetic_used_for_parity(self):
         """When remaining_weight is set, weight_used = label - remaining and
         the baseline absorbs the used_weight delta. This mirrors the internal
@@ -429,6 +445,18 @@ class TestMapSpoolmanSpool:
     def test_spool_level_none_falls_back_to_filament(self):
         spool = {**MINIMAL_SPOOL, "spool_weight": None, "filament": {**MINIMAL_SPOOL["filament"], "spool_weight": 196}}
         assert _map_spoolman_spool(spool)["core_weight"] == 196
+
+    @pytest.mark.parametrize(
+        ("spool_level", "inherited"),
+        [(180, False), (0, False), (None, True), ("absent", True)],
+    )
+    def test_core_weight_is_inherited_says_whose_tare_it_is(self, spool_level, inherited):
+        """The spool form copies an own tare onto a copy and leaves an
+        inherited one alone (#2908). 0 is an own tare, not a missing one."""
+        spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "spool_weight": 196}}
+        if spool_level != "absent":
+            spool["spool_weight"] = spool_level
+        assert _map_spoolman_spool(spool)["core_weight_is_inherited"] is inherited
 
     def test_spool_level_absent_falls_back_to_filament(self):
         spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "spool_weight": 196}}

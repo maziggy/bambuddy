@@ -32,6 +32,7 @@ class MappedSpoolFields(TypedDict):
     effect_type: None
     label_weight: int | None
     core_weight: int | None
+    core_weight_is_inherited: bool
     core_weight_catalog_id: None
     weight_used: float | None
     weight_used_baseline: float | None
@@ -54,6 +55,10 @@ class MappedSpoolFields(TypedDict):
     created_at: str | None  # None when Spoolman spool has no registered timestamp
     updated_at: str | None
     cost_per_kg: float | None
+    # Spoolman's native filament.article_number, surfaced as the internal
+    # material number (#2870). Read-only in Spoolman mode — the number is
+    # filament-level there and maintained in Spoolman itself.
+    material_number: str | None
     storage_location: str | None
     location_id: int | None
     k_profiles: list[Any]
@@ -378,6 +383,11 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         "core_weight": _safe_int(
             spool.get("spool_weight") if spool.get("spool_weight") is not None else filament.get("spool_weight"), 250
         ),
+        # True when the spool has no spool_weight of its own and core_weight is
+        # the filament type's (or the 250 g fallback). The spool form needs it
+        # to copy a spool without dropping an own tare or stamping an
+        # inherited one (#2908).
+        "core_weight_is_inherited": spool.get("spool_weight") is None,
         "core_weight_catalog_id": None,
         "weight_used": used_weight,
         "weight_used_baseline": weight_used_baseline,
@@ -408,6 +418,12 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         # Spoolman has no updated_at field; use registered timestamp as best available proxy
         "updated_at": created_at,
         "cost_per_kg": _safe_optional_float(spool.get("price")),
+        # Spoolman's filament.article_number maps 1:1 onto the internal
+        # material number (#2870): both identify the purchasable product.
+        # Trimmed for the same reason the schema validator trims the internal
+        # one — the filter chip builds its options from trimmed values and
+        # matches exactly, so a padded number would list and match nothing.
+        "material_number": ((filament.get("article_number") or "").strip() or None),
         "storage_location": spool.get("location") or None,
         "location_id": None,
         "k_profiles": [],

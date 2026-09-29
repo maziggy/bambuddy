@@ -8,6 +8,7 @@ to ensure they are well-formed before use.
 """
 
 import asyncio
+import contextlib
 import functools
 import ipaddress
 import logging
@@ -921,42 +922,55 @@ async def generate_mjpeg_stream(
                 logger.exception("on_frame callback raised")
         return _format_mjpeg_frame(frame)
 
-    if camera_type == "mjpeg":
-        # Proxy MJPEG stream directly, with reconnect on timeout
-        max_retries = 3
-        for attempt in range(max_retries + 1):
+    async def _reconnecting(open_session, label: str):
+        """Yield frames across sessions, reconnecting after each that delivered.
+
+        A session that ends without a single frame stops the stream: the
+        source is down, and retrying is the viewer's call. One that delivered
+        frames and then ended is a routine drop and is always reconnected.
+        This used to be three reconnects for the life of the stream, so a
+        server that closes its sessions periodically ended the stream for good
+        on the fourth drop, however long each session had run -- the external
+        twin of the built-in RTSP path's lifetime reconnect budget.
+        """
+        drops = 0
+        while True:
             frame_yielded = False
-            async for frame in _stream_mjpeg(url):
-                frame_yielded = True
+            # aclosing: stop the session's ffmpeg the moment this generator is
+            # closed, rather than whenever the abandoned iterator is collected.
+            async with contextlib.aclosing(open_session()) as session:
+                async for frame in session:
+                    frame_yielded = True
+                    yield frame
+            if not frame_yielded or (stop_event is not None and stop_event.is_set()):
+                break
+            # The sessions swallow CancelledError and simply end, so a viewer
+            # whose task was cancelled mid-read looks like a routine drop here.
+            # Never redial for a task that is being cancelled (Task.cancelling
+            # is 3.11+; without it this falls back to the next await raising).
+            task = asyncio.current_task()
+            if task is not None and getattr(task, "cancelling", lambda: 0)():
+                break
+            drops += 1
+            logger.warning("External %s stream ended, reconnecting (drop %d)...", label, drops)
+            await asyncio.sleep(2)
+
+    if camera_type == "mjpeg":
+        # Proxy MJPEG stream directly, reconnecting after routine drops.
+        async with contextlib.aclosing(_reconnecting(lambda: _stream_mjpeg(url), "MJPEG")) as frames:
+            async for frame in frames:
                 current_time = asyncio.get_event_loop().time()
                 if current_time - last_frame_time >= frame_interval:
                     last_frame_time = current_time
                     yield _publish(frame)
-            if not frame_yielded or attempt == max_retries or (stop_event is not None and stop_event.is_set()):
-                break
-            logger.warning(
-                "External MJPEG stream ended, reconnecting (attempt %d/%d)...",
-                attempt + 1,
-                max_retries,
-            )
-            await asyncio.sleep(2)
 
     elif camera_type == "rtsp":
-        # Use ffmpeg to convert RTSP to MJPEG, with reconnect on timeout
-        max_retries = 3
-        for attempt in range(max_retries + 1):
-            frame_yielded = False
-            async for frame in _stream_rtsp(url, fps, on_process=on_process):
-                frame_yielded = True
+        # Use ffmpeg to convert RTSP to MJPEG, reconnecting after routine drops.
+        async with contextlib.aclosing(
+            _reconnecting(lambda: _stream_rtsp(url, fps, on_process=on_process), "RTSP")
+        ) as frames:
+            async for frame in frames:
                 yield _publish(frame)
-            if not frame_yielded or attempt == max_retries or (stop_event is not None and stop_event.is_set()):
-                break
-            logger.warning(
-                "External RTSP stream ended, reconnecting (attempt %d/%d)...",
-                attempt + 1,
-                max_retries,
-            )
-            await asyncio.sleep(2)
 
     elif camera_type == "usb":
         # Use ffmpeg to stream from USB camera

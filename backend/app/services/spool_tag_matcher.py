@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.schemas.spool import normalize_effect_type
+from backend.app.services import slot_unlink_grace
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_filament_preset import printer_safe_filament_id, resolve_spool_preset
 from backend.app.utils.tag_normalization import (
@@ -226,6 +227,18 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
         remain_pct = 100  # Unknown → assume full
     weight_used = round(label_weight * (100 - remain_pct) / 100.0, 1)
 
+    # A new spool of an already-numbered product inherits its material number
+    # (#2870) — an RFID-scanned refill arrives costed, not blank.
+    from backend.app.services.material_number import find_material_number_for_product
+
+    material_number = await find_material_number_for_product(
+        db,
+        material=material,
+        subtype=subtype,
+        brand="Bambu Lab",
+        color_name=color_name,
+    )
+
     spool = Spool(
         material=material,
         subtype=subtype,
@@ -234,6 +247,7 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
         extra_colors=extra_colors,
         effect_type=effect_type,
         brand="Bambu Lab",
+        material_number=material_number,
         label_weight=label_weight,
         core_weight=core_weight,
         core_weight_catalog_id=core_weight_catalog_id,
@@ -255,8 +269,16 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     # when creating SpoolAssignment runs synchronously outside the greenlet.
     spool.k_profiles = []
     spool.assignments = []
+    spool.supplier_links = []
     db.add(spool)
     await db.flush()
+
+    # A new spool of a product that already carries supplier assignments
+    # inherits the source list (#2988) — a scanned refill arrives knowing
+    # where it can be bought.
+    from backend.app.services.supplier_links import apply_supplier_inheritance
+
+    await apply_supplier_inheritance(db, spool)
 
     logger.info(
         "Auto-created spool %d from AMS tray data: %s %s %s (tag=%s uuid=%s)",
@@ -559,6 +581,7 @@ async def auto_assign_spool(
     )
     db.add(assignment)
     await db.flush()
+    slot_unlink_grace.forget_slot(printer_id, ams_id, tray_id)
 
     # Apply K-profile via MQTT (if available)
     # NOTE: Do NOT send ams_set_filament_setting here. This function is only

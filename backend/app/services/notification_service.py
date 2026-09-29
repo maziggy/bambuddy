@@ -1814,7 +1814,7 @@ class NotificationService:
         self,
         printer_id: int,
         printer_name: str,
-        slot: int,
+        slot: str,
         remaining_percent: int,
         db: AsyncSession,
         color: str | None = None,
@@ -1826,7 +1826,7 @@ class NotificationService:
 
         variables = {
             "printer": printer_name,
-            "slot": str(slot),
+            "slot": slot,
             "remaining_percent": str(remaining_percent),
             "color": color or "",
         }

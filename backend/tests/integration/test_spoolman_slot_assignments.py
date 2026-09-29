@@ -111,6 +111,28 @@ class TestAssignSpoolmanSlot:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_assign_drops_a_held_unlink_on_the_slot(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_client
+    ):
+        """#3186: a slot that read empty has its unlink held for a grace period.
+        Linking a spool to it is fresher evidence, so the old clock must not
+        carry over and delete the user's own link."""
+        from backend.app.services import slot_unlink_grace
+
+        hold_key = ("spoolman", 0, 0, 10)
+        slot_unlink_grace.removal_confirmed(test_printer.id, hold_key)
+        assert slot_unlink_grace.is_held(test_printer.id, hold_key)
+
+        response = await async_client.post(
+            "/api/v1/spoolman/inventory/slot-assignments",
+            json={"spoolman_spool_id": 10, "printer_id": test_printer.id, "ams_id": 0, "tray_id": 0},
+        )
+
+        assert response.status_code == 200
+        assert not slot_unlink_grace.is_held(test_printer.id, hold_key)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_assign_accepts_ams_ht_id(self, async_client: AsyncClient, slot_settings, test_printer, mock_client):
         """#1274: AMS-HT units report ams_id 128+. The pre-fix ck_ams_id_range
         only allowed 0-7 / 255, so the upsert blew up with `CHECK constraint

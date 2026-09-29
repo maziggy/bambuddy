@@ -40,6 +40,7 @@ import type {
   ScheduleType,
 } from './types';
 import { DEFAULT_PRINT_OPTIONS, DEFAULT_SCHEDULE_OPTIONS } from './types';
+import { NumberInput } from '../NumberInput';
 
 /** Same filament: type ignoring case, colour as RRGGBB ignoring `#`, case and alpha. */
 function isSameFilament(a: { type: string; color: string }, b: { type: string; color: string }): boolean {
@@ -1951,13 +1952,13 @@ export function PrintModal({
                 <label htmlFor="printQuantity" className="text-sm text-bambu-gray whitespace-nowrap">
                   {t('queue.quantity', 'Quantity')}
                 </label>
-                <input
+                <NumberInput
                   id="printQuantity"
-                  type="number"
                   min={1}
                   max={999}
                   value={quantity}
-                  onChange={(e) => setQuantity(Math.max(1, Math.min(999, parseInt(e.target.value) || 1)))}
+                  onChange={setQuantity}
+                  fallback={1}
                   className="w-20 px-2 py-1 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded text-white focus:outline-none focus:ring-1 focus:ring-bambu-green"
                 />
                 {quantity > 1 && (

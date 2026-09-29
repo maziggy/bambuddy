@@ -3626,6 +3626,9 @@ export interface InventorySpool {
   brand: string | null;
   label_weight: number;
   core_weight: number;
+  // Spoolman-backed inventory only: true when the spool has no tare of its
+  // own and core_weight is the filament type's. Absent for local spools (#2908).
+  core_weight_is_inherited?: boolean;
   core_weight_catalog_id: number | null;
   weight_used: number;
   // Anchor for the resettable "Total Consumed" display (#1390). The
@@ -3655,9 +3658,76 @@ export interface InventorySpool {
   // User-defined category + per-spool low-stock threshold override (#729).
   category: string | null;
   low_stock_threshold_pct: number | null;
+  // Internal material / article number (#2870) — the purchasing identifier
+  // shared by all spools of the same product.
+  material_number: string | null;
   k_profiles?: SpoolKProfile[];
   storage_location?: string | null;
   location_id?: number | null;
+  // Supplier assignments (#2988). Absent in Spoolman mode — Spoolman's
+  // vendor is the manufacturer, not the seller, so there is no mapping.
+  suppliers?: SpoolSupplierLink[];
+}
+
+// ── Suppliers (#2988) ──────────────────────────────────────────────────────
+
+/** Where filament is bought — distinct from brand (who made it). */
+export interface Supplier {
+  id: number;
+  name: string;
+  website: string | null;
+  customer_number: string | null;
+  note: string | null;
+  /** Spools referencing this supplier; a referenced supplier cannot be deleted. */
+  spool_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupplierInput {
+  name: string;
+  website?: string | null;
+  customer_number?: string | null;
+  note?: string | null;
+}
+
+/** One spool-to-supplier assignment as written by the spool dialog. */
+export interface SpoolSupplierLinkInput {
+  supplier_id: number;
+  /** The supplier's own article number — NOT the internal material number. */
+  supplier_article_number?: string | null;
+  /** Quoted price for comparison — never the cost basis (spool.cost_per_kg). */
+  quoted_price_per_kg?: number | null;
+  /** Marks where this concrete spool was actually bought. */
+  is_purchase_source?: boolean;
+}
+
+export interface SpoolSupplierLink {
+  id: number;
+  supplier_id: number;
+  supplier_name: string;
+  supplier_article_number: string | null;
+  quoted_price_per_kg: number | null;
+  is_purchase_source: boolean;
+}
+
+/** Per-supplier inventory aggregate (#2988), purchase-source spools only. */
+export interface SupplierStats {
+  supplier_id: number;
+  supplier_name: string;
+  spool_count: number;
+  remaining_g: number;
+  consumed_g: number;
+  cost: number;
+}
+
+/** Per-material-number inventory aggregate (#2870). */
+export interface MaterialNumberStats {
+  material_number: string;
+  spool_count: number;
+  remaining_g: number;
+  consumed_g: number;
+  cost: number;
 }
 
 export interface SpoolmanBulkCreateResult {
@@ -6665,6 +6735,36 @@ export const api = {
     request<{ deleted: number }>('/inventory/catalog/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
   resetSpoolCatalog: () =>
     request<{ status: string }>('/inventory/catalog/reset', { method: 'POST' }),
+  // ── Suppliers (#2988) — inventory master data, Locations pattern ─────────
+  getSuppliers: () =>
+    request<Supplier[]>('/inventory/suppliers'),
+  createSupplier: (data: SupplierInput) =>
+    request<Supplier>('/inventory/suppliers', { method: 'POST', body: JSON.stringify(data) }),
+  updateSupplier: (id: number, data: Partial<SupplierInput>) =>
+    request<Supplier>(`/inventory/suppliers/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteSupplier: (id: number) =>
+    request<{ status: string }>(`/inventory/suppliers/${id}`, { method: 'DELETE' }),
+  setSpoolSuppliers: (spoolId: number, links: SpoolSupplierLinkInput[]) =>
+    request<SpoolSupplierLink[]>(`/inventory/spools/${spoolId}/suppliers`, {
+      method: 'PUT',
+      body: JSON.stringify(links),
+    }),
+  // Spoolman parity: the assignment rows live Bambuddy-side, keyed by the
+  // remote spool id — same request/response shape as the built-in inventory.
+  setSpoolmanSpoolSuppliers: (spoolmanSpoolId: number, links: SpoolSupplierLinkInput[]) =>
+    request<SpoolSupplierLink[]>(`/spoolman/inventory/spools/${spoolmanSpoolId}/suppliers`, {
+      method: 'PUT',
+      body: JSON.stringify(links),
+    }),
+  // date_from/date_to scope the usage half only, so the widget can follow the
+  // dashboard timeframe; stock stays point-in-time.
+  getSupplierStats: (dateFrom?: string, dateTo?: string) => {
+    const params = new URLSearchParams();
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    const qs = params.toString();
+    return request<SupplierStats[]>(`/inventory/stats/suppliers${qs ? `?${qs}` : ''}`);
+  },
   getLocations: () =>
     request<StorageLocation[]>('/inventory/locations'),
   createLocation: (data: { name: string; identifier?: string | null }) =>
@@ -6716,6 +6816,15 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+  // Per-material-number inventory aggregate (#2870). The date range narrows
+  // the usage half only — stock is point-in-time.
+  getMaterialNumberStats: (options?: { dateFrom?: string; dateTo?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.dateFrom) params.set('date_from', options.dateFrom);
+    if (options?.dateTo) params.set('date_to', options.dateTo);
+    const qs = params.toString();
+    return request<MaterialNumberStats[]>(`/inventory/stats/material-numbers${qs ? `?${qs}` : ''}`);
+  },
   getSpoolUsageHistory: (spoolId: number, limit = 50) =>
     request<SpoolUsageRecord[]>(`/inventory/spools/${spoolId}/usage?limit=${limit}`),
   getAllUsageHistory: (limit = 100, printerId?: number) =>

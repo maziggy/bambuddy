@@ -9,6 +9,7 @@ import { PrintLogTable } from './PrintLogTable';
 import { invalidateArchiveAndProjectViews } from '../utils/projectQueries';
 import { assignableProjects } from '../utils/projectTree';
 import { verdictSourceKey } from '../utils/verdictSource';
+import { NumberInput } from './NumberInput';
 
 // Keys for failure reasons - translated at render time.
 // Exported so the Print Log per-row classification editor (#1687 part 4)
@@ -375,15 +376,15 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
               <Hash className="w-4 h-4 inline mr-1" />
               {t('editArchive.itemsPrinted')}
             </label>
-            <input
+            <NumberInput
               id="archive-items-printed"
-              type="number"
               min={0}
               value={quantity}
               // 0 is a real answer, not an empty field: a plate that jammed and
               // came off ruined produced nothing, and the project's completed
               // count has to be able to say so (#3051).
-              onChange={(e) => setQuantity(Math.max(0, parseInt(e.target.value) || 0))}
+              onChange={setQuantity}
+              fallback={0}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
               placeholder="1"
             />

@@ -41,9 +41,12 @@ from backend.app.models.settings import Settings
 from backend.app.models.spool_filament_preset import SpoolmanFilamentPreset
 from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+from backend.app.models.supplier import SpoolmanSpoolSupplier, Supplier
 from backend.app.models.user import User
 from backend.app.schemas.spool import SpoolFilamentPresetBase, SpoolKProfileBase
 from backend.app.schemas.spoolman import SpoolmanFilamentPatch, SpoolmanSlotAssignmentEnriched
+from backend.app.schemas.supplier import SpoolSupplierLinkInput
+from backend.app.services import slot_unlink_grace
 from backend.app.services.location_service import (
     enrich_spool_dicts_with_location_id,
     maybe_sync_spoolman_locations,
@@ -311,9 +314,12 @@ class SpoolmanInventoryCreate(BaseModel):
     color_name: str | None = Field(None, max_length=64)
     rgba: str | None = Field(None, max_length=8, description="6-digit hex (RRGGBB) or 8-digit (RRGGBBAA)")
     label_weight: int = Field(1000, ge=1, le=100_000)
-    core_weight: int = Field(
-        250, ge=0, le=10_000
-    )  # Accepted for schema parity but not persisted to Spoolman (stored on filament type, not spool)
+    # Persisted to the Spoolman spool's own `spool_weight` (tare), which takes
+    # priority over the filament-level value both in _map_spoolman_spool and in
+    # the weigh endpoint. Only written when the request actually sets it: the
+    # 250 default is the display fallback, and writing it on every create would
+    # stamp an explicit tare on spools that should keep inheriting one (#2908).
+    core_weight: int = Field(250, ge=0, le=10_000)
     weight_used: float = Field(0.0, ge=0.0, le=100_000.0)
     note: str | None = Field(None, max_length=1000)
     cost_per_kg: float | None = Field(None, ge=0.0, le=1_000_000.0)
@@ -352,9 +358,11 @@ class SpoolmanInventoryUpdate(BaseModel):
     color_name: str | None = Field(None, max_length=64)
     rgba: str | None = Field(None, max_length=8, description="6-digit hex (RRGGBB) or 8-digit (RRGGBBAA)")
     label_weight: int | None = Field(None, ge=1, le=100_000)
-    core_weight: int | None = Field(
-        None, ge=0, le=10_000
-    )  # Accepted for schema parity but not persisted to Spoolman (stored on filament type, not spool)
+    # Persisted to the spool's own `spool_weight` (see the Create schema).
+    # Omitted / null leaves the current value alone, as with every other field
+    # here. There is no per-spool "go back to inheriting" through this route;
+    # the filament-level route already owns that decision (#2908).
+    core_weight: int | None = Field(None, ge=0, le=10_000)
     weight_used: float | None = Field(None, ge=0.0, le=100_000.0)
     note: str | None = Field(None, max_length=1000)
     cost_per_kg: float | None = Field(None, ge=0.0, le=1_000_000.0)
@@ -471,6 +479,19 @@ async def list_spools(
         for m in mapped:
             m["k_profiles"] = kp_by_spool.get(m["id"], [])
 
+        # Supplier assignments (#2988) live Bambuddy-side even for Spoolman
+        # spools, so the list carries them in both modes identically.
+        link_result = await db.execute(
+            select(SpoolmanSpoolSupplier)
+            .options(selectinload(SpoolmanSpoolSupplier.supplier))
+            .where(SpoolmanSpoolSupplier.spoolman_spool_id.in_(spool_ids))
+        )
+        links_by_spool: dict[int, list[dict]] = {}
+        for link in link_result.scalars().all():
+            links_by_spool.setdefault(link.spoolman_spool_id, []).append(_supplier_link_to_dict(link))
+        for m in mapped:
+            m["suppliers"] = links_by_spool.get(m["id"], [])
+
     await enrich_spool_dicts_with_location_id(db, mapped)
     return mapped
 
@@ -493,6 +514,12 @@ async def get_spool(
 
     kp_result = await db.execute(select(SpoolmanKProfile).where(SpoolmanKProfile.spoolman_spool_id == spool_id))
     mapped["k_profiles"] = [_k_profile_to_dict(kp) for kp in kp_result.scalars().all()]
+    link_result = await db.execute(
+        select(SpoolmanSpoolSupplier)
+        .options(selectinload(SpoolmanSpoolSupplier.supplier))
+        .where(SpoolmanSpoolSupplier.spoolman_spool_id == spool_id)
+    )
+    mapped["suppliers"] = [_supplier_link_to_dict(link) for link in link_result.scalars().all()]
     await enrich_spool_dicts_with_location_id(db, [mapped])
     return mapped
 
@@ -552,6 +579,7 @@ async def create_spool(
                 remaining_weight=remaining,
                 comment=data.note or None,
                 location=storage_location or None,
+                spool_weight=(data.core_weight if "core_weight" in data.model_fields_set else None),
             )
     except HTTPException as exc:
         if exc.status_code == 404 and data.spoolman_filament_id is not None:
@@ -641,6 +669,7 @@ async def bulk_create_spools(
                 remaining_weight=remaining,
                 comment=data.note or None,
                 location=storage_location or None,
+                spool_weight=(data.core_weight if "core_weight" in data.model_fields_set else None),
             )
         except (SpoolmanUnavailableError, SpoolmanClientError, SpoolmanNotFoundError) as exc:
             logger.warning("Bulk spool creation: one spool failed: %s", exc)
@@ -854,6 +883,11 @@ async def update_spool(
                 extra=extra,
                 location=storage_location or None,
                 clear_location=storage_location_changed and not storage_location,
+                # No model_fields_set guard here, unlike create: this schema
+                # already defaults core_weight to None, and None is what
+                # update_spool_full reads as "leave the tare alone". A guard
+                # would be a second spelling of the same condition.
+                spool_weight=data.core_weight,
             )
 
     # Persist BambuStudio slicer preset AND color_name under spool.extra.
@@ -890,6 +924,22 @@ async def update_spool(
     return _map_spoolman_spool(updated)
 
 
+async def _purge_local_rows_for_spool(db: AsyncSession, spool_id: int) -> None:
+    """Drop the Bambuddy-side rows a deleted Spoolman spool leaves behind.
+
+    Spoolman owns the spool; Bambuddy owns the K profiles, the filament preset
+    overrides and the supplier assignments, each keyed by the remote id with no
+    foreign key that could cascade. The K-profile and preset leaks are inert,
+    but a leaked ``spoolman_spool_suppliers`` row keeps the supplier's
+    reference count non-zero, so deleting that supplier answers 409 forever
+    with no way for the user to find the phantom reference (#2988).
+
+    The caller commits.
+    """
+    for model in (SpoolmanKProfile, SpoolmanFilamentPreset, SpoolmanSpoolSupplier):
+        await db.execute(delete(model).where(model.spoolman_spool_id == spool_id))
+
+
 @router.delete("/spools/{spool_id}")
 async def delete_spool(
     spool_id: int = Path(..., gt=0),
@@ -900,6 +950,8 @@ async def delete_spool(
     client = await _get_client(db)
     async with _translate_spoolman_errors():
         await client.delete_spool(spool_id)
+    await _purge_local_rows_for_spool(db, spool_id)
+    await db.commit()
     await ws_manager.broadcast({"type": "inventory_changed"})
     return {"status": "deleted"}
 
@@ -1030,6 +1082,7 @@ async def bulk_delete_spools(
         try:
             async with _translate_spoolman_errors():
                 await client.delete_spool(sid)
+            await _purge_local_rows_for_spool(db, sid)
             deleted += 1
         except HTTPException as exc:
             errors.append({"id": sid, "status": exc.status_code, "detail": exc.detail})
@@ -1037,6 +1090,7 @@ async def bulk_delete_spools(
             logger.exception("Spoolman bulk-delete failed for spool %s", sid)
             errors.append({"id": sid, "status": 500, "detail": str(exc)})
     if deleted:
+        await db.commit()
         await ws_manager.broadcast({"type": "inventory_changed"})
     return {"deleted": deleted, "errors": errors}
 
@@ -1486,6 +1540,7 @@ async def assign_spoolman_slot(
             },
         )
         await db.commit()
+        slot_unlink_grace.forget_slot(body.printer_id, body.ams_id, body.tray_id)
     except Exception as exc:
         await db.rollback()
         logger.error("Failed to persist slot assignment: %s", exc)
@@ -2137,3 +2192,77 @@ async def save_spoolman_k_profiles(
         await db.refresh(obj)
 
     return [_k_profile_to_dict(p) for p in saved]
+
+
+def _supplier_link_to_dict(link: SpoolmanSpoolSupplier) -> dict:
+    """Same shape as ``SpoolSupplierResponse`` so the frontend renders both
+    inventories with one component."""
+    return {
+        "id": link.id,
+        "supplier_id": link.supplier_id,
+        "supplier_name": link.supplier_name,
+        "supplier_article_number": link.supplier_article_number,
+        "quoted_price_per_kg": link.quoted_price_per_kg,
+        "is_purchase_source": link.is_purchase_source,
+    }
+
+
+@router.get("/spools/{spool_id}/suppliers")
+async def get_spoolman_spool_suppliers(
+    spool_id: int = Path(..., gt=0),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+) -> list[dict]:
+    """Supplier assignments for a Spoolman spool (#2988, Bambuddy-side rows)."""
+    await _get_client(db)
+    result = await db.execute(
+        select(SpoolmanSpoolSupplier)
+        .options(selectinload(SpoolmanSpoolSupplier.supplier))
+        .where(SpoolmanSpoolSupplier.spoolman_spool_id == spool_id)
+    )
+    return [_supplier_link_to_dict(link) for link in result.scalars().all()]
+
+
+@router.put("/spools/{spool_id}/suppliers")
+async def save_spoolman_spool_suppliers(
+    spool_id: int = Path(..., gt=0),
+    links: list[SpoolSupplierLinkInput] = Body(...),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> list[dict]:
+    """Replace a Spoolman spool's supplier assignments (#2988).
+
+    Mirror of the built-in inventory's replace-all endpoint — Spoolman owns
+    the spool, Bambuddy owns the assignment (``SpoolmanKProfile`` precedent),
+    so the rows are local and the spool is only verified to exist remotely.
+    """
+    client = await _get_client(db)
+    async with _translate_spoolman_errors():
+        await client.get_spool(spool_id)
+
+    supplier_ids = [link.supplier_id for link in links]
+    if len(set(supplier_ids)) != len(supplier_ids):
+        raise HTTPException(400, "Duplicate supplier in assignment list")
+    if sum(1 for link in links if link.is_purchase_source) > 1:
+        raise HTTPException(400, "Only one assignment can be the purchase source")
+    if supplier_ids:
+        found = await db.execute(select(Supplier.id).where(Supplier.id.in_(supplier_ids)))
+        missing = set(supplier_ids) - {row[0] for row in found.all()}
+        if missing:
+            raise HTTPException(404, f"Supplier(s) not found: {sorted(missing)}")
+
+    await db.execute(delete(SpoolmanSpoolSupplier).where(SpoolmanSpoolSupplier.spoolman_spool_id == spool_id))
+    saved: list[SpoolmanSpoolSupplier] = []
+    for link in links:
+        row = SpoolmanSpoolSupplier(spoolman_spool_id=spool_id, **link.model_dump())
+        db.add(row)
+        saved.append(row)
+    await db.commit()
+    refreshed = await db.execute(
+        select(SpoolmanSpoolSupplier)
+        .options(selectinload(SpoolmanSpoolSupplier.supplier))
+        .where(SpoolmanSpoolSupplier.id.in_([row.id for row in saved]))
+        .order_by(SpoolmanSpoolSupplier.id)
+    )
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    return [_supplier_link_to_dict(link) for link in refreshed.scalars().all()]

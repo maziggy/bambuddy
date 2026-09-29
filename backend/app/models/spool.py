@@ -57,6 +57,15 @@ class Spool(Base):
     # spools with a lower one without changing the global default.
     low_stock_threshold_pct: Mapped[int | None] = mapped_column(Integer)
 
+    # Internal material / article number (#2870): the identifier a business
+    # purchases and costs by (e.g. "15" = Bambu Lab PLA Basic), distinct from
+    # `category` (production grouping) and `note` (free text). Free text, no
+    # uniqueness — several spools of the same product share the number, which
+    # is exactly what makes it a sort/filter/statistics key. New spools of a
+    # matching product inherit it on creation (services/material_number.py,
+    # applied by the spool create routes and the RFID auto-add).
+    material_number: Mapped[str | None] = mapped_column(String(64))
+
     # Cost tracking
     cost_per_kg: Mapped[float | None] = mapped_column(Float)  # Cost per kilogram
 
@@ -83,9 +92,15 @@ class Spool(Base):
     )
     assignments: Mapped[list["SpoolAssignment"]] = relationship(back_populates="spool", cascade="all, delete-orphan")
     location: Mapped["Location | None"] = relationship(back_populates="spools")
+    # Supplier assignments (#2988): where this product can be bought, with
+    # per-assignment article number / price and a purchase-source marker.
+    # Default loader like every other relationship here — the handful of
+    # routes that embed them ask for selectinload() at the query site.
+    supplier_links: Mapped[list["SpoolSupplier"]] = relationship(back_populates="spool", cascade="all, delete-orphan")
 
 
 from backend.app.models.location import Location  # noqa: E402
 from backend.app.models.spool_assignment import SpoolAssignment  # noqa: E402
 from backend.app.models.spool_filament_preset import SpoolFilamentPreset  # noqa: E402
 from backend.app.models.spool_k_profile import SpoolKProfile  # noqa: E402
+from backend.app.models.supplier import SpoolSupplier  # noqa: E402

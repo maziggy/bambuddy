@@ -6,8 +6,17 @@ import { resolveSpoolColorName } from './colors';
  * Case-insensitive. Empty query always returns true.
  */
 export function spoolMatchesQuery(spool: InventorySpool, query: string): boolean {
-  if (!query) return true;
-  const q = query.toLowerCase();
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+
+  // A hash-prefixed number is an explicit spool ID lookup. Keep plain numeric
+  // searches backwards-compatible ("3" can still match #3, #13, #30, ...),
+  // while "#3" selects only the physical spool whose label says #3.
+  const exactIdQuery = q.match(/^#(\d+)$/);
+  if (exactIdQuery) {
+    return spool.id === Number(exactIdQuery[1]);
+  }
+
   return (
     String(spool.id).includes(q) ||
     spool.material.toLowerCase().includes(q) ||
@@ -25,7 +34,13 @@ export function spoolMatchesQuery(spool: InventorySpool, query: string): boolean
     (spool.subtype?.toLowerCase().includes(q) ?? false) ||
     (spool.note?.toLowerCase().includes(q) ?? false) ||
     (spool.slicer_filament_name?.toLowerCase().includes(q) ?? false) ||
-    (spool.storage_location?.toLowerCase().includes(q) ?? false)
+    (spool.storage_location?.toLowerCase().includes(q) ?? false) ||
+    (spool.material_number?.toLowerCase().includes(q) ?? false) ||
+    (spool.suppliers?.some(
+      (link) =>
+        link.supplier_name.toLowerCase().includes(q) ||
+        (link.supplier_article_number?.toLowerCase().includes(q) ?? false)
+    ) ?? false)
   );
 }
 

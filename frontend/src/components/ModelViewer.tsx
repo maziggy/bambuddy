@@ -64,6 +64,9 @@ function parseStepInWorker(buffer: ArrayBuffer): Promise<StepWorkerMesh[]> {
   });
 }
 
+// How far the user may dolly out, as a multiple of the framed distance.
+const MAX_ZOOM_OUT = 8;
+
 /**
  * Frame the camera on a bounding box.
  *
@@ -78,6 +81,7 @@ function fitCameraToBox(
   camera: THREE.PerspectiveCamera,
   controls: OrbitControls,
   box: THREE.Box3,
+  plateDiagonal: number,
   padding = 1.15,
 ): void {
   const size = box.getSize(new THREE.Vector3());
@@ -92,10 +96,18 @@ function fitCameraToBox(
   // Keep the established three-quarter view; only the distance changes.
   const direction = new THREE.Vector3(0.7, 0.5, 0.7).normalize();
   camera.position.copy(center).addScaledVector(direction, distance);
+
+  // Zoom range relative to the framed distance. Without the upper bound the
+  // wheel dollied straight through the far plane: five or six notches out and
+  // the model, plate and grid all vanished, which reads as "zoom is broken".
+  controls.minDistance = Math.max(radius * 0.05, 0.05);
+  controls.maxDistance = distance * MAX_ZOOM_OUT;
+
   // Clip planes scaled to the subject, so a small model doesn't z-fight and a
-  // large one isn't sliced by the far plane.
+  // large one isn't sliced by the far plane. The far plane has to cover the
+  // whole dolly range plus the plate, whose diagonal dwarfs a small model.
   camera.near = Math.max(distance / 1000, 0.01);
-  camera.far = distance + radius * 4;
+  camera.far = controls.maxDistance + radius * 4 + plateDiagonal;
   camera.updateProjectionMatrix();
 
   controls.target.copy(center);
@@ -107,6 +119,11 @@ interface BuildVolume {
   y: number;
   z: number;
 }
+
+// Module-level so the default keeps its identity: an inline default object is
+// new on every render and, as an effect dependency, would rebuild the whole
+// scene each time the component re-renders.
+const DEFAULT_BUILD_VOLUME: BuildVolume = { x: 256, y: 256, z: 256 };
 
 interface ModelViewerProps {
   url: string;
@@ -765,7 +782,7 @@ function buildStepGroup(meshes: StepMeshData[], filamentColors?: string[]): THRE
 export function ModelViewer({
   url,
   fileType,
-  buildVolume = { x: 256, y: 256, z: 256 },
+  buildVolume = DEFAULT_BUILD_VOLUME,
   filamentColors,
   selectedPlateId = null,
   className = '',
@@ -786,6 +803,9 @@ export function ModelViewer({
   const modelGroupRef = useRef<THREE.Group | null>(null);
   const plateRef = useRef<THREE.Mesh | null>(null);
   const gridRef = useRef<THREE.GridHelper | null>(null);
+  // The last framed bounds, so Reset returns to the framed view rather than
+  // a fixed camera pose that ignores where the model was placed.
+  const fitBoxRef = useRef<THREE.Box3 | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<Parsed3MFData | null>(null);
@@ -1023,6 +1043,10 @@ export function ModelViewer({
       renderer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
+    // Entering or leaving fullscreen resizes the container too; the observer
+    // catches that, but only after layout — resizing on the event itself
+    // avoids one frame drawn at the old aspect.
+    document.addEventListener('fullscreenchange', handleResize);
     const resizeObserver = new ResizeObserver(() => {
       handleResize();
     });
@@ -1030,6 +1054,7 @@ export function ModelViewer({
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      document.removeEventListener('fullscreenchange', handleResize);
       resizeObserver.disconnect();
       cancelAnimationFrame(animationId);
       controls.dispose();
@@ -1148,7 +1173,8 @@ export function ModelViewer({
     const finalBox = new THREE.Box3().setFromObject(group);
 
     // Adjust camera to fit model
-    fitCameraToBox(cameraRef.current, controlsRef.current, finalBox);
+    fitBoxRef.current = finalBox;
+    fitCameraToBox(cameraRef.current, controlsRef.current, finalBox, Math.hypot(buildVolume.x, buildVolume.y));
 
     setLoading(false);
 
@@ -1184,17 +1210,29 @@ export function ModelViewer({
   }, [parsedData, stlGeometry, stepMeshes, selectedPlateId, filamentColors, buildVolume]);
 
   const resetView = () => {
-    if (cameraRef.current && controlsRef.current) {
-      cameraRef.current.position.set(150, 150, 150);
-      controlsRef.current.target.set(0, 50, 0);
-      controlsRef.current.update();
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+    if (fitBoxRef.current) {
+      fitCameraToBox(camera, controls, fitBoxRef.current, Math.hypot(buildVolume.x, buildVolume.y));
+    } else {
+      camera.position.set(150, 150, 150);
+      controls.target.set(0, 50, 0);
+      controls.update();
     }
   };
 
+  // Dolly along the view axis, like the wheel. Scaling the camera position
+  // itself measured from the world origin, not from the orbit target at the
+  // plate centre, so each press also slid the model sideways.
   const zoom = (factor: number) => {
-    if (cameraRef.current) {
-      cameraRef.current.position.multiplyScalar(factor);
-    }
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+    const offset = camera.position.clone().sub(controls.target);
+    const distance = Math.min(controls.maxDistance, Math.max(controls.minDistance, offset.length() * factor));
+    camera.position.copy(controls.target).addScaledVector(offset.normalize(), distance);
+    controls.update();
   };
 
   return (

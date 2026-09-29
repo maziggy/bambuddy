@@ -28,10 +28,36 @@
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ASSETS = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'static', 'assets');
+
+/**
+ * Every extension the build can emit executable JavaScript under. `.mjs`
+ * because a dependency's file imported with `?url` is copied verbatim under
+ * its own extension and bypasses `build.target` - the pdf.js worker shipped a
+ * class static block that way (#2976).
+ */
+const SCRIPT_EXTENSIONS = ['.js', '.mjs', '.cjs'];
+
+/**
+ * Every script under `dir`, recursively, as paths relative to ASSETS. The
+ * subdirectories matter: pdf.js's decoder fallbacks are published verbatim
+ * under assets/pdfjs/ (vite.config.ts) and run in its worker (#2976).
+ */
+function collectScripts(dir) {
+  const found = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      found.push(...collectScripts(full));
+    } else if (SCRIPT_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) {
+      found.push(relative(ASSETS, full));
+    }
+  }
+  return found;
+}
 
 /**
  * Each pattern must match only real occurrences of the feature. Anything that
@@ -62,17 +88,16 @@ const FORBIDDEN = [
 
 let bundles;
 try {
-  // .mjs too: a dependency's worker imported with `?url` is copied verbatim
-  // under its own extension, bypasses `build.target`, and was invisible here -
-  // the pdf.js worker shipped a class static block that way (#2976).
-  bundles = readdirSync(ASSETS).filter((f) => f.endsWith('.js') || f.endsWith('.mjs'));
+  bundles = collectScripts(ASSETS);
 } catch {
   console.error(`check-browser-baseline: no build output at ${ASSETS} - run \`vite build\` first.`);
   process.exit(1);
 }
 
 if (bundles.length === 0) {
-  console.error(`check-browser-baseline: no .js or .mjs files in ${ASSETS} - did the build succeed?`);
+  console.error(
+    `check-browser-baseline: no ${SCRIPT_EXTENSIONS.join('/')} files in ${ASSETS} - did the build succeed?`,
+  );
   process.exit(1);
 }
 

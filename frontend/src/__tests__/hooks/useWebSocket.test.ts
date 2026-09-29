@@ -465,6 +465,11 @@ describe('useWebSocket hook', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inventory-spools'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['spoolman-inventory-spools'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inventory-locations'] });
+      // #2988: without this key the supplier broadcast reached nothing, so a
+      // supplier created in one tab never showed up in another.
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inventory-suppliers'] });
+      // The per-material-number aggregate is derived from the same rows (#2870).
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['material-number-stats'] });
 
       vi.useRealTimers();
       vi.unstubAllGlobals();

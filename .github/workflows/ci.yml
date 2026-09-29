@@ -276,9 +276,13 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      # `tsc -b`, not `tsc --noEmit`: the root tsconfig only holds project
+      # references, so plain `tsc` checks zero files. Kept out of `npm run
+      # build` because every installer runs that on the user's machine, and
+      # the type check alone needs ~1 GB of Node heap (#3181).
       - name: Run TypeScript check
         working-directory: frontend
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
   frontend-tests:
     name: Frontend Tests

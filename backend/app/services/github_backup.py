@@ -778,6 +778,16 @@ class GitHubBackupService:
                 "nozzle_temp_max": s.nozzle_temp_max,
                 "note": s.note,
                 "cost_per_kg": s.cost_per_kg,
+                # The user's own bookkeeping on the spool: purchasing number
+                # (#2870), category and low-stock override (#729), free-text
+                # storage. All four were missing from this whitelist, so a
+                # restore silently dropped them. `location_id` stays out —
+                # the locations table itself is not in the backup, so the ID
+                # would point at whatever happens to own it on the target.
+                "material_number": s.material_number,
+                "category": s.category,
+                "low_stock_threshold_pct": s.low_stock_threshold_pct,
+                "storage_location": s.storage_location,
                 "tag_uid": s.tag_uid,
                 "tray_uuid": s.tray_uuid,
                 "data_origin": s.data_origin,

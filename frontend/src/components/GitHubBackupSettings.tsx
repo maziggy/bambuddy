@@ -44,6 +44,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { GitHubRestoreModal } from './GitHubRestoreModal';
 import { useToast } from '../contexts/ToastContext';
 import { formatRelativeTime, parseUTCDate } from '../utils/date';
+import { NumberInput } from './NumberInput';
 
 function formatDateTime(dateStr: string | null): string {
   if (!dateStr) return '-';
@@ -1288,14 +1289,12 @@ export function GitHubBackupSettings() {
                   )}
                   <div>
                     <label className="block text-sm text-bambu-gray mb-1">{t('backup.retention')}</label>
-                    <input
-                      type="number"
+                    <NumberInput
                       min={1}
                       max={100}
                       value={localBackupStatus?.retention ?? 5}
                       className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                      onChange={async (e) => {
-                        const val = Math.max(1, Math.min(100, parseInt(e.target.value) || 5));
+                      onChange={async (val) => {
                         try {
                           await api.updateSettings({ local_backup_retention: val });
                           showToast(t('backup.settingsSaved'));
@@ -1304,6 +1303,7 @@ export function GitHubBackupSettings() {
                         }
                         refetchLocalStatus();
                       }}
+                      fallback={5}
                     />
                     <p className="text-xs text-bambu-gray-light mt-1">{t('backup.retentionDescription')}</p>
                   </div>

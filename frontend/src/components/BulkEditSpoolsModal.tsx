@@ -26,7 +26,8 @@ type EditableField =
   | 'label_weight'
   | 'core_weight'
   | 'category'
-  | 'low_stock_threshold_pct';
+  | 'low_stock_threshold_pct'
+  | 'material_number';
 
 type FieldSpec = {
   id: EditableField;
@@ -43,6 +44,11 @@ type FieldSpec = {
   step?: number;
   /** Hex pattern for the rgba field. */
   pattern?: string;
+  /** Lives on the internal spool row only. A Spoolman spool has no such
+   *  field, so SpoolmanInventoryUpdate drops it, the payload dumps to {} and
+   *  the route answers 400 "update must include at least one field". Offering
+   *  it in Spoolman mode is offering a button that cannot work. */
+  internalOnly?: boolean;
 };
 
 const FIELDS: FieldSpec[] = [
@@ -58,8 +64,11 @@ const FIELDS: FieldSpec[] = [
   { id: 'note', type: 'textarea', labelKey: 'inventory.note' },
   { id: 'label_weight', type: 'number', labelKey: 'inventory.labelWeight', min: 1, step: 1 },
   { id: 'core_weight', type: 'number', labelKey: 'inventory.coreWeight', min: 0, step: 1 },
-  { id: 'category', type: 'searchable', labelKey: 'inventory.category' },
-  { id: 'low_stock_threshold_pct', type: 'number', labelKey: 'inventory.lowStockThresholdOverride', min: 1, max: 99, step: 1 },
+  { id: 'category', type: 'searchable', labelKey: 'inventory.category', internalOnly: true },
+  { id: 'low_stock_threshold_pct', type: 'number', labelKey: 'inventory.lowStockThresholdOverride', min: 1, max: 99, step: 1, internalOnly: true },
+  // Internal material / article number (#2870) — bulk-assigning it is the
+  // main way existing inventories get numbered.
+  { id: 'material_number', type: 'searchable', labelKey: 'inventory.materialNumber', internalOnly: true },
 ];
 
 export interface BulkEditSpoolsModalProps {
@@ -72,8 +81,11 @@ export interface BulkEditSpoolsModalProps {
   availableSubtypes: string[];
   availableBrands: string[];
   availableCategories: string[];
+  availableMaterialNumbers: string[];
   availableSlicerFilaments: string[];
   availableSlicerFilamentNames: string[];
+  /** Spoolman-backed inventory: hides the fields Spoolman cannot store. */
+  spoolmanMode?: boolean;
   onClose: () => void;
   onApply: (patch: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>>) => void;
 }
@@ -210,10 +222,15 @@ function combineUnique(...lists: string[][]): string[] {
 export function BulkEditSpoolsModal({
   isOpen, selectedCount, isPending,
   availableLocations, availableMaterials, availableSubtypes, availableBrands, availableCategories,
-  availableSlicerFilaments, availableSlicerFilamentNames,
+  availableMaterialNumbers, availableSlicerFilaments, availableSlicerFilamentNames,
+  spoolmanMode = false,
   onClose, onApply,
 }: BulkEditSpoolsModalProps) {
   const { t } = useTranslation();
+  const fields = useMemo(
+    () => FIELDS.filter((f) => !(spoolmanMode && f.internalOnly)),
+    [spoolmanMode],
+  );
 
   // Slicer preset sources — match the per-spool form (cloud Bambu + cloud Orca
   // + local + built-in). Gated on `isOpen` so closed modal doesn't fetch.
@@ -280,6 +297,10 @@ export function BulkEditSpoolsModal({
     () => combineUnique(availableCategories).map((m) => ({ value: m, label: m })),
     [availableCategories],
   );
+  const materialNumberOptions: Option[] = useMemo(
+    () => combineUnique(availableMaterialNumbers).map((m) => ({ value: m, label: m })),
+    [availableMaterialNumbers],
+  );
   const slicerFilamentOptions: Option[] = useMemo(() => {
     // value = preset code (what goes into spool.slicer_filament),
     // label = display name so the user can find it by name.
@@ -317,7 +338,7 @@ export function BulkEditSpoolsModal({
 
   const buildPatch = (): Record<string, string | number> => {
     const patch: Record<string, string | number> = {};
-    for (const f of FIELDS) {
+    for (const f of fields) {
       const raw = values[f.id];
       if (raw === undefined) continue;
       const trimmed = typeof raw === 'string' ? raw.trim() : raw;
@@ -345,7 +366,7 @@ export function BulkEditSpoolsModal({
   // would be silently dropped from the patch — e.g. a malformed rgba hex.
   // Without this guard the user clicks Apply, the field is dropped, and the
   // success toast still fires for the OTHER fields.
-  const hasDroppedTickedField = FIELDS.some((f) => {
+  const hasDroppedTickedField = fields.some((f) => {
     const raw = values[f.id];
     if (raw === undefined) return false;
     if (raw.trim() === '') return false;
@@ -357,6 +378,7 @@ export function BulkEditSpoolsModal({
     if (id === 'subtype') return subtypeOptions;
     if (id === 'brand') return brandOptions;
     if (id === 'category') return categoryOptions;
+    if (id === 'material_number') return materialNumberOptions;
     if (id === 'slicer_filament') return slicerFilamentOptions;
     if (id === 'slicer_filament_name') return slicerFilamentNameOptions;
     if (id === 'location_id') return locationOptions;
@@ -469,7 +491,7 @@ export function BulkEditSpoolsModal({
           {t('inventory.bulk.editHint')}
         </p>
         <div className="flex-1 overflow-y-auto p-5 space-y-3">
-          {FIELDS.map((f) => {
+          {fields.map((f) => {
             const enabled = values[f.id] !== undefined;
             return (
               <div key={f.id} className={`flex items-start gap-3 rounded-md p-2 transition-colors ${enabled ? 'bg-bambu-green/5 border border-bambu-green/30' : 'border border-transparent'}`}>

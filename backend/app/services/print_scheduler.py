@@ -4360,7 +4360,14 @@ class PrintScheduler:
             # before any spool work, the same guard the bed-cooled waiter uses.
             # No printer_id: this asks whether any provider wants the event at
             # all; per-printer scoping is applied when the event is sent.
+            #
+            # While nobody wants it, no pass sees a slot go back above its
+            # threshold, so nothing can re-arm; a spool refilled under the same
+            # id in that time would stay silenced until a restart. Forgetting
+            # what was sent is right anyway: whoever switches the event back on
+            # is told about the spools that are low now.
             if not await notification_service._get_providers_for_event(db, "on_filament_low"):
+                self._notified_filament_low.clear()
                 return
 
             global_threshold = await self._get_low_stock_threshold(db)

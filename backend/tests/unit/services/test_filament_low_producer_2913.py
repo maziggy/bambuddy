@@ -562,6 +562,33 @@ async def test_one_provider_wanting_the_event_is_enough(db_session, scheduler, r
     real_providers.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+async def test_switching_the_event_off_and_on_again_re_arms(db_session, scheduler, real_providers):
+    """While the event is off no pass runs, so none can see a slot go back above
+    its threshold and re-arm it. A spool refilled under the same id meanwhile
+    would stay silenced once the event is back on. Switching it off forgets what
+    was sent; switching it on reports the spools that are low now."""
+    printer = await _printer(db_session)
+    spool = await _assigned_spool(db_session, printer, weight_used=850.0)
+    provider = NotificationProvider(name="p", provider_type="ntfy", config="{}", enabled=True, on_filament_low=True)
+    db_session.add(provider)
+    await db_session.commit()
+
+    await _pass(scheduler, db_session)
+    assert real_providers.await_count == 1
+
+    # Off; refilled and run low again while no pass was looking; on again.
+    provider.on_filament_low = False
+    await db_session.commit()
+    await _pass(scheduler, db_session)
+    spool.weight_used = 900.0
+    provider.on_filament_low = True
+    await db_session.commit()
+    await _pass(scheduler, db_session)
+
+    assert real_providers.await_count == 2
+
+
 # -- the event actually reaches a provider ----------------------------------
 
 

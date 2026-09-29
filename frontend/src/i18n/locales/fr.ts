@@ -6266,7 +6266,21 @@ export default {
   // Notifications
   notifications: {
     // Provider types
+    push: {
+      enable: "Activer les notifications sur cet appareil",
+      help: "Créez un fournisseur par appareil. Désactivez-le ou supprimez-le pour arrêter les envois. Les notifications peuvent apparaître sur l’écran verrouillé.",
+      ios: "Sur iPhone ou iPad, ajoutez d’abord Bambuddy à l’écran d’accueil et ouvrez-le depuis celui-ci.",
+      unsupported: "Utilisez HTTPS et un navigateur compatible Web Push.",
+      denied: "L’autorisation n’a pas été accordée. Autorisez les notifications dans les réglages du navigateur puis réessayez.",
+      failed: "Impossible d’activer Push. Vérifiez la connexion et les réglages de notification du navigateur puis réessayez.",
+      ready: "Appareil prêt. Enregistrez pour recevoir les notifications d’événements.",
+      saved: "Appareil déjà enregistré. Le test est envoyé à cet appareil. Le remplacement prend effet à l’enregistrement.",
+      replace: "Remplacer par cet appareil",
+      required: "Activez les notifications sur cet appareil avant d’enregistrer.",
+      keyChanged: "La clé du serveur a changé. Réinitialisez l’autorisation ou l’abonnement aux notifications de ce site dans le navigateur puis réessayez.",
+    },
     providerTypes: {
+      webpush: "Push (navigateur)",
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6279,6 +6293,7 @@ export default {
     },
     // Provider descriptions
     providerDescriptions: {
+      webpush: "Notifications Web Push vers un navigateur ou une application installée",
       email: 'Notifications par e-mail SMTP',
       telegram: 'Notifications via un bot Telegram',
       discord: 'Envoyer vers un canal Discord via webhook',

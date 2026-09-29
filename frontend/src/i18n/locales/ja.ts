@@ -6279,7 +6279,21 @@ export default {
   // Notifications
   notifications: {
     // Provider types
+    push: {
+      enable: "このデバイスで通知を有効にする",
+      help: "デバイスごとにプロバイダーを作成してください。配信を止めるには無効化または削除します。通知はロック画面に表示される場合があります。",
+      ios: "iPhoneまたはiPadでは、先にBambuddyをホーム画面に追加し、そこから開いてください。",
+      unsupported: "HTTPSとWebプッシュ対応ブラウザーを使用してください。",
+      denied: "通知が許可されませんでした。ブラウザーの設定で許可して再試行してください。",
+      failed: "プッシュ通知を有効にできません。接続とブラウザーの通知設定を確認して再試行してください。",
+      ready: "デバイスの準備ができました。保存するとイベント通知を受信できます。",
+      saved: "デバイスは登録済みです。テストは保存済みのデバイスに送信されます。置き換えは保存時に反映されます。",
+      replace: "このデバイスに置き換える",
+      required: "保存する前にこのデバイスで通知を有効にしてください。",
+      keyChanged: "サーバーの鍵が変更されました。ブラウザーでこのサイトの通知許可または購読をリセットして再試行してください。",
+    },
     providerTypes: {
+      webpush: "プッシュ（ブラウザー）",
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6292,6 +6306,7 @@ export default {
     },
     // Provider descriptions
     providerDescriptions: {
+      webpush: "ブラウザーまたはインストール済みアプリへのWebプッシュ通知",
       email: 'SMTPメール通知',
       telegram: 'Telegramボット経由の通知',
       discord: 'Webhook経由でDiscordチャンネルに送信',

@@ -26,6 +26,7 @@ from backend.app.models.notification import (
 )
 from backend.app.models.notification_template import NotificationTemplate
 from backend.app.services.print_confirmation import one_tap_url
+from backend.app.services.web_push import deliver_push
 
 logger = logging.getLogger(__name__)
 
@@ -298,7 +299,9 @@ class NotificationService:
             message = "This is a test notification. If you see this, notifications are working!"
 
         try:
-            if provider_type == "callmebot":
+            if provider_type == "webpush":
+                return await deliver_push(config, title, message)
+            elif provider_type == "callmebot":
                 return await self._send_callmebot(config, f"{title}\n{message}")
             elif provider_type == "ntfy":
                 return await self._send_ntfy(config, title, message)
@@ -1130,7 +1133,11 @@ class NotificationService:
         config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
 
         try:
-            if provider.provider_type == "callmebot":
+            if provider.provider_type == "webpush":
+                result = await deliver_push(config, title, message)
+                provider.config = json.dumps(config)
+                return result
+            elif provider.provider_type == "callmebot":
                 return await self._send_callmebot(config, f"{title}\n{message}")
             elif provider.provider_type == "ntfy":
                 # Outcome confirmation (#1898): render the verdict capability

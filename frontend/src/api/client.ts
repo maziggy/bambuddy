@@ -2988,7 +2988,7 @@ export interface Filament {
 }
 
 // Notification Provider types
-export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook' | 'homeassistant' | 'bark';
+export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook' | 'homeassistant' | 'bark' | 'webpush';
 // How a Telegram provider collects the outcome verdict (#3046)
 export type TelegramVerdictMode = 'buttons' | 'reactions' | 'both';
 
@@ -6464,6 +6464,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  getWebPushPublicKey: () => request<{ public_key: string }>('/notifications/webpush/public-key'),
   testAllNotificationProviders: () =>
     request<{
       tested: number;

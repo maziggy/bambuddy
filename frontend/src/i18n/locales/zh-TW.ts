@@ -6264,7 +6264,21 @@ export default {
   // Notifications
   notifications: {
     // Provider types
+    push: {
+      enable: "在此裝置上啟用通知",
+      help: "為每台裝置建立一個提供者。停用或刪除該提供者即可停止傳送。通知可能顯示在鎖定畫面上。",
+      ios: "在 iPhone 或 iPad 上，請先將 Bambuddy 加入主畫面，再從那裡開啟。",
+      unsupported: "請使用 HTTPS 和支援網頁推播的瀏覽器。",
+      denied: "未獲得通知權限。請在瀏覽器設定中允許通知後重試。",
+      failed: "無法啟用推播。請檢查連線和瀏覽器通知設定後重試。",
+      ready: "裝置已就緒。儲存後即可接收事件通知。",
+      saved: "裝置已註冊。測試將傳送到已儲存的裝置。替換將在儲存後生效。",
+      replace: "替換為此裝置",
+      required: "儲存前請在此裝置上啟用通知。",
+      keyChanged: "伺服器金鑰已變更。請在瀏覽器中重設此網站的通知權限或訂閱後重試。",
+    },
     providerTypes: {
+      webpush: "推播（瀏覽器）",
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6277,6 +6291,7 @@ export default {
     },
     // Provider descriptions
     providerDescriptions: {
+      webpush: "向瀏覽器或已安裝的應用程式傳送網頁推播通知",
       email: 'SMTP 電子郵件通知',
       telegram: '透過 Telegram 機器人傳送通知',
       discord: '透過 Webhook 傳送到 Discord 頻道',

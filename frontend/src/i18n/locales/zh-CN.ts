@@ -6264,7 +6264,21 @@ export default {
   // Notifications
   notifications: {
     // Provider types
+    push: {
+      enable: "在此设备上启用通知",
+      help: "为每台设备创建一个提供商。禁用或删除该提供商即可停止发送。通知可能显示在锁屏上。",
+      ios: "在 iPhone 或 iPad 上，请先将 Bambuddy 添加到主屏幕，再从那里打开。",
+      unsupported: "请使用 HTTPS 和支持网页推送的浏览器。",
+      denied: "未获得通知权限。请在浏览器设置中允许通知后重试。",
+      failed: "无法启用推送。请检查连接和浏览器通知设置后重试。",
+      ready: "设备已就绪。保存后即可接收事件通知。",
+      saved: "设备已注册。测试将发送到已保存的设备。替换将在保存后生效。",
+      replace: "替换为此设备",
+      required: "保存前请在此设备上启用通知。",
+      keyChanged: "服务器密钥已更改。请在浏览器中重置此网站的通知权限或订阅后重试。",
+    },
     providerTypes: {
+      webpush: "推送（浏览器）",
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6277,6 +6291,7 @@ export default {
     },
     // Provider descriptions
     providerDescriptions: {
+      webpush: "向浏览器或已安装的应用发送网页推送通知",
       email: 'SMTP 电子邮件通知',
       telegram: '通过 Telegram 机器人发送通知',
       discord: '通过 Webhook 发送到 Discord 频道',

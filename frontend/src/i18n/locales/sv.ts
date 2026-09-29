@@ -6327,7 +6327,21 @@ errors: {
   // Notifications
   notifications: {
     // Provider types
+    push: {
+      enable: "Aktivera notiser på den här enheten",
+      help: "Skapa en leverantör per enhet. Inaktivera eller ta bort den för att stoppa leveransen. Notiser kan visas på låsskärmen.",
+      ios: "På iPhone eller iPad lägger du först till Bambuddy på hemskärmen och öppnar därifrån.",
+      unsupported: "Använd HTTPS och en webbläsare som stöder Web Push.",
+      denied: "Tillstånd nekades. Tillåt notiser i webbläsarens inställningar och försök igen.",
+      failed: "Kunde inte aktivera Push. Kontrollera anslutningen och webbläsarens notisinställningar och försök igen.",
+      ready: "Enheten är redo. Spara för att få händelsenotiser.",
+      saved: "Enheten är redan registrerad. Testet skickas till den sparade enheten. Bytet gäller först när du sparar.",
+      replace: "Ersätt med den här enheten",
+      required: "Aktivera notiser på den här enheten innan du sparar.",
+      keyChanged: "Servernyckeln har ändrats. Återställ webbplatsens notistillstånd eller prenumeration i webbläsaren och försök igen.",
+    },
     providerTypes: {
+      webpush: "Push (webbläsare)",
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6340,6 +6354,7 @@ errors: {
     },
     // Provider descriptions
     providerDescriptions: {
+      webpush: "Webbpushnotiser till en webbläsare eller installerad app",
       email: 'SMTP e-postnotiser',
       telegram: 'Notiser via Telegram-bot',
       discord: 'Skicka till Discord-kanal via webhook',

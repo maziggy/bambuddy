@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
-    "test:run": "vitest run && npm run check:i18n",
+    "test:run": "vitest run && node --test scripts/test-web-push-worker.cjs && npm run check:i18n",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
     "check:i18n": "node scripts/check-i18n-parity.mjs",

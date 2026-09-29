@@ -1,12 +1,25 @@
 if ('serviceWorker' in navigator) {
   if (location.pathname.startsWith('/spoolbuddy')) {
-    navigator.serviceWorker.getRegistrations().then((regs) => {
-      if (regs.length > 0) {
-        Promise.all([
-          ...regs.map((r) => r.unregister()),
-          caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n)))),
-        ]).then(() => location.reload());
+    navigator.serviceWorker.getRegistrations().then(async (regs) => {
+      const removed = await Promise.all(regs.map(async (r) => {
+        // Unregistering also ends push subscriptions shared with the main app.
+        // Preserve the registration if its subscription cannot be checked.
+        try {
+          if (r.pushManager && await r.pushManager.getSubscription()) return false;
+          return await r.unregister();
+        } catch {
+          return false;
+        }
+      }));
+      if (!removed.some(Boolean)) return;
+      // Retained workers may still need these same-origin caches.
+      if (removed.every(Boolean)) {
+        const names = await caches.keys();
+        await Promise.all(names.map((n) => caches.delete(n)));
       }
+      location.reload();
+    }).catch(() => {
+      console.warn('SpoolBuddy service worker cleanup failed');
     });
   } else {
     // Capture controller state at script-load. Used to decide whether a

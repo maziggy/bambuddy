@@ -20,6 +20,7 @@ class ProviderType(StrEnum):
     WEBHOOK = "webhook"
     HOMEASSISTANT = "homeassistant"
     BARK = "bark"
+    WEBPUSH = "webpush"
 
 
 class NotificationProviderBase(BaseModel):

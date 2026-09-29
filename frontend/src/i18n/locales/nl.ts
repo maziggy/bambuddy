@@ -6329,7 +6329,21 @@ export default {
   // Notifications
   notifications: {
     // Provider types
+    push: {
+      enable: "Meldingen op dit apparaat inschakelen",
+      help: "Maak één provider per apparaat. Schakel deze uit of verwijder deze om meldingen te stoppen. Meldingen kunnen op het vergrendelscherm verschijnen.",
+      ios: "Voeg Bambuddy op iPhone of iPad eerst toe aan het beginscherm en open het vanaf daar.",
+      unsupported: "Gebruik HTTPS en een browser die Web Push ondersteunt.",
+      denied: "Geen toestemming voor meldingen. Sta meldingen toe in de browserinstellingen en probeer opnieuw.",
+      failed: "Push inschakelen mislukt. Controleer de verbinding en meldingsinstellingen van de browser en probeer opnieuw.",
+      ready: "Apparaat gereed. Sla op om gebeurtenismeldingen te ontvangen.",
+      saved: "Apparaat al geregistreerd. De test gaat naar het opgeslagen apparaat. Vervanging wordt pas toegepast bij opslaan.",
+      replace: "Vervangen door dit apparaat",
+      required: "Schakel meldingen op dit apparaat in voordat je opslaat.",
+      keyChanged: "De serversleutel is gewijzigd. Stel de meldingstoestemming of het abonnement voor deze site opnieuw in via de browser en probeer opnieuw.",
+    },
     providerTypes: {
+      webpush: "Push (webbrowser)",
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6342,6 +6356,7 @@ export default {
     },
     // Provider descriptions
     providerDescriptions: {
+      webpush: "Webpushmeldingen naar een browser of geïnstalleerde app",
       email: 'SMTP-e-mailmeldingen',
       telegram: 'Meldingen via Telegram-bot',
       discord: 'Versturen naar Discord-kanaal via webhook',

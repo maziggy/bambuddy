@@ -6237,7 +6237,21 @@ export default {
 
   // Bildirimler
   notifications: {
+    push: {
+      enable: "Bu cihazda bildirimleri etkinleştir",
+      help: "Her cihaz için bir sağlayıcı oluşturun. Gönderimi durdurmak için devre dışı bırakın veya silin. Bildirimler kilit ekranında görünebilir.",
+      ios: "iPhone veya iPad’de önce Bambuddy’yi Ana Ekran’a ekleyin ve oradan açın.",
+      unsupported: "HTTPS ve Web Push destekleyen bir tarayıcı kullanın.",
+      denied: "Bildirim izni verilmedi. Tarayıcı ayarlarında bildirimlere izin verip yeniden deneyin.",
+      failed: "Push etkinleştirilemedi. Bağlantıyı ve tarayıcı bildirim ayarlarını kontrol edip yeniden deneyin.",
+      ready: "Cihaz hazır. Olay bildirimlerini almak için kaydedin.",
+      saved: "Cihaz zaten kayıtlı. Test, kayıtlı cihaza gönderilir. Cihaz değişikliği kaydettiğinizde geçerli olur.",
+      replace: "Bu cihazla değiştir",
+      required: "Kaydetmeden önce bu cihazda bildirimleri etkinleştirin.",
+      keyChanged: "Sunucu anahtarı değişti. Tarayıcıda bu sitenin bildirim iznini veya aboneliğini sıfırlayıp yeniden deneyin.",
+    },
     providerTypes: {
+      webpush: "Push (tarayıcı)",
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6249,6 +6263,7 @@ export default {
       bark: 'Bark',
     },
     providerDescriptions: {
+      webpush: "Tarayıcıya veya yüklü uygulamaya Web Push bildirimleri",
       email: 'SMTP e-posta bildirimleri',
       telegram: 'Telegram botu üzerinden bildirimler',
       discord: 'Webhook üzerinden Discord kanalına gönder',

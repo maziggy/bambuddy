@@ -870,6 +870,11 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
                 )
                 raise
 
+        # Browser subscriptions remain tied to their original VAPID identity.
+        from backend.app.services.web_push import backup_vapid_key
+
+        backup_vapid_key(temp_path)
+
         # Create ZIP
         if output_path is not None:
             zip_file = (
@@ -1349,6 +1354,19 @@ async def restore_backup(
         if not backup_db.exists():
             raise HTTPException(400, "Invalid backup: missing bambuddy.db")
 
+        from backend.app.services.web_push import (
+            preserve_encryption_keys_on_error,
+            restore_vapid_key,
+            validate_vapid_backup,
+        )
+
+        # Reject incompatible/corrupt Push keys before stopping services or
+        # replacing the MFA key that protects the current database's secrets.
+        try:
+            validate_vapid_backup(temp_path)
+        except ValueError:
+            raise HTTPException(400, "Invalid Web Push key backup or incompatible encryption key") from None
+
         # 2b. Can this version import this backup at all?
         #
         # Deliberately here: everything below has a side effect. The virtual
@@ -1424,45 +1442,54 @@ async def restore_backup(
             # every encrypted secret becomes unrecoverable.
             from backend.app.core.paths import resolve_data_dir
 
-            mfa_key_src = temp_path / ".mfa_encryption_key"
-            if mfa_key_src.exists() and mfa_key_src.is_file():
-                dst_key = resolve_data_dir() / ".mfa_encryption_key"
-                tmp_key = dst_key.parent / ".mfa_encryption_key.restore-tmp"
-                try:
-                    dst_key.parent.mkdir(parents=True, exist_ok=True)
-                    # S1: atomic write with restrictive mode from creation.
-                    # O_TRUNC because a stale tmp may exist from a prior
-                    # failed restore attempt — we want to overwrite it.
-                    fd = os.open(str(tmp_key), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with preserve_encryption_keys_on_error():
+                mfa_key_src = temp_path / ".mfa_encryption_key"
+                if mfa_key_src.exists() and mfa_key_src.is_file():
+                    dst_key = resolve_data_dir() / ".mfa_encryption_key"
+                    tmp_key = dst_key.parent / ".mfa_encryption_key.restore-tmp"
                     try:
-                        os.write(fd, mfa_key_src.read_bytes())
-                    finally:
-                        os.close(fd)
-                    # POSIX rename(2) — atomic when source/dest are on the
-                    # same filesystem (we're staying inside dst_key.parent).
-                    os.replace(str(tmp_key), str(dst_key))
-                    # S9: warn if the FS doesn't enforce 0o600
-                    actual_mode = dst_key.stat().st_mode & 0o777
-                    if actual_mode != 0o600:
-                        logger.warning(
-                            "Restored MFA key file %s: filesystem did not enforce 0o600 "
-                            "(actual: 0o%o). Key may be world-readable on Windows / SMB / FUSE.",
+                        dst_key.parent.mkdir(parents=True, exist_ok=True)
+                        # S1: atomic write with restrictive mode from creation.
+                        # O_TRUNC because a stale tmp may exist from a prior
+                        # failed restore attempt — we want to overwrite it.
+                        fd = os.open(str(tmp_key), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                        try:
+                            os.write(fd, mfa_key_src.read_bytes())
+                        finally:
+                            os.close(fd)
+                        # POSIX rename(2) — atomic when source/dest are on the
+                        # same filesystem (we're staying inside dst_key.parent).
+                        os.replace(str(tmp_key), str(dst_key))
+                        # S9: warn if the FS doesn't enforce 0o600
+                        actual_mode = dst_key.stat().st_mode & 0o777
+                        if actual_mode != 0o600:
+                            logger.warning(
+                                "Restored MFA key file %s: filesystem did not enforce 0o600 "
+                                "(actual: 0o%o). Key may be world-readable on Windows / SMB / FUSE.",
+                                dst_key,
+                                actual_mode,
+                            )
+                        logger.info("Restored .mfa_encryption_key from backup")
+                    except OSError as e:
+                        logger.error(
+                            "Could not write restored MFA key file to %s: %s — "
+                            "aborting BEFORE database swap (DB unchanged).",
                             dst_key,
-                            actual_mode,
+                            e,
+                            exc_info=True,
                         )
-                    logger.info("Restored .mfa_encryption_key from backup")
-                except OSError as e:
-                    logger.error(
-                        "Could not write restored MFA key file to %s: %s — "
-                        "aborting BEFORE database swap (DB unchanged).",
-                        dst_key,
-                        e,
-                        exc_info=True,
-                    )
+                        raise HTTPException(
+                            status_code=500,
+                            detail=("Restore aborted: MFA key write failed. Database is unchanged. Check server logs."),
+                        ) from e
+
+                # A failed Push key installation must roll back the MFA key too.
+                try:
+                    restore_vapid_key(temp_path)
+                except (OSError, ValueError):
                     raise HTTPException(
-                        status_code=500,
-                        detail=("Restore aborted: MFA key write failed. Database is unchanged. Check server logs."),
-                    ) from e
+                        status_code=500, detail="Restore aborted: Web Push key restore failed"
+                    ) from None
 
             # 5. Replace database
             logger.info("Restoring database from backup...")

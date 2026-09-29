@@ -6328,8 +6328,23 @@ export default {
 
   // Notifications
   notifications: {
+    // Browser push
+    push: {
+      enable: 'Enable notifications on this device',
+      help: 'Create one provider per device. Disable or delete this provider to stop delivery. Notifications may appear on the lock screen.',
+      ios: 'On iPhone or iPad, add Bambuddy to the Home Screen and open it there first.',
+      unsupported: 'Use HTTPS and a browser that supports Web Push.',
+      denied: 'Notification permission was not granted. Allow notifications in your browser settings and try again.',
+      failed: 'Could not enable Push. Check the connection and browser notification settings, then try again.',
+      ready: 'Device ready. Save to receive event notifications.',
+      saved: 'Device already registered. Test sends to the saved device. Replacing it takes effect when you save.',
+      replace: 'Replace with this device',
+      required: 'Enable notifications on this device before saving.',
+      keyChanged: 'The server key changed. Reset this site\'s notification permission/subscription in browser settings, then try again.',
+    },
     // Provider types
     providerTypes: {
+      webpush: 'Push (browser)',
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6342,6 +6357,7 @@ export default {
     },
     // Provider descriptions
     providerDescriptions: {
+      webpush: 'Web Push notifications to a browser or installed app',
       email: 'SMTP email notifications',
       telegram: 'Notifications via Telegram bot',
       discord: 'Send to Discord channel via webhook',

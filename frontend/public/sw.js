@@ -1,6 +1,6 @@
 // Bambuddy Service Worker
-const CACHE_NAME = 'bambuddy-v30';
-const STATIC_CACHE = 'bambuddy-static-v29';
+const CACHE_NAME = 'bambuddy-v32';
+const STATIC_CACHE = 'bambuddy-static-v30';
 
 // Static assets to cache on install
 const STATIC_ASSETS = [
@@ -9,6 +9,7 @@ const STATIC_ASSETS = [
   '/img/favicon.png',
   '/img/favicon-16x16.png',
   '/img/favicon-32x32.png',
+  '/img/notification-badge.png',
   '/img/android-chrome-192x192.png',
   '/img/android-chrome-512x512.png',
   '/img/apple-touch-icon.png',
@@ -185,23 +186,35 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Handle push notifications (for future use)
-self.addEventListener('push', (event) => {
-  if (!event.data) return;
+// Notifications can only open this application, never an external/action URL.
+function pushTarget(value) {
+  try {
+    const url = new URL(typeof value === 'string' ? value : '/', self.location.origin);
+    if (url.origin === self.location.origin && ['/', '/settings', '/archives', '/queue'].includes(url.pathname)) return url.href;
+  } catch { /* Fall back to the application's home page. */ }
+  return self.location.origin + '/';
+}
 
-  const data = event.data.json();
+// Handle visible notifications, including empty or malformed payloads.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    const parsed = event.data?.json();
+    if (parsed && typeof parsed === 'object') data = parsed;
+  } catch { /* Still show a notification for userVisibleOnly subscriptions. */ }
   const options = {
-    body: data.body || 'New notification from Bambuddy',
+    body: typeof data.body === 'string' ? data.body : 'New notification from Bambuddy',
     icon: '/img/android-chrome-192x192.png',
-    badge: '/img/favicon-32x32.png',
+    // Android uses only the alpha mask for its small status-bar icon.
+    badge: '/img/notification-badge.png',
     vibrate: [100, 50, 100],
     data: {
-      url: data.url || '/',
+      url: pushTarget(data.url),
     },
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Bambuddy', options)
+    self.registration.showNotification(typeof data.title === 'string' ? data.title : 'Bambuddy', options)
   );
 });
 
@@ -209,15 +222,23 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const url = event.notification.data?.url || '/';
+  const url = pushTarget(event.notification.data?.url);
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).catch(() => []).then(async (windowClients) => {
       // Check if there's already a window open
       for (const client of windowClients) {
-        if (client.url.includes(self.location.origin) && 'focus' in client) {
-          client.navigate(url);
-          return client.focus();
+        if (new URL(client.url).origin === self.location.origin && 'focus' in client) {
+          try {
+            // Bring the app forward while the notification tap is still active.
+            // Waiting for a background page to load first can prevent focus.
+            await client.focus();
+            if (client.url === url) return;
+            const navigated = await client.navigate(url);
+            if (navigated) return;
+          } catch {
+            // A suspended/closed client must not prevent the openWindow fallback.
+          }
         }
       }
       // Open a new window if none exists

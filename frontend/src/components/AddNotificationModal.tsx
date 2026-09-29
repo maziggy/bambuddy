@@ -6,13 +6,14 @@ import { api } from '../api/client';
 import type { NotificationProvider, NotificationProviderCreate, NotificationProviderUpdate, ProviderType, TelegramVerdictMode } from '../api/client';
 import { Button } from './Button';
 import { Toggle } from './Toggle';
+import { prepareWebPush, subscribeWebPush, supportsWebPush } from '../utils/webPush';
 
 interface AddNotificationModalProps {
   provider?: NotificationProvider | null;
   onClose: () => void;
 }
 
-const PROVIDER_VALUES: ProviderType[] = ['email', 'telegram', 'discord', 'ntfy', 'pushover', 'bark', 'callmebot', 'webhook', 'homeassistant'];
+const PROVIDER_VALUES: ProviderType[] = ['email', 'telegram', 'discord', 'ntfy', 'pushover', 'bark', 'callmebot', 'webhook', 'homeassistant', 'webpush'];
 
 export function AddNotificationModal({ provider, onClose }: AddNotificationModalProps) {
   const { t } = useTranslation();
@@ -88,6 +89,43 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
 
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pushSubscription, setPushSubscription] = useState<PushSubscriptionJSON | null>(null);
+  const [pushPending, setPushPending] = useState(false);
+  const pushSupported = supportsWebPush();
+  const pushRegistered = !!pushSubscription || (provider?.provider_type === 'webpush' && provider.config.registered === true);
+  const { data: pushSetup, isError: pushSetupFailed } = useQuery({
+    queryKey: ['webpush-setup'],
+    queryFn: async () => {
+      const [key, registration] = await Promise.all([api.getWebPushPublicKey(), prepareWebPush()]);
+      return { publicKey: key.public_key, registration };
+    },
+    enabled: providerType === 'webpush' && pushSupported,
+    retry: false,
+    staleTime: 0,
+  });
+
+  const enablePush = async () => {
+    if (!pushSetup || pushPending) return;
+    setPushPending(true);
+    setError(null);
+    setTestResult(null);
+    try {
+      // Request permission directly in the click handler, before any network await.
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setError(t('notifications.push.denied'));
+        return;
+      }
+      setPushSubscription(await subscribeWebPush(pushSetup.registration, pushSetup.publicKey));
+    } catch (err) {
+      setError(t(err instanceof Error && err.message === 'pushKeyChanged'
+        ? 'notifications.push.keyChanged' : 'notifications.push.failed'));
+    } finally {
+      setPushPending(false);
+    }
+  };
+
+  const pushConfig = pushSubscription ? { subscription: pushSubscription } : {};
 
   // Fetch printers for linking
   const { data: printers } = useQuery({
@@ -106,7 +144,9 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
 
   // Test configuration mutation
   const testMutation = useMutation({
-    mutationFn: () => api.testNotificationConfig({ provider_type: providerType, config }),
+    mutationFn: () => providerType === 'webpush' && !pushSubscription && provider
+      ? api.testNotificationProvider(provider.id)
+      : api.testNotificationConfig({ provider_type: providerType, config: providerType === 'webpush' ? pushConfig : config }),
     onSuccess: (result) => {
       setTestResult(result);
       setError(null);
@@ -150,6 +190,10 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
     }
 
     // Validate provider-specific config
+    if (providerType === 'webpush' && !pushRegistered) {
+      setError(t('notifications.push.required'));
+      return;
+    }
     const requiredFields = getRequiredFields(providerType);
     for (const field of requiredFields) {
       if (!config[field.key]?.trim()) {
@@ -190,7 +234,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
     const data = {
       name: name.trim(),
       provider_type: providerType,
-      config: finalConfig,
+      config: providerType === 'webpush' ? pushConfig : finalConfig,
       printer_id: printerId,
       quiet_hours_enabled: quietHoursEnabled,
       quiet_hours_start: quietHoursEnabled ? quietHoursStart : null,
@@ -229,7 +273,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
     }
   };
 
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  const isPending = createMutation.isPending || updateMutation.isPending || pushPending;
 
   // Get config fields for each provider type
   const getConfigFields = (type: ProviderType) => {
@@ -397,9 +441,11 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               onChange={(e) => {
                 setProviderType(e.target.value as ProviderType);
                 setConfig({}); // Reset config when changing type
+                setPushSubscription(null);
+                setError(null);
                 setTestResult(null);
               }}
-              disabled={isEditing}
+              disabled={isEditing || pushPending}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none disabled:opacity-50"
             >
               {PROVIDER_VALUES.map((value) => (
@@ -416,6 +462,22 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
           {/* Provider-specific configuration */}
           <div className="space-y-3">
             <p className="text-sm text-bambu-gray">{t('notifications.configuration')}</p>
+            {providerType === 'webpush' && (
+              <div className="space-y-3 p-3 bg-bambu-dark rounded-lg">
+                <p className="text-sm text-bambu-gray">{t('notifications.push.help')}</p>
+                <p className="text-xs text-bambu-gray">{t('notifications.push.ios')}</p>
+                {!pushSupported && <p role="status" className="text-sm text-amber-400">{t('notifications.push.unsupported')}</p>}
+                {pushSetupFailed && <p role="alert" className="text-sm text-red-400">{t('notifications.push.failed')}</p>}
+                {pushRegistered && <p role="status" className="text-sm text-bambu-green">{t(pushSubscription ? 'notifications.push.ready' : 'notifications.push.saved')}</p>}
+                {!pushSubscription && (
+                  <Button type="button" variant="secondary" onClick={enablePush}
+                    disabled={!pushSupported || !pushSetup || isPending}>
+                    {pushPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {t(pushRegistered ? 'notifications.push.replace' : 'notifications.push.enable')}
+                  </Button>
+                )}
+              </div>
+            )}
             {configFields
               .filter((field) => !('showIf' in field) || (field as { showIf?: (cfg: Record<string, string>) => boolean }).showIf?.(config) !== false)
               .map((field) => (
@@ -495,7 +557,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                 setTestResult(null);
                 testMutation.mutate();
               }}
-              disabled={testMutation.isPending || (getRequiredFields(providerType).length > 0 && !config[getRequiredFields(providerType)[0]?.key])}
+              disabled={testMutation.isPending || pushPending || (providerType === 'webpush' && !pushRegistered) || (getRequiredFields(providerType).length > 0 && !config[getRequiredFields(providerType)[0]?.key])}
               className="flex-1"
             >
               {testMutation.isPending ? (

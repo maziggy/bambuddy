@@ -29,6 +29,7 @@ from backend.app.schemas.notification import (
 )
 from backend.app.services.notification_service import notification_service
 from backend.app.services.telegram_reactions import telegram_reaction_poller
+from backend.app.services.web_push import get_vapid_private_key, public_push_config, store_push_config, vapid_public_key
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +50,15 @@ async def _resync_reaction_poller():
 
 def _provider_to_dict(provider: NotificationProvider) -> dict:
     """Convert a NotificationProvider model to a response dictionary."""
+    config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
+    if provider.provider_type == "webpush":
+        config = public_push_config(config)
     return {
         "id": provider.id,
         "name": provider.name,
         "provider_type": provider.provider_type,
         "enabled": provider.enabled,
-        "config": json.loads(provider.config) if isinstance(provider.config, str) else provider.config,
+        "config": config,
         # Print lifecycle events
         "on_print_start": provider.on_print_start,
         "on_print_complete": provider.on_print_complete,
@@ -150,11 +154,14 @@ async def create_notification_provider(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_CREATE),
 ):
     """Create a new notification provider."""
+    config = provider_data.config
+    if provider_data.provider_type == "webpush":
+        config = _store_push_config(config)
     provider = NotificationProvider(
         name=provider_data.name,
         provider_type=provider_data.provider_type.value,
         enabled=provider_data.enabled,
-        config=json.dumps(provider_data.config),
+        config=json.dumps(config),
         # Print lifecycle events
         on_print_start=provider_data.on_print_start,
         on_print_complete=provider_data.on_print_complete,
@@ -227,6 +234,26 @@ async def create_notification_provider(
 # ============================================================================
 
 
+def _store_push_config(config: dict, existing: dict | None = None) -> dict:
+    try:
+        return store_push_config(config, existing)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except Exception:
+        raise HTTPException(status_code=503, detail="Push secret storage is unavailable") from None
+
+
+@router.get("/webpush/public-key")
+async def get_webpush_public_key(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_READ),
+):
+    """Only the public VAPID key is shared with the browser."""
+    try:
+        return {"public_key": vapid_public_key(get_vapid_private_key())}
+    except Exception:
+        raise HTTPException(status_code=503, detail="Push secret storage is unavailable") from None
+
+
 @router.post("/test-config", response_model=NotificationTestResponse)
 async def test_notification_config(
     test_request: NotificationTestRequest,
@@ -234,9 +261,10 @@ async def test_notification_config(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_CREATE),
 ):
     """Test notification configuration before saving."""
-    success, message = await notification_service.send_test_notification(
-        test_request.provider_type.value, test_request.config, db
-    )
+    config = test_request.config
+    if test_request.provider_type == "webpush":
+        config = _store_push_config(config)
+    success, message = await notification_service.send_test_notification(test_request.provider_type.value, config, db)
 
     return NotificationTestResponse(success=success, message=message)
 
@@ -260,6 +288,8 @@ async def test_all_notification_providers(
     for provider in providers:
         config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
         success, message = await notification_service.send_test_notification(provider.provider_type, config, db)
+        if provider.provider_type == "webpush":
+            provider.config = json.dumps(config)
 
         # Update provider status
         if success:
@@ -519,6 +549,13 @@ async def update_notification_provider(
     # Update only provided fields
     update_dict = update_data.model_dump(exclude_unset=True)
 
+    new_type = update_data.provider_type or provider.provider_type
+    if new_type == "webpush" and ("config" in update_dict or provider.provider_type != "webpush"):
+        existing = json.loads(provider.config) if provider.provider_type == "webpush" else None
+        update_dict["config"] = _store_push_config(update_dict.get("config") or {}, existing)
+    elif provider.provider_type == "webpush" and new_type != "webpush" and "config" not in update_dict:
+        update_dict["config"] = {}  # Never expose the old subscription by changing type.
+
     for key, value in update_dict.items():
         if key == "config" and value is not None:
             setattr(provider, key, json.dumps(value))
@@ -574,6 +611,8 @@ async def test_notification_provider(
 
     config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
     success, message = await notification_service.send_test_notification(provider.provider_type, config, db)
+    if provider.provider_type == "webpush":
+        provider.config = json.dumps(config)
 
     # Update provider status
     if success:

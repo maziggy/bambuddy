@@ -65,6 +65,8 @@ openpyxl>=3.1.0
 
 # Notifications
 pywebpush>=2.0.0
+requests>=2.32.4
+py-vapid>=1.9.0
 
 # Utilities
 # 0.0.27 → 0.0.31 clears three CVEs in the parser surface that FastAPI

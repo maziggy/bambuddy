@@ -5999,7 +5999,21 @@ export default {
     delayAfterDryingMinutes: '건조 후 지연 (분)'
   },
   notifications: {
+    push: {
+      enable: "이 기기에서 알림 활성화",
+      help: "기기마다 공급자를 만드세요. 전송을 중지하려면 비활성화하거나 삭제하세요. 잠금 화면에 알림이 표시될 수 있습니다.",
+      ios: "iPhone 또는 iPad에서는 먼저 Bambuddy를 홈 화면에 추가하고 거기서 여세요.",
+      unsupported: "HTTPS와 Web Push를 지원하는 브라우저를 사용하세요.",
+      denied: "알림 권한이 허용되지 않았습니다. 브라우저 설정에서 알림을 허용하고 다시 시도하세요.",
+      failed: "푸시를 활성화할 수 없습니다. 연결과 브라우저 알림 설정을 확인하고 다시 시도하세요.",
+      ready: "기기가 준비되었습니다. 이벤트 알림을 받으려면 저장하세요.",
+      saved: "기기가 이미 등록되어 있습니다. 테스트는 저장된 기기로 전송됩니다. 기기 교체는 저장할 때 적용됩니다.",
+      replace: "이 기기로 교체",
+      required: "저장하기 전에 이 기기에서 알림을 활성화하세요.",
+      keyChanged: "서버 키가 변경되었습니다. 브라우저에서 이 사이트의 알림 권한 또는 구독을 초기화하고 다시 시도하세요.",
+    },
     providerTypes: {
+      webpush: "푸시(브라우저)",
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6011,6 +6025,7 @@ export default {
       bark: 'Bark'
     },
     providerDescriptions: {
+      webpush: "브라우저 또는 설치된 앱으로 Web Push 알림 전송",
       email: 'SMTP 이메일 알림',
       telegram: 'Telegram 봇을 통한 알림',
       discord: 'Webhook을 통해 Discord 채널로 전송',

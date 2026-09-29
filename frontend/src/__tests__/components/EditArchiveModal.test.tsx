@@ -567,12 +567,16 @@ describe('EditArchiveModal', () => {
       );
       const field = screen.getByLabelText(/items printed/i) as HTMLInputElement;
       await user.clear(field);
+      // Empty while editing (#3182), and 0 rather than 1 once the field is left.
+      expect(field.value).toBe('');
+      await user.tab();
 
       expect(field.value).toBe('0');
     });
 
     it('still refuses a negative count', async () => {
       const user = userEvent.setup();
+      const seen = patchSpy();
 
       render(
         <EditArchiveModal
@@ -584,8 +588,10 @@ describe('EditArchiveModal', () => {
       const field = screen.getByLabelText(/items printed/i) as HTMLInputElement;
       await user.clear(field);
       await user.type(field, '-3');
+      await user.click(screen.getByRole('button', { name: /save/i }));
 
-      expect(Number(field.value)).toBeGreaterThanOrEqual(0);
+      expect(field.value).toBe('0');
+      await waitFor(() => expect(seen.body?.quantity).toBe(0));
     });
   });
 

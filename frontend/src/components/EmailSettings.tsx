@@ -9,6 +9,7 @@ import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { NumberInput } from './NumberInput';
 
 const SECURITY_PORT_MAP: Record<string, number> = {
   starttls: 587,
@@ -316,10 +317,12 @@ export function EmailSettings() {
                   <label className="block text-sm font-medium text-white mb-1">
                     {t('settings.email.smtpPort') || 'SMTP Port'}
                   </label>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={smtpSettings.smtp_port}
-                    onChange={(e) => handlePortChange(parseInt(e.target.value) || 587)}
+                    onChange={handlePortChange}
+                    min={1}
+                    max={65535}
+                    fallback={587}
                     placeholder="587"
                     className={inputClasses}
                   />

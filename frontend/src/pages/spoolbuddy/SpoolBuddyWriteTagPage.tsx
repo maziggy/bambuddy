@@ -53,6 +53,7 @@ import {
   withCurrentValue,
 } from '../../components/spool-form/utils';
 import { MATERIALS } from '../../components/spool-form/constants';
+import { NumberInput } from '../../components/NumberInput';
 
 type Tab = 'existing' | 'new' | 'replace';
 type WriteStatus = 'idle' | 'selected' | 'writing' | 'success' | 'error';
@@ -906,10 +907,10 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
 
             <div>
               <label className="block text-xs text-zinc-400 mb-1">{t('spoolbuddy.writeTag.weight', 'Weight (g)')}</label>
-              <input
-                type="number"
+              <NumberInput
                 value={formData.label_weight}
-                onChange={(e) => updateField('label_weight', parseInt(e.target.value) || 0)}
+                onChange={(v) => updateField('label_weight', v)}
+                fallback={0}
                 min={0}
                 max={10000}
                 className="w-full px-3 py-2 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-sm text-white focus:outline-none focus:border-bambu-green"

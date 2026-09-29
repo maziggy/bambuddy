@@ -650,7 +650,14 @@ async def generate_rtsp_mjpeg_stream(
                     ip_address,
                     stream_id,
                 )
-                await asyncio.sleep(profile.rtsp_reconnect_delay)
+                # Fast after a session that delivered frames (reconnect_count
+                # is 1 then), backing off while the printer keeps refusing.
+                await asyncio.sleep(
+                    min(
+                        profile.rtsp_reconnect_delay * 2 ** (reconnect_count - 1),
+                        profile.rtsp_reconnect_backoff_max,
+                    )
+                )
                 if disconnect_event and disconnect_event.is_set():
                     break
 
@@ -698,6 +705,7 @@ async def generate_rtsp_mjpeg_stream(
             buffer = b""
             stream_ended = False
             client_gone = False
+            session_got_frames = False
 
             while True:
                 if disconnect_event and disconnect_event.is_set():
@@ -735,6 +743,7 @@ async def generate_rtsp_mjpeg_stream(
                         frame = buffer[: end_idx + 2]
                         buffer = buffer[end_idx + 2 :]
                         got_any_frames = True
+                        session_got_frames = True
 
                         if printer_id is not None:
                             _last_frames[printer_id] = frame
@@ -784,6 +793,13 @@ async def generate_rtsp_mjpeg_stream(
                 break
 
             if stream_ended:
+                # The budget is for failures in a row. A session that
+                # delivered video was a success, however it ended -- a stock
+                # X1C ends every session after about a minute, which under a
+                # lifetime count stopped the live view for good after half an
+                # hour.
+                if session_got_frames:
+                    reconnect_count = 0
                 reconnect_count += 1
                 continue
 
@@ -792,7 +808,7 @@ async def generate_rtsp_mjpeg_stream(
 
         if reconnect_count > profile.rtsp_reconnect_max:
             logger.error(
-                "RTSP max reconnects (%d) reached for %s (stream_id=%s)",
+                "RTSP max consecutive reconnects (%d) reached for %s (stream_id=%s)",
                 profile.rtsp_reconnect_max,
                 ip_address,
                 stream_id,

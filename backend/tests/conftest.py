@@ -152,6 +152,20 @@ def reset_spoolman_location_sync_cache():
 
 
 @pytest.fixture(autouse=True)
+def reset_slot_unlink_grace():
+    """Drop held slot unlinks and cancel their re-checks between tests (#3186).
+
+    The holds live in a module-level dict keyed by printer id, and every test
+    database hands out the same ids -- a hold left by one test would let the
+    next one's first blank report count as already confirmed."""
+    from backend.app.services import slot_unlink_grace
+
+    slot_unlink_grace.reset()
+    yield
+    slot_unlink_grace.reset()
+
+
+@pytest.fixture(autouse=True)
 def reset_auth_enabled_cache():
     """Drop the module-level auth-enabled cache between tests (issue #2572).
 

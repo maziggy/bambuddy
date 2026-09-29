@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.schemas.spool import normalize_effect_type
+from backend.app.services import slot_unlink_grace
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_filament_preset import printer_safe_filament_id, resolve_spool_preset
 from backend.app.utils.tag_normalization import (
@@ -567,6 +568,7 @@ async def auto_assign_spool(
     )
     db.add(assignment)
     await db.flush()
+    slot_unlink_grace.forget_slot(printer_id, ams_id, tray_id)
 
     # Apply K-profile via MQTT (if available)
     # NOTE: Do NOT send ams_set_filament_setting here. This function is only

@@ -129,6 +129,25 @@ describe('PrintersPage - drying start modes', () => {
     );
   });
 
+  it('lets the temperature be retyped instead of snapping to the 45 °C minimum (#3182)', async () => {
+    const user = userEvent.setup();
+    render(<PrintersPage />);
+    await openDryingPopover(user);
+
+    const temp = screen
+      .getAllByRole('spinbutton')
+      .find((el) => el.getAttribute('min') === '45') as HTMLInputElement;
+    await user.clear(temp);
+    await user.keyboard('6');
+    expect(temp.value).toBe('6');
+    await user.keyboard('0');
+    expect(temp.value).toBe('60');
+
+    await user.tab();
+    expect(temp.value).toBe('60');
+    expect((screen.getAllByRole('slider')[0] as HTMLInputElement).value).toBe('60');
+  });
+
   it('reveals the delay chips when After delay is selected, with 2h preselected', async () => {
     const user = userEvent.setup();
     render(<PrintersPage />);

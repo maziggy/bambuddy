@@ -67,11 +67,54 @@ class TestNotificationPhotoStore:
         assert ".." not in filename
         assert (self.directory / filename).exists()
 
+    def test_filename_embeds_a_urlsafe_token(self):
+        """The filename is the URL's only credential, so it has to carry the
+        full 24-byte token, not a guessable suffix."""
+        with patch.object(notification_photos.secrets, "token_urlsafe", return_value="T" * 32) as mock_token:
+            filename = notification_photos.save_notification_photo(b"x", "test")
+
+        mock_token.assert_called_once_with(24)
+        assert filename.endswith("_" + "T" * 32 + ".jpg")
+
+    def test_filenames_are_unique_per_save(self):
+        first = notification_photos.save_notification_photo(b"x", "test")
+        second = notification_photos.save_notification_photo(b"x", "test")
+
+        assert first != second
+
     def test_find_rejects_traversal_and_missing_files(self):
         notification_photos.save_notification_photo(b"x", "test")
 
         assert notification_photos.find_notification_photo("../secret.jpg") is None
         assert notification_photos.find_notification_photo("does_not_exist.jpg") is None
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            # the pre-#3089-review shape: an 8-hex uuid suffix is guessable
+            "test_20260930_120000_abcdef12.jpg",
+            # token one character short / long
+            "test_20260930_120000_" + "A" * 31 + ".jpg",
+            "test_20260930_120000_" + "A" * 33 + ".jpg",
+            # other extensions, even if such a file exists on disk
+            "test_20260930_120000_" + "A" * 32 + ".png",
+            "test_20260930_120000_" + "A" * 32 + ".jpg.bak",
+        ],
+    )
+    def test_find_serves_only_the_exact_saved_shape(self, name):
+        self.directory.mkdir(parents=True, exist_ok=True)
+        (self.directory / name).write_bytes(b"x")
+
+        assert notification_photos.find_notification_photo(name) is None
+
+    def test_find_refuses_a_photo_past_its_expiry_even_before_prune(self):
+        """The 3-day age limit is the URL's expiry, so it can't depend on
+        another notification coming along to trigger a prune."""
+        filename = notification_photos.save_notification_photo(b"x", "test")
+        old = time.time() - notification_photos._MAX_AGE_SECONDS - 60
+        os.utime(self.directory / filename, (old, old))
+
+        assert notification_photos.find_notification_photo(filename) is None
 
     def test_save_prunes_photos_older_than_max_age(self):
         self.directory.mkdir(parents=True)
@@ -128,22 +171,61 @@ class TestAttachPhotoOptOut:
         ],
     )
     async def test_fetched_url_providers_skip_the_url_when_opted_out(self, service, provider_type, config, sender):
-        """HA/Bark/Slack could otherwise pull finish_photo_url straight out of
-        the shared variables dict, so they need their own check."""
+        """HA/Bark/Slack could otherwise get the URL an earlier provider in the
+        same send left in the shared photo cache, so they need their own check."""
         provider = _provider(provider_type, config, attach_photo=False)
-        variables = {"finish_photo_url": "https://bambuddy.example/api/v1/archives/1/photos/a.jpg"}
+        photo_cache = {"url": "https://bambuddy.example/api/v1/notifications/photos/a.jpg"}
 
         with (
             patch.object(service, sender, new_callable=AsyncMock) as mock_send,
-            patch.object(service, "_get_or_build_photo_url", new_callable=AsyncMock) as mock_build,
+            patch.object(service, "_get_or_build_photo_url", wraps=service._get_or_build_photo_url) as mock_build,
         ):
             mock_send.return_value = (True, "OK")
             await service._send_to_provider(
-                provider, "Title", "Body", db=AsyncMock(), image_data=b"jpeg", variables=variables
+                provider, "Title", "Body", db=AsyncMock(), image_data=b"jpeg", photo_cache=photo_cache
             )
 
         mock_build.assert_not_called()
         assert mock_send.call_args.kwargs.get("image_url") is None
+
+    @pytest.mark.asyncio
+    async def test_one_send_persists_the_photo_once_and_keeps_it_out_of_variables(self, service):
+        """Every HA/Bark/Slack provider in a send shares one saved photo, and
+        the URL (the photo's only credential) never reaches the variables a
+        generic webhook copies into its payload."""
+        providers = [
+            _provider("bark", {"device_key": "abc"}),
+            _provider("homeassistant", {"service": "notify.mobile_app_x"}),
+        ]
+        for i, provider in enumerate(providers):
+            provider.id = i
+            provider.name = f"p{i}"
+            provider.daily_digest_enabled = False
+        variables = {"printer": "X1C"}
+
+        with (
+            patch.object(service, "_send_bark", new_callable=AsyncMock, return_value=(True, "OK")) as bark,
+            patch.object(service, "_send_homeassistant", new_callable=AsyncMock, return_value=(True, "OK")) as ha,
+            patch.object(service, "_update_provider_status", new_callable=AsyncMock),
+            patch.object(service, "_log_notification", new_callable=AsyncMock),
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value="https://bambuddy.example",
+            ),
+            patch(
+                "backend.app.services.notification_service.save_notification_photo", return_value="p.jpg"
+            ) as mock_save,
+        ):
+            await service._send_to_providers(
+                providers, "T", "B", AsyncMock(), event_type="print_complete", image_data=b"jpeg", variables=variables
+            )
+
+        mock_save.assert_called_once()
+        url = "https://bambuddy.example/api/v1/notifications/photos/p.jpg"
+        assert bark.call_args.kwargs["image_url"] == url
+        assert ha.call_args.kwargs["image_url"] == url
+        assert variables == {"printer": "X1C"}
 
     @pytest.mark.asyncio
     async def test_bark_gets_photo_url_when_enabled(self, service):
@@ -253,67 +335,97 @@ class TestFetchedUrlPayloads:
 
 
 class TestGetOrBuildPhotoUrl:
-    @pytest.mark.asyncio
-    async def test_reuses_an_absolute_finish_photo_url(self, service):
-        url = "https://bambuddy.example/api/v1/archives/1/photos/a.jpg"
-
-        with patch("backend.app.services.notification_service.save_notification_photo") as mock_save:
-            result = await service._get_or_build_photo_url(AsyncMock(), b"jpeg", {"finish_photo_url": url}, "x")
-
-        assert result == url
-        mock_save.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_ignores_a_relative_finish_photo_url_without_external_url(self, service):
-        """A relative path is useless to a service that fetches it itself."""
-        with patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=""):
-            result = await service._get_or_build_photo_url(
-                AsyncMock(), b"jpeg", {"finish_photo_url": "/api/v1/archives/1/photos/a.jpg"}, "x"
-            )
-
-        assert result is None
+    @pytest.fixture
+    def external_url(self):
+        with patch(
+            "backend.app.api.routes.settings.get_setting",
+            new_callable=AsyncMock,
+            return_value="https://bambuddy.example/",
+        ):
+            yield
 
     @pytest.mark.asyncio
     async def test_no_image_returns_none(self, service):
-        assert await service._get_or_build_photo_url(AsyncMock(), None, {}, "x") is None
+        assert await service._get_or_build_photo_url(AsyncMock(), None, "x") is None
 
     @pytest.mark.asyncio
-    async def test_saves_and_builds_a_tokenless_url_when_auth_is_off(self, service):
-        variables: dict = {}
-
+    async def test_no_external_url_returns_none(self, service):
+        """A relative path is useless to a service that fetches it itself."""
         with (
-            patch(
-                "backend.app.api.routes.settings.get_setting",
-                new_callable=AsyncMock,
-                return_value="https://bambuddy.example/",
-            ),
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=""),
+            patch("backend.app.services.notification_service.save_notification_photo") as mock_save,
+        ):
+            result = await service._get_or_build_photo_url(AsyncMock(), b"jpeg", "x")
+
+        assert result is None
+        mock_save.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_saves_and_builds_a_url_with_no_token(self, service, external_url):
+        """The filename is the credential. A camera stream token here would
+        open every printer's live stream to whoever sees the notification."""
+        with (
             patch(
                 "backend.app.services.notification_service.save_notification_photo", return_value="first_layer_a.jpg"
             ) as mock_save,
-            patch("backend.app.core.auth.is_auth_enabled", new_callable=AsyncMock, return_value=False),
+            patch("backend.app.core.auth.create_camera_stream_token", new_callable=AsyncMock) as mock_token,
         ):
-            result = await service._get_or_build_photo_url(AsyncMock(), b"jpeg", variables, "first_layer_complete")
+            result = await service._get_or_build_photo_url(AsyncMock(), b"jpeg", "first_layer_complete")
 
         assert result == "https://bambuddy.example/api/v1/notifications/photos/first_layer_a.jpg"
         mock_save.assert_called_once_with(b"jpeg", "first_layer_complete")
-        # Cached so the next HA/Bark/Slack provider in the same send reuses it.
-        assert variables["photo_url"] == result
+        mock_token.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_appends_a_token_when_auth_is_on(self, service):
-        with (
-            patch(
-                "backend.app.api.routes.settings.get_setting",
-                new_callable=AsyncMock,
-                return_value="https://bambuddy.example",
-            ),
-            patch("backend.app.services.notification_service.save_notification_photo", return_value="p.jpg"),
-            patch("backend.app.core.auth.is_auth_enabled", new_callable=AsyncMock, return_value=True),
-            patch("backend.app.core.auth.create_camera_stream_token", new_callable=AsyncMock, return_value="tok"),
-        ):
-            result = await service._get_or_build_photo_url(AsyncMock(), b"jpeg", {}, "x")
+    async def test_print_complete_gets_its_own_photo_not_the_archive_url(self, service, external_url):
+        """The archive's finish_photo_url needs a media token, so with auth on
+        HA/Bark/Slack would get a 401 on it. Print Complete must build its own."""
+        with patch("backend.app.services.notification_service.save_notification_photo", return_value="p.jpg"):
+            result = await service._get_or_build_photo_url(AsyncMock(), b"jpeg", "print_complete")
 
-        assert result == "https://bambuddy.example/api/v1/notifications/photos/p.jpg?token=tok"
+        assert result == "https://bambuddy.example/api/v1/notifications/photos/p.jpg"
+
+    @pytest.mark.asyncio
+    async def test_cache_is_filled_and_then_reused(self, service, external_url):
+        photo_cache: dict = {}
+
+        with patch(
+            "backend.app.services.notification_service.save_notification_photo", return_value="p.jpg"
+        ) as mock_save:
+            first = await service._get_or_build_photo_url(AsyncMock(), b"jpeg", "x", photo_cache)
+            second = await service._get_or_build_photo_url(AsyncMock(), b"jpeg", "x", photo_cache)
+
+        assert first == second == photo_cache["url"]
+        mock_save.assert_called_once()
+
+
+class TestNotificationPhotoRoute:
+    """GET /notifications/photos/{filename} is public: the filename is the auth."""
+
+    @pytest.mark.asyncio
+    async def test_serves_a_saved_photo_without_credentials(self, tmp_path, monkeypatch):
+        from backend.app.api.routes.notifications import get_notification_photo
+
+        monkeypatch.setattr(notification_photos.settings, "base_dir", tmp_path)
+        filename = notification_photos.save_notification_photo(b"\xff\xd8jpeg", "test")
+
+        response = await get_notification_photo(filename)
+
+        assert response.media_type == "image/jpeg"
+        assert response.headers["cache-control"] == "private, no-store"
+
+    @pytest.mark.asyncio
+    async def test_unknown_name_is_404(self, tmp_path, monkeypatch):
+        from fastapi import HTTPException
+
+        from backend.app.api.routes.notifications import get_notification_photo
+
+        monkeypatch.setattr(notification_photos.settings, "base_dir", tmp_path)
+
+        with pytest.raises(HTTPException) as exc:
+            await get_notification_photo("test_20260930_120000_" + "A" * 32 + ".jpg")
+
+        assert exc.value.status_code == 404
 
 
 class TestSendEmailInlineImage:

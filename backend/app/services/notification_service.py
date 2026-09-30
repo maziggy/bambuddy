@@ -359,15 +359,15 @@ class NotificationService:
             elif provider_type == "webhook":
                 photo_url = None
                 if attach_photo and (config.get("payload_format") or "generic").strip() == "slack":
-                    photo_url = await self._get_or_build_photo_url(db, image_data, {}, "test")
+                    photo_url = await self._get_or_build_photo_url(db, image_data, "test")
                 return await self._send_webhook(
                     config, title, message, image_data=image_data, event_type="test", image_url=photo_url
                 )
             elif provider_type == "homeassistant":
-                photo_url = await self._get_or_build_photo_url(db, image_data, {}, "test") if attach_photo else None
+                photo_url = await self._get_or_build_photo_url(db, image_data, "test") if attach_photo else None
                 return await self._send_homeassistant(config, title, message, db=db, image_url=photo_url)
             elif provider_type == "bark":
-                photo_url = await self._get_or_build_photo_url(db, image_data, {}, "test") if attach_photo else None
+                photo_url = await self._get_or_build_photo_url(db, image_data, "test") if attach_photo else None
                 return await self._send_bark(config, title, message, image_url=photo_url)
             else:
                 return False, f"Unknown provider type: {provider_type}"
@@ -1195,34 +1195,33 @@ class NotificationService:
         self,
         db: AsyncSession | None,
         image_data: bytes | None,
-        variables: dict | None,
         event_type: str | None,
+        photo_cache: dict | None = None,
     ) -> str | None:
         """Return a URL for a notification photo, for providers that fetch it themselves.
 
-        Reuses ``finish_photo_url``/``photo_url`` in *variables* if one's
-        already there (a persisted finish photo). Otherwise writes
-        *image_data* to disk and builds a URL from the ``external_url``
-        setting — for events like first-layer-complete or plate-not-empty
-        that only ever had raw bytes for the byte-upload providers (ntfy,
-        Pushover, Telegram, Discord, ...).
+        Writes *image_data* under an unguessable filename and builds the URL
+        from the ``external_url`` setting. The filename is the only credential
+        (see notification_photos.py), so the URL opens this one photo and
+        nothing else -- no camera token, which would open every printer's live
+        stream. Print Complete goes through here too rather than reusing the
+        archive's ``finish_photo_url``: that route needs a media token, so with
+        auth on HA/Bark/Slack would get a 401.
 
         Returns None with no photo or no ``external_url`` set: HA and Bark
         fetch this URL themselves, so a relative path does them no good.
+
+        *photo_cache* is shared by every provider in one send, so only the
+        first HA/Bark/Slack provider pays for the disk write. It's kept apart
+        from the template variables so the URL never lands in a generic
+        webhook's payload.
         """
-        existing = (variables or {}).get("finish_photo_url") or (variables or {}).get("photo_url")
-        # finish_photo_url can be a relative path when external_url isn't
-        # set — fine as link text in an email, useless to HA/Bark since they
-        # fetch it themselves. Treat that as no photo, not a dead URL.
-        if existing and existing.startswith(("http://", "https://")):
-            return existing
+        if photo_cache is not None and "url" in photo_cache:
+            return photo_cache["url"]
 
         if not image_data or db is None:
             return None
 
-        # variables is the same dict for every provider in this send, so
-        # caching the URL here means only the first HA/Bark/Slack provider
-        # pays for the disk write — the rest hit the check above.
         from backend.app.api.routes.settings import get_setting
 
         external_url = (await get_setting(db, "external_url") or "").strip()
@@ -1236,19 +1235,8 @@ class NotificationService:
             return None
 
         url = f"{external_url.rstrip('/')}/api/v1/notifications/photos/{filename}"
-
-        try:
-            from backend.app.core.auth import create_camera_stream_token, is_auth_enabled
-
-            if await is_auth_enabled(db):
-                token = await create_camera_stream_token()
-                url = f"{url}?token={token}"
-        except Exception as e:
-            logger.warning("Failed to mint token for notification photo URL: %s", e)
-
-        if variables is not None:
-            variables["photo_url"] = url
-
+        if photo_cache is not None:
+            photo_cache["url"] = url
         return url
 
     async def _send_to_provider(
@@ -1260,8 +1248,13 @@ class NotificationService:
         image_data: bytes | None = None,
         event_type: str | None = None,
         variables: dict | None = None,
+        photo_cache: dict | None = None,
     ) -> tuple[bool, str]:
-        """Send notification to a specific provider."""
+        """Send notification to a specific provider.
+
+        *photo_cache* lets the providers of one send share a single persisted
+        photo URL (see _get_or_build_photo_url).
+        """
         # Check quiet hours
         if self._is_in_quiet_hours(provider):
             logger.info("Skipping notification to %s - quiet hours active", provider.name)
@@ -1271,8 +1264,8 @@ class NotificationService:
 
         # attach_photo is a per-provider opt-out. Clearing image_data covers
         # the byte-upload providers below; HA/Bark/Slack get their own check
-        # further down too, since they could otherwise pull a photo URL
-        # straight out of the shared `variables` dict regardless.
+        # further down too, since they could otherwise get the URL an earlier
+        # provider in the same send left in photo_cache.
         if not provider.attach_photo:
             image_data = None
 
@@ -1373,7 +1366,7 @@ class NotificationService:
                 # base64 image field instead.
                 photo_url = None
                 if provider.attach_photo and (config.get("payload_format") or "generic").strip() == "slack":
-                    photo_url = await self._get_or_build_photo_url(db, image_data, variables, event_type)
+                    photo_url = await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
                 return await self._send_webhook(
                     config,
                     title,
@@ -1385,7 +1378,7 @@ class NotificationService:
                 )
             elif provider.provider_type == "homeassistant":
                 photo_url = (
-                    await self._get_or_build_photo_url(db, image_data, variables, event_type)
+                    await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
                     if provider.attach_photo
                     else None
                 )
@@ -1398,7 +1391,7 @@ class NotificationService:
                 if event_type == "print_confirm_request" and _bark_confirm and _bark_confirm.startswith("http"):
                     bark_url = _bark_confirm
                 photo_url = (
-                    await self._get_or_build_photo_url(db, image_data, variables, event_type)
+                    await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
                     if provider.attach_photo
                     else None
                 )
@@ -1505,11 +1498,19 @@ class NotificationService:
         All notifications are always sent immediately. If digest mode is enabled,
         the notification is ALSO queued for the daily digest summary.
         """
+        photo_cache: dict = {}
         for provider in providers:
             try:
                 # Always send notification immediately
                 success, error = await self._send_to_provider(
-                    provider, title, message, db, image_data=image_data, event_type=event_type, variables=variables
+                    provider,
+                    title,
+                    message,
+                    db,
+                    image_data=image_data,
+                    event_type=event_type,
+                    variables=variables,
+                    photo_cache=photo_cache,
                 )
 
                 # Also queue for digest if enabled (digest is a summary, not a queue)

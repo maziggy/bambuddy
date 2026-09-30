@@ -97,6 +97,11 @@ _PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         # confirmation page and writes nothing; the POST behind it records.
         ("GET", "/api/v1/archives/confirm/{token}/{verdict}"),
         ("POST", "/api/v1/archives/confirm/{token}/{verdict}"),
+        # Notification snapshot (#3089) — HA, Bark and Slack fetch it with no
+        # session. The filename embeds secrets.token_urlsafe(24) and is the
+        # credential; the handler serves only names of that exact shape, younger
+        # than three days, and it opens that one photo and nothing else.
+        ("GET", "/api/v1/notifications/photos/{filename}"),
         # Obico cached frame — one-time nonce embedded in <img> tags.
         ("GET", "/api/v1/obico/cached-frame/{nonce}"),
         # MakerWorld thumbnail proxy — fetches external URL; no Bambuddy data exposed.

@@ -4018,41 +4018,58 @@ async def on_print_start(printer_id: int, data: dict):
                         # Wait for light to physically turn on and camera to adjust exposure
                         await asyncio.sleep(2.5)
 
-                logger.info("[PLATE CHECK] Running plate detection for printer %s", printer_id)
-                plate_result = await check_plate_empty(
-                    printer_id=printer_id,
-                    ip_address=printer.ip_address,
-                    access_code=printer.access_code,
-                    model=printer.model,
-                    include_debug_image=False,
-                    external_camera_url=printer.external_camera_url,
-                    external_camera_type=printer.external_camera_type,
-                    use_external=printer.external_camera_enabled,
-                    roi=roi,
-                    external_camera_snapshot_url=printer.external_camera_snapshot_url,
-                )
-
-                if not plate_result.needs_calibration and not plate_result.is_empty:
-                    # Objects detected - pause the print!
-                    logger.warning(
-                        f"[PLATE CHECK] Objects detected on plate for printer {printer_id}! "
-                        f"Confidence: {plate_result.confidence:.0%}, Diff: {plate_result.difference_percent:.1f}%"
+                plate_photo_data = None
+                objects_detected = False
+                try:
+                    logger.info("[PLATE CHECK] Running plate detection for printer %s", printer_id)
+                    plate_result = await check_plate_empty(
+                        printer_id=printer_id,
+                        ip_address=printer.ip_address,
+                        access_code=printer.access_code,
+                        model=printer.model,
+                        include_debug_image=False,
+                        external_camera_url=printer.external_camera_url,
+                        external_camera_type=printer.external_camera_type,
+                        use_external=printer.external_camera_enabled,
+                        roi=roi,
+                        external_camera_snapshot_url=printer.external_camera_snapshot_url,
                     )
-                    client = printer_manager.get_client(printer_id)
-                    if client:
-                        client.pause_print()
-                        logger.info("[PLATE CHECK] Print paused for printer %s", printer_id)
 
-                    # Snapshot while the light's still on — restoring it first
-                    # would leave the notification with a dark photo.
-                    plate_photo_data = None
-                    try:
-                        plate_photo_data = await _capture_snapshot_for_notification(printer_id, printer, logger)
-                    except Exception as snap_err:
+                    objects_detected = not plate_result.needs_calibration and not plate_result.is_empty
+                    if objects_detected:
+                        # Objects detected - pause the print!
                         logger.warning(
-                            "[PLATE CHECK] Failed to capture snapshot for printer %s: %s", printer_id, snap_err
+                            f"[PLATE CHECK] Objects detected on plate for printer {printer_id}! "
+                            f"Confidence: {plate_result.confidence:.0%}, Diff: {plate_result.difference_percent:.1f}%"
                         )
+                        pause_client = printer_manager.get_client(printer_id)
+                        if pause_client:
+                            pause_client.pause_print()
+                            logger.info("[PLATE CHECK] Print paused for printer %s", printer_id)
 
+                        # Snapshot while the light's still on — restoring it first
+                        # would leave the notification with a dark photo.
+                        try:
+                            plate_photo_data = await _capture_snapshot_for_notification(printer_id, printer, logger)
+                        except Exception as snap_err:
+                            logger.warning(
+                                "[PLATE CHECK] Failed to capture snapshot for printer %s: %s", printer_id, snap_err
+                            )
+                finally:
+                    # Restore chamber light to original state as soon as the
+                    # camera is done with it, whatever happened above.
+                    if light_was_off and client:
+                        logger.info("[PLATE CHECK] Restoring chamber light to off for printer %s", printer_id)
+                        try:
+                            client.set_chamber_light(False)
+                        except Exception as light_err:
+                            logger.warning(
+                                "[PLATE CHECK] Failed to restore chamber light for printer %s: %s",
+                                printer_id,
+                                light_err,
+                            )
+
+                if objects_detected:
                     # Send notification about plate not empty
                     await ws_manager.broadcast(
                         {
@@ -4076,11 +4093,6 @@ async def on_print_start(printer_id: int, data: dict):
                         logger.warning("[PLATE CHECK] Failed to send notification: %s", notif_err)
                 else:
                     logger.info("[PLATE CHECK] Plate is empty for printer %s, proceeding with print", printer_id)
-
-                # Restore chamber light to original state
-                if light_was_off and client:
-                    logger.info("[PLATE CHECK] Restoring chamber light to off for printer %s", printer_id)
-                    client.set_chamber_light(False)
             except Exception as plate_err:
                 # Don't block print on plate detection errors
                 logger.warning("[PLATE CHECK] Plate detection failed for printer %s: %s", printer_id, plate_err)

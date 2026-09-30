@@ -5,19 +5,13 @@ import logging
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import (
-    RequireCameraStreamTokenIfAuthEnabled,
-    RequirePermissionIfAuthEnabled,
-    ScopedCaller,
-    require_notification_send,
-)
+from backend.app.core.auth import RequirePermissionIfAuthEnabled, ScopedCaller, require_notification_send
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.notification import NotificationLog, NotificationProvider
@@ -434,22 +428,19 @@ async def clear_notification_logs(
 
 
 @router.get("/photos/{filename}")
-async def get_notification_photo(
-    filename: str,
-    _: None = RequireCameraStreamTokenIfAuthEnabled,
-):
-    """Serve an ad-hoc notification snapshot (plate-not-empty, first-layer, ...).
+async def get_notification_photo(filename: str):
+    """Serve an ad-hoc notification snapshot to HA, Bark or Slack.
 
-    HA and Bark fetch this URL themselves, so it has to work without a login
-    session — same token scheme as camera stream snapshots.
+    They fetch this URL themselves with no session, so the unguessable
+    filename is the credential and opens this one photo only -- see
+    backend/app/utils/notification_photos.py. Anything that isn't a live
+    photo of exactly that shape is a 404.
     """
     photo_path = find_notification_photo(filename)
     if photo_path is None:
         raise HTTPException(404, "Photo not found")
 
-    ext = Path(filename).suffix.lower()
-    media_types = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
-    return FileResponse(path=photo_path, media_type=media_types.get(ext, "image/jpeg"))
+    return FileResponse(path=photo_path, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
 
 
 # ============================================================================

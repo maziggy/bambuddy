@@ -105,18 +105,6 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     "queue_job_skipped": ["printer", "job_name", "reason", "timestamp", "app_name"],
     "queue_job_failed": ["printer", "job_name", "reason", "timestamp", "app_name"],
     "queue_completed": ["completed_count", "timestamp", "app_name"],
-    # Inventory stock alerts
-    "stock_reorder_alert": ["material", "brand", "stock_g", "rate_g_day", "days_left", "timestamp", "app_name"],
-    "stock_break_alert": [
-        "material",
-        "brand",
-        "stock_g",
-        "rate_g_day",
-        "days_left",
-        "lead_time_days",
-        "timestamp",
-        "app_name",
-    ],
     # User management notifications
     "user_created": ["username", "password", "login_url", "app_name", "timestamp"],
     "password_reset": ["username", "password", "login_url", "app_name", "timestamp"],
@@ -361,26 +349,6 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     "queue_completed": {
         "completed_count": "5",
         "timestamp": "2024-01-15 18:30",
-        "app_name": "Bambuddy",
-    },
-    # Inventory stock alerts
-    "stock_reorder_alert": {
-        "material": "PLA Basic",
-        "brand": "Bambu Lab",
-        "stock_g": "450",
-        "rate_g_day": "35.2",
-        "days_left": "12",
-        "timestamp": "2024-01-15 08:00",
-        "app_name": "Bambuddy",
-    },
-    "stock_break_alert": {
-        "material": "PETG HF",
-        "brand": "Bambu Lab",
-        "stock_g": "120",
-        "rate_g_day": "40.0",
-        "days_left": "3",
-        "lead_time_days": "7",
-        "timestamp": "2024-01-15 08:00",
         "app_name": "Bambuddy",
     },
     # User management notifications

@@ -5128,6 +5128,12 @@ async def run_migrations(conn):
     # on fresh installs only — this covers databases whose table predates it.
     await _migrate_location_ha_sensor_unique_binding(conn)
 
+    # Migration: the stock alert templates name the colour and subtype (#2955).
+    # The forecast groups by colour, so two colours of one product would
+    # otherwise send the same message. A plain UPDATE guarded on the old text, so
+    # a template an admin has edited is left alone.
+    await _migrate_stock_alert_template_sku_variables(conn)
+
     # Migration: supplier master list + spool assignments (#2988).
     # create_all() covers fresh installs; this covers upgrades.
     await _migrate_create_supplier_tables(conn)
@@ -5420,6 +5426,35 @@ async def _migrate_rename_ha_sensor_alert_template(conn) -> None:
         text("UPDATE notification_templates SET name = :new WHERE event_type = :et AND name = :old"),
         {"new": "Printer Sensor Alert", "et": "ha_sensor_alert", "old": "Home Assistant Sensor Alert"},
     )
+
+
+_STOCK_ALERT_TEMPLATE_BODIES = {
+    "stock_reorder_alert": (
+        "{material} ({brand}) has reached the reorder point.\nStock: {stock_g}g | Rate: {rate_g_day}g/day | Days left: {days_left}d\nReorder now to avoid a stock break.",
+        "{material} {subtype} {color} ({brand}) has reached the reorder point.\nStock: {stock_g}g | Rate: {rate_g_day}g/day | Days left: {days_left}d\nReorder now to avoid a stock break.",
+    ),
+    "stock_break_alert": (
+        "{material} ({brand}) will run out before replenishment arrives.\nStock: {stock_g}g | Rate: {rate_g_day}g/day | Lead time: {lead_time_days}d\nOnly {days_left}d of stock remaining — order immediately.",
+        "{material} {subtype} {color} ({brand}) will run out before replenishment arrives.\nStock: {stock_g}g | Rate: {rate_g_day}g/day | Lead time: {lead_time_days}d\nOnly {days_left}d of stock remaining — order immediately.",
+    ),
+}
+
+
+async def _migrate_stock_alert_template_sku_variables(conn) -> None:
+    """Give the stock alert templates {subtype} and {color} (#2955).
+
+    Updates a body only while it is still the shipped default, so an admin's own
+    wording is kept.
+    """
+    from sqlalchemy import text
+
+    for event_type, (old, new) in _STOCK_ALERT_TEMPLATE_BODIES.items():
+        await conn.execute(
+            text(
+                "UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"
+            ),
+            {"new": new, "et": event_type, "old": old},
+        )
 
 
 async def _migrate_location_ha_sensor_unique_binding(conn) -> None:

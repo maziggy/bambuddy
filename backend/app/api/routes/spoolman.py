@@ -10,7 +10,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
+from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool, spoolman_net_weight
 from backend.app.api.routes.spoolman_inventory import _clear_stale_tag_links
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
@@ -806,11 +806,12 @@ async def get_linked_spools(
             # Remove quotes if present (JSON encoded string)
             clean_tag = tag.strip('"').upper()
             if clean_tag:
-                filament = spool.get("filament") or {}
                 linked[clean_tag] = {
                     "id": spool["id"],
                     "remaining_weight": spool.get("remaining_weight"),
-                    "filament_weight": filament.get("weight"),
+                    # The spool's own net weight, falling back to the
+                    # filament's; the key predates initial_weight (#3194).
+                    "filament_weight": spoolman_net_weight(spool),
                 }
 
     return {"linked": linked}

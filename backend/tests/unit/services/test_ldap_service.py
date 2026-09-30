@@ -10,8 +10,16 @@ Network-dependent functions (authenticate_ldap_user, test_ldap_connection)
 are not tested here — they require a live LDAP server.
 """
 
+from types import SimpleNamespace
+
 import pytest
-from ldap3.core.exceptions import LDAPObjectClassError
+from ldap3.core.exceptions import (
+    LDAPObjectClassError,
+    LDAPSocketOpenError,
+    LDAPStartTLSError,
+    LDAPUnwillingToPerformResult,
+)
+from ldap3.utils.ciDict import CaseInsensitiveDict
 
 from backend.app.services.ldap_service import (
     LDAPConfig,
@@ -23,6 +31,7 @@ from backend.app.services.ldap_service import (
     parse_ldap_config,
     resolve_group_mapping,
     search_ldap_users,
+    test_ldap_connection as check_ldap_connection,
 )
 
 
@@ -289,6 +298,29 @@ class _MockEntry:
             setattr(self, key, _MockAttr(val))
 
 
+class _MockServer:
+    """Stand-in for ldap3 Server: only the schema and root DSE info the service reads.
+
+    `schema` None is a server that published no schema, where ldap3 checks no
+    names client-side. Otherwise it carries the attribute types and object
+    classes the server defines.
+    """
+
+    def __init__(self, attribute_types=None, object_classes=None, naming_contexts=None, active_directory=False):
+        if attribute_types is None and object_classes is None:
+            self.schema = None
+        else:
+            self.schema = SimpleNamespace(
+                attribute_types=CaseInsensitiveDict(dict.fromkeys(attribute_types or ())),
+                object_classes=CaseInsensitiveDict(dict.fromkeys(object_classes or ())),
+            )
+        features = [("1.2.840.113556.1.4.800", "FEATURE", "Active directory", "MICROSOFT")] if active_directory else []
+        if naming_contexts is None and not active_directory:
+            self.info = None
+        else:
+            self.info = SimpleNamespace(naming_contexts=naming_contexts, supported_features=features)
+
+
 class _MockConnection:
     """Mock ldap3 Connection that returns pre-configured entries based on filter substring match.
 
@@ -304,17 +336,20 @@ class _MockConnection:
     # before the request is ever built (#2769).
     _raise_object_class_error_on: str | None = None
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, server=None, *args, **kwargs):
+        self.server = server
         self.entries: list = []
         self.search_calls: list[str] = []
+        self.search_bases: list[str | None] = []
+        self.search_attrs: list[list | None] = []
         self.last_attrs: list | None = None
         _MockConnection._instances.append(self)
 
     def open(self):
         pass
 
-    def start_tls(self):
-        pass
+    def start_tls(self, read_server_info=True):
+        self.start_tls_read_server_info = read_server_info
 
     def bind(self):
         return True
@@ -325,7 +360,9 @@ class _MockConnection:
     def search(self, search_base=None, search_filter=None, search_scope=None, attributes=None, **kwargs):
         # **kwargs absorbs ldap3 options like size_limit that the real client supports
         self.search_calls.append(search_filter or "")
+        self.search_bases.append(search_base)
         self.last_attrs = list(attributes) if attributes is not None else None
+        self.search_attrs.append(self.last_attrs)
         needle = _MockConnection._raise_object_class_error_on
         if needle and needle in (search_filter or ""):
             raise LDAPObjectClassError(f"invalid class in objectClass attribute: {needle}")
@@ -343,8 +380,11 @@ def mock_ldap(monkeypatch):
     _MockConnection._search_fixture = {}
     _MockConnection._instances = []
     _MockConnection._raise_object_class_error_on = None
+    _MockConnection.server_fixture = _MockServer()
     monkeypatch.setattr("backend.app.services.ldap_service.Connection", _MockConnection)
-    monkeypatch.setattr("backend.app.services.ldap_service._create_server", lambda config: None)
+    monkeypatch.setattr(
+        "backend.app.services.ldap_service._create_server", lambda config: _MockConnection.server_fixture
+    )
     return _MockConnection
 
 
@@ -704,3 +744,311 @@ class TestLookupLdapUser:
 
         with pytest.raises(RuntimeError):
             lookup_ldap_user(_base_config(), "anyone")
+
+
+# ---------------------------------------------------------------------------
+# Group membership on directories where `*` doesn't return memberOf (#3197)
+# ---------------------------------------------------------------------------
+
+_USER_DN = "uid=tofm,ou=people,dc=example,dc=com"
+_ADMINS_DN = "cn=bambuddy-admins,ou=groups,dc=example,dc=com"
+_PEOPLE_BASE = "ou=people,dc=example,dc=com"
+
+
+def _user_search_attrs(conn: _MockConnection) -> list | None:
+    """The attribute list sent with the user search (the first search on the service connection)."""
+    return conn.search_attrs[0]
+
+
+def _member_searches(conn: _MockConnection) -> list[tuple[str, str | None]]:
+    return [
+        (flt, base)
+        for flt, base in zip(conn.search_calls, conn.search_bases, strict=True)
+        if "(member=" in flt or "(uniqueMember=" in flt
+    ]
+
+
+class TestMemberOfIsRequestedByName:
+    """lldap fills in memberOf only when it is asked for by name, and OpenLDAP's
+    memberof overlay makes it operational, so `*` alone returns no groups. The
+    reporter's lldap user was a member of a mapped group and always got the
+    default group instead."""
+
+    def test_login_asks_for_memberof_when_the_schema_has_it(self, mock_ldap):
+        mock_ldap.server_fixture = _MockServer(
+            attribute_types=["uid", "memberOf"], object_classes=["groupOfUniqueNames"]
+        )
+        user_entry = _MockEntry(_USER_DN, uid="tofm", memberOf=[_ADMINS_DN])
+        mock_ldap._search_fixture = {"(uid=tofm)": [user_entry]}
+
+        info = authenticate_ldap_user(_base_config(search_base=_PEOPLE_BASE), "tofm", "password")
+
+        service_conn = _MockConnection._instances[0]
+        assert _user_search_attrs(service_conn) == ["*", "memberOf"]
+        assert info.groups == [_ADMINS_DN]
+
+    def test_schema_match_is_case_insensitive(self, mock_ldap):
+        """Schemas spell it memberof, memberOf or MemberOf; ldap3's schema dict ignores case."""
+        mock_ldap.server_fixture = _MockServer(attribute_types=["memberof"], object_classes=[])
+        mock_ldap._search_fixture = {"(uid=tofm)": [_MockEntry(_USER_DN, uid="tofm")]}
+
+        authenticate_ldap_user(_base_config(), "tofm", "password")
+
+        assert _user_search_attrs(_MockConnection._instances[0]) == ["*", "memberOf"]
+
+    def test_groups_are_asked_as_well_as_memberof(self, mock_ldap):
+        """OpenLDAP's memberof overlay tracks only the group class it was set up
+        for (osixia's image: groupOfUniqueNames), so a groupOfNames group is
+        missing from memberOf even though the schema has the attribute."""
+        mock_ldap.server_fixture = _MockServer(
+            attribute_types=["memberOf"],
+            object_classes=["groupOfNames", "groupOfUniqueNames"],
+            naming_contexts=["dc=example,dc=com"],
+        )
+        operators_dn = "cn=bambuddy-operators,ou=groups,dc=example,dc=com"
+        mock_ldap._search_fixture = {
+            "(uid=tofm)": [_MockEntry(_USER_DN, uid="tofm", memberOf=[operators_dn])],
+            f"(member={_USER_DN})": [_MockEntry(_ADMINS_DN), _MockEntry(operators_dn)],
+        }
+
+        info = authenticate_ldap_user(_base_config(search_base=_PEOPLE_BASE), "tofm", "password")
+
+        assert info.groups == [operators_dn, _ADMINS_DN]
+
+    def test_no_group_side_search_on_active_directory(self, mock_ldap):
+        """AD keeps memberOf complete, and its groups are objectClass=group, so a
+        subtree search from the domain root would find nothing."""
+        mock_ldap.server_fixture = _MockServer(
+            attribute_types=["memberOf", "member"],
+            object_classes=["group", "groupOfNames"],
+            naming_contexts=["dc=example,dc=com"],
+            active_directory=True,
+        )
+        mock_ldap._search_fixture = {"(uid=tofm)": [_MockEntry(_USER_DN, uid="tofm", memberOf=[_ADMINS_DN])]}
+
+        info = authenticate_ldap_user(_base_config(search_base=_PEOPLE_BASE), "tofm", "password")
+
+        assert info.groups == [_ADMINS_DN]
+        assert _member_searches(_MockConnection._instances[0]) == []
+
+    def test_admin_lookup_asks_for_memberof_too(self, mock_ldap):
+        mock_ldap.server_fixture = _MockServer(attribute_types=["memberOf"], object_classes=[])
+        mock_ldap._search_fixture = {"(uid=tofm)": [_MockEntry(_USER_DN, uid="tofm", memberOf=[_ADMINS_DN])]}
+
+        info = lookup_ldap_user(_base_config(), "tofm")
+
+        assert _user_search_attrs(_MockConnection._instances[0]) == ["*", "memberOf"]
+        assert info.groups == [_ADMINS_DN]
+
+    def test_memberof_not_requested_when_the_schema_lacks_it(self, mock_ldap):
+        """ldap3 rejects a requested attribute the schema doesn't define before
+        sending anything, even with check_names off. Asking anyway would make
+        every login on such a directory fail."""
+        mock_ldap.server_fixture = _MockServer(attribute_types=["uid", "cn"], object_classes=[])
+        mock_ldap._search_fixture = {"(uid=tofm)": [_MockEntry(_USER_DN, uid="tofm")]}
+
+        authenticate_ldap_user(_base_config(), "tofm", "password")
+
+        assert _user_search_attrs(_MockConnection._instances[0]) == ["*"]
+
+    def test_memberof_requested_when_the_server_publishes_no_schema(self, mock_ldap):
+        """Without a schema ldap3 checks no names, and the server ignores an
+        attribute it doesn't know."""
+        mock_ldap.server_fixture = _MockServer()
+        mock_ldap._search_fixture = {"(uid=tofm)": [_MockEntry(_USER_DN, uid="tofm")]}
+
+        authenticate_ldap_user(_base_config(), "tofm", "password")
+
+        assert _user_search_attrs(_MockConnection._instances[0]) == ["*", "memberOf"]
+
+
+class TestGroupsListingTheUserByDn:
+    """Group membership asked from the group side. Plain OpenLDAP without the
+    memberof overlay can answer it no other way."""
+
+    def _server(self, object_classes=("groupOfNames", "groupOfUniqueNames"), naming_contexts=("dc=example,dc=com",)):
+        return _MockServer(
+            attribute_types=["uid", "cn", "member", "uniqueMember"],
+            object_classes=list(object_classes),
+            naming_contexts=list(naming_contexts),
+        )
+
+    def test_finds_a_group_outside_the_user_search_base(self, mock_ldap):
+        """The reporter's layout: users under ou=people, groups under ou=groups.
+        The group search starts at the naming context, not the user search base."""
+        mock_ldap.server_fixture = self._server()
+        mock_ldap._search_fixture = {
+            "(uid=tofm)": [_MockEntry(_USER_DN, uid="tofm")],
+            f"(member={_USER_DN})": [_MockEntry(_ADMINS_DN)],
+        }
+
+        info = authenticate_ldap_user(_base_config(search_base=_PEOPLE_BASE), "tofm", "password")
+
+        assert info.groups == [_ADMINS_DN]
+        searches = _member_searches(_MockConnection._instances[0])
+        assert len(searches) == 1
+        flt, base = searches[0]
+        assert base == "dc=example,dc=com"
+        assert flt == (
+            f"(|(&(objectClass=groupOfNames)(member={_USER_DN}))"
+            f"(&(objectClass=groupOfUniqueNames)(uniqueMember={_USER_DN})))"
+        )
+
+    def test_only_classes_the_schema_defines_go_into_the_filter(self, mock_ldap):
+        """Naming an undefined class raises client-side, the #2769 failure."""
+        mock_ldap.server_fixture = self._server(object_classes=["groupOfUniqueNames"])
+        mock_ldap._search_fixture = {"(uid=tofm)": [_MockEntry(_USER_DN, uid="tofm")]}
+
+        authenticate_ldap_user(_base_config(search_base=_PEOPLE_BASE), "tofm", "password")
+
+        (flt, _base) = _member_searches(_MockConnection._instances[0])[0]
+        assert flt == f"(&(objectClass=groupOfUniqueNames)(uniqueMember={_USER_DN}))"
+
+    def test_no_search_when_the_schema_has_neither_class(self, mock_ldap):
+        mock_ldap.server_fixture = self._server(object_classes=["posixGroup"])
+        mock_ldap._search_fixture = {"(uid=tofm)": [_MockEntry(_USER_DN, uid="tofm")]}
+
+        info = authenticate_ldap_user(_base_config(), "tofm", "password")
+
+        assert info.groups == []
+        assert _member_searches(_MockConnection._instances[0]) == []
+
+    def test_dn_is_escaped_in_the_filter(self, mock_ldap):
+        """A DN may carry filter metacharacters (an escaped comma, a parenthesis)."""
+        dn = r"cn=Doe\, John (ops),ou=people,dc=example,dc=com"
+        mock_ldap.server_fixture = self._server(object_classes=["groupOfNames"])
+        mock_ldap._search_fixture = {"(uid=jdoe)": [_MockEntry(dn, uid="jdoe")]}
+
+        authenticate_ldap_user(_base_config(search_base=_PEOPLE_BASE), "jdoe", "password")
+
+        (flt, _base) = _member_searches(_MockConnection._instances[0])[0]
+        assert flt == r"(&(objectClass=groupOfNames)(member=cn=Doe\5c, John \28ops\29,ou=people,dc=example,dc=com))"
+
+    def test_search_base_is_used_when_no_naming_context_contains_it(self, mock_ldap):
+        mock_ldap.server_fixture = self._server(naming_contexts=["dc=other,dc=org"])
+        mock_ldap._search_fixture = {"(uid=tofm)": [_MockEntry(_USER_DN, uid="tofm")]}
+
+        authenticate_ldap_user(_base_config(search_base=_PEOPLE_BASE), "tofm", "password")
+
+        (_flt, base) = _member_searches(_MockConnection._instances[0])[0]
+        assert base == _PEOPLE_BASE
+
+    def test_naming_context_match_is_on_whole_components(self, mock_ldap):
+        """dc=ample,dc=com is not a suffix of ou=people,dc=example,dc=com."""
+        mock_ldap.server_fixture = self._server(naming_contexts=["dc=ample,dc=com", "DC=Example,DC=Com"])
+        mock_ldap._search_fixture = {"(uid=tofm)": [_MockEntry(_USER_DN, uid="tofm")]}
+
+        authenticate_ldap_user(_base_config(search_base=_PEOPLE_BASE), "tofm", "password")
+
+        (_flt, base) = _member_searches(_MockConnection._instances[0])[0]
+        assert base == "DC=Example,DC=Com"
+
+    def test_dedupes_against_posix_groups(self, mock_ldap):
+        """A group can be both a groupOfNames and a posixGroup (OpenLDAP rfc2307bis)."""
+        mock_ldap.server_fixture = self._server(object_classes=["groupOfNames", "posixGroup"])
+        mock_ldap._search_fixture = {
+            "(uid=tofm)": [_MockEntry(_USER_DN, uid="tofm")],
+            f"(member={_USER_DN})": [_MockEntry(_ADMINS_DN)],
+            "memberUid=tofm": [_MockEntry(_ADMINS_DN.upper())],
+        }
+
+        info = authenticate_ldap_user(_base_config(search_base=_PEOPLE_BASE), "tofm", "password")
+
+        assert info.groups == [_ADMINS_DN]
+
+    def test_a_failed_group_search_still_logs_the_user_in(self, mock_ldap, caplog):
+        """The user gets the groups found by other means, and the log names the
+        failure without the DN it may contain (#2681)."""
+
+        class _GroupSearchFails(_MockConnection):
+            def search(self, search_base=None, search_filter=None, **kwargs):
+                if "(member=" in (search_filter or ""):
+                    raise LDAPObjectClassError(f"size limit on {_USER_DN}")
+                return super().search(search_base=search_base, search_filter=search_filter, **kwargs)
+
+        import backend.app.services.ldap_service as ldap_service
+
+        mock_ldap.server_fixture = self._server(object_classes=["groupOfNames"])
+        mock_ldap._search_fixture = {"(uid=tofm)": [_MockEntry(_USER_DN, uid="tofm")]}
+        original = ldap_service.Connection
+        ldap_service.Connection = _GroupSearchFails
+        try:
+            with caplog.at_level("WARNING", logger="backend.app.services.ldap_service"):
+                info = authenticate_ldap_user(_base_config(search_base=_PEOPLE_BASE), "tofm", "password")
+        finally:
+            ldap_service.Connection = original
+
+        assert info is not None
+        assert info.groups == []
+        assert "LDAP group membership lookup failed (LDAPObjectClassError)" in caplog.text
+        assert _USER_DN not in caplog.text
+
+
+class TestStartTlsRefused:
+    """lldap offers LDAPS only. Its answer to StartTLS is "Unsupported extended
+    operation" plus the StartTLS OID, which the reporter had to decode."""
+
+    def _refusing(self, error):
+        class _Conn(_MockConnection):
+            def start_tls(self, read_server_info=True):
+                raise error
+
+        return _Conn
+
+    def test_connection_test_says_what_to_change(self, mock_ldap, monkeypatch):
+        refusal = LDAPUnwillingToPerformResult(
+            result=53,
+            description="unwillingToPerform",
+            message="Unsupported extended operation: 1.3.6.1.4.1.1466.20037",
+            response_type="extendedResp",
+        )
+        monkeypatch.setattr("backend.app.services.ldap_service.Connection", self._refusing(refusal))
+
+        ok, message = check_ldap_connection(_base_config(server_url="ldap://lldap:3890", security="starttls"))
+
+        assert ok is False
+        assert message == (
+            "LDAP connection failed: the server refused StartTLS (unwillingToPerform). "
+            "If it only offers LDAPS, choose LDAPS and use its ldaps:// URL and port"
+        )
+
+    def test_login_with_refused_starttls_fails_cleanly(self, mock_ldap, monkeypatch):
+        refusal = LDAPUnwillingToPerformResult(result=53, description="unwillingToPerform")
+        monkeypatch.setattr("backend.app.services.ldap_service.Connection", self._refusing(refusal))
+
+        assert authenticate_ldap_user(_base_config(server_url="ldap://x", security="starttls"), "u", "p") is None
+
+    @pytest.mark.parametrize(
+        "error",
+        [LDAPStartTLSError("wrap socket error: certificate verify failed"), LDAPSocketOpenError("reset")],
+    )
+    def test_tls_failures_keep_their_own_message(self, mock_ldap, monkeypatch, error):
+        """Only a refusal by the server is reworded; a certificate problem is not a missing feature."""
+        monkeypatch.setattr("backend.app.services.ldap_service.Connection", self._refusing(error))
+
+        ok, message = check_ldap_connection(_base_config(server_url="ldap://x", security="starttls"))
+
+        assert ok is False
+        assert message == f"LDAP connection failed: {error}"
+        assert "refused StartTLS" not in message
+
+    def test_ldaps_never_sends_starttls(self, mock_ldap, monkeypatch):
+        refusal = LDAPUnwillingToPerformResult(result=53, description="unwillingToPerform")
+        monkeypatch.setattr("backend.app.services.ldap_service.Connection", self._refusing(refusal))
+
+        ok, _message = check_ldap_connection(_base_config(server_url="ldaps://x:636", security="starttls"))
+
+        assert ok is True
+
+    def test_server_info_is_not_read_before_the_bind(self, mock_ldap):
+        """ldap3's default re-reads the schema right after StartTLS, before any
+        bind; Active Directory and Samba AD refuse that anonymous read with
+        operationsError, so StartTLS never worked against them. bind() reads it
+        once authenticated."""
+        mock_ldap._search_fixture = {"(uid=u)": [_MockEntry("uid=u,dc=test,dc=com", uid="u")]}
+
+        authenticate_ldap_user(_base_config(server_url="ldap://ad:389", security="starttls"), "u", "p")
+
+        service_conn, user_conn = _MockConnection._instances
+        assert service_conn.start_tls_read_server_info is False
+        assert user_conn.start_tls_read_server_info is False

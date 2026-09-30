@@ -38,7 +38,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
+from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool, spoolman_net_weight
 from backend.app.core.config import settings as app_settings
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.spool_assignment import SpoolAssignment
@@ -144,15 +144,15 @@ async def _spoolman_remaining_grams(spoolman_spool_id: int) -> float | None:
         return None
 
     # Spoolman exposes either an absolute remaining_weight, or used_weight +
-    # filament.weight. Either is sufficient — prefer remaining_weight when
-    # present (the user may have overridden it).
+    # the spool's net weight (initial_weight, else filament.weight; #3194).
+    # Either is sufficient — prefer remaining_weight when present (the user
+    # may have overridden it).
     remaining = spool.get("remaining_weight")
     if isinstance(remaining, (int, float)) and remaining >= 0:
         return float(remaining)
 
     used = spool.get("used_weight")
-    filament = spool.get("filament") or {}
-    total = filament.get("weight")
+    total = spoolman_net_weight(spool)
     if isinstance(used, (int, float)) and isinstance(total, (int, float)) and total > 0:
         return max(0.0, float(total) - float(used))
 
@@ -525,7 +525,7 @@ async def build_slot_materials(db: AsyncSession, printer_id: int) -> list[SlotMa
                 remaining = float(rw)
             else:
                 used = spool_dict.get("used_weight")
-                total = (spool_dict.get("filament") or {}).get("weight")
+                total = spoolman_net_weight(spool_dict)
                 if isinstance(used, (int, float)) and isinstance(total, (int, float)) and total > 0:
                     remaining = max(0.0, float(total) - float(used))
             if remaining is None:
@@ -704,7 +704,7 @@ async def compute_deficit_for_queue_item(
                     remaining = float(rw)
                 else:
                     used = spool_dict.get("used_weight")
-                    total = (spool_dict.get("filament") or {}).get("weight")
+                    total = spoolman_net_weight(spool_dict)
                     if isinstance(used, (int, float)) and isinstance(total, (int, float)) and total > 0:
                         remaining = max(0.0, float(total) - float(used))
         else:

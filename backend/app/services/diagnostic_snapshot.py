@@ -33,8 +33,11 @@ logger = logging.getLogger(__name__)
 # Mirrors the IPv4 pattern in services.log_reader.sanitize_log_content. Kept as
 # a literal here (not imported) so a refactor of that module's internals can't
 # silently change snapshot sanitization. Skips firmware-version-shaped strings
-# (leading-zero octets like "01.09.01.00") via the [1-9]\d|\d alternations.
-_IPV4_RE = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)\b")
+# (leading-zero octets like "01.09.01.00") via the [1-9]\d|\d alternations,
+# and four-number runs inside a longer dotted number such as an OID.
+_IPV4_RE = re.compile(
+    r"(?<!\d\.)\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)\b(?!\.\d)"
+)
 
 # Per-diagnostic wall-clock cap. Each underlying probe carries its own (smaller)
 # TCP / HTTP timeouts; this is the outer guard so a hung interface or a wedged

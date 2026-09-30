@@ -91,6 +91,18 @@ class TestSpoolCostPerGram:
         silently pass through into the archive."""
         assert _spool_cost_per_gram(spool) is None
 
+    def test_spool_price_is_divided_by_the_spools_own_weight(self):
+        """#3194: a spool's price is what that spool cost. 6.25 for a 250 g
+        spool of a 1000 g filament is 2.5 cents a gram, not 0.625."""
+        spool = {**_spool(1, price=6.25, weight=1000), "initial_weight": 250.0}
+        assert _spool_cost_per_gram(spool) == pytest.approx(0.025)
+
+    def test_catalogue_price_stays_on_the_filament_weight(self):
+        """filament.price is the catalogue price of a filament.weight spool,
+        whatever size this particular spool is."""
+        spool = {**_spool(1, filament_price=25.0, weight=1000), "initial_weight": 250.0}
+        assert _spool_cost_per_gram(spool) == pytest.approx(0.025)
+
 
 class TestPrintCostAccumulator:
     def test_sums_each_slot_at_its_own_rate(self):

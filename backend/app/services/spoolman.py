@@ -416,9 +416,14 @@ class SpoolmanClient:
         comment: str | None = None,
         extra: dict | None = None,
         spool_weight: float | None = None,
+        initial_weight: float | None = None,
     ) -> dict:
         """Create a new spool in Spoolman."""
         data: dict = {"filament_id": filament_id}
+        # The spool's own net weight. Left off, Spoolman copies the filament's
+        # weight, which is wrong for a spool of another size (#3194).
+        if initial_weight is not None:
+            data["initial_weight"] = initial_weight
         if remaining_weight is not None:
             data["remaining_weight"] = remaining_weight
         if location:
@@ -746,11 +751,17 @@ class SpoolmanClient:
         extra: dict | None = None,
         spool_weight: float | None = None,
         clear_spool_weight: bool = False,
+        initial_weight: float | None = None,
     ) -> dict:
         """Update a spool with full field support; unlike update_spool, does not auto-set last_used."""
         data: dict = {}
         if filament_id is not None:
             data["filament_id"] = filament_id
+        # Spoolman applies the fields in its own schema order, which puts
+        # initial_weight before remaining_weight, so a remaining_weight in the
+        # same PATCH is measured against the new net weight.
+        if initial_weight is not None:
+            data["initial_weight"] = initial_weight
         if remaining_weight is not None:
             data["remaining_weight"] = remaining_weight
         if comment is not None:

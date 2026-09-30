@@ -14,7 +14,7 @@ import logging
 from dataclasses import dataclass
 
 from ldap3 import ALL, SUBTREE, Connection, Server, Tls
-from ldap3.core.exceptions import LDAPObjectClassError
+from ldap3.core.exceptions import LDAPException, LDAPObjectClassError, LDAPOperationResult
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +102,37 @@ def _create_server(config: LDAPConfig) -> Server:
     return Server(config.server_url, use_ssl=use_ssl, tls=tls, get_info=ALL, connect_timeout=10)
 
 
+class LDAPStartTLSRefusedError(Exception):
+    """The server answered the StartTLS request with an error result."""
+
+
+def _start_tls_if_configured(conn: Connection, config: LDAPConfig) -> None:
+    """Upgrade `conn` with StartTLS when the config asks for it.
+
+    A server that doesn't offer StartTLS (lldap, for one, only does LDAPS)
+    rejects the request with a bare "Unsupported extended operation" and the
+    StartTLS OID, which doesn't tell the admin what to change (#3197). Only a
+    rejection by the server is reworded; TLS handshake and certificate failures
+    keep their own messages.
+
+    ldap3 re-reads the server's info and schema straight after StartTLS by
+    default, still unauthenticated. A directory that refuses anonymous
+    searches (Active Directory, Samba AD) answers that read with
+    "operationsError", which failed every StartTLS connection to it and would
+    otherwise be reported as a refused StartTLS here. bind() reads the same
+    info once authenticated, so the early read is skipped.
+    """
+    if config.security != "starttls" or config.server_url.startswith("ldaps://"):
+        return
+    try:
+        conn.start_tls(read_server_info=False)
+    except LDAPOperationResult as e:
+        raise LDAPStartTLSRefusedError(
+            f"the server refused StartTLS ({e.description}). If it only offers LDAPS, "
+            "choose LDAPS and use its ldaps:// URL and port"
+        ) from e
+
+
 def _open_service_connection(config: LDAPConfig, server: Server, *, check_names: bool = True) -> Connection:
     """Open and bind a service-account LDAP connection. Raises on failure.
 
@@ -122,10 +153,105 @@ def _open_service_connection(config: LDAPConfig, server: Server, *, check_names:
         check_names=check_names,
     )
     conn.open()
-    if config.security == "starttls" and not config.server_url.startswith("ldaps://"):
-        conn.start_tls()
+    _start_tls_if_configured(conn, config)
     conn.bind()
     return conn
+
+
+# Group classes that list their members by DN, and the attribute each uses.
+_MEMBER_DN_GROUP_CLASSES = (("groupOfNames", "member"), ("groupOfUniqueNames", "uniqueMember"))
+
+
+def _schema_defines(names, name: str) -> bool | None:
+    """Whether a schema dict (attribute types or object classes) has `name`.
+
+    None when the server published no schema. ldap3 then skips its client-side
+    name checks, so the caller can request the name without it raising.
+    """
+    if not names:
+        return None
+    return name in names
+
+
+def _user_search_attributes(server: Server) -> list[str]:
+    """Attributes to request for a user entry: all user attributes plus memberOf.
+
+    `*` alone does not return memberOf on every directory. OpenLDAP's memberof
+    overlay makes it operational and lldap only returns it when asked by name
+    (#3197), so it has to be listed. But ldap3 rejects a requested name that the
+    server's schema doesn't define before anything is sent, even with
+    check_names off, so it is only listed when the schema has it (or publishes
+    no schema at all).
+    """
+    schema = server.schema
+    has_member_of = _schema_defines(schema.attribute_types if schema else None, "memberOf")
+    return ["*"] if has_member_of is False else ["*", "memberOf"]
+
+
+def _groups_base(server: Server, search_base: str) -> str:
+    """The naming context that contains `search_base`, else `search_base`.
+
+    Groups usually live beside the users rather than under them (ou=groups next
+    to ou=people), so a group search from the user search base finds nothing.
+    """
+    base_lower = search_base.lower()
+    contexts = server.info.naming_contexts if server.info and server.info.naming_contexts else []
+    for context in contexts:
+        context_lower = str(context).lower()
+        if base_lower == context_lower or base_lower.endswith("," + context_lower):
+            return str(context)
+    return search_base
+
+
+# Root DSE capability that Active Directory (and Samba AD) advertises.
+_ACTIVE_DIRECTORY_CAPABILITY = "1.2.840.113556.1.4.800"
+
+
+def _is_active_directory(server: Server) -> bool:
+    info = server.info
+    features = info.supported_features if info and info.supported_features else []
+    return any(feature[0] == _ACTIVE_DIRECTORY_CAPABILITY for feature in features)
+
+
+def _member_dn_groups(service_conn: Connection, config: LDAPConfig, user_dn: str) -> list[str]:
+    """Find groupOfNames / groupOfUniqueNames entries that list `user_dn` as a member.
+
+    memberOf alone is not enough outside Active Directory. Plain OpenLDAP has
+    none without the memberof overlay; with it, the overlay tracks only the
+    group class it was configured for (osixia's image: groupOfUniqueNames, so
+    groupOfNames groups are missing) and only groups changed after it was
+    loaded. The groups themselves are the authority, so they are asked too.
+
+    Active Directory is skipped: it keeps memberOf complete itself, and its
+    groups are objectClass=group, not either class searched here, so the
+    search would cost a subtree walk from the domain root and find nothing.
+
+    Only the classes the schema defines go into the filter, for the same
+    client-side check the POSIX lookup trips over.
+    """
+    schema = service_conn.server.schema
+    object_classes = schema.object_classes if schema else None
+    clauses = [
+        f"(&(objectClass={object_class})({attribute}={_ldap_escape(user_dn)}))"
+        for object_class, attribute in _MEMBER_DN_GROUP_CLASSES
+        if _schema_defines(object_classes, object_class) is not False
+    ]
+    if not clauses:
+        return []
+    search_filter = clauses[0] if len(clauses) == 1 else f"(|{''.join(clauses)})"
+    try:
+        service_conn.search(
+            search_base=_groups_base(service_conn.server, config.search_base),
+            search_filter=search_filter,
+            search_scope=SUBTREE,
+            attributes=["cn"],
+        )
+    except LDAPException as e:
+        # The exception text can carry the user's DN (PII, #2681), so only its
+        # type is logged. The user still logs in, with memberOf and POSIX groups.
+        logger.warning("LDAP group membership lookup failed (%s); mapping without it", type(e).__name__)
+        return []
+    return [str(entry.entry_dn) for entry in service_conn.entries]
 
 
 def _pick_canonical_username(entry, fallback: str) -> str:
@@ -142,17 +268,23 @@ def _extract_user_info(
 ) -> LDAPUserInfo:
     """Build an LDAPUserInfo from an already-fetched directory entry.
 
-    Collects memberOf groups, POSIX memberUid groups, and the primary
-    gidNumber group; dedups DNs case-insensitively. Uses the supplied
-    service-bound connection to resolve POSIX groups.
+    Collects memberOf groups, the groupOfNames / groupOfUniqueNames entries
+    that list the user (except on Active Directory), POSIX
+    memberUid groups, and the primary gidNumber group; dedups DNs
+    case-insensitively. Uses the supplied service-bound connection for the
+    group searches. The entry must have been fetched with
+    `_user_search_attributes`, or memberOf may be missing from it.
     """
     email = str(user_entry.mail) if hasattr(user_entry, "mail") and user_entry.mail else None
     display_name = (
         str(user_entry.displayName) if hasattr(user_entry, "displayName") and user_entry.displayName else None
     )
 
-    # Collect groups from memberOf attribute (Active Directory / groupOfNames)
+    # Collect groups from the memberOf attribute (Active Directory, lldap,
+    # OpenLDAP with the memberof overlay, 389-DS), then ask the groups too.
     groups = [str(g) for g in user_entry.memberOf] if hasattr(user_entry, "memberOf") and user_entry.memberOf else []
+    if not _is_active_directory(service_conn.server):
+        groups.extend(_member_dn_groups(service_conn, config, str(user_entry.entry_dn)))
 
     canonical_username = _pick_canonical_username(user_entry, fallback_username)
 
@@ -202,7 +334,7 @@ def _extract_user_info(
         # error the operator can or should act on.
         logger.info(
             "Directory publishes no posixGroup object class; skipping POSIX group lookup "
-            "(memberOf groups are unaffected)"
+            "(memberOf and groupOfNames groups are unaffected)"
         )
 
     # Dedupe group DNs (user may be in a group via both memberUid and primary gidNumber).
@@ -250,7 +382,7 @@ def authenticate_ldap_user(config: LDAPConfig, username: str, password: str) -> 
             search_base=config.search_base,
             search_filter=search_filter,
             search_scope=SUBTREE,
-            attributes=["*"],
+            attributes=_user_search_attributes(server),
         )
 
         if not service_conn.entries:
@@ -271,8 +403,7 @@ def authenticate_ldap_user(config: LDAPConfig, username: str, password: str) -> 
                 read_only=True,
             )
             user_conn.open()
-            if config.security == "starttls" and not config.server_url.startswith("ldaps://"):
-                user_conn.start_tls()
+            _start_tls_if_configured(user_conn, config)
             user_conn.bind()
             user_conn.unbind()
         except Exception as e:
@@ -320,7 +451,7 @@ def lookup_ldap_user(config: LDAPConfig, username: str) -> LDAPUserInfo | None:
             search_base=config.search_base,
             search_filter=search_filter,
             search_scope=SUBTREE,
-            attributes=["*"],
+            attributes=_user_search_attributes(server),
         )
         if not service_conn.entries:
             logger.info("LDAP lookup: user not found: %s", username)
@@ -434,8 +565,7 @@ def test_ldap_connection(config: LDAPConfig) -> tuple[bool, str]:
             read_only=True,
         )
         conn.open()
-        if config.security == "starttls" and not config.server_url.startswith("ldaps://"):
-            conn.start_tls()
+        _start_tls_if_configured(conn, config)
         conn.bind()
 
         # Try a search to verify search base

@@ -184,9 +184,11 @@ def sanitize_log_content(content: str, sensitive_strings: dict[str, str] | None 
     # Replace Bambu Lab printer serial numbers (format: 00M/01D/01S/01P/03W + alphanumeric, 12-16 chars total)
     content = re.sub(r"\b0[0-3][A-Z0-9][A-Z0-9]{9,13}\b", "[SERIAL]", content, flags=re.IGNORECASE)
 
-    # Replace IPv4 addresses (skip firmware versions like 01.09.01.00 which have leading zeros)
+    # Replace IPv4 addresses (skip firmware versions like 01.09.01.00 which have leading zeros,
+    # and four-number runs inside a longer dotted number, such as the LDAP StartTLS OID
+    # 1.3.6.1.4.1.1466.20037, whose masked "[IP].4.1.1466.20037" hid what failed, #3197)
     content = re.sub(
-        r"\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)\b",
+        r"(?<!\d\.)\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)\b(?!\.\d)",
         "[IP]",
         content,
     )

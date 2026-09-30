@@ -21,13 +21,14 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.models.print_batch import PrintBatch, PrintBatchPlate
 from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
+from backend.app.services.queue_position import next_queue_position
 
 logger = logging.getLogger(__name__)
 
@@ -432,34 +433,6 @@ async def refresh_batch_status_for_item(db: AsyncSession, queue_item_id: int) ->
     await refresh_batch_status(db, batch)
 
 
-async def _next_position(db: AsyncSession, printer_id: int | None) -> int:
-    """Next free queue position in the scope a clone will land in.
-
-    Positions are per-queue, not global: one sequence per printer plus one
-    shared sequence for unassigned / model-based items, matching the scope the
-    add-to-queue route uses. Taking a global MAX here would drop every clone
-    at the end of whichever printer's queue happens to be longest and scramble
-    the order the user sees.
-    """
-    # Same advisory lock the add-to-queue route takes (#1625-followup): two
-    # concurrent inserts into an empty scope would otherwise both read
-    # MAX(position) as 0 and land on position 1. SQLite serialises writes
-    # implicitly and needs no equivalent.
-    bind = db.get_bind()
-    if bind.dialect.name == "postgresql":
-        await db.execute(
-            text("SELECT pg_advisory_xact_lock(1625, :k)"), {"k": printer_id if printer_id is not None else 0}
-        )
-
-    scope = PrintQueueItem.printer_id == printer_id if printer_id is not None else PrintQueueItem.printer_id.is_(None)
-    max_pos = (
-        await db.execute(
-            select(func.max(PrintQueueItem.position)).where(scope).where(PrintQueueItem.status == "pending")
-        )
-    ).scalar() or 0
-    return max_pos + 1
-
-
 def _clone_queue_item(source: PrintQueueItem, *, position: int, created_by_id: int | None) -> PrintQueueItem:
     """Copy *source*'s print configuration into a fresh pending item.
 
@@ -556,9 +529,9 @@ async def dispatch_remaining(
         if limit is not None:
             wanted = min(wanted, limit - len(created))
 
-        # One scope per source printer; clones for this plate all land in it,
-        # appended after whatever is already queued there.
-        position = await _next_position(db, source.printer_id)
+        # Clones for this plate are appended to the end of the queue (#3200),
+        # after whatever is already pending, in plate order.
+        position = await next_queue_position(db)
 
         for _ in range(wanted):
             clone = _clone_queue_item(source, position=position, created_by_id=created_by_id)

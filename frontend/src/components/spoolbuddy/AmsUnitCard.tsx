@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { AMSUnit, AMSTray } from '../../api/client';
-import { getFillBarColor } from '../../utils/amsHelpers';
+import { getEmptySlotKind, getFillBarColor } from '../../utils/amsHelpers';
 
 function trayColorToCSS(color: string | null): string {
   if (!color) return '#808080';
@@ -9,19 +9,6 @@ function trayColorToCSS(color: string | null): string {
 
 function isTrayEmpty(tray: AMSTray): boolean {
   return !tray.tray_type || tray.tray_type === '';
-}
-
-// Mirror of PrintersPage.getEmptySlotKind (#1694, #2527): 'physical' when
-// firmware confirms no spool, 'reset' when a spool is present but has no
-// tray_type (= loaded, slot just unconfigured — e.g. a non-RFID spool).
-// tray_exist_bits (exists) is authoritative when present; otherwise fall back
-// to the state=9/10 heuristic.
-function getEmptySlotKind(tray: AMSTray): 'physical' | 'reset' | null {
-  if (tray.tray_type) return null;
-  if (tray.exists === true) return 'reset';
-  if (tray.exists === false) return 'physical';
-  const state = tray.state ?? null;
-  return state === 9 || state === 10 ? 'physical' : 'reset';
 }
 
 function getAmsName(id: number): string {

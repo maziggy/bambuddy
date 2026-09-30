@@ -1623,14 +1623,19 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           <Button
             variant="secondary"
             disabled={filteredSpools.length === 0}
-            // Pre-select every visible spool so the user lands in "all
-            // checked", then refines downward in the modal. Per-card icon
-            // pre-selects only that spool — both flows share the same picker.
-            onClick={() => setLabelPickerSpoolIds(filteredSpools.map((s) => s.id))}
+            // Pre-select the spools ticked in the list; with none ticked,
+            // every visible spool, so the user refines downward in the modal
+            // (#2980). Per-card icon pre-selects only that spool — all flows
+            // share the same picker.
+            onClick={() =>
+              setLabelPickerSpoolIds(selectedIds.size > 0 ? [...selectedIds] : filteredSpools.map((s) => s.id))
+            }
             title={
               filteredSpools.length === 0
                 ? t('inventory.labels.noSpoolsTitle', 'No spools to label')
-                : t('inventory.labels.bulkTitle', 'Pick spools to print labels for from the {{count}} currently shown', { count: filteredSpools.length })
+                : selectedIds.size > 0
+                  ? t('inventory.labels.selectedTitle', 'Print labels for the {{count}} selected spools', { count: selectedIds.size })
+                  : t('inventory.labels.bulkTitle', 'Pick spools to print labels for from the {{count}} currently shown', { count: filteredSpools.length })
             }
           >
             <Printer className="w-4 h-4" />

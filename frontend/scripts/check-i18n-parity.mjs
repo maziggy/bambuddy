@@ -176,6 +176,7 @@ const DE_COGNATES = [
   'Diagnose',  // DE: same spelling/meaning as EN — camera diagnostic button label
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   'Score',  // #1546 AI detection modal — established DE loanword (Duden)
+  'Version 2',  // stream overlay artwork picker (#3177) — same word in German
 ];
 
 // French cognates — many UI labels overlap with English exactly.
@@ -225,6 +226,7 @@ const FR_COGNATES = [
   'Simple', 'Expert',  // slicer settings visibility tiers — identical words in French
   'Support',  // same word in French
   'Photos', '{{count}} photo', '{{count}} photos',  // file details photo strip (#3077) — same word in French
+  'Version 2',  // stream overlay artwork picker (#3177) — same word in French
 ];
 
 // Italian cognates.
@@ -393,6 +395,7 @@ const SV_COGNATES = [
   'Port', '(System)', 'Autologin', 'Process', 'Filament {{n}}', 'Region', 'Global', 'Normal', 'Version', 'max {{n}}', 'Expert', 'Filament {{index}} ({{type}})', 'Material:',
   '(Inv)', 'Original', 'Commit', 'Extruder', 'Gradient', 'Proxy', 'Metadata', '{{count}} filament', 'Temp', 'Min', 'ntfy, Pushover, Discord, etc.', 'Hex: #{{hex}}', 'Designer',
   'Prefix', 'Trend', 'max(global {{global}}d, SKU {{sku}}d)', 'Slicer',
+  'Version 2',  // stream overlay artwork picker (#3177) — same word in Swedish
 ];
 
 // Turkish cognates — technical UI labels that Turkish speakers use verbatim

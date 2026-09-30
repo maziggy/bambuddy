@@ -2761,10 +2761,16 @@ class TestAbortedStatusNormalisation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_add_to_queue_insert_position_scopes_unassigned_items(
+    async def test_add_to_queue_positions_are_one_sequence_across_printers(
         self, async_client: AsyncClient, printer_factory, archive_factory, db_session
     ):
-        """Unassigned inserts shift only the unassigned queue scope."""
+        """Positions are shared by pinned and unassigned items (#3200).
+
+        The queue page lists and reorders pending items as one list and the
+        scheduler dispatches in that order, so a pinned item added after two
+        unassigned ones lands after them, and an insert at the top shifts
+        everything, not only its own printer's items.
+        """
         printer = await printer_factory()
         unassigned_first = await archive_factory(print_name="Unassigned First")
         unassigned_second = await archive_factory(print_name="Unassigned Second")
@@ -2778,7 +2784,7 @@ class TestAbortedStatusNormalisation:
             json={"printer_id": printer.id, "archive_id": assigned.id},
         )
         assert assigned_response.status_code == 200
-        assert assigned_response.json()["position"] == 1
+        assert assigned_response.json()["position"] == 3
 
         response = await async_client.post(
             "/api/v1/queue/",
@@ -2789,19 +2795,14 @@ class TestAbortedStatusNormalisation:
         )
         assert response.status_code == 200
 
-        unassigned_response = await async_client.get("/api/v1/queue/?printer_id=-1")
-        unassigned_items = sorted(unassigned_response.json(), key=lambda item: item["position"])
-        assert [item["archive_id"] for item in unassigned_items] == [
+        all_items = sorted((await async_client.get("/api/v1/queue/")).json(), key=lambda item: item["position"])
+        assert [item["archive_id"] for item in all_items] == [
             priority.id,
             unassigned_first.id,
             unassigned_second.id,
+            assigned.id,
         ]
-        assert [item["position"] for item in unassigned_items] == [1, 2, 3]
-
-        assigned_scope_response = await async_client.get(f"/api/v1/queue/?printer_id={printer.id}&target_model=NONE")
-        assigned_items = sorted(assigned_scope_response.json(), key=lambda item: item["position"])
-        assert [item["archive_id"] for item in assigned_items] == [assigned.id]
-        assert [item["position"] for item in assigned_items] == [1]
+        assert [item["position"] for item in all_items] == [1, 2, 3, 4]
 
     @pytest.mark.asyncio
     @pytest.mark.integration

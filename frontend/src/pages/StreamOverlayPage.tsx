@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Layers, Clock, Timer, Printer, Flame, Square, Box } from 'lucide-react';
+import { UpdatedStreamOverlay } from '../components/UpdatedStreamOverlay';
 import { api, ApiError, withStreamToken } from '../api/client';
 import { formatDuration, formatETA, type TimeFormat } from '../utils/date';
 import { mapModelCode } from '../utils/printerModel';
@@ -13,6 +14,7 @@ type OverlaySize = 'small' | 'medium' | 'large';
 
 interface OverlayConfig {
   size: OverlaySize;
+  updatedArtwork: boolean;
   fps: number;
   showCamera: boolean;
   showProgress: boolean;
@@ -54,6 +56,7 @@ function parseConfig(params: URLSearchParams): OverlayConfig {
   return {
     size: (params.get('size') as OverlaySize) || 'medium',
     fps,
+    updatedArtwork: params.get('artwork') === '2',
     showCamera,
     showProgress: show.includes('progress'),
     showLayers: show.includes('layers'),
@@ -379,6 +382,26 @@ export function StreamOverlayPage() {
   const streamUrl = kiosk && token
     ? `${camPath}&token=${encodeURIComponent(token)}`
     : withStreamToken(camPath);
+
+  if (config.updatedArtwork) {
+    const active = status.connected && isPrinting;
+    const remainingTime = status.remaining_time;
+    const hasRemaining = active && config.showEta && remainingTime != null && remainingTime > 0;
+    return <UpdatedStreamOverlay
+      size={config.size}
+      camera={config.showCamera ? { url: streamUrl, rotation: printer?.camera_rotation ?? 0, onError: handleStreamError } : null}
+      name={config.showPrinter ? printer?.name ?? null : null}
+      model={config.showModel ? mapModelCode(printer?.model ?? null) || null : null}
+      filename={config.showFilename && status.current_print ? formatPrintName(status.current_print.replace(/\.gcode\.3mf$|\.3mf$|\.gcode$/i, ''), status.gcode_file, t) : null}
+      status={config.showStatus ? (status.connected ? getStatusText(status, t) : t('streamOverlay.printerOffline')) : null}
+      state={status.connected ? status.state : null}
+      progress={active && config.showProgress ? Math.min(100, Math.max(0, Number.isFinite(progress) ? progress : 0)) : null}
+      layers={active && config.showLayers && status.layer_num != null && status.total_layers != null && status.total_layers > 0 ? `${status.layer_num} / ${status.total_layers}` : null}
+      remaining={hasRemaining ? formatDuration(remainingTime * 60) : null}
+      eta={hasRemaining ? formatETA(remainingTime, timeFormat, t) : null}
+      temperatures={status.connected ? tempReadings : []}
+    />;
+  }
 
   return (
     <div className="min-h-screen bg-black relative overflow-hidden">

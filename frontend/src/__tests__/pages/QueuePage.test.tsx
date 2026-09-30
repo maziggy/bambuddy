@@ -197,6 +197,691 @@ describe('QueuePage', () => {
       });
     });
 
+    it('shows the queue override colour instead of the original 3MF colour (#3132)', async () => {
+      const item = {
+        ...mockQueueItems[0],
+        id: 82,
+        printer_id: null,
+        target_model: 'P2S',
+        archive_id: null,
+        library_file_id: 13,
+        archive_name: null,
+        library_file_name: 'Override colour test',
+        plate_id: 1,
+        filament_used_grams: 23.66,
+        filament_type: 'PLA',
+        filament_color: '#7C4B00',
+        filament_overrides: [
+          {
+            slot_id: 1,
+            type: 'PLA',
+            color: '#C2BAA7FF',
+            color_name: 'Bone White',
+            force_color_match: false,
+          },
+        ],
+      };
+
+      server.use(
+        http.get('/api/v1/queue/', () => HttpResponse.json([item])),
+        http.get('/api/v1/library/files/13/plates', () =>
+          HttpResponse.json({
+            file_id: 13,
+            filename: 'override-colour.3mf',
+            plates: [
+              {
+                index: 1,
+                name: 'Plate 1',
+                objects: ['Part'],
+                has_thumbnail: false,
+                thumbnail_url: null,
+                print_time_seconds: 3095,
+                filament_used_grams: 23.66,
+                filaments: [
+                  {
+                    slot_id: 1,
+                    type: 'PLA',
+                    color: '#7C4B00',
+                    used_grams: 23.7,
+                    used_meters: 7.93,
+                  },
+                ],
+              },
+            ],
+            is_multi_plate: false,
+          }),
+        ),
+      );
+
+      render(<QueuePage />);
+
+      const colourName = await screen.findByText('Bone White');
+      const row = colourName.closest('.group');
+
+      expect(row).not.toBeNull();
+      expect(within(row as HTMLElement).getByTestId('filament-swatch')).toHaveAttribute(
+        'title',
+        '#C2BAA7',
+      );
+    });
+
+    it('shows the resolved AMS slot and bound spool when a physical mapping is stored (#3132)', async () => {
+      const item = {
+        ...mockQueueItems[0],
+        id: 85,
+        printer_id: 1,
+        printer_name: 'Test Printer',
+        archive_id: null,
+        library_file_id: 16,
+        archive_name: null,
+        library_file_name: 'Resolved AMS mapping test',
+        plate_id: 1,
+        ams_mapping: [1],
+        filament_overrides: [
+          {
+            slot_id: 1,
+            type: 'PLA',
+            color: '#8E351BFF',
+            color_name: 'Caramel',
+            force_color_match: false,
+          },
+        ],
+      };
+
+      server.use(
+        http.get('/api/v1/queue/', () => HttpResponse.json([item])),
+        http.get('/api/v1/library/files/16/plates', () =>
+          HttpResponse.json({
+            file_id: 16,
+            filename: 'resolved-mapping.3mf',
+            plates: [
+              {
+                index: 1,
+                name: 'Plate 1',
+                objects: ['Part'],
+                has_thumbnail: false,
+                thumbnail_url: null,
+                print_time_seconds: 3600,
+                filament_used_grams: 20,
+                filaments: [
+                  {
+                    slot_id: 1,
+                    type: 'PLA',
+                    color: '#7C4B00',
+                    used_grams: 20,
+                    used_meters: 6.7,
+                  },
+                ],
+              },
+            ],
+            is_multi_plate: false,
+          }),
+        ),
+        http.get('/api/v1/printers/:id/status', () =>
+          HttpResponse.json({
+            id: 1,
+            name: 'Test Printer',
+            connected: true,
+            state: 'IDLE',
+            ams: [
+              {
+                id: 0,
+                // Regular AMS units expose four tray records. Keeping all four
+                // here matters because buildLoadedFilaments distinguishes a
+                // regular AMS from a single-slot AMS-HT by tray count.
+                tray: [
+                  { id: 0, tray_type: null },
+                  {
+                    id: 1,
+                    tray_type: 'PLA',
+                    tray_color: 'C2BAA7FF',
+                    tray_sub_brands: 'PLA Basic',
+                    tray_info_idx: 'GFA00',
+                    remain: 80,
+                  },
+                  { id: 2, tray_type: null },
+                  { id: 3, tray_type: null },
+                ],
+              },
+            ],
+            vt_tray: [],
+            nozzles: [],
+            ams_extruder_map: {},
+          }),
+        ),
+        http.get('/api/v1/printers/:id/inventory-remain', () =>
+          HttpResponse.json({
+            inventory_remain_g: { '1': 800 },
+            slot_materials: [
+              {
+                ams_id: 0,
+                tray_id: 1,
+                global_tray_id: 1,
+                material_key: 'PLA|basic|bone-white',
+                remaining_g: 800,
+                extruder: 0,
+                spool: {
+                  brand: 'eSUN',
+                  material: 'PLA',
+                  subtype: 'Basic',
+                  color_name: 'Bone White',
+                  rgba: 'C2BAA7FF',
+                },
+              },
+            ],
+          }),
+        ),
+      );
+
+      render(<QueuePage />);
+
+      const name = await screen.findByText('Resolved AMS mapping test');
+      const row = name.closest('.group');
+      expect(row).not.toBeNull();
+
+      await waitFor(() => {
+        expect(
+          within(row as HTMLElement).getByText('A2 · eSUN PLA Basic · Bone White'),
+        ).toBeInTheDocument();
+      });
+      expect(within(row as HTMLElement).queryByText('Caramel')).not.toBeInTheDocument();
+    });
+
+    it('resolves a mapped tray on a second regular AMS unit (#3132)', async () => {
+      const item = {
+        ...mockQueueItems[0],
+        id: 86,
+        printer_id: 1,
+        printer_name: 'Test Printer',
+        archive_id: null,
+        library_file_id: 17,
+        archive_name: null,
+        library_file_name: 'Second AMS mapping test',
+        plate_id: 1,
+        ams_mapping: [5],
+        filament_overrides: null,
+      };
+
+      server.use(
+        http.get('/api/v1/queue/', () => HttpResponse.json([item])),
+        http.get('/api/v1/library/files/17/plates', () =>
+          HttpResponse.json({
+            file_id: 17,
+            filename: 'second-ams.3mf',
+            plates: [
+              {
+                index: 1,
+                name: 'Plate 1',
+                objects: ['Part'],
+                has_thumbnail: false,
+                thumbnail_url: null,
+                print_time_seconds: 3600,
+                filament_used_grams: 20,
+                filaments: [
+                  {
+                    slot_id: 1,
+                    type: 'PLA',
+                    color: '#111111',
+                    used_grams: 20,
+                    used_meters: 6.7,
+                  },
+                ],
+              },
+            ],
+            is_multi_plate: false,
+          }),
+        ),
+        http.get('/api/v1/printers/:id/status', () =>
+          HttpResponse.json({
+            id: 1,
+            name: 'Test Printer',
+            connected: true,
+            state: 'IDLE',
+            ams: [
+              {
+                id: 1,
+                tray: [
+                  { id: 0, tray_type: null },
+                  {
+                    id: 1,
+                    tray_type: 'PLA',
+                    tray_color: 'C2BAA7FF',
+                    tray_sub_brands: 'PLA Basic',
+                    tray_info_idx: 'GFA00',
+                    remain: 80,
+                  },
+                  { id: 2, tray_type: null },
+                  { id: 3, tray_type: null },
+                ],
+              },
+            ],
+            vt_tray: [],
+            nozzles: [],
+            ams_extruder_map: {},
+          }),
+        ),
+        http.get('/api/v1/printers/:id/inventory-remain', () =>
+          HttpResponse.json({
+            inventory_remain_g: { '5': 800 },
+            slot_materials: [
+              {
+                ams_id: 1,
+                tray_id: 1,
+                global_tray_id: 5,
+                material_key: 'PLA|basic|bone-white',
+                remaining_g: 800,
+                extruder: 0,
+                spool: {
+                  brand: 'eSUN',
+                  material: 'PLA',
+                  subtype: 'Basic',
+                  color_name: 'Bone White',
+                  rgba: 'C2BAA7FF',
+                },
+              },
+            ],
+          }),
+        ),
+      );
+
+      render(<QueuePage />);
+
+      const name = await screen.findByText('Second AMS mapping test');
+      const row = name.closest('.group');
+      expect(row).not.toBeNull();
+
+      await waitFor(() => {
+        expect(
+          within(row as HTMLElement).getByText('B2 · eSUN PLA Basic · Bone White'),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it('falls back to the selected plate 3MF colour when there is no override (#3132)', async () => {
+      const item = {
+        ...mockQueueItems[0],
+        id: 83,
+        printer_id: null,
+        target_model: 'P2S',
+        archive_id: null,
+        library_file_id: 14,
+        archive_name: null,
+        library_file_name: 'Original colour test',
+        plate_id: 1,
+        filament_color: '#FFFFFF',
+        filament_overrides: null,
+      };
+
+      server.use(
+        http.get('/api/v1/queue/', () => HttpResponse.json([item])),
+        http.get('/api/v1/library/files/14/plates', () =>
+          HttpResponse.json({
+            file_id: 14,
+            filename: 'original-colour.3mf',
+            plates: [
+              {
+                index: 1,
+                name: 'Plate 1',
+                objects: ['Part'],
+                has_thumbnail: false,
+                thumbnail_url: null,
+                print_time_seconds: 3600,
+                filament_used_grams: 20,
+                filaments: [
+                  {
+                    slot_id: 1,
+                    type: 'PLA',
+                    color: '#7C4B00',
+                    used_grams: 20,
+                    used_meters: 6.7,
+                  },
+                ],
+              },
+            ],
+            is_multi_plate: false,
+          }),
+        ),
+      );
+
+      render(<QueuePage />);
+
+      await screen.findByText('Original colour test');
+      const row = screen.getByText('Original colour test').closest('.group');
+
+      expect(row).not.toBeNull();
+      await waitFor(() => {
+        expect(within(row as HTMLElement).getByTestId('filament-swatch')).toHaveAttribute(
+          'title',
+          '#7C4B00',
+        );
+      });
+    });
+
+    it('shows all used plate colours and only overrides the matching slot (#3132)', async () => {
+      const item = {
+        ...mockQueueItems[0],
+        id: 84,
+        printer_id: null,
+        target_model: 'P2S',
+        archive_id: null,
+        library_file_id: 15,
+        archive_name: null,
+        library_file_name: 'Multi colour test',
+        plate_id: 1,
+        filament_overrides: [
+          {
+            slot_id: 2,
+            type: 'PLA',
+            color: '#C2BAA7FF',
+            color_name: 'Bone White',
+            force_color_match: false,
+          },
+        ],
+      };
+
+      server.use(
+        http.get('/api/v1/queue/', () => HttpResponse.json([item])),
+        http.get('/api/v1/library/files/15/plates', () =>
+          HttpResponse.json({
+            file_id: 15,
+            filename: 'multi-colour.3mf',
+            plates: [
+              {
+                index: 1,
+                name: 'Plate 1',
+                objects: ['Part'],
+                has_thumbnail: false,
+                thumbnail_url: null,
+                print_time_seconds: 3600,
+                filament_used_grams: 30,
+                filaments: [
+                  {
+                    slot_id: 1,
+                    type: 'PLA',
+                    color: '#000000',
+                    used_grams: 20,
+                    used_meters: 6.7,
+                  },
+                  {
+                    slot_id: 2,
+                    type: 'PLA',
+                    color: '#7C4B00',
+                    used_grams: 10,
+                    used_meters: 3.35,
+                  },
+                ],
+              },
+            ],
+            is_multi_plate: false,
+          }),
+        ),
+      );
+
+      render(<QueuePage />);
+
+      const overrideName = await screen.findByText('Bone White');
+      const row = overrideName.closest('.group');
+
+      expect(row).not.toBeNull();
+      await waitFor(() => {
+        const swatches = within(row as HTMLElement).getAllByTestId('filament-swatch');
+        expect(swatches).toHaveLength(2);
+        expect(swatches.map((swatch) => swatch.getAttribute('title'))).toEqual([
+          '#000000',
+          '#C2BAA7',
+        ]);
+      });
+    });
+
+    it('keeps an eight-colour job compact and exposes details in the tooltip (#3132)', async () => {
+      const colours = [
+        '#FF0000',
+        '#00FF00',
+        '#0000FF',
+        '#FFFF00',
+        '#FF00FF',
+        '#00FFFF',
+        '#FFFFFF',
+        '#000000',
+      ];
+      const item = {
+        ...mockQueueItems[0],
+        id: 87,
+        printer_id: null,
+        target_model: 'P2S',
+        archive_id: null,
+        library_file_id: 18,
+        archive_name: null,
+        library_file_name: 'Eight colour test',
+        plate_id: 1,
+        filament_overrides: colours.map((color, index) => ({
+          slot_id: index + 1,
+          type: 'PLA',
+          color,
+          color_name: `Colour ${index + 1}`,
+          force_color_match: false,
+        })),
+      };
+
+      server.use(
+        http.get('/api/v1/queue/', () => HttpResponse.json([item])),
+        http.get('/api/v1/library/files/18/plates', () =>
+          HttpResponse.json({
+            file_id: 18,
+            filename: 'eight-colour.3mf',
+            plates: [
+              {
+                index: 1,
+                name: 'Plate 1',
+                objects: ['Part'],
+                has_thumbnail: false,
+                thumbnail_url: null,
+                print_time_seconds: 3600,
+                filament_used_grams: 40,
+                filaments: colours.map((color, index) => ({
+                  slot_id: index + 1,
+                  type: 'PLA',
+                  color,
+                  used_grams: 5,
+                  used_meters: 1.7,
+                })),
+              },
+            ],
+            is_multi_plate: false,
+          }),
+        ),
+      );
+
+      render(<QueuePage />);
+
+      const name = await screen.findByText('Eight colour test');
+      const row = name.closest('.group');
+      expect(row).not.toBeNull();
+
+      await waitFor(() => {
+        const compact = within(row as HTMLElement).getByTestId('queue-filament-compact');
+        expect(compact).toHaveAttribute(
+          'title',
+          colours.map((_, index) => `Colour ${index + 1}`).join('\n'),
+        );
+        expect(within(compact).getAllByTestId('filament-swatch')).toHaveLength(8);
+      });
+      // Touch screens never show the tooltip; the same lines are the group's
+      // accessible name.
+      expect(screen.getByRole('img', { name: /^Colour 1, Colour 2, .*Colour 8$/ })).toBe(
+        within(row as HTMLElement).getByTestId('queue-filament-compact'),
+      );
+
+      // Compact mode keeps the long labels out of the metadata row itself.
+      expect(within(row as HTMLElement).queryByText('Colour 1')).not.toBeInTheDocument();
+      expect(within(row as HTMLElement).queryByText('Colour 8')).not.toBeInTheDocument();
+    });
+
+    describe('stored mapping on the live printer (#3132)', () => {
+      const mappedItem = (amsMapping: number[]) => ({
+        ...mockQueueItems[0],
+        id: 88,
+        printer_id: 1,
+        printer_name: 'Test Printer',
+        archive_id: null,
+        library_file_id: 19,
+        archive_name: null,
+        library_file_name: 'Mapped slot test',
+        plate_id: 1,
+        ams_mapping: amsMapping,
+        filament_overrides: [
+          {
+            slot_id: 1,
+            type: 'PLA',
+            color: '#8E351BFF',
+            color_name: 'Caramel',
+            force_color_match: false,
+          },
+        ],
+      });
+
+      const useMappedPrinter = (amsMapping: number[], status: Record<string, unknown>) => {
+        server.use(
+          http.get('/api/v1/queue/', () => HttpResponse.json([mappedItem(amsMapping)])),
+          http.get('/api/v1/library/files/19/plates', () =>
+            HttpResponse.json({
+              file_id: 19,
+              filename: 'mapped-slot.3mf',
+              plates: [
+                {
+                  index: 1,
+                  name: 'Plate 1',
+                  objects: ['Part'],
+                  has_thumbnail: false,
+                  thumbnail_url: null,
+                  print_time_seconds: 3600,
+                  filament_used_grams: 20,
+                  filaments: [
+                    { slot_id: 1, type: 'PLA', color: '#7C4B00', used_grams: 20, used_meters: 6.7 },
+                  ],
+                },
+              ],
+              is_multi_plate: false,
+            }),
+          ),
+          http.get('/api/v1/printers/:id/status', () =>
+            HttpResponse.json({
+              id: 1,
+              name: 'Test Printer',
+              state: 'IDLE',
+              nozzles: [],
+              ams_extruder_map: {},
+              ...status,
+            }),
+          ),
+          http.get('/api/v1/printers/:id/inventory-remain', () =>
+            HttpResponse.json({ inventory_remain_g: {}, slot_materials: [] }),
+          ),
+        );
+      };
+
+      // Regular AMS units expose four tray records; slot A3 (global 2) is empty.
+      const amsWithEmptyA3 = [
+        {
+          id: 0,
+          tray: [
+            { id: 0, tray_type: 'PLA', tray_color: 'FFFFFFFF', remain: 50 },
+            { id: 1, tray_type: 'PLA', tray_color: 'C2BAA7FF', remain: 80 },
+            // Firmware confirms A3 has no spool (tray_exist_bits bit clear).
+            { id: 2, tray_type: null, exists: false, state: 9 },
+            { id: 3, tray_type: null },
+          ],
+        },
+      ];
+
+      const mappedRow = async () => {
+        render(<QueuePage />);
+        const name = await screen.findByText('Mapped slot test');
+        const row = name.closest('.group');
+        expect(row).not.toBeNull();
+        return row as HTMLElement;
+      };
+
+      it('resolves a mapping to the external spool', async () => {
+        useMappedPrinter([254], {
+          connected: true,
+          ams: [],
+          vt_tray: [{ id: 254, tray_type: 'PETG', tray_color: 'C2BAA7FF', remain: 60 }],
+        });
+        const row = await mappedRow();
+
+        await waitFor(() => {
+          expect(within(row).getByText(/^External · PETG · /)).toBeInTheDocument();
+        });
+        expect(within(row).queryByText('Caramel')).not.toBeInTheDocument();
+      });
+
+      it('says the mapped slot is empty, keeping the intended colour', async () => {
+        useMappedPrinter([2], { connected: true, ams: amsWithEmptyA3, vt_tray: [] });
+        const row = await mappedRow();
+
+        await waitFor(() => {
+          expect(within(row).getByText('A3 · Empty · Caramel')).toBeInTheDocument();
+        });
+        expect(within(row).getByTestId('filament-swatch')).toHaveAttribute('title', '#8E351B');
+      });
+
+      it('never calls the external spool empty, having no presence signal', async () => {
+        // Shape the status route really sends: an external tray carries no
+        // state / exists, so an unconfigured spool and no spool look the same.
+        let statusServed = false;
+        useMappedPrinter([254], { connected: true, ams: [], vt_tray: [] });
+        server.use(
+          http.get('/api/v1/printers/:id/status', () => {
+            statusServed = true;
+            return HttpResponse.json({ id: 1, name: 'Test Printer', state: 'IDLE', connected: true, ams: [], vt_tray: [{ id: 254, tray_type: '' }], nozzles: [], ams_extruder_map: {} });
+          }),
+        );
+        const row = await mappedRow();
+
+        await waitFor(() => expect(statusServed).toBe(true));
+        expect(await within(row).findByText('Caramel')).toBeInTheDocument();
+        expect(within(row).queryByText(/Empty/)).not.toBeInTheDocument();
+      });
+
+      it('does not call a loaded but unconfigured spool empty (#2527)', async () => {
+        // A non-RFID spool the firmware can't identify has no tray_type but is
+        // physically present; the Printers page draws it as "?", not "Empty".
+        const ams = [
+          {
+            id: 0,
+            tray: [
+              { id: 0, tray_type: 'PLA', tray_color: 'FFFFFFFF', remain: 50 },
+              { id: 1, tray_type: 'PLA', tray_color: 'C2BAA7FF', remain: 80 },
+              { id: 2, tray_type: '', exists: true, state: 3 },
+              { id: 3, tray_type: null },
+            ],
+          },
+        ];
+        let statusServed = false;
+        useMappedPrinter([2], { connected: true, ams, vt_tray: [] });
+        server.use(
+          http.get('/api/v1/printers/:id/status', () => {
+            statusServed = true;
+            return HttpResponse.json({ id: 1, name: 'Test Printer', state: 'IDLE', connected: true, ams, vt_tray: [], nozzles: [], ams_extruder_map: {} });
+          }),
+        );
+        const row = await mappedRow();
+
+        await waitFor(() => expect(statusServed).toBe(true));
+        expect(await within(row).findByText('Caramel')).toBeInTheDocument();
+        expect(within(row).queryByText(/Empty/)).not.toBeInTheDocument();
+      });
+
+      it('does not call a slot empty while the printer is offline', async () => {
+        useMappedPrinter([2], { connected: false, ams: amsWithEmptyA3, vt_tray: [] });
+        const row = await mappedRow();
+
+        expect(await within(row).findByText('Caramel')).toBeInTheDocument();
+        expect(within(row).queryByText(/Empty/)).not.toBeInTheDocument();
+      });
+    });
+
     it('shows one if-started-now ETA for an eligible pending item', async () => {
       // Printer 1 is free: nothing is printing on it and nothing is queued ahead.
       server.use(

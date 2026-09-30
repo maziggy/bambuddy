@@ -498,10 +498,15 @@ class TestBatchOrderDispatch:
             # from under the rest of the order.
             assert clone.cleanup_library_after_dispatch is False
 
-    async def test_clones_land_in_their_own_printer_queue(
+    async def test_clones_land_at_the_end_of_the_queue(
         self, async_client, printer_factory, archive_factory, db_session
     ):
-        """Positions are per-printer sequences — a global MAX would scramble them."""
+        """Positions are one sequence across every printer (#3200).
+
+        The queue page shows and reorders pending items as one list and the
+        scheduler dispatches in that order, so clones go after everything
+        already queued, and the whole queue stays free of gaps and duplicates.
+        """
         printer_a = await printer_factory()
         printer_b = await printer_factory()
         archive = await archive_factory()
@@ -510,35 +515,34 @@ class TestBatchOrderDispatch:
             archive.id,
             [{"plate_id": 1, "quantity_target": 3}, {"plate_id": 2, "quantity_target": 2}],
         )
-        # Pad printer B's queue so a global MAX would push plate 1's clones
-        # past the end of printer A's much shorter queue.
         for _ in range(5):
             await async_client.post("/api/v1/queue/", json={"printer_id": printer_b.id, "archive_id": archive.id})
         await _queue_item(async_client, printer_a.id, archive.id, order["id"], plate_id=1)
         await _queue_item(async_client, printer_b.id, archive.id, order["id"], plate_id=2)
 
-        response = await async_client.post(f"/api/v1/queue/batches/{order['id']}/dispatch", json={})
-        assert response.status_code == 200
-
         from sqlalchemy import select
 
         from backend.app.models.print_queue import PrintQueueItem
 
-        for printer in (printer_a, printer_b):
-            rows = (
-                (
-                    await db_session.execute(
-                        select(PrintQueueItem)
-                        .where(PrintQueueItem.printer_id == printer.id)
-                        .where(PrintQueueItem.status == "pending")
-                    )
-                )
+        async def pending():
+            return (
+                (await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.status == "pending")))
                 .scalars()
                 .all()
             )
-            positions = sorted(r.position for r in rows)
-            assert len(positions) == len(set(positions)), f"duplicate positions on printer {printer.id}"
-            assert positions == list(range(1, len(rows) + 1)), f"gap in printer {printer.id} queue"
+
+        before_ids = {r.id for r in await pending()}
+        last_before = max(r.position for r in await pending())
+
+        response = await async_client.post(f"/api/v1/queue/batches/{order['id']}/dispatch", json={})
+        assert response.status_code == 200
+
+        rows = await pending()
+        positions = sorted(r.position for r in rows)
+        assert positions == list(range(1, len(rows) + 1)), "queue positions have a gap or a duplicate"
+        clones = [r for r in rows if r.id not in before_ids]
+        assert len(clones) == 3
+        assert all(r.position > last_before for r in clones)
 
     async def test_clone_differs_from_its_source_only_in_lifecycle_state(
         self, async_client, printer_factory, archive_factory, db_session

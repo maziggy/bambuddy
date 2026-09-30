@@ -127,6 +127,23 @@ function buildSlicerUrlFilename(filename: string): string {
   return safe.toLowerCase().endsWith('.3mf') ? safe : `${safe}.3mf`;
 }
 
+/** POST JSON and return the response body as a Blob (label PDFs and images). */
+async function postForBlob(endpoint: string, data: unknown, signal?: AbortSignal): Promise<Blob> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+    signal,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(typeof error.detail === 'string' ? error.detail : `HTTP ${response.status}`);
+  }
+  return response.blob();
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -2744,7 +2761,7 @@ export interface PrintQueueItemCreate {
   require_previous_success?: boolean;
   auto_off_after?: boolean;
   manual_start?: boolean;  // Requires manual trigger to start (staged)
-  insert_at_top?: boolean;  // Insert ahead of other pending items in the same queue scope
+  insert_at_top?: boolean;  // Insert ahead of other pending items (one queue order across all printers, #3200)
   insert_position?: number | null;  // 1-indexed insertion position for priority queueing
   // PrintModal "Print Anyway" on the deficit warning — persisted so the
   // scheduler doesn't immediately re-flag this item (#1698-followup).
@@ -3611,11 +3628,48 @@ export type SpoolLabelTemplate =
   | 'avery_5160'
   | 'avery_l7160';
 
+// Mirror of backend.app.services.label_renderer.LabelField, in print order (#2981).
+export const SPOOL_LABEL_FIELDS = [
+  'brand',
+  'material',
+  'hex',
+  'name',
+  'location',
+  'material_number',
+  'temps',
+  'weight',
+  'note',
+  'added',
+  'qr',
+  'spool_id',
+] as const;
+export type SpoolLabelField = (typeof SPOOL_LABEL_FIELDS)[number];
+// Mirror of DEFAULT_LABEL_FIELDS: what a label carried before fields were selectable.
+export const DEFAULT_SPOOL_LABEL_FIELDS: SpoolLabelField[] = [
+  'brand',
+  'material',
+  'hex',
+  'name',
+  'location',
+  'qr',
+  'spool_id',
+];
+
 export interface PrintSpoolLabelsRequest {
   spool_ids: number[];
   template: SpoolLabelTemplate;
   monochrome: boolean;
   starting_position: number;
+  fields?: SpoolLabelField[];
+  format?: 'pdf' | 'png';
+  dpi?: 203 | 300 | 600;
+}
+
+export interface PreviewSpoolLabelRequest {
+  spool_id: number;
+  template: SpoolLabelTemplate;
+  monochrome: boolean;
+  fields: SpoolLabelField[];
 }
 
 export interface InventorySpool {
@@ -6713,36 +6767,16 @@ export const api = {
   unassignSpool: (printerId: number, amsId: number, trayId: number) =>
     request<{ status: string }>(`/inventory/assignments/${printerId}/${amsId}/${trayId}`, { method: 'DELETE' }),
   // ── Spool label printing (#809) ──────────────────────────────────────────
-  // Both endpoints return application/pdf. Frontend opens the resulting Blob
-  // in a new tab so the user can print or save from the browser's PDF viewer.
-  printSpoolLabels: async (data: PrintSpoolLabelsRequest): Promise<Blob> => {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-    const response = await fetch(`${API_BASE}/inventory/labels`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `HTTP ${response.status}`);
-    }
-    return response.blob();
-  },
-  printSpoolmanSpoolLabels: async (data: PrintSpoolLabelsRequest): Promise<Blob> => {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-    const response = await fetch(`${API_BASE}/spoolman/labels`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `HTTP ${response.status}`);
-    }
-    return response.blob();
-  },
+  // The print endpoints return a PDF, a PNG, or a ZIP of PNGs (#2981); the
+  // preview endpoints one PNG. Callers get the Blob and decide what to do.
+  printSpoolLabels: (data: PrintSpoolLabelsRequest): Promise<Blob> =>
+    postForBlob('/inventory/labels', data),
+  printSpoolmanSpoolLabels: (data: PrintSpoolLabelsRequest): Promise<Blob> =>
+    postForBlob('/spoolman/labels', data),
+  previewSpoolLabel: (data: PreviewSpoolLabelRequest, signal?: AbortSignal): Promise<Blob> =>
+    postForBlob('/inventory/labels/preview', data, signal),
+  previewSpoolmanSpoolLabel: (data: PreviewSpoolLabelRequest, signal?: AbortSignal): Promise<Blob> =>
+    postForBlob('/spoolman/labels/preview', data, signal),
   getSpoolCatalog: () =>
     request<SpoolCatalogEntry[]>('/inventory/catalog'),
   addCatalogEntry: (data: { name: string; weight: number }) =>

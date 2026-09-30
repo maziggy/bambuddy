@@ -494,6 +494,8 @@ def mock_httpx_client():
 
         mock_instance.get = AsyncMock(return_value=mock_response)
         mock_instance.post = AsyncMock(return_value=mock_response)
+        # ntfy switches to PUT when a photo is attached (e.g. the sample image on Test).
+        mock_instance.put = AsyncMock(return_value=mock_response)
         mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
         mock_instance.__aexit__ = AsyncMock()
 

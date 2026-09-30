@@ -364,14 +364,10 @@ class NotificationService:
                     config, title, message, image_data=image_data, event_type="test", image_url=photo_url
                 )
             elif provider_type == "homeassistant":
-                photo_url = (
-                    await self._get_or_build_photo_url(db, image_data, {}, "test") if attach_photo else None
-                )
+                photo_url = await self._get_or_build_photo_url(db, image_data, {}, "test") if attach_photo else None
                 return await self._send_homeassistant(config, title, message, db=db, image_url=photo_url)
             elif provider_type == "bark":
-                photo_url = (
-                    await self._get_or_build_photo_url(db, image_data, {}, "test") if attach_photo else None
-                )
+                photo_url = await self._get_or_build_photo_url(db, image_data, {}, "test") if attach_photo else None
                 return await self._send_bark(config, title, message, image_url=photo_url)
             else:
                 return False, f"Unknown provider type: {provider_type}"

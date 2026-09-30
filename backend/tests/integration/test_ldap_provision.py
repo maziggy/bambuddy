@@ -461,3 +461,73 @@ class TestLdapLoginFinanceDefaults:
         ).scalar_one_or_none()
         assert membership is not None
         assert membership.can_print is True
+
+
+class TestLdapFirstLoginProvisionsOnce:
+    """Auto-provisioning on login used to be followed straight away by the sync
+    meant for returning users, which repeated what provisioning had just done and
+    logged the default-group warning twice (#3197)."""
+
+    async def _login(
+        self, async_client: AsyncClient, db_session: AsyncSession, groups: list[str], default_group: str = "Viewers"
+    ):
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={"auth_enabled": True, "admin_username": "ldapadmin", "admin_password": "AdminPass1!"},
+        )
+        await _seed_ldap_settings(
+            db_session,
+            ldap_auto_provision="true",
+            ldap_default_group=default_group,
+            ldap_group_mapping='{"cn=bambuddy-admins,ou=groups,dc=test,dc=com": "Administrators"}',
+        )
+        fake_ldap = LDAPUserInfo(username="tofm", email="tofm@test.com", display_name=None, groups=groups)
+        with patch("backend.app.services.ldap_service.authenticate_ldap_user", return_value=fake_ldap):
+            return await async_client.post("/api/v1/auth/login", json={"username": "tofm", "password": "irrelevant"})
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_default_group_warning_is_logged_once(
+        self, async_client: AsyncClient, db_session: AsyncSession, caplog
+    ):
+        with caplog.at_level("WARNING", logger="backend.app.api.routes.auth"):
+            response = await self._login(async_client, db_session, groups=[])
+
+        assert response.status_code == 200
+        assert {g["name"] for g in response.json()["user"]["groups"]} == {"Viewers"}
+        assert caplog.text.count("has no mapped groups") == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_new_user_gets_mapped_group_and_finance_defaults(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        response = await self._login(async_client, db_session, groups=["CN=Bambuddy-Admins,OU=Groups,DC=Test,DC=Com"])
+
+        assert response.status_code == 200
+        body = response.json()["user"]
+        assert body["auth_source"] == "ldap"
+        assert body["email"] == "tofm@test.com"
+        assert {g["name"] for g in body["groups"]} == {"Administrators"}
+        user = (await db_session.execute(select(User).where(User.username == "tofm"))).scalar_one()
+        wallet = (
+            await db_session.execute(select(UserWallet).where(UserWallet.user_id == user.id))
+        ).scalar_one_or_none()
+        assert wallet is not None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_new_user_with_no_groups_at_all_logs_in_twice(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """No mapped group and no default group: the new user has no groups, and
+        the second login (the sync path) still works."""
+        first = await self._login(async_client, db_session, groups=[], default_group="")
+        assert first.status_code == 200
+        assert first.json()["user"]["groups"] == []
+
+        fake_ldap = LDAPUserInfo(username="tofm", email="new@test.com", display_name=None, groups=[])
+        with patch("backend.app.services.ldap_service.authenticate_ldap_user", return_value=fake_ldap):
+            second = await async_client.post("/api/v1/auth/login", json={"username": "tofm", "password": "irrelevant"})
+        assert second.status_code == 200
+        assert second.json()["user"]["email"] == "new@test.com"

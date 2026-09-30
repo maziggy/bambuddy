@@ -1588,7 +1588,7 @@ export function SettingsPage() {
 
       {/* Tab Navigation + content: horizontal tabs on mobile, vertical rail on lg+ */}
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
-      <nav className="flex flex-wrap gap-1 border-b border-bambu-dark-tertiary lg:flex-col lg:flex-nowrap lg:gap-0 lg:border-b-0 lg:border-r lg:w-48 lg:flex-shrink-0 lg:self-start lg:sticky lg:top-4">
+      <nav className="flex flex-wrap gap-1 border-b border-bambu-dark-tertiary lg:flex-col lg:flex-nowrap lg:gap-0 lg:border-b-0 lg:border-r lg:w-60 lg:flex-shrink-0 lg:self-start lg:sticky lg:top-4">
         <button
           onClick={() => handleTabChange('general')}
           className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
@@ -1597,7 +1597,7 @@ export function SettingsPage() {
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
-          <SettingsIcon className="w-4 h-4" />
+          <SettingsIcon className="w-4 h-4 shrink-0" />
           {t('settings.tabs.general')}
         </button>
         <button
@@ -1608,10 +1608,10 @@ export function SettingsPage() {
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
-          <Plug className="w-4 h-4" />
+          <Plug className="w-4 h-4 shrink-0" />
           {t('settings.tabs.smartPlugs')}
           {smartPlugs && smartPlugs.length > 0 && (
-            <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full">
+            <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full shrink-0">
               {smartPlugs.length}
             </span>
           )}
@@ -1624,10 +1624,10 @@ export function SettingsPage() {
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
-          <Gauge className="w-4 h-4" />
+          <Gauge className="w-4 h-4 shrink-0" />
           {t('settings.tabs.sensors')}
           {(haSensors?.length ?? 0) + (locationHaSensors?.length ?? 0) > 0 && (
-            <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full">
+            <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full shrink-0">
               {(haSensors?.length ?? 0) + (locationHaSensors?.length ?? 0)}
             </span>
           )}
@@ -1640,10 +1640,10 @@ export function SettingsPage() {
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
-          <Bell className="w-4 h-4" />
+          <Bell className="w-4 h-4 shrink-0" />
           {t('settings.tabs.notifications')}
           {notificationProviders && notificationProviders.length > 0 && (
-            <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full">
+            <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full shrink-0">
               {notificationProviders.length}
             </span>
           )}
@@ -1656,7 +1656,7 @@ export function SettingsPage() {
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
-          <ListOrdered className="w-4 h-4" />
+          <ListOrdered className="w-4 h-4 shrink-0" />
           {t('settings.tabs.queue', 'Workflow')}
         </button>
         <button
@@ -1667,7 +1667,7 @@ export function SettingsPage() {
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
-          <Cylinder className="w-4 h-4" />
+          <Cylinder className="w-4 h-4 shrink-0" />
           {t('settings.tabs.filament')}
         </button>
         <button
@@ -1678,9 +1678,9 @@ export function SettingsPage() {
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
-          <Wifi className="w-4 h-4" />
+          <Wifi className="w-4 h-4 shrink-0" />
           {t('settings.tabs.network')}
-          <span className={`w-2 h-2 rounded-full ${mqttStatus?.enabled ? 'bg-green-400' : 'bg-gray-500'}`} />
+          <span className={`w-2 h-2 rounded-full shrink-0 ${mqttStatus?.enabled ? 'bg-green-400' : 'bg-gray-500'}`} />
         </button>
         <button
           onClick={() => handleTabChange('apikeys')}
@@ -1690,10 +1690,10 @@ export function SettingsPage() {
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
-          <Key className="w-4 h-4" />
+          <Key className="w-4 h-4 shrink-0" />
           {t('settings.tabs.apiKeys')}
           {apiKeys && apiKeys.length > 0 && (
-            <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full">
+            <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full shrink-0">
               {apiKeys.length}
             </span>
           )}
@@ -1706,9 +1706,9 @@ export function SettingsPage() {
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
-          <Printer className="w-4 h-4" />
+          <Printer className="w-4 h-4 shrink-0" />
           {t('settings.tabs.virtualPrinter')}
-          <span className={`w-2 h-2 rounded-full ${virtualPrinterRunning ? 'bg-green-400' : 'bg-gray-500'}`} />
+          <span className={`w-2 h-2 rounded-full shrink-0 ${virtualPrinterRunning ? 'bg-green-400' : 'bg-gray-500'}`} />
         </button>
         <button
           onClick={() => handleTabChange('spoolbuddy')}
@@ -1718,14 +1718,14 @@ export function SettingsPage() {
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
-          <Scale className="w-4 h-4" />
+          <Scale className="w-4 h-4 shrink-0" />
           {t('settings.tabs.spoolbuddy')}
           {spoolbuddyDeviceCount > 0 && (
-            <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full">
+            <span className="text-xs bg-bambu-dark-tertiary px-1.5 py-0.5 rounded-full shrink-0">
               {spoolbuddyDeviceCount}
             </span>
           )}
-          <span className={`w-2 h-2 rounded-full ${spoolbuddyAnyOnline ? 'bg-green-400' : 'bg-gray-500'}`} />
+          <span className={`w-2 h-2 rounded-full shrink-0 ${spoolbuddyAnyOnline ? 'bg-green-400' : 'bg-gray-500'}`} />
         </button>
         <button
           onClick={() => handleTabChange('failure-detection')}
@@ -1735,9 +1735,9 @@ export function SettingsPage() {
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
-          <ScanEye className="w-4 h-4" />
+          <ScanEye className="w-4 h-4 shrink-0" />
           {t('settings.tabs.failureDetection')}
-          <span className={`w-2 h-2 rounded-full ${obicoActive ? 'bg-green-400' : 'bg-gray-500'}`} />
+          <span className={`w-2 h-2 rounded-full shrink-0 ${obicoActive ? 'bg-green-400' : 'bg-gray-500'}`} />
         </button>
         <button
           onClick={() => handleTabChange('users')}
@@ -1747,10 +1747,10 @@ export function SettingsPage() {
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
-          <Users className="w-4 h-4" />
+          <Users className="w-4 h-4 shrink-0" />
           {t('settings.tabs.users')}
           {authEnabled && (
-            <span className="w-2 h-2 rounded-full bg-green-400" />
+            <span className="w-2 h-2 rounded-full shrink-0 bg-green-400" />
           )}
         </button>
         <button
@@ -1761,9 +1761,9 @@ export function SettingsPage() {
               : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
           }`}
         >
-          <Database className="w-4 h-4" />
+          <Database className="w-4 h-4 shrink-0" />
           {t('settings.tabs.backup')}
-          <span className={`w-2 h-2 rounded-full ${(cloudAuthStatus?.is_authenticated && githubBackupStatus?.configured && githubBackupStatus?.enabled) || settings?.local_backup_enabled ? 'bg-green-400' : 'bg-gray-500'}`} />
+          <span className={`w-2 h-2 rounded-full shrink-0 ${(cloudAuthStatus?.is_authenticated && githubBackupStatus?.configured && githubBackupStatus?.enabled) || settings?.local_backup_enabled ? 'bg-green-400' : 'bg-gray-500'}`} />
         </button>
       </nav>
       <div className="flex-1 min-w-0">

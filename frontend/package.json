@@ -60,8 +60,8 @@
   },
   "overrides": {
     "minimatch": "^10.2.1",
-    "brace-expansion": "^5.0.9",
-    "js-yaml": "^5.2.3",
+    "brace-expansion": "^5.0.12",
+    "js-yaml": "^5.4.1",
     "nanoid": "^3.3.18",
     "react-router": "7.18.2"
   },

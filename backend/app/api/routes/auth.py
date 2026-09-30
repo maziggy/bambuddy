@@ -483,6 +483,7 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
     user = None
     # Check if LDAP is enabled
     ldap_user = None
+    ldap_user_provisioned = False
     ldap_settings = await _get_ldap_settings(db)
     if ldap_settings:
         try:
@@ -506,10 +507,14 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
                             # User doesn't exist and auto-provision is off
                             ldap_user = None
                         else:
-                            # Auto-provision LDAP user
+                            # Auto-provision LDAP user. Provisioning already sets the
+                            # email, groups and finance defaults the sync below would,
+                            # so a new user skips it (it also logged the default-group
+                            # warning a second time, #3197).
                             user = await _provision_ldap_user(db, ldap_user, ldap_config)
+                            ldap_user_provisioned = True
 
-                    if user and ldap_user:
+                    if user and ldap_user and not ldap_user_provisioned:
                         # Update email and group mappings on each login
                         await _sync_ldap_user(db, user, ldap_user, ldap_config)
                         # Keep finance defaults idempotently in sync for LDAP users

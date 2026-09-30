@@ -269,6 +269,44 @@ class TestSanitizeLogContent:
         assert "01.07.02.00" in result
         assert "[IP] running firmware 01.07.02.00" in result
 
+    def test_oid_is_not_masked_as_an_ip(self):
+        """A longer dotted number is not an address. Masking its first four parts
+        turned lldap's StartTLS refusal into "[IP].4.1.1466.20037" (#3197)."""
+        from backend.app.services.log_reader import sanitize_log_content as _sanitize_log_content
+
+        content = "Unsupported extended operation: 1.3.6.1.4.1.1466.20037 - extendedResp"
+        assert _sanitize_log_content(content) == content
+
+    @pytest.mark.parametrize(
+        ("content", "expected"),
+        [
+            ("Connected to 192.168.1.5.", "Connected to [IP]."),
+            ("(10.0.0.1)", "([IP])"),
+            ("ftp://10.0.0.1:990/cache", "ftp://[IP]:990/cache"),
+            ("peers 10.0.0.1,10.0.0.2", "peers [IP],[IP]"),
+            ("[IP]:54054 via 172.16.0.9:443", "[IP]:54054 via [IP]:443"),
+        ],
+    )
+    def test_ips_are_still_masked_next_to_punctuation(self, content, expected):
+        from backend.app.services.log_reader import sanitize_log_content as _sanitize_log_content
+
+        assert _sanitize_log_content(content) == expected
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "at 192.168.1.5 and 1.3.6.1.4.1.1466.20037",
+            "firmware 01.07.02.00 on 10.1.2.3.",
+            "Connected to 192.168.1.5.",
+        ],
+    )
+    def test_diagnostic_snapshot_masks_the_same_way(self, content):
+        """diagnostic_snapshot keeps its own copy of the pattern; the two must agree."""
+        from backend.app.services.diagnostic_snapshot import _IPV4_RE
+        from backend.app.services.log_reader import sanitize_log_content as _sanitize_log_content
+
+        assert _IPV4_RE.sub("[IP]", content) == _sanitize_log_content(content)
+
     def test_printer_ip_from_sensitive_strings(self):
         """Printer IPs in sensitive_strings are replaced before regex pass."""
         from backend.app.services.log_reader import sanitize_log_content as _sanitize_log_content

@@ -490,6 +490,53 @@ class TestPartialUsageRemainDelta:
 
         client.use_spool.assert_awaited_once_with(7, 200.0)
 
+    @pytest.mark.asyncio
+    async def test_remain_delta_uses_the_spools_own_weight(self):
+        """#3194: the AMS percentage is of this spool, so a 20% drop on a
+        250 g spool of a 1000 g filament is 50 g, not 200 g."""
+        from backend.app.services.spoolman_tracking import _report_partial_usage
+
+        tracking = SimpleNamespace(
+            archive_id=99,
+            filament_usage=None,
+            layer_usage=None,
+            filament_properties=None,
+            ams_trays={"0": {"tray_uuid": "AAAA"}},
+            slot_to_tray=None,
+            tray_remain_start={"0-0": {"remain": 90, "tray_uuid": "AAAA"}},
+        )
+
+        client = AsyncMock()
+        client.get_spool = AsyncMock(return_value={"id": 7, "initial_weight": 250.0, "filament": {"weight": 1000.0}})
+        client.use_spool = AsyncMock()
+
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={"ams": [{"id": 0, "tray": [{"id": 0, "tray_uuid": "AAAA", "remain": 70}]}]},
+            layer_num=42,
+            total_layers=100,
+        )
+
+        with (
+            patch("backend.app.api.routes.settings.get_setting", AsyncMock(return_value="true")),
+            patch(
+                "backend.app.services.spoolman_tracking._get_spoolman_client_with_fallback",
+                AsyncMock(return_value=client),
+            ),
+            patch(
+                "backend.app.services.spoolman_tracking._get_printer_serial",
+                AsyncMock(return_value="serial"),
+            ),
+            patch(
+                "backend.app.services.spoolman_tracking._resolve_spool_id_via_slot_assignment",
+                AsyncMock(return_value=7),
+            ),
+            patch("backend.app.services.printer_manager.printer_manager", printer_manager),
+        ):
+            await _report_partial_usage(printer_id=1, tracking=tracking)
+
+        client.use_spool.assert_awaited_once_with(7, 50.0)
+
 
 class _AsyncCtx:
     """Tiny async-context shim returning a pre-built db mock; mirrors

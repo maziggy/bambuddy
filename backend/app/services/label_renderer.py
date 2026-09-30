@@ -27,12 +27,21 @@ Layout principle, taken from the issue's user need (`#809`): the **spool ID**
 is the most-recognisable field at arm's length and dominates the layout. Other
 fields (brand, material, name, storage location) fill remaining space; the QR
 code provides the round-trip back to ``/inventory?spool=<id>``.
+
+Which of those appear is the caller's choice (#2981): ``fields`` names the
+lines to print, and ``DEFAULT_LABEL_FIELDS`` is the set every label carried
+before the choice existed. The label text is data only (numbers, units,
+dates), never words, because the PDF is not translated.
+
+``render_labels`` returns a PDF; ``pdf_to_pngs`` rasterises it page by page
+for label-printer software that takes images.
 """
 
 from __future__ import annotations
 
 import io
 from dataclasses import dataclass
+from datetime import date
 from typing import Literal
 
 import qrcode
@@ -49,6 +58,44 @@ TemplateName = Literal[
     "avery_5160",
     "avery_l7160",
 ]
+
+
+LabelField = Literal[
+    "brand",
+    "material",
+    "hex",
+    "name",
+    "location",
+    "material_number",
+    "temps",
+    "weight",
+    "note",
+    "added",
+    "qr",
+    "spool_id",
+]
+
+# Top-to-bottom order of the text lines, and the order the picker lists them.
+ALL_LABEL_FIELDS: tuple[LabelField, ...] = (
+    "brand",
+    "material",
+    "hex",
+    "name",
+    "location",
+    "material_number",
+    "temps",
+    "weight",
+    "note",
+    "added",
+    "qr",
+    "spool_id",
+)
+
+# What a label carried before the fields were selectable, so a request that
+# names none prints exactly what it always did.
+DEFAULT_LABEL_FIELDS: frozenset[LabelField] = frozenset(
+    {"brand", "material", "hex", "name", "location", "qr", "spool_id"}
+)
 
 
 @dataclass
@@ -68,6 +115,26 @@ class LabelData:
     extra_colors: list[str] | None = None  # additional hex colours (no '#')
     storage_location: str | None = None
     deeplink_url: str = ""  # what the QR encodes; caller composes it
+    material_number: str | None = None
+    nozzle_temp_min: int | None = None
+    nozzle_temp_max: int | None = None
+    label_weight: int | None = None  # advertised net weight, grams
+    note: str | None = None
+    added: date | None = None
+
+
+def _temps_text(data: LabelData) -> str:
+    """``220–240 °C``, or the one bound that is set."""
+    lo, hi = data.nozzle_temp_min, data.nozzle_temp_max
+    if lo and hi and lo != hi:
+        return f"{lo}–{hi} °C"
+    if lo or hi:
+        return f"{lo or hi} °C"
+    return ""
+
+
+def _weight_text(data: LabelData) -> str:
+    return f"{data.label_weight} g" if data.label_weight else ""
 
 
 # ── Colour helpers ───────────────────────────────────────────────────────────
@@ -213,7 +280,14 @@ def _truncate_to_width(c: rl_canvas.Canvas, text: str, font: str, size: float, m
 
 
 def _draw_label(
-    c: rl_canvas.Canvas, x: float, y: float, w: float, h: float, data: LabelData, monochrome: bool = False
+    c: rl_canvas.Canvas,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    data: LabelData,
+    monochrome: bool = False,
+    fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
 ) -> None:
     """Render one label inside the box (x, y, w, h). Origin is bottom-left.
 
@@ -244,9 +318,9 @@ def _draw_label(
     is_tight = h < 20 * mm
 
     if is_tight:
-        _draw_label_tight(c, x, y, w, h, inner_x, inner_y, inner_w, inner_h, pad, data, monochrome)
+        _draw_label_tight(c, x, y, w, h, inner_x, inner_y, inner_w, inner_h, pad, data, monochrome, fields)
     else:
-        _draw_label_roomy(c, x, y, w, h, inner_x, inner_y, inner_w, inner_h, pad, data, monochrome)
+        _draw_label_roomy(c, x, y, w, h, inner_x, inner_y, inner_w, inner_h, pad, data, monochrome, fields)
 
 
 def _draw_label_tight(
@@ -262,8 +336,12 @@ def _draw_label_tight(
     pad: float,
     data: LabelData,
     monochrome: bool = False,
+    fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
 ) -> None:
-    """Tight layout (h < 20 mm). Swatch + brand/material/hex/ID, no QR."""
+    """Tight layout (h < 20 mm). Swatch + brand/material/hex/ID, no QR.
+
+    Only those four lines fit, so they are the only ``fields`` it honours.
+    """
     # Monochrome: drop the colour swatch (see _draw_label_roomy) and give the
     # width to the text column (#1870).
     if monochrome:
@@ -283,14 +361,14 @@ def _draw_label_tight(
     # Top: brand — bumped to bold + larger per the #809 follow-up so it's the
     # easiest thing to read on a small AMS holder at arm's length.
     brand_size = 6.5
-    if data.brand:
+    if data.brand and "brand" in fields:
         c.setFont("Helvetica-Bold", brand_size)
         brand = _truncate_to_width(c, data.brand, "Helvetica-Bold", brand_size, text_w)
         c.drawString(text_x, y + h - pad - brand_size, brand)
 
     # Second line: material + subtype, small
     sub_size = 5
-    sub_line = " ".join(filter(None, [data.material, data.subtype]))
+    sub_line = " ".join(filter(None, [data.material, data.subtype])) if "material" in fields else ""
     sub_y_baseline = y + h - pad - brand_size - 0.6 - sub_size
     if sub_line:
         c.setFont("Helvetica", sub_size)
@@ -299,7 +377,7 @@ def _draw_label_tight(
 
     # Third line (when there's room): hex code, tiny — useful when the user
     # has multiple near-identical colours in the same material family.
-    hex_code = _hex_code_label(data.rgba)
+    hex_code = _hex_code_label(data.rgba) if "hex" in fields else ""
     if hex_code:
         hex_size = 4.5
         hex_y = sub_y_baseline - 0.4 - hex_size
@@ -309,6 +387,8 @@ def _draw_label_tight(
             c.drawString(text_x, hex_y, hex_code)
 
     # Bottom: BIG spool ID — the killer field at-a-glance.
+    if "spool_id" not in fields:
+        return
     id_size = 13
     c.setFont("Helvetica-Bold", id_size)
     id_text = _truncate_to_width(c, f"#{data.spool_id}", "Helvetica-Bold", id_size, text_w)
@@ -328,6 +408,7 @@ def _draw_label_roomy(
     pad: float,
     data: LabelData,
     monochrome: bool = False,
+    fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
 ) -> None:
     """Box-label / Avery layout. Swatch left, QR right, text middle."""
     # Swatch: full inner height, ~18% of inner width but capped so we never
@@ -342,73 +423,69 @@ def _draw_label_roomy(
         swatch_w = min(inner_w * 0.18, inner_h, 16 * mm)
         _draw_swatch(c, inner_x, inner_y, swatch_w, inner_h, data)
 
-    qr_size = _roomy_qr_size(inner_w, inner_h)
-    qr_x = x + w - pad - qr_size
-    qr_y = inner_y + (inner_h - qr_size) / 2
-    _draw_qr(c, qr_x, qr_y, qr_size, data.deeplink_url)
+    # Without the QR the text column runs to the right-hand padding.
+    if "qr" in fields:
+        qr_size = _roomy_qr_size(inner_w, inner_h)
+        qr_x = x + w - pad - qr_size
+        qr_y = inner_y + (inner_h - qr_size) / 2
+        _draw_qr(c, qr_x, qr_y, qr_size, data.deeplink_url)
+        text_right = qr_x - 1.5 * mm
+    else:
+        text_right = inner_x + inner_w
 
     text_x = inner_x + swatch_w + 1.5 * mm
-    text_w = qr_x - text_x - 1.5 * mm
+    text_w = text_right - text_x
     if text_w < 8 * mm:
         return
 
     c.setFillColor(black)
 
-    # Build the text rows we want to render, in top→bottom order.
-    line1 = data.brand or ""
-    line2 = " · ".join(filter(None, [data.material, data.subtype]))
-    name = data.name or ""
-    hex_code = _hex_code_label(data.rgba)
-
-    # Layout from the top of the text column.
-    cursor_y = y + h - pad
-
-    # Brand — bumped to bold + larger per the #809 follow-up.
-    if line1:
-        size = 8
-        c.setFont("Helvetica-Bold", size)
-        text = _truncate_to_width(c, line1, "Helvetica-Bold", size, text_w)
-        cursor_y -= size
-        c.drawString(text_x, cursor_y, text)
-        cursor_y -= 1.2
-
-    if line2:
-        size = 7
-        c.setFont("Helvetica", size)
-        text = _truncate_to_width(c, line2, "Helvetica", size, text_w)
-        cursor_y -= size
-        c.drawString(text_x, cursor_y, text)
-        cursor_y -= 1.5
-
-    # Hex colour code — useful for telling near-identical material+colour
-    # spools apart when the swatch is small or the user is colour-blind.
-    if hex_code:
-        size = 6.5
-        c.setFont("Helvetica", size)
-        cursor_y -= size
-        c.drawString(text_x, cursor_y, hex_code)
-        cursor_y -= 1.2
-
-    if name and name != line1:
-        size = 9
-        c.setFont("Helvetica-Bold", size)
-        text = _truncate_to_width(c, name, "Helvetica-Bold", size, text_w)
-        cursor_y -= size
-        c.drawString(text_x, cursor_y, text)
-        cursor_y -= 1.2
-
-    if data.storage_location:
-        size = 6.5
-        c.setFont("Helvetica-Oblique", size)
-        text = _truncate_to_width(c, data.storage_location, "Helvetica-Oblique", size, text_w)
-        cursor_y -= size
-        c.drawString(text_x, cursor_y, text)
-
-    # Spool ID — anchored at the bottom of the text column, big and bold.
+    # Spool ID — anchored at the bottom of the text column, big and bold. The
+    # lines above stop short of it rather than print over it.
     id_size = 16
-    c.setFont("Helvetica-Bold", id_size)
-    id_text = _truncate_to_width(c, f"#{data.spool_id}", "Helvetica-Bold", id_size, text_w)
-    c.drawString(text_x, inner_y + 0.5, id_text)
+    show_id = "spool_id" in fields
+    floor_y = inner_y + 0.5 + id_size if show_id else inner_y
+
+    name = data.name or ""
+    # The name line is dropped when it only repeats the brand, or the subtype
+    # already printed beside the material (a Spoolman filament named after
+    # its colour yields both).
+    repeats = {data.brand or ""}
+    if "material" in fields and data.subtype:
+        repeats.add(data.subtype)
+    # (field, text, font, size, gap below). Sizes and gaps of the first five
+    # are what the label has always used; the rest share the location's.
+    rows: list[tuple[LabelField, str, str, float, float]] = [
+        # Brand — bumped to bold + larger per the #809 follow-up.
+        ("brand", data.brand or "", "Helvetica-Bold", 8, 1.2),
+        ("material", " · ".join(filter(None, [data.material, data.subtype])), "Helvetica", 7, 1.5),
+        # Hex colour code — useful for telling near-identical material+colour
+        # spools apart when the swatch is small or the user is colour-blind.
+        ("hex", _hex_code_label(data.rgba), "Helvetica", 6.5, 1.2),
+        ("name", name if name not in repeats else "", "Helvetica-Bold", 9, 1.2),
+        ("location", data.storage_location or "", "Helvetica-Oblique", 6.5, 1.2),
+        ("material_number", data.material_number or "", "Helvetica", 6.5, 1.2),
+        ("temps", _temps_text(data), "Helvetica", 6.5, 1.2),
+        ("weight", _weight_text(data), "Helvetica", 6.5, 1.2),
+        ("note", data.note or "", "Helvetica-Oblique", 6.5, 1.2),
+        ("added", data.added.isoformat() if data.added else "", "Helvetica", 6.5, 1.2),
+    ]
+
+    cursor_y = y + h - pad
+    for field, text, font, size, gap in rows:
+        if field not in fields or not text:
+            continue
+        if cursor_y - size < floor_y:
+            break
+        c.setFont(font, size)
+        cursor_y -= size
+        c.drawString(text_x, cursor_y, _truncate_to_width(c, text, font, size, text_w))
+        cursor_y -= gap
+
+    if show_id:
+        c.setFont("Helvetica-Bold", id_size)
+        id_text = _truncate_to_width(c, f"#{data.spool_id}", "Helvetica-Bold", id_size, text_w)
+        c.drawString(text_x, inner_y + 0.5, id_text)
 
 
 # ── Template entry points ────────────────────────────────────────────────────
@@ -430,8 +507,13 @@ _SHEET_TEMPLATES: dict[str, tuple] = {
 }
 
 
-def _render_single_label_pdf(template: TemplateName, data_list: list[LabelData], monochrome: bool = False) -> bytes:
-    w_mm, h_mm = _SINGLE_LABEL_SIZES_MM[template]
+def _render_single_label_pdf(
+    template: TemplateName,
+    data_list: list[LabelData],
+    monochrome: bool = False,
+    fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
+) -> bytes:
+    w_mm, h_mm = label_size_mm(template)
     page_w, page_h = w_mm * mm, h_mm * mm
 
     buf = io.BytesIO()
@@ -439,11 +521,21 @@ def _render_single_label_pdf(template: TemplateName, data_list: list[LabelData],
     c.setTitle(f"Bambuddy spool labels ({template})")
 
     for data in data_list:
-        _draw_label(c, 0, 0, page_w, page_h, data, monochrome)
+        _draw_label(c, 0, 0, page_w, page_h, data, monochrome, fields)
         c.showPage()
 
     c.save()
     return buf.getvalue()
+
+
+def label_size_mm(template: TemplateName) -> tuple[float, float]:
+    """(width, height) of one label of ``template`` — a sheet's cell size."""
+    if template in _SINGLE_LABEL_SIZES_MM:
+        return _SINGLE_LABEL_SIZES_MM[template]
+    if template in _SHEET_TEMPLATES:
+        layout = _SHEET_TEMPLATES[template]
+        return layout[1], layout[2]
+    raise ValueError(f"Unknown label template: {template!r}")
 
 
 def get_sheet_capacity(template: TemplateName) -> int | None:
@@ -459,6 +551,7 @@ def _render_sheet_pdf(
     data_list: list[LabelData],
     monochrome: bool,
     starting_position: int,
+    fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
 ) -> bytes:
     page_size, w_mm, h_mm, cols, rows, top_mm, left_mm, col_gap_mm, row_gap_mm = _SHEET_TEMPLATES[template]
     page_w, page_h = page_size
@@ -490,7 +583,7 @@ def _render_sheet_pdf(
             col = slot_index % cols
             x = left_margin + col * (label_w + col_gap)
             y = page_h - top_margin - (row + 1) * label_h - row * row_gap
-            _draw_label(c, x, y, label_w, label_h, data, monochrome)
+            _draw_label(c, x, y, label_w, label_h, data, monochrome, fields)
         c.showPage()
         data_index += len(chunk)
         page_number += 1
@@ -505,6 +598,7 @@ def render_labels(
     *,
     monochrome: bool = False,
     starting_position: int = 1,
+    fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
 ) -> bytes:
     """Render ``data_list`` to a PDF using the named template. Returns bytes.
 
@@ -517,16 +611,81 @@ def render_labels(
 
     ``starting_position`` is one-based and applies only to the first page of a
     sheet template. Later pages always begin at the first slot.
+
+    ``fields`` names the lines to print (#2981); see ``ALL_LABEL_FIELDS``.
     """
     if template in _SINGLE_LABEL_SIZES_MM:
         if starting_position != 1:
             raise ValueError("Starting position is only supported for sheet label templates")
-        return _render_single_label_pdf(template, data_list, monochrome)
+        return _render_single_label_pdf(template, data_list, monochrome, fields)
     if template in _SHEET_TEMPLATES:
-        return _render_sheet_pdf(template, data_list, monochrome, starting_position)
+        return _render_sheet_pdf(template, data_list, monochrome, starting_position, fields)
     raise ValueError(f"Unknown label template: {template!r}")
 
 
-__all__ = ["LabelData", "TemplateName", "get_sheet_capacity", "render_labels"]
+def render_label_preview_pdf(
+    template: TemplateName,
+    data: LabelData,
+    *,
+    monochrome: bool = False,
+    fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
+) -> bytes:
+    """One label of ``template`` on a page of its own size.
+
+    For a roll template that is the label as printed; for a sheet it is one
+    cell, which is all the preview needs to show.
+    """
+    w_mm, h_mm = label_size_mm(template)
+    page_w, page_h = w_mm * mm, h_mm * mm
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=(page_w, page_h))
+    _draw_label(c, 0, 0, page_w, page_h, data, monochrome, fields)
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+def pdf_to_pngs(pdf: bytes, dpi: int) -> list[bytes]:
+    """Rasterise every page of ``pdf`` to a PNG at ``dpi``.
+
+    Images are drawn without smoothing: the QR is embedded as a bitmap, and
+    resampling it with interpolation greys the module edges, which is what
+    makes a small code unreadable on a 203 dpi thermal printer (#1870). The
+    PNG carries its dpi so label software prints it at the right size.
+    """
+    import pypdfium2 as pdfium
+
+    from backend.app.services.pdf_thumbnail import _PDFIUM_LOCK
+
+    pages: list[bytes] = []
+    with _PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(pdf)
+        try:
+            for index in range(len(doc)):
+                page = doc[index]
+                try:
+                    image = page.render(scale=dpi / 72, no_smoothimage=True).to_pil()
+                finally:
+                    page.close()
+                out = io.BytesIO()
+                image.convert("RGB").save(out, "PNG", dpi=(dpi, dpi), optimize=True)
+                pages.append(out.getvalue())
+        finally:
+            doc.close()
+    return pages
+
+
+__all__ = [
+    "ALL_LABEL_FIELDS",
+    "DEFAULT_LABEL_FIELDS",
+    "LabelData",
+    "LabelField",
+    "TemplateName",
+    "get_sheet_capacity",
+    "label_size_mm",
+    "pdf_to_pngs",
+    "render_label_preview_pdf",
+    "render_labels",
+]
 # white re-exported for completeness; future templates may need a paper-tone variant.
 _ = white

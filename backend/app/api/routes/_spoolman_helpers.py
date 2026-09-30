@@ -144,6 +144,98 @@ def _safe_optional_float(value: object) -> float | None:
     return None
 
 
+# Used only when Spoolman has no empty-spool weight at any level.
+SPOOLMAN_FALLBACK_TARE = 250.0
+
+
+def spoolman_tare(spool: dict) -> tuple[float, str]:
+    """The empty-spool weight of a Spoolman spool, and where it came from.
+
+    Spoolman resolves the tare as the spool's own ``spool_weight``, then the
+    filament's ``spool_weight``, then the vendor's ``empty_spool_weight``, and
+    its own ``/measure`` endpoint follows that order. Skipping the vendor
+    level made a spool whose tare lives only on its vendor weigh against
+    250 g instead (#3195). Every Spoolman-mode tare in Bambuddy goes through
+    here so the weigh endpoints and the displayed core weight cannot drift
+    apart again.
+
+    Returns ``(grams, source)`` with source one of ``"spool"``,
+    ``"filament"``, ``"vendor"`` or ``"fallback"``. 0 is a real tare, not a
+    missing one; a value that is not a finite number counts as missing.
+    """
+    filament = spool.get("filament") or {}
+    vendor = filament.get("vendor") or {}
+    for source, raw in (
+        ("spool", spool.get("spool_weight")),
+        ("filament", filament.get("spool_weight")),
+        ("vendor", vendor.get("empty_spool_weight")),
+    ):
+        value = _safe_optional_float(raw)
+        if value is not None:
+            return value, source
+    return SPOOLMAN_FALLBACK_TARE, "fallback"
+
+
+def spoolman_net_weight(spool: dict) -> float | None:
+    """The net filament weight of a full Spoolman spool (its label weight).
+
+    Spoolman keeps it on the spool as ``initial_weight`` and falls back to the
+    filament's catalogue ``weight``, so one filament can have spools of
+    different sizes. Reading only the filament made a 250 g spool of a 1000 g
+    filament look four times its size (#3194). Like Spoolman, an
+    ``initial_weight`` of 0 counts as unset.
+
+    Returns None when neither level has a finite number (a bool is not
+    one); the filament's value is otherwise returned as stored, 0 included,
+    so callers keep their own handling of a filament without a weight.
+    """
+    initial = _weight_or_none(spool.get("initial_weight"))
+    if initial is not None and initial > 0:
+        return initial
+    filament = spool.get("filament")
+    return _weight_or_none(filament.get("weight")) if isinstance(filament, dict) else None
+
+
+def _weight_or_none(value: object) -> float | None:
+    # A bool is an int in Python; True must not read as a 1 g spool.
+    return None if isinstance(value, bool) else _safe_optional_float(value)
+
+
+def spoolman_price_to_cost_per_kg(price: object, net_weight: float) -> float | None:
+    """A Spoolman spool price as a price per kilogram.
+
+    Spoolman's ``price`` on a spool is what that spool cost, not a rate; the
+    spool form edits a rate, so the two are converted at the spool's net
+    weight. They agree only for 1000 g spools (#3194). Rounded to 4 places so
+    a round trip through the form doesn't drift by float noise.
+    """
+    value = _safe_optional_float(price)
+    if value is None or net_weight <= 0:
+        return None
+    return round(value * 1000.0 / net_weight, 4)
+
+
+def cost_per_kg_to_spoolman_price(cost_per_kg: float, net_weight: float) -> float:
+    """Inverse of spoolman_price_to_cost_per_kg: the price of a spool of ``net_weight`` grams."""
+    return round(cost_per_kg * net_weight / 1000.0, 4)
+
+
+def spoolman_price_weight(spool: dict) -> float:
+    """The weight a Spoolman spool's price is converted at.
+
+    The spool's exact net weight, not the whole-gram label weight, so a
+    250.7 g spool is not re-priced by a no-op edit. A spool with no usable
+    weight keeps the old 1:1 reading of its price as a per-kg rate.
+    """
+    net = spoolman_net_weight(spool)
+    return net if net is not None and net > 0 else 1000.0
+
+
+def spoolman_cost_per_kg(spool: dict) -> float | None:
+    """The spool form's cost per kg for a Spoolman spool (#3194)."""
+    return spoolman_price_to_cost_per_kg(spool.get("price"), spoolman_price_weight(spool))
+
+
 def _extract_extra_str(extra: dict, key: str) -> str:
     """Extract a JSON-encoded string from a Spoolman extra dict.
 
@@ -290,7 +382,7 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     extra_stops = parse_spoolman_multi_colors(filament)
     extra_colors: str | None = ",".join(extra_stops) if extra_stops else None
 
-    label_weight: int = _safe_int(filament.get("weight"), 1000)
+    label_weight: int = _safe_int(spoolman_net_weight(spool), 1000)
     real_used_weight: float = _safe_float(spool.get("used_weight"), 0.0)
     # Parity with internal mode (#1390): the InventorySpool shape lets the
     # frontend compute `remaining = label_weight - weight_used` and
@@ -380,11 +472,9 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         "effect_type": None,
         "brand": vendor.get("name") or None,
         "label_weight": label_weight,
-        "core_weight": _safe_int(
-            spool.get("spool_weight") if spool.get("spool_weight") is not None else filament.get("spool_weight"), 250
-        ),
+        "core_weight": _safe_int(spoolman_tare(spool)[0], 250),
         # True when the spool has no spool_weight of its own and core_weight is
-        # the filament type's (or the 250 g fallback). The spool form needs it
+        # the filament type's, the vendor's or the 250 g fallback. The spool form needs it
         # to copy a spool without dropping an own tare or stamping an
         # inherited one (#2908).
         "core_weight_is_inherited": spool.get("spool_weight") is None,
@@ -417,7 +507,8 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         "created_at": created_at,
         # Spoolman has no updated_at field; use registered timestamp as best available proxy
         "updated_at": created_at,
-        "cost_per_kg": _safe_optional_float(spool.get("price")),
+        # Spoolman's spool price is what the whole spool cost (#3194).
+        "cost_per_kg": spoolman_cost_per_kg(spool),
         # Spoolman's filament.article_number maps 1:1 onto the internal
         # material number (#2870): both identify the purchasable product.
         # Trimmed for the same reason the schema validator trims the internal

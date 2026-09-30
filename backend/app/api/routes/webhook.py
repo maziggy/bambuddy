@@ -11,6 +11,7 @@ from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
+from backend.app.schemas.printer import HMSErrorResponse, hms_error_responses
 from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
 from backend.app.services.printer_manager import printer_manager
 
@@ -41,11 +42,28 @@ class QueueAddResponse(BaseModel):
 class PrinterStatusResponse(BaseModel):
     id: int
     name: str
+    # The printer's own serial, so a client can tell printers apart by what
+    # they report rather than by Bambuddy's row id (#2919).
+    serial_number: str
     connected: bool
     state: str | None
     current_print: str | None
     progress: float | None
+    # Minutes, as the printer reports it. Kept for existing clients;
+    # remaining_seconds is the same estimate in seconds, the unit the
+    # notification pipeline uses (#2919).
     remaining_time: int | None
+    remaining_seconds: int | None = None
+    layer_num: int | None = None
+    total_layers: int | None = None
+    # Bambu's id for the running job. A new value marks a new print, even when
+    # two prints of the same file run back to back between two polls. None
+    # when the job has no id: Bambu reports "0" or "" for local prints (for
+    # example one started on the printer), the same reading main.py uses.
+    subtask_id: str | None = None
+    # Live HMS faults, in the same shape as GET /printers/{id}/status. They
+    # tell a filament runout apart from someone pressing pause.
+    hms_errors: list[HMSErrorResponse] = []
 
 
 class QueueStatusResponse(BaseModel):
@@ -54,6 +72,18 @@ class QueueStatusResponse(BaseModel):
     pending: int
     printing: int
     items: list[dict]
+
+
+def _job_id(subtask_id) -> str | None:
+    """The printer's job id as text, or None when the job has none.
+
+    Stored as the printer sent it, so coerce: a numeric id would fail
+    validation and turn a status poll into a 500.
+    """
+    if subtask_id is None:
+        return None
+    value = str(subtask_id).strip()
+    return None if value in ("", "0") else value
 
 
 # Webhook endpoints
@@ -278,14 +308,31 @@ async def webhook_get_printer_status(
     # attribute access, not dict lookup. The previous `.get(...)` calls raised
     # AttributeError and surfaced as a generic 500 for any printer that
     # actually had a status row (#1584).
+    if status is None:
+        return PrinterStatusResponse(
+            id=printer.id,
+            name=printer.name,
+            serial_number=printer.serial_number,
+            connected=False,
+            state=None,
+            current_print=None,
+            progress=None,
+            remaining_time=None,
+        )
     return PrinterStatusResponse(
         id=printer.id,
         name=printer.name,
-        connected=status.connected if status else False,
-        state=status.state if status else None,
-        current_print=status.current_print if status else None,
-        progress=status.progress if status else None,
-        remaining_time=status.remaining_time if status else None,
+        serial_number=printer.serial_number,
+        connected=status.connected,
+        state=status.state,
+        current_print=status.current_print,
+        progress=status.progress,
+        remaining_time=status.remaining_time,
+        remaining_seconds=status.remaining_time * 60 if status.remaining_time is not None else None,
+        layer_num=status.layer_num,
+        total_layers=status.total_layers,
+        subtask_id=_job_id(status.subtask_id),
+        hms_errors=hms_error_responses(status.hms_errors),
     )
 
 

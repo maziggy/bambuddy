@@ -525,3 +525,113 @@ class TestUpdateSpoolWeightPriority:
         # remaining = 600 - 250 (fallback) = 350
         mock_client.update_spool.assert_called_once_with(spool_id=42, remaining_weight=pytest.approx(350.0))
         assert response.json().get("warnings")
+
+
+# ---------------------------------------------------------------------------
+# Vendor-level tare (#3195): spool -> filament -> vendor.empty_spool_weight -> 250 g
+# ---------------------------------------------------------------------------
+
+# The reporter's numbers: Sunlu's empty_spool_weight is 211.7 g, the scale reads
+# 1177 g, and Spoolman's own /measure gives 965.3 g remaining.
+SUNLU_VENDOR = {"id": 5, "name": "Sunlu", "empty_spool_weight": 211.7}
+
+SPOOL_WITH_VENDOR_TARE_ONLY = {
+    **SAMPLE_SPOOL_WITH_FILAMENT_7,
+    "spool_weight": None,
+    "filament": {**SAMPLE_SPOOL_WITH_FILAMENT_7["filament"], "spool_weight": None, "vendor": SUNLU_VENDOR},
+}
+
+
+class TestVendorTare:
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_sync_weight_uses_vendor_empty_spool_weight(self, async_client: AsyncClient, spoolman_settings):
+        mock_client = make_mock_client()
+        mock_client.get_spool = AsyncMock(return_value=SPOOL_WITH_VENDOR_TARE_ONLY)
+        mock_client.update_spool_full = AsyncMock(return_value=SPOOL_WITH_VENDOR_TARE_ONLY)
+
+        with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
+            response = await async_client.patch(
+                "/api/v1/spoolman/inventory/spools/42/weight",
+                json={"weight_grams": 1177.0},
+            )
+
+        assert response.status_code == 200
+        assert mock_client.update_spool_full.call_args.kwargs["remaining_weight"] == pytest.approx(965.3)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_sync_weight_filament_tare_still_beats_vendor(self, async_client: AsyncClient, spoolman_settings):
+        spool_data = {
+            **SPOOL_WITH_VENDOR_TARE_ONLY,
+            "filament": {**SPOOL_WITH_VENDOR_TARE_ONLY["filament"], "spool_weight": 180.0},
+        }
+        mock_client = make_mock_client()
+        mock_client.get_spool = AsyncMock(return_value=spool_data)
+        mock_client.update_spool_full = AsyncMock(return_value=spool_data)
+
+        with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
+            response = await async_client.patch(
+                "/api/v1/spoolman/inventory/spools/42/weight",
+                json={"weight_grams": 1177.0},
+            )
+
+        assert response.status_code == 200
+        assert mock_client.update_spool_full.call_args.kwargs["remaining_weight"] == pytest.approx(997.0)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spoolbuddy_scale_uses_vendor_tare_without_warning(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        mock_client = MagicMock()
+        mock_client.get_spool = AsyncMock(return_value=SPOOL_WITH_VENDOR_TARE_ONLY)
+        mock_client.update_spool = AsyncMock(return_value=None)
+
+        with patch(
+            "backend.app.api.routes.spoolbuddy._get_spoolman_client_or_none",
+            AsyncMock(return_value=mock_client),
+        ):
+            response = await async_client.post(
+                "/api/v1/spoolbuddy/scale/update-spool-weight",
+                json={"spool_id": 42, "weight_grams": 1177.0},
+            )
+
+        assert response.status_code == 200
+        mock_client.update_spool.assert_called_once_with(spool_id=42, remaining_weight=pytest.approx(965.3))
+        # The vendor tare is a real value, so the 250 g fallback warning must not fire.
+        assert not response.json().get("warnings")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_option_a_stamps_vendor_tare_when_filament_had_none(
+        self, async_client: AsyncClient, spoolman_settings
+    ):
+        """Inheriting spools weighed against the vendor's tare before the filament
+        got its own, so keeping them unchanged means stamping the vendor's value."""
+        filament = {**SAMPLE_FILAMENT, "spool_weight": None, "vendor": SUNLU_VENDOR}
+        mock_client = make_mock_client(filament=filament, all_spools=[SPOOL_WITH_VENDOR_TARE_ONLY])
+
+        with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
+            response = await async_client.patch(
+                "/api/v1/spoolman/inventory/filaments/7",
+                json={"spool_weight": 196.0, "keep_existing_spools": True},
+            )
+
+        assert response.status_code == 200
+        mock_client.update_spool_full.assert_called_once_with(spool_id=42, spool_weight=pytest.approx(211.7))
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_option_a_filament_tare_beats_vendor_tare(self, async_client: AsyncClient, spoolman_settings):
+        filament = {**SAMPLE_FILAMENT, "spool_weight": 250.0, "vendor": SUNLU_VENDOR}
+        mock_client = make_mock_client(filament=filament, all_spools=[SPOOL_WITH_VENDOR_TARE_ONLY])
+
+        with patch("backend.app.api.routes.spoolman_inventory._get_client", AsyncMock(return_value=mock_client)):
+            response = await async_client.patch(
+                "/api/v1/spoolman/inventory/filaments/7",
+                json={"spool_weight": 196.0, "keep_existing_spools": True},
+            )
+
+        assert response.status_code == 200
+        mock_client.update_spool_full.assert_called_once_with(spool_id=42, spool_weight=pytest.approx(250.0))

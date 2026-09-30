@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from httpx import AsyncClient
 
-from backend.app.services.bambu_mqtt import PrinterState
+from backend.app.services.bambu_mqtt import HMSError, PrinterState
 
 
 @pytest.fixture
@@ -94,6 +94,7 @@ class TestWebhookGetPrinterStatus:
         assert body["current_print"] == "bench.3mf"
         assert body["progress"] == 42.0
         assert body["remaining_time"] == 1234
+        assert body["remaining_seconds"] == 1234 * 60
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -123,6 +124,12 @@ class TestWebhookGetPrinterStatus:
         assert body["current_print"] is None
         assert body["progress"] is None
         assert body["remaining_time"] is None
+        assert body["serial_number"] == "00M00A000000010"
+        assert body["remaining_seconds"] is None
+        assert body["layer_num"] is None
+        assert body["total_layers"] is None
+        assert body["subtask_id"] is None
+        assert body["hms_errors"] == []
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -136,6 +143,173 @@ class TestWebhookGetPrinterStatus:
             headers={"X-API-Key": api_key_data},
         )
         assert resp.status_code == 404
+
+
+async def _status(async_client: AsyncClient, key: str, printer_id: int, state: PrinterState | None):
+    with patch(
+        "backend.app.api.routes.webhook.printer_manager.get_status",
+        MagicMock(return_value=state),
+    ):
+        return await async_client.get(
+            f"/api/v1/webhook/printer/{printer_id}/status",
+            headers={"X-API-Key": key},
+        )
+
+
+class TestWebhookPrinterStatusFields:
+    """What an external client such as a phone Live Activity needs from the
+    status route, all of it already on ``PrinterState`` (#2919)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_running_print_reports_layers_job_and_seconds(
+        self, async_client: AsyncClient, api_key_data, printer_row
+    ):
+        state = PrinterState(
+            connected=True,
+            state="RUNNING",
+            current_print="bench.3mf",
+            progress=62.0,
+            remaining_time=107,
+            layer_num=88,
+            total_layers=240,
+            subtask_id="512345678",
+        )
+        body = (await _status(async_client, api_key_data, printer_row.id, state)).json()
+
+        assert body["serial_number"] == "00M00A000000010"
+        assert body["layer_num"] == 88
+        assert body["total_layers"] == 240
+        assert body["subtask_id"] == "512345678"
+        # remaining_time stays in minutes for existing clients.
+        assert body["remaining_time"] == 107
+        assert body["remaining_seconds"] == 6420
+        assert body["hms_errors"] == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_paused_print_says_why(self, async_client: AsyncClient, api_key_data, printer_row):
+        """A runout pause carries its HMS fault; a user pause carries none."""
+        runout = HMSError(
+            code="0x20008",
+            attr=0x07008000,
+            module=0x07,
+            severity=2,
+            description="Filament has run out.",
+            actions=["RESUME_PRINTING"],
+            job_id="512345678",
+            full_code="0700800000020008",
+        )
+        state = PrinterState(connected=True, state="PAUSE", subtask_id="512345678", hms_errors=[runout])
+        body = (await _status(async_client, api_key_data, printer_row.id, state)).json()
+
+        assert body["hms_errors"] == [
+            {
+                "code": "0x20008",
+                "attr": 0x07008000,
+                "module": 0x07,
+                "severity": 2,
+                "actions": ["RESUME_PRINTING"],
+                "job_id": "512345678",
+                "full_code": "0700800000020008",
+                "description": "Filament has run out.",
+            }
+        ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_hms_errors_match_the_printer_status_route(
+        self, async_client: AsyncClient, api_key_data, printer_row
+    ):
+        """One shape for a fault, whether the UI or an API key asks."""
+        from backend.app.api.routes.printers import hms_error_responses as used_by_printers_route
+
+        fault = HMSError(code="0x1", attr=0x0300_0100, module=0x03, severity=1, full_code="0300010000000001")
+        state = PrinterState(connected=True, state="FAILED", hms_errors=[fault])
+        body = (await _status(async_client, api_key_data, printer_row.id, state)).json()
+
+        assert body["hms_errors"] == [e.model_dump() for e in used_by_printers_route([fault])]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_numeric_subtask_id_is_returned_as_text(self, async_client: AsyncClient, api_key_data, printer_row):
+        """Stored as the printer sent it; a number must not 500 the poll."""
+        state = PrinterState(connected=True, state="RUNNING", subtask_id=512345678)
+        resp = await _status(async_client, api_key_data, printer_row.id, state)
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["subtask_id"] == "512345678"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("raw", ["0", "", " ", 0])
+    async def test_a_job_without_an_id_reports_null(self, async_client: AsyncClient, api_key_data, printer_row, raw):
+        """Bambu reports "0" or "" for local prints. Every such print would
+        share the same "id", so it must not be handed out as one."""
+        state = PrinterState(connected=True, state="RUNNING", subtask_id=raw)
+        resp = await _status(async_client, api_key_data, printer_row.id, state)
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["subtask_id"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_idle_printer_reports_zero_not_null(self, async_client: AsyncClient, api_key_data, printer_row):
+        """A connected idle printer has real zeros; null is kept for "no status yet"."""
+        state = PrinterState(connected=True, state="IDLE")
+        body = (await _status(async_client, api_key_data, printer_row.id, state)).json()
+
+        assert body["remaining_time"] == 0
+        assert body["remaining_seconds"] == 0
+        assert body["layer_num"] == 0
+        assert body["total_layers"] == 0
+        assert body["subtask_id"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_needs_the_read_status_scope(self, async_client: AsyncClient, db_session, printer_row):
+        from backend.app.core.auth import generate_api_key
+        from backend.app.models.api_key import APIKey
+
+        full_key, key_hash, key_prefix = generate_api_key()
+        db_session.add(
+            APIKey(
+                name="no-status",
+                key_hash=key_hash,
+                key_prefix=key_prefix,
+                can_read_status=False,
+                can_queue=True,
+                enabled=True,
+            )
+        )
+        await db_session.commit()
+
+        resp = await _status(async_client, full_key, printer_row.id, PrinterState(connected=True))
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_key_for_another_printer_sees_nothing(self, async_client: AsyncClient, db_session, printer_row):
+        """The serial and faults are only for keys allowed on this printer."""
+        from backend.app.core.auth import generate_api_key
+        from backend.app.models.api_key import APIKey
+
+        full_key, key_hash, key_prefix = generate_api_key()
+        db_session.add(
+            APIKey(
+                name="other-printer",
+                key_hash=key_hash,
+                key_prefix=key_prefix,
+                can_read_status=True,
+                printer_ids=[printer_row.id + 1000],
+                enabled=True,
+            )
+        )
+        await db_session.commit()
+
+        resp = await _status(async_client, full_key, printer_row.id, PrinterState(connected=True))
+        assert resp.status_code == 403
+        assert "00M00A000000010" not in resp.text
 
 
 class TestWebhookStopPrint:

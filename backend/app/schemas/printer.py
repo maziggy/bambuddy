@@ -181,6 +181,27 @@ class HMSErrorResponse(BaseModel):
     description: str | None = None
 
 
+def hms_error_responses(errors) -> list[HMSErrorResponse]:
+    """A printer's live HMS faults (``PrinterState.hms_errors``) as API rows.
+
+    Shared by the printer status route and the webhook status route, so a
+    fault reads the same to the UI and to an API-key client (#2919).
+    """
+    return [
+        HMSErrorResponse(
+            code=e.code,
+            attr=e.attr,
+            module=e.module,
+            severity=e.severity,
+            actions=e.actions,
+            job_id=e.job_id,
+            full_code=e.full_code,
+            description=e.description,
+        )
+        for e in (errors or [])
+    ]
+
+
 class AMSTray(BaseModel):
     id: int
     tray_color: str | None = None

@@ -11,7 +11,9 @@ import React from 'react';
 import { AmsUnitCard } from '../../../components/spoolbuddy/AmsUnitCard';
 import type { AMSUnit, AMSTray } from '../../../api/client';
 
-vi.mock('../../../utils/amsHelpers', () => ({
+vi.mock('../../../utils/amsHelpers', async (importOriginal) => ({
+  // Keep the real getEmptySlotKind: the "Empty" vs "?" cases below test it.
+  ...(await importOriginal<typeof import('../../../utils/amsHelpers')>()),
   getFillBarColor: (fill: number) => {
     if (fill > 50) return '#00ae42';
     if (fill >= 15) return '#f59e0b';

@@ -1,0 +1,245 @@
+/* Scoped to the opt-in renderer. Existing OBS sources retain their styling. */
+.updated-overlay {
+  --overlay-scale: 1;
+  --overlay-space: clamp(12px, 2.5vmin, 32px);
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 100vh;
+  color: #fff;
+  background: #10171b;
+  font-size: calc(clamp(14px, 2.2vmin, 28px) * var(--overlay-scale));
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+.updated-overlay[data-size='small'] {
+  --overlay-scale: 0.8;
+}
+.updated-overlay[data-size='large'] {
+  --overlay-scale: 1.2;
+}
+.updated-overlay__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--overlay-space);
+  padding: var(--overlay-space);
+  z-index: 1;
+}
+.updated-overlay__identity {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  min-width: 0;
+  padding: 0.65em 0.9em;
+  border-radius: 0.7em;
+  background: rgb(12 19 23 / 90%);
+}
+.updated-overlay__identity svg {
+  flex-shrink: 0;
+  width: 2em;
+  height: 2em;
+}
+.updated-overlay__identity div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.updated-overlay__identity strong {
+  display: block;
+  font-size: 1.35em;
+}
+.updated-overlay__identity span {
+  display: block;
+  color: #b8c0c7;
+}
+.updated-overlay__logo {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.updated-overlay__logo img {
+  width: clamp(100px, 19vmin, 230px);
+  height: auto;
+}
+.updated-overlay__camera {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+}
+.updated-overlay__camera img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+}
+.updated-overlay__panel {
+  padding: var(--overlay-space);
+  background: rgb(12 19 23 / 88%);
+}
+.updated-overlay__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  margin-bottom: 0.8em;
+}
+.updated-overlay__summary h1 {
+  font-size: 1.65em;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.updated-overlay__status {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  font-size: 1.15em;
+  font-weight: 600;
+  color: #b8c0c7;
+}
+.updated-overlay__status > span {
+  width: 0.75em;
+  height: 0.75em;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.updated-overlay[data-state='RUNNING'] .updated-overlay__status,
+.updated-overlay[data-state='FINISH'] .updated-overlay__status {
+  color: #00d76a;
+}
+.updated-overlay[data-state='PAUSE'] .updated-overlay__status {
+  color: #fbbf24;
+}
+.updated-overlay[data-state='FAILED'] .updated-overlay__status {
+  color: #f87171;
+}
+.updated-overlay__progress {
+  display: flex;
+  align-items: center;
+  gap: 1em;
+}
+.updated-overlay__progress > span {
+  color: #b8c0c7;
+  font-size: 0.8em;
+  text-transform: uppercase;
+}
+.updated-overlay__progress > strong {
+  color: #00d76a;
+  font-size: 1.4em;
+}
+.updated-overlay__progress > div {
+  flex: 1;
+  height: 0.65em;
+  border-radius: 1em;
+  overflow: hidden;
+  background: #3c454c;
+}
+.updated-overlay__progress > div > div {
+  height: 100%;
+  border-radius: inherit;
+  background: #00d76a;
+  transition: width 0.5s;
+}
+.updated-overlay__readings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1em;
+  margin-top: 0.8em;
+  padding-top: 0.8em;
+  border-top: 1px solid #ffffff35;
+}
+.updated-overlay__stats,
+.updated-overlay__temperatures {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 1em;
+}
+.updated-overlay__reading {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.updated-overlay__reading svg {
+  width: 1.8em;
+  height: 1.8em;
+  flex-shrink: 0;
+}
+.updated-overlay__reading > div > span {
+  display: block;
+  color: #b8c0c7;
+  font-size: 0.7em;
+  text-transform: uppercase;
+}
+.updated-overlay__reading strong {
+  display: block;
+  font-size: 1.3em;
+  overflow-wrap: anywhere;
+}
+.updated-overlay__reading small {
+  font-size: 0.65em;
+  color: #b8c0c7;
+}
+@media (orientation: portrait) {
+  .updated-overlay {
+    display: grid;
+    font-size: calc(clamp(14px, 3vmin, 36px) * var(--overlay-scale));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto;
+    min-height: 100vh;
+  }
+  .updated-overlay__header {
+    grid-row: 1;
+    align-items: center;
+    background: #10171b;
+  }
+  .updated-overlay__identity {
+    background: none;
+    padding: 0;
+  }
+  .updated-overlay__camera {
+    position: relative;
+    grid-row: 2;
+    min-height: 30vh;
+    z-index: 0;
+  }
+  .updated-overlay__panel {
+    grid-row: 3;
+    background: #10171b;
+  }
+  .updated-overlay__summary {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 0.65em;
+  }
+  .updated-overlay__progress {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.3em;
+  }
+  .updated-overlay__progress > div {
+    flex: 0 0 100%;
+    order: 1;
+  }
+  .updated-overlay__readings {
+    flex-direction: column;
+  }
+  .updated-overlay__temperatures:not(:first-child) {
+    border-top: 1px solid #ffffff35;
+    padding-top: 0.8em;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .updated-overlay__progress > div > div {
+    transition: none;
+  }
+}

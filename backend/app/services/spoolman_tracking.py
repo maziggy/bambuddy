@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import delete, select
 
+from backend.app.api.routes._spoolman_helpers import spoolman_net_weight
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session
 from backend.app.services.spoolman import (
@@ -693,10 +694,11 @@ def _spool_cost_per_gram(spool: dict | None) -> float | None:
     different vendor, import duty. The spool's own value wins, which is the
     order the Spoolman UI presents them in.
 
-    The divisor is ``filament.weight``: net filament grams, excluding the core.
-    That is the same field the remain-delta path already divides by to turn a
-    remain%% drop into grams, so a spool that can be charged by percentage can
-    always be priced too.
+    Each price is divided by the net weight it was paid for, excluding the
+    core: the spool's price by the spool's own ``initial_weight`` (falling
+    back to the filament's), the catalogue price by ``filament.weight``. A
+    250 g spool of a 1000 g filament was otherwise charged at a quarter of
+    its rate (#3194).
 
     A missing or non-positive price is not a free spool, it is an unpriced one,
     and returns None so the caller can fall back to the global default rate
@@ -715,12 +717,12 @@ def _spool_cost_per_gram(spool: dict | None) -> float | None:
     # client that writes 0 instead is common enough that reading it as free
     # would price a whole print at the default rate while a perfectly good
     # catalogue price sat one level down.
-    raw_price = spool.get("price")
-    if _as_positive_number(raw_price) is None:
-        raw_price = filament.get("price")
-
-    price = _as_positive_number(raw_price)
-    weight = _as_positive_number(filament.get("weight"))
+    price = _as_positive_number(spool.get("price"))
+    if price is not None:
+        weight = _as_positive_number(spoolman_net_weight(spool))
+    else:
+        price = _as_positive_number(filament.get("price"))
+        weight = _as_positive_number(filament.get("weight"))
     if price is None or weight is None:
         return None
     # Both operands can be finite and the quotient still overflow. A non-finite
@@ -1657,7 +1659,7 @@ async def _report_remain_delta_for_slots(
             )
             continue
 
-        # Look up the spool's filament reference weight. Use a fresh GET so
+        # Look up the spool's net weight (#3194). Use a fresh GET so
         # we don't depend on a stale cached_spools list. Failure here is
         # silent-skip rather than fatal — other slots can still be written.
         try:
@@ -1666,10 +1668,10 @@ async def _report_remain_delta_for_slots(
             logger.debug("[SPOOLMAN] AMS%d-T%d: get_spool(%s) failed: %s", ams_id, tray_id, spool_id, exc)
             continue
         filament = spool.get("filament") or {}
-        ref_weight = filament.get("weight")
-        if not ref_weight or ref_weight <= 0:
+        ref_weight = _as_positive_number(spoolman_net_weight(spool))
+        if ref_weight is None:
             logger.debug(
-                "[SPOOLMAN] AMS%d-T%d: spool %s has no filament.weight, skipping remain-delta",
+                "[SPOOLMAN] AMS%d-T%d: spool %s has no initial_weight or filament.weight, skipping remain-delta",
                 ams_id,
                 tray_id,
                 spool_id,
@@ -1688,7 +1690,7 @@ async def _report_remain_delta_for_slots(
             continue
 
         spools_updated += 1
-        # ``spool`` here is the full row fetched above for its filament weight,
+        # ``spool`` here is the full row fetched above for its net weight,
         # so the price is already in hand (#2591).
         if cost_out is not None:
             cost_out.add(grams_used, spool, f"AMS{ams_id}-T{tray_id}")

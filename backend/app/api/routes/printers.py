@@ -36,7 +36,6 @@ from backend.app.schemas.printer import (
     ExtruderSlotResponse,
     FilaSwitchResponse,
     HmsActionBody,
-    HMSErrorResponse,
     NozzleInfoResponse,
     NozzleRackSlot,
     PrinterCreate,
@@ -48,6 +47,7 @@ from backend.app.schemas.printer import (
     PrinterStatus,
     PrinterUpdate,
     PrintOptionsResponse,
+    hms_error_responses,
 )
 from backend.app.services import drying_preflight
 from backend.app.services.bambu_ftp import (
@@ -508,20 +508,7 @@ async def get_printer_status(
     if state.state in ("RUNNING", "PAUSE") and state.gcode_file:
         cover_url = f"/api/v1/printers/{printer_id}/cover"
 
-    # Convert HMS errors to response format
-    hms_errors = [
-        HMSErrorResponse(
-            code=e.code,
-            attr=e.attr,
-            module=e.module,
-            severity=e.severity,
-            actions=e.actions,
-            job_id=e.job_id,
-            full_code=e.full_code,
-            description=e.description,
-        )
-        for e in (state.hms_errors or [])
-    ]
+    hms_errors = hms_error_responses(state.hms_errors)
 
     # Parse AMS data from raw_data
     ams_units = []

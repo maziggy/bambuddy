@@ -10,7 +10,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
+from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool, spoolman_net_weight
 from backend.app.api.routes.spoolman_inventory import _clear_stale_tag_links
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
@@ -363,6 +363,7 @@ async def sync_printer_ams(
                 sync_result = await client.sync_ams_tray(
                     tray,
                     printer.name,
+                    db,
                     # Per-print tracking owns weight updates (#1119); manual sync
                     # only refreshes spool metadata + slot assignments here.
                     disable_weight_sync=True,
@@ -580,6 +581,7 @@ async def sync_all_printers(
                     sync_result = await client.sync_ams_tray(
                         tray,
                         printer.name,
+                        db,
                         # Per-print tracking owns weight updates (#1119); manual
                         # sync-all only refreshes spool metadata + slot assignments.
                         disable_weight_sync=True,
@@ -804,11 +806,12 @@ async def get_linked_spools(
             # Remove quotes if present (JSON encoded string)
             clean_tag = tag.strip('"').upper()
             if clean_tag:
-                filament = spool.get("filament") or {}
                 linked[clean_tag] = {
                     "id": spool["id"],
                     "remaining_weight": spool.get("remaining_weight"),
-                    "filament_weight": filament.get("weight"),
+                    # The spool's own net weight, falling back to the
+                    # filament's; the key predates initial_weight (#3194).
+                    "filament_weight": spoolman_net_weight(spool),
                 }
 
     return {"linked": linked}
@@ -1292,6 +1295,7 @@ async def create_spool_from_slot(
     sync_result = await client.sync_ams_tray(
         tray,
         printer.name,
+        db,
         disable_weight_sync=True,
         auto_add_unknown_rfid=True,
     )

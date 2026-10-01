@@ -765,6 +765,30 @@ describe('SliceModal', () => {
     });
   });
 
+  it('starts with auto-arrange ticked for a freshly combined file', async () => {
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Combined.3mf' },
+      onClose: vi.fn(),
+      defaultAutoArrange: true,
+    });
+
+    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    expect(screen.getByRole('checkbox', { name: /Auto-arrange/ })).toBeChecked();
+
+    await userEvent.setup().click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => {
+      const [, body] = vi.mocked(mockApi.sliceLibraryFile).mock.calls[0];
+      expect(body).toHaveProperty('auto_arrange', true);
+    });
+  });
+
   it('omits both layout flags when neither box is ticked (#2548)', async () => {
     mockApi.sliceLibraryFile.mockResolvedValue({
       job_id: 42,

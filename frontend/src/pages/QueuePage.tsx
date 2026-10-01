@@ -82,7 +82,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { QueueStatsBar } from '../components/QueueStatsBar';
 import { CompactHistoryRow } from '../components/CompactHistoryRow';
 import { QueueTimelineView } from '../components/QueueTimelineView';
-import { compareQueueOrder, compareQueueOrderAcrossLanes } from '../utils/queueOrder';
+import { compareQueueOrder } from '../utils/queueOrder';
 import { BatchOrdersView } from '../components/BatchOrdersView';
 import { buildLoadedFilaments, type LoadedFilament } from '../hooks/useFilamentMapping';
 
@@ -2056,7 +2056,7 @@ export function QueuePage() {
 
     // When SJF is enabled, override sort to match scheduler order
     if (settings?.queue_shortest_first) {
-      return [...items].sort((a, b) => compareQueueOrderAcrossLanes(a, b, true));
+      return [...items].sort((a, b) => compareQueueOrder(a, b, true));
     }
 
     return [...items].sort((a, b) => {

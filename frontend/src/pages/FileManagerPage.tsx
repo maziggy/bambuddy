@@ -52,6 +52,7 @@ import {
   StickyNote,
   Camera,
   Eye,
+  Combine,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type {
@@ -70,6 +71,7 @@ import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 import { PrintModal } from '../components/PrintModal';
 import { ModelViewerModal } from '../components/ModelViewerModal';
 import { SliceModal } from '../components/SliceModal';
+import { CombineFilesModal } from '../components/CombineFilesModal';
 import { RunWithPipelineModal } from '../components/RunWithPipelineModal';
 import { BulkTagsPickerModal } from '../components/BulkTagsPickerModal';
 import { FileUploadModal } from '../components/FileUploadModal';
@@ -1184,6 +1186,9 @@ export function FileManagerPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'folder' | 'bulk'; id: number; count?: number } | null>(null);
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
   const [sliceFile, setSliceFile] = useState<LibraryFileListItem | null>(null);
+  const [showCombineModal, setShowCombineModal] = useState(false);
+  // A file just built by "Combine to 3MF", handed straight to the SliceModal.
+  const [sliceCombined, setSliceCombined] = useState<{ id: number; filename: string } | null>(null);
   // Slicer Pipelines (#1425 PR B) — file gets "Run with pipeline" action.
   const [runPipelineFile, setRunPipelineFile] = useState<LibraryFileListItem | null>(null);
   const [renameItem, setRenameItem] = useState<{ type: 'file' | 'folder'; id: number; name: string } | null>(null);
@@ -1771,6 +1776,14 @@ export function FileManagerPage() {
   const selectedSlicedFiles = useMemo(() => {
     if (!files) return [];
     return files.filter(f => selectedFiles.includes(f.id) && isSlicedLibraryFile(f));
+  }, [files, selectedFiles]);
+
+  // "Combine to 3MF" is offered only when every selected file is an STL, so
+  // the action never silently drops part of the selection.
+  const selectedStlFiles = useMemo(() => {
+    if (!files) return [];
+    const stls = files.filter(f => selectedFiles.includes(f.id) && f.filename.toLowerCase().endsWith('.stl'));
+    return stls.length === selectedFiles.length ? stls : [];
   }, [files, selectedFiles]);
 
   // The clicked file's variant group, so printing one member offers the rest
@@ -2549,6 +2562,18 @@ export function FileManagerPage() {
                         <span className="hidden sm:inline">{t('fileManager.variants.groupAction')}</span>
                       </Button>
                     )}
+                    {selectedStlFiles.length >= 1 && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setShowCombineModal(true)}
+                        disabled={!hasPermission('library:upload')}
+                        title={t('fileManager.combine.tooltip')}
+                      >
+                        <Combine className="w-4 h-4 sm:mr-1" />
+                        <span className="hidden sm:inline">{t('fileManager.combine.action')}</span>
+                      </Button>
+                    )}
                     <Button
                       variant="secondary"
                       size="sm"
@@ -3136,6 +3161,30 @@ export function FileManagerPage() {
         <SliceModal
           source={{ kind: 'libraryFile', id: sliceFile.id, filename: sliceFile.filename }}
           onClose={() => setSliceFile(null)}
+        />
+      )}
+
+      {showCombineModal && selectedStlFiles.length > 0 && (
+        <CombineFilesModal
+          files={selectedStlFiles}
+          folderId={selectedFolderId}
+          // canSlice() also covers the desktop-slicer handoff; "open the
+          // slicer next" means the in-app SliceModal, so the sidecar must be on.
+          canSlice={!!settings?.use_slicer_api && canSlice()}
+          onClose={() => setShowCombineModal(false)}
+          onCombined={(result, sliceNext) => {
+            setShowCombineModal(false);
+            setSelectedFiles([]);
+            if (sliceNext) setSliceCombined({ id: result.id, filename: result.filename });
+          }}
+        />
+      )}
+
+      {sliceCombined && (
+        <SliceModal
+          source={{ kind: 'libraryFile', id: sliceCombined.id, filename: sliceCombined.filename }}
+          onClose={() => setSliceCombined(null)}
+          defaultAutoArrange
         />
       )}
 

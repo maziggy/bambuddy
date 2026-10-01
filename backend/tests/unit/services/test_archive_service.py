@@ -318,6 +318,80 @@ class TestThreeMFMetadataHTMLUnescape:
         assert parsed.get("print_name") == "Benchy"
 
 
+class TestModelMetadataSkipsMeshes:
+    """The metadata scans stream past ``<mesh>`` bodies instead of reading the
+    whole model entry: a combined plate keeps hundreds of MB of geometry inline
+    in 3D/3dmodel.model (#3162). Metadata after ``</build>``, where
+    BambuStudio writes its MakerWorld fields, must still be found."""
+
+    MESH = (
+        '<mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/>'
+        '<vertex x="0" y="1" z="0"/></vertices><triangles><triangle v1="0" v2="1" v3="2"/>'
+        "</triangles></mesh>"
+    )
+
+    def _model(self) -> str:
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<model><metadata name="Title">Before &amp; mesh</metadata><resources>'
+            f'<object id="1" type="model">{self.MESH}</object>'
+            f'<object id="2" type="model">{self.MESH}</object>'
+            '</resources><build><item objectid="1"/></build>'
+            '<metadata name="Designer">After build</metadata>'
+            '<metadata name="CopyRight">https://makerworld.com/en/models/130726</metadata>'
+            "</model>"
+        )
+
+    def _write(self, tmp_path, model: str):
+        import zipfile
+
+        path = tmp_path / "plate.3mf"
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("3D/3dmodel.model", model)
+        return path
+
+    def test_meshes_are_dropped_and_everything_else_kept(self, tmp_path):
+        import zipfile
+
+        from backend.app.services.archive import read_3dmodel_without_meshes
+
+        model = self._model()
+        with zipfile.ZipFile(self._write(tmp_path, model)) as zf:
+            text = read_3dmodel_without_meshes(zf)
+
+        assert "<vertex" not in text and "<triangle" not in text
+        assert text == model.replace(self.MESH, "")
+
+    def test_tags_split_across_chunks(self, tmp_path, monkeypatch):
+        """Every chunk size from 1 byte up puts ``<mesh`` and ``</mesh>``
+        across a boundary somewhere; the result must not change."""
+        import zipfile
+
+        from backend.app.services import archive
+
+        model = self._model()
+        path = self._write(tmp_path, model)
+        expected = model.replace(self.MESH, "")
+        for chunk in range(1, 40):
+            monkeypatch.setattr(archive, "_MODEL_READ_CHUNK", chunk)
+            with zipfile.ZipFile(path) as zf:
+                assert archive.read_3dmodel_without_meshes(zf) == expected, chunk
+
+    def test_parsers_still_find_metadata_after_the_build(self, tmp_path):
+        from backend.app.services.archive import ProjectPageParser, ThreeMFParser
+
+        path = self._write(tmp_path, self._model())
+
+        parsed = ThreeMFParser(str(path)).parse()
+        assert parsed.get("print_name") == "Before & mesh"
+        assert parsed.get("designer") == "After build"
+        assert parsed.get("makerworld_model_id") == "130726"
+
+        page = ProjectPageParser(str(path)).parse(archive_id=1)
+        assert page["title"] == "Before & mesh"
+        assert page["designer"] == "After build"
+
+
 class TestPrintableObjectsExtraction:
     """Tests for extracting printable objects count from 3MF files."""
 

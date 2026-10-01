@@ -2761,7 +2761,7 @@ export interface PrintQueueItemCreate {
   require_previous_success?: boolean;
   auto_off_after?: boolean;
   manual_start?: boolean;  // Requires manual trigger to start (staged)
-  insert_at_top?: boolean;  // Insert ahead of other pending items in the same queue scope
+  insert_at_top?: boolean;  // Insert ahead of other pending items (one queue order across all printers, #3200)
   insert_position?: number | null;  // 1-indexed insertion position for priority queueing
   // PrintModal "Print Anyway" on the deficit warning — persisted so the
   // scheduler doesn't immediately re-flag this item (#1698-followup).
@@ -7810,6 +7810,11 @@ export const api = {
     request<BatchThumbnailResponse>('/library/generate-stl-thumbnails', {
       method: 'POST',
       body: JSON.stringify(options),
+    }),
+  combineLibraryFiles: (items: { file_id: number; copies: number }[], filename: string, folderId: number | null) =>
+    request<LibraryFileUploadResponse>('/library/files/combine', {
+      method: 'POST',
+      body: JSON.stringify({ items, filename, folder_id: folderId }),
     }),
   addLibraryFilesToQueue: (fileIds: number[]) =>
     request<AddToQueueResponse>('/library/files/add-to-queue', {

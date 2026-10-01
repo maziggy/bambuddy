@@ -179,96 +179,64 @@ def _shade_kwargs(poly3d, LightSource) -> dict:
     }
 
 
-def generate_stl_thumbnail(
-    stl_path: Path,
-    thumbnails_dir: Path,
-    size: int = 256,
-) -> str | None:
-    """Generate a thumbnail image from an STL file.
+def _import_renderer():
+    """Import matplotlib (headless) and the mplot3d pieces the renderer uses."""
+    # Must precede the matplotlib import: MPLCONFIGDIR is read at
+    # matplotlib import time, not on subsequent attribute access.
+    _configure_matplotlib_cache()
 
-    Args:
-        stl_path: Path to the STL file
-        thumbnails_dir: Directory to save the thumbnail
-        size: Thumbnail size in pixels (default 256x256)
+    import matplotlib
 
-    Returns:
-        Path to the generated thumbnail, or None on failure
+    # Use Agg backend for headless rendering
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LightSource
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+    return plt, LightSource, Poly3DCollection
+
+
+def render_mesh_png(mesh, size: int = 256, label: str = "mesh") -> bytes:
+    """Render ``mesh`` (a ``trimesh.Trimesh``) to PNG bytes.
+
+    The caller owns the face budget: this draws every face it is given, so a
+    large mesh has to be simplified first (see ``generate_stl_thumbnail`` and
+    ``mesh_combine``). Raises on failure; callers decide whether a missing
+    preview is an error.
     """
-    # Callers historically pass either Path or str; coerce so the `thumbnails_dir
-    # / thumb_filename` join at the end of this function can't fail with the
-    # str-divided-by-str TypeError (see #1299).
-    stl_path = Path(stl_path)
-    thumbnails_dir = Path(thumbnails_dir)
+    import io
 
+    import trimesh
+
+    plt, LightSource, Poly3DCollection = _import_renderer()
+
+    # Wind every face the same way, and outward, or the shading turns the
+    # model into camouflage. See ``_repair_winding``; it must run before the
+    # vertices below are read, since a future repair step could move them.
     try:
-        # Must precede the matplotlib import — MPLCONFIGDIR is read at
-        # matplotlib import time, not on subsequent attribute access.
-        _configure_matplotlib_cache()
+        _repair_winding(mesh, trimesh, label)
+    except Exception as e:  # best-effort: a flat render beats no thumbnail
+        logger.debug("Winding repair skipped (%s): %s", e, label)
 
-        import matplotlib
-        import trimesh
+    # Get mesh bounds and center it
+    vertices = mesh.vertices
+    bounds_min = vertices.min(axis=0)
+    bounds_max = vertices.max(axis=0)
+    center = (bounds_min + bounds_max) / 2
+    vertices_centered = vertices - center
 
-        # Use Agg backend for headless rendering
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        from matplotlib.colors import LightSource
-        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
-        from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+    # Scale to fit in view
+    max_extent = (bounds_max - bounds_min).max()
+    if max_extent > 0:
+        scale = 1.0 / max_extent
+        vertices_scaled = vertices_centered * scale
+    else:
+        vertices_scaled = vertices_centered
 
-        # Load the STL file
-        mesh = trimesh.load(str(stl_path), force="mesh")
-
-        if mesh is None or not hasattr(mesh, "vertices") or len(mesh.vertices) == 0:
-            # Demoted from warning to debug: this is a per-file content
-            # observation (the STL is empty / stub / corrupted), not an
-            # actionable error. The caller proceeds correctly with no
-            # thumbnail. The call sites also pre-skip files below
-            # MIN_USABLE_STL_BYTES so the common stub-STL case never gets
-            # this far — this branch now catches only the rare "large
-            # enough but trimesh still can't parse it" case.
-            logger.debug("Failed to load STL or empty mesh: %s", stl_path)
-            return None
-
-        # Simplify large meshes for performance
-        if len(mesh.vertices) > MAX_VERTICES:
-            logger.info("Simplifying mesh from %s vertices", len(mesh.vertices))
-            try:
-                # Calculate reduction ratio (0-1 range)
-                # e.g., 124633 vertices -> 100000 means keep ~80%, so reduce by ~20%
-                keep_ratio = MAX_VERTICES / len(mesh.vertices)
-                target_reduction = 1.0 - keep_ratio
-                # Clamp to valid range (0.01 to 0.99)
-                target_reduction = max(0.01, min(0.99, target_reduction))
-                mesh = mesh.simplify_quadric_decimation(target_reduction)
-                logger.info("Simplified mesh to %s vertices", len(mesh.vertices))
-            except Exception as e:
-                logger.warning("Mesh simplification failed, using original: %s", e)
-
-        # Wind every face the same way, and outward, or the shading turns the
-        # model into camouflage. See ``_repair_winding``; it must run before the
-        # vertices below are read, since a future repair step could move them.
-        try:
-            _repair_winding(mesh, trimesh, str(stl_path))
-        except Exception as e:  # best-effort: a flat render beats no thumbnail
-            logger.debug("Winding repair skipped (%s): %s", e, stl_path)
-
-        # Get mesh bounds and center it
-        vertices = mesh.vertices
-        bounds_min = vertices.min(axis=0)
-        bounds_max = vertices.max(axis=0)
-        center = (bounds_min + bounds_max) / 2
-        vertices_centered = vertices - center
-
-        # Scale to fit in view
-        max_extent = (bounds_max - bounds_min).max()
-        if max_extent > 0:
-            scale = 1.0 / max_extent
-            vertices_scaled = vertices_centered * scale
-        else:
-            vertices_scaled = vertices_centered
-
-        # Create figure with dark background
-        fig = plt.figure(figsize=(size / 100, size / 100), dpi=100)
+    # Create figure with dark background
+    fig = plt.figure(figsize=(size / 100, size / 100), dpi=100)
+    try:
         fig.patch.set_facecolor(BACKGROUND_COLOR)
 
         ax = fig.add_subplot(111, projection="3d")
@@ -276,7 +244,7 @@ def generate_stl_thumbnail(
 
         # Create polygon collection from mesh faces
         # Index with the face array rather than building a list of lists. Same
-        # data, and Poly3DCollection accepts it directly — but shading walks this
+        # data, and Poly3DCollection accepts it directly, but shading walks this
         # structure to generate normals, and on an 82k-face mesh the list form
         # costs ~0.19s against ~0.007s for the ndarray. It speeds up the unshaded
         # path too.
@@ -311,12 +279,9 @@ def generate_stl_thumbnail(
         # Remove margins
         plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
 
-        # Save thumbnail
-        thumb_filename = f"{uuid.uuid4().hex}.png"
-        thumb_path = thumbnails_dir / thumb_filename  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
-
+        buf = io.BytesIO()
         fig.savefig(
-            thumb_path,
+            buf,
             format="png",
             facecolor=BACKGROUND_COLOR,
             edgecolor="none",
@@ -324,7 +289,71 @@ def generate_stl_thumbnail(
             pad_inches=0.05,
             dpi=100,
         )
+        return buf.getvalue()
+    finally:
         plt.close(fig)
+
+
+def generate_stl_thumbnail(
+    stl_path: Path,
+    thumbnails_dir: Path,
+    size: int = 256,
+) -> str | None:
+    """Generate a thumbnail image from an STL file.
+
+    Args:
+        stl_path: Path to the STL file
+        thumbnails_dir: Directory to save the thumbnail
+        size: Thumbnail size in pixels (default 256x256)
+
+    Returns:
+        Path to the generated thumbnail, or None on failure
+    """
+    # Callers historically pass either Path or str; coerce so the `thumbnails_dir
+    # / thumb_filename` join at the end of this function can't fail with the
+    # str-divided-by-str TypeError (see #1299).
+    stl_path = Path(stl_path)
+    thumbnails_dir = Path(thumbnails_dir)
+
+    try:
+        _import_renderer()
+        import trimesh
+
+        # Load the STL file
+        mesh = trimesh.load(str(stl_path), force="mesh")
+
+        if mesh is None or not hasattr(mesh, "vertices") or len(mesh.vertices) == 0:
+            # Demoted from warning to debug: this is a per-file content
+            # observation (the STL is empty / stub / corrupted), not an
+            # actionable error. The caller proceeds correctly with no
+            # thumbnail. The call sites also pre-skip files below
+            # MIN_USABLE_STL_BYTES so the common stub-STL case never gets
+            # this far; this branch now catches only the rare "large
+            # enough but trimesh still can't parse it" case.
+            logger.debug("Failed to load STL or empty mesh: %s", stl_path)
+            return None
+
+        # Simplify large meshes for performance
+        if len(mesh.vertices) > MAX_VERTICES:
+            logger.info("Simplifying mesh from %s vertices", len(mesh.vertices))
+            try:
+                # Calculate reduction ratio (0-1 range)
+                # e.g., 124633 vertices -> 100000 means keep ~80%, so reduce by ~20%
+                keep_ratio = MAX_VERTICES / len(mesh.vertices)
+                target_reduction = 1.0 - keep_ratio
+                # Clamp to valid range (0.01 to 0.99)
+                target_reduction = max(0.01, min(0.99, target_reduction))
+                mesh = mesh.simplify_quadric_decimation(target_reduction)
+                logger.info("Simplified mesh to %s vertices", len(mesh.vertices))
+            except Exception as e:
+                logger.warning("Mesh simplification failed, using original: %s", e)
+
+        png = render_mesh_png(mesh, size=size, label=str(stl_path))
+
+        # Save thumbnail
+        thumb_filename = f"{uuid.uuid4().hex}.png"
+        thumb_path = thumbnails_dir / thumb_filename  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
+        thumb_path.write_bytes(png)
 
         logger.info("Generated STL thumbnail: %s", thumb_path)
         return str(thumb_path)
@@ -336,7 +365,7 @@ def generate_stl_thumbnail(
         # Log the traceback, not just the message: a bare
         # "unsupported operand type(s) for /: 'str' and 'str'" gives no clue
         # which line failed, and the fault is data-/environment-specific
-        # enough that it can't be reproduced from a clean STL — the traceback
+        # enough that it can't be reproduced from a clean STL; the traceback
         # in the next support bundle is what pinpoints it (#1480).
         logger.warning("Failed to generate STL thumbnail for %s: %s", stl_path, e, exc_info=True)
         return None

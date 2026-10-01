@@ -421,6 +421,27 @@ def _filament_constraints(candidate: _ModelCandidate) -> tuple[list[str] | None,
     return effective_types, filament_overrides
 
 
+def _could_take_printer(item: PrintQueueItem, printer_id: int, printer_model: str | None) -> bool:
+    """Whether ``item`` was competing for the printer another item just took.
+
+    The SJF starvation guard marks a job as jumped when a shorter one lower in
+    the queue takes a printer it wanted. A pinned job and an "Any <model>" job
+    compete for the same printer, so the guard has to look across both lanes
+    (#3200); looking only inside the dispatched item's own lane let a stream of
+    short model-based jobs hold a longer pinned job back indefinitely.
+
+    Location filters are not checked: over-marking only lifts an item that was
+    going to wait anyway, while under-marking is the starvation this prevents.
+    """
+    if item.printer_id is not None:
+        return item.printer_id == printer_id
+    if not printer_model:
+        return False
+    wanted = (normalize_printer_model(printer_model) or printer_model).lower()
+    models = [v.target_model for v in item.variants] if item.variants else [item.target_model]
+    return any(m and (normalize_printer_model(m) or m).lower() == wanted for m in models)
+
+
 def _candidates_for(item: PrintQueueItem) -> list[_ModelCandidate]:
     """Candidate files for ``item``, best first.
 
@@ -1329,11 +1350,17 @@ class PrintScheduler:
             # Check if shortest-job-first scheduling is enabled
             sjf_enabled = await self._get_bool_setting(db, "queue_shortest_first")
 
-            # Get all pending items, ordered by printer and position (or SJF order)
+            # Get all pending items in the one order the queue page shows them
+            # in (#3200). The first eligible item takes a printer, so this order
+            # decides who wins a printer that a pinned job and an "Any <model>"
+            # job both want. It used to start with ``printer_id``, which made the
+            # lane outrank the position: SQLite sorts NULL first, so model-based
+            # jobs always won; PostgreSQL sorts it last, so pinned jobs did.
+            # Neither is what the user dragged into place.
             if sjf_enabled:
-                # SJF: group by printer (and target_model for model-based jobs),
-                # then items already jumped get top priority (starvation guard),
-                # then sort by print_time ascending. Items with no print time go last.
+                # SJF: items already jumped get top priority (starvation guard),
+                # then sort by print_time ascending. Items with no print time go
+                # last, and position breaks ties.
                 result = await db.execute(
                     select(PrintQueueItem)
                     .where(PrintQueueItem.status == "pending")
@@ -1354,11 +1381,10 @@ class PrintScheduler:
                         selectinload(PrintQueueItem.variants).selectinload(PrintQueueVariant.library_file),
                     )
                     .order_by(
-                        PrintQueueItem.printer_id,
-                        PrintQueueItem.target_model,
                         PrintQueueItem.been_jumped.desc(),
                         PrintQueueItem.print_time_seconds.asc().nullslast(),
                         PrintQueueItem.position,
+                        PrintQueueItem.id,
                     )
                 )
             else:
@@ -1375,7 +1401,7 @@ class PrintScheduler:
                         # raise in async.
                         selectinload(PrintQueueItem.variants).selectinload(PrintQueueVariant.library_file),
                     )
-                    .order_by(PrintQueueItem.printer_id, PrintQueueItem.position)
+                    .order_by(PrintQueueItem.position, PrintQueueItem.id)
                 )
             items = list(result.scalars().all())
 
@@ -1913,11 +1939,13 @@ class PrintScheduler:
 
                     # SJF starvation guard: mark items that were jumped
                     if sjf_enabled and item.print_time_seconds is not None:
+                        pinned_model = pinned_printers.get(item.printer_id, ("", ""))[1]
                         for other in items:
                             if (
                                 other.id != item.id
+                                and other.id not in dispatch_ids
                                 and other.status == "pending"
-                                and other.printer_id == item.printer_id
+                                and _could_take_printer(other, item.printer_id, pinned_model)
                                 and not other.been_jumped
                                 and other.position < item.position
                                 and (
@@ -2117,15 +2145,14 @@ class PrintScheduler:
                         dispatch_ids.append(item.id)
                         claim_printer(printer_id)
 
-                        # SJF starvation guard: mark model-based items that were jumped
+                        # SJF starvation guard: mark items that were jumped
                         if sjf_enabled and item.print_time_seconds is not None:
                             for other in items:
                                 if (
                                     other.id != item.id
+                                    and other.id not in dispatch_ids
                                     and other.status == "pending"
-                                    and other.printer_id is None
-                                    and other.target_model
-                                    and other.target_model.upper() == item.target_model.upper()
+                                    and _could_take_printer(other, printer_id, item.target_model)
                                     and not other.been_jumped
                                     and other.position < item.position
                                     and (

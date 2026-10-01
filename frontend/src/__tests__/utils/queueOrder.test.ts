@@ -7,11 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import {
-  compareQueueOrder,
-  compareQueueOrderAcrossLanes,
-  queueLaneKey,
-} from '../../utils/queueOrder';
+import { compareQueueOrder, queueLaneKey } from '../../utils/queueOrder';
 
 interface Item {
   id: number;
@@ -98,36 +94,39 @@ describe('queueLaneKey', () => {
   });
 });
 
-describe('compareQueueOrderAcrossLanes', () => {
-  const sortIds = (items: Item[], sjf: boolean) =>
-    [...items].sort((a, b) => compareQueueOrderAcrossLanes(a, b, sjf)).map(i => i.id);
+describe('compareQueueOrder across printers and models (#3200)', () => {
+  it('orders a pinned job and an Any-model job by position, not by lane', () => {
+    const items = [
+      item(1, { printer_id: null, target_model: 'P2S', position: 2 }),
+      item(2, { printer_id: null, target_model: 'P2S', position: 3 }),
+      item(3, { printer_id: 1, position: 1 }),
+    ];
+    expect(idsInOrder(items, false)).toEqual([3, 1, 2]);
+  });
 
-  it('keeps each lane contiguous and sorted within itself', () => {
+  it('puts an Any-model job above a pinned one when it is higher in the queue', () => {
+    const items = [
+      item(1, { printer_id: 1, position: 2 }),
+      item(2, { printer_id: null, target_model: 'P2S', position: 1 }),
+    ];
+    expect(idsInOrder(items, false)).toEqual([2, 1]);
+  });
+
+  it('applies Shortest-Job-First across lanes', () => {
     const items = [
       item(1, { printer_id: 2, position: 1, print_time_seconds: 7200 }),
       item(2, { printer_id: 1, position: 2, print_time_seconds: 7200 }),
-      item(3, { printer_id: 2, position: 3, print_time_seconds: 600 }),
-      item(4, { printer_id: 1, position: 4, print_time_seconds: 600 }),
+      item(3, { printer_id: null, target_model: 'X1C', position: 3, print_time_seconds: 600 }),
+      item(4, { printer_id: 1, position: 4, print_time_seconds: 300 }),
     ];
-    expect(sortIds(items, true)).toEqual([4, 2, 3, 1]);
+    expect(idsInOrder(items, true)).toEqual([4, 3, 1, 2]);
   });
 
-  it('does not interleave two model lanes with the same initial', () => {
+  it('breaks a position tie by id, like the scheduler', () => {
     const items = [
-      item(1, { printer_id: null, target_model: 'X1C', position: 1, print_time_seconds: 7200 }),
-      item(2, { printer_id: null, target_model: 'X2D', position: 2, print_time_seconds: 600 }),
-      item(3, { printer_id: null, target_model: 'X1C', position: 3, print_time_seconds: 300 }),
+      item(7, { printer_id: null, target_model: 'P2S', position: 1 }),
+      item(5, { printer_id: 1, position: 1 }),
     ];
-    expect(sortIds(items, true)).toEqual([3, 1, 2]);
-  });
-
-  it('orders printers numerically, then model lanes, then unassigned', () => {
-    const items = [
-      item(1, { printer_id: null, target_model: null, position: 1 }),
-      item(2, { printer_id: null, target_model: 'P1S', position: 2 }),
-      item(3, { printer_id: 10, position: 3 }),
-      item(4, { printer_id: 2, position: 4 }),
-    ];
-    expect(sortIds(items, false)).toEqual([4, 3, 2, 1]);
+    expect(idsInOrder(items, false)).toEqual([5, 7]);
   });
 });

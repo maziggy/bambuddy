@@ -1045,13 +1045,11 @@ class VirtualPrinterInstance:
                     # empty queue.
                     from sqlalchemy import func, select as _sql_select
 
+                    # One sequence across all pending items, not one per
+                    # printer (#3200): the plates go to the end of the queue.
                     queue_scope = _sql_select(func.max(PrintQueueItem.position)).where(
                         PrintQueueItem.status == "pending"
                     )
-                    if self.target_printer_id is not None:
-                        queue_scope = queue_scope.where(PrintQueueItem.printer_id == self.target_printer_id)
-                    else:
-                        queue_scope = queue_scope.where(PrintQueueItem.printer_id.is_(None))
                     try:
                         max_pos_raw = (await db.execute(queue_scope)).scalar()
                         max_pos = int(max_pos_raw) if max_pos_raw is not None else 0

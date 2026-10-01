@@ -155,6 +155,32 @@ class TestRecoveryFillsTheExistingRow:
             assert archive.filament_type == "PLA"
             assert archive.print_time_seconds == 3600
 
+    async def test_recovery_keeps_a_thumbnail_the_3mf_cannot_replace(self, test_engine, tmp_path):
+        """A 3MF with no thumbnail must not blank the cloud cover already on the row (#2910).
+
+        `_write_3mf` embeds no thumbnail, so the parser yields None — which used to be
+        assigned unconditionally, erasing a good image for the prints least likely to
+        get another one.
+        """
+        from backend.app import main as main_module
+
+        maker, printer_id, archive_id = await _seed(test_engine, tmp_path)
+        async with maker() as db:
+            archive = await db.get(PrintArchive, archive_id)
+            archive.thumbnail_path = "archive/7/thumbnail.png"
+            await db.commit()
+
+        source = _write_3mf(tmp_path / "temp" / DISPATCH_FILENAME)
+        with (
+            patch.object(main_module, "async_session", maker),
+            patch.dict(main_module._active_prints, {(printer_id, DISPATCH_FILENAME): archive_id}, clear=True),
+        ):
+            assert await main_module.try_recover_fallback_archive(printer_id, DISPATCH_FILENAME, source) is True
+
+        async with maker() as db:
+            archive = await db.get(PrintArchive, archive_id)
+            assert archive.thumbnail_path == "archive/7/thumbnail.png"
+
     async def test_a_name_variant_still_finds_the_archive(self, test_engine, tmp_path):
         """The cover endpoint arrives with whichever spelling its own path built.
 

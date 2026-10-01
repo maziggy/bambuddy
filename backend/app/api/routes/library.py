@@ -50,6 +50,7 @@ from backend.app.schemas.library import (
     BulkDeleteRequest,
     BulkDeleteResponse,
     ClientThumbnailResponse,
+    CombineFilesRequest,
     ExternalFolderCreate,
     FileDuplicate,
     FileListResponse,
@@ -657,8 +658,10 @@ async def save_3mf_bytes_to_library(
     thumbnail_path: str | None = None
     if ext == ".3mf":
         try:
+            # Off the event loop: the parser still decompresses the whole model
+            # entry, which for a combined plate is hundreds of MB (#3162).
             parser = ThreeMFParser(str(file_path))
-            raw_metadata = parser.parse()
+            raw_metadata = await asyncio.to_thread(parser.parse)
             thumb_data = raw_metadata.get("_thumbnail_data")
             thumb_ext = raw_metadata.get("_thumbnail_ext", ".png")
             if thumb_data:
@@ -2915,6 +2918,90 @@ def is_sliced_file(filename: str) -> bool:
     """
     lower = filename.lower()
     return lower.endswith(".gcode") or ".gcode." in lower
+
+
+@router.post("/files/combine", response_model=FileUploadResponse)
+async def combine_files(
+    request: CombineFilesRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
+):
+    """Combine STL library files into one multi-object 3MF.
+
+    The slicer sidecar takes one model per slice, so putting several separate
+    STLs (or several copies of one, #2999) on one plate means building that
+    file first. The result is a new library file that slices like any other
+    3MF; with auto-arrange on, the slicer lays the objects out on the bed.
+    The sources are left untouched.
+    """
+    from backend.app.services.mesh_combine import CombinePart, MeshCombineError, combine_parts_to_3mf
+
+    filename = request.filename.strip()
+    if not filename.lower().endswith(".3mf"):
+        filename = f"{filename}.3mf"
+    try:
+        validate_print_filename(filename)
+    except InvalidFilenameError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    if request.folder_id is not None:
+        folder = (
+            await db.execute(select(LibraryFolder).where(LibraryFolder.id == request.folder_id))
+        ).scalar_one_or_none()
+        if folder is None:
+            raise HTTPException(status_code=404, detail="Folder not found")
+
+    # Same per-row visibility the slice route applies: a READ_OWN caller must
+    # not be able to pull another user's model into their own file by raw id.
+    can_read_all = current_user is None or current_user.has_permission(Permission.LIBRARY_READ_ALL.value)
+
+    # The same file listed twice is one object with the copies added up, so
+    # its mesh is loaded and stored once. Order follows first appearance.
+    copies_by_id: dict[int, int] = {}
+    for item in request.items:
+        copies_by_id[item.file_id] = copies_by_id.get(item.file_id, 0) + item.copies
+
+    rows = (await db.execute(LibraryFile.active().where(LibraryFile.id.in_(copies_by_id)))).scalars().all()
+    by_id = {row.id: row for row in rows}
+
+    # Gate every source before touching any of them on disk, so the answer for
+    # a file the caller can't see is the same 404 whatever else is in the list.
+    sources = [_ensure_library_file_visible(by_id.get(file_id), current_user, can_read_all) for file_id in copies_by_id]
+
+    parts: list[CombinePart] = []
+    for lib_file in sources:
+        if not lib_file.filename.lower().endswith(".stl"):
+            raise HTTPException(status_code=400, detail=f"Only STL files can be combined: {lib_file.filename}")
+        src_path = _resolve_source_disk_path(lib_file)
+        if src_path is None or not src_path.exists():
+            raise HTTPException(status_code=404, detail=f"Source file missing on disk: {lib_file.filename}")
+        parts.append(CombinePart(name=lib_file.filename, path=src_path, copies=copies_by_id[lib_file.id]))
+
+    try:
+        content = await asyncio.to_thread(combine_parts_to_3mf, parts)
+    except MeshCombineError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # The preview is embedded as Metadata/thumbnail.png by combine_parts_to_3mf,
+    # so ThreeMFParser picks it up here like any other 3MF's thumbnail. Loading
+    # the combined file back to render one would expand every copy.
+    library_file, _ = await save_3mf_bytes_to_library(
+        db,
+        file_bytes=content,
+        filename=filename,
+        folder_id=request.folder_id,
+        source_type="combined",
+        owner_id=current_user.id if current_user else None,
+    )
+
+    return FileUploadResponse(
+        id=library_file.id,
+        filename=library_file.filename,
+        file_type=library_file.file_type,
+        file_size=library_file.file_size,
+        thumbnail_path=library_file.thumbnail_path,
+        metadata=library_file.file_metadata,
+    )
 
 
 @router.post("/files/add-to-queue", response_model=AddToQueueResponse)

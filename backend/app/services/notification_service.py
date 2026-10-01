@@ -2769,15 +2769,31 @@ class NotificationService:
         rate_g_day: float,
         days_left: int,
         db: AsyncSession,
+        *,
+        subtype: str | None = None,
+        color: str | None = None,
+        skip_break_subscribers: bool = False,
     ):
-        """Fire when an inventory SKU reaches its reorder point."""
+        """Fire when an inventory SKU reaches its reorder point.
+
+        ``subtype`` and ``color`` are what tell apart the messages for two colours of one
+        product, which the forecast (grouped by colour as well) reports separately.
+
+        A SKU in stock break has also reached its reorder point. ``skip_break_subscribers``
+        leaves out the providers that have the break alert on, so the producer can send
+        the reorder event for a break SKU without telling those providers twice.
+        """
         providers = await self._get_providers_for_event(db, "on_stock_reorder_alert", None)
+        if skip_break_subscribers:
+            providers = [p for p in providers if not p.on_stock_break_alert]
         if not providers:
             return
 
         variables = {
             "material": material,
+            "subtype": subtype or "",
             "brand": brand or "",
+            "color": color or "",
             "stock_g": f"{stock_g:.0f}",
             "rate_g_day": f"{rate_g_day:.1f}",
             "days_left": str(days_left),
@@ -2795,15 +2811,23 @@ class NotificationService:
         days_left: int,
         lead_time_days: int,
         db: AsyncSession,
+        *,
+        subtype: str | None = None,
+        color: str | None = None,
     ):
-        """Fire when a stock break is detected (stock runs out before lead time)."""
+        """Fire when a stock break is detected (stock runs out before lead time).
+
+        ``subtype`` and ``color`` as for :meth:`on_stock_reorder_alert`.
+        """
         providers = await self._get_providers_for_event(db, "on_stock_break_alert", None)
         if not providers:
             return
 
         variables = {
             "material": material,
+            "subtype": subtype or "",
             "brand": brand or "",
+            "color": color or "",
             "stock_g": f"{stock_g:.0f}",
             "rate_g_day": f"{rate_g_day:.1f}",
             "days_left": str(days_left),

@@ -150,6 +150,54 @@ def swap_plate_suffix(name: str | None, target_plate: int) -> str | None:
     return f"{base}{separator}{target_plate}"
 
 
+_MESH_OPEN = b"<mesh"
+_MESH_CLOSE = b"</mesh>"
+_MODEL_READ_CHUNK = 1024 * 1024
+
+
+def read_3dmodel_without_meshes(zf: zipfile.ZipFile, model_path: str = "3D/3dmodel.model") -> str:
+    """Return the model XML with every ``<mesh>...</mesh>`` body left out.
+
+    The metadata scans only want ``<metadata>`` elements and the URLs inside
+    them, but a plain 3MF keeps its geometry inline in this same entry: a
+    combined plate's is hundreds of MB of vertex and triangle rows (#3162).
+    Streaming past the meshes keeps memory to the non-geometry part. The
+    entry can't simply be cut at ``<resources>``: BambuStudio writes its
+    MakerWorld metadata after ``</build>``. Mesh bodies hold only numbers, and
+    a ``<`` inside a metadata value is escaped, so nothing a scan looks for is
+    dropped.
+    """
+    out = bytearray()
+    pending = b""
+    in_mesh = False
+    with zf.open(model_path) as fh:
+        while chunk := fh.read(_MODEL_READ_CHUNK):
+            data = pending + chunk
+            pos = 0
+            while True:
+                if in_mesh:
+                    end = data.find(_MESH_CLOSE, pos)
+                    if end == -1:
+                        # Keep enough of the tail to match a tag split across chunks.
+                        pending = data[max(pos, len(data) - len(_MESH_CLOSE) + 1) :]
+                        break
+                    pos = end + len(_MESH_CLOSE)
+                    in_mesh = False
+                else:
+                    start = data.find(_MESH_OPEN, pos)
+                    if start == -1:
+                        keep = max(pos, len(data) - len(_MESH_OPEN) + 1)
+                        out += data[pos:keep]
+                        pending = data[keep:]
+                        break
+                    out += data[pos:start]
+                    pos = start + len(_MESH_OPEN)
+                    in_mesh = True
+    if not in_mesh:
+        out += pending
+    return out.decode("utf-8", errors="ignore")
+
+
 # How much of a plate's G-code to scan for header/config values. The header
 # block ends in the first kilobyte; the CONFIG_BLOCK that follows it carries
 # layer_height 14-25KB in (measured across the sliced 3MFs on hand, Bambu
@@ -550,7 +598,7 @@ class ThreeMFParser:
             if model_path not in zf.namelist():
                 return
 
-            content = zf.read(model_path).decode("utf-8", errors="ignore")
+            content = read_3dmodel_without_meshes(zf, model_path)
 
             # Parse XML metadata elements
             # MakerWorld adds metadata like: <metadata name="Designer">username</metadata>
@@ -799,7 +847,7 @@ class ProjectPageParser:
                 # Parse 3D/3dmodel.model for metadata
                 model_path = "3D/3dmodel.model"
                 if model_path in zf.namelist():
-                    content = zf.read(model_path).decode("utf-8", errors="ignore")
+                    content = read_3dmodel_without_meshes(zf, model_path)
 
                     # Extract metadata elements using regex
                     # Format: <metadata name="Key">Value</metadata> or <metadata name="Key" />

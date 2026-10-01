@@ -20,9 +20,10 @@ the default 14 day margin:
     used  500 -> 500 g left, 5 g/day, 100 days of stock                      : nothing
 """
 
+import json
 import logging
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -31,7 +32,7 @@ from backend.app.models.filament_sku_settings import FilamentSkuSettings
 from backend.app.models.notification import NotificationProvider
 from backend.app.models.settings import Settings
 from backend.app.models.spool import Spool
-from backend.app.services.print_scheduler import PrintScheduler
+from backend.app.services.print_scheduler import _STOCK_ALERTS_SETTING_KEY, PrintScheduler
 from backend.app.services.spoolman import SpoolmanUnavailableError
 from backend.app.utils.local_time import utcnow_naive
 
@@ -109,6 +110,129 @@ def notify():
         ns.on_stock_break_alert = AsyncMock()
         ns._get_providers_for_event = AsyncMock(return_value=[MagicMock()])
         yield ns
+
+
+# -- a restart does not start it over ----------------------------------------
+
+
+async def _stored(db) -> list | None:
+    """What the settings row holds, parsed. None when there is no row."""
+    from sqlalchemy import select
+
+    row = (await db.execute(select(Settings).where(Settings.key == _STOCK_ALERTS_SETTING_KEY))).scalar_one_or_none()
+    return json.loads(row.value) if row else None
+
+
+@pytest.mark.asyncio
+async def test_a_fresh_scheduler_does_not_re_send_what_is_already_stored(db_session, scheduler, notify):
+    """The first check runs as soon as Bambuddy starts. Without the stored set, every update
+    re-sent one message per SKU that was still low."""
+    await _sku(db_session)
+    await _spool(db_session, used=REORDER_USED)
+    await db_session.commit()
+    await _pass(scheduler, db_session)
+    assert notify.on_stock_reorder_alert.await_count == 1
+
+    restarted = PrintScheduler()
+    await _pass(restarted, db_session)
+
+    assert notify.on_stock_reorder_alert.await_count == 1
+    notify.on_stock_break_alert.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_stored_reorder_still_lets_the_worsening_to_a_break_through_after_a_restart(
+    db_session, scheduler, notify
+):
+    await _sku(db_session)
+    spool = await _spool(db_session, used=REORDER_USED)
+    await db_session.commit()
+    await _pass(scheduler, db_session)
+
+    spool.weight_used = BREAK_USED
+    await db_session.commit()
+    restarted = PrintScheduler()
+    await _pass(restarted, db_session)
+
+    notify.on_stock_break_alert.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_a_sku_that_cleared_while_it_was_down_alerts_again_after_a_restart(db_session, scheduler, notify):
+    await _sku(db_session)
+    spool = await _spool(db_session, used=REORDER_USED)
+    await db_session.commit()
+    await _pass(scheduler, db_session)
+
+    spool.weight_used = QUIET_USED
+    await db_session.commit()
+    await _pass(PrintScheduler(), db_session)
+    spool.weight_used = REORDER_USED
+    await db_session.commit()
+    await _pass(PrintScheduler(), db_session)
+
+    assert notify.on_stock_reorder_alert.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_the_stored_set_drops_a_sku_that_no_longer_exists(db_session, scheduler, notify):
+    await _sku(db_session)
+    spool = await _spool(db_session, used=REORDER_USED)
+    await db_session.commit()
+    await _pass(scheduler, db_session)
+    assert len(await _stored(db_session)) == 1
+
+    spool.archived_at = utcnow_naive()
+    await db_session.commit()
+    await _pass(PrintScheduler(), db_session)
+
+    assert await _stored(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_the_stored_set_is_emptied_when_nobody_wants_either_event(db_session, scheduler, real_providers):
+    await _sku(db_session)
+    await _spool(db_session, used=REORDER_USED)
+    provider_row = NotificationProvider(
+        name="p", provider_type="ntfy", config="{}", enabled=True, on_stock_reorder_alert=True
+    )
+    db_session.add(provider_row)
+    await db_session.commit()
+    await _pass(scheduler, db_session)
+    assert len(await _stored(db_session)) == 1
+
+    provider_row.on_stock_reorder_alert = False
+    await db_session.commit()
+    await _pass(PrintScheduler(), db_session)
+
+    assert await _stored(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_an_unchanged_set_is_not_written_again(db_session, scheduler, notify):
+    await _sku(db_session)
+    await _spool(db_session, used=REORDER_USED)
+    await db_session.commit()
+    await _pass(scheduler, db_session)
+
+    with patch("backend.app.core.db_dialect.upsert_setting", AsyncMock()) as upsert:
+        await _pass(scheduler, db_session)
+        await _pass(PrintScheduler(), db_session)
+
+    upsert.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_stored_set_is_treated_as_empty(db_session, scheduler, notify):
+    db_session.add(Settings(key=_STOCK_ALERTS_SETTING_KEY, value="not json {"))
+    await _sku(db_session)
+    await _spool(db_session, used=REORDER_USED)
+    await db_session.commit()
+
+    await _pass(scheduler, db_session)
+
+    notify.on_stock_reorder_alert.assert_awaited_once()
+    assert len(await _stored(db_session)) == 1
 
 
 # -- when it alerts ----------------------------------------------------------
@@ -834,3 +958,32 @@ async def test_subtype_and_colour_are_optional_so_the_old_call_shape_still_works
     variables = mock_send.await_args.kwargs["variables"]
     assert variables["subtype"] == ""
     assert variables["color"] == ""
+
+
+@pytest.mark.asyncio
+async def test_a_spoolman_registered_date_with_a_trailing_z_still_gives_the_spool_an_age(db_session, scheduler, notify):
+    """Python 3.10's fromisoformat rejects a trailing "Z" (pyproject still allows 3.10), which
+    silently dropped the spool's age and with it the delta rate. Simulated here so the test
+    means the same on every interpreter."""
+
+    class _Py310Datetime(datetime):
+        @classmethod
+        def fromisoformat(cls, value):
+            if value.endswith("Z"):
+                raise ValueError(f"Invalid isoformat string: {value!r}")
+            return super().fromisoformat(value)
+
+    db_session.add(Settings(key="spoolman_enabled", value="true"))
+    await db_session.commit()
+    client = _spoolman_client([_spoolman_spool(7, used=REORDER_USED)])
+
+    with (
+        patch("backend.app.services.print_scheduler.datetime", _Py310Datetime),
+        patch("backend.app.services.spoolman.get_spoolman_client", AsyncMock(return_value=client)),
+    ):
+        await _pass(scheduler, db_session)
+
+    # 920 g in 100 days is 9.2 g/day: a reorder. With the age dropped the rate falls back to a
+    # different number and this SKU is not at its reorder point.
+    notify.on_stock_reorder_alert.assert_awaited_once()
+    assert notify.on_stock_reorder_alert.await_args.args[3] == pytest.approx(9.2, abs=0.05)

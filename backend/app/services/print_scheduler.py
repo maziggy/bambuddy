@@ -115,6 +115,9 @@ _FILAMENT_LOW_MIN_INTERVAL = 30.0
 # days, so a finer check would only repeat the same answer.
 _STOCK_FORECAST_MIN_INTERVAL = 3600.0
 
+# The settings row that holds which stock alerts have already been sent (#2955).
+_STOCK_ALERTS_SETTING_KEY = "stock_alerts_notified"
+
 # The Inventory page asks for this many usage records and the forecast panel
 # builds its rates from them; the alert reads the same window so the two agree.
 _STOCK_FORECAST_HISTORY_LIMIT = 5000
@@ -1072,9 +1075,12 @@ class PrintScheduler:
         # condition is "reorder" or "break", the events are those that had a
         # subscriber when it was sent. Absent means not alerting. Cleared when the
         # condition clears, so it can alert again, and when nobody wants either
-        # event. In memory only, like the low-filament set: a restart re-sends
-        # whatever is still alerting once.
+        # event. Mirrored to one settings row (_STOCK_ALERTS_SETTING_KEY), because the
+        # first check runs as soon as Bambuddy starts and a restart would otherwise
+        # re-send one message per SKU that is still low.
         self._notified_stock_alerts: dict[stock_forecast.SkuKey, tuple[str, frozenset[str]]] = {}
+        # The JSON last read from or written to that row; None until it has been read.
+        self._stock_alerts_persisted: str | None = None
         # Earliest monotonic time the next stock forecast check may run (#2955).
         self._stock_forecast_next_check: float = 0.0
         # Printers with a "running" scheduled drying row (#2638). Rebuilt from the
@@ -4576,6 +4582,8 @@ class PrintScheduler:
         self._stock_forecast_next_check = now + _STOCK_FORECAST_MIN_INTERVAL
 
         try:
+            if self._stock_alerts_persisted is None:
+                await self._load_stock_alerts(db)
             wanted = {
                 "reorder": bool(await notification_service._get_providers_for_event(db, "on_stock_reorder_alert")),
                 "break": bool(await notification_service._get_providers_for_event(db, "on_stock_break_alert")),
@@ -4584,6 +4592,7 @@ class PrintScheduler:
                 # Nobody wants either event. Forget what was sent, so whoever
                 # switches one on is told about the SKUs that are low now.
                 self._notified_stock_alerts.clear()
+                await self._save_stock_alerts(db)
                 return
 
             forecasts = await self._stock_forecasts(db)
@@ -4594,8 +4603,44 @@ class PrintScheduler:
                 return
 
             await self._emit_stock_alerts(db, forecasts, wanted)
+            await self._save_stock_alerts(db)
         except Exception as e:
             logger.warning("Stock forecast check failed: %s", e, exc_info=True)
+
+    def _serialize_stock_alerts(self) -> str:
+        """The notified set as JSON, in a fixed order so an unchanged set compares equal."""
+        rows = sorted([list(key), kind, sorted(events)] for key, (kind, events) in self._notified_stock_alerts.items())
+        return json.dumps(rows)
+
+    async def _load_stock_alerts(self, db: AsyncSession) -> None:
+        """Read the notified set saved by the last run, once per process.
+
+        A missing or unreadable row is an empty set: the worst that does is one
+        repeat of what a restart used to cause every time.
+        """
+        raw = (await db.execute(select(Settings).where(Settings.key == _STOCK_ALERTS_SETTING_KEY))).scalar_one_or_none()
+        loaded: dict[stock_forecast.SkuKey, tuple[str, frozenset[str]]] = {}
+        if raw and raw.value:
+            try:
+                for key, kind, events in json.loads(raw.value):
+                    if len(key) == 4 and kind in ("reorder", "break"):
+                        loaded[tuple(str(part) for part in key)] = (kind, frozenset(str(e) for e in events))
+            except (ValueError, TypeError):
+                logger.warning("Ignoring unreadable %s setting", _STOCK_ALERTS_SETTING_KEY)
+                loaded = {}
+        self._notified_stock_alerts = loaded
+        self._stock_alerts_persisted = self._serialize_stock_alerts()
+
+    async def _save_stock_alerts(self, db: AsyncSession) -> None:
+        """Write the notified set to its settings row if it changed since it was last read or written."""
+        serialized = self._serialize_stock_alerts()
+        if serialized == self._stock_alerts_persisted:
+            return
+        from backend.app.core.db_dialect import upsert_setting
+
+        await upsert_setting(db, Settings, _STOCK_ALERTS_SETTING_KEY, serialized)
+        await db.commit()
+        self._stock_alerts_persisted = serialized
 
     async def _stock_forecasts(self, db: AsyncSession) -> stock_forecast.ForecastMap | None:
         """Forecast every active SKU in whichever inventory mode is on. None if it cannot be read."""
@@ -4695,7 +4740,7 @@ class PrintScheduler:
             created_at = None
             if mapped.get("created_at"):
                 try:
-                    created_at = datetime.fromisoformat(str(mapped["created_at"]))
+                    created_at = datetime.fromisoformat(str(mapped["created_at"]).replace("Z", "+00:00"))
                 except ValueError:
                     created_at = None
             spools.append(

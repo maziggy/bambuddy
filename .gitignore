@@ -49,6 +49,7 @@ firmware/
 
 # Screenshots (development - root folder only)
 /screenshots/
+output/playwright/
 
 # Logs
 *.log

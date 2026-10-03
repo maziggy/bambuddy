@@ -1728,6 +1728,7 @@ def _long_lived_token_to_response(record, *, plaintext: str | None = None) -> di
 @router.post("/tokens", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_long_lived_camera_token(
     payload: dict,
+    response: Response,
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1786,6 +1787,7 @@ async def create_long_lived_camera_token(
         scope,
         created.record.expires_at.isoformat(),
     )
+    response.headers["Cache-Control"] = "no-store"
     return _long_lived_token_to_response(created.record, plaintext=created.plaintext)
 
 

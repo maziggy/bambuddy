@@ -1065,7 +1065,7 @@ describe('SpoolFormModal — assignment actions (#1336, #2978)', () => {
 
     expect(screen.queryByRole('button', { name: /unassign/i })).not.toBeInTheDocument();
     const assignBtn = screen.getByRole('button', { name: /assign spool/i });
-    expect(assignBtn).not.toBeDisabled();
+    await waitFor(() => expect(assignBtn).not.toBeDisabled());
 
     fireEvent.click(assignBtn);
     expect(await screen.findByRole('heading', { name: /assign to AMS/i })).toBeInTheDocument();

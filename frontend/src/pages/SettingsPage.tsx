@@ -199,6 +199,7 @@ function describeLocationSensorValue(
 }
 
 export function SettingsPage() {
+  const [cameraTokenRevision, setCameraTokenRevision] = useState(0);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -4444,13 +4445,13 @@ export function SettingsPage() {
       {/* API Keys Tab */}
       {activeTab === 'apikeys' && (
         <div className={hasPermission('api_keys:read')
-          ? 'grid grid-cols-1 xl:grid-cols-2 gap-4'
+          ? 'grid grid-cols-1 lg:grid-cols-2 gap-4'
           : 'grid grid-cols-1 gap-4'}>
           {/* Left Column - API Keys Management. Admin-gated content
               (webhook keys, webhook docs) is hidden from users without
               api_keys:read; the Camera Tokens panel is always shown so
               users with camera:view can self-manage their own tokens. */}
-          <div>
+          <div className="min-w-0">
             {hasPermission('api_keys:read') && <>
             <div className="flex items-start justify-between gap-4 mb-6">
               <div className="flex-1">
@@ -4896,7 +4897,7 @@ export function SettingsPage() {
                 </h3>
               </CardHeader>
               <CardContent>
-                <CameraTokensSection />
+                <CameraTokensSection key={cameraTokenRevision} />
               </CardContent>
             </Card>
 
@@ -4911,7 +4912,7 @@ export function SettingsPage() {
                 </h3>
               </CardHeader>
               <CardContent>
-                <StreamOverlayBuilder />
+                <StreamOverlayBuilder onTokenCreated={() => setCameraTokenRevision((revision) => revision + 1)} />
               </CardContent>
             </Card>
           </div>
@@ -4920,7 +4921,7 @@ export function SettingsPage() {
               api_keys:read since the API Browser is the testing surface
               for those keys; non-admins land in this tab only for the
               Camera Tokens panel and don't need the browser. */}
-          {hasPermission('api_keys:read') && <div>
+          {hasPermission('api_keys:read') && <div className="min-w-0">
             <div className="mb-6">
               <h2 className="text-lg font-semibold text-white flex items-center gap-2" id="card-apibrowser">
                 <Globe className="w-5 h-5 text-bambu-green" />

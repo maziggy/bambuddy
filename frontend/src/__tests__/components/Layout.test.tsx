@@ -626,7 +626,7 @@ describe('Layout', () => {
         expect(sidebar?.querySelector('a[href="/files"]')).toBeInTheDocument();
       });
 
-      expect(findMakerWorldNavLink()).toBeNull();
+      await waitFor(() => expect(findMakerWorldNavLink()).toBeNull());
     });
 
     it('shows the MakerWorld nav entry when the user has makerworld:view', async () => {

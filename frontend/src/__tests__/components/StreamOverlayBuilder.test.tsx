@@ -6,18 +6,30 @@
  * camera stream until it is asked to.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
 import { server } from '../mocks/server';
+import { setAuthToken } from '../../api/client';
 import { StreamOverlayBuilder } from '../../components/StreamOverlayBuilder';
 
 const printers = [
   { id: 1, name: 'X1 Carbon', ip_address: '192.168.1.100', serial_number: '00M09A350100001', model: 'X1C' },
   { id: 2, name: 'P1S', ip_address: '192.168.1.101', serial_number: '01P00A000000002', model: 'P1S' },
 ];
+
+const createdToken = {
+  id: 42, user_id: 1, name: 'OBS', scope: 'overlay', lookup_prefix: '12345678',
+  created_at: '2026-01-01T00:00:00Z', expires_at: '2099-01-01T00:00:00Z',
+  last_used_at: null, token: null,
+};
+
+function setupSignedIn() {
+  setAuthToken('test-login');
+  server.use(http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })));
+}
 
 // The URL is rendered inside a <code>, so read it back the way a user would.
 function shownUrl(): string {
@@ -26,6 +38,7 @@ function shownUrl(): string {
 }
 
 describe('StreamOverlayBuilder', () => {
+  afterEach(() => { setAuthToken(null); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
   beforeEach(() => {
     server.use(http.get('/api/v1/printers', () => HttpResponse.json(printers)), http.get('/api/v1/settings/overlay-logo', () => new HttpResponse(null, { status: 404 })));
   });
@@ -59,6 +72,7 @@ describe('StreamOverlayBuilder', () => {
       expect(url.searchParams.get('backgroundTransparency')).toBe(artwork === '2' ? '65' : null);
       expect(url.searchParams.get('layout')).toBe(orientation === 'Portrait' ? 'portrait' : null);
       expect(url.searchParams.get('token')).toBe('bblt_example');
+      expect(group.getByText(/token=\*\*\*\*/)).not.toHaveTextContent('bblt_example');
       expect(url.searchParams.get('size')).toBe('large');
       expect(url.searchParams.get('camera')).toBe('false');
       expect(url.searchParams.get('show')).toContain('nozzle');
@@ -90,6 +104,178 @@ describe('StreamOverlayBuilder', () => {
     expect(document.querySelectorAll('iframe')).toHaveLength(0);
     copy.mockRestore();
     vi.unstubAllGlobals();
+  });
+
+  it('imports portrait sources and resets to landscape when layout is absent', async () => {
+    const user = userEvent.setup();
+    render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+    const input = screen.getByLabelText('Existing overlay URL');
+    await user.type(input, 'https://obs.local/overlay/2?layout=portrait&token=bblt_portrait');
+    await user.click(screen.getByRole('button', { name: 'Import URL' }));
+    expect(screen.getByLabelText('Layout')).toHaveValue('portrait');
+    expect(new URL(shownUrl()).searchParams.get('layout')).toBe('portrait');
+    await user.click(screen.getByRole('button', { name: 'Show preview' }));
+    expect(new URL(screen.getByTitle('Portrait preview').getAttribute('src')!).searchParams.get('token')).toBe('bblt_portrait');
+    await user.type(input, 'https://obs.local/overlay/1?token=bblt_landscape');
+    await user.click(screen.getByRole('button', { name: 'Import URL' }));
+    expect(screen.getByLabelText('Layout')).toHaveValue('landscape');
+    expect(new URL(shownUrl()).searchParams.has('layout')).toBe(false);
+    expect(screen.queryByTitle('Portrait preview')).not.toBeInTheDocument();
+  });
+
+  it('accepts an existing raw token without requiring saved-token recovery', async () => {
+    const user = userEvent.setup();
+    const view = render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+    const manual = screen.getByLabelText('Manual token');
+    expect(manual).toHaveAttribute('type', 'password');
+    await user.type(manual, 'bblt_existing');
+    expect(shownUrl()).not.toContain('bblt_existing');
+    expect(shownUrl()).toContain('token=****');
+    await user.click(screen.getByRole('button', { name: 'Show preview' }));
+    expect(new URL(screen.getByTitle('Landscape preview').getAttribute('src')!).searchParams.get('token')).toBe('bblt_existing');
+    await user.click(screen.getByRole('button', { name: 'Show token' }));
+    expect(manual).toHaveAttribute('type', 'text');
+    expect(shownUrl()).toContain('token=bblt_existing');
+    view.unmount();
+    render(<StreamOverlayBuilder />);
+    expect(screen.getByLabelText('Manual token')).toHaveValue('');
+    expect(shownUrl()).not.toContain('bblt_existing');
+  });
+
+  it('imports locally, masks credentials, restores settings and keeps the current origin', async () => {
+    const user = userEvent.setup();
+    const storageWrites = vi.spyOn(Storage.prototype, 'setItem');
+    render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+    const input = screen.getByLabelText('Existing overlay URL');
+    expect(input).toHaveAttribute('type', 'password');
+    await user.type(input, 'https://other.example/overlay/2?token=bblt_imported&show=nozzle,status&size=large&fps=5&artwork=2&camera=false');
+    await user.click(screen.getByRole('button', { name: 'Import URL' }));
+    expect(input).toHaveValue('');
+    expect(screen.getByLabelText('Manual token')).toHaveValue('bblt_imported');
+    expect(shownUrl()).not.toContain('bblt_imported');
+    expect(new URL(shownUrl()).origin).toBe(window.location.origin);
+    expect(screen.getByLabelText('Printer')).toHaveValue('2');
+    expect(screen.getByLabelText('Text size')).toHaveValue('large');
+    expect(screen.getByLabelText('Artwork')).toHaveValue('2');
+    expect(screen.getByLabelText('Camera feed')).not.toBeChecked();
+    expect(new URL(shownUrl()).searchParams.get('show')).toBe('status,nozzle');
+    expect(new URL(shownUrl()).searchParams.get('fps')).toBe('5');
+    expect(document.querySelector('iframe')).toBeNull();
+    expect(storageWrites).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('bblt_imported'));
+    await user.type(input, 'http://old.example/overlay/1');
+    await user.click(screen.getByRole('button', { name: 'Import URL' }));
+    expect(screen.getByLabelText('Manual token')).toHaveValue('');
+    expect(screen.getByLabelText('Text size')).toHaveValue('medium');
+    expect(screen.getByLabelText('Artwork')).toHaveValue('1');
+    expect(screen.getByLabelText('Camera feed')).toBeChecked();
+    expect(new URL(shownUrl()).searchParams.has('fps')).toBe(false);
+  });
+
+  it.each([
+    'javascript:alert(1)', 'https://example.com/overlay/nope',
+    'https://example.com/overlay/0', 'https://example.com/overlay/9007199254740992',
+    'https://user:password@example.com/overlay/2',
+    'https://example.com/overlay/2?token=a&token=b',
+  ])('rejects invalid or unsupported imports without changing settings: %s', async (value) => {
+    const user = userEvent.setup();
+    render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+    await user.type(screen.getByLabelText('Manual token'), 'bblt_keep');
+    const original = shownUrl();
+    await user.type(screen.getByLabelText('Existing overlay URL'), value);
+    await user.click(screen.getByRole('button', { name: 'Import URL' }));
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(shownUrl()).toBe(original);
+    expect(screen.getByLabelText('Manual token')).toHaveValue('bblt_keep');
+  });
+
+  it.each([
+    ['999', '30'], ['0', '1'], ['-5', '1'], ['5.9', '5'], ['20fps', '20'], ['bad', null], ['', null],
+  ])('imports fps=%s with runtime clamping and ignores unknown configuration', async (fps, expected) => {
+    const user = userEvent.setup();
+    render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+    fireEvent.change(screen.getByLabelText('Existing overlay URL'), { target: { value:
+      `https://other.example/overlay/2?fps=${fps}&show=status,unknown&size=huge&unrelated=ignored` } });
+    await user.click(screen.getByRole('button', { name: 'Import URL' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    const url = new URL(shownUrl());
+    expect(url.searchParams.get('fps')).toBe(expected);
+    expect(url.searchParams.get('show')).toBe('status');
+    expect(screen.getByLabelText('Text size')).toHaveValue('medium');
+    expect(url.searchParams.has('unrelated')).toBe(false);
+  });
+
+  it('imports branding and transparency and resets missing values on the next import', async () => {
+    const user = userEvent.setup();
+    render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+    fireEvent.change(screen.getByLabelText('Existing overlay URL'), { target: { value:
+      'https://other.example/overlay/2?artwork=2&backgroundTransparency=150&logo=1&progressFrom=%23aabbcc&progressTo=%23112233' } });
+    await user.click(screen.getByRole('button', { name: 'Import URL' }));
+    const params = new URL(shownUrl()).searchParams;
+    expect(params.get('backgroundTransparency')).toBe('100');
+    expect(params.get('logo')).toBe('1');
+    expect(params.get('progressFrom')).toBe('#aabbcc');
+    expect(params.get('progressTo')).toBe('#112233');
+    expect(screen.getByLabelText('From colour (hex)')).toHaveValue('#aabbcc');
+    expect(screen.getByLabelText('To colour (hex)')).toHaveValue('#112233');
+    fireEvent.change(screen.getByLabelText('Existing overlay URL'), { target: { value:
+      'https://other.example/overlay/2?artwork=2&progressFrom=invalid&progressTo=%23112233' } });
+    await user.click(screen.getByRole('button', { name: 'Import URL' }));
+    expect(shownUrl()).not.toMatch(/backgroundTransparency|logo=|progressFrom|progressTo/);
+    expect(screen.getByLabelText('From colour (hex)')).toHaveValue('#00ae42');
+  });
+
+  it('locks import during a logo upload so its completion cannot overwrite imported branding', async () => {
+    let finish = () => {};
+    const gate = new Promise<void>((resolve) => { finish = resolve; });
+    let started = false;
+    server.use(http.post('/api/v1/settings/overlay-logo', async () => {
+      started = true;
+      await gate;
+      return HttpResponse.json({ status: 'ok' });
+    }));
+    const user = userEvent.setup();
+    render(<StreamOverlayBuilder />);
+    fireEvent.change(screen.getByLabelText('Existing overlay URL'), { target: { value:
+      'https://other.example/overlay/2?progressFrom=%23aabbcc&progressTo=%23112233' } });
+    expect(screen.getByRole('button', { name: 'Import URL' })).toBeEnabled();
+    await user.upload(screen.getByLabelText('Upload logo'), new File(['png'], 'logo.png', { type: 'image/png' }));
+    await waitFor(() => expect(started).toBe(true));
+    expect(screen.getByLabelText('Existing overlay URL')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Import URL' })).toBeDisabled();
+    await act(async () => { finish(); await gate; });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Import URL' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Import URL' }));
+    expect(new URL(shownUrl()).searchParams.has('logo')).toBe(false);
+    expect(new URL(shownUrl()).searchParams.get('progressFrom')).toBe('#aabbcc');
+    expect(screen.getByLabelText('From colour (hex)')).toHaveValue('#aabbcc');
+  });
+
+  it('shows a server creation error, unlocks controls, and allows successful repeated creation', async () => {
+    setupSignedIn();
+    server.use(http.post('*/api/v1/auth/tokens', () => HttpResponse.json({ detail: 'Token limit reached' }, { status: 400 })));
+    const user = userEvent.setup();
+    render(<StreamOverlayBuilder />);
+    await user.click(await screen.findByRole('button', { name: 'Create overlay token' }));
+    await user.type(screen.getByLabelText('Token name'), 'OBS');
+    await user.click(screen.getByRole('button', { name: 'Create', exact: true }));
+    expect(await screen.findByText('Token limit reached')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+    expect(screen.getByLabelText('Manual token')).toBeEnabled();
+    expect(screen.getByLabelText('Existing overlay URL')).toBeEnabled();
+    server.use(http.post('*/api/v1/auth/tokens', () => HttpResponse.json({ ...createdToken, token: 'bblt_retry' }, { status: 201 })));
+    await user.click(screen.getByRole('button', { name: 'Create', exact: true }));
+    await waitFor(() => expect(screen.getByLabelText('Manual token')).toHaveValue('bblt_retry'));
+    await user.click(screen.getByRole('button', { name: 'Create overlay token' }));
+    await user.type(screen.getByLabelText('Token name'), 'OBS again');
+    server.use(http.post('*/api/v1/auth/tokens', () => HttpResponse.json({ ...createdToken, token: 'bblt_second' }, { status: 201 })));
+    await user.click(screen.getByRole('button', { name: 'Create', exact: true }));
+    await waitFor(() => expect(screen.getByLabelText('Manual token')).toHaveValue('bblt_second'));
   });
 
   it('starts on the first printer with the overlay defaults', async () => {
@@ -236,17 +422,87 @@ describe('StreamOverlayBuilder', () => {
     await waitFor(() => expect(shownUrl()).not.toContain('size='));
   });
 
-  it('appends a token and warns that the URL is now a key', async () => {
+  it('uses a newly created overlay token directly without retrieval', async () => {
+    setupSignedIn();
+    server.use(
+      http.post('*/api/v1/auth/tokens', async ({ request }) => {
+        expect(await request.json()).toEqual({ name: 'OBS', scope: 'overlay', expires_in_days: 90 });
+        return HttpResponse.json({ ...createdToken, token: 'bblt_saved' }, { status: 201 });
+      }),
+    );
     const user = userEvent.setup();
     render(<StreamOverlayBuilder />);
+    await user.click(await screen.findByRole('button', { name: 'Create overlay token' }));
+    await user.selectOptions(screen.getByLabelText('Printer'), '2');
+    await user.type(screen.getByLabelText('Token name'), 'OBS');
+    expect(screen.getByLabelText('Scope')).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Create', exact: true }));
+    await screen.findByText(/This URL contains a token/);
+    expect(screen.getByLabelText('Manual token')).toHaveValue('bblt_saved');
+    await user.click(screen.getByRole('button', { name: 'Show token' }));
+    expect(shownUrl()).toContain('/overlay/2?');
+    expect(shownUrl()).toContain('token=bblt_saved');
+  });
 
-    await waitFor(() => expect(screen.getByLabelText(/token/i)).toBeInTheDocument());
-    expect(screen.queryByText(/This URL contains a token/)).not.toBeInTheDocument();
+  it('locks conflicting controls until a delayed token is available', async () => {
+    setupSignedIn();
+    let finish = () => {};
+    const gate = new Promise<void>((resolve) => { finish = resolve; });
+    let started = false;
+    server.use(http.post('*/api/v1/auth/tokens', async () => {
+      started = true;
+      await gate;
+      return HttpResponse.json({ ...createdToken, token: 'bblt_late' }, { status: 201 });
+    }));
+    const user = userEvent.setup();
+    render(<StreamOverlayBuilder />);
+    await user.click(await screen.findByRole('button', { name: 'Create overlay token' }));
+    await user.type(screen.getByLabelText('Existing overlay URL'), 'https://other.example/overlay/2?token=bblt_import');
+    expect(screen.getByRole('button', { name: 'Import URL' })).toBeEnabled();
+    await user.type(screen.getByLabelText('Token name'), 'OBS');
+    await user.click(screen.getByRole('button', { name: 'Create', exact: true }));
+    await waitFor(() => expect(started).toBe(true));
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(screen.getByLabelText('Manual token')).toBeDisabled();
+    expect(screen.getByLabelText('Existing overlay URL')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Import URL' })).toBeDisabled();
+    await act(async () => { finish(); await gate; });
+    await screen.findByText('Token created');
+    expect(screen.getByLabelText('Manual token')).toHaveValue('bblt_late');
+    expect(screen.getByLabelText('Manual token')).toBeEnabled();
+    expect(screen.getByLabelText('Existing overlay URL')).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Show token' }));
+    expect(shownUrl()).toContain('token=bblt_late');
+    await user.click(screen.getByRole('button', { name: 'Create overlay token' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByLabelText('Manual token')).toHaveValue('bblt_late');
+  });
 
-    await user.type(screen.getByLabelText(/token/i), 'bblt_abc');
+  it('does not offer token creation without a signed-in user', async () => {
+    render(<StreamOverlayBuilder />);
+    await screen.findByRole('option', { name: 'P1S' });
+    expect(screen.queryByRole('button', { name: 'Create overlay token' })).not.toBeInTheDocument();
+  });
 
-    await waitFor(() => expect(shownUrl()).toContain('token=bblt_abc'));
-    expect(screen.getByText(/This URL contains a token/)).toBeInTheDocument();
+  it.each([true, false])('copies the full masked URL with secure context = %s', async (secure) => {
+    setupSignedIn();
+    const user = userEvent.setup();
+    vi.stubGlobal('isSecureContext', secure);
+    let copied = '';
+    if (secure) {
+      vi.spyOn(navigator.clipboard, 'writeText').mockImplementation(async (value) => { copied = value; });
+    } else {
+      Object.defineProperty(document, 'execCommand', { configurable: true, value: () => {
+        copied = document.querySelector('textarea')?.value ?? '';
+        return true;
+      } });
+    }
+    render(<StreamOverlayBuilder />);
+    await user.type(screen.getByLabelText('Manual token'), 'bblt_saved');
+    await screen.findByText(/This URL contains a token/);
+    await user.click(screen.getByRole('button', { name: 'Copy', exact: true }));
+    expect(new URL(copied).searchParams.get('token')).toBe('bblt_saved');
+    expect(shownUrl()).not.toContain('bblt_saved');
   });
 
   it('opens no camera stream until the preview is asked for', async () => {

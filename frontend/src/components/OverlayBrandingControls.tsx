@@ -6,20 +6,22 @@ import { useToast } from '../contexts/ToastContext';
 import { useOverlayLogo } from '../hooks/useOverlayLogo';
 import { isOverlayColour, type OverlayBranding } from '../utils/overlayBranding';
 
-export function OverlayBrandingControls({ value, onChange }: {
+export function OverlayBrandingControls({ value, onChange, onBusyChange }: {
   value: OverlayBranding;
   onChange: (value: OverlayBranding) => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const { authEnabled, hasPermission } = useAuth();
   const canEdit = !authEnabled || hasPermission('settings:update');
   const [busy, setBusy] = useState(false);
-  const [draft, setDraft] = useState({ from: '#00ae42', to: '#00ae42' });
+  const [draft, setDraft] = useState({ from: value.from || '#00ae42', to: value.to || '#00ae42' });
   const logo = useOverlayLogo(true, null, value.logoRevision);
 
   const saveLogo = async (file: File | null) => {
     setBusy(true);
+    onBusyChange?.(true);
     try {
       if (file) await api.uploadOverlayLogo(file);
       else await api.deleteOverlayLogo();
@@ -28,6 +30,7 @@ export function OverlayBrandingControls({ value, onChange }: {
       showToast(error instanceof Error ? error.message : t('streamOverlay.branding.failed'), 'error');
     } finally {
       setBusy(false);
+      onBusyChange?.(false);
     }
   };
   const setColour = (key: 'from' | 'to', colour: string) => {

@@ -9142,6 +9142,7 @@ export interface SpoolBuddyDevice {
   update_status: string | null;
   update_message: string | null;
   system_stats: {
+    scale_driver?: 'nau7802' | 'hx711';
     os?: { os?: string; kernel?: string; arch?: string; python?: string };
     cpu_temp_c?: number;
     cpu_count?: number;

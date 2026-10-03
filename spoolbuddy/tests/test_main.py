@@ -320,3 +320,147 @@ class TestScalePollLoopWakeGating:
         # would still wake (delta 120 > 50), so this asserts both gating AND
         # the absence of poisoning.
         assert display.wake.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_scale_keeps_weight_threshold_without_stability_or_periodic_reports():
+    config = _make_config(scale_read_interval=0.0, scale_report_interval=0.0)
+    scale = MagicMock()
+    scale.ok = True
+    readings = iter([(373.0, False, 100), (373.1, True, 101), (373.1, True, 102), (373.1, True, 103)])
+    scale.read.side_effect = lambda: next(readings, None)
+    api = AsyncMock()
+    display = MagicMock()
+    clock = iter([100.0, 101.0, 102.0, 112.0])
+
+    async def inline(fn, *args):
+        return fn(*args)
+
+    with patch("daemon.main.asyncio.to_thread", inline), patch("daemon.main.time") as time_module:
+        time_module.monotonic.side_effect = lambda: next(clock)
+        task = asyncio.create_task(scale_poll_loop(config, api, {"scale": scale, "display": display}))
+        for _ in range(10):
+            await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert [c.kwargs["raw_adc"] for c in api.scale_reading.await_args_list] == [100]
+    assert [c.kwargs["stable"] for c in api.scale_reading.await_args_list] == [False]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("driver", ["nau7802", "hx711"])
+async def test_heartbeat_reports_selected_scale_board(driver):
+    config = _make_config(scale_driver=driver)
+    api = _make_api()
+    called = asyncio.Event()
+
+    async def heartbeat(**kwargs):
+        assert kwargs["system_stats"]["scale_driver"] == driver
+        called.set()
+        return None
+
+    api.heartbeat.side_effect = heartbeat
+    task = asyncio.create_task(heartbeat_loop(config, api, time.monotonic(), {"display": MagicMock()}))
+    try:
+        await asyncio.wait_for(called.wait(), timeout=2)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_hx711_diagnostic_uses_active_driver_without_subprocess():
+    config = _make_config(scale_driver="hx711")
+    api = _make_api()
+    api.heartbeat.return_value = {"pending_command": "run_scale_diag"}
+    scale = MagicMock()
+    scale.diagnostic.return_value = "HX711: valid readings"
+    completed = asyncio.Event()
+
+    async def report(*args):
+        completed.set()
+
+    api.diagnostic_result.side_effect = report
+    with patch("daemon.main.subprocess.run") as run:
+        task = asyncio.create_task(
+            heartbeat_loop(config, api, time.monotonic(), {"display": MagicMock(), "scale": scale})
+        )
+        try:
+            await asyncio.wait_for(completed.wait(), timeout=2)
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        run.assert_not_called()
+    api.diagnostic_result.assert_awaited_once_with("dev-1", "scale", True, "HX711: valid readings", 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure",
+    [
+        RuntimeError("No HX711 device; check spoolbuddy-hx711.service"),
+        PermissionError("HX711 raw sample is not readable"),
+        OSError("HX711 input saturated; check wiring or overload"),
+        TimeoutError("Scale diagnostic timed out"),
+    ],
+)
+async def test_hx711_diagnostic_failure_reaches_ui_without_interrupting_nfc(failure):
+    config = _make_config(scale_driver="hx711")
+    api = _make_api()
+    api.heartbeat.return_value = {"pending_command": "run_scale_diag"}
+    scale = MagicMock()
+    scale.diagnostic.side_effect = failure
+    nfc = MagicMock()
+    shared = {"display": MagicMock(), "scale": scale, "nfc": nfc}
+    completed = asyncio.Event()
+
+    async def report(*args):
+        completed.set()
+
+    api.diagnostic_result.side_effect = report
+    with patch("daemon.main.subprocess.run") as run:
+        task = asyncio.create_task(heartbeat_loop(config, api, time.monotonic(), shared))
+        try:
+            await asyncio.wait_for(completed.wait(), timeout=2)
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        run.assert_not_called()
+    api.diagnostic_result.assert_awaited_once_with(
+        "dev-1", "scale", False, f"Diagnostic execution failed: {failure}", -1
+    )
+    nfc.close.assert_not_called()
+    assert shared["nfc"] is nfc
+    assert not shared.get("nfc_scan_paused")
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_reports_failed_hx711_scale_without_disabling_nfc():
+    config = _make_config(scale_driver="hx711")
+    api = _make_api()
+    scale = MagicMock()
+    scale.ok = False
+    nfc = MagicMock()
+    nfc.ok = True
+    completed = asyncio.Event()
+
+    async def heartbeat(**kwargs):
+        assert kwargs["scale_ok"] is False
+        assert kwargs["nfc_ok"] is True
+        completed.set()
+        return None
+
+    api.heartbeat.side_effect = heartbeat
+    task = asyncio.create_task(
+        heartbeat_loop(config, api, time.monotonic(), {"scale": scale, "nfc": nfc, "display": MagicMock()})
+    )
+    try:
+        await asyncio.wait_for(completed.wait(), timeout=2)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task

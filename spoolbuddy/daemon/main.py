@@ -246,6 +246,8 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
         scale = shared.get("scale")
         uptime = int(time.monotonic() - start_time)
         stats = await asyncio.to_thread(system_stats.collect)
+        # Existing system_stats transport keeps older backends compatible.
+        stats["scale_driver"] = config.scale_driver
         result = await api.heartbeat(
             device_id=config.device_id,
             nfc_ok=nfc.ok if nfc else False,
@@ -336,6 +338,10 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
 
                 logger.info("Running %s diagnostic via %s", diagnostic, script_path)
                 try:
+                    if diagnostic == "scale" and config.scale_driver == "hx711":
+                        output = await asyncio.to_thread(shared["scale"].diagnostic)
+                        await api.diagnostic_result(config.device_id, diagnostic, True, output, 0)
+                        continue
                     proc = await asyncio.to_thread(
                         subprocess.run,
                         [sys.executable, str(script_path)],
@@ -435,6 +441,9 @@ async def main():
     # Initialize hardware before registration so we can report capabilities
     nfc = NFCReader()
     scale = ScaleReader(
+        driver=config.scale_driver,
+        data_pin=config.hx711_data_pin,
+        clock_pin=config.hx711_clock_pin,
         tare_offset=config.tare_offset,
         calibration_factor=config.calibration_factor,
     )

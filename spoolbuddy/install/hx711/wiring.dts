@@ -1,0 +1,24 @@
+/dts-v1/;
+/plugin/;
+/ {
+    compatible = "brcm,bcm2835";
+    fragment@0 {
+        target-path = "/";
+        __overlay__ {
+            hx711_supply: spoolbuddy-hx711-supply {
+                compatible = "regulator-fixed";
+                regulator-name = "spoolbuddy-hx711-avdd";
+                regulator-min-microvolt = <3300000>;
+                regulator-max-microvolt = <3300000>;
+            };
+            spoolbuddy-hx711 {
+                compatible = "avia,hx711";
+                sck-gpios = <&gpio @CLOCK_PIN@ 0>;
+                dout-gpios = <&gpio @DATA_PIN@ 0>;
+                avdd-supply = <&hx711_supply>;
+                clock-frequency = <400000>;
+                status = "okay";
+            };
+        };
+    };
+};

@@ -32,6 +32,10 @@ class Config:
     stability_threshold: float = 2.0
     stability_window: float = 1.0
 
+    scale_driver: str = "nau7802"
+    hx711_data_pin: int = 5
+    hx711_clock_pin: int = 6
+
     tare_offset: int = 0
     calibration_factor: float = 1.0
 
@@ -48,6 +52,17 @@ class Config:
             raise RuntimeError("SPOOLBUDDY_BACKEND_URL is required (e.g. http://192.168.1.100:5000)")
         if not cfg.api_key:
             raise RuntimeError("SPOOLBUDDY_API_KEY is required (create one in Bambuddy Settings → API Keys)")
+
+        cfg.scale_driver = os.environ.get("SPOOLBUDDY_SCALE_DRIVER", "nau7802").strip().lower()
+        if cfg.scale_driver not in ("nau7802", "hx711"):
+            raise ValueError("SPOOLBUDDY_SCALE_DRIVER must be nau7802 or hx711")
+        if cfg.scale_driver == "hx711":
+            cfg.hx711_data_pin = int(os.environ.get("SPOOLBUDDY_HX711_DATA_PIN", "5"))
+            cfg.hx711_clock_pin = int(os.environ.get("SPOOLBUDDY_HX711_CLOCK_PIN", "6"))
+            if not (0 <= cfg.hx711_data_pin <= 27 and 0 <= cfg.hx711_clock_pin <= 27):
+                raise ValueError("HX711 GPIO numbers must be between 0 and 27")
+            if cfg.hx711_data_pin == cfg.hx711_clock_pin:
+                raise ValueError("HX711 needs different data and clock pins")
 
         # Default device_id from MAC address
         if not cfg.device_id:

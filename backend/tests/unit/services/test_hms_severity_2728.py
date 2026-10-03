@@ -157,10 +157,12 @@ class TestNotificationDeduplication:
     @pytest.fixture(autouse=True)
     def _clean(self):
         main_module._notified_hms_errors.pop(self.PRINTER, None)
-        main_module._hms_last_seen.pop(self.PRINTER, None)
+        main_module._hms_print_state.pop(self.PRINTER, None)
+        main_module._hms_forget_when_gone.pop(self.PRINTER, None)
         yield
         main_module._notified_hms_errors.pop(self.PRINTER, None)
-        main_module._hms_last_seen.pop(self.PRINTER, None)
+        main_module._hms_print_state.pop(self.PRINTER, None)
+        main_module._hms_forget_when_gone.pop(self.PRINTER, None)
 
     def test_two_faults_on_one_part_are_both_notified(self):
         """#1840's H2C held both of these at once; they share attr 05000600."""
@@ -192,3 +194,108 @@ class TestNotificationDeduplication:
         a = SimpleNamespace(full_code="", attr=0x05000600, code="0x20005", severity=2)
         b = SimpleNamespace(full_code="", attr=0x05000600, code="0x20006", severity=2)
         assert _hms_notify_key(a) != _hms_notify_key(b)
+
+
+class TestFlickeringFaults:
+    """#3226: an H2D held two lubrication notices for the whole print while the
+    nozzle-camera-lens fault came and went (on 20-29 s, off 25-64 s). The
+    notified set was replaced on every update, so each return was notified."""
+
+    PRINTER = 9002
+    RODS = "0501040000030002"
+    LENS = "0C00010000020017"
+
+    @pytest.fixture(autouse=True)
+    def _clean(self):
+        main_module._notified_hms_errors.pop(self.PRINTER, None)
+        main_module._hms_print_state.pop(self.PRINTER, None)
+        main_module._hms_forget_when_gone.pop(self.PRINTER, None)
+        yield
+        main_module._notified_hms_errors.pop(self.PRINTER, None)
+        main_module._hms_print_state.pop(self.PRINTER, None)
+        main_module._hms_forget_when_gone.pop(self.PRINTER, None)
+
+    @pytest.fixture
+    def clock(self, monkeypatch):
+        now = [1_000_000.0]
+        monkeypatch.setattr(main_module.time, "time", lambda: now[0])
+        return now
+
+    def test_a_fault_flickering_beside_a_held_notice_is_notified_once(self, clock):
+        rods, lens = _fault(self.RODS, 3), _fault(self.LENS)
+        assert _take_new_hms_faults(self.PRINTER, [rods, lens], "RUNNING") == [lens]
+        for _ in range(9):
+            clock[0] += 64
+            assert _take_new_hms_faults(self.PRINTER, [rods], "RUNNING") == []
+            clock[0] += 29
+            assert _take_new_hms_faults(self.PRINTER, [rods, lens], "RUNNING") == []
+
+    def test_a_fault_gone_for_the_whole_window_is_notified_again(self, clock):
+        lens = _fault(self.LENS)
+        assert _take_new_hms_faults(self.PRINTER, [lens], "RUNNING") == [lens]
+        clock[0] += 1
+        assert _take_new_hms_faults(self.PRINTER, [], "RUNNING") == []
+        clock[0] += main_module._HMS_CLEAR_GRACE_SECONDS
+        assert _take_new_hms_faults(self.PRINTER, [], "RUNNING") == []
+        assert self.PRINTER not in main_module._notified_hms_errors
+        assert _take_new_hms_faults(self.PRINTER, [lens], "RUNNING") == [lens]
+
+    def test_a_fault_fixed_before_resuming_is_notified_when_it_returns(self, clock):
+        """A runout pauses the print; the user fixes it and resumes. The same
+        fault minutes later must not go unnoticed while the printer sits paused."""
+        runout = _fault("0700200000020001")
+        assert _take_new_hms_faults(self.PRINTER, [runout], "PAUSE") == [runout]
+        clock[0] += 60
+        assert _take_new_hms_faults(self.PRINTER, [], "RUNNING") == []
+        clock[0] += 120
+        assert _take_new_hms_faults(self.PRINTER, [runout], "PAUSE") == [runout]
+
+    def test_a_state_change_keeps_a_fault_that_is_still_there(self, clock):
+        lens = _fault(self.LENS)
+        assert _take_new_hms_faults(self.PRINTER, [lens], "RUNNING") == [lens]
+        clock[0] += 5
+        assert _take_new_hms_faults(self.PRINTER, [lens], "FINISH") == []
+
+    def test_the_first_state_seen_is_not_a_change(self, clock):
+        lens = _fault(self.LENS)
+        assert _take_new_hms_faults(self.PRINTER, [lens]) == [lens]
+        clock[0] += 5
+        assert _take_new_hms_faults(self.PRINTER, [], "RUNNING") == []
+        assert _take_new_hms_faults(self.PRINTER, [lens], "RUNNING") == []
+
+    def test_a_fault_still_reported_at_the_resume_is_forgotten_once_gone(self, clock):
+        """The update that flips PAUSE to RUNNING can still carry the fault; it
+        goes on the next one. A recurrence minutes later must still notify."""
+        runout = _fault("0700200000020001")
+        assert _take_new_hms_faults(self.PRINTER, [runout], "PAUSE") == [runout]
+        clock[0] += 60
+        assert _take_new_hms_faults(self.PRINTER, [runout], "RUNNING") == []
+        clock[0] += 2
+        assert _take_new_hms_faults(self.PRINTER, [], "RUNNING") == []
+        clock[0] += 120
+        assert _take_new_hms_faults(self.PRINTER, [runout], "PAUSE") == [runout]
+
+    def test_a_state_change_costs_a_flickering_fault_at_most_one_more_notification(self, clock):
+        rods, lens = _fault(self.RODS, 3), _fault(self.LENS)
+        assert _take_new_hms_faults(self.PRINTER, [rods, lens], "RUNNING") == [lens]
+        clock[0] += 5
+        assert _take_new_hms_faults(self.PRINTER, [rods, lens], "FINISH") == []
+        clock[0] += 30
+        assert _take_new_hms_faults(self.PRINTER, [rods], "FINISH") == []
+        clock[0] += 30
+        assert _take_new_hms_faults(self.PRINTER, [rods, lens], "FINISH") == [lens]
+        for _ in range(5):
+            clock[0] += 60
+            assert _take_new_hms_faults(self.PRINTER, [rods], "FINISH") == []
+            clock[0] += 30
+            assert _take_new_hms_faults(self.PRINTER, [rods, lens], "FINISH") == []
+
+    def test_tracking_is_dropped_once_everything_is_forgotten(self, clock):
+        lens = _fault(self.LENS)
+        _take_new_hms_faults(self.PRINTER, [lens], "RUNNING")
+        clock[0] += 1
+        _take_new_hms_faults(self.PRINTER, [lens], "FINISH")
+        clock[0] += 1
+        _take_new_hms_faults(self.PRINTER, [], "FINISH")
+        assert self.PRINTER not in main_module._notified_hms_errors
+        assert self.PRINTER not in main_module._hms_forget_when_gone

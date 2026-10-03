@@ -478,13 +478,18 @@ _kill_switch_setting_cache: tuple[bool, float] | None = None
 # provider notification when the immediate attempt failed.
 _kill_switch_notification_tasks: dict[int, asyncio.Task[bool]] = {}
 
-# Track HMS errors that have been notified: {printer_id: set of error codes}
-# This prevents sending duplicate notifications for the same error
-_notified_hms_errors: dict[int, set[str]] = {}
-# Track when HMS errors were last seen: {printer_id: timestamp}
-# Used to debounce clearing — prevents flapping errors from re-triggering notifications
-_hms_last_seen: dict[int, float] = {}
-_HMS_CLEAR_GRACE_SECONDS = 30.0
+# HMS faults already notified, with when each was last seen:
+# {printer_id: {fault key: timestamp}}. Tracked per fault, not per printer: a
+# fault that flickers beside a held notice was forgotten on every gap and
+# notified on every return (#3226). The window is long because the measured
+# gaps reach 64 s.
+_notified_hms_errors: dict[int, dict[str, float]] = {}
+_HMS_CLEAR_GRACE_SECONDS = 600.0
+# The print state each printer was last seen in, and the faults recorded before
+# it last changed, which are forgotten as soon as they are gone (see
+# _take_new_hms_faults).
+_hms_print_state: dict[int, str] = {}
+_hms_forget_when_gone: dict[int, set[str]] = {}
 
 # Track timelapse file baselines at print start: {printer_id: set of video filenames}
 # Used for snapshot-diff detection at print completion
@@ -1494,18 +1499,46 @@ def _hms_errors_to_notify(errors: list, new_error_codes: set[str]) -> list:
     return [e for e in errors if _hms_notify_key(e) in new_error_codes and _hms_fault_counts(e)]
 
 
-def _take_new_hms_faults(printer_id: int, errors: list) -> list:
+def _take_new_hms_faults(printer_id: int, errors: list, print_state: str | None = None) -> list:
     """The faults on this printer not notified yet, and record them as notified.
 
     Tracking is updated before anything is sent, so concurrent status callbacks
-    cannot notify the same fault twice. The set is replaced, not extended: a
-    fault that clears and later returns is notified again, and the grace period
-    in the caller keeps a fault that flickers off for a moment from doing that.
+    cannot notify the same fault twice. A notified fault is forgotten once it
+    has been gone for ``_HMS_CLEAR_GRACE_SECONDS``, so one that flickers off
+    and on is notified once (#3226), while one that clears and comes back much
+    later is notified again.
+
+    When ``print_state`` changes (a print resumed, started or finished), every
+    fault recorded so far is forgotten the first time it is gone, without the
+    wait: a runout fixed before resuming must be notified if it happens again a
+    few minutes later, while the printer sits paused. Not only the faults gone
+    at the change itself, because the update that flips the state can still
+    carry the old fault (a ``print_error`` entry stays until a payload brings
+    ``hms``).
     """
+    now = time.time()
     current = {_hms_notify_key(e) for e in errors}
-    new = current - _notified_hms_errors.get(printer_id, set())
-    _notified_hms_errors[printer_id] = current
-    _hms_last_seen[printer_id] = time.time()
+    seen = _notified_hms_errors.setdefault(printer_id, {})
+    forget_when_gone = _hms_forget_when_gone.setdefault(printer_id, set())
+
+    if print_state is not None:
+        print_state = print_state.upper()
+        if _hms_print_state.get(printer_id, print_state) != print_state:
+            forget_when_gone.update(seen)
+        _hms_print_state[printer_id] = print_state
+
+    for key, last_seen in list(seen.items()):
+        if key not in current and (key in forget_when_gone or now - last_seen >= _HMS_CLEAR_GRACE_SECONDS):
+            del seen[key]
+            forget_when_gone.discard(key)
+
+    new = current - seen.keys()
+    for key in current:
+        seen[key] = now
+    if not seen:
+        _notified_hms_errors.pop(printer_id, None)
+    if not forget_when_gone:
+        _hms_forget_when_gone.pop(printer_id, None)
     return _hms_errors_to_notify(errors, new)
 
 
@@ -1928,7 +1961,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     # Check for new HMS errors and send notifications
     current_hms_errors = getattr(state, "hms_errors", []) or []
     if current_hms_errors:
-        new_errors = _take_new_hms_faults(printer_id, current_hms_errors)
+        new_errors = _take_new_hms_faults(printer_id, current_hms_errors, state.state)
 
         if new_errors:
             try:
@@ -2010,15 +2043,10 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                 logging.getLogger(__name__).warning(f"HMS error notification failed: {e}")
 
     else:
-        # No HMS errors — only clear tracking after a grace period to prevent
-        # flapping errors (brief hms:[] gaps) from re-triggering notifications.
-        # Some HMS codes (e.g. chamber temp regulation during PETG prints) toggle
-        # on/off every few seconds as conditions fluctuate around thresholds.
-        if printer_id in _notified_hms_errors:
-            last_seen = _hms_last_seen.get(printer_id, 0)
-            if time.time() - last_seen >= _HMS_CLEAR_GRACE_SECONDS:
-                _notified_hms_errors.pop(printer_id, None)
-                _hms_last_seen.pop(printer_id, None)
+        # No HMS errors: nothing to send, but faults gone long enough (or gone
+        # across a print state change) are forgotten. Some codes, e.g. chamber
+        # temperature regulation during PETG prints, toggle every few seconds.
+        _take_new_hms_faults(printer_id, [], state.state)
 
     await ws_manager.send_printer_status(
         printer_id,

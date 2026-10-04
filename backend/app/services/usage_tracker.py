@@ -1632,12 +1632,23 @@ async def _track_from_3mf(
     # Collected rather than acted on inline so one notification covers the whole
     # print instead of one per slot (#2812).
     unassigned_global_trays: list[int] = []
+    # Deduplicated by slicer slot, not by tray (#3230). Several slots mapped to
+    # one tray, or a single-slot print that returns to an earlier tray, each
+    # consume filament of their own. A slot only repeats when the plate is
+    # unknown and every plate of the file is listed, and that must not charge
+    # the same slot once per plate. Only a tray the caller had already covered
+    # before this pass is skipped.
+    charged_slots: set[int] = set()
+    covered_before = frozenset(handled_trays)
 
     for usage in filament_usage:
         slot_id = usage.get("slot_id", 0)
         used_g = usage.get("used_g", 0)
         if used_g <= 0:
             continue
+        if slot_id in charged_slots:
+            continue
+        charged_slots.add(slot_id)
 
         # --- Mid-print tray switch: split weight across trays ---
         # Split math is shared with the Spoolman writer via
@@ -1698,7 +1709,7 @@ async def _track_from_3mf(
                     seg_tray_id = tray_global % 4
 
                 seg_key = (seg_ams_id, seg_tray_id)
-                if seg_key in handled_trays:
+                if seg_key in covered_before:
                     continue
 
                 seg_start_layer = tray_changes[seg_idx][1]
@@ -1787,6 +1798,7 @@ async def _track_from_3mf(
             continue  # Skip normal single-tray processing for this slot
 
         # Map 3MF slot_id to physical (ams_id, tray_id) using resolved mapping
+        tray_is_guessed = False
         if tray_now_override is not None:
             # Single-filament non-queue print: use actual tray from printer state
             global_tray_id = tray_now_override
@@ -1822,6 +1834,7 @@ async def _track_from_3mf(
             # never gets recorded. vt_tray entries are already filtered the
             # same way inside `build_ams_tray_lookup` (line 174 checks
             # `tray_type`), so this just mirrors that for the AMS side.
+            tray_is_guessed = global_tray_id is None
             if global_tray_id is None:
                 _state = printer_manager.get_status(printer_id)
                 _raw = getattr(_state, "raw_data", None) if _state else None
@@ -1858,7 +1871,12 @@ async def _track_from_3mf(
         )
 
         key = (ams_id, tray_id)
-        if key in handled_trays:
+        if key in covered_before:
+            continue
+        if tray_is_guessed and key in handled_trays:
+            # A guess by position can land a second slot on a tray another slot
+            # was charged for. That says nothing about which spool fed it, so
+            # it is not charged to that tray's spool as well.
             continue
 
         spool_id = await _resolve_spool_id_for_tray(

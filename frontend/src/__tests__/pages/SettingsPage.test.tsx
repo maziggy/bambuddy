@@ -2032,6 +2032,50 @@ describe('SettingsPage', () => {
     });
   });
 
+  describe('printer access sub-tab (#1727)', () => {
+    const asAdmin = (isAdmin: boolean) => {
+      setAuthToken('test-token', 'session');
+      server.use(
+        http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('*/api/v1/auth/me', () =>
+          HttpResponse.json({ id: 1, username: 'u', is_admin: isAdmin, groups: [], permissions: ['settings:read', 'users:read', 'groups:read'] })
+        ),
+        http.get('/api/v1/groups/', () => HttpResponse.json([])),
+        http.get('/api/v1/users/', () => HttpResponse.json([]))
+      );
+    };
+
+    it('opens straight on Printer access from a deep link', async () => {
+      asAdmin(true);
+      window.history.replaceState({}, '', '/settings?tab=users&sub=printer-access&view=printers');
+      render(<SettingsPage />);
+
+      expect(await screen.findByText(/Besides the groups listed here/)).toBeInTheDocument();
+    });
+
+    it('drops the sub-tab from the URL when leaving it', async () => {
+      asAdmin(true);
+      window.history.replaceState({}, '', '/settings?tab=users&sub=printer-access&group=4');
+      render(<SettingsPage />);
+      const user = userEvent.setup();
+      await screen.findByText(/Pick a group to choose its printers/);
+
+      await user.click(screen.getByRole('button', { name: 'General' }));
+      await waitFor(() => expect(window.location.search).toBe(''));
+    });
+
+    it('lands non-admins on the Users sub-tab instead', async () => {
+      asAdmin(false);
+      window.history.replaceState({}, '', '/settings?tab=users&sub=printer-access');
+      render(<SettingsPage />);
+
+      // The sub-tab row is there, without Printer access
+      expect(await screen.findByRole('button', { name: /Two-Factor|2FA/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Printer access' })).not.toBeInTheDocument();
+      expect(screen.queryByText(/Pick a group to choose its printers/)).not.toBeInTheDocument();
+    });
+  });
+
   // --------------------------------------------------------------------
   // Ask for the outcome of prints Bambuddy did not start (#1898)
   // --------------------------------------------------------------------

@@ -11,6 +11,8 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
+from backend.app.core.printer_scope import ALL_PRINTERS
+
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
@@ -169,7 +171,7 @@ class TestCamWallTokenReachesTheVideo:
         jwt = await _setup_admin(async_client, suffix="_video")
         camwall_token = await _mint(async_client, jwt, scope="camwall")
 
-        assert await verify_camera_stream_token(camwall_token) is True
+        assert await verify_camera_stream_token(camwall_token) == ALL_PRINTERS  # admin-owned: every printer (#1727)
 
     async def test_camera_stream_token_still_passes_its_own_gate(self, async_client: AsyncClient):
         """Regression guard on #1108: widening the accepted scopes must not have
@@ -180,7 +182,7 @@ class TestCamWallTokenReachesTheVideo:
         jwt = await _setup_admin(async_client, suffix="_video_legacy")
         stream_token = await _mint(async_client, jwt, scope="camera_stream")
 
-        assert await verify_camera_stream_token(stream_token) is True
+        assert await verify_camera_stream_token(stream_token) == ALL_PRINTERS  # admin-owned: every printer (#1727)
 
     async def test_camwall_gate_rejects_a_camera_stream_token(self, async_client: AsyncClient):
         from backend.app.core.auth import verify_camwall_token
@@ -188,7 +190,7 @@ class TestCamWallTokenReachesTheVideo:
         jwt = await _setup_admin(async_client, suffix="_gate_narrow")
         stream_token = await _mint(async_client, jwt, scope="camera_stream")
 
-        assert await verify_camwall_token(stream_token) is False
+        assert await verify_camwall_token(stream_token) is None
 
 
 class TestScopeValidation:

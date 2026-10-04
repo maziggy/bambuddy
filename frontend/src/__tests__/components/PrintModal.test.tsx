@@ -6,7 +6,7 @@
  * - 'edit-queue-item': Edit existing queue item (single printer)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type React from 'react';
 import { screen, waitFor, fireEvent, within, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -18,6 +18,7 @@ import { AuthProvider } from '../../contexts/AuthContext';
 import { ThemeProvider } from '../../contexts/ThemeContext';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { http, HttpResponse } from 'msw';
+import { setAuthToken } from '../../api/client';
 import { server } from '../mocks/server';
 import type { PrintQueueItem } from '../../api/client';
 
@@ -413,6 +414,90 @@ describe('PrintModal', () => {
 
       expect(mockOnClose).toHaveBeenCalled();
     });
+  });
+
+  // Without queue:start_unreviewed every job waits for staff to start it (#1620)
+  describe('when the user needs review', () => {
+    beforeEach(() => {
+      setAuthToken('test-token', 'session');
+      server.use(
+        http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('*/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 7,
+            username: 'student',
+            is_admin: false,
+            permissions: ['printers:read', 'queue:create', 'queue:update_own'],
+          }),
+        ),
+      );
+    });
+
+    afterEach(() => {
+      setAuthToken(null);
+    });
+
+    it('says the job waits and still asks for that when saving as ASAP', async () => {
+      let body: Record<string, unknown> | null = null;
+      server.use(
+        http.patch('/api/v1/queue/:id', async ({ request }) => {
+          body = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ id: 1, status: 'pending' });
+        }),
+      );
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="edit-queue-item"
+          archiveId={1}
+          archiveName="Test Print"
+          queueItem={createMockQueueItem({ manual_start: true, created_by_id: 7 })}
+          onClose={mockOnClose}
+        />
+      );
+
+      expect(
+        await screen.findByText('Your print waits for review: it starts once someone who manages the queue starts it.'),
+      ).toBeInTheDocument();
+      expect(screen.queryByText('Require manual start')).not.toBeInTheDocument();
+
+      await user.click(screen.getByText('ASAP'));
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      // Sending false would clear the wait, which the server refuses for them
+      await waitFor(() => expect(body).not.toBeNull());
+      expect(body!.manual_start).toBe(true);
+    });
+  });
+
+  // A student's scheduled job waits too (#1620); staff editing it must not start it
+  it('keeps a scheduled job waiting when it is edited', async () => {
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      http.patch('/api/v1/queue/:id', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ id: 1, status: 'pending' });
+      }),
+    );
+    const user = userEvent.setup();
+    render(
+      <PrintModal
+        mode="edit-queue-item"
+        archiveId={1}
+        archiveName="Test Print"
+        queueItem={createMockQueueItem({
+          manual_start: true,
+          // Tomorrow: over six months ahead reads as the "no date" placeholder
+          scheduled_time: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        })}
+        onClose={mockOnClose}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body!.manual_start).toBe(true);
   });
 
   describe('edit-queue-item mode', () => {

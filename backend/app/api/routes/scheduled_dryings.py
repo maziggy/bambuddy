@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.printer import Printer
 from backend.app.models.scheduled_drying import ScheduledDrying
 from backend.app.models.user import User
@@ -29,8 +30,10 @@ LISTED_STATUSES = (*ACTIVE_STATUSES, "failed")
 async def create_scheduled_drying(
     payload: ScheduledDryingCreate,
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    printer_scope: PrinterScope = RequestPrinterScope,
     db: AsyncSession = Depends(get_db),
 ):
+    printer_scope.ensure(payload.printer_id)
     result = await db.execute(select(Printer).where(Printer.id == payload.printer_id))
     printer = result.scalar_one_or_none()
     if not printer:
@@ -70,9 +73,12 @@ async def create_scheduled_drying(
 async def list_scheduled_dryings(
     printer_id: int | None = None,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
     db: AsyncSession = Depends(get_db),
 ):
     query = select(ScheduledDrying).where(ScheduledDrying.status.in_(LISTED_STATUSES))
+    if (clause := printer_scope.where_strict(ScheduledDrying.printer_id)) is not None:
+        query = query.where(clause)
     if printer_id is not None:
         query = query.where(ScheduledDrying.printer_id == printer_id)
     result = await db.execute(query.order_by(ScheduledDrying.start_after.asc().nullsfirst(), ScheduledDrying.id.asc()))
@@ -83,11 +89,12 @@ async def list_scheduled_dryings(
 async def cancel_scheduled_drying(
     scheduled_drying_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    printer_scope: PrinterScope = RequestPrinterScope,
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ScheduledDrying).where(ScheduledDrying.id == scheduled_drying_id))
     row = result.scalar_one_or_none()
-    if not row:
+    if not row or not printer_scope.allows(row.printer_id):
         raise HTTPException(404, "Scheduled drying not found")
     if row.status == "failed":
         # Terminal and now acknowledged; drop it so it stops being listed.

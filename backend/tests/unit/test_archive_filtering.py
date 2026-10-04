@@ -10,6 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from backend.app.core.printer_scope import ALL_PRINTERS
+
 # Patch paths for lazy imports inside functions
 _FTP_MODULE = "backend.app.services.bambu_ftp"
 
@@ -847,7 +849,9 @@ class TestDeleteTimelapse:
         with patch("backend.app.api.routes.archives.settings") as mock_settings:
             mock_settings.base_dir = tmp_path
             # auth_result=(None, True) → the auth-disabled / can_modify_all path.
-            result = await delete_timelapse(archive_id=1, db=mock_db, auth_result=(None, True))
+            result = await delete_timelapse(
+                archive_id=1, db=mock_db, auth_result=(None, True), printer_scope=ALL_PRINTERS
+            )
 
         assert result == {"status": "deleted"}
         assert mock_archive.timelapse_path is None
@@ -871,7 +875,7 @@ class TestDeleteTimelapse:
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         with pytest.raises(HTTPException) as exc_info:
-            await delete_timelapse(archive_id=1, db=mock_db, auth_result=(None, True))
+            await delete_timelapse(archive_id=1, db=mock_db, auth_result=(None, True), printer_scope=ALL_PRINTERS)
 
         assert exc_info.value.status_code == 404
 
@@ -888,6 +892,6 @@ class TestDeleteTimelapse:
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         with pytest.raises(HTTPException) as exc_info:
-            await delete_timelapse(archive_id=999, db=mock_db, auth_result=(None, True))
+            await delete_timelapse(archive_id=999, db=mock_db, auth_result=(None, True), printer_scope=ALL_PRINTERS)
 
         assert exc_info.value.status_code == 404

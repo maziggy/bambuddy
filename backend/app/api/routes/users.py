@@ -23,6 +23,7 @@ from backend.app.core.auth import (
 )
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.websocket import ws_manager
 from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, TokenType
@@ -349,6 +350,10 @@ async def update_user(
     await ensure_user_finance_defaults(db, user)
 
     await db.commit()
+    if user_data.group_ids is not None or user_data.role is not None or user_data.is_active is not None:
+        # Groups, admin role and deactivation all change which printers the
+        # user's open dashboards may hear about (#1727)
+        await ws_manager.refresh_printer_scopes()
     result = await db.execute(select(User).where(User.id == user_id).options(selectinload(User.groups)))
     user = result.scalar_one()
 
@@ -467,6 +472,22 @@ async def delete_user(
         # users would otherwise leave dangling created_by_id on SQLite (#1295 review nit).
         from sqlalchemy import update
 
+        from backend.app.core.printer_scope import resolve_user_printer_scope
+
+        # An ownerless "any <model>" job may run on any printer of that model;
+        # the scheduler held it to this user's printers only while it was
+        # theirs (#1727). Stage those jobs instead, so an admin decides where
+        # they run rather than the job quietly spreading across the fleet.
+        if not (await resolve_user_printer_scope(db, user)).is_unrestricted:
+            await db.execute(
+                update(PrintQueueItem)
+                .where(
+                    PrintQueueItem.created_by_id == user_id,
+                    PrintQueueItem.printer_id.is_(None),
+                    PrintQueueItem.status == "pending",
+                )
+                .values(manual_start=True)
+            )
         await db.execute(update(PrintArchive).where(PrintArchive.created_by_id == user_id).values(created_by_id=None))
         await db.execute(
             update(PrintQueueItem).where(PrintQueueItem.created_by_id == user_id).values(created_by_id=None)
@@ -517,6 +538,7 @@ async def delete_user(
 
     await db.delete(user)
     await db.commit()
+    await ws_manager.refresh_printer_scopes()
 
     for file_id in doomed_library_file_ids:
         remove_library_photos_dir(file_id)

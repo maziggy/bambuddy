@@ -21,6 +21,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from backend.app.core.printer_scope import ALL_PRINTERS
+
 logger = logging.getLogger(__name__)
 
 
@@ -411,7 +413,7 @@ class TestManualScanUsesTheBaseline:
             ),
             patch("backend.app.services.bambu_ftp.delete_archived_timelapse", delete or AsyncMock()),
         ):
-            return await archives_mod.scan_timelapse(archive.id, None)
+            return await archives_mod.scan_timelapse(archive.id, None, ALL_PRINTERS)
 
     @pytest.mark.asyncio
     async def test_attaches_the_single_unclaimed_new_file(self):

@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.archive import PrintArchive
 
 
@@ -81,6 +82,7 @@ class ExportService:
         date_to: datetime | None = None,
         search: str | None = None,
         visible_to_user_id: int | None = None,
+        printer_scope: PrinterScope | None = None,
     ) -> tuple[bytes, str, str]:
         """Export archives to CSV or Excel format.
 
@@ -123,6 +125,8 @@ class ExportService:
             query = query.where(PrintArchive.created_at <= date_to)
         if visible_to_user_id is not None:
             query = query.where(PrintArchive.created_by_id == visible_to_user_id)
+        if printer_scope is not None and (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
+            query = query.where(clause)
         if search:
             like_pattern = f"%{search}%"
             query = query.where(
@@ -170,6 +174,7 @@ class ExportService:
         printer_id: int | None = None,
         project_id: int | None = None,
         created_by_id: int | None = None,
+        printer_scope: PrinterScope | None = None,
     ) -> tuple[bytes, str, str]:
         """Export statistics summary to CSV or Excel format.
 
@@ -192,6 +197,7 @@ class ExportService:
             printer_id=printer_id,
             project_id=project_id,
             created_by_id=created_by_id,
+            printer_scope=printer_scope,
         )
 
         # Build stats rows

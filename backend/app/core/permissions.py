@@ -50,6 +50,10 @@ class Permission(StrEnum):
     QUEUE_DELETE_OWN = "queue:delete_own"
     QUEUE_DELETE_ALL = "queue:delete_all"
     QUEUE_REORDER = "queue:reorder"
+    # Without it, every job the user queues waits until someone with
+    # queue:update_all starts it (#1620). Only the waiting is enforced here;
+    # queue:create still decides whether they may queue at all.
+    QUEUE_START_UNREVIEWED = "queue:start_unreviewed"
 
     # Library
     LIBRARY_READ = "library:read"
@@ -237,6 +241,7 @@ PERMISSION_CATEGORIES = {
         Permission.QUEUE_DELETE_OWN,
         Permission.QUEUE_DELETE_ALL,
         Permission.QUEUE_REORDER,
+        Permission.QUEUE_START_UNREVIEWED,
     ],
     "Library": [
         Permission.LIBRARY_READ,  # legacy — kept for back-compat with custom roles
@@ -414,6 +419,7 @@ DEFAULT_GROUPS = {
             Permission.QUEUE_UPDATE_OWN.value,
             Permission.QUEUE_DELETE_OWN.value,
             Permission.QUEUE_REORDER.value,
+            Permission.QUEUE_START_UNREVIEWED.value,
             # Library - own items only
             Permission.LIBRARY_READ_OWN.value,
             Permission.LIBRARY_UPLOAD.value,

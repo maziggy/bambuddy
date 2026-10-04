@@ -584,7 +584,8 @@ class TestPrintersAPI:
                 headers=headers,
             )
 
-        assert denied.status_code == 403
+        # Out of scope reads as missing, so the id isn't confirmed (#1727)
+        assert denied.status_code == 404
         assert allowed.status_code == 200
         listing.assert_awaited_once()
 

@@ -12,13 +12,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.core.auth import (
+    RequestPrinterScope,
     RequireAnyPermissionIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
+    RequirePrinterPermissionIfAuthEnabled,
     require_auth_if_enabled,
 )
 from backend.app.core.catalog_defaults import DEFAULT_COLOR_CATALOG, DEFAULT_SPOOL_CATALOG
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.core.websocket import ws_manager
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.color_catalog import ColorCatalogEntry
@@ -2053,6 +2056,7 @@ async def list_assignments(
     printer_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_VIEW_ASSIGNMENTS),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """List spool assignments, optionally filtered by printer."""
     from backend.app.services.printer_manager import printer_manager
@@ -2063,6 +2067,8 @@ async def list_assignments(
     )
     if printer_id is not None:
         query = query.where(SpoolAssignment.printer_id == printer_id)
+    if (clause := printer_scope.where_strict(SpoolAssignment.printer_id)) is not None:
+        query = query.where(clause)
     result = await db.execute(query)
     assignments = list(result.scalars().all())
 
@@ -2118,9 +2124,12 @@ async def assign_spool(
     data: SpoolAssignmentCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Assign a spool to an AMS slot and auto-configure via MQTT."""
     from backend.app.services.printer_manager import printer_manager
+
+    printer_scope.ensure(data.printer_id)
 
     # 1. Validate spool exists and is not archived
     result = await db.execute(select(Spool).options(*spool_response_loads()).where(Spool.id == data.spool_id))
@@ -2340,7 +2349,7 @@ async def unassign_spool(
     ams_id: int,
     tray_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Unassign a spool from an AMS slot."""
     result = await db.execute(
@@ -2695,6 +2704,7 @@ async def get_all_usage_history(
     printer_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get global usage history, optionally filtered by printer."""
     from backend.app.models.spool_usage_history import SpoolUsageHistory
@@ -2702,6 +2712,8 @@ async def get_all_usage_history(
     query = select(SpoolUsageHistory).order_by(SpoolUsageHistory.created_at.desc()).limit(limit)
     if printer_id is not None:
         query = query.where(SpoolUsageHistory.printer_id == printer_id)
+    if (clause := printer_scope.where(SpoolUsageHistory.printer_id)) is not None:
+        query = query.where(clause)
     result = await db.execute(query)
     return list(result.scalars().all())
 
@@ -2729,6 +2741,7 @@ async def clear_spool_usage_history(
 async def sync_weights_from_ams(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Force-sync spool weight_used from live AMS remain% data.
 
@@ -2739,7 +2752,8 @@ async def sync_weights_from_ams(
     from backend.app.services.printer_manager import printer_manager
 
     result = await db.execute(select(SpoolAssignment).options(selectinload(SpoolAssignment.spool)))
-    assignments = list(result.scalars().all())
+    # Only slots on printers the caller may see (#1727)
+    assignments = [a for a in result.scalars().all() if printer_scope.allows(a.printer_id)]
     logger.info("AMS weight sync: found %d assignments", len(assignments))
 
     synced = 0
@@ -3107,6 +3121,7 @@ async def create_spool_from_slot(
     req: CreateSpoolFromSlotRequest,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Explicit user action: create an inventory spool from an AMS slot's current tray data.
 
@@ -3117,6 +3132,7 @@ async def create_spool_from_slot(
     from backend.app.services.printer_manager import printer_manager
     from backend.app.services.spool_tag_matcher import auto_assign_spool, create_spool_from_tray
 
+    printer_scope.ensure(req.printer_id)
     state = printer_manager.get_status(req.printer_id)
     if not state or not state.raw_data:
         raise HTTPException(status_code=404, detail="Printer not connected or no state available")

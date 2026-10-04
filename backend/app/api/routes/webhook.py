@@ -5,7 +5,15 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import check_printer_access, check_webhook_permission, get_api_key
+from backend.app.core.auth import (
+    api_key_printer_scope,
+    check_webhook_permission,
+    ensure_api_key_printer_access,
+    get_api_key,
+    is_auth_enabled,
+    queue_review_required_for,
+    resolve_apikey_owner,
+)
 from backend.app.core.database import get_db
 from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
@@ -101,7 +109,7 @@ async def webhook_add_to_queue(
     Requires 'can_queue' permission.
     """
     await check_webhook_permission(db, api_key, "queue")
-    check_printer_access(api_key, data.printer_id)
+    await ensure_api_key_printer_access(db, api_key, data.printer_id)
 
     # Verify archive exists
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == data.archive_id))
@@ -145,6 +153,8 @@ async def webhook_add_to_queue(
         # for the person whose key it is. Legacy keys predating per-user ownership
         # have no `user_id`, and those rows stay ownerless.
         created_by_id=api_key.user_id,
+        # Waits for someone to start it unless the owner may print without review (#1620)
+        manual_start=await is_auth_enabled(db) and queue_review_required_for(await resolve_apikey_owner(db, api_key)),
     )
     db.add(queue_item)
     await db.flush()
@@ -180,7 +190,7 @@ async def webhook_start_print(
     Requires 'can_control_printer' permission.
     """
     await check_webhook_permission(db, api_key, "control_printer")
-    check_printer_access(api_key, printer_id)
+    await ensure_api_key_printer_access(db, api_key, printer_id)
 
     # Get printer
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
@@ -201,6 +211,18 @@ async def webhook_start_print(
     queue_item = result.scalar_one_or_none()
     if not queue_item:
         raise HTTPException(status_code=404, detail="No pending prints in queue")
+
+    # Starting a waiting job is a review decision (#1620): a key whose owner
+    # needs review for their own jobs can't make one for anybody's
+    if (
+        queue_item.manual_start
+        and await is_auth_enabled(db)
+        and queue_review_required_for(await resolve_apikey_owner(db, api_key))
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="The next job waits for review: someone who can manage all queue jobs has to start it",
+        )
 
     # Clear manual_start so the scheduler will dispatch. If the item was
     # already auto-dispatchable this is a no-op; the scheduler will still
@@ -224,7 +246,7 @@ async def webhook_stop_print(
     Requires 'can_control_printer' permission.
     """
     await check_webhook_permission(db, api_key, "control_printer")
-    check_printer_access(api_key, printer_id)
+    await ensure_api_key_printer_access(db, api_key, printer_id)
 
     status = printer_manager.get_status(printer_id)
     # `printer_manager.get_status(...)` returns a ``PrinterState`` dataclass
@@ -256,7 +278,7 @@ async def webhook_cancel_print(
     Requires 'can_control_printer' permission.
     """
     await check_webhook_permission(db, api_key, "control_printer")
-    check_printer_access(api_key, printer_id)
+    await ensure_api_key_printer_access(db, api_key, printer_id)
 
     status = printer_manager.get_status(printer_id)
     # Same dataclass-not-dict shape as stop_print above (#1584).
@@ -286,7 +308,7 @@ async def webhook_get_printer_status(
     Requires 'can_read_status' permission.
     """
     await check_webhook_permission(db, api_key, "read_status")
-    check_printer_access(api_key, printer_id)
+    await ensure_api_key_printer_access(db, api_key, printer_id)
 
     # Get printer
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
@@ -342,15 +364,15 @@ async def webhook_get_queue_status(
 
     # Get printers
     if printer_id:
-        check_printer_access(api_key, printer_id)
+        await ensure_api_key_printer_access(db, api_key, printer_id)
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
         printers = result.scalars().all()
     else:
         result = await db.execute(select(Printer))
         printers = result.scalars().all()
-        # Filter by allowed printers if limited
-        if api_key.printer_ids is not None:
-            printers = [p for p in printers if p.id in api_key.printer_ids]
+        # Only the printers the key (and its owner) may reach
+        scope = await api_key_printer_scope(db, api_key)
+        printers = [p for p in printers if scope.allows(p.id)]
 
     response = []
     for printer in printers:

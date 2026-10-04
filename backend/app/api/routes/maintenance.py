@@ -8,9 +8,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import (
+    RequestPrinterScope,
+    RequirePermissionIfAuthEnabled,
+    RequirePrinterPermissionIfAuthEnabled,
+)
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.maintenance import MaintenanceHistory, MaintenanceType, PrinterMaintenance
 from backend.app.models.printer import Printer
 from backend.app.models.user import User
@@ -440,7 +445,7 @@ async def _get_printer_maintenance_internal(
 async def get_printer_maintenance(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
 ):
     """Get maintenance overview for a specific printer."""
     return await _get_printer_maintenance_internal(printer_id, db, commit=True)
@@ -450,12 +455,13 @@ async def get_printer_maintenance(
 async def get_all_maintenance_overview(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get maintenance overview for all active printers."""
     await ensure_default_types(db)
 
     result = await db.execute(select(Printer).where(Printer.is_active.is_(True)))
-    printers = result.scalars().all()
+    printers = [p for p in result.scalars().all() if printer_scope.allows(p.id)]
 
     overviews = []
     for printer in printers:
@@ -475,6 +481,7 @@ async def update_printer_maintenance(
     data: PrinterMaintenanceUpdate,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Update a printer maintenance item (e.g., custom interval, enabled)."""
     result = await db.execute(
@@ -483,7 +490,7 @@ async def update_printer_maintenance(
         .options(selectinload(PrinterMaintenance.maintenance_type))
     )
     item = result.scalar_one_or_none()
-    if not item:
+    if not item or not printer_scope.allows(item.printer_id):
         raise HTTPException(status_code=404, detail="Maintenance item not found")
 
     update_data = data.model_dump(exclude_unset=True)
@@ -500,7 +507,7 @@ async def assign_maintenance_type(
     printer_id: int,
     type_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_CREATE),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.MAINTENANCE_CREATE),
 ):
     """Assign a maintenance type to a specific printer (for custom types)."""
     # Verify printer exists
@@ -554,6 +561,7 @@ async def remove_maintenance_item(
     item_id: int,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Remove a maintenance item (unassign a custom type from a printer)."""
     result = await db.execute(
@@ -562,7 +570,7 @@ async def remove_maintenance_item(
         .options(selectinload(PrinterMaintenance.maintenance_type))
     )
     item = result.scalar_one_or_none()
-    if not item:
+    if not item or not printer_scope.allows(item.printer_id):
         raise HTTPException(status_code=404, detail="Maintenance item not found")
 
     # Only allow removing custom (non-system) types
@@ -581,6 +589,7 @@ async def perform_maintenance(
     data: PerformMaintenanceRequest,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Mark maintenance as performed (reset the counter)."""
     result = await db.execute(
@@ -589,7 +598,7 @@ async def perform_maintenance(
         .options(selectinload(PrinterMaintenance.maintenance_type))
     )
     item = result.scalar_one_or_none()
-    if not item:
+    if not item or not printer_scope.allows(item.printer_id):
         raise HTTPException(status_code=404, detail="Maintenance item not found")
 
     # Get printer for name
@@ -659,8 +668,14 @@ async def get_maintenance_history(
     item_id: int,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get maintenance history for a specific item."""
+    item_printer_id = (
+        await db.execute(select(PrinterMaintenance.printer_id).where(PrinterMaintenance.id == item_id))
+    ).scalar_one_or_none()
+    if not printer_scope.allows(item_printer_id):
+        raise HTTPException(status_code=404, detail="Maintenance item not found")
     result = await db.execute(
         select(MaintenanceHistory)
         .where(MaintenanceHistory.printer_maintenance_id == item_id)
@@ -673,12 +688,13 @@ async def get_maintenance_history(
 async def get_maintenance_summary(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get a summary of maintenance status across all printers."""
     await ensure_default_types(db)
 
     result = await db.execute(select(Printer).where(Printer.is_active.is_(True)))
-    printers = result.scalars().all()
+    printers = [p for p in result.scalars().all() if printer_scope.allows(p.id)]
 
     total_due = 0
     total_warning = 0
@@ -710,7 +726,7 @@ async def set_printer_hours(
     printer_id: int,
     total_hours: float,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
 ):
     """Set the total print hours for a printer (adjusts offset to match).
 

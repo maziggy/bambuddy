@@ -50,6 +50,7 @@ import { GitHubBackupSettings } from '../components/GitHubBackupSettings';
 import { FailureDetectionSettings } from '../components/FailureDetectionSettings';
 import { EmailSettings } from '../components/EmailSettings';
 import { LDAPSettings } from '../components/LDAPSettings';
+import { PrinterAccessSettings } from '../components/PrinterAccessSettings';
 import { TwoFactorSettings } from '../components/TwoFactorSettings';
 import { OIDCProviderSettings } from '../components/OIDCProviderSettings';
 import { SecurityStatusCard } from '../components/SecurityStatusCard';
@@ -114,6 +115,7 @@ registerSettingsSearch({ labelKey: 'settings.tabs.spoolbuddy', tab: 'spoolbuddy'
 registerSettingsSearch({ labelKey: 'settings.currentUser', tab: 'users', subTab: 'users', keywords: 'current user profile password change', anchor: 'card-currentuser' });
 registerSettingsSearch({ labelKey: 'settings.users', tab: 'users', subTab: 'users', keywords: 'users accounts list', anchor: 'card-users' });
 registerSettingsSearch({ labelKey: 'settings.groups', tab: 'users', subTab: 'users', keywords: 'groups roles permissions administrators operators viewers', anchor: 'card-groups' });
+registerSettingsSearch({ labelKey: 'printerAccess.tab', tab: 'users', subTab: 'printer-access', keywords: 'printer access groups teams locations limit restrict scope who can see', anchor: 'card-printer-access' });
 registerSettingsSearch({ labelKey: 'settings.sessionPolicy.title', labelFallback: 'Session Policy', tab: 'users', subTab: 'users', keywords: 'session timeout expiry logout remember me jwt token lifetime', anchor: 'card-session-policy' });
 registerSettingsSearch({ labelKey: 'settings.email.smtpSettings', labelFallback: 'SMTP Configuration', tab: 'users', subTab: 'email', keywords: 'smtp email send server port password auth starttls ssl', anchor: 'card-smtp' });
 registerSettingsSearch({ labelKey: 'settings.ldap.title', labelFallback: 'LDAP Authentication', tab: 'users', subTab: 'ldap', keywords: 'ldap active directory ad authentication bind dn search base group mapping', anchor: 'card-ldap' });
@@ -285,7 +287,22 @@ export function SettingsPage() {
     : isLegacyCameraLink ? 'camera'
     : (tabParam && validTabs.includes(tabParam as TabType) ? tabParam as TabType : 'general');
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
-  const [usersSubTab, setUsersSubTab] = useState<UsersSubTab>(isLegacyEmailTab ? 'email' : 'users');
+  // Only Printer access is deep-linked (?tab=users&sub=printer-access), from the printer card menu
+  const [usersSubTab, setUsersSubTab] = useState<UsersSubTab>(
+    isLegacyEmailTab ? 'email' : tabParam === 'users' && searchParams.get('sub') === 'printer-access' ? 'printer-access' : 'users'
+  );
+  const selectUsersSubTab = (sub: UsersSubTab) => {
+    setUsersSubTab(sub);
+    if (sub === 'printer-access') {
+      searchParams.set('sub', 'printer-access');
+    } else {
+      for (const key of ['sub', 'view', 'group', 'printer']) searchParams.delete(key);
+    }
+    setSearchParams(searchParams, { replace: true });
+  };
+  // A link to Printer access lands non-admins on the Users sub-tab instead
+  const shownUsersSubTab: UsersSubTab =
+    usersSubTab === 'printer-access' && !(authEnabled && isAdmin) ? 'users' : usersSubTab;
   // Workflow tab sub-tabs (#1425): 'dispatch' = current Workflow content,
   // 'pipelines' = Slicer Pipelines management. URL: ?tab=queue&sub=pipelines.
   const initialQueueSub: 'dispatch' | 'pipelines' =
@@ -298,9 +315,10 @@ export function SettingsPage() {
     if (tab === 'users') {
       setUsersSubTab('users');
     }
+    // Sub-tab state belongs to the tab being left
+    for (const key of ['sub', 'view', 'group', 'printer']) searchParams.delete(key);
     if (tab === 'queue') {
       setQueueSubTab('dispatch');
-      searchParams.delete('sub');
     }
     if (tab === 'general') {
       searchParams.delete('tab');
@@ -1551,7 +1569,7 @@ export function SettingsPage() {
   const jumpToSetting = (entry: typeof searchIndex[number]) => {
     handleTabChange(entry.tab as TabType);
     if (entry.subTab) {
-      setUsersSubTab(entry.subTab as UsersSubTab);
+      selectUsersSubTab(entry.subTab as UsersSubTab);
     }
     setSettingsSearch('');
     // Scroll to the card after the tab has rendered
@@ -6639,9 +6657,9 @@ export function SettingsPage() {
           {/* Sub-tab Navigation */}
           <div className="flex gap-1 border-b border-bambu-dark-tertiary">
             <button
-              onClick={() => setUsersSubTab('users')}
+              onClick={() => selectUsersSubTab('users')}
               className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-                usersSubTab === 'users'
+                shownUsersSubTab === 'users'
                   ? 'text-bambu-green border-bambu-green'
                   : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
               }`}
@@ -6649,10 +6667,23 @@ export function SettingsPage() {
               <Users className="w-4 h-4" />
               {t('settings.tabs.users')}
             </button>
+            {authEnabled && isAdmin && (
+              <button
+                onClick={() => selectUsersSubTab('printer-access')}
+                className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+                  shownUsersSubTab === 'printer-access'
+                    ? 'text-bambu-green border-bambu-green'
+                    : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+                }`}
+              >
+                <Printer className="w-4 h-4" />
+                {t('printerAccess.tab')}
+              </button>
+            )}
             <button
-              onClick={() => setUsersSubTab('email')}
+              onClick={() => selectUsersSubTab('email')}
               className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-                usersSubTab === 'email'
+                shownUsersSubTab === 'email'
                   ? 'text-bambu-green border-bambu-green'
                   : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
               }`}
@@ -6664,9 +6695,9 @@ export function SettingsPage() {
               )}
             </button>
             <button
-              onClick={() => setUsersSubTab('ldap')}
+              onClick={() => selectUsersSubTab('ldap')}
               className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px lg:border-b-0 lg:border-l-2 lg:-ml-px lg:mb-0 lg:justify-start flex items-center gap-2 ${
-                usersSubTab === 'ldap'
+                shownUsersSubTab === 'ldap'
                   ? 'text-bambu-green border-bambu-green'
                   : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
               }`}
@@ -6678,9 +6709,9 @@ export function SettingsPage() {
               )}
             </button>
             <button
-              onClick={() => setUsersSubTab('twofa')}
+              onClick={() => selectUsersSubTab('twofa')}
               className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
-                usersSubTab === 'twofa'
+                shownUsersSubTab === 'twofa'
                   ? 'text-bambu-green border-bambu-green'
                   : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
               }`}
@@ -6697,9 +6728,9 @@ export function SettingsPage() {
             </button>
             {isAdmin && (
               <button
-                onClick={() => setUsersSubTab('oidc')}
+                onClick={() => selectUsersSubTab('oidc')}
                 className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
-                  usersSubTab === 'oidc'
+                  shownUsersSubTab === 'oidc'
                     ? 'text-bambu-green border-bambu-green'
                     : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
                 }`}
@@ -6717,9 +6748,9 @@ export function SettingsPage() {
             )}
             {isAdmin && (
               <button
-                onClick={() => setUsersSubTab('security')}
+                onClick={() => selectUsersSubTab('security')}
                 className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
-                  usersSubTab === 'security'
+                  shownUsersSubTab === 'security'
                     ? 'text-bambu-green border-bambu-green'
                     : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
                 }`}
@@ -6731,7 +6762,7 @@ export function SettingsPage() {
           </div>
 
           {/* Users Sub-tab */}
-          {usersSubTab === 'users' && (
+          {shownUsersSubTab === 'users' && (
           <>
           {/* Auth Toggle Header */}
           <Card>
@@ -7107,26 +7138,28 @@ export function SettingsPage() {
           </>
           )}
 
+          {shownUsersSubTab === 'printer-access' && <PrinterAccessSettings />}
+
           {/* Email Auth Sub-tab */}
-          {usersSubTab === 'email' && (
+          {shownUsersSubTab === 'email' && (
             <div className="max-w-5xl" id="card-smtp">
               <EmailSettings />
             </div>
           )}
 
-          {usersSubTab === 'ldap' && (
+          {shownUsersSubTab === 'ldap' && (
             <div className="max-w-5xl" id="card-ldap">
               <LDAPSettings />
             </div>
           )}
 
-          {usersSubTab === 'twofa' && (
+          {shownUsersSubTab === 'twofa' && (
             <div className="max-w-2xl">
               <TwoFactorSettings />
             </div>
           )}
 
-          {usersSubTab === 'oidc' && isAdmin && (
+          {shownUsersSubTab === 'oidc' && isAdmin && (
             <div className="max-w-3xl space-y-4">
               <Card>
                 <CardContent className="space-y-3 p-4">
@@ -7148,7 +7181,7 @@ export function SettingsPage() {
             </div>
           )}
 
-          {usersSubTab === 'security' && isAdmin && (
+          {shownUsersSubTab === 'security' && isAdmin && (
             <div className="max-w-3xl">
               <SecurityStatusCard />
             </div>

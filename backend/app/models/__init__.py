@@ -8,7 +8,7 @@ from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.connected_app import ConnectedApp, ConnectedAppGrant
 from backend.app.models.filament import Filament
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
-from backend.app.models.group import Group, user_groups
+from backend.app.models.group import Group, group_locations, group_printers, user_groups
 from backend.app.models.kprofile_note import KProfileNote
 from backend.app.models.library import FileVariantGroup, LibraryFile, LibraryFolder
 from backend.app.models.local_preset import LocalPreset
@@ -78,6 +78,8 @@ __all__ = [
     "User",
     "Group",
     "user_groups",
+    "group_locations",
+    "group_printers",
     "GitHubBackupConfig",
     "GitHubBackupLog",
     "LocalPreset",

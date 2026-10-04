@@ -77,6 +77,10 @@ class AuthEphemeralToken(Base):
     # oidc_state: which provider initiated the flow
     provider_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # camera_stream + websocket: the API key that minted the token, when one
+    # did, so the token carries that key's printer scope (#1727)
+    api_key_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # oidc_state: replay-protection nonce embedded in the ID token
     nonce: Mapped[str | None] = mapped_column(String(128), nullable=True)
 

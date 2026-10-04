@@ -80,3 +80,58 @@ class UnifiedPresetsResponse(BaseModel):
     standard: UnifiedPresetsBySlot = UnifiedPresetsBySlot()
     cloud_status: CloudStatus = "ok"
     orca_cloud_status: CloudStatus = "ok"
+
+
+class LoadedSpoolPreset(BaseModel):
+    """The filament profile Bambuddy recorded for a slot (``slot_preset_mappings``).
+
+    ``tray_info_idx`` is the filament id the slot was configured with alongside
+    it. The SliceModal compares it with the tray's live id the same way the
+    slot card does, so a row that outlived a spool swap isn't trusted (#3216).
+    """
+
+    preset_id: str
+    preset_name: str
+    preset_source: str
+    tray_info_idx: str | None = None
+
+
+class LoadedSpoolTray(BaseModel):
+    """One AMS slot or external holder, as the printer reports it right now."""
+
+    ams_id: int
+    tray_id: int
+    tray_type: str | None = None
+    tray_sub_brands: str | None = None
+    tray_color: str | None = None
+    tray_info_idx: str | None = None
+    # Firmware's presence bit. A non-RFID spool it can't identify is present
+    # (True) but has no tray_type, which reads as "loaded, unconfigured".
+    exists: bool | None = None
+    state: int | None = None
+    saved_preset: LoadedSpoolPreset | None = None
+
+
+class LoadedSpoolUnit(BaseModel):
+    id: int
+    is_ams_ht: bool
+    trays: list[LoadedSpoolTray]
+
+
+class LoadedSpoolPrinter(BaseModel):
+    id: int
+    name: str
+    # Short model name ("X1C", "H2D") — the form the slicer's @BBL tags use.
+    model: str | None = None
+    ams: list[LoadedSpoolUnit] = []
+    # Only holders that currently have a spool in them.
+    external: list[LoadedSpoolTray] = []
+    # How many holders the printer has, loaded or not: two on a dual-nozzle
+    # printer, whose holders are labelled left and right.
+    external_holders: int = 0
+
+
+class LoadedSpoolsResponse(BaseModel):
+    """Connected printers and what is loaded in them, for the SliceModal (#3172)."""
+
+    printers: list[LoadedSpoolPrinter] = []

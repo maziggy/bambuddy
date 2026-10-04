@@ -27,6 +27,7 @@ from backend.app.core.auth import (
     create_access_token,
     create_media_token,
     create_websocket_token,
+    current_api_key_if_present,
     get_current_active_user,
     get_password_hash,
     get_user_by_email,
@@ -40,6 +41,7 @@ from backend.app.core.auth import (
 )
 from backend.app.core.database import async_session, get_db
 from backend.app.core.oidc_env import env_bool
+from backend.app.models.api_key import APIKey
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent, EventType, TokenType
 from backend.app.models.group import Group
 from backend.app.models.settings import Settings
@@ -644,6 +646,7 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
 @router.post("/ws-token")
 async def mint_websocket_token(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.WEBSOCKET_CONNECT),
+    api_key: APIKey | None = Depends(current_api_key_if_present),
 ):
     """Mint a short-lived token for ``/api/v1/ws`` connections (GHSA-r2qv follow-up).
 
@@ -661,7 +664,9 @@ async def mint_websocket_token(
     passes via the standard allowlist (``can_read_status`` covers it).
     """
     username = current_user.username if current_user is not None else None
-    return {"token": await create_websocket_token(username)}
+    # The socket only carries the printers its minter may see (#1727)
+    api_key_id = api_key.id if api_key is not None else None
+    return {"token": await create_websocket_token(username, api_key_id)}
 
 
 @router.post("/media-token")
@@ -1466,13 +1471,19 @@ async def _sync_ldap_user(db: AsyncSession, user: User, ldap_user, ldap_config) 
 
     current_group_ids = {g.id for g in user.groups}
     new_group_ids = {g.id for g in new_groups}
-    if current_group_ids != new_group_ids:
+    groups_changed = current_group_ids != new_group_ids
+    if groups_changed:
         user.groups = new_groups
         changed = True
 
     if changed:
         await db.commit()
         logger.info("Synced LDAP user attributes: %s", user.username)
+        if groups_changed:
+            # The user's open dashboards may now see other printers (#1727)
+            from backend.app.core.websocket import ws_manager
+
+            await ws_manager.refresh_printer_scopes()
 
 
 @router.post("/ldap/test")

@@ -12,9 +12,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import (
+    RequestPrinterScope,
+    RequirePermissionIfAuthEnabled,
+    RequirePrinterPermissionIfAuthEnabled,
+)
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
@@ -106,9 +111,10 @@ def _not_checked(printer: Printer) -> FirmwareUpdateInfo:
 async def check_firmware_updates(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """
-    Check for firmware updates for all connected printers.
+    Check for firmware updates for the connected printers the caller may see.
 
     Compares each printer's current firmware version against the latest
     available version from Bambu Lab's official firmware download page.
@@ -120,7 +126,7 @@ async def check_firmware_updates(
 
     # Get all printers from database
     result = await db.execute(select(Printer).where(Printer.is_active.is_(True)))
-    printers = result.scalars().all()
+    printers = [p for p in result.scalars().all() if printer_scope.allows(p.id)]
 
     if not await _checks_enabled(db):
         return FirmwareUpdatesResponse(updates=[_not_checked(p) for p in printers], updates_available=0)
@@ -163,7 +169,7 @@ async def check_firmware_updates(
 async def check_printer_firmware(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.FIRMWARE_READ),
 ):
     """
     Check for firmware update for a specific printer.
@@ -267,7 +273,7 @@ async def prepare_firmware_upload(
     printer_id: int,
     version: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.FIRMWARE_READ),
 ):
     """
     Check prerequisites for uploading firmware to a printer.
@@ -290,7 +296,7 @@ async def start_firmware_upload(
     printer_id: int,
     version: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_UPDATE),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.FIRMWARE_UPDATE),
 ):
     """
     Start uploading firmware to a printer's SD card.
@@ -340,7 +346,7 @@ async def start_firmware_upload(
 @router.get("/updates/{printer_id}/upload/status", response_model=FirmwareUploadStatusResponse)
 async def get_firmware_upload_status(
     printer_id: int,
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.FIRMWARE_READ),
 ):
     """
     Get the current status of a firmware upload operation.

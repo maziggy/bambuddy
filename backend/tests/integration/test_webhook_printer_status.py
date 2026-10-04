@@ -308,7 +308,8 @@ class TestWebhookPrinterStatusFields:
         await db_session.commit()
 
         resp = await _status(async_client, full_key, printer_row.id, PrinterState(connected=True))
-        assert resp.status_code == 403
+        # Out of scope reads as missing, so the id isn't confirmed (#1727)
+        assert resp.status_code == 404
         assert "00M00A000000010" not in resp.text
 
 

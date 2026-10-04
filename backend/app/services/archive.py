@@ -14,6 +14,7 @@ from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
@@ -1599,6 +1600,7 @@ class ArchiveService:
         limit: int = 50,
         offset: int = 0,
         visible_to_user_id: int | None = None,
+        printer_scope: PrinterScope | None = None,
     ) -> list[PrintArchive]:
         """List archives with optional filtering.
 
@@ -1634,6 +1636,10 @@ class ArchiveService:
 
         if visible_to_user_id is not None:
             query = query.where(PrintArchive.created_by_id == visible_to_user_id)
+
+        # Only archives from printers the caller may see (#1727)
+        if printer_scope is not None and (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
+            query = query.where(clause)
 
         query = query.limit(limit).offset(offset)
         result = await self.db.execute(query)

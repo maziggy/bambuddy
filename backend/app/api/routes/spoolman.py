@@ -12,9 +12,14 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool, spoolman_net_weight
 from backend.app.api.routes.spoolman_inventory import _clear_stale_tag_links
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import (
+    RequestPrinterScope,
+    RequirePermissionIfAuthEnabled,
+    RequirePrinterPermissionIfAuthEnabled,
+)
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.spool_assignment import SpoolAssignment
@@ -213,7 +218,7 @@ async def disconnect_spoolman(
 async def sync_printer_ams(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
 ):
     """Sync AMS data from a specific printer to Spoolman."""
     # Check if Spoolman is enabled and connected
@@ -449,6 +454,7 @@ async def sync_printer_ams(
 async def sync_all_printers(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Sync AMS data from all connected printers to Spoolman."""
     # Check if Spoolman is enabled
@@ -470,7 +476,7 @@ async def sync_all_printers(
 
     # Get all active printers
     result = await db.execute(select(Printer).where(Printer.is_active.is_(True)))
-    printers = result.scalars().all()
+    printers = [p for p in result.scalars().all() if printer_scope.allows(p.id)]
 
     total_synced = 0
     all_skipped: list[SkippedSpool] = []
@@ -834,6 +840,7 @@ async def link_spool(
     request: LinkSpoolRequest,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Link a Spoolman spool to an AMS tag by setting Spoolman extra.tag."""
     sm = await get_spoolman_settings(db)
@@ -871,6 +878,7 @@ async def link_spool(
     # that field is user-managed in Spoolman. Slot assignment is stored locally.
     printer_context: tuple[int, int, int] | None = None
     if request.printer_id is not None and request.ams_id is not None and request.tray_id is not None:
+        printer_scope.ensure(request.printer_id)
         printer_result = await db.execute(select(Printer).where(Printer.id == request.printer_id))
         if not printer_result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Printer not found")
@@ -1229,6 +1237,7 @@ async def create_spool_from_slot(
     req: CreateSpoolFromSlotRequest,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Explicit user action: create a Spoolman spool from an AMS slot's current tray data.
 
@@ -1250,6 +1259,7 @@ async def create_spool_from_slot(
     if not await client.health_check():
         raise HTTPException(status_code=503, detail="Spoolman is not reachable")
 
+    printer_scope.ensure(req.printer_id)
     result = await db.execute(select(Printer).where(Printer.id == req.printer_id))
     printer = result.scalar_one_or_none()
     if not printer:

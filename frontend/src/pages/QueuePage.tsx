@@ -555,6 +555,9 @@ function SortableQueueItem({
   etaNow?: number;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
+  const { hasAnyPermission } = useAuth();
+  // Their waiting jobs are started by someone who manages the queue (#1620)
+  const awaitingReview = !hasAnyPermission('queue:update_all', 'queue:start_unreviewed');
   const hasPhysicalAmsMapping =
     item.printer_id != null && (item.ams_mapping?.some((trayId) => trayId >= 0) ?? false);
 
@@ -941,7 +944,7 @@ function SortableQueueItem({
             {item.manual_start && (
               <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 rounded-full border border-purple-200 dark:border-purple-500/20 flex items-center gap-1">
                 <Hand className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                {t('queue.badges.staged')}
+                {awaitingReview ? t('queue.badges.awaitingReview') : t('queue.badges.staged')}
               </span>
             )}
             {item.require_previous_success && (
@@ -1082,8 +1085,14 @@ function SortableQueueItem({
                     variant="ghost"
                     size="sm"
                     onClick={onStart}
-                    disabled={!canModify('queue', 'update', item.created_by_id)}
-                    title={!canModify('queue', 'update', item.created_by_id) ? t('queue.permissions.noStartPrint') : t('queue.actions.startPrint')}
+                    disabled={awaitingReview || !canModify('queue', 'update', item.created_by_id)}
+                    title={
+                      awaitingReview
+                        ? t('queue.permissions.awaitingReview')
+                        : !canModify('queue', 'update', item.created_by_id)
+                          ? t('queue.permissions.noStartPrint')
+                          : t('queue.actions.startPrint')
+                    }
                     className="text-bambu-green hover:text-bambu-green-light hover:bg-bambu-green/10 p-1.5 sm:p-2"
                   >
                     <Play className="w-4 h-4" />

@@ -26,14 +26,22 @@ from backend.app.api.routes.orca_cloud import (
     _build_authenticated_service as _build_orca_service,
     _load_credentials as _load_orca_credentials,
 )
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_ownership_permission
+from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled, require_ownership_permission
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.local_preset import LocalPreset
+from backend.app.models.printer import Printer
+from backend.app.models.slot_preset import SlotPresetMapping
 from backend.app.models.user import User
 from backend.app.schemas.slicer import PresetRef
 from backend.app.schemas.slicer_presets import (
+    LoadedSpoolPreset,
+    LoadedSpoolPrinter,
+    LoadedSpoolsResponse,
+    LoadedSpoolTray,
+    LoadedSpoolUnit,
     UnifiedPreset,
     UnifiedPresetsBySlot,
     UnifiedPresetsResponse,
@@ -49,12 +57,17 @@ from backend.app.services.orca_cloud import (
     OrcaCloudError,
 )
 from backend.app.services.preset_resolver import resolve_preset_ref
+from backend.app.services.printer_manager import printer_manager
 from backend.app.services.slicer_api import (
     SlicerApiError,
     SlicerApiService,
     SlicerApiUnavailableError,
 )
-from backend.app.utils.printer_models import PRINTER_MODEL_MAP
+from backend.app.utils.printer_models import (
+    PRINTER_MODEL_MAP,
+    normalize_printer_model,
+    normalize_printer_model_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -666,6 +679,112 @@ async def list_unified_presets(
         cloud_status=cloud_status,
         orca_cloud_status=orca_cloud_status,
     )
+
+
+def _loaded_spool_tray(raw: dict, ams_id: int, tray_id: int, saved: SlotPresetMapping | None) -> LoadedSpoolTray:
+    exists = raw.get("exists")
+    state = raw.get("state")
+    return LoadedSpoolTray(
+        ams_id=ams_id,
+        tray_id=tray_id,
+        tray_type=raw.get("tray_type") or None,
+        tray_sub_brands=raw.get("tray_sub_brands") or None,
+        tray_color=raw.get("tray_color") or None,
+        tray_info_idx=raw.get("tray_info_idx") or None,
+        exists=exists if isinstance(exists, bool) else None,
+        state=state if isinstance(state, int) else None,
+        saved_preset=(
+            LoadedSpoolPreset(
+                preset_id=saved.preset_id,
+                preset_name=saved.preset_name,
+                preset_source=saved.preset_source,
+                tray_info_idx=saved.tray_info_idx,
+            )
+            if saved is not None
+            else None
+        ),
+    )
+
+
+@router.get("/loaded-spools", response_model=LoadedSpoolsResponse)
+async def list_loaded_spools(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD, Permission.PRINTERS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+) -> LoadedSpoolsResponse:
+    """What is loaded in each connected printer, for the SliceModal's filters (#3172).
+
+    One call rather than a status request per printer: the dialog needs every
+    connected printer at once, and a farm has a hundred of them. Gated on the
+    slice permission plus printers:read, because it shows what the printer
+    status does, and limited to the caller's printers (#1727).
+
+    Only printers with a live connection are listed: an offline printer can't
+    say what it has loaded, and its last-known trays may be long gone.
+    """
+    query = select(Printer).where(Printer.is_active == True).order_by(Printer.name)  # noqa: E712
+    scope_clause = printer_scope.where_strict(Printer.id)
+    if scope_clause is not None:
+        query = query.where(scope_clause)
+    printers = (await db.execute(query)).scalars().all()
+
+    connected: list[tuple[Printer, dict]] = []
+    for printer in printers:
+        state = printer_manager.get_status(printer.id)
+        if state is None or not state.connected:
+            continue
+        connected.append((printer, state.raw_data or {}))
+    if not connected:
+        return LoadedSpoolsResponse()
+
+    mappings = (
+        (
+            await db.execute(
+                select(SlotPresetMapping).where(SlotPresetMapping.printer_id.in_([p.id for p, _ in connected]))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    saved = {(m.printer_id, m.ams_id, m.tray_id): m for m in mappings}
+
+    out: list[LoadedSpoolPrinter] = []
+    for printer, raw_data in connected:
+        units: list[LoadedSpoolUnit] = []
+        raw_ams = raw_data.get("ams")
+        for ams_data in raw_ams if isinstance(raw_ams, list) else []:
+            if not isinstance(ams_data, dict):
+                continue
+            ams_id = int(ams_data.get("id", 0))
+            raw_trays = [t for t in ams_data.get("tray") or [] if isinstance(t, dict)]
+            trays = [
+                _loaded_spool_tray(t, ams_id, int(t.get("id", 0)), saved.get((printer.id, ams_id, int(t.get("id", 0)))))
+                for t in raw_trays
+            ]
+            # Same rule as the printer status: an AMS-HT reports a single tray.
+            units.append(LoadedSpoolUnit(id=ams_id, is_ams_ht=len(trays) == 1, trays=trays))
+
+        external: list[LoadedSpoolTray] = []
+        holders = [vt for vt in raw_data.get("vt_tray") or [] if isinstance(vt, dict)]
+        for vt in holders:
+            if not vt.get("tray_type"):
+                continue
+            # The holders are trays 254 / 255; slot presets key them as AMS 255,
+            # tray 0 / 1, the way the printer card saves them.
+            tray_id = int(vt.get("id", 254)) - 254
+            external.append(_loaded_spool_tray(vt, 255, tray_id, saved.get((printer.id, 255, tray_id))))
+
+        out.append(
+            LoadedSpoolPrinter(
+                id=printer.id,
+                name=printer.name,
+                model=normalize_printer_model_id(printer.model) or normalize_printer_model(printer.model),
+                ams=units,
+                external=external,
+                external_holders=len(holders),
+            )
+        )
+    return LoadedSpoolsResponse(printers=out)
 
 
 @router.get("/preview-progress/{request_id}")

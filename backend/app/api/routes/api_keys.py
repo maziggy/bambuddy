@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.auth import RequirePermissionIfAuthEnabled, generate_api_key
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.websocket import ws_manager
 from backend.app.models.api_key import APIKey
 from backend.app.models.user import User
 from backend.app.schemas.api_key import (
@@ -175,6 +176,11 @@ async def update_api_key(
 
     await db.flush()
     await db.refresh(api_key)
+    if data.printer_ids is not None or data.enabled is not None or data.expires_at is not None:
+        # Sockets opened with this key may now see fewer printers, or none
+        # (#1727). Committed first so the refresh reads the new row.
+        await db.commit()
+        await ws_manager.refresh_printer_scopes()
 
     return api_key
 
@@ -193,5 +199,8 @@ async def delete_api_key(
         raise HTTPException(status_code=404, detail="API key not found")
 
     await db.delete(api_key)
+    # Sockets opened with this key lose their printers (#1727)
+    await db.commit()
+    await ws_manager.refresh_printer_scopes()
 
     return {"message": "API key deleted"}

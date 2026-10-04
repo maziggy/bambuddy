@@ -16,10 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.library import get_library_dir
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_media_token_permission
+from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled, require_media_token_permission
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.print_log import PrintLogEntry
@@ -916,6 +917,7 @@ async def list_project_archives(
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """List archives in a project."""
     # Verify project exists
@@ -937,6 +939,9 @@ async def list_project_archives(
         .limit(limit)
         .offset(offset)
     )
+    # Only archives from printers the caller may see (#1727)
+    if (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
+        query = query.where(clause)
     result = await db.execute(query)
     archives = result.scalars().all()
 
@@ -955,6 +960,7 @@ async def list_project_queue(
     project_id: int,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """List queue items in a project."""
     # Verify project exists
@@ -964,6 +970,8 @@ async def list_project_queue(
 
     # Get queue items
     query = select(PrintQueueItem).where(PrintQueueItem.project_id == project_id).order_by(PrintQueueItem.position)
+    if (clause := printer_scope.where(PrintQueueItem.printer_id)) is not None:
+        query = query.where(clause)
     result = await db.execute(query)
     items = result.scalars().all()
 

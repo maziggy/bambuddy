@@ -35,9 +35,10 @@ from backend.app.api.routes._spoolman_helpers import (
     spoolman_price_weight,
     spoolman_tare,
 )
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.core.websocket import ws_manager
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.printer import Printer
@@ -1330,6 +1331,7 @@ async def get_all_spoolman_slot_assignments(
     printer_id: int | None = Query(None, gt=0),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ) -> list[SpoolmanSlotAssignmentEnriched]:
     """Return all Spoolman slot assignments enriched with printer_name and ams_label.
 
@@ -1341,6 +1343,8 @@ async def get_all_spoolman_slot_assignments(
     query = select(SpoolmanSlotAssignment).options(selectinload(SpoolmanSlotAssignment.printer))
     if printer_id is not None:
         query = query.where(SpoolmanSlotAssignment.printer_id == printer_id)
+    if (clause := printer_scope.where_strict(SpoolmanSlotAssignment.printer_id)) is not None:
+        query = query.where(clause)
     result = await db.execute(query)
     slots = list(result.scalars().all())
 
@@ -1421,6 +1425,7 @@ async def get_all_spoolman_slot_assignments(
 async def sync_spoolman_ams_weights(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Sync remaining weight back to Spoolman for all slot-assigned spools.
 
@@ -1435,7 +1440,8 @@ async def sync_spoolman_ams_weights(
     spool_lookup: dict[int, dict] = {s["id"]: s for s in raw_spools if s.get("id") is not None}
 
     result = await db.execute(select(SpoolmanSlotAssignment))
-    assignments = list(result.scalars().all())
+    # Only slots on printers the caller may see (#1727)
+    assignments = [a for a in result.scalars().all() if printer_scope.allows(a.printer_id)]
 
     synced = 0
     skipped = 0
@@ -1549,6 +1555,7 @@ async def assign_spoolman_slot(
     body: SpoolSlotAssignmentRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ) -> dict:
     """Assign a Spoolman spool to a printer AMS slot (stored in local DB only).
 
@@ -1557,6 +1564,7 @@ async def assign_spoolman_slot(
     """
 
     client = await _get_client(db)
+    printer_scope.ensure(body.printer_id)
     result = await db.execute(select(Printer).where(Printer.id == body.printer_id))
     printer = result.scalar_one_or_none()
     if not printer:
@@ -1865,6 +1873,7 @@ async def unassign_spoolman_slot(
     spoolman_spool_id: int = Path(..., gt=0),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ) -> dict:
     """Remove the local slot assignment for a Spoolman spool.
 
@@ -1873,9 +1882,11 @@ async def unassign_spoolman_slot(
     client = await _get_client(db)
 
     try:
-        await db.execute(
-            delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == spoolman_spool_id)
-        )
+        # A slot on a printer the caller can't see stays assigned (#1727)
+        unassign = delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == spoolman_spool_id)
+        if (clause := printer_scope.where_strict(SpoolmanSlotAssignment.printer_id)) is not None:
+            unassign = unassign.where(clause)
+        await db.execute(unassign)
         await db.commit()
     except Exception as exc:
         await db.rollback()
@@ -1902,9 +1913,11 @@ async def get_spoolman_slot_assignment(
     tray_id: int = Query(..., ge=0, le=3),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ) -> dict | None:
     """Return the Spoolman spool assigned to a specific printer slot, or null if unassigned."""
     client = await _get_client(db)
+    printer_scope.ensure(printer_id)
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
     if not printer:

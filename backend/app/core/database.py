@@ -5247,6 +5247,28 @@ async def run_migrations(conn):
             text("UPDATE printers SET camera_light_auto = :off WHERE camera_light_auto IS NULL"), {"off": False}
         )
 
+    # Migration: printer-scoped groups (#1727). Defaults off, so no existing
+    # group narrows anyone's printers on upgrade; the group_printers table
+    # itself comes from create_all(). The backfill covers a table create_all()
+    # already gave the column, where the ALTER is swallowed as a duplicate.
+    await _safe_execute(conn, "ALTER TABLE groups ADD COLUMN restrict_printers BOOLEAN DEFAULT FALSE")
+    async with conn.begin_nested():
+        await conn.execute(
+            text("UPDATE groups SET restrict_printers = :off WHERE restrict_printers IS NULL"), {"off": False}
+        )
+
+    # Migration: camera-stream and websocket tokens record who minted them, so
+    # they carry that caller's printer scope (#1727). Camera tokens minted
+    # before this have no principal at all (username NULL; every new one sets
+    # it, "" for API keys and auth-off), and would now resolve to no printers.
+    # They live 60 minutes; dropping them sends the browser to mint a new one.
+    await _safe_execute(conn, "ALTER TABLE auth_ephemeral_tokens ADD COLUMN api_key_id INTEGER")
+    async with conn.begin_nested():
+        await conn.execute(
+            text("DELETE FROM auth_ephemeral_tokens WHERE token_type = :t AND username IS NULL"),
+            {"t": "camera_stream"},
+        )
+
 
 async def _migrate_confirm_prompt_body_template(conn) -> None:
     """Replace the one-tap verdict URLs in the outcome prompt's body (#1898).
@@ -5929,6 +5951,13 @@ async def seed_notification_templates():
         await session.commit()
 
 
+# Groups holding any of these before #1620 could queue, start or run jobs that
+# went ahead on their own, so the upgrade lets them keep doing that.
+_QUEUE_REVIEW_BACKFILL_FROM = frozenset(
+    {"queue:create", "queue:update_own", "queue:update_all", "printers:control", "pipelines:run"}
+)
+
+
 async def seed_default_groups():
     """Seed default groups and migrate existing users to appropriate groups.
 
@@ -6252,6 +6281,26 @@ async def seed_default_groups():
             if changed:
                 group.permissions = perms
         await session.commit()
+
+        # queue:start_unreviewed (#1620): jobs of users without it wait for
+        # someone to start them. Granted once to every group that could queue,
+        # start or run jobs before it existed, so nothing changes on upgrade. Once
+        # only, unlike the backfills above: an admin removing it from a group is
+        # the whole point, and a per-boot backfill would hand it straight back.
+        from backend.app.models.settings import Settings
+
+        review_flag = "_backfill_1620_queue_start_unreviewed_done"
+        if (await session.execute(select(Settings).where(Settings.key == review_flag))).scalar_one_or_none() is None:
+            result = await session.execute(select(Group))
+            for group in result.scalars().all():
+                perms = list(group.permissions or [])
+                if "queue:start_unreviewed" in perms:
+                    continue
+                if _QUEUE_REVIEW_BACKFILL_FROM.intersection(perms):
+                    group.permissions = [*perms, "queue:start_unreviewed"]
+                    logger.info("Added queue:start_unreviewed to group '%s' (#1620)", group.name)
+            session.add(Settings(key=review_flag, value="true"))
+            await session.commit()
 
         # Migrate existing users to groups if they're not already in any group
         if groups_created:

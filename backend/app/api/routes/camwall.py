@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequireCamWallTokenIfAuthEnabled
 from backend.app.core.database import get_db
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.printer import Printer
 from backend.app.services.printer_manager import printer_manager
 
@@ -34,10 +35,11 @@ router = APIRouter(prefix="/camwall", tags=["camwall"])
 
 @router.get("/printers")
 async def list_camwall_printers(
-    _: None = RequireCamWallTokenIfAuthEnabled,
+    printer_scope: PrinterScope = RequireCamWallTokenIfAuthEnabled,
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
-    """Every printer plus the handful of status fields a Cam Wall tile draws.
+    """Every printer the token's owner may see (#1727), plus the handful of
+    status fields a Cam Wall tile draws.
 
     One call for the whole wall rather than one per printer: a kiosk polls this
     on a fixed interval with no WebSocket to invalidate it, and N+1 requests
@@ -46,7 +48,10 @@ async def list_camwall_printers(
     Ordered by name so tile positions stay put across polls — a wall that
     reshuffles itself is unusable to watch.
     """
-    result = await db.execute(select(Printer).order_by(Printer.name))
+    query = select(Printer).order_by(Printer.name)
+    if (clause := printer_scope.where_strict(Printer.id)) is not None:
+        query = query.where(clause)
+    result = await db.execute(query)
     printers = list(result.scalars().all())
 
     payload: list[dict] = []

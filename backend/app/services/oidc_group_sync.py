@@ -142,6 +142,10 @@ async def sync_oidc_user_groups(
 
         user.groups = new_groups
         await db.commit()
+        # The user's open dashboards may now see other printers (#1727)
+        from backend.app.core.websocket import ws_manager
+
+        await ws_manager.refresh_printer_scopes()
         logger.info(
             "OIDC group sync: user %s groups -> %s",
             user.username,

@@ -328,4 +328,6 @@ export interface ScheduleOptionsProps {
   printerCount?: number;
   /** Whether G-code snippets are configured in settings */
   hasGcodeSnippets?: boolean;
+  /** The user's jobs wait for someone to start them (#1620) */
+  needsReview?: boolean;
 }

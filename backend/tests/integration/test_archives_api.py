@@ -648,7 +648,9 @@ class TestArchivesAPI:
                 headers={"X-API-Key": full_key},
             )
 
-        assert response.status_code == 403
+        # An archive from a printer outside the key's scope is as missing as
+        # the printer (#1727), so nothing is listed over FTP.
+        assert response.status_code == 404
         listing.assert_not_awaited()
 
     @pytest.mark.asyncio

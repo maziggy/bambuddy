@@ -20,6 +20,13 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.core.database import async_session, get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import (
+    ALL_PRINTERS,
+    PrinterScope,
+    api_key_own_scope,
+    resolve_user_id_printer_scope,
+    resolve_user_printer_scope,
+)
 from backend.app.models.api_key import APIKey
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, TokenType
 from backend.app.models.settings import Settings
@@ -135,6 +142,7 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str | tuple[str, ...]] = {
     Permission.QUEUE_DELETE_OWN: "can_queue",
     Permission.QUEUE_DELETE_ALL: "can_queue",
     Permission.QUEUE_REORDER: "can_queue",
+    Permission.QUEUE_START_UNREVIEWED: "can_queue",
     Permission.ARCHIVES_REPRINT_OWN: "can_queue",
     Permission.ARCHIVES_REPRINT_ALL: "can_queue",
     # can_control_printer — physical-world side effects on hardware
@@ -815,8 +823,13 @@ async def verify_slicer_download_token(
 CAMERA_STREAM_TOKEN_EXPIRE_MINUTES = 60
 
 
-async def create_camera_stream_token() -> str:
-    """Create a reusable token for camera stream/snapshot access."""
+async def create_camera_stream_token(username: str | None = None, api_key_id: int | None = None) -> str:
+    """Create a reusable token for camera stream/snapshot access.
+
+    Records who minted it -- ``username`` for a user, ``api_key_id`` for an
+    API key -- so the streams it opens stay within that caller's printer scope
+    (#1727). Neither is set when auth is off.
+    """
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(minutes=CAMERA_STREAM_TOKEN_EXPIRE_MINUTES)
     token = secrets.token_urlsafe(24)
@@ -832,6 +845,8 @@ async def create_camera_stream_token() -> str:
             AuthEphemeralToken(
                 token=token,
                 token_type="camera_stream",
+                username=username or "",
+                api_key_id=api_key_id,
                 expires_at=expires_at,
             )
         )
@@ -842,7 +857,7 @@ async def create_camera_stream_token() -> str:
 WEBSOCKET_TOKEN_EXPIRE_MINUTES = 60
 
 
-async def create_websocket_token(username: str | None) -> str:
+async def create_websocket_token(username: str | None, api_key_id: int | None = None) -> str:
     """Create a short-lived token for ``/api/v1/ws`` connections.
 
     Mirrors the camera-stream-token pattern: opaque random string stored
@@ -874,6 +889,7 @@ async def create_websocket_token(username: str | None) -> str:
                 token=token,
                 token_type="websocket",
                 username=username or "",
+                api_key_id=api_key_id,
                 expires_at=expires_at,
             )
         )
@@ -881,14 +897,14 @@ async def create_websocket_token(username: str | None) -> str:
     return token
 
 
-async def verify_websocket_token(token: str) -> str | None:
-    """Verify a WebSocket connect token.
+async def verify_websocket_token_principal(token: str) -> tuple[str, int | None] | None:
+    """Verify a WebSocket connect token and return who minted it.
 
-    Returns the recorded ``username`` (possibly ``""`` for API-key
-    callers, never ``None`` on success) when the token is valid, or
-    ``None`` when it is missing / expired / unknown. The token is
-    NOT consumed — a single page reload should not need a new round
-    trip to mint a replacement.
+    ``(username, api_key_id)``: the username is ``""`` for API-key callers
+    and with auth off; ``api_key_id`` is set only for API keys. ``None`` when
+    the token is missing / expired / unknown. The token is NOT consumed -- a
+    single page reload should not need a new round trip to mint a
+    replacement.
     """
     now = datetime.now(timezone.utc)
     async with async_session() as db:
@@ -902,15 +918,60 @@ async def verify_websocket_token(token: str) -> str | None:
         row = result.scalar_one_or_none()
         if row is None:
             return None
-        return row.username or ""
+        return row.username or "", row.api_key_id
 
 
-async def verify_camera_stream_token(token: str) -> bool:
-    """Verify a camera stream token is valid (reusable — does not consume it).
+async def verify_websocket_token(token: str) -> str | None:
+    """Verify a WebSocket connect token.
 
-    Tries the ephemeral 60-minute token first (the common, browser-bound case)
-    and falls through to long-lived tokens (#1108) for HA / kiosk integrations
-    that paste a token once and expect it to keep working for days.
+    Returns the recorded ``username`` (possibly ``""`` for API-key
+    callers, never ``None`` on success) when the token is valid, or
+    ``None`` when it is missing / expired / unknown.
+    """
+    principal = await verify_websocket_token_principal(token)
+    return None if principal is None else principal[0]
+
+
+_NO_PRINTERS = PrinterScope(frozenset())
+
+
+async def principal_printer_scope(db: AsyncSession, username: str | None, api_key_id: int | None) -> PrinterScope:
+    """Printer scope of the principal a token was minted for (#1727).
+
+    Fail-closed: a key that is gone, disabled, expired or whose owner was
+    deactivated, a user who is gone or deactivated, and a token naming no
+    principal all get no printers. Callers skip this when auth is off.
+    """
+    if api_key_id is not None:
+        api_key = (await db.execute(select(APIKey).where(APIKey.id == api_key_id))).scalar_one_or_none()
+        if api_key is None or not api_key.enabled:
+            return _NO_PRINTERS
+        if api_key.expires_at is not None:
+            expires = api_key.expires_at
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if expires < datetime.now(timezone.utc):
+                return _NO_PRINTERS
+        try:
+            return await api_key_printer_scope(db, api_key)
+        except HTTPException:
+            return _NO_PRINTERS
+    if username:
+        user = await get_user_by_username(db, username)
+        if user is None or not user.is_active:
+            return _NO_PRINTERS
+        return await resolve_user_printer_scope(db, user)
+    return _NO_PRINTERS
+
+
+async def verify_camera_stream_token(token: str) -> PrinterScope | None:
+    """Verify a camera stream token (reusable -- does not consume it).
+
+    Returns the printer scope of whoever minted it (#1727), or None when the
+    token is invalid. Tries the ephemeral 60-minute token first (the common,
+    browser-bound case) and falls through to long-lived tokens (#1108) for HA
+    / kiosk integrations that paste a token once and expect it to keep
+    working for days; those carry their owner's scope.
     """
     now = datetime.now(timezone.utc)
     async with async_session() as db:
@@ -921,19 +982,24 @@ async def verify_camera_stream_token(token: str) -> bool:
                 AuthEphemeralToken.expires_at > now,
             )
         )
-        if result.scalar_one_or_none() is not None:
-            return True
+        row = result.scalar_one_or_none()
+        if row is not None:
+            return await principal_printer_scope(db, row.username, row.api_key_id)
 
         # Long-lived path. Imported lazily so the auth module stays importable
         # at startup before the long_lived_tokens model is registered.
         from backend.app.services.long_lived_tokens import STREAM_SCOPES, verify_token as verify_long_lived
 
         record = await verify_long_lived(db, token, scope=STREAM_SCOPES)
-        return record is not None
+        if record is None:
+            return None
+        return await resolve_user_id_printer_scope(db, record.user_id)
 
 
-async def verify_camwall_token(token: str) -> bool:
-    """Verify a Cam Wall token (#2531). Reusable — does not consume it.
+async def verify_camwall_token(token: str) -> PrinterScope | None:
+    """Verify a Cam Wall token (#2531). Reusable -- does not consume it.
+
+    Returns the token owner's printer scope (#1727), or None when invalid.
 
     Deliberately narrower than :func:`verify_camera_stream_token`: only the
     long-lived ``camwall`` scope passes. The 60-minute ephemeral token belongs
@@ -947,11 +1013,15 @@ async def verify_camwall_token(token: str) -> bool:
         from backend.app.services.long_lived_tokens import verify_token as verify_long_lived
 
         record = await verify_long_lived(db, token, scope="camwall")
-        return record is not None
+        if record is None:
+            return None
+        return await resolve_user_id_printer_scope(db, record.user_id)
 
 
-async def verify_overlay_token(token: str) -> bool:
-    """Verify a streaming-overlay token (#2613). Reusable — does not consume it.
+async def verify_overlay_token(token: str) -> PrinterScope | None:
+    """Verify a streaming-overlay token (#2613). Reusable -- does not consume it.
+
+    Returns the token owner's printer scope (#1727), or None when invalid.
 
     Like :func:`verify_camwall_token`, only the matching long-lived scope passes:
     the overlay status feed names the file being printed, so it must not be
@@ -964,7 +1034,9 @@ async def verify_overlay_token(token: str) -> bool:
         from backend.app.services.long_lived_tokens import verify_token as verify_long_lived
 
         record = await verify_long_lived(db, token, scope="overlay")
-        return record is not None
+        if record is None:
+            return None
+        return await resolve_user_id_printer_scope(db, record.user_id)
 
 
 # --- Media tokens (#3025) ---
@@ -1294,6 +1366,11 @@ async def _user_from_api_key(db: AsyncSession, api_key: APIKey) -> User | None:
 # the raw credential so a request carrying two of them can never cross their
 # rows, and held in a ContextVar so it cannot outlive the task that set it.
 _validated_api_key: ContextVar[tuple[str, APIKey] | None] = ContextVar("_validated_api_key", default=None)
+
+# Same idea for a JWT: the user the permission gate resolved, so the printer
+# scope lookup (#1727) needn't decode, revocation-check and load it again.
+# Keyed by the raw token for the same reason as above.
+_authenticated_user: ContextVar[tuple[str, User] | None] = ContextVar("_authenticated_user", default=None)
 
 
 async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | None:
@@ -1771,26 +1848,22 @@ async def check_webhook_permission(db: AsyncSession, api_key: APIKey, permission
         )
 
 
-def check_printer_access(api_key: APIKey, printer_id: int) -> None:
-    """Check if API key has access to the specified printer.
+async def api_key_printer_scope(db: AsyncSession, api_key: APIKey) -> PrinterScope:
+    """The printers ``api_key`` may reach: its own allowlist within its owner's scope.
 
-    Args:
-        api_key: The API key object
-        printer_id: The printer ID to check access for
-
-    Raises:
-        HTTPException: If access is denied
+    Raises 403 when the owner was deactivated or deleted, like every other
+    owner check (see ``resolve_apikey_owner``).
     """
-    # None = global key, access to all printers
-    if api_key.printer_ids is None:
-        return
+    scope = api_key_own_scope(api_key)
+    owner = await resolve_apikey_owner(db, api_key)
+    if owner is not None:
+        scope = scope.intersect(await resolve_user_printer_scope(db, owner))
+    return scope
 
-    # Empty list or printer not in allowed list = no access
-    if printer_id not in api_key.printer_ids:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"API key does not have access to printer {printer_id}",
-        )
+
+async def ensure_api_key_printer_access(db: AsyncSession, api_key: APIKey, printer_id: int) -> None:
+    """Raise 404 unless ``api_key`` may reach ``printer_id`` (see ``api_key_printer_scope``)."""
+    (await api_key_printer_scope(db, api_key)).ensure(printer_id)
 
 
 async def validated_api_key_from_request(
@@ -1835,10 +1908,146 @@ async def current_api_key_if_present(
     return await validated_api_key_from_request(credentials, x_api_key)
 
 
-def require_printer_permission_if_auth_enabled(permission: str | Permission):
-    """Require a permission and enforce an API key's per-printer allowlist."""
+async def resolve_request_printer_scope(
+    credentials: HTTPAuthorizationCredentials | None,
+    x_api_key: str | None,
+) -> PrinterScope:
+    """The printer scope of whoever sent this request (#1727).
 
-    permission_checker = require_permission_if_auth_enabled(permission)
+    Meant to run after the route's permission gate, which has already turned
+    away bad credentials; it reuses what that gate resolved where it can. With
+    auth on and no usable principal it returns an empty scope, never every
+    printer.
+    """
+    async with async_session() as db:
+        if not await is_auth_enabled(db):
+            return ALL_PRINTERS
+        api_key = await validated_api_key_from_request(credentials, x_api_key)
+        if api_key is not None:
+            return await api_key_printer_scope(db, api_key)
+        if credentials is None:
+            return PrinterScope(frozenset())
+        cached = _authenticated_user.get()
+        if cached is not None and cached[0] == credentials.credentials:
+            user = cached[1]
+        else:
+            user = await get_current_user_optional(credentials)
+            if user is None:
+                return PrinterScope(frozenset())
+        return await resolve_user_printer_scope(db, user)
+
+
+async def get_printer_scope_if_auth_enabled(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> PrinterScope:
+    """FastAPI dependency for ``resolve_request_printer_scope``.
+
+    Declare it after the permission dependency so the gate runs first.
+    """
+    return await resolve_request_printer_scope(credentials, x_api_key)
+
+
+RequestPrinterScope = Depends(get_printer_scope_if_auth_enabled)
+
+
+def queue_review_required_for(user: User | None) -> bool:
+    """Whether jobs ``user`` queues must wait for someone to start them (#1620).
+
+    None is auth-off or a legacy ownerless API key, neither of which has a
+    reviewer above it. Whoever may start every job (queue:update_all) is the
+    reviewer, so their own jobs don't wait either.
+    """
+    return (
+        user is not None
+        and not user.has_permission(Permission.QUEUE_START_UNREVIEWED.value)
+        and not user.has_permission(Permission.QUEUE_UPDATE_ALL.value)
+    )
+
+
+def may_start_queue_item(user: User | None, can_modify_all: bool, created_by_id: int | None) -> bool:
+    """Whether the caller may start a waiting queue item (#1620).
+
+    ``can_modify_all`` is what ``require_ownership_permission`` answered for
+    queue:update_all; an API key only gets it when its owner holds that. Anyone
+    else needs to be allowed to print without review, and the item must be
+    theirs or have no owner yet (a virtual-printer upload, claimed by starting
+    it, #1670).
+    """
+    if can_modify_all or user is None:
+        return True
+    if queue_review_required_for(user):
+        return False
+    return created_by_id is None or created_by_id == user.id
+
+
+async def get_queue_review_required(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> bool:
+    """FastAPI dependency: must the caller's new queue items wait for review (#1620)?
+
+    Permission dependencies answer API-key requests with no user, so the key's
+    owner decides here. Declare it after the permission dependency. With auth
+    on and no usable principal it answers True.
+    """
+    async with async_session() as db:
+        if not await is_auth_enabled(db):
+            return False
+        api_key = await validated_api_key_from_request(credentials, x_api_key)
+        if api_key is not None:
+            return queue_review_required_for(await resolve_apikey_owner(db, api_key))
+        if credentials is None:
+            return True
+        cached = _authenticated_user.get()
+        if cached is not None and cached[0] == credentials.credentials:
+            user = cached[1]
+        else:
+            user = await get_current_user_optional(credentials)
+            if user is None:
+                return True
+        return queue_review_required_for(user)
+
+
+QueueReviewRequired = Depends(get_queue_review_required)
+
+
+async def get_media_or_request_printer_scope(
+    token: str | None = None,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> PrinterScope:
+    """``RequestPrinterScope`` for routes an ``<img>`` may load with ``?token=``.
+
+    Such a request carries a media token and no headers, so the header-based
+    lookup would find nobody and answer with no printers. With headers present
+    they win, exactly as in ``require_media_token_*``.
+    """
+    if token and credentials is None and x_api_key is None:
+        async with async_session() as db:
+            if not await is_auth_enabled(db):
+                return ALL_PRINTERS
+            username = await verify_media_token(token)
+            if not username:
+                return _NO_PRINTERS
+            user = await get_user_by_username(db, username)
+            if user is None or not user.is_active:
+                return _NO_PRINTERS
+            return await resolve_user_printer_scope(db, user)
+    return await resolve_request_printer_scope(credentials, x_api_key)
+
+
+MediaOrRequestPrinterScope = Depends(get_media_or_request_printer_scope)
+
+
+def require_printer_permission_if_auth_enabled(*permissions: str | Permission):
+    """Require permissions and that the path's ``printer_id`` is in the caller's scope.
+
+    For routes with ``{printer_id}`` in the path. A printer outside the scope
+    gets 404, the same as one that doesn't exist.
+    """
+
+    permission_checker = require_permission_if_auth_enabled(*permissions)
 
     async def checker(
         printer_id: int,
@@ -1846,9 +2055,8 @@ def require_printer_permission_if_auth_enabled(permission: str | Permission):
         x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
     ) -> User | None:
         user = await permission_checker(credentials=credentials, x_api_key=x_api_key)
-        api_key = await validated_api_key_from_request(credentials, x_api_key)
-        if api_key is not None:
-            check_printer_access(api_key, printer_id)
+        scope = await resolve_request_printer_scope(credentials, x_api_key)
+        scope.ensure(printer_id)
         return user
 
     return checker
@@ -2041,6 +2249,7 @@ def require_permission_if_auth_enabled(*permissions: str | Permission):
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail=f"Missing required permissions: {', '.join(perm_strings)}",
                     )
+                _authenticated_user.set((token, user))
                 return user
 
             # No credentials provided
@@ -2063,10 +2272,10 @@ def RequirePermissionIfAuthEnabled(*permissions: str | Permission):
     return Depends(require_permission_if_auth_enabled(*permissions))
 
 
-def RequirePrinterPermissionIfAuthEnabled(permission: str | Permission):
-    """Require a permission plus any API-key ``printer_ids`` restriction."""
+def RequirePrinterPermissionIfAuthEnabled(*permissions: str | Permission):
+    """Require permissions plus the caller's printer scope for the path's ``printer_id``."""
 
-    return Depends(require_printer_permission_if_auth_enabled(permission))
+    return Depends(require_printer_permission_if_auth_enabled(*permissions))
 
 
 def probe_permissions_if_auth_enabled(*permissions: str | Permission):
@@ -2172,6 +2381,7 @@ def require_any_permission_if_auth_enabled(*permissions: str | Permission):
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail=f"Missing required permissions: {', '.join(perm_strings)}",
                     )
+                _authenticated_user.set((token, user))
                 return user
 
             raise HTTPException(
@@ -2202,15 +2412,18 @@ def require_camera_stream_token_if_auth_enabled():
     tell one user's rows from another's (#3025).
     """
 
-    async def checker(token: str | None = None) -> None:
+    async def checker(printer_id: int, token: str | None = None) -> None:
         async with async_session() as db:
             if not await is_auth_enabled(db):
                 return  # Auth disabled, allow access
-        if not token or not await verify_camera_stream_token(token):
+        scope = await verify_camera_stream_token(token) if token else None
+        if scope is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Valid camera stream token required. Obtain one from POST /api/v1/printers/camera/stream-token",
             )
+        # The token's minter may not see this printer (#1727)
+        scope.ensure(printer_id)
 
     return checker
 
@@ -2223,17 +2436,20 @@ def require_camwall_token_if_auth_enabled():
 
     Used by the read-only Cam Wall feed (#2531), which a kiosk browser loads
     with the token in the URL because it has no login session to carry a JWT.
+    Returns the token owner's printer scope, which the feed filters by (#1727).
     """
 
-    async def checker(token: str | None = None) -> None:
+    async def checker(token: str | None = None) -> PrinterScope:
         async with async_session() as db:
             if not await is_auth_enabled(db):
-                return  # Auth disabled, allow access
-        if not token or not await verify_camwall_token(token):
+                return ALL_PRINTERS  # Auth disabled, allow access
+        scope = await verify_camwall_token(token) if token else None
+        if scope is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Valid Cam Wall token required. Create one under Settings > API Keys with the 'Cam Wall' scope.",
             )
+        return scope
 
     return checker
 
@@ -2250,11 +2466,38 @@ def require_overlay_token_if_auth_enabled():
     has no JWT to carry.
     """
 
+    async def checker(printer_id: int, token: str | None = None) -> None:
+        async with async_session() as db:
+            if not await is_auth_enabled(db):
+                return  # Auth disabled, allow access
+        scope = await verify_overlay_token(token) if token else None
+        if scope is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Valid overlay token required. Create one under Settings > API Keys with the 'Streaming Overlay' scope.",
+            )
+        # The token owner may not see this printer (#1727)
+        scope.ensure(printer_id)
+
+    return checker
+
+
+RequireOverlayTokenIfAuthEnabled = Depends(require_overlay_token_if_auth_enabled())
+
+
+def require_overlay_token_any_printer_if_auth_enabled():
+    """The overlay-token check for overlay assets that belong to no printer.
+
+    The overlay logo (#3104) is one per installation, so there is no printer
+    for the token owner's scope (#1727) to be checked against; a valid overlay
+    token is all it takes, as before.
+    """
+
     async def checker(token: str | None = None) -> None:
         async with async_session() as db:
             if not await is_auth_enabled(db):
                 return  # Auth disabled, allow access
-        if not token or not await verify_overlay_token(token):
+        if token is None or await verify_overlay_token(token) is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Valid overlay token required. Create one under Settings > API Keys with the 'Streaming Overlay' scope.",
@@ -2263,7 +2506,7 @@ def require_overlay_token_if_auth_enabled():
     return checker
 
 
-RequireOverlayTokenIfAuthEnabled = Depends(require_overlay_token_if_auth_enabled())
+RequireOverlayTokenAnyPrinterIfAuthEnabled = Depends(require_overlay_token_any_printer_if_auth_enabled())
 
 
 def require_ownership_permission(
@@ -2505,10 +2748,10 @@ def require_media_token_ownership(
 def require_media_token_printer_permission(permission: str | Permission):
     """Media-route dependency for per-printer resources (#3025).
 
-    :func:`require_media_token_permission` plus the API key's per-printer
-    allowlist, mirroring :func:`require_printer_permission_if_auth_enabled`.
-    Only the header path can present an API key -- a media token resolves to a
-    real user or to nothing -- so the allowlist check applies there alone.
+    :func:`require_media_token_permission` plus the caller's printer scope for
+    the path's ``printer_id``, mirroring
+    :func:`require_printer_permission_if_auth_enabled`. A media token names a
+    user, so their scope applies; a header caller gets the request's scope.
     """
     media_checker = require_media_token_permission(permission)
 
@@ -2519,9 +2762,12 @@ def require_media_token_printer_permission(permission: str | Permission):
         x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
     ) -> User | None:
         user = await media_checker(token=token, credentials=credentials, x_api_key=x_api_key)
-        api_key = await validated_api_key_from_request(credentials, x_api_key)
-        if api_key is not None:
-            check_printer_access(api_key, printer_id)
+        if token and user is not None:
+            async with async_session() as db:
+                scope = await resolve_user_printer_scope(db, user)
+        else:
+            scope = await resolve_request_printer_scope(credentials, x_api_key)
+        scope.ensure(printer_id)
         return user
 
     return checker

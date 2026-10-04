@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequirePrinterPermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.kprofile_note import KProfileNote as KProfileNoteModel
@@ -33,7 +33,7 @@ async def get_kprofiles(
     printer_id: int,
     nozzle_diameter: str = "0.4",
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.KPROFILES_READ),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_READ),
 ):
     """Get K-profiles from a printer.
 
@@ -82,7 +82,7 @@ async def set_kprofile(
     printer_id: int,
     profile: KProfileCreate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.KPROFILES_UPDATE),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_UPDATE),
 ):
     """Create or update a K-profile on the printer.
 
@@ -198,7 +198,7 @@ async def set_kprofiles_batch(
     printer_id: int,
     profiles: list[KProfileCreate],
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.KPROFILES_UPDATE),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_UPDATE),
 ):
     """Create multiple K-profiles in a single command (for dual-nozzle).
 
@@ -261,7 +261,7 @@ async def delete_kprofile(
     printer_id: int,
     profile: KProfileDelete,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.KPROFILES_DELETE),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_DELETE),
 ):
     """Delete a K-profile from the printer.
 
@@ -311,7 +311,7 @@ async def delete_kprofile(
 async def get_kprofile_notes(
     printer_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.KPROFILES_READ),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_READ),
 ):
     """Get all K-profile notes for a printer.
 
@@ -339,7 +339,7 @@ async def set_kprofile_note(
     printer_id: int,
     note_data: KProfileNote,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.KPROFILES_UPDATE),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_UPDATE),
 ):
     """Set or update a note for a K-profile.
 
@@ -388,7 +388,7 @@ async def delete_kprofile_note(
     printer_id: int,
     setting_id: str,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.KPROFILES_DELETE),
+    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_DELETE),
 ):
     """Delete a note for a K-profile.
 

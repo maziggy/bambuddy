@@ -19,6 +19,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.core.config import settings
 from backend.app.core.database import async_session, run_with_retry
+from backend.app.core.printer_scope import ALL_PRINTERS, PrinterScope, resolve_user_id_printer_scope
 from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
 from backend.app.models.archive import PrintArchive
@@ -1824,6 +1825,21 @@ class PrintScheduler:
                 if candidate.cleanup_library_after_dispatch:
                     consumed_libs.add(lib_id)
 
+            # Printer scope of each job's creator (#1727), so an "any <model>"
+            # job only lands on a printer its creator may use. Loaded lazily,
+            # once per creator per pass.
+            from backend.app.core.auth import is_auth_enabled
+
+            scope_auth_enabled = await is_auth_enabled(db)
+            creator_scopes: dict[int, PrinterScope] = {}
+
+            async def _creator_scope(user_id: int | None) -> PrinterScope:
+                if not scope_auth_enabled or user_id is None:
+                    return ALL_PRINTERS
+                if user_id not in creator_scopes:
+                    creator_scopes[user_id] = await resolve_user_id_printer_scope(db, user_id)
+                return creator_scopes[user_id]
+
             for item in items:
                 # Check scheduled time first (scheduled_time is stored in UTC from ISO string)
                 if item.scheduled_time:
@@ -1852,6 +1868,20 @@ class PrintScheduler:
                     continue
 
                 if item.printer_id:
+                    # Its creator may no longer use this printer (#1727): an
+                    # admin took it away from their group after the job was
+                    # queued, say to keep it free for a training session. Held,
+                    # not failed, so it starts if access comes back or the user
+                    # moves it to a printer they still have.
+                    if not (await _creator_scope(item.created_by_id)).allows(item.printer_id):
+                        await hold_item(
+                            item,
+                            "Its owner no longer has access to this printer — move it to another printer",
+                            notify=False,
+                        )
+                        skip_reasons["printer_out_of_scope"] = skip_reasons.get("printer_out_of_scope", 0) + 1
+                        continue
+
                     # Held by a sensor interlock (#1148). Checked before the
                     # busy_printers test that would otherwise swallow it
                     # silently — "waiting for a printer" and "waiting for you
@@ -2095,6 +2125,7 @@ class PrintScheduler:
                     # user's priority order so the pick is reproducible when more
                     # than one printer is free in the same pass.
                     candidates = _candidates_for(item)
+                    item_scope = await _creator_scope(item.created_by_id)
                     printer_id = None
                     chosen: _ModelCandidate | None = None
                     per_model_reasons: list[tuple[str | None, str]] = []
@@ -2147,6 +2178,7 @@ class PrintScheduler:
                             filament_overrides=filament_overrides,
                             require_plate_clear=require_plate_clear,
                             wakeable_ids=wakeable_printer_ids,
+                            printer_scope=item_scope,
                         )
                         if match_id:
                             printer_id = match_id
@@ -2166,6 +2198,7 @@ class PrintScheduler:
                             busy_printers | interlocked.keys(),
                             wakeable_printer_ids,
                             require_plate_clear,
+                            printer_scope=item_scope,
                         )
                         # An attempt spends the pass's one wake whether or not
                         # it worked: it has already blocked the queue loop for
@@ -2788,12 +2821,14 @@ class PrintScheduler:
         db: AsyncSession,
         model: str,
         target_location: str | None = None,
+        printer_scope: PrinterScope = ALL_PRINTERS,
     ) -> list[Printer]:
         """Active printers of *model*, optionally narrowed to one location.
 
         Shared by the matcher and by the smart-plug wake step (#2786) so both
         answer "which printers can this job run on" from one query — a job can
         only be woken onto a printer the matcher would also have considered.
+        ``printer_scope`` is the job creator's (#1727).
         """
         normalized_model = normalize_printer_model(model) or model
         query = (
@@ -2803,6 +2838,8 @@ class PrintScheduler:
         )
         if target_location:
             query = query.where(Printer.location == target_location)
+        if (clause := printer_scope.where_strict(Printer.id)) is not None:
+            query = query.where(clause)
         result = await db.execute(query)
         return list(result.scalars().all())
 
@@ -2841,6 +2878,7 @@ class PrintScheduler:
         exclude_ids: set[int],
         wakeable_ids: set[int],
         require_plate_clear: bool,
+        printer_scope: PrinterScope = ALL_PRINTERS,
     ) -> tuple[int | None, int | None]:
         """Power on one offline printer a model-based item could run on (#2786).
 
@@ -2876,7 +2914,7 @@ class PrintScheduler:
             if not candidate.target_model:
                 continue
             required_types, filament_overrides = _filament_constraints(candidate)
-            printers = await self._printers_for_model(db, candidate.target_model, target_location)
+            printers = await self._printers_for_model(db, candidate.target_model, target_location, printer_scope)
             for printer in sorted(printers, key=lambda p: p.id):
                 if printer.id in exclude_ids or printer.id not in wakeable_ids:
                     continue
@@ -2952,6 +2990,7 @@ class PrintScheduler:
         filament_overrides: list[dict] | None = None,
         require_plate_clear: bool = True,
         wakeable_ids: set[int] | None = None,
+        printer_scope: PrinterScope = ALL_PRINTERS,
     ) -> tuple[int | None, str | None]:
         """Find an idle, connected printer matching the model with compatible filaments.
 
@@ -2976,7 +3015,7 @@ class PrintScheduler:
             - (None, reason) if no printer is available, with explanation
         """
         normalized_model = normalize_printer_model(model) or model
-        printers = await self._printers_for_model(db, model, target_location)
+        printers = await self._printers_for_model(db, model, target_location, printer_scope)
 
         location_suffix = f" in {target_location}" if target_location else ""
         if not printers:

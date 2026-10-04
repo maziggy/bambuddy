@@ -749,7 +749,7 @@ export interface PrinterCreate {
   ip_address: string;
   access_code: string;
   model?: string;
-  location?: string;
+  location?: string | null;
   auto_archive?: boolean;
   // Maintenance Mode flag (#1476). Backend already gates MQTT, queue dispatch,
   // scheduler, metrics and the print picker on this; toggling via PATCH
@@ -1986,6 +1986,43 @@ export interface UnifiedPresetsBySlot {
   printer: UnifiedPreset[];
   process: UnifiedPreset[];
   filament: UnifiedPreset[];
+}
+// What is loaded in each connected printer, for the SliceModal's
+// "only connected printers" / "only loaded spools" filters (#3172).
+export interface LoadedSpoolPreset {
+  preset_id: string;
+  preset_name: string;
+  preset_source: string;
+  tray_info_idx?: string | null;
+}
+export interface LoadedSpoolTray {
+  ams_id: number;
+  tray_id: number;
+  tray_type: string | null;
+  tray_sub_brands: string | null;
+  tray_color: string | null;
+  tray_info_idx: string | null;
+  exists: boolean | null;
+  state: number | null;
+  saved_preset: LoadedSpoolPreset | null;
+}
+export interface LoadedSpoolUnit {
+  id: number;
+  is_ams_ht: boolean;
+  trays: LoadedSpoolTray[];
+}
+export interface LoadedSpoolPrinter {
+  id: number;
+  name: string;
+  model: string | null;
+  ams: LoadedSpoolUnit[];
+  // Holders with a spool in them; external_holders counts all of them (two
+  // on a dual-nozzle printer, labelled left and right).
+  external: LoadedSpoolTray[];
+  external_holders: number;
+}
+export interface LoadedSpoolsResponse {
+  printers: LoadedSpoolPrinter[];
 }
 export interface UnifiedPresetsResponse {
   // Priority order: local > orca_cloud > cloud > standard. No cross-tier
@@ -4345,7 +4382,7 @@ export type Permission =
   | 'archives:reprint_own' | 'archives:reprint_all' | 'archives:purge'
   | 'queue:read' | 'queue:read_own' | 'queue:read_all' | 'queue:create'
   | 'queue:update_own' | 'queue:update_all' | 'queue:delete_own' | 'queue:delete_all'
-  | 'queue:reorder'
+  | 'queue:reorder' | 'queue:start_unreviewed'
   | 'library:read' | 'library:read_own' | 'library:read_all' | 'library:upload'
   | 'library:update_own' | 'library:update_all' | 'library:delete_own' | 'library:delete_all'
   | 'library:purge'
@@ -4389,6 +4426,11 @@ export interface Group {
   description: string | null;
   permissions: Permission[];
   is_system: boolean;
+  /** Members only see the printers in printer_ids plus every printer in locations (#1727) */
+  restrict_printers: boolean;
+  printer_ids: number[];
+  /** Matched against Printer.location, so printers added there later are included */
+  locations: string[];
   user_count: number;
   created_at: string;
   updated_at: string;
@@ -4402,12 +4444,18 @@ export interface GroupCreate {
   name: string;
   description?: string;
   permissions: Permission[];
+  restrict_printers?: boolean;
+  printer_ids?: number[];
+  locations?: string[];
 }
 
 export interface GroupUpdate {
   name?: string;
   description?: string;
   permissions?: Permission[];
+  restrict_printers?: boolean;
+  printer_ids?: number[];
+  locations?: string[];
 }
 
 export interface PermissionInfo {
@@ -8264,6 +8312,8 @@ export const api = {
   // `@BBL <code>` suffix against the selected printer-preset name (#1325).
   getSlicerPrinterModels: () =>
     request<Record<string, string>>('/slicer/printer-models'),
+  getSlicerLoadedSpools: () =>
+    request<LoadedSpoolsResponse>('/slicer/loaded-spools'),
 
   /**
    * Effective values of a process preset, with its `inherits:` chain flattened

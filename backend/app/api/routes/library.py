@@ -25,6 +25,8 @@ from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
 from backend.app.api.routes.library_variants import normalize_model_name, resolve_variant_model
 from backend.app.api.routes.print_queue import _extract_filament_types_from_3mf
 from backend.app.core.auth import (
+    QueueReviewRequired,
+    RequestPrinterScope,
     require_media_token_ownership,
     require_ownership_permission,
     require_permission_if_auth_enabled,
@@ -32,6 +34,7 @@ from backend.app.core.auth import (
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session, get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope, ensure_model_target_allowed
 from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryFolder
@@ -3020,6 +3023,8 @@ async def add_files_to_queue(
     request: AddToQueueRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.QUEUE_CREATE)),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    review_required: bool = QueueReviewRequired,
 ):
     """Add library files to the print queue.
 
@@ -3043,9 +3048,13 @@ async def add_files_to_queue(
         raise HTTPException(400, "Cannot specify both printer_id and target_model")
 
     if request.printer_id is not None:
+        printer_scope.ensure(request.printer_id)
         printer_row = (await db.execute(select(Printer).where(Printer.id == request.printer_id))).scalar_one_or_none()
         if not printer_row:
             raise HTTPException(400, "Printer not found")
+    else:
+        # Without a printer, every file goes to "any printer of a model"
+        ensure_model_target_allowed(current_user, printer_scope)
 
     # Active printers of every model, read once, and only when the batch has no
     # printer of its own -- with one named, neither the check below nor the
@@ -3197,6 +3206,8 @@ async def add_files_to_queue(
                 # on `created_by_id` — so the user who queued the file could not
                 # see it in their own queue.
                 created_by_id=current_user.id if current_user else None,
+                # Waits for someone to start it unless they may print without review (#1620)
+                manual_start=review_required,
             )
             db.add(queue_item)
 

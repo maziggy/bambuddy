@@ -10,6 +10,8 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
+from backend.app.core.printer_scope import ALL_PRINTERS
+
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
@@ -293,7 +295,7 @@ class TestCameraStreamTokenVerification:
         )
         long_lived = created.json()["token"]
 
-        assert await verify_camera_stream_token(long_lived) is True
+        assert await verify_camera_stream_token(long_lived) == ALL_PRINTERS  # admin-owned: every printer (#1727)
 
     async def test_revoked_long_lived_token_fails_camera_stream_check(self, async_client: AsyncClient):
         from backend.app.core.auth import verify_camera_stream_token
@@ -311,14 +313,14 @@ class TestCameraStreamTokenVerification:
             f"/api/v1/auth/tokens/{token_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert await verify_camera_stream_token(long_lived) is False
+        assert await verify_camera_stream_token(long_lived) is None
 
     async def test_garbage_token_fails_camera_stream_check(self, async_client: AsyncClient):
         from backend.app.core.auth import verify_camera_stream_token
 
         await _setup_admin(async_client, suffix="_verify_garbage")
-        assert await verify_camera_stream_token("bblt_aaaaaaaa_garbage") is False
-        assert await verify_camera_stream_token("not-a-real-token") is False
+        assert await verify_camera_stream_token("bblt_aaaaaaaa_garbage") is None
+        assert await verify_camera_stream_token("not-a-real-token") is None
 
 
 class TestHashOnlyOverlayTokens:

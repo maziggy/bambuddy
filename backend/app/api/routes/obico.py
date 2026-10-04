@@ -5,8 +5,9 @@ import logging
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.user import User
 from backend.app.services.obico_detection import obico_detection_service, pop_frame
 
@@ -42,6 +43,7 @@ async def get_status(
 @router.get("/printer-status")
 async def get_printer_status(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Per-printer live classification for the printer cards (#1546).
 
@@ -59,6 +61,10 @@ async def get_printer_status(
         # needs to know their print is not being watched. Only the reason, which
         # can name a URL, is withheld.
         per_printer = {pid: {**entry, "error": None} for pid, entry in per_printer.items()}
+    # Only printers the caller may see (#1727)
+    per_printer = {pid: entry for pid, entry in per_printer.items() if printer_scope.allows(int(pid))}
+    if enabled_printers is not None:
+        enabled_printers = [pid for pid in enabled_printers if printer_scope.allows(int(pid))]
     return {
         "enabled": settings["enabled"],
         # None = all printers are monitored

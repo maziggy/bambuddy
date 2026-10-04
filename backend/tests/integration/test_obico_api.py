@@ -8,6 +8,7 @@ hardcoded 5s read timeout by pre-populating a cache before issuing the ML call.
 import pytest
 from httpx import AsyncClient
 
+from backend.app.core.printer_scope import ALL_PRINTERS
 from backend.app.services.obico_detection import _frame_cache, obico_detection_service, stash_frame
 from backend.app.services.obico_smoothing import PrintState
 
@@ -202,7 +203,7 @@ class TestObicoPrinterStatusNoVerdict:
         # redaction under test is independent of them.
         loaded = {"enabled": True, "enabled_printers": None}
         with patch.object(obico_detection_service, "_load_settings", new=AsyncMock(return_value=loaded)):
-            data = await get_printer_status(user=user)
+            data = await get_printer_status(user=user, printer_scope=ALL_PRINTERS)
         entry = data["per_printer"][1]
         assert entry["class"] == "error"
         assert entry["error"] is None

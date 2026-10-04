@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Save, Loader2, Search, Check, Minus, Shield, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Search, Check, Minus, Shield, AlertTriangle, Printer as PrinterIcon } from 'lucide-react';
 import { api } from '../api/client';
-import type { Permission, PermissionCategory } from '../api/client';
+import type { GroupCreate, GroupUpdate, Permission, PermissionCategory } from '../api/client';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { useToast } from '../contexts/ToastContext';
@@ -43,8 +43,7 @@ export function GroupEditPage() {
   }
 
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; description?: string; permissions: Permission[] }) =>
-      api.createGroup(data),
+    mutationFn: (data: GroupCreate) => api.createGroup(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       queryClient.invalidateQueries({ queryKey: ['group'] });
@@ -57,8 +56,7 @@ export function GroupEditPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: { name?: string; description?: string; permissions: Permission[] }) =>
-      api.updateGroup(Number(id), data),
+    mutationFn: (data: GroupUpdate) => api.updateGroup(Number(id), data),
     onSuccess: (updatedGroup) => {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       // Prime the single-group detail cache with the PATCH response body so
@@ -81,6 +79,8 @@ export function GroupEditPage() {
   });
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
+  // Administrators see every printer regardless
+  const isAdministrators = isEditing && groupData?.is_system === true && groupData.name === 'Administrators';
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -88,10 +88,16 @@ export function GroupEditPage() {
       return;
     }
     if (isEditing) {
+      // System groups refuse any permissions payload, so only send it when it
+      // changed -- otherwise their description couldn't be saved at all.
+      const permissionsChanged =
+        !groupData ||
+        permissions.length !== groupData.permissions.length ||
+        permissions.some((p) => !groupData.permissions.includes(p));
       updateMutation.mutate({
         name: name !== groupData?.name ? name : undefined,
         description,
-        permissions,
+        permissions: groupData?.is_system && !permissionsChanged ? undefined : permissions,
       });
     } else {
       createMutation.mutate({
@@ -206,6 +212,36 @@ export function GroupEditPage() {
           />
         </div>
       </div>
+
+      {/* Printer access (#1727) is managed on its own page */}
+      <Card>
+        <div className="p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <PrinterIcon className="w-4 h-4 text-bambu-gray shrink-0" />
+            <span className="text-white font-medium text-sm">{t('groups.editor.printerAccess')}</span>
+            <span className="text-sm text-bambu-gray">
+              {isAdministrators
+                ? t('groups.editor.adminsSeeAllPrinters')
+                : !isEditing
+                ? t('groups.editor.printerAccessAfterCreate')
+                : groupData?.restrict_printers
+                ? t('groups.editor.printerAccessLimited', {
+                    printers: groupData.printer_ids.length,
+                    locations: groupData.locations?.length ?? 0,
+                  })
+                : t('groups.editor.printerAccessOpen')}
+            </span>
+          </div>
+          {isEditing && !isAdministrators && (
+            <Link
+              to={`/settings?tab=users&sub=printer-access&group=${id}`}
+              className="text-sm text-bambu-green hover:underline shrink-0"
+            >
+              {t('groups.editor.managePrinterAccess')}
+            </Link>
+          )}
+        </div>
+      </Card>
 
       {/* Toolbar */}
       <div className="flex items-center justify-between flex-wrap gap-3">

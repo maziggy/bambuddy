@@ -157,6 +157,7 @@ import {
   PictureInPicture2,
   ThumbsUp,
   ThumbsDown,
+  KeyRound,
 } from 'lucide-react';
 import { ConfirmOutcomeDialog } from '../components/ConfirmOutcomeDialog';
 
@@ -2113,7 +2114,7 @@ function PrinterCard({
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { hasPermission, canModify } = useAuth();
+  const { hasPermission, canModify, authEnabled, isAdmin } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteArchives, setDeleteArchives] = useState(true);
@@ -3743,6 +3744,18 @@ function PrinterCard({
             <Info className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
             {t('printers.printerInformation')}
           </button>
+          {authEnabled && isAdmin && (
+            <button
+              className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
+              onClick={() => {
+                setShowMenu(false);
+                navigate(`/settings?tab=users&sub=printer-access&view=printers&printer=${printer.id}`);
+              }}
+            >
+              <KeyRound className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
+              {t('printerAccess.whoHasAccess')}
+            </button>
+          )}
           {/* Maintenance Mode toggle (#1476) — leverages backend is_active flag */}
           <button
             className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
@@ -8445,6 +8458,7 @@ function EditPrinterModal({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { authEnabled, isAdmin } = useAuth();
   const [form, setForm] = useState({
     name: printer.name,
     ip_address: printer.ip_address,
@@ -8454,6 +8468,25 @@ function EditPrinterModal({
     auto_archive: printer.auto_archive,
     is_active: printer.is_active,
   });
+
+  // Groups can be given a location (#1727), so a move changes who can use the
+  // printer. Non-admins can't read groups; the server refuses their move instead.
+  const { data: groups } = useQuery({
+    queryKey: ['groups'],
+    queryFn: () => api.getGroups(),
+    enabled: authEnabled && isAdmin,
+  });
+  const newLocation = form.location.trim();
+  const accessChangedFor =
+    newLocation !== (printer.location || '')
+      ? (groups ?? [])
+          .filter(
+            (g) =>
+              g.restrict_printers &&
+              (g.locations ?? []).some((loc) => loc === printer.location || loc === newLocation)
+          )
+          .map((g) => g.name)
+      : [];
 
   // Setup-time pre-flight — same warn-on-save as the Add-Printer dialog, so an
   // edit that breaks connectivity (e.g. a mistyped IP) is caught before save.
@@ -8484,7 +8517,8 @@ function EditPrinterModal({
       name: form.name,
       ip_address: form.ip_address,
       model: form.model || undefined,
-      location: form.location || undefined,
+      // null clears it; leaving it out kept the old location
+      location: form.location.trim() || null,
       auto_archive: form.auto_archive,
       is_active: form.is_active,
     };
@@ -8615,6 +8649,12 @@ function EditPrinterModal({
                 maxLength={100}
               />
               <p className="text-xs text-bambu-gray mt-1">{t('printers.locationHelp')}</p>
+              {accessChangedFor.length > 0 && (
+                <p className="flex items-start gap-1.5 text-xs text-yellow-700 dark:text-yellow-400 mt-1">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                  {t('printerAccess.moveWarning', { groups: accessChangedFor.join(', ') })}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <input

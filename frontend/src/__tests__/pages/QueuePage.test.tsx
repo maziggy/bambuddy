@@ -2,13 +2,14 @@
  * Tests for the QueuePage component.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { QueuePage } from '../../pages/QueuePage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { setAuthToken } from '../../api/client';
 
 // Mock queue data
 const mockQueueItems = [
@@ -1455,6 +1456,43 @@ describe('QueuePage', () => {
 
       await waitFor(() => {
         expect(screen.getByTitle('Start Print')).toBeInTheDocument();
+      });
+    });
+
+    // Without queue:start_unreviewed their jobs wait for staff to start them (#1620)
+    describe('waiting for review', () => {
+      const signInWith = (permissions: string[]) => {
+        setAuthToken('test-token', 'session');
+        server.use(
+          http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+          http.get('*/api/v1/auth/me', () =>
+            HttpResponse.json({ id: 7, username: 'student', is_admin: false, permissions }),
+          ),
+          http.get('/api/v1/queue/', () =>
+            HttpResponse.json([{ ...mockQueueItems[0], manual_start: true, created_by_id: 7 }]),
+          ),
+        );
+      };
+
+      afterEach(() => {
+        setAuthToken(null);
+      });
+
+      it('tells a student their job waits for review and offers no start', async () => {
+        signInWith(['queue:read_own', 'queue:update_own', 'queue:delete_own']);
+        render(<QueuePage />);
+
+        expect(await screen.findByText('Waiting for review')).toBeInTheDocument();
+        const start = screen.getByTitle('Waiting for review: someone who manages the queue starts this job');
+        expect(start).toBeDisabled();
+      });
+
+      it('keeps the start button for users who may print without review', async () => {
+        signInWith(['queue:read_own', 'queue:update_own', 'queue:start_unreviewed']);
+        render(<QueuePage />);
+
+        expect(await screen.findByText('Staged')).toBeInTheDocument();
+        expect(screen.getByTitle('Start Print')).not.toBeDisabled();
       });
     });
   });

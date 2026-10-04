@@ -10,7 +10,7 @@ from fastapi.responses import Response
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 
-from backend.app.core.auth import RequireOverlayTokenIfAuthEnabled, RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequireOverlayTokenAnyPrinterIfAuthEnabled, RequirePermissionIfAuthEnabled
 from backend.app.core.config import settings
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
@@ -64,7 +64,7 @@ def get_logo(_: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS
 
 
 @router.get("/overlay-branding/logo")
-def get_stream_logo(_: None = RequireOverlayTokenIfAuthEnabled):
+def get_stream_logo(_: None = RequireOverlayTokenAnyPrinterIfAuthEnabled):
     return _read_logo()
 
 

@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.printer import Printer
 
@@ -29,6 +30,7 @@ class FailureAnalysisService:
         printer_id: int | None = None,
         project_id: int | None = None,
         created_by_id: int | None = None,
+        printer_scope: PrinterScope | None = None,
     ) -> dict:
         """Analyze failure patterns across logged print events."""
         # Build base query — separate date vs non-date filters for trend reuse
@@ -76,6 +78,9 @@ class FailureAnalysisService:
                 non_date_filter.append(PrintLogEntry.created_by_id.is_(None))
             else:
                 non_date_filter.append(PrintLogEntry.created_by_id == created_by_id)
+        # Only prints on printers the caller may see (#1727)
+        if printer_scope is not None and (clause := printer_scope.where(PrintLogEntry.printer_id)) is not None:
+            non_date_filter.append(clause)
         base_filter.extend(non_date_filter)
 
         # Total counts

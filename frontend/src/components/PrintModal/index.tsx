@@ -99,7 +99,10 @@ export function PrintModal({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const { hasPermission, user } = useAuth();
+  const { hasPermission, hasAnyPermission, user } = useAuth();
+  // Their jobs wait for someone to start them (#1620); the server enforces it,
+  // this keeps the request and the dialog honest about it.
+  const needsReview = !hasAnyPermission('queue:start_unreviewed', 'queue:update_all');
 
   // Determine if we're printing a library file
   const isLibraryFile = !!libraryFileId && !archiveId;
@@ -989,6 +992,15 @@ export function PrintModal({
     });
   };
 
+  // Saving an existing job. Only Queue has a manual-start checkbox, so a
+  // scheduled job keeps whatever wait it had: a student's scheduled job waits
+  // for review (#1620), and editing it must not start it.
+  const editManualStart =
+    needsReview ||
+    (scheduleOptions.scheduleType === 'queue'
+      ? scheduleOptions.requireManualStart
+      : scheduleOptions.scheduleType === 'scheduled' && !!queueItem?.manual_start);
+
   const handleSubmit = async (e?: React.FormEvent, options?: { skipFilamentCheck?: boolean }) => {
     e?.preventDefault();
 
@@ -1238,7 +1250,7 @@ export function PrintModal({
           require_previous_success: scheduleOptions.requirePreviousSuccess,
           auto_off_after: scheduleOptions.autoOffAfter,
           gcode_injection: scheduleOptions.gcodeInjection,
-          manual_start: scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart,
+          manual_start: needsReview || (scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart),
           scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
             ? new Date(scheduleOptions.scheduledTime).toISOString()
             : undefined,
@@ -1339,7 +1351,7 @@ export function PrintModal({
       require_previous_success: scheduleOptions.requirePreviousSuccess,
       auto_off_after: scheduleOptions.autoOffAfter,
       gcode_injection: scheduleOptions.gcodeInjection,
-      manual_start: scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart,
+      manual_start: needsReview || (scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart),
       // When the user clicks "Print Anyway" on the frontend deficit warning,
       // persist that acknowledgement so the scheduler doesn't immediately
       // re-flag the item on its first dispatch tick (#1698-followup).
@@ -1386,7 +1398,7 @@ export function PrintModal({
               require_previous_success: scheduleOptions.requirePreviousSuccess,
               auto_off_after: scheduleOptions.autoOffAfter,
               gcode_injection: scheduleOptions.gcodeInjection,
-              manual_start: scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart,
+              manual_start: editManualStart,
               ams_mapping: undefined,
               plate_id: plateId,
               scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
@@ -1448,7 +1460,7 @@ export function PrintModal({
                 require_previous_success: scheduleOptions.requirePreviousSuccess,
                 auto_off_after: scheduleOptions.autoOffAfter,
                 gcode_injection: scheduleOptions.gcodeInjection,
-                manual_start: scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart,
+                manual_start: editManualStart,
                 ams_mapping: printerMapping,
                 // Only ever set here, never cleared: an earlier "Print Anyway"
                 // stays acknowledged across an edit, as it does today.
@@ -2059,6 +2071,7 @@ export function PrintModal({
               showStagger={!isEditing && assignmentMode === 'printer' && selectedPrinters.length > 1}
               printerCount={selectedPrinters.length}
               hasGcodeSnippets={!!settings?.gcode_snippets}
+              needsReview={needsReview}
             />
 
             {/* Outcome prompt (#1898) sits outside the collapsed Print Options

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Box, CheckSquare, ChevronDown, Loader2, Move, Pencil, Plus, Search, Square, Trash2, UserMinus, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ArrowLeft, Box, CheckSquare, ChevronDown, Loader2, Move, Pencil, Plus, Search, Square, Trash2, UserMinus, X } from 'lucide-react';
 import { api } from '../api/client';
 import type { Printer, PrinterLocation } from '../api/client';
 import { Button } from '../components/Button';
@@ -471,6 +472,12 @@ export function PrinterLocationsPage() {
 
   return (
     <div className="p-4 md:p-8 pb-28">
+      <Link
+        to="/"
+        className="inline-flex items-center gap-1 mb-3 text-sm text-bambu-gray hover:text-white transition-colors"
+      >
+        <ArrowLeft className="w-4 h-4" /> {t('printers.locations.backToPrinters')}
+      </Link>
       <div className="mb-4">
         <div className="flex items-center gap-3 mb-1">
           <Box className="w-[25px] h-[25px] text-bambu-green" />

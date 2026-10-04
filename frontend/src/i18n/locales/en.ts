@@ -241,6 +241,7 @@ export default {
     // they read correctly in every language without plural forms.
     locations: {
       title: 'Printer Locations',
+      backToPrinters: 'Back to Printers',
       subtitle: '{{grouped}} in a location, {{ungrouped}} without one',
       search: 'Search locations...',
       showEmpty: 'Show empty',

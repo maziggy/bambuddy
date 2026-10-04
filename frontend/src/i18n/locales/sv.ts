@@ -239,6 +239,7 @@ export default {
   printers: {
     locations: {
       title: 'Skrivarplatser',
+      backToPrinters: 'Tillbaka till skrivare',
       subtitle: '{{grouped}} med plats, {{ungrouped}} utan',
       search: 'Sök platser...',
       showEmpty: 'Visa tomma',

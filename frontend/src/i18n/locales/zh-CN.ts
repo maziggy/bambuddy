@@ -239,6 +239,7 @@ export default {
   printers: {
     locations: {
       title: '打印机位置',
+      backToPrinters: '返回打印机',
       subtitle: '有位置 {{grouped}} 台，无位置 {{ungrouped}} 台',
       search: '搜索位置...',
       showEmpty: '显示空位置',

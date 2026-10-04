@@ -239,6 +239,7 @@ export default {
   printers: {
     locations: {
       title: 'Printerlocaties',
+      backToPrinters: 'Terug naar printers',
       subtitle: '{{grouped}} met locatie, {{ungrouped}} zonder',
       search: 'Locaties zoeken...',
       showEmpty: 'Lege tonen',

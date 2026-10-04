@@ -239,6 +239,7 @@ export default {
   printers: {
     locations: {
       title: 'Emplacements des imprimantes',
+      backToPrinters: 'Retour aux imprimantes',
       subtitle: '{{grouped}} avec emplacement, {{ungrouped}} sans',
       search: 'Rechercher des emplacements...',
       showEmpty: 'Afficher les vides',

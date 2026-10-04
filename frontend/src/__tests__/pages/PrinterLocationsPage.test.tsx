@@ -177,6 +177,13 @@ describe('PrinterLocationsPage', () => {
     expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /select all/i })).not.toBeInTheDocument();
   });
+
+  it('links back to the printers page', async () => {
+    render(<PrinterLocationsPage />);
+
+    const back = await screen.findByRole('link', { name: /back to printers/i });
+    expect(back).toHaveAttribute('href', '/');
+  });
 });
 
 describe('printer locations strings', () => {

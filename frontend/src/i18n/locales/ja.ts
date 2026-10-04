@@ -238,6 +238,7 @@ export default {
   printers: {
     locations: {
       title: 'プリンターの場所',
+      backToPrinters: 'プリンターに戻る',
       subtitle: '場所あり {{grouped}} 台、場所なし {{ungrouped}} 台',
       search: '場所を検索...',
       showEmpty: '空の場所を表示',

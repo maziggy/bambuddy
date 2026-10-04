@@ -233,6 +233,7 @@ export default {
   printers: {
     locations: {
       title: "Расположение принтеров",
+      backToPrinters: "Назад к принтерам",
       subtitle: "С расположением: {{grouped}}, без расположения: {{ungrouped}}",
       search: "Поиск расположений...",
       showEmpty: "Показать пустые",

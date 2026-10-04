@@ -233,6 +233,7 @@ export default {
   printers: {
     locations: {
       title: '프린터 위치',
+      backToPrinters: '프린터로 돌아가기',
       subtitle: '위치 있음 {{grouped}}대, 위치 없음 {{ungrouped}}대',
       search: '위치 검색...',
       showEmpty: '빈 위치 표시',

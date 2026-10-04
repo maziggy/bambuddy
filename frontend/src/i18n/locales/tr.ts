@@ -239,6 +239,7 @@ export default {
   printers: {
     locations: {
       title: 'Yazıcı konumları',
+      backToPrinters: 'Yazıcılara dön',
       subtitle: '{{grouped}} konumlu, {{ungrouped}} konumsuz',
       search: 'Konum ara...',
       showEmpty: 'Boşları göster',

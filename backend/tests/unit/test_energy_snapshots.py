@@ -197,3 +197,44 @@ class TestPerPrintRestartResilience:
         reloaded = result.scalar_one()
         assert reloaded.energy_kwh == pytest.approx(3.4)
         assert reloaded.energy_cost == pytest.approx(1.02)
+
+
+class TestSumLivePlugTotalsRest:
+    """#3232 — all-time total-consumption mode read ``today`` for REST plugs.
+
+    A REST device that exposes only a lifetime counter (Shelly ``aenergy.total``
+    via ``rest_energy_total_path``) has no ``today`` key, so the unfiltered
+    Statistics total stayed at 0 while the date-filtered path worked.
+    """
+
+    @pytest.mark.asyncio
+    async def test_rest_plug_lifetime_total_is_summed(self, db_session, smart_plug_factory, monkeypatch):
+        from backend.app.api.routes.archives import _sum_live_plug_totals
+        from backend.app.services import rest_smart_plug
+
+        await smart_plug_factory(name="Shelly", plug_type="rest")
+
+        async def fake_get_energy(_plug):
+            return {"power": 11.0, "total": 5.802}
+
+        monkeypatch.setattr(rest_smart_plug.rest_smart_plug_service, "get_energy", fake_get_energy)
+
+        total = await _sum_live_plug_totals(db_session)
+
+        assert total == pytest.approx(5.802)
+
+    @pytest.mark.asyncio
+    async def test_rest_plug_falls_back_to_today_without_lifetime(self, db_session, smart_plug_factory, monkeypatch):
+        from backend.app.api.routes.archives import _sum_live_plug_totals
+        from backend.app.services import rest_smart_plug
+
+        await smart_plug_factory(name="DailyOnly", plug_type="rest")
+
+        async def fake_get_energy(_plug):
+            return {"power": 11.0, "today": 0.4}
+
+        monkeypatch.setattr(rest_smart_plug.rest_smart_plug_service, "get_energy", fake_get_energy)
+
+        total = await _sum_live_plug_totals(db_session)
+
+        assert total == pytest.approx(0.4)

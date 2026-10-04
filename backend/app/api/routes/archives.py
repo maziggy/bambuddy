@@ -1414,9 +1414,18 @@ async def _sum_live_plug_totals(db: AsyncSession) -> float:
             if mqtt_data and mqtt_data.energy is not None:
                 total += mqtt_data.energy
         elif plug.plug_type == "rest":
+            # A REST device that exposes only a lifetime counter (Shelly
+            # ``aenergy.total`` via ``rest_energy_total_path``) returns no
+            # ``today`` key, so read the lifetime total first, like the
+            # Tasmota/HA branches above. ``today`` stays as the fallback for
+            # devices that only have a daily counter.
             energy = await rest_smart_plug_service.get_energy(plug)
-            if energy and energy.get("today") is not None:
-                total += energy["today"]
+            if energy:
+                value = energy.get("total")
+                if value is None:
+                    value = energy.get("today")
+                if value is not None:
+                    total += value
     return total
 
 

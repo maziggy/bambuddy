@@ -29,7 +29,7 @@ class Group(Base):
 
     Groups contain a list of permissions that are granted to all members.
     Users can belong to multiple groups, and their permissions are additive.
-    System groups (Administrators, Operators, Viewers) cannot be deleted.
+    System groups (Administrators) cannot be deleted.
     """
 
     __tablename__ = "groups"

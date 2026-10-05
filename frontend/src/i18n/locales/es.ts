@@ -360,6 +360,12 @@ export default {
           'Este enlace del muro de cámaras ya no es válido. Es posible que el token haya caducado o se haya revocado.',
         loadFailed: 'No se han podido cargar las impresoras.',
       },
+      tileSize: {
+        small: 'Mosaicos pequeños',
+        medium: 'Mosaicos medianos',
+        large: 'Mosaicos grandes',
+        extraLarge: 'Mosaicos extragrandes',
+      },
       noPrinters: 'No hay impresoras que mostrar',
       noSignal: 'Sin señal',
       live: 'En vivo',

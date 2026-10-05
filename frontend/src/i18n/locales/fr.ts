@@ -360,6 +360,12 @@ export default {
           "Ce lien du mur de caméras n'est plus valide. Le jeton a peut-être expiré ou été révoqué.",
         loadFailed: 'Impossible de charger les imprimantes.',
       },
+      tileSize: {
+        small: 'Petites vignettes',
+        medium: 'Vignettes moyennes',
+        large: 'Grandes vignettes',
+        extraLarge: 'Très grandes vignettes',
+      },
       noPrinters: 'Aucune imprimante à afficher',
       noSignal: 'Aucun signal',
       live: 'En direct',

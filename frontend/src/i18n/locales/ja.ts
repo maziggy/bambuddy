@@ -359,6 +359,12 @@ export default {
           'このカメラウォールのリンクは無効です。トークンの有効期限が切れたか、取り消された可能性があります。',
         loadFailed: 'プリンターを読み込めませんでした。',
       },
+      tileSize: {
+        small: '小タイル',
+        medium: '中タイル',
+        large: '大タイル',
+        extraLarge: '特大タイル',
+      },
       noPrinters: '表示するプリンターがありません',
       noSignal: '信号なし',
       live: 'ライブ',

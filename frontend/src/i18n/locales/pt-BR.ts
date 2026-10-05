@@ -360,6 +360,12 @@ export default {
           'Este link do mural de câmeras não é mais válido. O token pode ter expirado ou sido revogado.',
         loadFailed: 'Não foi possível carregar as impressoras.',
       },
+      tileSize: {
+        small: 'Blocos pequenos',
+        medium: 'Blocos médios',
+        large: 'Blocos grandes',
+        extraLarge: 'Blocos extra grandes',
+      },
       noPrinters: 'Nenhuma impressora para exibir',
       noSignal: 'Sem sinal',
       live: 'Ao vivo',

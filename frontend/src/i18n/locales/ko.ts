@@ -346,6 +346,12 @@ export default {
           '이 카메라 월 링크는 더 이상 유효하지 않습니다. 토큰이 만료되었거나 취소되었을 수 있습니다.',
         loadFailed: '프린터를 불러오지 못했습니다.',
       },
+      tileSize: {
+        small: '작은 타일',
+        medium: '중간 타일',
+        large: '큰 타일',
+        extraLarge: '아주 큰 타일',
+      },
       noPrinters: '표시할 프린터가 없습니다',
       noSignal: '신호 없음',
       live: '라이브',

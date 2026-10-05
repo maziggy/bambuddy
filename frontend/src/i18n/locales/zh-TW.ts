@@ -360,6 +360,12 @@ export default {
           '此攝影機牆連結已失效。權杖可能已過期或遭撤銷。',
         loadFailed: '無法載入印表機。',
       },
+      tileSize: {
+        small: '小圖塊',
+        medium: '中圖塊',
+        large: '大圖塊',
+        extraLarge: '超大圖塊',
+      },
       noPrinters: '沒有可顯示的印表機',
       noSignal: '無訊號',
       live: '直播',

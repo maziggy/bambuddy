@@ -360,6 +360,12 @@ export default {
           'Dieser Kamera-Wand-Link ist nicht mehr gültig. Das Token ist möglicherweise abgelaufen oder wurde widerrufen.',
         loadFailed: 'Die Drucker konnten nicht geladen werden.',
       },
+      tileSize: {
+        small: 'Kleine Kacheln',
+        medium: 'Mittlere Kacheln',
+        large: 'Große Kacheln',
+        extraLarge: 'Extra große Kacheln',
+      },
       noPrinters: 'Keine Drucker anzuzeigen',
       noSignal: 'Kein Signal',
       live: 'Live',

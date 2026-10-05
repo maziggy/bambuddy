@@ -360,6 +360,12 @@ export default {
           'Bu kamera duvarı bağlantısı artık geçerli değil. Belirtecin süresi dolmuş veya belirteç iptal edilmiş olabilir.',
         loadFailed: 'Yazıcılar yüklenemedi.',
       },
+      tileSize: {
+        small: 'Küçük kutucuklar',
+        medium: 'Orta kutucuklar',
+        large: 'Büyük kutucuklar',
+        extraLarge: 'Çok büyük kutucuklar',
+      },
       noPrinters: 'Gösterilecek yazıcı yok',
       noSignal: 'Sinyal yok',
       live: 'Canlı',

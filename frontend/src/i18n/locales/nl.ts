@@ -360,6 +360,12 @@ export default {
           'Deze camerawandlink is niet meer geldig. Het token is mogelijk verlopen of ingetrokken.',
         loadFailed: 'Printers konden niet worden geladen.',
       },
+      tileSize: {
+        small: 'Kleine tegels',
+        medium: 'Middelgrote tegels',
+        large: 'Grote tegels',
+        extraLarge: 'Extra grote tegels',
+      },
       noPrinters: 'Geen printers om weer te geven',
       noSignal: 'Geen signaal',
       live: 'Live',

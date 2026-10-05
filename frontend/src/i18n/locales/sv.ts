@@ -360,6 +360,12 @@ export default {
           'Denna länk till kameraväggen är inte längre giltig. Token kan ha löpt ut eller återkallats.',
         loadFailed: 'Kunde inte ladda skrivarna.',
       },
+      tileSize: {
+        small: 'Små rutor',
+        medium: 'Mellanstora rutor',
+        large: 'Stora rutor',
+        extraLarge: 'Extra stora rutor',
+      },
       noPrinters: 'Inga skrivare att visa',
       noSignal: 'Ingen signal',
       live: 'Live',

@@ -360,6 +360,12 @@ export default {
           '此摄像头墙链接已失效。令牌可能已过期或被撤销。',
         loadFailed: '无法加载打印机。',
       },
+      tileSize: {
+        small: '小图块',
+        medium: '中图块',
+        large: '大图块',
+        extraLarge: '超大图块',
+      },
       noPrinters: '没有可显示的打印机',
       noSignal: '无信号',
       live: '直播',

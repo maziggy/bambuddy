@@ -172,6 +172,7 @@ import { BulkPrinterToolbar, type PrinterState } from '../components/BulkPrinter
 import { FileManagerModal } from '../components/FileManagerModal';
 import { EmbeddedCameraViewer } from '../components/EmbeddedCameraViewer';
 import { CameraWall } from '../components/CameraWall';
+import { DEFAULT_CAM_WALL_TILE_SIZE } from '../components/camWallTileSize';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 import { MQTTDebugModal } from '../components/MQTTDebugModal';
 import { HMSErrorModal, filterKnownHMSErrors, isSevereHMSError } from '../components/HMSErrorModal';
@@ -8815,6 +8816,12 @@ export function PrintersPage() {
   // 'full' adds progress, layer, and time-left on printing/paused tiles.
   // Defaulting to 'full' because the cards already show this info — users who
   // pick cam-wall view still want to glance the same details without flipping.
+  // Kept apart from the card size: S on the cards also means the compact
+  // layout, and a wall of 2 cameras wants big tiles next to small cards (#2735).
+  const [camWallTileSize, setCamWallTileSize] = useState<number>(() => {
+    const saved = parseInt(localStorage.getItem('camWallTileSize') || '', 10);
+    return saved >= 1 && saved <= 4 ? saved : DEFAULT_CAM_WALL_TILE_SIZE;
+  });
   const [camWallStatusMode, setCamWallStatusMode] = useState<'off' | 'compact' | 'full'>(() => {
     const saved = localStorage.getItem('camWallStatusMode');
     return saved === 'off' || saved === 'compact' || saved === 'full' ? saved : 'full';
@@ -9670,14 +9677,19 @@ export function PrintersPage() {
       )}
 
       {/* Card size selector */}
-      <div className={`flex h-8 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary ${pageView === 'camwall' ? 'opacity-40 pointer-events-none' : ''} ${inMenu ? 'w-full' : ''}`}>
+      <div className={`flex h-8 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary ${inMenu ? 'w-full' : ''}`}>
         {cardSizeLabels.map((label, index) => {
           const size = index + 1;
-          const isSelected = cardSize === size;
+          const isSelected = (pageView === 'camwall' ? camWallTileSize : cardSize) === size;
           return (
             <button
               key={label}
               onClick={() => {
+                if (pageView === 'camwall') {
+                  setCamWallTileSize(size);
+                  localStorage.setItem('camWallTileSize', String(size));
+                  return;
+                }
                 setCompactDrilldownPrinterId(null);
                 setCardSize(size);
                 localStorage.setItem('printerCardSize', String(size));
@@ -9691,7 +9703,7 @@ export function PrintersPage() {
                   ? 'bg-bambu-green text-white'
                   : 'text-white hover:bg-bambu-dark-tertiary'
               }`}
-              title={label === 'S' ? t('printers.cardSize.small') : label === 'M' ? t('printers.cardSize.medium') : label === 'L' ? t('printers.cardSize.large') : t('printers.cardSize.extraLarge')}
+              title={t(`printers.${pageView === 'camwall' ? 'camWall.tileSize' : 'cardSize'}.${['small', 'medium', 'large', 'extraLarge'][index]}`)}
             >
               {label}
             </button>
@@ -9879,6 +9891,7 @@ export function PrintersPage() {
           printers={sortedPrinters}
           maxLive={camWallMaxLive}
           snapshotIntervalSec={camWallSnapshotSec}
+          tileSize={camWallTileSize}
           onTileClick={(id, name) => {
             // A wall tile has no room for a split button, so it follows the
             // mode the card buttons last chose.

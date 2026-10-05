@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueries } from '@tanstack/react-query';
 import { Settings as SettingsIcon } from 'lucide-react';
+import { DEFAULT_CAM_WALL_TILE_SIZE, camWallGridClasses } from './camWallTileSize';
 import { CameraTile, type CameraTileMode, type CameraTileStatusMode } from './CameraTile';
 import { filterKnownHMSErrors } from './HMSErrorModal';
 import { api, type PrinterStatus } from '../api/client';
@@ -49,6 +50,9 @@ interface CameraWallProps {
   // Kiosk walls hide the settings popover — the knobs come from the URL, and
   // there is nobody standing at the screen to turn them.
   showSettings?: boolean;
+  // 1=S, 2=M, 3=L, 4=XL, the same scale as the printer cards (#2735). Sets how
+  // many tiles share a row; the tiles stay 16:9.
+  tileSize?: number;
 }
 
 const MIN_MAX_LIVE = 1;
@@ -68,6 +72,7 @@ export function CameraWall({
   onChangeStatusMode,
   statuses,
   showSettings: settingsEnabled = true,
+  tileSize = DEFAULT_CAM_WALL_TILE_SIZE,
 }: CameraWallProps) {
   const { t } = useTranslation();
   const tileRefs = useRef<Map<number, HTMLDivElement | null>>(new Map());
@@ -271,7 +276,7 @@ export function CameraWall({
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className={`grid gap-3 ${camWallGridClasses(tileSize)}`} data-testid="camwall-grid">
         {printers.map((p) => {
           const mode = modeByPrinter.get(p.id) ?? 'paused';
           return (

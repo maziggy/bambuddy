@@ -360,6 +360,12 @@ export default {
           'Questo link al muro telecamere non è più valido. Il token potrebbe essere scaduto o essere stato revocato.',
         loadFailed: 'Impossibile caricare le stampanti.',
       },
+      tileSize: {
+        small: 'Riquadri piccoli',
+        medium: 'Riquadri medi',
+        large: 'Riquadri grandi',
+        extraLarge: 'Riquadri extra grandi',
+      },
       noPrinters: 'Nessuna stampante da mostrare',
       noSignal: 'Nessun segnale',
       live: 'Live',

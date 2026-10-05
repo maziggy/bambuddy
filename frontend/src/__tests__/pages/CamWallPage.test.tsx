@@ -143,3 +143,37 @@ describe('CamWallPage — signed out, no token', () => {
     expect(api.getCamWallPrinters).not.toHaveBeenCalled();
   });
 });
+
+describe('CamWallPage — tile size (#2735)', () => {
+  beforeEach(() => {
+    vi.spyOn(api, 'getCamWallPrinters').mockResolvedValue(FEED);
+    vi.spyOn(global, 'fetch').mockResolvedValue(new Response(null, { status: 401 }));
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const grid = async () => {
+    await waitFor(() => expect(screen.getByText('X1C-Lab')).toBeInTheDocument());
+    return screen.getByTestId('camwall-grid').className;
+  };
+
+  it('takes ?size=xl for a single full-width column', async () => {
+    renderAt(`?token=${KIOSK_TOKEN}&size=xl`);
+    const classes = await grid();
+    expect(classes).toContain('grid-cols-1');
+    expect(classes).not.toContain('sm:grid-cols-2');
+  });
+
+  it('takes ?size=s for the most tiles per row', async () => {
+    renderAt(`?token=${KIOSK_TOKEN}&size=S`);
+    expect(await grid()).toContain('xl:grid-cols-5');
+  });
+
+  it('falls back to the medium grid for a size it does not know', async () => {
+    renderAt(`?token=${KIOSK_TOKEN}&size=huge`);
+    expect(await grid()).toContain('xl:grid-cols-4');
+  });
+});

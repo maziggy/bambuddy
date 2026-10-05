@@ -353,7 +353,8 @@ async def test_first_matching_variant_wins_and_is_folded_onto_the_row(queue_db):
     assert item.printer_id == 2, "assigned to the H2C"
     assert item.target_model == "H2C"
     assert item.plate_id == 3
-    assert item.ams_mapping == "[4, 5]"
+    # A variant's mapping was not made for H2C-1; it is matched on the printer (#3239).
+    assert item.ams_mapping is None
     assert item.nozzle_mapping == "[0, 1]"
     assert item.print_time_seconds == 1200, "the estimate now describes what will actually run"
     assert item.waiting_reason is None

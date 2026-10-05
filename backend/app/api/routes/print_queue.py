@@ -1994,6 +1994,14 @@ async def update_queue_item(
                 f"File was sliced for {sliced_for} and cannot be dispatched to {update_data['target_model']} printers",
             )
 
+    # A job that now waits for any printer of a model keeps nothing that was
+    # resolved against one printer: the scheduler picks the printer and maps
+    # its trays then (#3239). The edit dialog omits both fields on such a move.
+    if new_target_model and not new_printer_id:
+        update_data["ams_mapping"] = None
+        if item.printer_id and "skip_filament_check" not in update_data:
+            update_data["skip_filament_check"] = False
+
     # Serialize ams_mapping to JSON for TEXT column storage
     if "ams_mapping" in update_data:
         update_data["ams_mapping"] = json.dumps(update_data["ams_mapping"]) if update_data["ams_mapping"] else None

@@ -139,3 +139,191 @@ async def test_print_anyway_still_keeps_the_users_mapping():
         pm.get_status.return_value = _status(A1_002_AMS, EMPTY_EXTERNAL)
         await scheduler._ensure_ams_mapping(AsyncMock(), 12, item)
     assert json.loads(item.ams_mapping) == [254]
+
+
+# A job made for A1-003, where black PETG sits in AMS tray 3, moved to the
+# location and picked by A1-002, whose tray 3 holds blue PETG. Tray 3 exists
+# and holds PETG, so the stored [3] fits by type and would print in blue.
+A1_002_BLUE_IN_TRAY_3 = [
+    {
+        "id": "0",
+        "tray": [
+            {"id": "0", "tray_type": "PETG", "tray_color": "000000FF", "tray_info_idx": "GFG99"},
+            {"id": "3", "tray_type": "PETG", "tray_color": "0085D5FF", "tray_info_idx": "GFG99"},
+        ],
+    }
+]
+
+
+@pytest.fixture
+async def session_maker():
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    import backend.app.models  # noqa: F401 - populate Base.metadata
+    from backend.app.core.database import Base
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    try:
+        yield async_sessionmaker(engine, expire_on_commit=False)
+    finally:
+        await engine.dispose()
+
+
+async def _location_job(session_maker, ams_mapping):
+    from backend.app.models.library import LibraryFile
+    from backend.app.models.print_queue import PrintQueueItem
+    from backend.app.models.printer import Printer
+
+    async with session_maker() as db:
+        db.add(
+            Printer(
+                id=2,
+                name="A1-002",
+                serial_number="A1002",
+                ip_address="10.0.0.2",
+                access_code="x",
+                model="A1",
+                location="Farm",
+                is_active=True,
+            )
+        )
+        lib = LibraryFile(
+            filename="job.gcode.3mf",
+            file_path="/library/job.gcode.3mf",
+            file_size=10,
+            file_type="gcode.3mf",
+            file_metadata={"sliced_for_model": "A1"},
+        )
+        db.add(lib)
+        await db.flush()
+        item = PrintQueueItem(
+            status="pending",
+            position=1,
+            target_model="A1",
+            target_location="Farm",
+            library_file_id=lib.id,
+            ams_mapping=ams_mapping,
+        )
+        db.add(item)
+        await db.commit()
+        return item.id
+
+
+async def _mapping_after_a_pass(session_maker, item_id):
+    from backend.app.models.print_queue import PrintQueueItem
+
+    scheduler = _scheduler()
+    scheduler._get_job_name = AsyncMock(return_value="job")
+    status = _status(A1_002_BLUE_IN_TRAY_3, EMPTY_EXTERNAL)
+    with (
+        patch("backend.app.services.print_scheduler.async_session", session_maker),
+        patch("backend.app.core.database.async_session", session_maker),
+        patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=True)),
+        patch("backend.app.services.print_scheduler.printer_manager.get_status", MagicMock(return_value=status)),
+        patch("backend.app.services.notification_service.notification_service.on_queue_job_assigned", AsyncMock()),
+        patch.object(scheduler, "_find_idle_printer_for_model", AsyncMock(return_value=(2, None))),
+        patch.object(scheduler, "_check_auto_drying", AsyncMock()),
+        patch.object(scheduler, "_block_on_filament_deficit", AsyncMock(return_value=False)),
+        patch.object(scheduler, "_launch_uploads", MagicMock()),
+    ):
+        await scheduler.check_queue()
+    async with session_maker() as db:
+        item = await db.get(PrintQueueItem, item_id)
+        return item.printer_id, json.loads(item.ams_mapping) if item.ams_mapping else None
+
+
+@pytest.mark.asyncio
+async def test_a_job_moved_to_a_location_is_mapped_for_the_printer_it_gets(session_maker):
+    item_id = await _location_job(session_maker, json.dumps([3]))
+
+    assert await _mapping_after_a_pass(session_maker, item_id) == (2, [0])
+
+
+@pytest.mark.asyncio
+async def test_a_location_job_without_a_mapping_is_matched_the_same(session_maker):
+    item_id = await _location_job(session_maker, None)
+
+    assert await _mapping_after_a_pass(session_maker, item_id) == (2, [0])
+
+
+async def _ensure_unmapped(status, model="A1", required=None):
+    """A job with no stored mapping, as a location job now always arrives."""
+    scheduler = _scheduler()
+    if required is not None:
+        scheduler._get_filament_requirements = AsyncMock(return_value=required)
+    scheduler._get_printer = AsyncMock(return_value=SimpleNamespace(model=model))
+    item = _item()
+    item.ams_mapping = None
+    with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+        pm.get_status.return_value = status
+        message = await scheduler._ensure_ams_mapping(AsyncMock(), 12, item)
+    return (json.loads(item.ams_mapping) if item.ams_mapping else None), message
+
+
+@pytest.mark.asyncio
+async def test_a_printer_without_ams_prints_from_its_unset_external_spool():
+    """A1-018 picks the job from the location: no AMS, and its external spool
+    holds the black PETG without a filament set. Without a mapping the print
+    would go out with the AMS on and be rejected with 0700_8012."""
+    assert await _ensure_unmapped(_status([], EMPTY_EXTERNAL)) == ([254], None)
+
+
+@pytest.mark.asyncio
+async def test_every_printed_filament_goes_to_the_external_spool():
+    required = [
+        {"slot_id": 1, "type": "PETG", "color": "#000000"},
+        {"slot_id": 3, "type": "PETG", "color": "#FFFFFF"},
+    ]
+    assert await _ensure_unmapped(_status([], EMPTY_EXTERNAL), required=required) == ([254, -1, 254], None)
+
+
+@pytest.mark.asyncio
+async def test_a_set_external_spool_is_matched_as_before():
+    assert await _ensure_unmapped(_status([], LOADED_EXTERNAL)) == ([254], None)
+
+
+@pytest.mark.asyncio
+async def test_an_external_spool_set_to_another_material_still_fails_the_job():
+    """The matcher answered: the only spool holds PLA. That stays a failure
+    with a message (#2771), not a print in the wrong material."""
+    pla = {**LOADED_EXTERNAL, "tray_type": "PLA", "tray_info_idx": "GFL99"}
+    mapping, message = await _ensure_unmapped(_status([], pla))
+    assert mapping is None
+    assert message
+
+
+@pytest.mark.asyncio
+async def test_a_printer_with_an_ams_is_not_sent_to_the_external_spool():
+    empty_ams = [{"id": "0", "tray": [{"id": "0", "tray_type": ""}]}]
+    assert await _ensure_unmapped(_status(empty_ams, EMPTY_EXTERNAL)) == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_a_printer_that_has_not_reported_its_ams_is_left_alone():
+    status = SimpleNamespace(raw_data={"vt_tray": [EMPTY_EXTERNAL]}, nozzles=[], fila_switch=None)
+    assert await _ensure_unmapped(status) == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_a_dual_nozzle_printer_is_left_alone():
+    """Its two external feeds steer the nozzles; which one is not ours to pick."""
+    status = _status([], EMPTY_EXTERNAL)
+    status.raw_data["vt_tray"] = [EMPTY_EXTERNAL, {**EMPTY_EXTERNAL, "id": "255"}]
+    assert await _ensure_unmapped(status, model="H2D") == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_a_job_that_wants_its_colours_matched_strictly_is_left_alone():
+    """Force colour match: a spool without a filament set has no colour to check."""
+    scheduler = _scheduler()
+    scheduler._get_printer = AsyncMock(return_value=SimpleNamespace(model="A1"))
+    item = _item()
+    item.ams_mapping = None
+    item.filament_overrides = json.dumps(
+        [{"slot_id": 1, "type": "PETG", "color": "#000000", "force_color_match": True}]
+    )
+    with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+        pm.get_status.return_value = _status([], EMPTY_EXTERNAL)
+        assert await scheduler._external_spool_only_mapping(AsyncMock(), 12, item) is None

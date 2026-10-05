@@ -2115,6 +2115,38 @@ class TestTargetLocationFeature:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_moving_a_job_to_a_location_drops_the_old_printers_mapping(
+        self, async_client: AsyncClient, queue_item_factory, printer_factory, db_session
+    ):
+        """#3239: the tray IDs were resolved against A1-003, and the scheduler may
+        pick another printer, so they must not travel with the job. Neither does
+        a "Print Anyway" given for A1-003's trays."""
+        a1_003 = await printer_factory(model="A1", location="Farm")
+        item = await queue_item_factory(printer_id=a1_003.id, ams_mapping="[3]", skip_filament_check=True)
+
+        # What the edit dialog sends: ams_mapping omitted, not null.
+        response = await async_client.patch(
+            f"/api/v1/queue/{item.id}",
+            json={"printer_id": None, "target_model": "A1", "target_location": "Farm"},
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["ams_mapping"] is None
+        assert result["skip_filament_check"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_job_on_a_printer_keeps_its_mapping(
+        self, async_client: AsyncClient, queue_item_factory, db_session
+    ):
+        item = await queue_item_factory(ams_mapping="[3]")
+
+        response = await async_client.patch(f"/api/v1/queue/{item.id}", json={"plate_id": 2})
+        assert response.status_code == 200
+        assert response.json()["ams_mapping"] == [3]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_clear_target_location(self, async_client: AsyncClient, queue_item_factory, db_session):
         """Verify target_location can be cleared (set to None)."""
         item = await queue_item_factory(

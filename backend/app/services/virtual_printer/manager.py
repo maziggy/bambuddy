@@ -20,6 +20,7 @@ from backend.app.models.virtual_printer import (
     VP_MODE_QUEUE,
     normalize_vp_mode,
 )
+from backend.app.services.bambu_mqtt import resolve_external_spools_in_mapping
 from backend.app.services.virtual_printer.bind_server import BindServer
 from backend.app.services.virtual_printer.certificate import CertificateService
 from backend.app.services.virtual_printer.ftp_server import VirtualPrinterFTPServer, compute_passive_port_slice
@@ -155,7 +156,7 @@ def _tristate_from_slicer(data: dict, bool_field: str, int_field: str) -> str | 
     return None
 
 
-def _extract_slicer_ams_mapping_json(data: dict, log_prefix: str) -> str | None:
+def _extract_slicer_ams_mapping_json(data: dict, log_prefix: str, *, is_dual_nozzle: bool = False) -> str | None:
     """Pull the slicer's own AMS-slot pick out of a captured project_file payload.
 
     BambuStudio/OrcaSlicer resolves the physical AMS tray for each filament
@@ -184,6 +185,14 @@ def _extract_slicer_ams_mapping_json(data: dict, log_prefix: str) -> str | None:
     per-slot force-color overrides all live inside that function. Callers are
     responsible for the gating — this parser only says what the slicer sent.
 
+    An external spool is ``-1`` in the flat list, the same as a filament with
+    no tray, and is named only in ``ams_mapping2``. It is resolved from there
+    to its global tray (254/255), as the usage capture does (#3166); dispatch
+    turns that back into the external-spool entry. Kept as ``-1`` it dispatched
+    as unmapped and the printer stopped with 0700-8012 (#3237).
+    ``is_dual_nozzle`` is the target printer's, since that decides which
+    global tray an external spool is.
+
     Returns ``None`` when the field is absent, unparsable, or the classic
     "all -1" unresolved-race sentinel (#2589) — never worth trusting over a
     fresh live computation.
@@ -202,6 +211,13 @@ def _extract_slicer_ams_mapping_json(data: dict, log_prefix: str) -> str | None:
     # valid mapping.
     if not isinstance(raw, list) or not raw or not all(isinstance(v, int) and not isinstance(v, bool) for v in raw):
         return None
+    detail = data.get("ams_mapping2")
+    if isinstance(detail, str):
+        try:
+            detail = json.loads(detail)
+        except json.JSONDecodeError:
+            detail = None
+    raw = resolve_external_spools_in_mapping(raw, detail, is_dual_nozzle)
     if all(v < 0 for v in raw):
         # #2589 sentinel — every slot unresolved. Let the scheduler compute a
         # fresh mapping from live AMS state instead of trusting this.
@@ -395,6 +411,26 @@ class VirtualPrinterInstance:
             # IDLE reset was wrong — staying at FINISH is the designed
             # behaviour. The next upload's PREPARE→FINISH cycle starts fresh.
 
+    def _target_is_dual_nozzle(self) -> bool:
+        """Whether the target printer has two nozzles, which decides the global
+        tray of an external spool in the slicer's mapping (#3237).
+
+        Same signal dispatch uses: the live client's detection, else its model.
+        Without a client, the VP's own model is what the slicer sliced for.
+        """
+        from backend.app.utils.printer_models import is_dual_nozzle_model
+
+        client = (
+            self._printer_manager.get_client(self.target_printer_id)
+            if self._printer_manager is not None and self.target_printer_id is not None
+            else None
+        )
+        if client is not None:
+            return bool(getattr(client, "_is_dual_nozzle", False)) or is_dual_nozzle_model(
+                getattr(client, "model", None)
+            )
+        return is_dual_nozzle_model(self.model)
+
     async def on_print_command(self, filename: str, data: dict) -> None:
         """Handle print command from MQTT.
 
@@ -534,7 +570,9 @@ class VirtualPrinterInstance:
         # `_compute_ams_mapping_for_printer`, and with it prefer-lowest and the
         # #1766 backup gate).
         ams_mapping_json = (
-            _extract_slicer_ams_mapping_json(data, f"[VP {self.name}] Late MQTT")
+            _extract_slicer_ams_mapping_json(
+                data, f"[VP {self.name}] Late MQTT", is_dual_nozzle=self._target_is_dual_nozzle()
+            )
             if self.target_printer_id is not None and self.save_ams_mapping
             else None
         )
@@ -979,7 +1017,9 @@ class VirtualPrinterInstance:
                 # printer actually gets the job.
                 ams_mapping_json: str | None = None
                 if slicer_opts is not None and self.target_printer_id is not None and self.save_ams_mapping:
-                    ams_mapping_json = _extract_slicer_ams_mapping_json(slicer_opts, f"[VP {self.name}]")
+                    ams_mapping_json = _extract_slicer_ams_mapping_json(
+                        slicer_opts, f"[VP {self.name}]", is_dual_nozzle=self._target_is_dual_nozzle()
+                    )
 
                 # `Force color match` is the user asking Bambuddy to do the
                 # matching strictly, against the printer's live trays. Its only

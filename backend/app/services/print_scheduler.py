@@ -3625,10 +3625,11 @@ class PrintScheduler:
         the firmware's own type check, so a PETG slot happily prints in ASA.
 
         Returns a short reason when the mapping names a tray this printer does
-        not have loaded, or points a slot at a tray holding a different filament
-        type. Returns None when the mapping fits, and — deliberately — whenever
-        we lack the evidence to judge, so a recompute only ever follows a
-        positive finding.
+        not have loaded, points a slot at a tray holding a different filament
+        type, or points it at an external spool this printer reports empty while
+        its AMS holds that slot's filament (#3239). Returns None when the
+        mapping fits, and — deliberately — whenever we lack the evidence to
+        judge, so a recompute only ever follows a positive finding.
 
         An unresolved (``-1``) required slot is NOT a conflict: it says the
         matcher had nothing, not that the mapping belongs to another printer,
@@ -3679,6 +3680,17 @@ class PrintScheduler:
             return None
         self._apply_filament_overrides(item, required)
 
+        # External feeds the printer reports and reports as empty. That is
+        # evidence, unlike an external feed it says nothing about (#3239).
+        empty_external: set[int] = set()
+        vt_trays = status.raw_data.get("vt_tray") if isinstance(status.raw_data, dict) else None
+        for vt in vt_trays if isinstance(vt_trays, list) else []:
+            if isinstance(vt, dict) and not vt.get("tray_type"):
+                try:
+                    empty_external.add(int(vt.get("id", 254)))
+                except (TypeError, ValueError):
+                    continue
+
         for req in required:
             slot_id = req.get("slot_id") or 0
             if slot_id <= 0:
@@ -3692,6 +3704,30 @@ class PrintScheduler:
 
             loaded_tray = by_tray.get(tray)
             if loaded_tray is None:
+                # A mapping made for a printer that feeds this slot from its
+                # external spool, sent to one whose external spool is empty and
+                # whose AMS holds the filament (#3239). Only then: an external
+                # spool can be loaded without its filament set, and on a printer
+                # with nothing else to offer that job printed before. The colour
+                # has to match too: with only another colour in the AMS, the
+                # printer asking for the spool beats printing in that colour.
+                want = canonical_filament_type(req.get("type"))
+                if tray >= 254 and tray in empty_external and want:
+                    ams_tray = next(
+                        (
+                            f
+                            for f in loaded
+                            if not f.get("is_external")
+                            and canonical_filament_type(f.get("type")) == want
+                            and self._colors_are_similar(f.get("color"), req.get("color"))
+                        ),
+                        None,
+                    )
+                    if ams_tray is not None:
+                        return (
+                            f"slot {slot_id} points at the external spool, which is empty, "
+                            f"while tray {ams_tray['global_tray_id']} holds {ams_tray.get('type')}"
+                        )
                 continue
 
             want = canonical_filament_type(req.get("type"))

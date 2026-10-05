@@ -1,4 +1,6 @@
 <p align="center">
+
+[![Deploy to Railyard](https://app.railyard.run/deploy/badge)](https://app.railyard.run/deploy?repo=https://github.com/maziggy/bambuddy)
   <img src="static/img/bambuddy_logo_dark.png" alt="Bambuddy Logo" width="300">
 </p>
 

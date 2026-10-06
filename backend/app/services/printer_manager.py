@@ -706,6 +706,11 @@ class PrinterManager:
             future = asyncio.run_coroutine_threadsafe(coro, self._loop)
 
             def handle_exception(f):
+                # Stopping the loop cancels callbacks still pending. That is
+                # shutdown, not a failure (#3243), and concurrent.futures'
+                # CancelledError is an Exception, so it would be logged below.
+                if f.cancelled():
+                    return
                 try:
                     # This will re-raise any exception from the coroutine
                     f.result()

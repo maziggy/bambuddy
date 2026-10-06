@@ -5644,6 +5644,22 @@ class TestHMSFullCode:
         assert mqtt_client.state.hms_errors[0].actions == ["CHECK_ASSISTANT"]
 
 
+def _wait_for_retirement(serial: str) -> None:
+    """Let the old client's teardown thread finish before asserting on it.
+
+    Since #3068 ``retire_paho_client`` runs ``disconnect()`` and ``loop_stop()``
+    on a thread of its own and returns at once, so a test that asserts on them
+    straight after the call can catch that thread between the two; under a
+    loaded parallel run it does.
+    """
+    import threading
+
+    for thread in threading.enumerate():
+        if thread.name == f"mqtt-retire-{serial}":
+            thread.join(timeout=5)
+            assert not thread.is_alive(), "the old client's teardown thread never finished"
+
+
 class TestForceReconnectRouting:
     """#1136 — force_reconnect_stale_session routes between hard-reset (full
     paho-client teardown, wipes the QoS 1 queue) and socket-close (the legacy
@@ -5688,6 +5704,7 @@ class TestForceReconnectRouting:
             mqtt_client.force_reconnect_stale_session("test")
 
         asyncio.run(_trigger())
+        _wait_for_retirement("TEST_HARD_RESET")
         original.disconnect.assert_called()
         original.loop_stop.assert_called()
         # connect() stub didn't repopulate _client, so it's None — the contract
@@ -5731,6 +5748,7 @@ class TestHardResetClientDirect:
         loop_stop (network thread exits, taking its QoS 1 queue with it)."""
         original = mqtt_client._client
         mqtt_client._hard_reset_client()
+        _wait_for_retirement("TEST_HARD_DIRECT")
         original.disconnect.assert_called()
         original.loop_stop.assert_called()
 
@@ -5748,6 +5766,7 @@ class TestHardResetClientDirect:
         original.disconnect.side_effect = RuntimeError("boom")
         # No exception escapes the call (test would fail if it did).
         mqtt_client._hard_reset_client()
+        _wait_for_retirement("TEST_HARD_DIRECT")
         # loop_stop is still attempted after the disconnect failure.
         original.loop_stop.assert_called()
         assert mqtt_client._client is None

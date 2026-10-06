@@ -2893,31 +2893,37 @@ class BambuMQTTClient:
             self.state.print_options.filament_tangle_detect = bool(xcam_data.get("filament_tangle_detect"))
 
     @staticmethod
-    def _resolve_local_slot_from_mapping(local_slot: int, mapping_raw: list | None) -> int | None:
+    def _resolve_local_slot_from_mapping(
+        local_slot: int, mapping_raw: list | None, units: list[int] | None = None
+    ) -> int | None:
         """Resolve a local AMS slot ID to a global tray ID using the MQTT mapping field.
 
         The MQTT mapping field is an array of snow-encoded values:
         each entry = ams_hw_id * 256 + slot_id (65535 = unmapped).
 
         Finds entries where the local slot matches, then computes the global tray ID.
+        When several match and ``units`` is given (the AMS units on the active
+        extruder of a dual-nozzle printer), only those units' trays count.
         Returns the global ID if exactly one AMS matches, or None if ambiguous/unavailable.
         """
         if not isinstance(mapping_raw, list) or not mapping_raw:
             return None
 
-        candidates: set[int] = set()
+        candidates: dict[int, int] = {}  # global tray ID -> AMS unit
         for value in mapping_raw:
             if not isinstance(value, int) or value >= 65535:
                 continue
             ams_hw_id = value >> 8
             slot = value & 0xFF
             if 0 <= ams_hw_id <= 3 and (slot & 0x03) == local_slot:
-                candidates.add(ams_hw_id * 4 + local_slot)
+                candidates[ams_hw_id * 4 + local_slot] = ams_hw_id
             elif 128 <= ams_hw_id <= 135 and local_slot == 0:
-                candidates.add(ams_hw_id)
+                candidates[ams_hw_id] = ams_hw_id
 
+        if len(candidates) > 1 and units:
+            candidates = {tray: unit for tray, unit in candidates.items() if unit in units}
         if len(candidates) == 1:
-            return candidates.pop()
+            return next(iter(candidates))
         return None
 
     def _maybe_trigger_external_spool_change(self):
@@ -3197,7 +3203,26 @@ class BambuMQTTClient:
                                     except ValueError:
                                         pass  # Skip AMS IDs that aren't valid integers
 
-                            if len(ams_on_extruder) == 1:
+                            # Several AMS (or none the map knows of) leave the
+                            # slot ambiguous. The printer's own mapping names the
+                            # trays the running print uses: one of them at this
+                            # slot is the one feeding (#3242). Only while a print
+                            # runs: an idle H2 keeps reporting the previous
+                            # print's mapping.
+                            mapped_tray = None
+                            if len(ams_on_extruder) != 1 and self._was_running and not self._completion_triggered:
+                                mapped_tray = self._resolve_local_slot_from_mapping(
+                                    parsed_tray_now, self.state.raw_data.get("mapping"), ams_on_extruder
+                                )
+
+                            if mapped_tray is not None:
+                                if self.state.tray_now != mapped_tray:
+                                    logger.debug(
+                                        f"[{self.serial_number}] H2D tray_now: AMS {ams_on_extruder} on extruder "
+                                        f"{active_ext}, slot {parsed_tray_now} -> global ID {mapped_tray} (from mapping)"
+                                    )
+                                self.state.tray_now = mapped_tray
+                            elif len(ams_on_extruder) == 1:
                                 # Single AMS on this extruder - unambiguous
                                 active_ams_id = ams_on_extruder[0]
                                 if 128 <= active_ams_id <= 135:
@@ -3244,19 +3269,24 @@ class BambuMQTTClient:
                                         )
                                         self.state.tray_now = resolved
                                     else:
-                                        # Genuinely ambiguous - use slot as-is (will be wrong for non-first AMS)
-                                        logger.warning(
-                                            f"[{self.serial_number}] H2D tray_now: multiple AMS {ams_on_extruder} on extruder {active_ext}, "
-                                            f"no snow field, using slot {parsed_tray_now} (may be incorrect)"
+                                        # Genuinely ambiguous. This is the second between a
+                                        # filament change reaching the AMS report and the
+                                        # extruder's snow, which then names the tray. Using
+                                        # the bare slot would point at AMS 0 and put that
+                                        # tray in the usage change log (#3242), so keep the
+                                        # current tray until snow arrives.
+                                        logger.debug(
+                                            f"[{self.serial_number}] H2D tray_now: multiple AMS {ams_on_extruder} on "
+                                            f"extruder {active_ext}, slot {parsed_tray_now} is ambiguous without snow, "
+                                            f"keeping {current_tray}"
                                         )
-                                        self.state.tray_now = parsed_tray_now
                             else:
-                                # No AMS on this extruder - use slot as-is
-                                logger.warning(
+                                # No AMS on this extruder that the map knows of: the
+                                # slot can't be placed, keep the current tray (#3242)
+                                logger.debug(
                                     f"[{self.serial_number}] H2D tray_now: no AMS on extruder {active_ext}, "
-                                    f"using slot {parsed_tray_now}"
+                                    f"slot {parsed_tray_now} can't be placed without snow, keeping {self.state.tray_now}"
                                 )
-                                self.state.tray_now = parsed_tray_now
                 elif not self._is_dual_nozzle and 0 <= parsed_tray_now <= 3:
                     # Single-nozzle printer with tray_now in 0-3 range.
                     # #1822: H2S firmware reports tray_now as the AMS's idle

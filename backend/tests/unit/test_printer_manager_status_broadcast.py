@@ -295,6 +295,11 @@ class TestEndToEndUnderRunningLoop:
             # Persistence path opens a DB session; stub it out so this
             # stays a pure unit test.
             patch.object(manager, "_persist_awaiting_plate_clear", new_callable=AsyncMock),
+            # So does the MQTT/notification emit, through its DB fallback for
+            # a printer with no client. Left real, its query is still running
+            # on aiosqlite's thread when the test's loop closes, and warns
+            # under whichever test runs next.
+            patch.object(manager, "_emit_plate_clear_change", new_callable=AsyncMock),
         ):
             manager.set_awaiting_plate_clear(7, False)
             # Yield repeatedly so run_coroutine_threadsafe has a chance

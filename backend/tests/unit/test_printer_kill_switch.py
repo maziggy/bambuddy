@@ -240,6 +240,11 @@ async def test_unauthorized_print_state_is_cleared_when_print_ends(monkeypatch):
     monkeypatch.setattr(main_module.mqtt_relay, "on_printer_status", fake_status)
     monkeypatch.setattr(main_module.ws_manager, "send_printer_status", fake_status)
     monkeypatch.setattr(main_module, "_is_bambuddy_authorized_print", unauthorized)
+    # The stop spawns this as a background task that reads the notification
+    # providers through a real session. Left real, the test ends with its
+    # query still running on aiosqlite's thread, which then posts the result
+    # to a closed event loop and warns under whichever test runs next.
+    monkeypatch.setattr(main_module, "_send_kill_switch_provider_notification", AsyncMock(return_value=True))
     monkeypatch.setattr("backend.app.services.finance_budget.is_printer_kill_switch_enabled", kill_switch_enabled)
 
     active_state = SimpleNamespace(

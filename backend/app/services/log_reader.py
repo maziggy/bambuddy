@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
-from backend.app.core.logging_filters import URL_CREDENTIALS_PATTERN
+from backend.app.core.logging_filters import URL_CREDENTIALS_PATTERN, redact_query_tokens
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
@@ -174,6 +174,10 @@ def sanitize_log_content(content: str, sensitive_strings: dict[str, str] | None 
     # the two can't drift; the bundle drops the username too, where the live log keeps
     # it for diagnosis.
     content = URL_CREDENTIALS_PATTERN.sub(r"\g<scheme>[CREDENTIALS]@", content)
+
+    # Query-string tokens (?token=...), for log lines written before the live
+    # filter existed or by a logger it is not attached to.
+    content = redact_query_tokens(content) or ""
 
     # Replace email addresses
     content = re.sub(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[EMAIL]", content)

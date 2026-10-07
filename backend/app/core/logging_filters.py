@@ -9,7 +9,9 @@ import them without pulling in ``backend.app.main``'s startup graph.
 
 Also holds :data:`URL_CREDENTIALS_PATTERN` and
 :func:`redact_url_credentials`, the single place where the shape of a
-credentialed URL is defined for the whole backend.
+credentialed URL is defined for the whole backend, and
+:data:`QUERY_TOKEN_PATTERN` / :class:`QueryTokenRedactFilter` for tokens
+carried in a query string.
 """
 
 from __future__ import annotations
@@ -58,6 +60,49 @@ def redact_url_credentials(text: str | None) -> str | None:
     if not text or "://" not in text or "@" not in text:
         return text
     return URL_CREDENTIALS_PATTERN.sub(r"\g<scheme>\g<user>:[REDACTED]@", text)
+
+
+# ``?token=<value>`` and its kin. The SPA passes its short-lived WebSocket and
+# media tokens in the query string (a browser cannot set headers on a
+# WebSocket upgrade, an <img> or a <video>), and uvicorn logs every request
+# path with its query: the access line for each GET, and the "WebSocket ...
+# [accepted]" line for each upgrade. Those reach the console, so `docker logs`,
+# and from there anything that collects container logs -- the appliance's
+# support bundle among them. The value ends at the next ``&``, whitespace or
+# quote, which is where uvicorn's format closes the path.
+QUERY_TOKEN_PATTERN = re.compile(r"(?P<key>[?&](?:token|access_token|api_key)=)[^&\s\"']+")
+
+
+def redact_query_tokens(text: str | None) -> str | None:
+    """Mask the value of every token-bearing query parameter in *text*."""
+    if not text or "=" not in text:
+        return text
+    return QUERY_TOKEN_PATTERN.sub(r"\g<key>[REDACTED]", text)
+
+
+class QueryTokenRedactFilter(logging.Filter):
+    """Mask query-string tokens in uvicorn's request and WebSocket log lines.
+
+    Rewrites the record rather than dropping it: the line is still the record
+    of a request, only its credential goes. Uvicorn passes the path as a
+    ``%s`` argument (``'%s - "%s %s HTTP/%s" %d'`` for HTTP,
+    ``'%s - "WebSocket %s" [accepted]'`` for an upgrade), so the arguments are
+    rewritten as well as the message.
+
+    Attach to ``logging.getLogger("uvicorn.access")`` and
+    ``logging.getLogger("uvicorn.error")`` -- the latter carries the WebSocket
+    lines. A logger-level filter runs whichever handler then writes the record,
+    so the console is covered as well as ``bambuddy.log``.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003 — stdlib API name
+        if isinstance(record.msg, str):
+            record.msg = redact_query_tokens(record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(redact_query_tokens(a) if isinstance(a, str) else a for a in record.args)
+        elif isinstance(record.args, dict):
+            record.args = {k: redact_query_tokens(v) if isinstance(v, str) else v for k, v in record.args.items()}
+        return True
 
 
 class WriteRequestsOnlyFilter(logging.Filter):

@@ -364,6 +364,13 @@ if app_settings.log_to_file:
     # log records that pre-existing pools still emit during their cleanup.
     logging.getLogger("sqlalchemy.pool").addFilter(CancelledPoolNoiseFilter())
 
+# Query-string tokens out of uvicorn's request and WebSocket lines, on every
+# handler (console included), whether or not file logging is on.
+from backend.app.core.logging_filters import QueryTokenRedactFilter  # noqa: E402
+
+for _uvicorn_logger in ("uvicorn.access", "uvicorn.error"):
+    logging.getLogger(_uvicorn_logger).addFilter(QueryTokenRedactFilter())
+
 # Reduce noise from third-party libraries in production
 if not app_settings.debug:
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)

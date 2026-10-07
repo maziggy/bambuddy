@@ -18,7 +18,8 @@ import pytest
 from backend.app.core.logging_filters import QueryTokenRedactFilter, redact_query_tokens
 from backend.app.services.log_reader import sanitize_log_content
 
-TOKEN = "M8qxtTy4sHgSkUhAwwrOHSji8stuLIq0"
+# Made up. Never paste a token from a real log here, expired or not.
+TOKEN = "fake-test-token"
 
 
 def _record(msg: str, args) -> logging.LogRecord:

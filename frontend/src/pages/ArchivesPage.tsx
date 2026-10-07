@@ -71,6 +71,7 @@ import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/sl
 import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDuration } from '../utils/date';
 import { getCurrencySymbol } from '../utils/currency';
 import { getBedTypeInfo } from '../utils/bedType';
+import { splitFilamentTypes } from '../utils/filamentTypes';
 import { invalidateArchiveAndProjectViews } from '../utils/projectQueries';
 import { assignableProjects } from '../utils/projectTree';
 import { verdictSourceKey } from '../utils/verdictSource';
@@ -2947,9 +2948,12 @@ export function ArchivesPage() {
     const saved = localStorage.getItem('archiveFilterPrinter');
     return saved ? Number(saved) : null;
   });
-  const [filterMaterial, setFilterMaterial] = useState<string | null>(() =>
-    localStorage.getItem('archiveFilterMaterial')
-  );
+  const [filterMaterial, setFilterMaterial] = useState<string | null>(() => {
+    // A saved joined value ("PLA Basic,PLA") was once offered as a material of
+    // its own (#3262); it matches nothing now, and would hide every archive.
+    const saved = localStorage.getItem('archiveFilterMaterial');
+    return saved && !saved.includes(',') ? saved : null;
+  });
   const [filterColors, setFilterColors] = useState<Set<string>>(() => {
     const saved = localStorage.getItem('archiveFilterColors');
     return saved ? new Set(JSON.parse(saved)) : new Set();
@@ -3535,7 +3539,7 @@ export function ArchivesPage() {
 
   // Extract unique materials and colors from archives
   const uniqueMaterials = [...new Set(
-    archives?.flatMap(a => a.filament_type?.split(', ') || []).filter(Boolean) || []
+    archives?.flatMap(a => splitFilamentTypes(a.filament_type)) || []
   )].sort();
 
   const uniqueColors = [...new Set(
@@ -3585,7 +3589,7 @@ export function ArchivesPage() {
 
       // Material filter
       const matchesMaterial = !filterMaterial ||
-        (a.filament_type?.split(', ').includes(filterMaterial));
+        splitFilamentTypes(a.filament_type).includes(filterMaterial);
 
       // Color filter (AND: must have all selected colors, OR: must have any selected color)
       const archiveColors = a.filament_color?.split(',') || [];

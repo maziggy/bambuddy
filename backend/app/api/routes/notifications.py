@@ -8,13 +8,14 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from sqlalchemy import delete, desc, func, select
+from sqlalchemy import delete, desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled, ScopedCaller, require_notification_send
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.notification import NotificationLog, NotificationProvider
+from backend.app.models.notification_lock_screen_widget import NotificationLockScreenWidget
 from backend.app.models.user import User
 from backend.app.schemas.notification import (
     AppMessage,
@@ -29,6 +30,9 @@ from backend.app.schemas.notification import (
     NotificationTestResponse,
 )
 from backend.app.services.notification_service import notification_service
+from backend.app.services.notify_client import NotifyError, notify_credentials
+from backend.app.services.notify_live_activities import notify_live_activities
+from backend.app.services.notify_widgets import notify_widgets
 from backend.app.services.telegram_reactions import telegram_reaction_poller
 from backend.app.utils.notification_photos import find_notification_photo
 
@@ -153,6 +157,11 @@ async def create_notification_provider(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_CREATE),
 ):
     """Create a new notification provider."""
+    if provider_data.provider_type.value == "notify":
+        try:
+            notify_credentials(provider_data.config)
+        except NotifyError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
     provider = NotificationProvider(
         name=provider_data.name,
         provider_type=provider_data.provider_type.value,
@@ -538,8 +547,22 @@ async def update_notification_provider(
     if not provider:
         raise HTTPException(status_code=404, detail="Notification provider not found")
 
+    old_config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
+    old_type = provider.provider_type
+
     # Update only provided fields
     update_dict = update_data.model_dump(exclude_unset=True)
+
+    effective_type = update_dict.get("provider_type") or provider.provider_type
+    effective_type = getattr(effective_type, "value", effective_type)
+    if effective_type == "notify":
+        try:
+            effective_config = update_dict.get("config", old_config)
+            if not isinstance(effective_config, dict):
+                raise NotifyError("Notify! configuration must be an object")
+            notify_credentials(effective_config)
+        except NotifyError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
 
     for key, value in update_dict.items():
         if key == "config" and value is not None:
@@ -549,13 +572,46 @@ async def update_notification_provider(
         else:
             setattr(provider, key, value)
 
+    if old_type == "notify":
+        effective_config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
+        remove_widgets = (
+            provider.provider_type != "notify"
+            or not provider.enabled
+            or effective_config.get("lock_screen_widgets") is not True
+        )
+        if remove_widgets or provider.printer_id is not None:
+            condition = NotificationLockScreenWidget.provider_id == provider_id
+            if not remove_widgets:
+                condition = condition & (NotificationLockScreenWidget.printer_id != provider.printer_id)
+            # Persist opt-out before returning, even if the user immediately
+            # opts back in. The worker finishes cleanup before creating anew.
+            await db.execute(
+                update(NotificationLockScreenWidget)
+                .where(condition)
+                .values(
+                    state="deleting",
+                    failures=0,
+                    next_attempt_at=None,
+                )
+            )
+
     await db.commit()
     await db.refresh(provider)
 
+    response = _provider_to_dict(provider)
+    new_config = response["config"]
+    changed = old_type != provider.provider_type or any(
+        old_config.get(key) != new_config.get(key) for key in ("device_id", "token")
+    )
+    # Refresh opened a new read transaction; close it before remote cleanup.
+    await db.commit()
+    if old_type == "notify" and changed:
+        await notify_live_activities.cleanup_provider(provider_id, old_config)
+        await notify_widgets.cleanup_provider(provider_id, old_config)
     logger.info("Updated notification provider: %s", provider.name)
     await _resync_reaction_poller()
 
-    return _provider_to_dict(provider)
+    return response
 
 
 @router.delete("/{provider_id}")
@@ -572,6 +628,13 @@ async def delete_notification_provider(
         raise HTTPException(status_code=404, detail="Notification provider not found")
 
     name = provider.name
+    if provider.provider_type == "notify":
+        config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
+        # Disable first so the worker cannot start a tile during cleanup.
+        provider.enabled = False
+        await db.commit()
+        await notify_live_activities.cleanup_provider(provider_id, config)
+        await notify_widgets.cleanup_provider(provider_id, config)
     await db.delete(provider)
     await db.commit()
 

@@ -21,6 +21,7 @@ class ProviderType(StrEnum):
     HOMEASSISTANT = "homeassistant"
     BARK = "bark"
     GOTIFY = "gotify"
+    NOTIFY = "notify"
 
 
 class NotificationProviderBase(BaseModel):

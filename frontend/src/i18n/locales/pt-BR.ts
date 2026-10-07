@@ -6548,8 +6548,37 @@ export default {
 
   // Notifications
   notifications: {
+    notifyLockScreenWidgets: 'Widgets da tela bloqueada (iOS)',
+    notifyLockScreenWidgetsHelp: 'Adicione um widget do Notify! pela personalização da tela bloqueada do iOS e selecione uma impressora. Ele mostra status, progresso e problemas sem contagem regressiva ao vivo. O iOS atualiza a cada 15 minutos ou mais, aproximadamente.',
+    notifyPhotoUnavailable: 'Destinatários de navegador e grupo aceitam apenas notificações de texto; anexos de fotos não estão disponíveis.',
+    notifyShowStage: 'Mostrar etapa da impressão',
+    notifyTimeSensitive: 'Alertas urgentes de problemas',
+    notifyTimeSensitiveHelp: 'Marca impressões com falha ou interrompidas e problemas da impressora ou detectados por IA como urgentes. As outras notificações permanecem normais.',
+    notifyPrivacy: 'Ocultar nome do arquivo no bloco',
+    notifyPrivacyHelp: 'Oculta nomes de arquivos apenas na Atividade ao Vivo. O texto das notificações ainda usa os modelos de notificação.',
+    notifyStyle: 'Estilo do progresso',
+    notifyStyleBar: 'Barra de progresso',
+    notifyStyleSegments: 'Segmentos',
+    notifyStyleNone: 'Sem indicador de progresso',
+    notifyDashboardUrl: 'URL do painel (opcional)',
+    notifySymbol: 'Símbolo (opcional)',
+    notifyTint: 'Cor (opcional)',
+    notifyAppearance: 'Aparência da Atividade ao Vivo',
+    notifyMetrics: 'Métricas',
+    notifyMetricsHelp: 'O temporizador é exibido por padrão. As métricas opcionais substituem a linha do nome do arquivo.',
+    notifyDeviceId: 'ID do dispositivo ou grupo',
+    notifyToken: 'Token do Notify!',
+    notifyIconUrl: 'URL do ícone (opcional)',
+    notifyGroupType: 'Grupo de notificações (opcional)',
+    notifyGroupTypeHelp: 'Deixe em branco para agrupar notificações por impressora. Um valor personalizado as agrupa na mesma conversa.',
+    notifyLiveActivities: 'Atividades ao Vivo (iOS)',
+    notifyLiveActivitiesHelp: 'Acompanhe impressões na tela bloqueada do iOS e na Dynamic Island. Use um ID de dispositivo iOS e adicione um provedor separado para notificações de grupo.',
+    notifyLifecycleHelp: 'As Atividades ao Vivo acompanham cada impressão automaticamente. Os controles abaixo afetam apenas as notificações push. O horário silencioso bloqueia novas atividades; as existentes continuam a ser atualizadas e encerradas. Os resumos diários não atrasam as atividades.',
+    notifyIosFeaturesUnavailable: 'As Atividades ao Vivo e os widgets da tela bloqueada exigem um ID de dispositivo iOS. IDs de grupos, navegadores e macOS usam apenas notificações push.',
+    notifyTestHelp: 'O teste envia uma notificação push. Uma Atividade ao Vivo começa quando uma impressão é iniciada.',
     // Provider types
     providerTypes: {
+      notify: 'Notify!',
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6563,6 +6592,7 @@ export default {
     },
     // Provider descriptions
     providerDescriptions: {
+      notify: 'Notificações push e Atividades ao Vivo do iOS pelo Notify!',
       email: 'Notificações por e-mail SMTP',
       telegram: 'Notificações via bot do Telegram',
       discord: 'Enviar para canal do Discord via webhook',

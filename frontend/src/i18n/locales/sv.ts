@@ -6610,8 +6610,37 @@ errors: {
 
   // Notifications
   notifications: {
+    notifyLockScreenWidgets: 'Låsskärmswidgetar (iOS)',
+    notifyLockScreenWidgetsHelp: 'Lägg till en Notify!-widget när du anpassar låsskärmen i iOS och välj en skrivare. Den visar status, förlopp och problem utan en nedräkning i realtid. iOS uppdaterar ungefär var 15:e minut eller mer sällan.',
+    notifyPhotoUnavailable: 'Webbläsar- och gruppmottagare stöder endast textnotiser; fotobilagor är inte tillgängliga.',
+    notifyShowStage: 'Visa utskriftsfas',
+    notifyTimeSensitive: 'Tidskänsliga problemvarningar',
+    notifyTimeSensitiveHelp: 'Markera misslyckade eller stoppade utskrifter och skrivar- eller AI-problem som tidskänsliga. Andra pushnotiser förblir normala.',
+    notifyPrivacy: 'Dölj filnamnet på rutan',
+    notifyPrivacyHelp: 'Döljer filnamn endast i liveaktiviteten. Pushtexter använder fortfarande notismallarna.',
+    notifyStyle: 'Förloppsstil',
+    notifyStyleBar: 'Förloppsindikator',
+    notifyStyleSegments: 'Segment',
+    notifyStyleNone: 'Ingen förloppsindikator',
+    notifyDashboardUrl: 'URL till kontrollpanelen (valfritt)',
+    notifySymbol: 'Symbol (valfritt)',
+    notifyTint: 'Färg (valfritt)',
+    notifyAppearance: 'Liveaktivitetens utseende',
+    notifyMetrics: 'Mätvärden',
+    notifyMetricsHelp: 'Timern visas som standard. Valfria mätvärden ersätter filnamnsraden.',
+    notifyDeviceId: 'Enhets- eller grupp-ID',
+    notifyToken: 'Notify!-token',
+    notifyIconUrl: 'Ikon-URL (valfritt)',
+    notifyGroupType: 'Notisgrupp (valfritt)',
+    notifyGroupTypeHelp: 'Lämna tomt för att gruppera pushnotiser per skrivare. Ett eget värde grupperar dem i samma tråd.',
+    notifyLiveActivities: 'Liveaktiviteter (iOS)',
+    notifyLiveActivitiesHelp: 'Följ utskrifter på låsskärmen i iOS och i Dynamic Island. Använd ett iOS-enhets-ID och lägg till en separat leverantör för gruppnotiser.',
+    notifyLifecycleHelp: 'Liveaktiviteter följer varje utskrift automatiskt. Reglagen nedan styr bara pushnotiser. Tysta timmar blockerar nya aktiviteter; befintliga aktiviteter uppdateras och avslutas fortfarande. Dagliga sammanfattningar fördröjer inte aktiviteter.',
+    notifyIosFeaturesUnavailable: 'Liveaktiviteter och låsskärmswidgetar kräver ett iOS-enhets-ID. Grupp-, webbläsar- och macOS-ID:n använder endast pushnotiser.',
+    notifyTestHelp: 'Testet skickar en pushnotis. En liveaktivitet börjar när en utskrift startar.',
     // Provider types
     providerTypes: {
+      notify: 'Notify!',
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6625,6 +6654,7 @@ errors: {
     },
     // Provider descriptions
     providerDescriptions: {
+      notify: 'Pushnotiser och liveaktiviteter för iOS via Notify!',
       email: 'SMTP e-postnotiser',
       telegram: 'Notiser via Telegram-bot',
       discord: 'Skicka till Discord-kanal via webhook',

@@ -6549,8 +6549,37 @@ export default {
 
   // Notifications
   notifications: {
+    notifyLockScreenWidgets: 'Widgets de l’écran verrouillé (iOS)',
+    notifyLockScreenWidgetsHelp: 'Ajoutez un widget Notify! via la personnalisation de l’écran verrouillé iOS et sélectionnez une imprimante. Il affiche l’état, la progression et les problèmes sans compte à rebours en direct. iOS actualise environ toutes les 15 minutes ou plus.',
+    notifyPhotoUnavailable: 'Les destinataires de navigateur et de groupe ne prennent en charge que les notifications textuelles ; les photos jointes ne sont pas disponibles.',
+    notifyShowStage: 'Afficher l’étape d’impression',
+    notifyTimeSensitive: 'Alertes de problème urgentes',
+    notifyTimeSensitiveHelp: 'Marque les impressions échouées ou arrêtées et les problèmes d’imprimante ou d’IA comme urgents. Les autres notifications restent normales.',
+    notifyPrivacy: 'Masquer le nom du fichier sur la vignette',
+    notifyPrivacyHelp: 'Masque les noms de fichiers uniquement dans l’activité en direct. Le texte des notifications utilise toujours les modèles de notification.',
+    notifyStyle: 'Style de progression',
+    notifyStyleBar: 'Barre de progression',
+    notifyStyleSegments: 'Segments de progression',
+    notifyStyleNone: 'Aucun indicateur de progression',
+    notifyDashboardUrl: 'URL du tableau de bord (facultatif)',
+    notifySymbol: 'Symbole (facultatif)',
+    notifyTint: 'Couleur (facultatif)',
+    notifyAppearance: 'Apparence de l’activité en direct',
+    notifyMetrics: 'Mesures',
+    notifyMetricsHelp: 'Le minuteur est affiché par défaut. Les mesures facultatives remplacent la ligne du nom de fichier.',
+    notifyDeviceId: 'Identifiant de l’appareil ou du groupe',
+    notifyToken: 'Jeton Notify!',
+    notifyIconUrl: 'URL de l’icône (facultatif)',
+    notifyGroupType: 'Fil de notifications (facultatif)',
+    notifyGroupTypeHelp: 'Laissez vide pour regrouper les notifications par imprimante. Une valeur personnalisée les regroupe dans le même fil.',
+    notifyLiveActivities: 'Activités en direct (iOS)',
+    notifyLiveActivitiesHelp: 'Suivez les impressions sur l’écran verrouillé iOS et dans la Dynamic Island. Utilisez un identifiant d’appareil iOS et ajoutez un fournisseur distinct pour les notifications de groupe.',
+    notifyLifecycleHelp: 'Les activités en direct suivent automatiquement chaque impression. Les interrupteurs ci-dessous ne contrôlent que les notifications push. Les heures silencieuses bloquent les nouvelles activités ; celles en cours continuent à se mettre à jour et à se terminer. Les résumés quotidiens ne retardent pas les activités.',
+    notifyIosFeaturesUnavailable: 'Les activités en direct et les widgets de l’écran verrouillé nécessitent un identifiant d’appareil iOS. Les identifiants de groupe, de navigateur et de macOS utilisent uniquement les notifications push.',
+    notifyTestHelp: 'Le test envoie une notification push. Une activité en direct commence au démarrage d’une impression.',
     // Provider types
     providerTypes: {
+      notify: 'Notify!',
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6564,6 +6593,7 @@ export default {
     },
     // Provider descriptions
     providerDescriptions: {
+      notify: 'Notifications push et activités en direct iOS via Notify!',
       email: 'Notifications par e-mail SMTP',
       telegram: 'Notifications via un bot Telegram',
       discord: 'Envoyer vers un canal Discord via webhook',

@@ -5,6 +5,7 @@ All notable changes to Bambuddy will be documented in this file.
 ## [1.2.6b1] - Unreleased
 
 ### Added
+- **Native Notify! notifications, Live Activities, and Lock Screen widgets (#2919)** — Add a Notify! provider with a device or group ID and token. Optional iOS Live Activities show a countdown by default, with configurable metrics; faults, pauses, and lost connections replace the timer with printer status. Tiles survive Bambuddy restarts and respect per-print dismissals. Optional Lock Screen widgets keep a printer status tile between jobs, refreshing on iOS's schedule. Camera photos can accompany alerts, including printer errors, when photo capture and attachments are enabled. Browser (`WB`) and group (`GRP`) IDs receive text notifications without photos, Live Activities, or widgets. Ordinary alerts retain Bambuddy's event filters, quiet hours, and digests.
 - **Each spool remembers when it was last dried (#2863, requested by @USER19464727)** — The AMS humidity describes the unit, not the spool, so once a spool left the AMS there was no telling whether it had been dried.
   - **Filled in by AMS drying:** when an AMS drying run ends, every spool assigned to a slot of that AMS is marked with the date, the temperature (for runs Bambuddy started; the printer doesn't report it) and how long the run actually lasted.
   - **Only real drying counts:** the run must have lasted at least half its length. One stopped before then, from Bambuddy, on the printer or because a print took priority, leaves the earlier record alone.

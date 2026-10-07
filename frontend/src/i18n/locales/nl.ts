@@ -6612,8 +6612,37 @@ export default {
 
   // Notifications
   notifications: {
+    notifyLockScreenWidgets: 'Toegangsschermwidgets (iOS)',
+    notifyLockScreenWidgetsHelp: 'Voeg een Notify!-widget toe via de aanpassing van het iOS-toegangsscherm en selecteer een printer. De widget toont status, voortgang en problemen zonder live afteltimer. iOS ververst ongeveer elke 15 minuten of minder vaak.',
+    notifyPhotoUnavailable: 'Browser- en groepsontvangers ondersteunen alleen tekstmeldingen; fotobijlagen zijn niet beschikbaar.',
+    notifyShowStage: 'Afdrukfase tonen',
+    notifyTimeSensitive: 'Tijdgevoelige probleemmeldingen',
+    notifyTimeSensitiveHelp: 'Markeer mislukte of gestopte afdrukken en printer- of AI-problemen als tijdgevoelig. Andere pushmeldingen blijven normaal.',
+    notifyPrivacy: 'Bestandsnaam op tegel verbergen',
+    notifyPrivacyHelp: 'Verbergt bestandsnamen alleen in de liveactiviteit. Pushteksten gebruiken nog steeds de meldingssjablonen.',
+    notifyStyle: 'Voortgangsstijl',
+    notifyStyleBar: 'Voortgangsbalk',
+    notifyStyleSegments: 'Segmenten',
+    notifyStyleNone: 'Geen voortgangsindicator',
+    notifyDashboardUrl: 'Dashboard-URL (optioneel)',
+    notifySymbol: 'Symbool (optioneel)',
+    notifyTint: 'Kleur (optioneel)',
+    notifyAppearance: 'Uiterlijk van liveactiviteit',
+    notifyMetrics: 'Meetwaarden',
+    notifyMetricsHelp: 'De timer wordt standaard getoond. Optionele meetwaarden vervangen de regel met de bestandsnaam.',
+    notifyDeviceId: 'Apparaat- of groeps-ID',
+    notifyToken: 'Notify!-token',
+    notifyIconUrl: 'Pictogram-URL (optioneel)',
+    notifyGroupType: 'Meldingengroep (optioneel)',
+    notifyGroupTypeHelp: 'Laat leeg om pushmeldingen per printer te groeperen. Een eigen waarde groepeert ze in dezelfde thread.',
+    notifyLiveActivities: 'Liveactiviteiten (iOS)',
+    notifyLiveActivitiesHelp: 'Volg afdrukken op het iOS-toegangsscherm en in de Dynamic Island. Gebruik een iOS-apparaat-ID en voeg een aparte aanbieder toe voor groepsmeldingen.',
+    notifyLifecycleHelp: 'Liveactiviteiten volgen elke afdruk automatisch. De schakelaars hieronder regelen alleen pushmeldingen. Stille uren blokkeren nieuwe activiteiten; bestaande activiteiten worden nog bijgewerkt en beëindigd. Dagoverzichten vertragen activiteiten niet.',
+    notifyIosFeaturesUnavailable: 'Liveactiviteiten en toegangsschermwidgets vereisen een iOS-apparaat-ID. Groeps-, browser- en macOS-ID’s gebruiken alleen pushmeldingen.',
+    notifyTestHelp: 'De test verstuurt een pushmelding. Een liveactiviteit begint wanneer een afdruk start.',
     // Provider types
     providerTypes: {
+      notify: 'Notify!',
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6627,6 +6656,7 @@ export default {
     },
     // Provider descriptions
     providerDescriptions: {
+      notify: 'Pushmeldingen en iOS-liveactiviteiten via Notify!',
       email: 'SMTP-e-mailmeldingen',
       telegram: 'Meldingen via Telegram-bot',
       discord: 'Versturen naar Discord-kanaal via webhook',

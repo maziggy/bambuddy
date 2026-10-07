@@ -6561,8 +6561,37 @@ export default {
 
   // Notifications
   notifications: {
+    notifyLockScreenWidgets: 'Sperrbildschirm-Widgets (iOS)',
+    notifyLockScreenWidgetsHelp: 'Füge über die iOS-Sperrbildschirmanpassung ein Notify!-Widget hinzu und wähle einen Drucker. Es zeigt Status, Fortschritt und Probleme ohne laufenden Countdown. iOS aktualisiert etwa alle 15 Minuten oder seltener.',
+    notifyPhotoUnavailable: 'Browser- und Gruppenempfänger unterstützen nur Textmitteilungen; Fotoanhänge sind nicht verfügbar.',
+    notifyShowStage: 'Druckphase anzeigen',
+    notifyTimeSensitive: 'Dringliche Problemmeldungen',
+    notifyTimeSensitiveHelp: 'Markiert fehlgeschlagene oder gestoppte Drucke sowie Drucker- oder KI-Probleme als dringlich. Andere Push-Mitteilungen bleiben normal.',
+    notifyPrivacy: 'Dateiname auf Kachel ausblenden',
+    notifyPrivacyHelp: 'Blendet Dateinamen nur in der Live-Aktivität aus. Push-Texte verwenden weiterhin die Mitteilungsvorlagen.',
+    notifyStyle: 'Fortschrittsdarstellung',
+    notifyStyleBar: 'Fortschrittsbalken',
+    notifyStyleSegments: 'Segmente',
+    notifyStyleNone: 'Keine Fortschrittsanzeige',
+    notifyDashboardUrl: 'Dashboard-URL (optional)',
+    notifySymbol: 'Symbolname (optional)',
+    notifyTint: 'Akzentfarbe (optional)',
+    notifyAppearance: 'Darstellung der Live-Aktivität',
+    notifyMetrics: 'Messwerte',
+    notifyMetricsHelp: 'Der Timer wird standardmäßig angezeigt. Optionale Messwerte ersetzen die Dateinamenzeile.',
+    notifyDeviceId: 'Geräte- oder Gruppen-ID',
+    notifyToken: 'Notify!-Token',
+    notifyIconUrl: 'Symbol-URL (optional)',
+    notifyGroupType: 'Mitteilungsgruppe (optional)',
+    notifyGroupTypeHelp: 'Leer lassen, um Push-Mitteilungen nach Drucker zu gruppieren. Ein eigener Wert fasst sie in derselben Gruppe zusammen.',
+    notifyLiveActivities: 'Live-Aktivitäten (iOS)',
+    notifyLiveActivitiesHelp: 'Verfolge Drucke auf dem iOS-Sperrbildschirm und in der Dynamic Island. Verwende eine iOS-Geräte-ID und einen separaten Anbieter für Gruppenmitteilungen.',
+    notifyLifecycleHelp: 'Live-Aktivitäten begleiten jeden Druck automatisch. Die Ereignisschalter unten steuern nur Push-Mitteilungen. Ruhezeiten verhindern neue Aktivitäten; bestehende werden weiter aktualisiert und beendet. Tageszusammenfassungen verzögern keine Aktivitäten.',
+    notifyIosFeaturesUnavailable: 'Live-Aktivitäten und Sperrbildschirm-Widgets benötigen eine iOS-Geräte-ID. Gruppen-, Browser- und macOS-IDs nutzen nur Push-Mitteilungen.',
+    notifyTestHelp: 'Der Test sendet eine Push-Mitteilung. Eine Live-Aktivität beginnt beim Druckstart.',
     // Provider types
     providerTypes: {
+      notify: 'Notify!',
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6576,6 +6605,7 @@ export default {
     },
     // Provider descriptions
     providerDescriptions: {
+      notify: 'Push-Mitteilungen und iOS-Live-Aktivitäten über Notify!',
       email: 'SMTP-E-Mail-Benachrichtigungen',
       telegram: 'Benachrichtigungen über Telegram-Bot',
       discord: 'An Discord-Kanal per Webhook senden',

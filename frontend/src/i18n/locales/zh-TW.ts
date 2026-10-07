@@ -6547,8 +6547,37 @@ export default {
 
   // Notifications
   notifications: {
+    notifyLockScreenWidgets: '鎖定畫面小工具（iOS）',
+    notifyLockScreenWidgetsHelp: '從 iOS 自訂鎖定畫面新增 Notify! 小工具並選擇印表機。它顯示狀態、進度和問題，不提供即時倒數計時。iOS 大約每 15 分鐘或更久更新一次。',
+    notifyPhotoUnavailable: '瀏覽器和群組收件者僅支援文字通知，無法附加照片。',
+    notifyShowStage: '顯示列印階段',
+    notifyTimeSensitive: '即時問題警示',
+    notifyTimeSensitiveHelp: '將失敗或停止的列印以及印表機或 AI 問題標記為即時通知。其他推播維持一般等級。',
+    notifyPrivacy: '在卡片上隱藏檔案名稱',
+    notifyPrivacyHelp: '僅在即時動態中隱藏檔案名稱。推播文字仍使用通知範本。',
+    notifyStyle: '進度樣式',
+    notifyStyleBar: '進度列',
+    notifyStyleSegments: '分段',
+    notifyStyleNone: '不顯示進度',
+    notifyDashboardUrl: '儀表板 URL（選填）',
+    notifySymbol: '符號（選填）',
+    notifyTint: '顏色（選填）',
+    notifyAppearance: '即時動態外觀',
+    notifyMetrics: '指標',
+    notifyMetricsHelp: '預設顯示計時器。選填指標會取代檔案名稱列。',
+    notifyDeviceId: '裝置或群組 ID',
+    notifyToken: 'Notify! 權杖',
+    notifyIconUrl: '圖示 URL（選填）',
+    notifyGroupType: '通知群組（選填）',
+    notifyGroupTypeHelp: '留空可按印表機將推播通知分組。自訂值會將它們歸入同一通知群組。',
+    notifyLiveActivities: '即時動態（iOS）',
+    notifyLiveActivitiesHelp: '在 iOS 鎖定畫面和動態島上追蹤列印。請使用 iOS 裝置 ID；如需群組推播，請新增獨立的供應商。',
+    notifyLifecycleHelp: '即時動態會自動追蹤每次列印。下方的事件開關僅控制推播通知。勿擾時段會阻止新動態，但現有動態仍會更新和結束。每日摘要不會延遲動態。',
+    notifyIosFeaturesUnavailable: '即時動態和鎖定畫面小工具需要 iOS 裝置 ID。群組、瀏覽器和 macOS ID 僅使用推播通知。',
+    notifyTestHelp: '測試會傳送推播通知。即時動態會在列印開始時啟動。',
     // Provider types
     providerTypes: {
+      notify: 'Notify!',
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6562,6 +6591,7 @@ export default {
     },
     // Provider descriptions
     providerDescriptions: {
+      notify: '透過 Notify! 傳送推播通知和 iOS 即時動態',
       email: 'SMTP 電子郵件通知',
       telegram: '透過 Telegram 機器人傳送通知',
       discord: '透過 Webhook 傳送到 Discord 頻道',

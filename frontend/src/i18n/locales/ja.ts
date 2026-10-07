@@ -6562,8 +6562,37 @@ export default {
 
   // Notifications
   notifications: {
+    notifyLockScreenWidgets: 'ロック画面ウィジェット（iOS）',
+    notifyLockScreenWidgetsHelp: 'iOSのロック画面のカスタマイズからNotify!ウィジェットを追加し、プリンターを選択してください。状態、進捗、問題を表示しますが、リアルタイムのカウントダウンはありません。iOSによる更新はおおむね15分間隔、またはそれ以上かかります。',
+    notifyPhotoUnavailable: 'ブラウザーとグループ宛てにはテキスト通知のみ送信できます。写真の添付は利用できません。',
+    notifyShowStage: '印刷段階を表示',
+    notifyTimeSensitive: '問題の即時通知',
+    notifyTimeSensitiveHelp: '失敗・停止した印刷やプリンター・AIの問題を即時通知として送信します。それ以外は通常のプッシュ通知です。',
+    notifyPrivacy: 'タイルでファイル名を非表示',
+    notifyPrivacyHelp: 'ライブアクティビティ内のファイル名のみを非表示にします。プッシュ通知の本文には引き続き通知テンプレートが使用されます。',
+    notifyStyle: '進捗の表示形式',
+    notifyStyleBar: '進捗バー',
+    notifyStyleSegments: 'セグメント',
+    notifyStyleNone: '進捗を表示しない',
+    notifyDashboardUrl: 'ダッシュボードのURL（任意）',
+    notifySymbol: 'シンボル（任意）',
+    notifyTint: '色（任意）',
+    notifyAppearance: 'ライブアクティビティの外観',
+    notifyMetrics: '表示する指標',
+    notifyMetricsHelp: '既定ではタイマーが表示されます。任意の指標を選択するとファイル名の行が置き換わります。',
+    notifyDeviceId: 'デバイスまたはグループのID',
+    notifyToken: 'Notify! のトークン',
+    notifyIconUrl: 'アイコンのURL（任意）',
+    notifyGroupType: '通知スレッド（任意）',
+    notifyGroupTypeHelp: '空欄の場合、プリンターごとにプッシュ通知をグループ化します。値を指定すると同じスレッドにまとめられます。',
+    notifyLiveActivities: 'ライブアクティビティ（iOS）',
+    notifyLiveActivitiesHelp: 'iOSのロック画面とDynamic Islandで印刷状況を確認できます。iOSデバイスのIDを使用してください。グループへの通知には別のプロバイダーを追加してください。',
+    notifyLifecycleHelp: 'ライブアクティビティは各印刷を自動的に追跡します。以下のイベントスイッチはプッシュ通知のみを制御します。通知休止時間中は新しいアクティビティを開始しませんが、既存のものは更新・終了されます。日次ダイジェストによってアクティビティが遅延することはありません。',
+    notifyIosFeaturesUnavailable: 'ライブアクティビティとロック画面ウィジェットにはiOSデバイスのIDが必要です。グループ、ブラウザー、macOSのIDではプッシュ通知のみ利用できます。',
+    notifyTestHelp: 'テストではプッシュ通知を送信します。ライブアクティビティは印刷開始時に開始されます。',
     // Provider types
     providerTypes: {
+      notify: 'Notify!',
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6577,6 +6606,7 @@ export default {
     },
     // Provider descriptions
     providerDescriptions: {
+      notify: 'Notify! によるプッシュ通知とiOSライブアクティビティ',
       email: 'SMTPメール通知',
       telegram: 'Telegramボット経由の通知',
       discord: 'Webhook経由でDiscordチャンネルに送信',

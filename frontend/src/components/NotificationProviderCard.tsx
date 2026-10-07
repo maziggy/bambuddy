@@ -9,6 +9,7 @@ import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
 import { Toggle } from './Toggle';
+import { isNotifyPushOnlyTarget, isNotifyPhotoUnsupported } from '../utils/notify';
 
 interface NotificationProviderCardProps {
   provider: NotificationProvider;
@@ -27,6 +28,8 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
     queryKey: ['printers'],
     queryFn: api.getPrinters,
   });
+
+  const notifyPhotosUnsupported = provider.provider_type === 'notify' && isNotifyPhotoUnsupported(String(provider.config.device_id || ''));
 
   const linkedPrinter = printers?.find(p => p.id === provider.printer_id);
 
@@ -114,6 +117,12 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
 
           {/* Event summary - show all event tags */}
           <div className="mb-3 flex flex-wrap gap-1">
+            {provider.provider_type === 'notify' && provider.config.live_activities === true && !isNotifyPushOnlyTarget(String(provider.config.device_id || '')) && (
+              <span className="px-2 py-0.5 bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-400 text-xs rounded">{t('notifications.notifyLiveActivities')}</span>
+            )}
+            {provider.provider_type === 'notify' && provider.config.lock_screen_widgets === true && !isNotifyPushOnlyTarget(String(provider.config.device_id || '')) && (
+              <span className="px-2 py-0.5 bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-400 text-xs rounded">{t('notifications.notifyLockScreenWidgets')}</span>
+            )}
             {provider.on_print_start && (
               <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs rounded">{t('notifications.start')}</span>
             )}
@@ -213,7 +222,7 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                 {t('notifications.digest', { time: provider.daily_digest_time })}
               </span>
             )}
-            {provider.attach_photo === false && (
+            {(provider.attach_photo === false || notifyPhotosUnsupported) && (
               <span className="px-2 py-0.5 bg-bambu-dark-tertiary text-bambu-gray text-xs rounded flex items-center gap-1">
                 <CameraOff className="w-3 h-3" />
                 {t('notifications.noPhoto')}
@@ -733,11 +742,12 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                   <Camera className="w-4 h-4 text-bambu-gray" />
                   <div>
                     <p className="text-sm text-white">{t('notifications.attachPhotoLabel')}</p>
-                    <p className="text-xs text-bambu-gray">{t('notifications.attachPhotoDescription')}</p>
+                    <p className="text-xs text-bambu-gray">{t(notifyPhotosUnsupported ? 'notifications.notifyPhotoUnavailable' : 'notifications.attachPhotoDescription')}</p>
                   </div>
                 </div>
                 <Toggle
-                  checked={provider.attach_photo ?? true}
+                  checked={!notifyPhotosUnsupported && (provider.attach_photo ?? true)}
+                  disabled={notifyPhotosUnsupported}
                   onChange={(checked) => updateMutation.mutate({ attach_photo: checked })}
                 />
               </div>

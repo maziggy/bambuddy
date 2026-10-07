@@ -3150,7 +3150,7 @@ export interface Filament {
 }
 
 // Notification Provider types
-export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook' | 'homeassistant' | 'bark' | 'gotify';
+export type ProviderType = 'callmebot' | 'ntfy' | 'pushover' | 'telegram' | 'email' | 'discord' | 'webhook' | 'homeassistant' | 'bark' | 'gotify' | 'notify';
 // How a Telegram provider collects the outcome verdict (#3046)
 export type TelegramVerdictMode = 'buttons' | 'reactions' | 'both';
 
@@ -3629,6 +3629,23 @@ export interface PushoverConfig {
   user_key: string;
   app_token: string;
   priority?: number;
+}
+
+export interface NotifyConfig {
+  device_id: string;
+  token: string;
+  icon_url?: string;
+  group_type?: string;
+  live_activities?: boolean;
+  lock_screen_widgets?: boolean;
+  live_activity_privacy?: boolean;
+  live_activity_stage?: boolean;
+  live_activity_style?: 'bar' | 'segments' | 'none';
+  live_activity_metrics?: ('progress' | 'eta' | 'layers' | 'nozzle' | 'bed' | 'chamber')[];
+  live_activity_button_url?: string;
+  live_activity_symbol?: string;
+  live_activity_tint?: string;
+  time_sensitive?: boolean;
 }
 
 export interface TelegramConfig {

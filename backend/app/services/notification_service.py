@@ -25,6 +25,7 @@ from backend.app.models.notification import (
     TelegramPendingVerdict,
 )
 from backend.app.models.notification_template import NotificationTemplate
+from backend.app.services.notify_client import NotifyClient, NotifyError, notify_credentials, notify_supports_photos
 from backend.app.services.print_confirmation import one_tap_url
 from backend.app.utils.notification_photos import save_notification_photo
 
@@ -367,6 +368,8 @@ class NotificationService:
             title = "Bambuddy Test"
             message = "This is a test notification. If you see this, notifications are working!"
 
+        if provider_type == "notify" and not notify_supports_photos(config.get("device_id")):
+            attach_photo = False
         image_data = await asyncio.to_thread(_load_sample_notification_image) if attach_photo else None
 
         try:
@@ -398,11 +401,45 @@ class NotificationService:
             elif provider_type == "gotify":
                 photo_url = await self._get_or_build_photo_url(db, image_data, "test") if attach_photo else None
                 return await self._send_gotify(config, title, message, event_type="test", image_url=photo_url)
+            elif provider_type == "notify":
+                photo_url = await self._get_or_build_photo_url(db, image_data, "test") if attach_photo else None
+                return await self._send_notify(config, title, message, image_url=photo_url)
             else:
                 return False, f"Unknown provider type: {provider_type}"
         except Exception as e:
             logger.exception("Error sending test notification via %s", provider_type)
             return False, str(e)
+
+    async def _send_notify(
+        self,
+        config: dict,
+        title: str,
+        message: str,
+        image_url: str | None = None,
+        event_type: str | None = None,
+        printer_id: int | None = None,
+    ) -> tuple[bool, str]:
+        """Ordinary Notify! alerts use the existing event, digest and quiet-hours rules."""
+        try:
+            device_id, token = notify_credentials(config)
+            client = NotifyClient(await self._get_client())
+            group_type = str(config.get("group_type") or "").strip()
+            if not group_type:
+                group_type = f"bambuddy-printer-{printer_id}" if printer_id is not None else "bambuddy"
+            await client.send_notification(
+                device_id,
+                token,
+                title=title,
+                text=message,
+                group_type=group_type,
+                icon_url=config.get("icon_url"),
+                image_url=image_url,
+                time_sensitive=config.get("time_sensitive") is True
+                and event_type in {"print_failed", "print_stopped", "printer_error", "ai_failure_detection"},
+            )
+            return True, "Message sent successfully"
+        except NotifyError as exc:
+            return False, str(exc)
 
     async def _send_callmebot(self, config: dict, message: str) -> tuple[bool, str]:
         """Send notification via CallMeBot (WhatsApp)."""
@@ -1322,6 +1359,7 @@ class NotificationService:
         event_type: str | None = None,
         variables: dict | None = None,
         photo_cache: dict | None = None,
+        printer_id: int | None = None,
     ) -> tuple[bool, str]:
         """Send notification to a specific provider.
 
@@ -1469,6 +1507,15 @@ class NotificationService:
                     else None
                 )
                 return await self._send_bark(config, title, message, url=bark_url, image_url=photo_url)
+            elif provider.provider_type == "notify":
+                photo_url = (
+                    await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
+                    if provider.attach_photo and notify_supports_photos(config.get("device_id"))
+                    else None
+                )
+                return await self._send_notify(
+                    config, title, message, image_url=photo_url, event_type=event_type, printer_id=printer_id
+                )
             elif provider.provider_type == "gotify":
                 # Outcome confirmation (#1898): like Bark, Gotify opens one URL
                 # on tap -- deep-link into the confirmation dialog.
@@ -1599,6 +1646,7 @@ class NotificationService:
                     event_type=event_type,
                     variables=variables,
                     photo_cache=photo_cache,
+                    printer_id=printer_id,
                 )
 
                 # Also queue for digest if enabled (digest is a summary, not a queue)

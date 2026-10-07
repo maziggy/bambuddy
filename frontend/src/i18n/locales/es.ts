@@ -6569,8 +6569,37 @@ export default {
 
   // Notifications
   notifications: {
+    notifyLockScreenWidgets: 'Widgets de la pantalla de bloqueo (iOS)',
+    notifyLockScreenWidgetsHelp: 'Añade un widget de Notify! desde la personalización de la pantalla de bloqueo de iOS y selecciona una impresora. Muestra el estado, el progreso y los problemas sin cuenta atrás en directo. iOS actualiza aproximadamente cada 15 minutos o más.',
+    notifyPhotoUnavailable: 'Los destinatarios de navegador y grupo solo admiten notificaciones de texto; no se pueden adjuntar fotos.',
+    notifyShowStage: 'Mostrar fase de impresión',
+    notifyTimeSensitive: 'Alertas urgentes de problemas',
+    notifyTimeSensitiveHelp: 'Marca como urgentes las impresiones fallidas o detenidas y los problemas de la impresora o detectados por IA. Las demás notificaciones siguen siendo normales.',
+    notifyPrivacy: 'Ocultar nombre del archivo en la tarjeta',
+    notifyPrivacyHelp: 'Solo oculta los nombres de archivo en la actividad en directo. El texto de las notificaciones sigue usando las plantillas de notificación.',
+    notifyStyle: 'Estilo de progreso',
+    notifyStyleBar: 'Barra de progreso',
+    notifyStyleSegments: 'Segmentos',
+    notifyStyleNone: 'Sin indicador de progreso',
+    notifyDashboardUrl: 'URL del panel (opcional)',
+    notifySymbol: 'Símbolo (opcional)',
+    notifyTint: 'Color (opcional)',
+    notifyAppearance: 'Aspecto de la actividad en directo',
+    notifyMetrics: 'Métricas',
+    notifyMetricsHelp: 'El temporizador se muestra de forma predeterminada. Las métricas opcionales sustituyen la línea del nombre de archivo.',
+    notifyDeviceId: 'ID del dispositivo o grupo',
+    notifyToken: 'Token de Notify!',
+    notifyIconUrl: 'URL del icono (opcional)',
+    notifyGroupType: 'Hilo de notificaciones (opcional)',
+    notifyGroupTypeHelp: 'Déjalo vacío para agrupar las notificaciones por impresora. Un valor personalizado las agrupa en el mismo hilo.',
+    notifyLiveActivities: 'Actividades en directo (iOS)',
+    notifyLiveActivitiesHelp: 'Sigue las impresiones en la pantalla de bloqueo de iOS y en la Dynamic Island. Usa un ID de dispositivo iOS y añade otro proveedor para las notificaciones de grupo.',
+    notifyLifecycleHelp: 'Las actividades en directo siguen cada impresión automáticamente. Los interruptores de abajo solo controlan las notificaciones push. Las horas de silencio bloquean nuevas actividades; las existentes se siguen actualizando y finalizando. Los resúmenes diarios no retrasan las actividades.',
+    notifyIosFeaturesUnavailable: 'Las actividades en directo y los widgets de la pantalla de bloqueo requieren un ID de dispositivo iOS. Los ID de grupos, navegadores y macOS solo usan notificaciones push.',
+    notifyTestHelp: 'La prueba envía una notificación push. Una actividad en directo comienza al iniciar una impresión.',
     // Provider types
     providerTypes: {
+      notify: 'Notify!',
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6584,6 +6613,7 @@ export default {
     },
     // Provider descriptions
     providerDescriptions: {
+      notify: 'Notificaciones push y actividades en directo de iOS mediante Notify!',
       email: 'Notificaciones por correo SMTP',
       telegram: 'Notificaciones mediante un bot de Telegram',
       discord: 'Enviar a un canal de Discord mediante un webhook',

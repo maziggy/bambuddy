@@ -6548,8 +6548,37 @@ export default {
 
   // Notifications
   notifications: {
+    notifyLockScreenWidgets: 'Widget della schermata di blocco (iOS)',
+    notifyLockScreenWidgetsHelp: 'Aggiungi un widget Notify! dalla personalizzazione della schermata di blocco iOS e seleziona una stampante. Mostra stato, avanzamento e problemi senza conto alla rovescia in tempo reale. iOS si aggiorna circa ogni 15 minuti o più.',
+    notifyPhotoUnavailable: 'I destinatari browser e gruppo supportano solo notifiche di testo; gli allegati fotografici non sono disponibili.',
+    notifyShowStage: 'Mostra la fase di stampa',
+    notifyTimeSensitive: 'Avvisi urgenti per problemi',
+    notifyTimeSensitiveHelp: 'Segna come urgenti le stampe fallite o interrotte e i problemi della stampante o rilevati dall’IA. Le altre notifiche rimangono normali.',
+    notifyPrivacy: 'Nascondi il nome del file nel riquadro',
+    notifyPrivacyHelp: 'Nasconde i nomi dei file solo nell’attività in tempo reale. Il testo delle notifiche usa ancora i modelli di notifica.',
+    notifyStyle: 'Stile di avanzamento',
+    notifyStyleBar: 'Barra di avanzamento',
+    notifyStyleSegments: 'Segmenti',
+    notifyStyleNone: 'Nessun indicatore di avanzamento',
+    notifyDashboardUrl: 'URL della dashboard (facoltativo)',
+    notifySymbol: 'Simbolo (facoltativo)',
+    notifyTint: 'Colore (facoltativo)',
+    notifyAppearance: 'Aspetto dell’attività in tempo reale',
+    notifyMetrics: 'Metriche',
+    notifyMetricsHelp: 'Il timer è mostrato per impostazione predefinita. Le metriche facoltative sostituiscono la riga del nome del file.',
+    notifyDeviceId: 'ID dispositivo o gruppo',
+    notifyToken: 'Token di Notify!',
+    notifyIconUrl: 'URL dell’icona (facoltativo)',
+    notifyGroupType: 'Raggruppamento notifiche (facoltativo)',
+    notifyGroupTypeHelp: 'Lascia vuoto per raggruppare le notifiche per stampante. Un valore personalizzato le raggruppa nello stesso thread.',
+    notifyLiveActivities: 'Attività in tempo reale (iOS)',
+    notifyLiveActivitiesHelp: 'Segui le stampe sulla schermata di blocco iOS e nella Dynamic Island. Usa un ID dispositivo iOS e aggiungi un fornitore separato per le notifiche di gruppo.',
+    notifyLifecycleHelp: 'Le attività in tempo reale seguono automaticamente ogni stampa. Gli interruttori qui sotto controllano solo le notifiche push. Le ore silenziose bloccano le nuove attività; quelle esistenti continuano ad aggiornarsi e a terminare. I riepiloghi giornalieri non ritardano le attività.',
+    notifyIosFeaturesUnavailable: 'Le attività in tempo reale e i widget della schermata di blocco richiedono un ID dispositivo iOS. Gli ID di gruppi, browser e macOS usano solo notifiche push.',
+    notifyTestHelp: 'Il test invia una notifica push. Un’attività in tempo reale inizia all’avvio di una stampa.',
     // Provider types
     providerTypes: {
+      notify: 'Notify!',
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6563,6 +6592,7 @@ export default {
     },
     // Provider descriptions
     providerDescriptions: {
+      notify: 'Notifiche push e attività in tempo reale iOS tramite Notify!',
       email: 'Notifiche email tramite SMTP',
       telegram: 'Notifiche tramite bot Telegram',
       discord: 'Invia a un canale Discord tramite webhook',

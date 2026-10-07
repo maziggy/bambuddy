@@ -6547,8 +6547,37 @@ export default {
 
   // Notifications
   notifications: {
+    notifyLockScreenWidgets: '锁定屏幕小组件（iOS）',
+    notifyLockScreenWidgetsHelp: '从 iOS 自定义锁定屏幕添加 Notify! 小组件并选择打印机。它显示状态、进度和问题，不提供实时倒计时。iOS 大约每 15 分钟或更长时间刷新一次。',
+    notifyPhotoUnavailable: '浏览器和群组收件人仅支持文本通知，无法附加照片。',
+    notifyShowStage: '显示打印阶段',
+    notifyTimeSensitive: '时效性问题警报',
+    notifyTimeSensitiveHelp: '将失败或停止的打印以及打印机或 AI 问题标记为时效性通知。其他推送保持普通级别。',
+    notifyPrivacy: '在卡片上隐藏文件名',
+    notifyPrivacyHelp: '仅在实时活动中隐藏文件名。推送文本仍使用通知模板。',
+    notifyStyle: '进度样式',
+    notifyStyleBar: '进度条',
+    notifyStyleSegments: '分段',
+    notifyStyleNone: '不显示进度',
+    notifyDashboardUrl: '仪表板 URL（可选）',
+    notifySymbol: '符号（可选）',
+    notifyTint: '颜色（可选）',
+    notifyAppearance: '实时活动外观',
+    notifyMetrics: '指标',
+    notifyMetricsHelp: '默认显示计时器。可选指标会替代文件名行。',
+    notifyDeviceId: '设备或群组 ID',
+    notifyToken: 'Notify! 令牌',
+    notifyIconUrl: '图标 URL（可选）',
+    notifyGroupType: '通知分组（可选）',
+    notifyGroupTypeHelp: '留空可按打印机分组推送通知。自定义值会将它们归入同一通知组。',
+    notifyLiveActivities: '实时活动（iOS）',
+    notifyLiveActivitiesHelp: '在 iOS 锁定屏幕和灵动岛上跟踪打印。请使用 iOS 设备 ID；如需群组推送，请添加单独的提供商。',
+    notifyLifecycleHelp: '实时活动会自动跟踪每次打印。下方的事件开关仅控制推送通知。免打扰时段会阻止新活动，但现有活动仍会更新和结束。每日摘要不会延迟活动。',
+    notifyIosFeaturesUnavailable: '实时活动和锁定屏幕小组件需要 iOS 设备 ID。群组、浏览器和 macOS ID 仅使用推送通知。',
+    notifyTestHelp: '测试会发送推送通知。实时活动会在打印开始时启动。',
     // Provider types
     providerTypes: {
+      notify: 'Notify!',
       callmebot: 'CallMeBot/WhatsApp',
       ntfy: 'ntfy',
       pushover: 'Pushover',
@@ -6562,6 +6591,7 @@ export default {
     },
     // Provider descriptions
     providerDescriptions: {
+      notify: '通过 Notify! 发送推送通知和 iOS 实时活动',
       email: 'SMTP 电子邮件通知',
       telegram: '通过 Telegram 机器人发送通知',
       discord: '通过 Webhook 发送到 Discord 频道',

@@ -122,6 +122,8 @@ from backend.app.services.location_ha_sensor_manager import location_ha_sensor_m
 from backend.app.services.mqtt_relay import mqtt_relay
 from backend.app.services.mqtt_smart_plug import mqtt_smart_plug_service
 from backend.app.services.notification_service import notification_service
+from backend.app.services.notify_live_activities import notify_live_activities
+from backend.app.services.notify_widgets import notify_widgets
 from backend.app.services.obico_detection import obico_detection_service
 from backend.app.services.print_cost_estimate import plate_scoped_run_estimate as _plate_scoped_run_estimate
 from backend.app.services.print_scheduler import scheduler as print_scheduler
@@ -1615,6 +1617,7 @@ def _progress_milestone_to_notify(printer_id: int, state: PrinterState) -> int |
 
 async def on_printer_status_change(printer_id: int, state: PrinterState):
     """Handle printer status changes - broadcast via WebSocket."""
+    notify_live_activities.observe(printer_id, state)
     # Connected-edge reconciliation (#1542 follow-up). When the printer
     # transitions disconnected → connected — which covers both Bambuddy
     # startup (no prior connection) and a mid-session MQTT reconnect — fire
@@ -4061,6 +4064,8 @@ async def on_print_start(printer_id: int, data: dict):
     logger = logging.getLogger(__name__)
 
     logger.info("[CALLBACK] on_print_start called for printer %s, data keys: %s", printer_id, list(data.keys()))
+
+    notify_live_activities.print_started(printer_id, printer_manager.get_status(printer_id), data)
 
     # Clear any stale user-stopped flag from previous print cycles
     _user_stopped_printers.discard(printer_id)
@@ -7435,6 +7440,7 @@ async def on_print_complete(printer_id: int, data: dict):
     # which auto-dispatched the next queued print onto a fouled bed two seconds
     # after a touchscreen-abort (#1171). Persisted to DB so the gate survives
     # Auto Off power cycles and Bambuddy restarts.
+    notify_live_activities.print_finished(printer_id, data)
     _final_status = data.get("status", "completed")
     if _final_status in ("completed", "failed", "aborted", "cancelled"):
         printer_manager.set_awaiting_plate_clear(printer_id, True)
@@ -10290,6 +10296,8 @@ async def lifespan(app: FastAPI):
 
     # Start the notification digest scheduler
     notification_service.start_digest_scheduler()
+    notify_live_activities.start()
+    notify_widgets.start()
 
     # Start the Telegram reaction pollers (#3046), one per bot token used by a
     # provider in reactions/both mode; the notification routes resync them.
@@ -10384,6 +10392,8 @@ async def lifespan(app: FastAPI):
     ha_sensor_manager.stop()
     location_ha_sensor_manager.stop()
     notification_service.stop_digest_scheduler()
+    await notify_live_activities.close()
+    await notify_widgets.close()
     await telegram_reaction_poller.aclose()
     github_backup_service.stop_scheduler()
     local_backup_service.stop_scheduler()

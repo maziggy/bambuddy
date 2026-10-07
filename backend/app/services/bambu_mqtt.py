@@ -5733,6 +5733,7 @@ class BambuMQTTClient:
             self.on_print_complete(
                 {
                     "status": status,
+                    "subtask_id": self.state.subtask_id,
                     "filename": self._previous_gcode_file or current_file,
                     "subtask_name": self.state.subtask_name,
                     "raw_data": data,

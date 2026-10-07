@@ -7212,6 +7212,63 @@ class TestCommandAckIsNotTelemetry:
 
         assert mqtt_client.state.ams_filament_backup is True
 
+    @staticmethod
+    def _full_status(**fields):
+        """A full status report: home_flag is only read from one (>30 keys)."""
+        frame = {"command": "push_status", **{f"filler_{i}": 0 for i in range(30)}}
+        frame.update(fields)
+        return {"print": frame}
+
+    def test_full_status_home_flag_sets_backup_state_without_cfg(self, mqtt_client):
+        """P1S / P1P / A1 never send cfg; home_flag bit 10 carries the state (#3259)."""
+        assert mqtt_client.state.ams_filament_backup is None
+
+        mqtt_client._process_message(self._full_status(home_flag=7554719))  # bit10=1
+
+        assert mqtt_client.state.ams_filament_backup is True
+
+        mqtt_client._process_message(self._full_status(home_flag=7554719 & ~(1 << 10)))
+
+        assert mqtt_client.state.ams_filament_backup is False
+
+    def test_small_frame_home_flag_is_ignored(self, mqtt_client):
+        """Heartbeat-style frames carry a partial home_flag (H2D, SD-card badge)."""
+        mqtt_client.state.ams_filament_backup = True
+
+        mqtt_client._process_message({"print": {"command": "push_status", "home_flag": 0}})
+
+        assert mqtt_client.state.ams_filament_backup is True
+
+    def test_home_flag_ignored_once_printer_sent_cfg(self, mqtt_client):
+        """Printers that send cfg keep reading it alone, even in full reports without it."""
+        mqtt_client._process_message(self._full_status(cfg="C0340FC219", home_flag=1 << 10))  # bit18=1
+        assert mqtt_client.state.ams_filament_backup is True
+
+        mqtt_client._process_message(self._full_status(home_flag=0))
+
+        assert mqtt_client.state.ams_filament_backup is True
+
+    def test_cfg_wins_over_home_flag_in_same_frame(self, mqtt_client):
+        mqtt_client._process_message(self._full_status(cfg="C0340BC219", home_flag=1 << 10))  # bit18=0
+
+        assert mqtt_client.state.ams_filament_backup is False
+
+    def test_ack_home_flag_is_not_read_as_backup_state(self, mqtt_client):
+        frame = self._full_status(home_flag=7554719)
+        frame["print"]["command"] = "project_file"
+
+        mqtt_client._process_message(frame)
+
+        assert mqtt_client.state.ams_filament_backup is None
+
+    def test_home_flag_respects_toggle_hold(self, mqtt_client):
+        """A stale home_flag right after a toggle must not flip the badge back."""
+        mqtt_client.set_ams_filament_backup(True)
+
+        mqtt_client._process_message(self._full_status(home_flag=7554719 & ~(1 << 10)))
+
+        assert mqtt_client.state.ams_filament_backup is True
+
     def test_project_file_ack_does_not_clear_timelapse_state(self, mqtt_client):
         """The ack echoes the per-job timelapse request, not the recorder."""
         mqtt_client.state.timelapse = True

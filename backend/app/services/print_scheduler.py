@@ -4001,8 +4001,8 @@ class PrintScheduler:
         # Gate prefer_lowest on the printer's AMS Filament Backup state (#1766).
         # Without backup, the printer will not switch to a second spool when the
         # picked one runs out — so sorting toward the lowest leaves the print
-        # at risk of running dry mid-job. None (unknown / A1 family) preserves
-        # today's behaviour intentionally.
+        # at risk of running dry mid-job. None (unknown: no status report with
+        # cfg or home_flag yet) preserves today's behaviour intentionally.
         if prefer_lowest and status.ams_filament_backup is False:
             logger.info("[prefer-lowest] skipped (AMS Backup OFF on printer %s)", printer_id)
             prefer_lowest = False

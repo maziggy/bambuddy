@@ -8,7 +8,10 @@ printers and pre-init pushes produce.
 
 import pytest
 
-from backend.app.services.bambu_mqtt import parse_ams_filament_backup_from_cfg
+from backend.app.services.bambu_mqtt import (
+    parse_ams_filament_backup_from_cfg,
+    parse_ams_filament_backup_from_home_flag,
+)
 
 
 class TestParseAmsFilamentBackupFromCfg:
@@ -56,3 +59,26 @@ class TestParseAmsFilamentBackupFromCfg:
         # None preserves today's behaviour for callers gating on backup state —
         # NOT False. Treating absent as OFF would regress A1-family scheduling.
         assert parse_ams_filament_backup_from_cfg(value) is None
+
+
+class TestParseAmsFilamentBackupFromHomeFlag:
+    """``home_flag`` bit 10, the only source on families without ``cfg``
+    (#3259). Values are from support-bundle push_status snapshots."""
+
+    def test_p1s_on(self):
+        # P1S fw 01.10.00.00 full status: no cfg, home_flag bit 10 set.
+        assert parse_ams_filament_backup_from_home_flag(7554719) is True
+
+    def test_a1_off(self):
+        # A1 fw 01.08.01.00: home_flag bit 10 clear.
+        assert parse_ams_filament_backup_from_home_flag(846152095) is False
+
+    def test_negative_value(self):
+        # X1-class firmware sends the 32-bit flag as a signed int; its bit 10
+        # matches cfg bit 18 in the same frames (ON and OFF).
+        assert parse_ams_filament_backup_from_home_flag(-1067070056) is True
+        assert parse_ams_filament_backup_from_home_flag(-1067069137) is False
+
+    @pytest.mark.parametrize("value", [None, "1024", True, 10.0, [1024]])
+    def test_invalid_returns_none(self, value):
+        assert parse_ams_filament_backup_from_home_flag(value) is None

@@ -86,6 +86,22 @@ def parse_ams_filament_backup_from_cfg(cfg_raw: object) -> bool | None:
         return None
 
 
+def parse_ams_filament_backup_from_home_flag(home_flag: object) -> bool | None:
+    """Extract AMS Filament Backup state from a push_status ``print.home_flag`` value.
+
+    Bambu Studio reads bit 10 for every family (DeviceManager.cpp
+    ``parse_home_flag``: ``SetAutoRefillEnabled((flag >> 10) & 0x1)``). It's
+    the only source on the P1S, P1P, A1 and A1 Mini, which never send ``cfg``
+    (#3259). On every printer that sends both, the two bits agree in all
+    captured snapshots, ON and OFF alike. Returns ``None`` for anything that
+    isn't an integer.
+    """
+    if isinstance(home_flag, bool) or not isinstance(home_flag, int):
+        return None
+    # Negative values are the 32-bit flag read as signed; bit 10 is the same.
+    return bool((home_flag >> 10) & 1)
+
+
 def is_printer_status_frame(print_data: dict) -> bool:
     """True when a ``print`` payload is the printer reporting its own state.
 
@@ -1446,6 +1462,10 @@ class BambuMQTTClient:
         self._xcam_hold_start: dict[str, float] = {}
         self._xcam_hold_time: float = 3.0  # Ignore incoming data for 3 seconds after command
 
+        # True once the printer has sent `cfg`; from then on AMS Filament Backup
+        # is read from cfg only, never from home_flag (#3259).
+        self._backup_cfg_seen: bool = False
+
         # Track last requested tray ID for H2D dual-nozzle printers
         # H2D only reports slot number (0-3) in tray_now, not global tray ID
         # We use our tracked value to resolve the correct global ID
@@ -2267,6 +2287,14 @@ class BambuMQTTClient:
             # DeviceManager.cpp:4961 SetAutoRefillEnabled(get_flag_bits(cfg, 18))
             # and live H2D ON/OFF capture 2026-06-20.
             #
+            # Families without cfg (P1S, P1P, A1, A1 Mini) carry it in home_flag
+            # bit 10 (#3259). That's read only from a full status report (the
+            # same >30-key test as the developer-mode probe) and only while the
+            # printer has never sent cfg: H2D firmware also sends small
+            # heartbeat frames with a partial home_flag (bits 8-9 clear with a
+            # card inserted, which is why the SD-card badge was removed), and
+            # printers that send cfg must keep reading it alone.
+            #
             # Hold-timer guard: when the user just toggled via the badge, the
             # next 1-2 push_status frames may still carry the printer's OLD cfg
             # for ~3 s before the firmware reflects the change. Without this
@@ -2275,11 +2303,13 @@ class BambuMQTTClient:
             # `"cfg": "0"` back, which read as "printer says backup is OFF" and
             # stuck on every family that doesn't repeat `cfg` in its periodic
             # frames — P1S, A1, A1 Mini, A2L (#3040).
-            new_backup = (
-                parse_ams_filament_backup_from_cfg(print_data.get("cfg"))
-                if is_printer_status_frame(print_data)
-                else None
-            )
+            new_backup = None
+            if is_printer_status_frame(print_data):
+                if "cfg" in print_data:
+                    self._backup_cfg_seen = True
+                    new_backup = parse_ams_filament_backup_from_cfg(print_data["cfg"])
+                elif not self._backup_cfg_seen and len(print_data) > 30:
+                    new_backup = parse_ams_filament_backup_from_home_flag(print_data.get("home_flag"))
             if new_backup is not None and new_backup != self.state.ams_filament_backup:
                 hold_start = self._xcam_hold_start.get("print_option_auto_switch_filament")
                 if hold_start is not None and (time.time() - hold_start) <= self._xcam_hold_time:

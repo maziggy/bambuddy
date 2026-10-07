@@ -1218,7 +1218,7 @@ describe('effectivePreferLowest gate (#1766)', () => {
     expect(effectivePreferLowest(true, true)).toBe(true);
   });
 
-  it('passes through when backup is unknown (null/undefined — A1 family)', () => {
+  it('passes through when backup is unknown (null/undefined)', () => {
     expect(effectivePreferLowest(true, null)).toBe(true);
     expect(effectivePreferLowest(true, undefined)).toBe(true);
   });

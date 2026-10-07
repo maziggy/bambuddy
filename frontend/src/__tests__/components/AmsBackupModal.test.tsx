@@ -140,7 +140,7 @@ describe('AmsBackupModal', () => {
     expect(onToggle).toHaveBeenCalledWith(false);
   });
 
-  it('toggle is disabled when state is unknown (A1 family)', async () => {
+  it('toggle is disabled when state is unknown', async () => {
     render(
       <AmsBackupModal
         isOpen

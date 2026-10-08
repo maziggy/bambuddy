@@ -6285,7 +6285,7 @@ export default {
   },
   notifications: {
     notifyLockScreenWidgets: '잠금 화면 위젯 (iOS)',
-    notifyLockScreenWidgetsHelp: 'iOS 잠금 화면 사용자화에서 Notify! 위젯을 추가하고 프린터를 선택하세요. 실시간 카운트다운 없이 상태, 진행률 및 문제를 표시합니다. iOS는 약 15분 또는 그보다 긴 간격으로 새로 고칩니다.',
+    notifyLockScreenWidgetsHelp: '유지보수 모드가 아닌 활성 프린터에만 위젯이 생성됩니다. Notify!는 기기당 총 10개의 위젯을 허용합니다. iOS 잠금 화면 사용자화에서 Notify! 위젯을 추가하고 프린터를 선택하세요. 실시간 카운트다운 없이 상태, 진행률 및 문제를 표시합니다. iOS는 약 15분 또는 그보다 긴 간격으로 새로 고칩니다.',
     notifyPhotoUnavailable: '브라우저 및 그룹 수신자는 텍스트 알림만 지원하며 사진을 첨부할 수 없습니다.',
     notifyShowStage: '출력 단계 표시',
     notifyTimeSensitive: '문제 발생 시 긴급 알림',

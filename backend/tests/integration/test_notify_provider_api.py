@@ -31,6 +31,31 @@ async def test_notify_settings_round_trip_and_push_flags_remain_independent(asyn
     assert response.json()["on_print_progress"] is False
 
 
+async def test_notify_crud_refreshes_worker_configuration_without_remote_work(async_client):
+    with (
+        patch("backend.app.api.routes.notifications.notify_live_activities.providers_changed") as live_changed,
+        patch("backend.app.api.routes.notifications.notify_widgets.providers_changed") as widgets_changed,
+        patch("backend.app.api.routes.notifications.notify_live_activities.schedule_cleanup", new_callable=AsyncMock),
+        patch("backend.app.api.routes.notifications.notify_widgets.schedule_cleanup", new_callable=AsyncMock),
+        patch(
+            "backend.app.api.routes.notifications.notify_live_activities.cleanup_provider", new_callable=AsyncMock
+        ) as live_http,
+        patch(
+            "backend.app.api.routes.notifications.notify_widgets.cleanup_provider", new_callable=AsyncMock
+        ) as widget_http,
+    ):
+        provider_id = await create_provider(async_client)
+        assert live_changed.call_count == widgets_changed.call_count == 1
+        response = await async_client.patch(f"/api/v1/notifications/{provider_id}", json={"enabled": False})
+        assert response.status_code == 200
+        assert live_changed.call_count == widgets_changed.call_count == 2
+        response = await async_client.delete(f"/api/v1/notifications/{provider_id}")
+        assert response.status_code == 200
+        assert live_changed.call_count == widgets_changed.call_count == 3
+    live_http.assert_not_awaited()
+    widget_http.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     "config",
     [
@@ -58,14 +83,14 @@ async def test_empty_config_update_is_rejected_and_keeps_previous_credentials(as
     assert saved.json()["config"] == CONFIG
 
 
-async def test_credential_change_ends_old_device_tiles_with_old_credentials(async_client):
+async def test_credential_change_queues_old_device_cleanup_with_old_credentials(async_client):
     provider_id = await create_provider(async_client)
     with (
         patch(
-            "backend.app.api.routes.notifications.notify_live_activities.cleanup_provider", new_callable=AsyncMock
+            "backend.app.api.routes.notifications.notify_live_activities.schedule_cleanup", new_callable=AsyncMock
         ) as cleanup,
         patch(
-            "backend.app.api.routes.notifications.notify_widgets.cleanup_provider", new_callable=AsyncMock
+            "backend.app.api.routes.notifications.notify_widgets.schedule_cleanup", new_callable=AsyncMock
         ) as widget_cleanup,
     ):
         response = await async_client.patch(
@@ -81,10 +106,10 @@ async def test_disabling_or_changing_push_thread_leaves_cleanup_to_durable_worke
     provider_id = await create_provider(async_client)
     with (
         patch(
-            "backend.app.api.routes.notifications.notify_live_activities.cleanup_provider", new_callable=AsyncMock
+            "backend.app.api.routes.notifications.notify_live_activities.schedule_cleanup", new_callable=AsyncMock
         ) as cleanup,
         patch(
-            "backend.app.api.routes.notifications.notify_widgets.cleanup_provider", new_callable=AsyncMock
+            "backend.app.api.routes.notifications.notify_widgets.schedule_cleanup", new_callable=AsyncMock
         ) as widget_cleanup,
     ):
         response = await async_client.patch(
@@ -96,14 +121,14 @@ async def test_disabling_or_changing_push_thread_leaves_cleanup_to_durable_worke
     widget_cleanup.assert_not_awaited()
 
 
-async def test_delete_ends_tiles_before_forgetting_credentials(async_client):
+async def test_delete_queues_cleanup_before_forgetting_credentials(async_client):
     provider_id = await create_provider(async_client)
     with (
         patch(
-            "backend.app.api.routes.notifications.notify_live_activities.cleanup_provider", new_callable=AsyncMock
+            "backend.app.api.routes.notifications.notify_live_activities.schedule_cleanup", new_callable=AsyncMock
         ) as cleanup,
         patch(
-            "backend.app.api.routes.notifications.notify_widgets.cleanup_provider", new_callable=AsyncMock
+            "backend.app.api.routes.notifications.notify_widgets.schedule_cleanup", new_callable=AsyncMock
         ) as widget_cleanup,
     ):
         response = await async_client.delete(f"/api/v1/notifications/{provider_id}")
@@ -137,10 +162,10 @@ async def test_switching_provider_type_cleans_up_both_owned_notify_resources(asy
     provider_id = await create_provider(async_client)
     with (
         patch(
-            "backend.app.api.routes.notifications.notify_live_activities.cleanup_provider", new_callable=AsyncMock
+            "backend.app.api.routes.notifications.notify_live_activities.schedule_cleanup", new_callable=AsyncMock
         ) as cleanup,
         patch(
-            "backend.app.api.routes.notifications.notify_widgets.cleanup_provider", new_callable=AsyncMock
+            "backend.app.api.routes.notifications.notify_widgets.schedule_cleanup", new_callable=AsyncMock
         ) as widget_cleanup,
     ):
         response = await async_client.patch(

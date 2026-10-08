@@ -1617,7 +1617,10 @@ def _progress_milestone_to_notify(printer_id: int, state: PrinterState) -> int |
 
 async def on_printer_status_change(printer_id: int, state: PrinterState):
     """Handle printer status changes - broadcast via WebSocket."""
-    notify_live_activities.observe(printer_id, state)
+    try:
+        notify_live_activities.observe(printer_id, state)
+    except Exception:
+        logging.getLogger(__name__).exception("Notify Live Activity status hook failed for printer %s", printer_id)
     # Connected-edge reconciliation (#1542 follow-up). When the printer
     # transitions disconnected → connected — which covers both Bambuddy
     # startup (no prior connection) and a mid-session MQTT reconnect — fire
@@ -4065,7 +4068,10 @@ async def on_print_start(printer_id: int, data: dict):
 
     logger.info("[CALLBACK] on_print_start called for printer %s, data keys: %s", printer_id, list(data.keys()))
 
-    notify_live_activities.print_started(printer_id, printer_manager.get_status(printer_id), data)
+    try:
+        notify_live_activities.print_started(printer_id, printer_manager.get_status(printer_id), data)
+    except Exception:
+        logger.exception("Notify Live Activity start hook failed for printer %s", printer_id)
 
     # Clear any stale user-stopped flag from previous print cycles
     _user_stopped_printers.discard(printer_id)
@@ -7440,7 +7446,10 @@ async def on_print_complete(printer_id: int, data: dict):
     # which auto-dispatched the next queued print onto a fouled bed two seconds
     # after a touchscreen-abort (#1171). Persisted to DB so the gate survives
     # Auto Off power cycles and Bambuddy restarts.
-    notify_live_activities.print_finished(printer_id, data)
+    try:
+        notify_live_activities.print_finished(printer_id, data)
+    except Exception:
+        logger.exception("Notify Live Activity completion hook failed for printer %s", printer_id)
     _final_status = data.get("status", "completed")
     if _final_status in ("completed", "failed", "aborted", "cancelled"):
         printer_manager.set_awaiting_plate_clear(printer_id, True)

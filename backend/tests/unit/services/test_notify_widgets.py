@@ -222,7 +222,6 @@ async def test_ambiguous_create_with_id_recovers_exact_id(setup):
 @pytest.mark.parametrize(
     "error",
     [
-        NotifyError("capacity", status_code=400, payload={"message": "Maximum of 10 widgets"}),
         NotifyError("disabled", status_code=503),
         NotifyError("throttled", status_code=429, retry_after_seconds=1800),
     ],
@@ -483,3 +482,255 @@ async def test_credential_whitespace_does_not_create_duplicate_ownership(setup):
     await service.tick()
     assert api.create_widget.await_count == 1
     api.delete_widget.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dormant_widgets_stop_all_periodic_database_work(setup):
+    service, api, factory, clock, states = setup
+    await configure(factory, lock_screen_widgets=False)
+    queries = []
+    engine = factory.kw["bind"]
+
+    def record(connection, cursor, statement, parameters, context, many):
+        queries.append(statement)
+
+    event.listen(engine.sync_engine, "before_cursor_execute", record)
+    service.worker_interval = 0.01
+    service.start()
+    try:
+        for _ in range(100):
+            if not service._initial_discovery:
+                break
+            await asyncio.sleep(0.001)
+        queries.clear()
+        await asyncio.sleep(0.05)
+        assert queries == []
+        api.create_widget.assert_not_awaited()
+    finally:
+        await service.close()
+        event.remove(engine.sync_engine, "before_cursor_execute", record)
+
+
+@pytest.mark.asyncio
+async def test_inactive_printer_never_gets_widget_and_existing_widget_is_removed(setup):
+    service, api, factory, clock, states = setup
+    await service.tick()
+    async with factory() as db:
+        (await db.get(Printer, 1)).is_active = False
+        await db.commit()
+    await service.tick()
+    api.delete_widget.assert_awaited_once_with("WG123456", "secret")
+    await service.tick()
+    assert api.create_widget.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_capacity_refusal_waits_for_provider_save_instead_of_forever_retrying(setup):
+    service, api, factory, clock, states = setup
+    api.create_widget.side_effect = NotifyError(
+        "capacity", status_code=400, payload={"message": "Maximum of 10 widgets"}
+    )
+    await service.tick()
+    for _ in range(3):
+        clock[0] += timedelta(hours=1)
+        await service.tick()
+    assert api.create_widget.await_count == 1
+    assert (await rows(factory))[0].state == "capacity"
+    service.providers_changed()
+    api.create_widget.side_effect = None
+    await service.tick()
+    assert api.create_widget.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_all_printers_is_bounded_to_ten_local_widgets(setup):
+    service, api, factory, clock, states = setup
+    async with factory() as db:
+        for printer_id in range(2, 13):
+            db.add(
+                Printer(
+                    id=printer_id,
+                    name=f"Printer {printer_id}",
+                    serial_number=f"serial{printer_id}",
+                    ip_address="127.0.0.1",
+                    access_code="12345678",
+                )
+            )
+        await db.commit()
+    await service.tick()
+    assert api.create_widget.await_count == 10
+    for _ in range(3):
+        clock[0] += timedelta(hours=1)
+        await service.tick()
+    assert api.create_widget.await_count == 10
+    assert len(await rows(factory)) == 10
+
+
+@pytest.mark.asyncio
+async def test_delete_during_inflight_create_is_nonblocking_and_cleans_returned_handle(setup):
+    service, api, factory, clock, states = setup
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def create(*args):
+        entered.set()
+        await release.wait()
+        return {"widgetId": "WG123456"}
+
+    api.create_widget.side_effect = create
+    tick = asyncio.create_task(service.tick())
+    await entered.wait()
+    await asyncio.wait_for(service.schedule_cleanup(1, {"device_id": "ABC12345", "token": "secret"}), 0.2)
+    async with factory() as db:
+        await db.delete(await db.get(NotificationProvider, 1))
+        await db.commit()
+    release.set()
+    await tick
+    try:
+        for _ in range(100):
+            if api.delete_widget.await_count:
+                break
+            await asyncio.sleep(0.005)
+        api.delete_widget.assert_awaited_once_with("WG123456", "secret")
+        assert await rows(factory) == []
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_retiring_during_device_preflight_prevents_create(setup):
+    service, api, factory, clock, states = setup
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def preflight(*args):
+        entered.set()
+        await release.wait()
+        return {"widgets": []}
+
+    api.list_widgets.side_effect = preflight
+    tick = asyncio.create_task(service.tick())
+    await entered.wait()
+    await service.schedule_cleanup(1, {"device_id": "ABC12345", "token": "secret"})
+    async with factory() as db:
+        await db.delete(await db.get(NotificationProvider, 1))
+        await db.commit()
+    release.set()
+    await tick
+    await service.close()
+    api.create_widget.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_boot_cleans_active_widget_for_disabled_provider_without_printer_queries(setup):
+    service, api, factory, clock, states = setup
+    await service.tick()
+    await configure(factory, lock_screen_widgets=False)
+    statements = []
+    engine = factory.kw["bind"]
+
+    def record(connection, cursor, statement, parameters, context, many):
+        statements.append(statement.lower())
+
+    event.listen(engine.sync_engine, "before_cursor_execute", record)
+    restarted = NotifyWidgetService(factory, api, states.get)
+    restarted.start()
+    try:
+        for _ in range(100):
+            if not await rows(factory):
+                break
+            await asyncio.sleep(0.005)
+        assert await rows(factory) == []
+        api.delete_widget.assert_awaited_once_with("WG123456", "secret")
+        assert not any("from printers" in statement for statement in statements)
+    finally:
+        await restarted.close()
+        event.remove(engine.sync_engine, "before_cursor_execute", record)
+
+
+@pytest.mark.asyncio
+async def test_cleanup_queued_during_same_generation_cleanup_is_not_lost(setup):
+    service, api, factory, clock, states = setup
+    await service.tick()
+    entered, release = asyncio.Event(), asyncio.Event()
+    batches = []
+
+    async def cleanup(provider_id, config, *, captured_rows):
+        batches.append(captured_rows)
+        if len(batches) == 1:
+            entered.set()
+            await release.wait()
+
+    service.cleanup_provider = cleanup
+    config = {"device_id": "ABC12345", "token": "secret"}
+    await service.schedule_cleanup(1, config)
+    await entered.wait()
+    await service.schedule_cleanup(1, config)
+    release.set()
+    try:
+        for _ in range(100):
+            if len(batches) == 2:
+                break
+            await asyncio.sleep(0.005)
+        assert len(batches) == 2
+        assert batches[0][0].widget_id == batches[1][0].widget_id == "WG123456"
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_transient_startup_database_failure_retries_then_becomes_dormant(setup):
+    service, api, factory, clock, states = setup
+    await configure(factory, lock_screen_widgets=False)
+    attempts = 0
+
+    class FailOnce:
+        async def __aenter__(self):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise RuntimeError("temporary database failure")
+            self.db = factory()
+            return await self.db.__aenter__()
+
+        async def __aexit__(self, *args):
+            await self.db.__aexit__(*args)
+
+    service._session = FailOnce
+    service._retry_delay = 0.001
+    service.start()
+    try:
+        for _ in range(100):
+            if not service._initial_discovery:
+                break
+            await asyncio.sleep(0.002)
+        assert service._provider_enabled is False
+        assert attempts >= 2
+        settled = attempts
+        await asyncio.sleep(0.02)
+        assert attempts == settled
+        api.create_widget.assert_not_awaited()
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_existing_widget_success_does_not_clear_another_widgets_capacity_warning(setup):
+    service, api, factory, clock, states = setup
+    async with factory() as db:
+        db.add(Printer(id=2, name="Printer 2", serial_number="serial2", ip_address="127.0.0.2", access_code="12345678"))
+        await db.commit()
+    capacity = NotifyError("capacity", status_code=400, payload={"message": "Maximum of 10 widgets"})
+    api.create_widget.side_effect = [{"widgetId": "WG123456"}, capacity]
+    await service.tick()
+    states[1] = state(progress=43)
+    clock[0] += timedelta(minutes=2)
+    await service.tick()
+    api.update_widget.assert_awaited_once()
+    async with factory() as db:
+        provider = await db.get(NotificationProvider, 1)
+        assert provider.last_error.startswith("Notify! widget capacity: ")
+    service.providers_changed()
+    api.create_widget.side_effect = None
+    api.create_widget.return_value = {"widgetId": "WG654321"}
+    await service.tick()
+    async with factory() as db:
+        assert (await db.get(NotificationProvider, 1)).last_error is None

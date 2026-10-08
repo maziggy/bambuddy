@@ -6522,7 +6522,7 @@ export default {
   // Bildirimler
   notifications: {
     notifyLockScreenWidgets: 'Kilit Ekranı Araç Takımları (iOS)',
-    notifyLockScreenWidgetsHelp: 'iOS Kilit Ekranı özelleştirmesinden bir Notify! araç takımı ekleyip yazıcı seçin. Canlı geri sayım olmadan durum, ilerleme ve sorunları gösterir. iOS yaklaşık 15 dakikada bir veya daha seyrek yeniler.',
+    notifyLockScreenWidgetsHelp: 'Yalnızca bakım modu dışındaki etkin yazıcılar için araç takımı oluşturulur. Notify! cihaz başına toplam 10 araç takımına izin verir. iOS Kilit Ekranı özelleştirmesinden bir Notify! araç takımı ekleyip yazıcı seçin. Canlı geri sayım olmadan durum, ilerleme ve sorunları gösterir. iOS yaklaşık 15 dakikada bir veya daha seyrek yeniler.',
     notifyPhotoUnavailable: 'Tarayıcı ve grup alıcıları yalnızca metin bildirimlerini destekler; fotoğraf ekleri kullanılamaz.',
     notifyShowStage: 'Baskı aşamasını göster',
     notifyTimeSensitive: 'Zamana duyarlı sorun uyarıları',

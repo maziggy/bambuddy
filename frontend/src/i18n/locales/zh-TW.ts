@@ -6548,7 +6548,7 @@ export default {
   // Notifications
   notifications: {
     notifyLockScreenWidgets: '鎖定畫面小工具（iOS）',
-    notifyLockScreenWidgetsHelp: '從 iOS 自訂鎖定畫面新增 Notify! 小工具並選擇印表機。它顯示狀態、進度和問題，不提供即時倒數計時。iOS 大約每 15 分鐘或更久更新一次。',
+    notifyLockScreenWidgetsHelp: '僅為未處於維護模式的啟用印表機建立小工具。Notify! 每台裝置總共允許最多 10 個小工具。 從 iOS 自訂鎖定畫面新增 Notify! 小工具並選擇印表機。它顯示狀態、進度和問題，不提供即時倒數計時。iOS 大約每 15 分鐘或更久更新一次。',
     notifyPhotoUnavailable: '瀏覽器和群組收件者僅支援文字通知，無法附加照片。',
     notifyShowStage: '顯示列印階段',
     notifyTimeSensitive: '即時問題警示',

@@ -6550,7 +6550,7 @@ export default {
   // Notifications
   notifications: {
     notifyLockScreenWidgets: 'Widgets de l’écran verrouillé (iOS)',
-    notifyLockScreenWidgetsHelp: 'Ajoutez un widget Notify! via la personnalisation de l’écran verrouillé iOS et sélectionnez une imprimante. Il affiche l’état, la progression et les problèmes sans compte à rebours en direct. iOS actualise environ toutes les 15 minutes ou plus.',
+    notifyLockScreenWidgetsHelp: 'Seules les imprimantes actives hors mode maintenance reçoivent des widgets. Notify! autorise un total de 10 widgets par appareil. Ajoutez un widget Notify! via la personnalisation de l’écran verrouillé iOS et sélectionnez une imprimante. Il affiche l’état, la progression et les problèmes sans compte à rebours en direct. iOS actualise environ toutes les 15 minutes ou plus.',
     notifyPhotoUnavailable: 'Les destinataires de navigateur et de groupe ne prennent en charge que les notifications textuelles ; les photos jointes ne sont pas disponibles.',
     notifyShowStage: 'Afficher l’étape d’impression',
     notifyTimeSensitive: 'Alertes de problème urgentes',

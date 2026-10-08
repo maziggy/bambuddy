@@ -6615,7 +6615,7 @@ export default {
   // Notifications
   notifications: {
     notifyLockScreenWidgets: 'Lock Screen Widgets (iOS)',
-    notifyLockScreenWidgetsHelp: 'Add a Notify! widget from iOS Customize Lock Screen and select a printer. It shows status, progress and problems without a live countdown. iOS refreshes roughly every 15 minutes or longer.',
+    notifyLockScreenWidgetsHelp: 'Only active printers outside maintenance mode receive widgets. Notify! allows 10 widgets per device in total. Add a Notify! widget from iOS Customize Lock Screen and select a printer. It shows status, progress and problems without a live countdown. iOS refreshes roughly every 15 minutes or longer.',
     notifyPhotoUnavailable: 'Browser and group recipients support text notifications only; photo attachments are unavailable.',
     notifyShowStage: 'Show print stage',
     notifyTimeSensitive: 'Time Sensitive problem alerts',

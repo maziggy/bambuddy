@@ -613,6 +613,9 @@ async def test_reenable_resumes_current_print_after_successful_cleanup(setup):
         provider.enabled = True
         await db.commit()
     await service.tick()
+    assert api.start_activity.await_count == 1  # Wait for fresh telemetry after dormant time.
+    service.observe(1, state())
+    await service.tick()
     assert api.start_activity.await_count == 2
 
 
@@ -634,6 +637,7 @@ async def test_reenable_waits_for_failed_cleanup_before_restarting(setup):
     api.end_activity.side_effect = None
     clock[0] += timedelta(minutes=2)
     await service.tick()
+    service.observe(1, state())
     await service.tick()
     assert api.start_activity.await_count == 2
 
@@ -670,3 +674,121 @@ async def test_disabling_optional_metrics_clears_chips_and_preserves_timer(setup
     assert content["metrics"] is None
     assert content["endsIn"] == 840
     assert api.start_activity.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_dormant_worker_has_no_periodic_sql_or_mqtt_wakeups(setup):
+    import asyncio
+
+    from sqlalchemy import event
+
+    service, api, factory, clock = setup
+    async with factory() as db:
+        provider = await db.get(NotificationProvider, 1)
+        provider.enabled = False
+        await db.commit()
+    queries = []
+    engine = factory.kw["bind"]
+
+    def record(connection, cursor, statement, parameters, context, many):
+        queries.append(statement)
+
+    event.listen(engine.sync_engine, "before_cursor_execute", record)
+    service.worker_interval = 0.01
+    service.start()
+    try:
+        for _ in range(100):
+            if not service._initial_discovery:
+                break
+            await asyncio.sleep(0.001)
+        queries.clear()
+        service.observe(1, state())
+        service.print_started(1, state())
+        service.print_finished(1, {"subtask_id": "job1", "status": "completed"})
+        await asyncio.sleep(0.05)
+        assert queries == []
+        assert service._snapshots == {}
+        api.start_activity.assert_not_awaited()
+    finally:
+        await service.close()
+        event.remove(engine.sync_engine, "before_cursor_execute", record)
+
+
+@pytest.mark.asyncio
+async def test_startup_waits_for_real_status_before_touching_existing_activity(setup):
+    service, api, factory, clock = await start(setup)
+    clock[0] += timedelta(minutes=2)
+    restarted = NotifyLiveActivityService(factory, api)
+    await restarted.tick()
+    api.get_activity.assert_not_awaited()
+    restarted.observe(1, state(state="unknown", progress=0))
+    await restarted.tick()
+    api.get_activity.assert_not_awaited()
+    restarted.observe(1, state())
+    await restarted.tick()
+    api.get_activity.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_scheduled_cleanup_does_not_wait_for_create_and_keeps_late_handle(setup):
+    import asyncio
+
+    service, api, factory, clock = setup
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def create(*args):
+        entered.set()
+        await release.wait()
+        return {"activityId": "LA123456"}
+
+    api.start_activity.side_effect = create
+    service.observe(1, state())
+    tick = asyncio.create_task(service.tick())
+    await entered.wait()
+    await asyncio.wait_for(service.schedule_cleanup(1, {"device_id": "ABC12345", "token": "secret"}), 0.2)
+    async with factory() as db:
+        await db.delete(await db.get(NotificationProvider, 1))
+        await db.commit()
+    release.set()
+    await tick
+    try:
+        for _ in range(100):
+            if api.end_activity.await_count:
+                break
+            await asyncio.sleep(0.005)
+        api.end_activity.assert_awaited_once_with("LA123456", "secret")
+        assert await rows(factory) == []
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_boot_cleans_disabled_activity_without_printer_queries_or_pruning(setup):
+    import asyncio
+
+    from sqlalchemy import event
+
+    service, api, factory, clock = await start(setup)
+    async with factory() as db:
+        (await db.get(NotificationProvider, 1)).enabled = False
+        await db.commit()
+    statements = []
+    engine = factory.kw["bind"]
+
+    def record(connection, cursor, statement, parameters, context, many):
+        statements.append(statement.lower())
+
+    event.listen(engine.sync_engine, "before_cursor_execute", record)
+    restarted = NotifyLiveActivityService(factory, api)
+    restarted.start()
+    try:
+        for _ in range(100):
+            if (await rows(factory))[0].state == "ended":
+                break
+            await asyncio.sleep(0.005)
+        assert (await rows(factory))[0].state == "ended"
+        assert not any("from printers" in statement for statement in statements)
+        assert not any(statement.startswith("delete from notification_live_activities") for statement in statements)
+    finally:
+        await restarted.close()
+        event.remove(engine.sync_engine, "before_cursor_execute", record)

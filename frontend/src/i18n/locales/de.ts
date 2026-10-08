@@ -6562,7 +6562,7 @@ export default {
   // Notifications
   notifications: {
     notifyLockScreenWidgets: 'Sperrbildschirm-Widgets (iOS)',
-    notifyLockScreenWidgetsHelp: 'Füge über die iOS-Sperrbildschirmanpassung ein Notify!-Widget hinzu und wähle einen Drucker. Es zeigt Status, Fortschritt und Probleme ohne laufenden Countdown. iOS aktualisiert etwa alle 15 Minuten oder seltener.',
+    notifyLockScreenWidgetsHelp: 'Nur aktive Drucker außerhalb des Wartungsmodus erhalten Widgets. Notify! erlaubt insgesamt 10 Widgets pro Gerät. Füge über die iOS-Sperrbildschirmanpassung ein Notify!-Widget hinzu und wähle einen Drucker. Es zeigt Status, Fortschritt und Probleme ohne laufenden Countdown. iOS aktualisiert etwa alle 15 Minuten oder seltener.',
     notifyPhotoUnavailable: 'Browser- und Gruppenempfänger unterstützen nur Textmitteilungen; Fotoanhänge sind nicht verfügbar.',
     notifyShowStage: 'Druckphase anzeigen',
     notifyTimeSensitive: 'Dringliche Problemmeldungen',

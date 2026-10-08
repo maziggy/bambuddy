@@ -1030,12 +1030,16 @@ describe('AddNotificationModal — Notify!', () => {
     const user = userEvent.setup();
     render(<AddNotificationModal provider={notifyProvider()} onClose={onClose} />);
     expect(screen.getByText(/iOS refreshes roughly every 15 minutes or longer/)).toBeInTheDocument();
+    expect(screen.getByText(/Only active printers outside maintenance mode receive widgets/)).toBeInTheDocument();
+    expect(screen.getByText(/Notify! allows 10 widgets per device in total/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue('All printers')).toBeEnabled();
     await user.click(widgetsSwitch());
     await user.click(screen.getByRole('button', { name: /^save$/i }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(captured).toMatchObject({
       on_print_start: false,
       on_print_progress: false,
+      printer_id: null,
       config: { token: 'notify-secret', live_activities: false, lock_screen_widgets: true },
     });
   });

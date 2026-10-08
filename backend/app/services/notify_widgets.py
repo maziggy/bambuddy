@@ -11,7 +11,7 @@ import logging
 from datetime import timedelta
 
 import httpx
-from sqlalchemy import case, delete, select, update
+from sqlalchemy import and_, case, delete, or_, select, update
 
 from backend.app.core.database import async_session
 from backend.app.models.notification import NotificationProvider
@@ -19,9 +19,11 @@ from backend.app.models.notification_lock_screen_widget import NotificationLockS
 from backend.app.models.printer import Printer
 from backend.app.services.notify_client import NotifyClient, NotifyError
 from backend.app.services.notify_live_activities import PrintSnapshot, _credential_key as _fingerprint, _now
+from backend.app.services.notify_worker import NotifyWorkerLifecycle
 
 logger = logging.getLogger(__name__)
 _ERROR_PREFIX = "Notify! Lock Screen widget: "
+_CAPACITY_ERROR_PREFIX = "Notify! widget capacity: "
 _INTERVAL = 60
 
 
@@ -89,7 +91,12 @@ def _status(printer_id):
     return printer_manager.get_status(printer_id)
 
 
-class NotifyWidgetService:
+class NotifyWidgetService(NotifyWorkerLifecycle):
+    ownership_model = NotificationLockScreenWidget
+    feature_field = "lock_screen_widgets"
+    worker_name = "notify-lock-screen-widgets"
+    _cleanup_key = staticmethod(_credential_key)
+
     def __init__(self, session_factory=None, client=None, state_getter=None):
         self._session = session_factory or async_session
         self._client = client
@@ -97,23 +104,15 @@ class NotifyWidgetService:
         self._state = state_getter or _status
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
+        self._init_worker()
+        self._capacity_devices: set[str] = set()
+        self._retry_capacity = False
+        self._over_capacity_providers: set[int] = set()
 
-    def start(self):
-        if self._task is None or self._task.done():
-            self._task = asyncio.create_task(self._run(), name="notify-lock-screen-widgets")
-
-    async def close(self):
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
-        if self._http:
-            await self._http.aclose()
-            self._http = None
-            self._client = None
+    def providers_changed(self):
+        self._retry_capacity = True
+        self._capacity_devices.clear()
+        super().providers_changed()
 
     async def _api(self):
         if self._client is None:
@@ -122,16 +121,6 @@ class NotifyWidgetService:
             )
             self._client = NotifyClient(self._http)
         return self._client
-
-    async def _run(self):
-        while True:
-            try:
-                await self.tick()
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("Notify Lock Screen widget reconciliation failed")
-            await asyncio.sleep(_INTERVAL)
 
     async def _save(self, row):
         async with self._session() as db:
@@ -149,6 +138,7 @@ class NotifyWidgetService:
         async with self._session() as db:
             await db.execute(delete(NotificationLockScreenWidget).where(NotificationLockScreenWidget.id == row.id))
             await db.commit()
+        row.state = "deleted"
 
     async def tick(self):
         async with self._lock:
@@ -156,8 +146,22 @@ class NotifyWidgetService:
                 providers = (
                     await db.scalars(select(NotificationProvider).where(NotificationProvider.provider_type == "notify"))
                 ).all()
+                enabled = any(self._eligible(provider) for provider in providers)
+                previously_enabled = self._provider_enabled
+                self._provider_enabled = enabled
+                if not enabled and not previously_enabled and not self._cleanup_once and not self._cleanup_pending:
+                    return
                 rows = (await db.scalars(select(NotificationLockScreenWidget))).all()
-                printers = dict((await db.execute(select(Printer.id, Printer.name))).all())
+                self._working_rows = rows
+                printers = (
+                    dict((await db.execute(select(Printer.id, Printer.name).where(Printer.is_active.is_(True)))).all())
+                    if enabled
+                    else {}
+                )
+
+            retry_capacity, self._retry_capacity = self._retry_capacity, False
+            if not retry_capacity:
+                self._capacity_devices.update(row.credential_key for row in rows if row.state == "capacity")
             for provider in providers:
                 config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
                 enabled = (
@@ -168,7 +172,25 @@ class NotifyWidgetService:
                 credential = _credential_key(config)
                 owned = [r for r in rows if r.provider_id == provider.id]
                 selected = {pid: name for pid, name in printers.items() if provider.printer_id in (None, pid)}
+                if len(selected) > 10:
+                    # Preserve already-owned widgets first; adding an eleventh
+                    # printer must not delete one merely because query order changed.
+                    retained = [row.printer_id for row in owned if row.printer_id in selected]
+                    chosen = list(dict.fromkeys([*retained, *sorted(selected)]))[:10]
+                    selected = {pid: selected[pid] for pid in chosen}
+                    if provider.id not in self._over_capacity_providers:
+                        logger.warning(
+                            "Notify widget provider %s exceeds ten active printers; select a printer", provider.id
+                        )
+                        self._over_capacity_providers.add(provider.id)
+                else:
+                    self._over_capacity_providers.discard(provider.id)
                 for row in owned:
+                    if retry_capacity and row.state == "capacity":
+                        row.state, row.failures, row.next_attempt_at = "pending", 0, None
+                        await self._save(row)
+                    if self._retired_row(row):
+                        continue
                     if row.credential_key != credential:
                         continue  # Credential-edit hook cleans up with the previous token.
                     if row.state == "deleting" or not enabled or row.printer_id not in selected:
@@ -177,13 +199,15 @@ class NotifyWidgetService:
                         await self._failure(
                             row, NotifyError("Previous creation was interrupted", delivery_state="unknown")
                         )
-                    elif row.state not in {"uncertain", "suppressed"}:
+                    elif row.state not in {"uncertain", "suppressed", "capacity"}:
                         await self._sync(
                             row, config, widget_content(selected[row.printer_id], self._state(row.printer_id))
                         )
                 if not enabled:
                     continue
                 for printer_id, name in selected.items():
+                    if credential in self._capacity_devices:
+                        break
                     if any(r.printer_id == printer_id for r in owned):
                         continue
                     row = NotificationLockScreenWidget(
@@ -195,12 +219,21 @@ class NotifyWidgetService:
                         created_at=_now(),
                         failures=0,
                     )
+                    if self._retired_row(row):
+                        continue
+                    self._working_rows.append(row)
                     async with self._session() as db:
                         db.add(row)
                         await db.commit()
                     await self._sync(row, config, widget_content(name, self._state(printer_id)))
 
+            self._cleanup_pending = any(
+                row.state == "deleting" and row.provider_id in {p.id for p in providers} for row in rows
+            )
+
     async def _sync(self, row, config, content):
+        if self._retired_row(row):
+            return
         if row.next_attempt_at and row.next_attempt_at > _now():
             return
         encoded = json.dumps(content, ensure_ascii=False, sort_keys=True)
@@ -220,6 +253,9 @@ class NotifyWidgetService:
                 # happened. The next process must never repeat new=1 blindly.
                 row.state = "uncertain"
                 await self._save(row)
+                if self._retired_row(row):
+                    row.state = "pending"  # No create was sent; cleanup need not warn of an unknown widget.
+                    return
                 create_attempted = True
                 result = await api.create_widget(config.get("device_id", ""), config.get("token", ""), content)
                 row.widget_id = result["widgetId"]
@@ -235,7 +271,18 @@ class NotifyWidgetService:
                     update(NotificationProvider)
                     .where(
                         NotificationProvider.id == row.provider_id,
-                        NotificationProvider.last_error.startswith(_ERROR_PREFIX),
+                        or_(
+                            NotificationProvider.last_error.startswith(_ERROR_PREFIX),
+                            and_(
+                                NotificationProvider.last_error.startswith(_CAPACITY_ERROR_PREFIX),
+                                ~select(NotificationLockScreenWidget.id)
+                                .where(
+                                    NotificationLockScreenWidget.provider_id == row.provider_id,
+                                    NotificationLockScreenWidget.state == "capacity",
+                                )
+                                .exists(),
+                            ),
+                        ),
                     )
                     .values(last_error=None, last_error_at=None)
                 )
@@ -264,7 +311,10 @@ class NotifyWidgetService:
             row.state = "suppressed"
         elif not row.widget_id:
             capacity = error.status_code == 400 and "10" in str(error.payload.get("message", ""))
-            if capacity or error.status_code in (429, 503) or error.retry_after_seconds is not None:
+            if capacity:
+                row.state = "capacity"
+                self._capacity_devices.add(row.credential_key)
+            elif error.status_code in (429, 503) or error.retry_after_seconds is not None:
                 row.state = "pending"
             else:
                 row.state = "suppressed"
@@ -274,12 +324,14 @@ class NotifyWidgetService:
         delay = max(_INTERVAL * 2 ** (row.failures - 1), error.retry_after_seconds or 0)
         row.next_attempt_at = _now() + timedelta(seconds=delay)
         await self._save(row)
-        message = _ERROR_PREFIX + str(error)
+        message = (_CAPACITY_ERROR_PREFIX if row.state == "capacity" else _ERROR_PREFIX) + str(error)
         if row.state == "uncertain":
             message += (
                 " Creation could not be confirmed. Check Notify! and remove any duplicate or unwanted widget, "
                 "then turn Lock Screen widgets off and on to retry."
             )
+        elif row.state == "capacity":
+            message += " Free a widget slot in Notify! and save this provider to retry."
         elif error.retry_after_seconds:
             message += f" Retry after {error.retry_after_seconds} seconds."
         async with self._session() as db:
@@ -326,7 +378,7 @@ class NotifyWidgetService:
                     return
         await self._remove(row)
 
-    async def cleanup_provider(self, provider_id: int, old_config: dict):
+    async def cleanup_provider(self, provider_id: int, old_config: dict, *, captured_rows=None):
         """Transfer a token rotation, or clean up before old credentials vanish.
 
         Widgets have no expiry. If a different-device/delete cleanup fails,
@@ -344,6 +396,12 @@ class NotifyWidgetService:
                         )
                     )
                 ).all()
+            if captured_rows is not None:
+                merged = {row.id: row for row in rows}
+                merged.update(
+                    {row.id: row for row in captured_rows if row.credential_key == _credential_key(old_config)}
+                )
+                rows = list(merged.values())
             config = (
                 (json.loads(current.config) if isinstance(current.config, str) else current.config) if current else {}
             )
@@ -367,6 +425,8 @@ class NotifyWidgetService:
                 return
             cleanup_failed = False
             for row in rows:
+                if row.state == "deleted":
+                    continue
                 if row.widget_id:
                     try:
                         await (await self._api()).delete_widget(row.widget_id, old_config.get("token", ""))

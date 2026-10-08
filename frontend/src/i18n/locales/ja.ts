@@ -6563,7 +6563,7 @@ export default {
   // Notifications
   notifications: {
     notifyLockScreenWidgets: 'ロック画面ウィジェット（iOS）',
-    notifyLockScreenWidgetsHelp: 'iOSのロック画面のカスタマイズからNotify!ウィジェットを追加し、プリンターを選択してください。状態、進捗、問題を表示しますが、リアルタイムのカウントダウンはありません。iOSによる更新はおおむね15分間隔、またはそれ以上かかります。',
+    notifyLockScreenWidgetsHelp: 'メンテナンスモードではない有効なプリンターのみウィジェットの対象になります。Notify!ではデバイスごとに合計10個までウィジェットを作成できます。 iOSのロック画面のカスタマイズからNotify!ウィジェットを追加し、プリンターを選択してください。状態、進捗、問題を表示しますが、リアルタイムのカウントダウンはありません。iOSによる更新はおおむね15分間隔、またはそれ以上かかります。',
     notifyPhotoUnavailable: 'ブラウザーとグループ宛てにはテキスト通知のみ送信できます。写真の添付は利用できません。',
     notifyShowStage: '印刷段階を表示',
     notifyTimeSensitive: '問題の即時通知',

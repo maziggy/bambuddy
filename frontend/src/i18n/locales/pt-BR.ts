@@ -6549,7 +6549,7 @@ export default {
   // Notifications
   notifications: {
     notifyLockScreenWidgets: 'Widgets da tela bloqueada (iOS)',
-    notifyLockScreenWidgetsHelp: 'Adicione um widget do Notify! pela personalização da tela bloqueada do iOS e selecione uma impressora. Ele mostra status, progresso e problemas sem contagem regressiva ao vivo. O iOS atualiza a cada 15 minutos ou mais, aproximadamente.',
+    notifyLockScreenWidgetsHelp: 'Apenas impressoras ativas fora do modo de manutenção recebem widgets. O Notify! permite um total de 10 widgets por dispositivo. Adicione um widget do Notify! pela personalização da tela bloqueada do iOS e selecione uma impressora. Ele mostra status, progresso e problemas sem contagem regressiva ao vivo. O iOS atualiza a cada 15 minutos ou mais, aproximadamente.',
     notifyPhotoUnavailable: 'Destinatários de navegador e grupo aceitam apenas notificações de texto; anexos de fotos não estão disponíveis.',
     notifyShowStage: 'Mostrar etapa da impressão',
     notifyTimeSensitive: 'Alertas urgentes de problemas',

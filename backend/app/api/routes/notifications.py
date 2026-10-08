@@ -41,6 +41,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
+def _notify_providers_changed() -> None:
+    """Wake optional workers after a provider edit, without waiting for their HTTP work."""
+    for worker in (notify_live_activities, notify_widgets):
+        try:
+            worker.providers_changed()
+        except Exception:
+            logger.exception("Could not refresh Notify worker configuration")
+
+
 async def _resync_reaction_poller():
     """Start/stop Telegram reaction polls after a provider changed (#3046).
 
@@ -230,6 +239,8 @@ async def create_notification_provider(
     await db.refresh(provider)
 
     logger.info("Created notification provider: %s (%s)", provider.name, provider.provider_type)
+    if provider.provider_type == "notify":
+        _notify_providers_changed()
     await _resync_reaction_poller()
 
     return _provider_to_dict(provider)
@@ -606,8 +617,10 @@ async def update_notification_provider(
     # Refresh opened a new read transaction; close it before remote cleanup.
     await db.commit()
     if old_type == "notify" and changed:
-        await notify_live_activities.cleanup_provider(provider_id, old_config)
-        await notify_widgets.cleanup_provider(provider_id, old_config)
+        await notify_live_activities.schedule_cleanup(provider_id, old_config)
+        await notify_widgets.schedule_cleanup(provider_id, old_config)
+    if old_type == "notify" or provider.provider_type == "notify":
+        _notify_providers_changed()
     logger.info("Updated notification provider: %s", provider.name)
     await _resync_reaction_poller()
 
@@ -630,13 +643,17 @@ async def delete_notification_provider(
     name = provider.name
     if provider.provider_type == "notify":
         config = json.loads(provider.config) if isinstance(provider.config, str) else provider.config
-        # Disable first so the worker cannot start a tile during cleanup.
+        # Retire this provider and capture owned IDs before FK cascade removes
+        # them. Queue remote cleanup; HTTP must never delay this request.
         provider.enabled = False
         await db.commit()
-        await notify_live_activities.cleanup_provider(provider_id, config)
-        await notify_widgets.cleanup_provider(provider_id, config)
+        await notify_live_activities.schedule_cleanup(provider_id, config)
+        await notify_widgets.schedule_cleanup(provider_id, config)
     await db.delete(provider)
     await db.commit()
+
+    if provider.provider_type == "notify":
+        _notify_providers_changed()
 
     logger.info("Deleted notification provider: %s", name)
     await _resync_reaction_poller()

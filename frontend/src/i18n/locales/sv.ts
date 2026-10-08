@@ -6611,7 +6611,7 @@ errors: {
   // Notifications
   notifications: {
     notifyLockScreenWidgets: 'Låsskärmswidgetar (iOS)',
-    notifyLockScreenWidgetsHelp: 'Lägg till en Notify!-widget när du anpassar låsskärmen i iOS och välj en skrivare. Den visar status, förlopp och problem utan en nedräkning i realtid. iOS uppdaterar ungefär var 15:e minut eller mer sällan.',
+    notifyLockScreenWidgetsHelp: 'Endast aktiva skrivare utanför underhållsläget får widgetar. Notify! tillåter totalt 10 widgetar per enhet. Lägg till en Notify!-widget när du anpassar låsskärmen i iOS och välj en skrivare. Den visar status, förlopp och problem utan en nedräkning i realtid. iOS uppdaterar ungefär var 15:e minut eller mer sällan.',
     notifyPhotoUnavailable: 'Webbläsar- och gruppmottagare stöder endast textnotiser; fotobilagor är inte tillgängliga.',
     notifyShowStage: 'Visa utskriftsfas',
     notifyTimeSensitive: 'Tidskänsliga problemvarningar',

@@ -22,6 +22,7 @@ from backend.app.models.notification import NotificationProvider
 from backend.app.models.notification_live_activity import NotificationLiveActivity
 from backend.app.models.printer import Printer
 from backend.app.services.notify_client import NotifyClient, NotifyError, _https_url
+from backend.app.services.notify_worker import NotifyWorkerLifecycle
 
 logger = logging.getLogger(__name__)
 _RUNNING = {"RUNNING", "PRINTING", "PAUSE", "PREPARE", "SLICING"}
@@ -221,7 +222,14 @@ class PrintSnapshot:
         return content
 
 
-class NotifyLiveActivityService:
+class NotifyLiveActivityService(NotifyWorkerLifecycle):
+    ownership_model = NotificationLiveActivity
+    feature_field = "live_activities"
+    worker_interval = 30
+    worker_name = "notify-live-activities"
+    stopped_states = ("ended", "suppressed")
+    _cleanup_key = staticmethod(_credential_key)
+
     def __init__(self, session_factory=None, client=None):
         self._session = session_factory or async_session
         self._client = client
@@ -234,9 +242,26 @@ class NotifyLiveActivityService:
         self._lock = asyncio.Lock()
         self._wake = asyncio.Event()
         self._task: asyncio.Task | None = None
+        self._init_worker()
+
+    def _on_activated(self):
+        # No MQTT observations are accepted while dormant. Anything retained
+        # from before opt-out is stale until a real status arrives after opt-in.
+        self._snapshots.clear()
+        self._finished.clear()
+        self._new_fallbacks.clear()
+        self._started_at.clear()
+        self._progress_resets.clear()
 
     def observe(self, printer_id: int, state) -> None:
+        if self._provider_enabled is False:
+            return
         snapshot = PrintSnapshot.from_state(state)
+        if snapshot.state in {"", "UNKNOWN"}:
+            previous = self._snapshots.get(printer_id)
+            if previous is None or snapshot.connected:
+                return  # Broker connection alone is not a real printer status.
+            snapshot = replace(previous, connected=False)
         reset = self._progress_resets.get(printer_id)
         if reset:
             initial, until = reset
@@ -261,16 +286,20 @@ class NotifyLiveActivityService:
             if snapshot.key.startswith("file:") or previous.key.startswith("file:"):
                 snapshot = replace(snapshot, key=previous.key)
         self._snapshots[printer_id] = snapshot
-        if previous is None or (previous.key, previous.state, previous.connected, previous.fault) != (
-            snapshot.key,
-            snapshot.state,
-            snapshot.connected,
-            snapshot.fault,
+        if self._provider_enabled and (
+            previous is None
+            or (previous.key, previous.state, previous.connected, previous.fault)
+            != (
+                snapshot.key,
+                snapshot.state,
+                snapshot.connected,
+                snapshot.fault,
+            )
         ):
             self._wake.set()
 
     def print_started(self, printer_id: int, state, data: dict | None = None) -> None:
-        if state is None:
+        if state is None or self._provider_enabled is False:
             return
         snapshot = PrintSnapshot.from_state(state)
         job_id = (data or {}).get("subtask_id") or ((data or {}).get("raw_data") or {}).get("subtask_id")
@@ -286,6 +315,8 @@ class NotifyLiveActivityService:
         self._wake.set()
 
     def print_finished(self, printer_id: int, data: dict) -> None:
+        if self._provider_enabled is False:
+            return
         job = data.get("subtask_id") or (data.get("raw_data") or {}).get("subtask_id")
         snapshot = self._snapshots.get(printer_id)
         filename = data.get("subtask_name") or data.get("filename")
@@ -304,23 +335,6 @@ class NotifyLiveActivityService:
             self._snapshots[printer_id] = replace(snapshot, state=self._finished[-1][2], remaining_seconds=0)
         self._wake.set()
 
-    def start(self) -> None:
-        if self._task is None or self._task.done():
-            self._task = asyncio.create_task(self._run(), name="notify-live-activities")
-
-    async def close(self) -> None:
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
-        if self._http:
-            await self._http.aclose()
-            self._http = None
-            self._client = None
-
     async def _api(self):
         if self._client is None:
             self._http = httpx.AsyncClient(
@@ -329,25 +343,14 @@ class NotifyLiveActivityService:
             self._client = NotifyClient(self._http)
         return self._client
 
-    async def _run(self):
-        while True:
-            try:
-                await self.tick()
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("Notify Live Activity reconciliation failed")
-            self._wake.clear()
-            try:
-                await asyncio.wait_for(self._wake.wait(), timeout=30)
-                # Coalesce MQTT bursts. Per-row deadlines bound actual requests.
-                await asyncio.sleep(1)
-            except TimeoutError:
-                pass
-
     async def _save(self, row) -> None:
         async with self._session() as db:
-            await db.merge(row)
+            values = {column.name: getattr(row, column.name) for column in row.__table__.columns if column.name != "id"}
+            # Never resurrect ownership after provider deletion. A queued cleanup
+            # still holds this object's newly returned remote ID.
+            await db.execute(
+                update(NotificationLiveActivity).where(NotificationLiveActivity.id == row.id).values(**values)
+            )
             await db.commit()
 
     async def tick(self) -> None:
@@ -356,8 +359,16 @@ class NotifyLiveActivityService:
                 providers = (
                     await db.scalars(select(NotificationProvider).where(NotificationProvider.provider_type == "notify"))
                 ).all()
+                any_enabled = any(self._eligible(provider) for provider in providers)
+                previously_enabled = self._provider_enabled
+                self._provider_enabled = any_enabled
+                if any_enabled and previously_enabled is False:
+                    self._on_activated()
+                if not any_enabled and not previously_enabled and not self._cleanup_once and not self._cleanup_pending:
+                    return
                 rows = (await db.scalars(select(NotificationLiveActivity))).all()
-                names = dict((await db.execute(select(Printer.id, Printer.name))).all())
+                self._working_rows = rows
+                names = dict((await db.execute(select(Printer.id, Printer.name))).all()) if any_enabled else {}
             finished, self._finished = self._finished, []
             snapshots = self._snapshots.copy()
             for provider in providers:
@@ -394,6 +405,8 @@ class NotifyLiveActivityService:
                     ):
                         row.job_key = snapshot.job_key
                         await self._save(row)
+                    if self._retired_row(row):
+                        continue
                     if row.state in _STOPPED:
                         continue
                     if row.credential_key != _credential_key(config):
@@ -421,6 +434,10 @@ class NotifyLiveActivityService:
                         await self._end(row, config, snapshot.state)
                     elif snapshot and snapshot.connected and snapshot.state in _RUNNING and not same_print:
                         await self._end(row, config, "STOPPED")
+                    elif snapshot is None:
+                        # Startup silence is not evidence of a disconnect. Wait
+                        # for this printer's first real status before changing it.
+                        continue
                     else:
                         # A missing/offline printer is not evidence the print ended.
                         # Clear its countdown and keep its last known progress.
@@ -473,10 +490,19 @@ class NotifyLiveActivityService:
                         content=json.dumps(snapshot.content(names[printer_id], config)),
                         created_at=_now(),
                     )
+                    if self._retired_row(row):
+                        continue
+                    self._working_rows.append(row)
                     async with self._session() as db:
                         db.add(row)
                         await db.commit()
                     await self._sync(row, config, json.loads(row.content), can_start=True)
+            self._cleanup_pending = any(
+                row.state == "ending" and row.provider_id in {p.id for p in providers} for row in rows
+            )
+            # Tombstones need no maintenance while the integration is dormant.
+            if not any_enabled:
+                return
             # Tombstones must outlive any plausible print, but need not grow forever.
             async with self._session() as db:
                 await db.execute(
@@ -519,6 +545,8 @@ class NotifyLiveActivityService:
         return notification_service._is_in_quiet_hours(provider)
 
     async def _sync(self, row, config, content, *, can_start):
+        if self._retired_row(row):
+            return
         now = _now()
         urgent = json.loads(row.content).get("status") != content.get("status")
         if row.next_attempt_at and row.next_attempt_at > now and not (urgent and row.last_sent_at and not row.failures):
@@ -561,6 +589,8 @@ class NotifyLiveActivityService:
                         row.state = "pending"
                         await self._save(row)
                     else:
+                        if self._retired_row(row):
+                            return
                         await api.update_activity(row.activity_id, token, content)
                         row.content = json.dumps(content)
                         row.failures = 0
@@ -580,6 +610,8 @@ class NotifyLiveActivityService:
             row.state = "uncertain"
             row.content = json.dumps(content)
             await self._save(row)
+            if self._retired_row(row):
+                return
             result = await api.start_activity(config.get("device_id", ""), token, content)
             row.activity_id = result["activityId"]
             row.state = "starting"
@@ -668,7 +700,7 @@ class NotifyLiveActivityService:
         row.content = json.dumps(content)
         await self._save(row)
 
-    async def cleanup_provider(self, provider_id: int, old_config: dict) -> None:
+    async def cleanup_provider(self, provider_id: int, old_config: dict, *, captured_rows=None) -> None:
         """Called after saving a credential/scope change or deleting a provider.
 
         Cleanup is best effort (the remote eight-hour ceiling bounds an outage).
@@ -684,6 +716,12 @@ class NotifyLiveActivityService:
                         )
                     )
                 ).all()
+            if captured_rows is not None:
+                merged = {row.id: row for row in rows}
+                merged.update(
+                    {row.id: row for row in captured_rows if row.credential_key == _credential_key(old_config)}
+                )
+                rows = list(merged.values())
             for row in rows:
                 if row.activity_id and row.state not in _STOPPED:
                     try:
@@ -698,6 +736,8 @@ class NotifyLiveActivityService:
                     )
                 )
                 await db.commit()
+            for row in rows:
+                row.state = "ended"
         self._wake.set()
 
 

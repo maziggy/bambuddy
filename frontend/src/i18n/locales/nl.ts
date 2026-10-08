@@ -6613,7 +6613,7 @@ export default {
   // Notifications
   notifications: {
     notifyLockScreenWidgets: 'Toegangsschermwidgets (iOS)',
-    notifyLockScreenWidgetsHelp: 'Voeg een Notify!-widget toe via de aanpassing van het iOS-toegangsscherm en selecteer een printer. De widget toont status, voortgang en problemen zonder live afteltimer. iOS ververst ongeveer elke 15 minuten of minder vaak.',
+    notifyLockScreenWidgetsHelp: 'Alleen actieve printers buiten de onderhoudsmodus krijgen widgets. Notify! staat in totaal 10 widgets per apparaat toe. Voeg een Notify!-widget toe via de aanpassing van het iOS-toegangsscherm en selecteer een printer. De widget toont status, voortgang en problemen zonder live afteltimer. iOS ververst ongeveer elke 15 minuten of minder vaak.',
     notifyPhotoUnavailable: 'Browser- en groepsontvangers ondersteunen alleen tekstmeldingen; fotobijlagen zijn niet beschikbaar.',
     notifyShowStage: 'Afdrukfase tonen',
     notifyTimeSensitive: 'Tijdgevoelige probleemmeldingen',

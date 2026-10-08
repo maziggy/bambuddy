@@ -6548,7 +6548,7 @@ export default {
   // Notifications
   notifications: {
     notifyLockScreenWidgets: '锁定屏幕小组件（iOS）',
-    notifyLockScreenWidgetsHelp: '从 iOS 自定义锁定屏幕添加 Notify! 小组件并选择打印机。它显示状态、进度和问题，不提供实时倒计时。iOS 大约每 15 分钟或更长时间刷新一次。',
+    notifyLockScreenWidgetsHelp: '仅为未处于维护模式的启用打印机创建小组件。Notify! 每台设备总共允许最多 10 个小组件。 从 iOS 自定义锁定屏幕添加 Notify! 小组件并选择打印机。它显示状态、进度和问题，不提供实时倒计时。iOS 大约每 15 分钟或更长时间刷新一次。',
     notifyPhotoUnavailable: '浏览器和群组收件人仅支持文本通知，无法附加照片。',
     notifyShowStage: '显示打印阶段',
     notifyTimeSensitive: '时效性问题警报',

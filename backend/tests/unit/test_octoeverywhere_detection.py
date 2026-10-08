@@ -124,6 +124,60 @@ def manager():
         yield mocked
 
 
+@pytest.mark.parametrize("ignore_cancellation", [False, True])
+async def test_forget_printer_discards_late_decisions_and_cached_limits(
+    detector, http_client, manager, clock, ignore_cancellation
+):
+    from backend.app.services.octoeverywhere_detection import _PrintState
+
+    configuration = settings(action="pause", enabled_printers={1, 2})
+    http_client.post.side_effect = [
+        httpx.Response(200, json=context_payload()),
+        httpx.Response(200, json=process_payload()),
+    ]
+    await poll_once(detector, configuration)
+    other_state = _PrintState(print_id="another-print")
+    detector._states[2] = other_state
+    detector._history.extend([{"printer_id": 1}, {"printer_id": 2}])
+    detector._cache_settings(configuration)
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def pending_response(url, **kwargs):
+        started.set()
+        try:
+            await release.wait()
+        except asyncio.CancelledError:
+            if not ignore_cancellation:
+                raise
+            await release.wait()
+        return httpx.Response(200, json=process_payload(PauseSuggested=True))
+
+    http_client.post.side_effect = pending_response
+    clock.return_value = 140
+    await detector._poll_once(configuration)
+    check = detector._checks[1]
+    try:
+        await asyncio.wait_for(started.wait(), timeout=1)
+        # Add another printer after scheduling: this deletion must keep its state.
+        detector._states[2] = other_state
+        detector.forget_printer(1)
+        release.set()
+        await asyncio.wait_for(asyncio.gather(check, return_exceptions=True), timeout=1)
+        assert 1 not in detector._states
+        assert 1 not in detector._checks
+        assert detector._states[2] is other_state
+        assert all(entry["printer_id"] != 1 for entry in detector._history)
+        assert any(entry["printer_id"] == 2 for entry in detector._history)
+        assert detector._settings is None
+        assert detector._settings_refresh_at == 0
+        detector._dispatch_action.assert_not_awaited()
+    finally:
+        release.set()
+        detector.stop()
+        await asyncio.gather(check, return_exceptions=True)
+
+
 class TestConnection:
     @pytest.mark.parametrize(
         "confidence, level", [("lowest", 1), ("low", 2), ("medium", 3), ("high", 4), ("highest", 5)]
@@ -452,12 +506,12 @@ class TestProcessing:
             await detector._check_printer(1, printer_status(), settings(action=action))
 
         calls = detector._dispatch_action.await_args_list
-        assert calls[0].args == (1, "notify", "test-print", 4)
+        assert calls[0].args == (1, "notify", "test-print", 4, FAKE_JPEG)
         if action == "notify":
             assert len(calls) == 1
         else:
             assert len(calls) == 2
-            assert calls[1].args == (1, action, "test-print", 1)
+            assert calls[1].args == (1, action, "test-print", 1, FAKE_JPEG)
         status = detector.get_status()
         assert status["per_printer"][1]["class"] == "failure"
         assert len(status["history"]) == 4
@@ -470,13 +524,15 @@ class TestProcessing:
             httpx.Response(200, json=process_payload(PauseSuggested=True, PrintQuality=2)),
         ]
         await detector._check_printer(1, printer_status(), settings(action="pause"))
-        detector._dispatch_action.assert_awaited_once_with(1, "pause", "test-print", 2)
+        detector._dispatch_action.assert_awaited_once_with(1, "pause", "test-print", 2, FAKE_JPEG)
 
     @pytest.mark.parametrize("action", ["pause", "pause_and_off"])
     async def test_pause_after_warning_sends_its_own_notification(self, detector, http_client, clock, action):
         # Run the real dispatcher: the user must hear that the printer stopped,
         # not only about the warning that came before it.
         detector._dispatch_action = OctoEverywhereDetectionService._dispatch_action.__get__(detector)
+        frames = [FAKE_JPEG + b"warning", FAKE_JPEG + b"pause"]
+        detector._capture_frame.side_effect = frames
         http_client.post.side_effect = [
             httpx.Response(200, json=context_payload()),
             httpx.Response(200, json=process_payload(WarningSuggested=True, PrintQuality=4)),
@@ -493,6 +549,7 @@ class TestProcessing:
                 await detector._check_printer(1, printer_status(), settings(action=action))
         pause.assert_called_once_with(1)
         assert [call.args[4] for call in notify.await_args_list] == ["notify", action]
+        assert [call.args[5] for call in notify.await_args_list] == frames
 
     @pytest.mark.parametrize(
         "fields",
@@ -947,7 +1004,7 @@ class TestFasterInspectionTiming:
         assert state.frame_count == 2
         assert state.error is None
         assert state.verdict == "warning"
-        detector._dispatch_action.assert_awaited_once_with(1, "notify", "test-print", 4)
+        detector._dispatch_action.assert_awaited_once_with(1, "notify", "test-print", 4, FAKE_JPEG)
         assert "private-recommendation" not in "\n".join(
             record.message for record in caplog.records if record.name == MODULE
         )
@@ -2345,6 +2402,87 @@ class TestLifecycle:
         with patch(f"{MODULE}.asyncio.sleep", new=AsyncMock(side_effect=asyncio.CancelledError)) as sleep:
             await detector._loop()
         sleep.assert_awaited_once_with(expected_poll)
+
+    @pytest.mark.parametrize("poll_interval", [5, 20, 21, 30])
+    async def test_scheduler_caches_settings_until_configured_poll_interval(self, detector, clock, poll_interval):
+        original = settings(poll_interval=poll_interval)
+        updated = settings(poll_interval=poll_interval, action="pause")
+        detector._load_settings = AsyncMock(side_effect=[original, updated])
+        detector._poll_once = AsyncMock()
+
+        async def advance_time(seconds):
+            clock.return_value += seconds
+            if clock.return_value >= 100 + poll_interval + 2:
+                raise asyncio.CancelledError
+
+        with patch(f"{MODULE}.asyncio.sleep", side_effect=advance_time):
+            await detector._loop()
+
+        assert detector._load_settings.await_count == 2
+        polled_settings = [call.args[0] for call in detector._poll_once.await_args_list]
+        assert polled_settings == [original] * poll_interval + [updated] * 2
+
+    async def test_refresh_replaces_cached_settings_immediately_without_reloading_on_restart(self, detector, clock):
+        original = settings()
+        updated = settings(action="pause")
+        detector._load_settings = AsyncMock(side_effect=[original, updated])
+        polled = asyncio.Event()
+        detector._poll_once = AsyncMock(side_effect=lambda configuration: polled.set())
+        await detector.start()
+        try:
+            await asyncio.wait_for(polled.wait(), timeout=1)
+            detector._load_settings.assert_awaited_once()
+            polled.clear()
+            await detector.refresh_settings()
+            await asyncio.wait_for(polled.wait(), timeout=1)
+            assert detector._load_settings.await_count == 2
+            assert detector._poll_once.await_args.args == (updated,)
+            assert detector._settings is updated
+        finally:
+            task = detector._task
+            detector.stop()
+            await asyncio.gather(task, return_exceptions=True)
+        assert detector._settings is None
+
+    async def test_stale_settings_load_never_populates_cache(self, detector, clock):
+        original = settings()
+        updated = settings(action="pause")
+
+        async def load_settings():
+            if detector._load_settings.await_count == 1:
+                detector._generation += 1
+                return original
+            return updated
+
+        detector._load_settings = AsyncMock(side_effect=load_settings)
+        detector._poll_once = AsyncMock()
+        with patch(f"{MODULE}.asyncio.sleep", new=AsyncMock(side_effect=asyncio.CancelledError)):
+            await detector._loop()
+        assert detector._load_settings.await_count == 2
+        detector._poll_once.assert_awaited_once_with(updated)
+        assert detector._settings is updated
+
+    async def test_concurrent_refresh_keeps_the_latest_settings_in_cache(self, detector, clock):
+        loading = asyncio.Event()
+        release = asyncio.Event()
+        updated = settings(action="pause")
+
+        async def load_settings():
+            if detector._load_settings.await_count == 1:
+                loading.set()
+                await release.wait()
+                return settings()
+            return updated
+
+        detector._load_settings = AsyncMock(side_effect=load_settings)
+        refresh = asyncio.create_task(detector.refresh_settings())
+        try:
+            await asyncio.wait_for(loading.wait(), timeout=1)
+            await detector.refresh_settings()
+        finally:
+            release.set()
+            await asyncio.wait_for(refresh, timeout=1)
+        assert detector._settings is updated
 
     async def test_refresh_cancels_stale_settings_load_before_polling(self, detector, clock):
         loading = asyncio.Event()

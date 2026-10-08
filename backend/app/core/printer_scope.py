@@ -225,7 +225,7 @@ async def drop_printers_from_api_keys(db, deleted: Iterable[int] | None = None) 
 
 
 async def drop_printers_from_obico(db, deleted: Iterable[int] | None = None) -> None:
-    """Take deleted printers out of the printers Obico detection watches.
+    """Take deleted printers out of either AI failure detection provider's list.
 
     As drop_printers_from_api_keys: SQLite would enrol the next printer given a
     stale id, sending its camera to the ML server and pausing its prints. An
@@ -239,27 +239,29 @@ async def drop_printers_from_obico(db, deleted: Iterable[int] | None = None) -> 
     from backend.app.models.printer import Printer
     from backend.app.models.settings import Settings
 
-    key = "obico_enabled_printers"
-    raw = (await db.execute(select(Settings.value).where(Settings.key == key))).scalar()
-    if not raw:
-        return
-    try:
-        printer_ids = json.loads(raw)
-    except ValueError:
-        return
-    if not isinstance(printer_ids, list):
-        return
-    if deleted is None:
+    gone = set(deleted) if deleted is not None else None
+    existing = set()
+    if gone is None:
         existing = set((await db.execute(select(Printer.id))).scalars().all())
-        kept = [printer_id for printer_id in printer_ids if printer_id in existing]
-    else:
-        gone = set(deleted)
-        kept = [printer_id for printer_id in printer_ids if printer_id not in gone]
-    if kept != printer_ids:
-        # Written as the settings page writes it ("[1,3]"); "[1, 3]" reads there
-        # as an unsaved change and saves itself again.
-        value = json.dumps(kept, separators=(",", ":"))
-        await db.execute(update(Settings).where(Settings.key == key).values(value=value))
+    for key in ("obico_enabled_printers", "octoeverywhere_enabled_printers"):
+        raw = (await db.execute(select(Settings.value).where(Settings.key == key))).scalar()
+        if not raw:
+            continue
+        try:
+            printer_ids = json.loads(raw)
+        except ValueError:
+            continue
+        if not isinstance(printer_ids, list):
+            continue
+        if gone is None:
+            kept = [printer_id for printer_id in printer_ids if printer_id in existing]
+        else:
+            kept = [printer_id for printer_id in printer_ids if printer_id not in gone]
+        if kept != printer_ids:
+            # Written as the settings page writes it ("[1,3]"); "[1, 3]" reads there
+            # as an unsaved change and saves itself again.
+            value = json.dumps(kept, separators=(",", ":"))
+            await db.execute(update(Settings).where(Settings.key == key).values(value=value))
 
 
 async def ensure_printers_exist(db: AsyncSession, printer_ids: Iterable[int | None] | None) -> None:

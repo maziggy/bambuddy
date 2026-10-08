@@ -421,15 +421,17 @@ async def update_settings(
     # printer created (the validator has already checked it is a list of ints).
     # Only ids not stored yet are checked: the page sends the whole list, and an
     # id already there must not block every save.
-    if update_data.get("obico_enabled_printers"):
+    for key in ("obico_enabled_printers", "octoeverywhere_enabled_printers"):
+        if not update_data.get(key):
+            continue
         from backend.app.core.printer_scope import ensure_printers_exist
 
         try:
-            stored = json.loads(await get_setting(db, "obico_enabled_printers") or "[]")
+            stored_printers = json.loads(await get_setting(db, key) or "[]")
         except ValueError:
-            stored = []
-        stored = set(stored) if isinstance(stored, list) else set()
-        added = [i for i in json.loads(update_data["obico_enabled_printers"]) if i not in stored]
+            stored_printers = []
+        stored_printers = set(stored_printers) if isinstance(stored_printers, list) else set()
+        added = [i for i in json.loads(update_data[key]) if i not in stored_printers]
         await ensure_printers_exist(db, added)
 
     # Safety refusals on disabling local login (#1589). Two failure modes

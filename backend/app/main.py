@@ -1275,6 +1275,7 @@ async def forget_printer(printer_id: int) -> None:
     layer_timelapse.cancel_session(printer_id)
     usage_tracker.forget_printer(printer_id)
     obico_detection_service.forget_printer(printer_id)
+    octoeverywhere_detection_service.forget_printer(printer_id)
     bambu_ftp.clear_3mf_cache(printer_id)
     await camera.forget_printer(printer_id)
     printers.clear_cover_cache(printer_id)

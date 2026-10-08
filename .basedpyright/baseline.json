@@ -3362,16 +3362,6 @@
                 }
             }
         ],
-        "./backend/app/services/obico_detection.py": [
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 16,
-                    "endColumn": 44,
-                    "lineCount": 1
-                }
-            }
-        ],
         "./backend/app/services/opentag3d.py": [
             {
                 "code": "reportArgumentType",

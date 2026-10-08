@@ -37,7 +37,7 @@ async def capture_detection_frame(printer_id: int, *, session_factory=async_sess
             return None
         return await capture_external_frame(
             printer.external_camera_url,
-            printer.external_camera_type,
+            printer.external_camera_type or "",
             timeout=timeout,
             snapshot_url=printer.external_camera_snapshot_url,
         )

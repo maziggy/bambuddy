@@ -26,6 +26,7 @@ from backend.app.api.routes import (
     archives,
     auth,
     bug_report,
+    bulk,
     camera,
     camwall,
     cloud,
@@ -10999,6 +11000,7 @@ app.include_router(websocket.router, prefix=app_settings.api_prefix)
 app.include_router(discovery.router, prefix=app_settings.api_prefix)
 app.include_router(pending_uploads.router, prefix=app_settings.api_prefix)
 app.include_router(firmware.router, prefix=app_settings.api_prefix)
+app.include_router(bulk.router, prefix=app_settings.api_prefix)
 app.include_router(github_backup.router, prefix=app_settings.api_prefix)
 app.include_router(local_backup.router, prefix=app_settings.api_prefix)
 app.include_router(obico.router, prefix=app_settings.api_prefix)

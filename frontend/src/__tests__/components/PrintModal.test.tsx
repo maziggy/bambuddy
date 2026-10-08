@@ -494,7 +494,10 @@ describe('PrintModal', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: /save/i }));
+    // Save waits for the printer's live status (#2589)
+    const save = screen.getByRole('button', { name: /save/i });
+    await waitFor(() => expect(save).toBeEnabled());
+    await user.click(save);
 
     await waitFor(() => expect(body).not.toBeNull());
     expect(body!.manual_start).toBe(true);

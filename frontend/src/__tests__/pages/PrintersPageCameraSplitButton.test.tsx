@@ -96,6 +96,9 @@ function renderPage(storedMode: 'window' | 'embedded' = 'window') {
 /** The camera icon, whichever of the two modes it currently promises. */
 async function cameraIcon(): Promise<HTMLElement> {
   await waitFor(() => expect(document.getElementById('printer-card-1')).not.toBeNull());
+  // The camera controls stay disabled until the printer's status says it is
+  // connected; status arrives a moment after the card.
+  await waitFor(() => expect(screen.getByLabelText('Camera View Mode')).not.toBeDisabled());
   const el =
     screen.queryByTitle('Open camera in new window') ?? screen.queryByTitle('Open camera overlay');
   expect(el).not.toBeNull();

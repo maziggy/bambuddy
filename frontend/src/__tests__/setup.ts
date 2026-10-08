@@ -7,6 +7,7 @@ import '@testing-library/jest-dom';
 import { afterAll, afterEach, beforeAll, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import { server } from './mocks/server';
+import { batchesSettled } from '../api/batch';
 
 // Initialize i18n for tests (suppresses react-i18next warnings)
 import '../i18n';
@@ -19,8 +20,15 @@ beforeAll(() =>
     onUnhandledRequest: 'bypass',
   })
 );
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // Let batched reads (api/batch.ts) a test started go out and be answered
+  // before its mocks are reset, so they can't land on the next test's. Capped
+  // so a handler a test left hanging can't stall the suite; skipped under fake
+  // timers, which would never fire the window.
+  if (!vi.isFakeTimers()) {
+    await Promise.race([batchesSettled(), new Promise((resolve) => setTimeout(resolve, 200))]);
+  }
   server.resetHandlers();
 });
 afterAll(() => server.close());

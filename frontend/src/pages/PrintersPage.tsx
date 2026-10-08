@@ -2571,7 +2571,7 @@ function PrinterCard({
   // Fetch queue count for this printer
   const { data: queueItems } = useQuery({
     queryKey: ['queue', printer.id, 'pending'],
-    queryFn: () => api.getQueue(printer.id, 'pending'),
+    queryFn: () => api.getPrinterQueue(printer.id, 'pending'),
   });
   // Filter queue items by filament compatibility (same logic as PrinterQueueWidget)
   // so the badge only shows on printers that can actually run the queued jobs.
@@ -2584,7 +2584,7 @@ function PrinterCard({
   // Fetch currently printing queue item to show who started it (Issue #206)
   const { data: printingQueueItems } = useQuery({
     queryKey: ['queue', printer.id, 'printing'],
-    queryFn: () => api.getQueue(printer.id, 'printing'),
+    queryFn: () => api.getPrinterQueue(printer.id, 'printing'),
     enabled: status?.state === 'RUNNING',
   });
 

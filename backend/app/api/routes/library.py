@@ -1182,18 +1182,23 @@ async def get_folders_by_archive(
 ):
     """Get all folders linked to a specific archive, those the user may see (#3201)."""
     user, _ = auth_result
+    return (await _folders_by_archive(db, user, [archive_id]))[archive_id]
+
+
+async def _folders_by_archive(db: AsyncSession, user: User | None, archive_ids: list[int]) -> dict[int, list]:
+    """The folders linked to each archive that *user* may see (#3201), by archive id."""
     index = await _load_index(db, user)
     visible = visible_folder_ids(index, user)
     own_files = _own_files_filter(user)
     result = await db.execute(
         select(LibraryFolder, PrintArchive.print_name)
         .outerjoin(PrintArchive, LibraryFolder.archive_id == PrintArchive.id)
-        .where(LibraryFolder.archive_id == archive_id)
+        .where(LibraryFolder.archive_id.in_(archive_ids))
         .order_by(LibraryFolder.name)
     )
     rows = [row for row in result.all() if visible is None or row[0].id in visible]
 
-    folders = []
+    folders: dict[int, list] = {archive_id: [] for archive_id in archive_ids}
     for folder, archive_name in rows:
         # Get file count + latest file activity (#1770/#2680) in one trip. Prefer
         # the real on-disk mtime (external scans), fall back to the DB updated_at.
@@ -1212,7 +1217,7 @@ async def get_folders_by_archive(
         own_activity = folder.fs_modified_at or folder.updated_at
         latest_activity_at = max(own_activity, latest_file) if latest_file is not None else own_activity
 
-        folders.append(
+        folders[folder.archive_id].append(
             FolderResponse(
                 id=folder.id,
                 name=folder.name,

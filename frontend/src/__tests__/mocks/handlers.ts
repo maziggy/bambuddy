@@ -87,7 +87,58 @@ const mockPrinters = [
   },
 ];
 
+// The bulk routes the API client batches per-printer reads into (api/batch.ts)
+// answer by asking the matching single-printer route for each id, through
+// MSW again. A test that mocks the single route therefore shapes the bulk
+// answer too, and ids the single route rejects are left out, as the backend
+// leaves out printers outside the caller's scope.
+async function fanOut(request: Request, single: (id: string) => string): Promise<Map<string, unknown>> {
+  const url = new URL(request.url);
+  const ids = (url.searchParams.get('ids') ?? '').split(',').filter(Boolean);
+  const answers = new Map<string, unknown>();
+  await Promise.all(
+    ids.map(async (id) => {
+      const headers = new Headers(request.headers);
+      // Marks the request as the mock's own, for tests counting what the app sent
+      headers.set('x-test-fan-out', '1');
+      const response = await fetch(new URL(single(id), url), { headers });
+      if (response.ok) answers.set(id, await response.json());
+    }),
+  );
+  return answers;
+}
+
+const asRecord = (answers: Map<string, unknown>) => HttpResponse.json(Object.fromEntries(answers));
+const asList = (answers: Map<string, unknown>) => HttpResponse.json([...answers.values()]);
+
+const bulkHandlers = [
+  http.get('*/api/v1/bulk/printer-statuses', async ({ request }) =>
+    asList(await fanOut(request, (id) => `/api/v1/printers/${id}/status`))),
+  http.get('*/api/v1/bulk/slot-presets', async ({ request }) =>
+    asRecord(await fanOut(request, (id) => `/api/v1/printers/${id}/slot-presets`))),
+  http.get('*/api/v1/bulk/ams-labels', async ({ request }) =>
+    asRecord(await fanOut(request, (id) => `/api/v1/printers/${id}/ams-labels`))),
+  http.get('*/api/v1/bulk/card-plugs', async ({ request }) => {
+    const plugs = await fanOut(request, (id) => `/api/v1/smart-plugs/by-printer/${id}`);
+    const scripts = await fanOut(request, (id) => `/api/v1/smart-plugs/by-printer/${id}/scripts`);
+    return HttpResponse.json(
+      Object.fromEntries([...plugs].map(([id, plug]) => [id, { plug, scripts: scripts.get(id) ?? [] }])),
+    );
+  }),
+  http.get('*/api/v1/bulk/ha-sensor-readings', async ({ request }) =>
+    asRecord(await fanOut(request, (id) => `/api/v1/ha-sensors/by-printer/${id}/readings`))),
+  http.get('*/api/v1/bulk/firmware-updates', async ({ request }) =>
+    asList(await fanOut(request, (id) => `/api/v1/firmware/updates/${id}`))),
+  http.get('*/api/v1/bulk/printer-queues', async ({ request }) => {
+    const status = new URL(request.url).searchParams.get('status') ?? '';
+    return asRecord(await fanOut(request, (id) => `/api/v1/queue/?printer_id=${id}&status=${status}`));
+  }),
+  http.get('*/api/v1/bulk/archive-folders', async ({ request }) =>
+    asRecord(await fanOut(request, (id) => `/api/v1/library/folders/by-archive/${id}`))),
+];
+
 export const handlers = [
+  ...bulkHandlers,
   // ========================================================================
   // Smart Plugs
   // ========================================================================

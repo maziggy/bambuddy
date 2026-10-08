@@ -519,7 +519,12 @@ async def get_printer_status(
     printer = result.scalar_one_or_none()
     if not printer:
         raise HTTPException(404, "Printer not found")
+    return await _printer_status(db, printer)
 
+
+async def _printer_status(db: AsyncSession, printer: Printer) -> PrinterStatus:
+    """The live status of *printer*, as the status endpoints report it."""
+    printer_id = printer.id
     state = printer_manager.get_status(printer_id)
     if not state:
         # No MQTT client state — the printer was never connected this run, or it
@@ -2579,8 +2584,11 @@ async def get_slot_presets(
 ):
     """Get all saved slot-to-preset mappings for a printer."""
     result = await db.execute(select(SlotPresetMapping).where(SlotPresetMapping.printer_id == printer_id))
-    mappings = result.scalars().all()
+    return _slot_presets_by_key(result.scalars().all())
 
+
+def _slot_presets_by_key(mappings) -> dict:
+    """One printer's slot-to-preset mappings, keyed as ``get_slot_presets`` returns them."""
     return {
         _slot_preset_key(mapping.ams_id, mapping.tray_id): {
             "ams_id": mapping.ams_id,
@@ -3443,6 +3451,11 @@ async def get_ams_labels(
     serial-to-ams_id mapping from the live printer state so the response is still
     keyed by ams_id for UI compatibility.
     """
+    return await _ams_labels(db, printer_id)
+
+
+async def _ams_labels(db: AsyncSession, printer_id: int) -> dict[int, str]:
+    """*printer_id*'s AMS labels keyed by AMS unit id; see ``get_ams_labels``."""
     # Build serial -> ams_id map from live printer state
     serial_to_ams_id: dict[str, int] = {}
     state = printer_manager.get_status(printer_id)

@@ -185,7 +185,11 @@ async def check_printer_firmware(
 
     if not await _checks_enabled(db):
         return _not_checked(printer)
+    return await _printer_update_info(firmware_service, printer)
 
+
+async def _printer_update_info(firmware_service, printer: Printer) -> FirmwareUpdateInfo:
+    """Whether *printer* has a firmware update, as ``GET /updates/{printer_id}`` reports it."""
     current_version = _current_version(printer.id)
 
     # Check for update

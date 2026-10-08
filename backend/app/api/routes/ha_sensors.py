@@ -6,7 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, RequirePrinterPermissionIfAuthEnabled
+from backend.app.core.auth import (
+    RequirePermissionIfAuthEnabled,
+    RequirePrinterPermissionIfAuthEnabled,
+)
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
@@ -97,35 +100,39 @@ async def get_printer_sensor_readings(
     to its last persisted state, marked unreachable, rather than vanishing
     from the card on every restart.
     """
+    return [_reading(sensor) for sensor in await _card_sensors(db, PrinterHASensor.printer_id == printer_id)]
+
+
+async def _card_sensors(db: AsyncSession, printer_clause) -> list[PrinterHASensor]:
+    """The card-visible sensors matching *printer_clause*, in card order."""
     result = await db.execute(
         select(PrinterHASensor)
         .where(
-            PrinterHASensor.printer_id == printer_id,
+            printer_clause,
             PrinterHASensor.show_on_printer_card.is_(True),
         )
         .order_by(PrinterHASensor.sort_order, PrinterHASensor.id)
     )
+    return list(result.scalars().all())
 
-    readings = []
-    for sensor in result.scalars().all():
-        cached = ha_sensor_manager.get_reading(sensor.id)
-        readings.append(
-            PrinterHASensorReading(
-                id=sensor.id,
-                name=sensor.name,
-                entity_id=sensor.entity_id,
-                kind=sensor.kind,
-                device_class=sensor.device_class,
-                unit=sensor.unit,
-                state=cached.state if cached else sensor.last_state,
-                value=cached.value if cached else None,
-                alerting=cached.alerting if cached else False,
-                block_print=sensor.block_print,
-                reachable=cached.reachable if cached else False,
-                last_changed=sensor.last_changed,
-            )
-        )
-    return readings
+
+def _reading(sensor: PrinterHASensor) -> PrinterHASensorReading:
+    """A sensor's live reading from the poller's cache, else its last persisted state."""
+    cached = ha_sensor_manager.get_reading(sensor.id)
+    return PrinterHASensorReading(
+        id=sensor.id,
+        name=sensor.name,
+        entity_id=sensor.entity_id,
+        kind=sensor.kind,
+        device_class=sensor.device_class,
+        unit=sensor.unit,
+        state=cached.state if cached else sensor.last_state,
+        value=cached.value if cached else None,
+        alerting=cached.alerting if cached else False,
+        block_print=sensor.block_print,
+        reachable=cached.reachable if cached else False,
+        last_changed=sensor.last_changed,
+    )
 
 
 @router.post("/", response_model=PrinterHASensorResponse)

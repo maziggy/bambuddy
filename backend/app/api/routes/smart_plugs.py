@@ -233,6 +233,15 @@ async def _plugs_for_printer(db: AsyncSession, printer_id: int) -> list[SmartPlu
     return list(result.scalars().all())
 
 
+class PrinterCardPlugs(BaseModel):
+    """A printer card's power plug and action buttons, in one answer."""
+
+    # As GET /by-printer/{printer_id}
+    plug: SmartPlugResponse | None
+    # As GET /by-printer/{printer_id}/scripts
+    scripts: list[SmartPlugResponse]
+
+
 @router.get("/by-printer/{printer_id}", response_model=SmartPlugResponse | None)
 async def get_smart_plug_by_printer(
     printer_id: int,
@@ -266,7 +275,11 @@ async def get_script_plugs_by_printer(
     falls back to showing one of them in the power row -- taking it out of this
     row too would cost the one-click run it has always had there.
     """
-    plugs = await _plugs_for_printer(db, printer_id)
+    return _card_script_plugs(await _plugs_for_printer(db, printer_id))
+
+
+def _card_script_plugs(plugs: list[SmartPlug]) -> list[SmartPlug]:
+    """The action buttons of one printer's card; see ``get_script_plugs_by_printer``."""
     main_plug = _pick_main_plug(plugs)
     duplicate_of_power_row = main_plug.id if main_plug and not _is_script_plug(main_plug) else None
 

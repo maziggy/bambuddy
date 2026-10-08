@@ -6,8 +6,9 @@
  * print, class-colored (safe/warning/failure) during one.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { act, screen, waitFor } from '@testing-library/react';
+import { useQueryClient } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { PrintersPage } from '../../pages/PrintersPage';
@@ -63,6 +64,15 @@ const mockPrinterStatus = {
   vt_tray: [],
 };
 
+function RefreshOctoEverywhereStatus() {
+  const queryClient = useQueryClient();
+  return (
+    <button onClick={() => queryClient.invalidateQueries({ queryKey: ['octoeverywhere-printer-status'] })}>
+      Refresh detection status
+    </button>
+  );
+}
+
 describe('PrintersPage AI detection badge (#1546)', () => {
   beforeEach(() => {
     localStorage.removeItem('printerCardSize');
@@ -80,6 +90,65 @@ describe('PrintersPage AI detection badge (#1546)', () => {
       ),
       http.get('/api/v1/queue/', () => HttpResponse.json([]))
     );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('discovers disabled OctoEverywhere once without continuing to poll', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    let requests = 0;
+    server.use(
+      http.get('/api/v1/octoeverywhere/printer-status', () => {
+        requests++;
+        return HttpResponse.json({ enabled: false, monitored_printers: null, per_printer: {}, last_error: null });
+      }),
+    );
+
+    render(<PrintersPage />);
+    await screen.findByText('X1 Carbon');
+    await waitFor(() => expect(requests).toBe(1));
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(requests).toBe(1);
+  });
+
+  it('starts polling when settings invalidate enabled detection and stops again when disabled', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    let enabled = false;
+    let requests = 0;
+    server.use(
+      http.get('/api/v1/octoeverywhere/printer-status', () => {
+        requests++;
+        return HttpResponse.json({ enabled, monitored_printers: [1], per_printer: {}, last_error: null });
+      }),
+    );
+
+    render(<><PrintersPage /><RefreshOctoEverywhereStatus /></>);
+    await screen.findByText('X1 Carbon');
+    await waitFor(() => expect(requests).toBe(1));
+
+    enabled = true;
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh detection status' }));
+    expect(await screen.findByText('Idle')).toBeInTheDocument();
+    expect(requests).toBe(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    await waitFor(() => expect(requests).toBe(3));
+
+    enabled = false;
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    await waitFor(() => expect(screen.queryByText('Idle')).not.toBeInTheDocument());
+    expect(requests).toBe(4);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(requests).toBe(4);
+
+    enabled = true;
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh detection status' }));
+    expect(await screen.findByText('Idle')).toBeInTheDocument();
+    expect(requests).toBe(5);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    await waitFor(() => expect(requests).toBe(6));
   });
 
   it('shows the live class for a monitored print and Idle for other monitored printers', async () => {

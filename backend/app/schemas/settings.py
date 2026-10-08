@@ -892,9 +892,9 @@ class AppSettingsUpdate(BaseModel):
     obico_enabled_printers: str | None = None
     octoeverywhere_enabled: bool | None = None
     octoeverywhere_api_key: str | None = None
-    # None only while unset, like the fields around it. An explicit null is
-    # rejected: it would be stored as "None" and break reading settings back.
-    octoeverywhere_poll_interval: int = Field(default=None, ge=5, le=30, strict=True)
+    # Unset fields default to None; the settings route rejects an explicit null
+    # for numeric settings before it can be stored.
+    octoeverywhere_poll_interval: int | None = Field(default=None, ge=5, le=30, strict=True)
     octoeverywhere_confidence: str | None = None
     octoeverywhere_action: str | None = None
     octoeverywhere_enabled_printers: str | None = None

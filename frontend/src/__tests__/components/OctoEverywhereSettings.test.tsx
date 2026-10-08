@@ -1,9 +1,9 @@
 /** Tests for provider selection and OctoEverywhere failure detection settings. */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { act, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { render } from '../utils';
 import { server } from '../mocks/server';
 import { FailureDetectionSettings } from '../../components/FailureDetectionSettings';
@@ -371,10 +371,59 @@ describe('OctoEverywhere settings', () => {
     expect(apiKey).toHaveValue('replacement-key');
   });
 
-  it('does not report a successful connection when settings could not be saved', async () => {
-    let tested = false;
+  it.each(['edit', 'test'] as const)('stops retrying failed autosaves until another %s', async (retry) => {
+    let failSave = true;
+    const attempts: Record<string, unknown>[] = [];
+    const calls: string[] = [];
     server.use(
-      http.put('/api/v1/settings/', () => HttpResponse.json({ detail: 'Cannot save settings' }, { status: 500 })),
+      http.put('/api/v1/settings/', async ({ request }) => {
+        const update = await request.json() as Record<string, unknown>;
+        attempts.push(update);
+        calls.push('save');
+        await delay(50);
+        return failSave
+          ? HttpResponse.json({ detail: 'Cannot save settings' }, { status: 500 })
+          : HttpResponse.json(saveSettings(update));
+      }),
+      http.post('/api/v1/octoeverywhere/test-connection', () => {
+        calls.push('test');
+        return HttpResponse.json({ ok: true, status_code: 200, error: null });
+      }),
+    );
+    render(<FailureDetectionSettings />);
+    const user = userEvent.setup();
+    await waitForForm();
+    await user.selectOptions(screen.getByLabelText('Confidence'), 'high');
+
+    await screen.findByText('Cannot save settings');
+    await waitFor(() => expect(screen.getByLabelText('Confidence')).not.toBeDisabled());
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1200)); });
+    expect(attempts).toHaveLength(1);
+    expect(screen.getAllByText('Cannot save settings')).toHaveLength(1);
+    expect(screen.getByLabelText('Confidence')).toHaveValue('high');
+
+    failSave = false;
+    if (retry === 'edit') {
+      await user.selectOptions(screen.getByLabelText('Confidence'), 'highest');
+      await waitFor(() => expect(savedSettings.octoeverywhere_confidence).toBe('highest'));
+      expect(calls).toEqual(['save', 'save']);
+    } else {
+      await user.click(screen.getByRole('button', { name: 'Test' }));
+      await screen.findByText('OctoEverywhere Gadget API key verification successful!');
+      expect(savedSettings.octoeverywhere_confidence).toBe('high');
+      expect(calls).toEqual(['save', 'save', 'test']);
+    }
+    expect(attempts).toHaveLength(2);
+  });
+
+  it('does not retry or report a successful connection when settings could not be saved', async () => {
+    let tested = false;
+    let attempts = 0;
+    server.use(
+      http.put('/api/v1/settings/', () => {
+        attempts++;
+        return HttpResponse.json({ detail: 'Cannot save settings' }, { status: 500 });
+      }),
       http.post('/api/v1/octoeverywhere/test-connection', () => {
         tested = true;
         return HttpResponse.json({ ok: true, status_code: 200, error: null });
@@ -387,6 +436,9 @@ describe('OctoEverywhere settings', () => {
     await user.click(screen.getByRole('button', { name: 'Test' }));
 
     expect((await screen.findAllByText('Cannot save settings')).length).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Test' })).not.toBeDisabled());
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1200)); });
+    expect(attempts).toBe(1);
     expect(tested).toBe(false);
     expect(screen.queryByText('OctoEverywhere Gadget API key verification successful!')).not.toBeInTheDocument();
   });

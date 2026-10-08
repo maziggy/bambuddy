@@ -421,27 +421,17 @@ async def record_email_otp_send(db: AsyncSession, username: str) -> None:
 # ---------------------------------------------------------------------------
 # TOTP replay-protection helper
 # ---------------------------------------------------------------------------
-def _assert_totp_not_replayed(totp_obj: pyotp.TOTP, totp_record: UserTOTP, code: str) -> None:
-    """Raise HTTP 400 if this TOTP code was already accepted in its time window.
+def _matched_totp_counter(totp_obj: pyotp.TOTP, code: str) -> int | None:
+    """The time step whose code matches, one step either side of now, or None.
 
-    M3 fix: store the counter of the *accepted* code rather than the current
-    wall-clock counter.  With valid_window=1, pyotp accepts codes from the
-    previous 30-second step.  Using timecode(now) would store the wrong counter
-    when the previous-window code is accepted, allowing immediate replay.
+    The caller records the returned step with ``accept_counter``. Matching and
+    naming the step share one clock reading.
     """
-    # Determine which time-step the accepted code belongs to.
-    now = datetime.now(timezone.utc)
-    accepted_counter: int | None = None
-    for offset in (0, -1):  # current window first, then previous
-        candidate_time = now.timestamp() + offset * totp_obj.interval
-        candidate_counter = totp_obj.timecode(datetime.fromtimestamp(candidate_time, tz=timezone.utc))
-        if totp_obj.at(candidate_counter) == code:
-            accepted_counter = candidate_counter
-            break
-    if accepted_counter is None:
-        accepted_counter = totp_obj.timecode(now)  # fallback (should not happen after verify())
-
-    totp_record.accept_counter(accepted_counter)
+    current = totp_obj.timecode(datetime.now(timezone.utc))
+    for counter in (current, current - 1, current + 1):
+        if pyotp.utils.strings_equal(str(code), totp_obj.generate_otp(counter)):
+            return counter
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -679,7 +669,7 @@ async def setup_totp(
         # S4: narrow the RuntimeError catch to ONLY the property access — that
         # is the single line that raises on key-loss. The previous wide try
         # block also covered record_failed_attempt, clear_failed_attempts,
-        # and _assert_totp_not_replayed, so a future RuntimeError from any
+        # and the replay guard, so a future RuntimeError from any
         # of those would have been misreported as "TOTP secret unavailable".
         try:
             secret_plain = existing.secret
@@ -689,14 +679,15 @@ async def setup_totp(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="TOTP secret unavailable",
             )
-        if not pyotp.TOTP(secret_plain).verify(supplied_code, valid_window=1):
+        counter = _matched_totp_counter(pyotp.TOTP(secret_plain), supplied_code)
+        if counter is None:
             await record_failed_attempt(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Current TOTP code required to replace an active authenticator",
             )
         await clear_failed_attempts(db, current_user.username, event_type=EventType.TWO_FA_ATTEMPT)
-        _assert_totp_not_replayed(pyotp.TOTP(secret_plain), existing, supplied_code)
+        existing.accept_counter(counter)
         await db.flush()  # L-3: persist last_totp_counter immediately to block replay
 
     secret = pyotp.random_base32()
@@ -782,10 +773,12 @@ async def disable_totp(
     # code path so the user can still disable 2FA with their printed codes.
     totp_obj: pyotp.TOTP | None = None
     code_valid = False
+    counter: int | None = None
     decryption_failed = False
     try:
         totp_obj = pyotp.TOTP(totp_record.secret)
-        code_valid = totp_obj.verify(body.code, valid_window=1)
+        counter = _matched_totp_counter(totp_obj, body.code)
+        code_valid = counter is not None
     except RuntimeError:
         # S3: track that the failure was server-side so we don't penalise
         # the user with a fail-counter increment for a problem they can't fix.
@@ -795,8 +788,8 @@ async def disable_totp(
             totp_record.user_id,
         )
 
-    if code_valid and totp_obj is not None:
-        _assert_totp_not_replayed(totp_obj, totp_record, body.code)
+    if code_valid and counter is not None:
+        totp_record.accept_counter(counter)
         await db.flush()  # L-3: persist last_totp_counter immediately to block replay
     else:
         # Check backup codes — always iterate all entries (L-R9-A: no early break
@@ -844,10 +837,12 @@ async def regenerate_backup_codes(
     # rotate their codes with a printed backup code.
     totp_obj: pyotp.TOTP | None = None
     code_valid = False
+    counter: int | None = None
     decryption_failed = False
     try:
         totp_obj = pyotp.TOTP(totp_record.secret)
-        code_valid = totp_obj.verify(body.code, valid_window=1)
+        counter = _matched_totp_counter(totp_obj, body.code)
+        code_valid = counter is not None
     except RuntimeError:
         # S3: track server-side failure so we skip the fail-counter debit.
         decryption_failed = True
@@ -856,8 +851,8 @@ async def regenerate_backup_codes(
             totp_record.user_id,
         )
 
-    if code_valid and totp_obj is not None:
-        _assert_totp_not_replayed(totp_obj, totp_record, body.code)
+    if code_valid and counter is not None:
+        totp_record.accept_counter(counter)
         await db.flush()  # L-3: persist last_totp_counter immediately to block replay
     else:
         # Accept a backup code as an alternative (M10)
@@ -1170,10 +1165,11 @@ async def verify_2fa(
         except RuntimeError:
             logger.exception("TOTP decryption failed for user_id=%s", totp_record.user_id)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="TOTP secret unavailable")
-        if not totp_obj.verify(body.code, valid_window=1):
+        counter = _matched_totp_counter(totp_obj, body.code)
+        if counter is None:
             await record_failed_attempt(db, username)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
-        _assert_totp_not_replayed(totp_obj, totp_record, body.code)
+        totp_record.accept_counter(counter)
         await db.flush()  # L-3: persist last_totp_counter immediately to block replay
 
     elif method == "email":

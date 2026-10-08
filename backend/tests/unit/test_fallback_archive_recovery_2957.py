@@ -469,7 +469,14 @@ class TestConcurrentRecoveryIsSerialised:
 
         # Exactly one caller did the work; the rest saw a recovered archive.
         assert results.count(True) == 1
-        created = (set(printer_root.iterdir()) if printer_root.exists() else set()) - before
+        # Only this run's folders: tests in other xdist workers archive into the
+        # same printer directory, sometimes within the same second.
+        stem = unique.removesuffix(".gcode.3mf")
+        created = {
+            p
+            for p in (set(printer_root.iterdir()) if printer_root.exists() else set()) - before
+            if p.name.endswith(stem)
+        }
         assert len(created) == 1, f"expected one archive directory, got {sorted(p.name for p in created)}"
 
         async with maker() as db:

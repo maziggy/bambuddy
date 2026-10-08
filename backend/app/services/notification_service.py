@@ -24,7 +24,7 @@ from backend.app.models.notification import (
     NotificationProvider,
     TelegramPendingVerdict,
 )
-from backend.app.models.notification_template import NotificationTemplate
+from backend.app.models.notification_template import DEFAULT_TEMPLATES, NotificationTemplate
 from backend.app.services.print_confirmation import one_tap_url
 from backend.app.utils.notification_photos import save_notification_photo
 
@@ -2081,12 +2081,13 @@ class NotificationService:
         printer_id: int,
         printer_name: str,
         task_name: str,
-        confidence: float,
+        confidence: float | None,
         action: str,
         db: AsyncSession,
         image_data: bytes | None = None,
+        print_quality: int | None = None,
     ):
-        """Handle AI failure-detection event (Obico spaghetti / print-failure ML).
+        """Handle AI failure-detection events from the configured provider.
 
         Split out of on_printer_error (#1794) so a user can subscribe to AI
         alerts without also being paged for every HMS hardware code.
@@ -2098,11 +2099,25 @@ class NotificationService:
         variables = {
             "printer": printer_name,
             "task_name": task_name or "current job",
-            "confidence": f"{confidence:.2f}",
+            "confidence": f"{confidence:.2f}" if confidence is not None else "N/A",
             "action": action,
+            "provider": "OctoEverywhere" if print_quality is not None else "Obico",
+            "print_quality": f"{print_quality}/10" if print_quality is not None else "N/A",
         }
 
         title, message = await self._build_message_from_template(db, "ai_failure_detection", variables)
+        if print_quality is not None:
+            template = await self._get_template(db, "ai_failure_detection")
+            default_body = next(
+                t["body_template"] for t in DEFAULT_TEMPLATES if t["event_type"] == "ai_failure_detection"
+            )
+            # Adapt the untouched Obico default without replacing custom text
+            # or changing the saved template used by either provider.
+            if template and template.body_template == default_body:
+                message = self._render_template(
+                    "{printer}: {task_name}\nOctoEverywhere print quality: {print_quality}\nAction taken: {action}",
+                    variables,
+                )
         await self._send_to_providers(
             providers,
             title,

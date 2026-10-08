@@ -178,7 +178,7 @@ import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 import { MQTTDebugModal } from '../components/MQTTDebugModal';
 import { HMSErrorModal, filterKnownHMSErrors, isSevereHMSError } from '../components/HMSErrorModal';
 import { AiDetectionModal } from '../components/AiDetectionModal';
-import { aiDetectionClass, type AiDetection } from '../utils/aiDetection';
+import { aiDetectionClass, OCTOEVERYWHERE_USAGE_LIMIT, type AiDetection } from '../utils/aiDetection';
 import { PrinterQueueWidget } from '../components/PrinterQueueWidget';
 import { PrinterHASensorRow } from '../components/PrinterHASensorRow';
 import { AMSHistoryModal } from '../components/AMSHistoryModal';
@@ -2069,6 +2069,7 @@ function PrinterCard({
   aiDetectionEnabled = false,
   aiDetection,
   aiLastError = null,
+  aiLastErrorCode = null,
 }: {
   printer: Printer;
   hideIfDisconnected?: boolean;
@@ -2111,6 +2112,7 @@ function PrinterCard({
   aiDetectionEnabled?: boolean;
   aiDetection?: AiDetection;
   aiLastError?: string | null;
+  aiLastErrorCode?: string | null;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -4103,15 +4105,24 @@ function PrinterCard({
                 const title =
                   cls === 'error'
                     ? t('printers.aiDetection.tooltipError', {
-                        reason: aiDetection?.error ?? t('printers.aiDetection.error'),
+                        reason: hasPermission('settings:read')
+                          ? aiDetection?.error_code === OCTOEVERYWHERE_USAGE_LIMIT
+                            ? t('octoeverywhere.limitReached')
+                            : aiDetection?.error ?? t('printers.aiDetection.error')
+                          : t('printers.aiDetection.error'),
                       })
                     : cls === 'unknown'
                       ? t('printers.aiDetection.tooltipUnknown')
                       : aiDetection
-                        ? t('printers.aiDetection.tooltip', {
-                            status: t(`printers.aiDetection.${cls}`),
-                            score: aiDetection.score.toFixed(3),
-                          })
+                        ? 'print_quality' in aiDetection
+                          ? t('octoeverywhere.tooltipQuality', {
+                              status: t(`printers.aiDetection.${cls}`),
+                              quality: aiDetection.print_quality ?? '—',
+                            })
+                          : t('printers.aiDetection.tooltip', {
+                              status: t(`printers.aiDetection.${cls}`),
+                              score: aiDetection.score.toFixed(3),
+                            })
                         : t('printers.aiDetection.tooltipIdle');
                 const Icon = cls === 'error' ? EyeOff : ScanEye;
                 return (
@@ -7251,6 +7262,7 @@ function PrinterCard({
           printerName={printer.name}
           detection={aiDetection}
           lastError={aiLastError}
+          lastErrorCode={aiLastErrorCode}
           onClose={() => setShowAiModal(false)}
         />
       )}
@@ -9063,13 +9075,19 @@ export function PrintersPage() {
     queryFn: api.getObicoPrinterStatus,
     refetchInterval: 10000,
   });
+  const { data: octoEverywherePrinterStatus } = useQuery({
+    queryKey: ['octoeverywhere-printer-status'],
+    queryFn: api.getOctoEverywherePrinterStatus,
+    refetchInterval: 10000,
+  });
+  const aiPrinterStatus = octoEverywherePrinterStatus?.enabled ? octoEverywherePrinterStatus : obicoPrinterStatus;
   // Badge visibility: detection enabled AND this printer in the monitored set
   // (monitored_printers null = all). Live per-print state is passed separately.
   const isAiMonitored = useCallback(
     (printerId: number) =>
-      obicoPrinterStatus?.enabled === true &&
-      (obicoPrinterStatus.monitored_printers === null || obicoPrinterStatus.monitored_printers.includes(printerId)),
-    [obicoPrinterStatus],
+      aiPrinterStatus?.enabled === true &&
+      (aiPrinterStatus.monitored_printers === null || aiPrinterStatus.monitored_printers.includes(printerId)),
+    [aiPrinterStatus],
   );
 
   // Fetch Spoolman status to enable link spool feature
@@ -10070,8 +10088,9 @@ export function PrintersPage() {
                       onToggleSelect={toggleSelect}
                       onOpenCompactCard={openCompactCard}
                       aiDetectionEnabled={isAiMonitored(printer.id)}
-                      aiDetection={obicoPrinterStatus?.enabled ? obicoPrinterStatus.per_printer[String(printer.id)] : undefined}
-                      aiLastError={obicoPrinterStatus?.last_error ?? null}
+                      aiDetection={aiPrinterStatus?.enabled ? aiPrinterStatus.per_printer[String(printer.id)] : undefined}
+                      aiLastError={aiPrinterStatus?.last_error ?? null}
+                      aiLastErrorCode={octoEverywherePrinterStatus?.enabled ? octoEverywherePrinterStatus.last_error_code : null}
                     />
                   ))}
                 </div>
@@ -10123,8 +10142,9 @@ export function PrintersPage() {
               onToggleSelect={toggleSelect}
               onOpenCompactCard={openCompactCard}
               aiDetectionEnabled={isAiMonitored(printer.id)}
-              aiDetection={obicoPrinterStatus?.enabled ? obicoPrinterStatus.per_printer[String(printer.id)] : undefined}
-              aiLastError={obicoPrinterStatus?.last_error ?? null}
+              aiDetection={aiPrinterStatus?.enabled ? aiPrinterStatus.per_printer[String(printer.id)] : undefined}
+              aiLastError={aiPrinterStatus?.last_error ?? null}
+              aiLastErrorCode={octoEverywherePrinterStatus?.enabled ? octoEverywherePrinterStatus.last_error_code : null}
             />
           ))}
         </div>

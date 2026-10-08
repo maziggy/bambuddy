@@ -247,7 +247,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - Print success rates & trends
 - Filament usage tracking
 - Cost analytics & failure analysis
-- **AI print-failure detection** — Optional integration with a self-hosted [Obico](https://github.com/TheSpaghettiDetective/obico-server) ML API: watches each running print's camera feed, smooths scores over time (30-frame warmup + EWM + rolling means), and fires a configurable action once per print (notify / pause / pause-and-off)
+- **AI print-failure detection** — Choose a self-hosted [Obico](https://github.com/TheSpaghettiDetective/obico-server) ML API or [OctoEverywhere cloud detection](https://docs.octoeverywhere.com/ai-failure-detection-apis/overview/) with a Gadget API key. Watches running prints through their cameras and supports notifications, pausing, or pausing and turning off linked smart plugs. Obico smooths scores locally; OctoEverywhere provides print quality and warning/pause decisions.
 - Per-user statistics filtering (admin permission gated)
 - Statistics grouped by your own material number
 - CSV/Excel export

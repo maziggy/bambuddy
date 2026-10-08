@@ -295,6 +295,26 @@ class PrintQueueItemResponse(BaseModel):
         from_attributes = True
 
 
+class PrintQueueHistoryResponse(BaseModel):
+    """One page of the queue history, plus what the page needs around it.
+
+    ``items`` holds the page in display order, followed by any other history
+    runs of the batches on that page, so a batch row can count all of its runs.
+    """
+
+    items: list[PrintQueueItemResponse]
+    # Matching history items in all, not just this page.
+    total: int
+    # Every target_location in the caller's history, for the location filter.
+    locations: list[str]
+
+
+class PrintQueueHistoryClearResponse(BaseModel):
+    cleared: int
+    # Runs a batch order still needs, cancelled rather than deleted (#2960).
+    kept: int
+
+
 class PrintQueueReorderItem(BaseModel):
     id: int
     position: int

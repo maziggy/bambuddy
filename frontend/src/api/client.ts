@@ -4772,6 +4772,39 @@ export interface AuthStatus {
 }
 
 // API functions
+export interface QueueHistoryFilters {
+  printerId?: number | null;
+  status?: string;
+  location?: string;
+}
+
+export interface QueueHistoryParams extends QueueHistoryFilters {
+  sortBy?: 'date' | 'name' | 'printer';
+  // Flips the default order: newest first by date, A to Z by name or printer.
+  reverse?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export interface QueueHistoryPage {
+  // The page in display order, then any other runs of the batches on it.
+  items: PrintQueueItem[];
+  total: number;
+  locations: string[];
+}
+
+function queueHistorySearch(params: QueueHistoryParams): URLSearchParams {
+  const search = new URLSearchParams();
+  if (params.printerId) search.set('printer_id', String(params.printerId));
+  if (params.status) search.set('status', params.status);
+  if (params.location) search.set('location', params.location);
+  if (params.sortBy) search.set('sort_by', params.sortBy);
+  if (params.reverse) search.set('reverse', 'true');
+  if (params.limit !== undefined) search.set('limit', String(params.limit));
+  if (params.offset) search.set('offset', String(params.offset));
+  return search;
+}
+
 export const api = {
   // Overlay branding
   getOverlayLogo: async (token: string | null, signal?: AbortSignal): Promise<Blob | null> => {
@@ -6466,6 +6499,14 @@ export const api = {
     if (targetModel) params.set('target_model', targetModel);
     return request<PrintQueueItem[]>(`/queue/?${params}`);
   },
+  // History (completed / failed / skipped / cancelled), one page at a time.
+  getQueueHistory: (params: QueueHistoryParams) =>
+    request<QueueHistoryPage>(`/queue/history?${queueHistorySearch(params)}`),
+  // Removes the history matching the same filters, server-side.
+  clearQueueHistory: (params: QueueHistoryFilters) =>
+    request<{ cleared: number; kept: number }>(`/queue/history/clear?${queueHistorySearch(params)}`, {
+      method: 'POST',
+    }),
   getQueueItem: (id: number) => request<PrintQueueItem>(`/queue/${id}`),
   addToQueue: (data: PrintQueueItemCreate) =>
     request<PrintQueueItem>('/queue/', {

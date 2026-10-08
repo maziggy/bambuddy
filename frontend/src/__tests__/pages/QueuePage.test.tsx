@@ -109,6 +109,32 @@ const mockPrinters = [
   },
 ];
 
+const HISTORY_STATUSES = ['completed', 'failed', 'skipped', 'cancelled'];
+
+type MockItem = { id: number; status: string; completed_at?: string | null; created_at?: string | null };
+
+// Serves one list of items the way the backend splits it: the active list on
+// /queue/ (by its status filter) and the paged, newest-first history on
+// /queue/history.
+function serveQueue(items: MockItem[]) {
+  return [
+    http.get('/api/v1/queue/', ({ request }) => {
+      const status = new URL(request.url).searchParams.get('status');
+      const wanted = status ? status.split(',') : null;
+      return HttpResponse.json(wanted ? items.filter((i) => wanted.includes(i.status)) : items);
+    }),
+    http.get('/api/v1/queue/history', ({ request }) => {
+      const params = new URL(request.url).searchParams;
+      const limit = Number(params.get('limit') ?? 50);
+      const when = (i: MockItem) => Date.parse(i.completed_at || i.created_at || '') || 0;
+      const history = items
+        .filter((i) => HISTORY_STATUSES.includes(i.status))
+        .sort((a, b) => when(b) - when(a));
+      return HttpResponse.json({ items: history.slice(0, limit), total: history.length, locations: [] });
+    }),
+  ];
+}
+
 describe('QueuePage', () => {
   beforeEach(() => {
     // Mock localStorage.getItem to return expected defaults for queue page
@@ -120,9 +146,7 @@ describe('QueuePage', () => {
 
     // Setup MSW handlers for this test
     server.use(
-      http.get('/api/v1/queue/', () => {
-        return HttpResponse.json(mockQueueItems);
-      }),
+      ...serveQueue(mockQueueItems),
       http.get('/api/v1/printers/', () => {
         return HttpResponse.json(mockPrinters);
       }),
@@ -1260,11 +1284,7 @@ describe('QueuePage', () => {
     }));
 
     beforeEach(() => {
-      server.use(
-        http.get('/api/v1/queue/', () => {
-          return HttpResponse.json(manyHistory);
-        })
-      );
+      server.use(...serveQueue(manyHistory));
     });
 
     it('caps the History list at one page and reveals the rest on Show more', async () => {
@@ -1292,11 +1312,7 @@ describe('QueuePage', () => {
 
   describe('empty state', () => {
     it('shows empty state when no queue items', async () => {
-      server.use(
-        http.get('/api/v1/queue/', () => {
-          return HttpResponse.json([]);
-        })
-      );
+      server.use(...serveQueue([]));
 
       render(<QueuePage />);
 
@@ -1868,6 +1884,132 @@ describe('QueuePage', () => {
       await waitFor(() => expect(captured.body).not.toBeNull());
       expect(captured.body!.timelapse).toBe(true);
       expect('confirm_outcome' in captured.body!).toBe(false);
+    });
+  });
+
+  // The page used to load the whole queue, history included, every five
+  // seconds; on a farm that stalled the server for over a minute.
+  describe('history from the server', () => {
+    it('asks /queue/ for active work only', async () => {
+      const statuses: (string | null)[] = [];
+      server.use(
+        http.get('/api/v1/queue/', ({ request }) => {
+          statuses.push(new URL(request.url).searchParams.get('status'));
+          return HttpResponse.json([mockQueueItems[0]]);
+        }),
+      );
+      render(<QueuePage />);
+
+      await screen.findByText('Test Print 1');
+      expect(statuses.length).toBeGreaterThan(0);
+      expect(statuses.every((s) => s === 'pending,printing,skipped')).toBe(true);
+    });
+
+    it('does not ask /queue/ at all while a finished status is selected', async () => {
+      const user = userEvent.setup();
+      const activeCalls: string[] = [];
+      server.use(
+        http.get('/api/v1/queue/', ({ request }) => {
+          activeCalls.push(new URL(request.url).searchParams.get('status') ?? '');
+          return HttpResponse.json([]);
+        }),
+      );
+      render(<QueuePage />);
+      await waitFor(() => expect(activeCalls.length).toBeGreaterThan(0));
+
+      await user.selectOptions(screen.getByDisplayValue('All Status'), 'completed');
+      activeCalls.length = 0;
+      await user.click(await screen.findByRole('button', { name: /^History/ }));
+
+      expect(await screen.findByText('Completed Print')).toBeInTheDocument();
+      expect(activeCalls).toEqual([]);
+    });
+
+    it('sends the sort to the server', async () => {
+      const user = userEvent.setup();
+      const requests: URLSearchParams[] = [];
+      server.use(
+        http.get('/api/v1/queue/history', ({ request }) => {
+          requests.push(new URL(request.url).searchParams);
+          return HttpResponse.json({ items: [mockQueueItems[2]], total: 1, locations: [] });
+        }),
+      );
+      render(<QueuePage />);
+      await user.click(await screen.findByRole('button', { name: /^History/ }));
+      await screen.findByText('Completed Print');
+
+      await user.selectOptions(screen.getByDisplayValue('Sort by Date'), 'name');
+      await waitFor(() => expect(requests.at(-1)?.get('sort_by')).toBe('name'));
+      expect(requests.at(-1)?.get('reverse')).toBeNull();
+
+      await user.click(screen.getByTitle('Descending (newest first)'));
+      await waitFor(() => expect(requests.at(-1)?.get('reverse')).toBe('true'));
+    });
+
+    it('offers the target locations found only in history', async () => {
+      server.use(
+        http.get('/api/v1/queue/history', () =>
+          HttpResponse.json({ items: [mockQueueItems[2]], total: 1, locations: ['Annex'] }),
+        ),
+      );
+      render(<QueuePage />);
+
+      expect(await screen.findByRole('option', { name: 'Annex' })).toBeInTheDocument();
+    });
+
+    it('counts every run of a batch, including those past the page', async () => {
+      const user = userEvent.setup();
+      const run = (id: number, status: string) => ({
+        ...mockQueueItems[2],
+        id,
+        status,
+        batch_id: 7,
+        batch_name: 'Order 7',
+      });
+      server.use(
+        http.get('/api/v1/queue/history', () =>
+          // One row on the page; the second run of its batch rides along after it
+          HttpResponse.json({ items: [run(70, 'completed'), run(71, 'failed')], total: 1, locations: [] }),
+        ),
+      );
+      render(<QueuePage />);
+      await user.click(await screen.findByRole('button', { name: /^History/ }));
+
+      // The failed run is past the page, yet the batch row counts it
+      const batchRow = (await screen.findByText('Order 7')).closest('button') as HTMLElement;
+      const failedCount = batchRow.querySelector('span.text-red-700');
+      expect(failedCount?.textContent).toBe('1');
+    });
+
+    it('clears history with one request carrying the filters', async () => {
+      const user = userEvent.setup();
+      let clearUrl: URL | null = null;
+      let deletes = 0;
+      server.use(
+        http.post('/api/v1/queue/history/clear', ({ request }) => {
+          clearUrl = new URL(request.url);
+          return HttpResponse.json({ cleared: 4, kept: 1 });
+        }),
+        http.delete('/api/v1/queue/:id', () => {
+          deletes += 1;
+          return HttpResponse.json({ deleted: true });
+        }),
+      );
+      render(<QueuePage />);
+      await user.click(await screen.findByRole('button', { name: /^History/ }));
+      await user.selectOptions(await screen.findByDisplayValue('All Status'), 'completed');
+
+      await user.click(await screen.findByRole('button', { name: /clear history/i }));
+      await screen.findByText(/Are you sure you want to remove all 1 item/i);
+      // The modal's confirm button is the second "Clear History"
+      await user.click(screen.getAllByRole('button', { name: /clear history/i }).at(-1)!);
+
+      await waitFor(() => expect(clearUrl).not.toBeNull());
+      expect(clearUrl!.searchParams.get('status')).toBe('completed');
+      expect(deletes).toBe(0);
+      expect(
+        await screen.findByText('Cleared 4 history item(s) Kept 1 that batch orders still need.'),
+      ).toBeInTheDocument();
     });
   });
 });

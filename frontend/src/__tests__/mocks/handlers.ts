@@ -443,6 +443,7 @@ export const handlers = [
   // Lists → empty arrays
   http.get('/api/v1/archives/', () => HttpResponse.json([])),
   http.get('/api/v1/archives/last-per-printer', () => HttpResponse.json([])),
+  http.get('/api/v1/queue/history', () => HttpResponse.json({ items: [], total: 0, locations: [] })),
   http.get('/api/v1/auth/oidc/providers', () => HttpResponse.json([])),
   http.get('/api/v1/auth/oidc/providers/all', () => HttpResponse.json([])),
   // OIDC icon proxy (#1333). Default returns a tiny PNG; individual tests

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   DndContext,
@@ -1459,7 +1459,10 @@ type HistoryRow =
   | { kind: 'batch'; batchId: number; batchName: string; items: PrintQueueItem[] };
 
 interface HistorySectionProps {
+  // The loaded page, then any other runs of its batches (see getQueueHistory)
   items: PrintQueueItem[];
+  // Matching history in all, loaded or not
+  total: number;
   collapsed: boolean;
   visibleCount: number;
   onShowMore: () => void;
@@ -1481,6 +1484,7 @@ interface HistorySectionProps {
 
 function HistorySection({
   items,
+  total,
   visibleCount,
   onShowMore,
   sortBy,
@@ -1533,7 +1537,7 @@ function HistorySection({
         <h2 className="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
           {t('queue.sections.history')}
           <span className="text-xs sm:text-sm font-normal text-bambu-gray">
-            ({t('queue.itemCount', { count: items.length })})
+            ({t('queue.itemCount', { count: total })})
           </span>
         </h2>
         <div className="flex items-center gap-2">
@@ -1659,15 +1663,15 @@ function HistorySection({
           );
         })}
       </div>
-      {items.length > visibleCount && (
+      {total > visibleCount && (
         <div className="mt-4 flex flex-col items-center gap-2">
           <Button variant="secondary" size="sm" onClick={onShowMore}>
             {t('queue.history.showMore')}
           </Button>
           <span className="text-xs text-bambu-gray">
             {t('queue.history.showingCount', {
-              shown: Math.min(visibleCount, items.length),
-              total: items.length,
+              shown: Math.min(visibleCount, total),
+              total,
             })}
           </span>
         </div>
@@ -1677,6 +1681,9 @@ function HistorySection({
 }
 
 const HISTORY_PAGE_SIZE = 50;
+// The statuses the Queue tab works with; the rest is history.
+const ACTIVE_STATUSES = ['pending', 'printing', 'skipped'];
+const EMPTY_QUEUE: PrintQueueItem[] = [];
 
 export function QueuePage() {
   const { t } = useTranslation();
@@ -1828,11 +1835,46 @@ export function QueuePage() {
   });
   const activeBatchCount = activeBatches?.length ?? 0;
 
-  const { data: queue, isLoading } = useQuery({
-    queryKey: ['queue', filterPrinter, filterStatus],
-    queryFn: () => api.getQueue(filterPrinter || undefined, filterStatus || undefined),
+  // Only what is still in play: pending and printing, plus skipped for the
+  // Resume-after-failure banner. History has its own paged query below. This
+  // used to be the whole queue, history included, every five seconds; on a
+  // farm that was thousands of rows and stalled the server.
+  const activeStatuses = filterStatus
+    ? (ACTIVE_STATUSES.includes(filterStatus) ? filterStatus : null)
+    : ACTIVE_STATUSES.join(',');
+  const { data: activeQueue, isLoading } = useQuery({
+    queryKey: ['queue', filterPrinter, activeStatuses],
+    queryFn: () => api.getQueue(filterPrinter || undefined, activeStatuses ?? undefined),
     refetchInterval: 5000,
+    // A finished status selected in the filter leaves nothing active to show
+    enabled: activeStatuses !== null,
   });
+  const queue = activeStatuses === null ? EMPTY_QUEUE : activeQueue;
+
+  // One page of history at a time, filtered and sorted on the server.
+  // "Show more" asks for a longer first page rather than appending, so a
+  // batch row always sees the rest of its runs.
+  const historyFilters = {
+    printerId: filterPrinter,
+    status: filterStatus || undefined,
+    location: filterLocation || undefined,
+  };
+  const { data: historyPage, isLoading: historyLoading } = useQuery({
+    queryKey: ['queue', 'history', historyFilters, historySortBy, historySortAsc, historyVisibleCount],
+    queryFn: () =>
+      api.getQueueHistory({
+        ...historyFilters,
+        sortBy: historySortBy,
+        reverse: historySortAsc,
+        limit: historyVisibleCount,
+      }),
+    // Nothing pushes history changes, so it is polled: briskly while the tab
+    // shows one page, slowly once it is expanded (a long page is what used to
+    // stall the server) or when only the badge and stats need the total.
+    refetchInterval: activeTab === 'history' && historyVisibleCount <= HISTORY_PAGE_SIZE ? 5000 : 30000,
+    placeholderData: keepPreviousData,
+  });
+  const historyTotal = historyPage?.total ?? 0;
 
   const { data: printers } = useQuery({
     queryKey: ['printers'],
@@ -1937,21 +1979,10 @@ export function QueuePage() {
   });
 
   const clearHistoryMutation = useMutation({
-    mutationFn: async () => {
-      const historyItems = queue?.filter(i =>
-        ['completed', 'failed', 'skipped', 'cancelled'].includes(i.status)
-      ) || [];
-      let cleared = 0;
-      let kept = 0;
-      for (const item of historyItems) {
-        const result = await api.removeFromQueue(item.id);
-        // A row a batch order still needs is kept rather than deleted, so the
-        // count has to come from what the backend actually did (#2960).
-        if (result.deleted === false) kept += 1;
-        else cleared += 1;
-      }
-      return { cleared, kept };
-    },
+    // One request for the history under the current filters. A row a batch
+    // order still needs is kept rather than deleted, so the counts come from
+    // what the backend actually did (#2960).
+    mutationFn: () => api.clearQueueHistory(historyFilters),
     onSuccess: ({ cleared, kept }) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       queryClient.invalidateQueries({ queryKey: ['batches'] });
@@ -2044,8 +2075,9 @@ export function QueuePage() {
     queue?.forEach(item => {
       if (item.target_location) locations.add(item.target_location);
     });
+    historyPage?.locations.forEach(location => locations.add(location));
     return Array.from(locations).sort();
-  }, [printers, queue]);
+  }, [printers, queue, historyPage?.locations]);
 
   // Helper to check if a queue item matches the location filter
   const matchesLocationFilter = useCallback((item: PrintQueueItem): boolean => {
@@ -2258,26 +2290,8 @@ export function QueuePage() {
     return map;
   }, [activePrinterIds, printerStatusQueries]);
 
-  const historyItems = useMemo(() => {
-    let items = queue?.filter(i => ['completed', 'failed', 'skipped', 'cancelled'].includes(i.status)) || [];
-    if (filterLocation) {
-      items = items.filter(matchesLocationFilter);
-    }
-    return [...items].sort((a, b) => {
-      let cmp: number;
-      if (historySortBy === 'name') {
-        const aName = a.archive_name || a.library_file_name || '';
-        const bName = b.archive_name || b.library_file_name || '';
-        cmp = aName.localeCompare(bName);
-      } else if (historySortBy === 'printer') {
-        cmp = (a.printer_name || '').localeCompare(b.printer_name || '');
-      } else {
-        // Default: by date - most recent first (desc) is the natural order
-        cmp = (parseUTCDate(b.completed_at || b.created_at)?.getTime() ?? 0) - (parseUTCDate(a.completed_at || a.created_at)?.getTime() ?? 0);
-      }
-      return historySortAsc ? -cmp : cmp;
-    });
-  }, [queue, historySortBy, historySortAsc, matchesLocationFilter, filterLocation]);
+  // Filtered and sorted by the server; see the history query above.
+  const historyItems = historyPage?.items ?? EMPTY_QUEUE;
 
   // Calculate total queue time
   const totalQueueTime = useMemo(() => {
@@ -2623,7 +2637,7 @@ export function QueuePage() {
         {([
           { id: 'queue' as const, label: t('queue.tabs.queue'), icon: Clock, count: pendingItems.length + activeItems.length },
           { id: 'batches' as const, label: t('queue.tabs.batches'), icon: Package, count: activeBatchCount },
-          { id: 'history' as const, label: t('queue.tabs.history'), icon: ListOrdered, count: historyItems.length },
+          { id: 'history' as const, label: t('queue.tabs.history'), icon: ListOrdered, count: historyTotal },
           { id: 'timeline' as const, label: t('queue.tabs.timeline'), icon: GanttChart, count: null as number | null },
           // Slicer Pipelines dashboard (#1425 PR C). Lives here instead of
           // its own sidebar entry so the Print Queue page is the single
@@ -2658,7 +2672,7 @@ export function QueuePage() {
         pendingCount={pendingItems.length}
         totalTime={totalQueueTime}
         totalWeight={totalWeight}
-        historyCount={historyItems.length}
+        historyCount={historyTotal}
         t={t}
       />}
 
@@ -2750,7 +2764,7 @@ export function QueuePage() {
 
         <div className="hidden sm:block flex-1" />
 
-        {activeTab === 'history' && historyItems.length > 0 && (
+        {activeTab === 'history' && historyTotal > 0 && (
           <Button
             className="w-full sm:w-auto"
             variant="secondary"
@@ -2817,9 +2831,9 @@ export function QueuePage() {
         <PipelineRunsView />
       ) : activeTab === 'batches' ? (
         <BatchOrdersView hasPermission={hasPermission} t={t} focusBatchId={focusBatchId} />
-      ) : isLoading ? (
+      ) : isLoading || (activeTab === 'history' && historyLoading) ? (
         <div className="text-center py-12 text-bambu-gray">{t('common.loading')}</div>
-      ) : queue?.length === 0 ? (
+      ) : queue?.length === 0 && !historyLoading && historyTotal === 0 ? (
         <Card className="p-12 text-center border-dashed">
           <Calendar className="w-16 h-16 text-bambu-gray mx-auto mb-4 opacity-50" />
           <h3 className="text-xl font-medium text-white mb-2">{t('queue.empty.title')}</h3>
@@ -2847,6 +2861,7 @@ export function QueuePage() {
       ) : activeTab === 'history' ? (
         <HistorySection
           items={historyItems}
+          total={historyTotal}
           collapsed={false}
           visibleCount={historyVisibleCount}
           onShowMore={() => setHistoryVisibleCount((c) => c + HISTORY_PAGE_SIZE)}
@@ -3231,7 +3246,7 @@ export function QueuePage() {
       {showClearHistoryConfirm && (
         <ConfirmModal
           title={t('queue.confirm.clearHistoryTitle')}
-          message={t('queue.confirm.clearHistoryMessage', { count: historyItems.length })}
+          message={t('queue.confirm.clearHistoryMessage', { count: historyTotal })}
           confirmText={t('queue.clearHistory')}
           variant="danger"
           onConfirm={() => {

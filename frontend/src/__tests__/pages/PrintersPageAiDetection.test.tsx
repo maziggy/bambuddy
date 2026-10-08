@@ -128,6 +128,91 @@ describe('PrintersPage AI detection badge (#1546)', () => {
     expect(await screen.findAllByText('Idle')).toHaveLength(1);
   });
 
+  it('shows OctoEverywhere quality in the badge and detail modal for monitored printers', async () => {
+    server.use(
+      http.get('/api/v1/octoeverywhere/printer-status', () =>
+        HttpResponse.json({
+          enabled: true,
+          monitored_printers: [1],
+          per_printer: { '1': { class: 'warning', frame_count: 12, print_quality: 5, error: null } },
+          last_error: null,
+        })
+      )
+    );
+    render(<PrintersPage />);
+
+    const badge = await screen.findByText('Warning');
+    expect(badge.closest('button')).toHaveAttribute(
+      'title',
+      'AI Failure Detection: Warning (print quality 5/10) - click for details'
+    );
+    expect(screen.queryByText('Idle')).not.toBeInTheDocument();
+    await userEvent.click(badge);
+    expect(await screen.findByText('Print quality')).toBeInTheDocument();
+    expect(screen.getByText('5/10')).toBeInTheDocument();
+    expect(screen.queryByText('Score')).not.toBeInTheDocument();
+  });
+
+  it('shows an OctoEverywhere camera error without a made-up quality value', async () => {
+    server.use(
+      http.get('/api/v1/octoeverywhere/printer-status', () =>
+        HttpResponse.json({
+          enabled: true,
+          monitored_printers: [1],
+          per_printer: { '1': { class: 'error', frame_count: 0, print_quality: null, error: 'Camera unavailable' } },
+          last_error: null,
+        })
+      )
+    );
+    render(<PrintersPage />);
+
+    await userEvent.click(await screen.findByText('Not checking'));
+    expect(await screen.findByText('Camera unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('Print quality')).not.toBeInTheDocument();
+    expect(screen.queryByText('Safe')).not.toBeInTheDocument();
+  });
+
+  it('localizes an OctoEverywhere usage-limit code in the badge and opens its billing setup link', async () => {
+    server.use(
+      http.get('/api/v1/octoeverywhere/printer-status', () => HttpResponse.json({
+        enabled: true,
+        monitored_printers: [1],
+        per_printer: {
+          '1': { class: 'error', frame_count: 0, print_quality: null, error: 'Remote quota text', error_code: 'OE_FREE_USAGE_LIMIT_REACHED' },
+        },
+        last_error: 'Remote quota text',
+        last_error_code: 'OE_FREE_USAGE_LIMIT_REACHED',
+      })),
+    );
+    render(<PrintersPage />);
+
+    const badge = await screen.findByText('Not checking');
+    expect(badge.closest('button')?.getAttribute('title')).toContain('Usage limit reached.');
+    expect(badge.closest('button')?.getAttribute('title')).not.toContain('Remote quota text');
+    await userEvent.click(badge);
+    expect(await screen.findByRole('link', { name: 'Set up billing to continue' })).toHaveAttribute('href', 'https://octoeverywhere.com/gadgetapi');
+    expect(screen.queryByText('Remote quota text')).not.toBeInTheDocument();
+  });
+
+  it('keeps a redacted OctoEverywhere error generic without exposing a quota link', async () => {
+    server.use(
+      http.get('/api/v1/octoeverywhere/printer-status', () => HttpResponse.json({
+        enabled: true,
+        monitored_printers: [1],
+        per_printer: {
+          '1': { class: 'error', frame_count: 0, print_quality: null, error: null, error_code: null },
+        },
+        last_error: null,
+        last_error_code: null,
+      })),
+    );
+    render(<PrintersPage />);
+
+    await userEvent.click(await screen.findByText('Not checking'));
+    expect(screen.queryByText('Usage limit reached.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /set up billing/i })).not.toBeInTheDocument();
+  });
+
   it('clicking the badge opens a modal with live status and the last error', async () => {
     server.use(
       http.get('/api/v1/obico/printer-status', () =>

@@ -1375,6 +1375,7 @@ async def link_tag_to_spoolman_spool(
 
 
 _HEX_TAG_RE = re.compile(r"^[0-9A-F]{8,64}$")
+_AMS_CHIP_UID_PADDING = "00000100"
 
 
 @router.post("/tags/migrate")
@@ -1418,6 +1419,12 @@ async def migrate_tags_to_native(
         if is_slot_fallback_tag(tag, serials):
             report["slot_ids"] += 1
             continue
+        # The AMS pads a Bambu chip's 4-byte UID to 8 bytes ("D3E68F32" arrives as
+        # "D3E68F3200000100"). The native tag is the chip's own UID, as the AMS
+        # sync stores it, so it matches what a reader sees.
+        bambu = len(tag) == 32
+        if len(tag) == 16 and tag.endswith(_AMS_CHIP_UID_PADDING):
+            tag, bambu = tag[:8], True
         holder = native_holder.get(tag)
         if holder == spool["id"]:
             report["already"] += 1
@@ -1426,7 +1433,7 @@ async def migrate_tags_to_native(
             holder = None
         if holder is None and not dry_run:
             async with _translate_spoolman_errors():
-                holder = await client.claim_native_tag(spool["id"], tag, "bambu" if len(tag) == 32 else None)
+                holder = await client.claim_native_tag(spool["id"], tag, "bambu" if bambu else None)
         if holder is not None:
             report["conflicts"].append({"spool_id": spool["id"], "tag": tag, "holder": holder})
             continue

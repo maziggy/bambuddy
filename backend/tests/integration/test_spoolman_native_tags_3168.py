@@ -496,6 +496,23 @@ class TestMigration:
         assert dry["conflicts"] == real["conflicts"] == []
         assert (fake.native(1), fake.native(9)) == ([], [CHIP])
 
+    async def test_a_padded_ams_chip_uid_is_copied_as_the_chips_own_uid(self, async_client, spoolman_on):
+        fake = FakeSpoolman()
+        fake.add_spool(1, extra_tag=f"{CHIP}00000100")  # linked from an AMS slot
+        fake.add_spool(2, extra_tag="E004015012345678")  # an 8-byte reader UID stays whole
+        fake.add_spool(3, extra_tag=f"{OTHER_CHIP}00000100", tags=[OTHER_CHIP])  # already native
+
+        with serving(fake):
+            dry = (await async_client.post(f"{INVENTORY}/tags/migrate")).json()
+            real = (await async_client.post(f"{INVENTORY}/tags/migrate", params={"dry_run": "false"})).json()
+
+        assert dry["moved"] == real["moved"] == [1, 2]
+        assert dry["already"] == real["already"] == 1
+        assert (fake.native(1), fake.native(2)) == ([CHIP], ["E004015012345678"])
+        assert fake.spools[1]["tags"][0]["format"] == "bambu"
+        # extra.tag keeps the AMS's padded form, which the AMS sync matches on.
+        assert fake.spools[1]["extra"]["tag"] == json.dumps(f"{CHIP}00000100")
+
     async def test_an_older_server_is_refused(self, async_client, spoolman_on):
         fake = FakeSpoolman(tag_api=False)
         fake.add_spool(1, extra_tag=TRAY_UUID)

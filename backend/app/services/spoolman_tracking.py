@@ -102,6 +102,19 @@ def get_fallback_spool_tag_for_slot(printer_serial: str, ams_id: int, tray_id: i
     return f"{_hash_serial_to_hex32(printer_serial)}{_to_fixed_hex(ams_id, 4)}{_to_fixed_hex(tray_id, 4)}"
 
 
+def is_slot_fallback_tag(tag: str, printer_serials) -> bool:
+    """Whether a tag is an AMS slot's generated fallback ID rather than a physical tag.
+
+    Fallback IDs are 16 hex characters that start with the printer serial's hash
+    (see get_fallback_spool_tag_for_slot). They identify a slot, not a spool, and
+    have no place among Spoolman's native tags.
+    """
+    tag = (tag or "").strip('"').upper()
+    if len(tag) != 16:
+        return False
+    return any(tag[:8] == _hash_serial_to_hex32(s) for s in printer_serials if s)
+
+
 def _resolve_spool_tag(tray_info: dict, printer_serial: str = "", global_tray_id: int | None = None) -> str:
     """Get the best spool identifier from tray info (prefer tray_uuid over tag_uid).
 

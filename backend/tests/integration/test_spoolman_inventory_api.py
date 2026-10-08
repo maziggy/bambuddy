@@ -55,6 +55,9 @@ async def spoolman_settings(db_session):
 def mock_spoolman_client():
     """Mock the Spoolman client with a sample spool."""
     mock_client = MagicMock()
+    mock_client.has_tag_api = AsyncMock(return_value=False)
+    mock_client.add_native_tags = AsyncMock(return_value=0)
+    mock_client.unlink_all_native_tags = AsyncMock()
     mock_client.base_url = "http://localhost:7912"
     mock_client.health_check = AsyncMock(return_value=True)
     mock_client.get_all_spools = AsyncMock(return_value=[SAMPLE_SPOOLMAN_SPOOL])
@@ -2277,6 +2280,9 @@ class TestUnlinkSpool:
             "extra": {"tag": '"AABBCCDDEEFF0011AABBCCDDEEFF0011"', "custom": "keep"},
         }
         mock_client = MagicMock()
+        mock_client.has_tag_api = AsyncMock(return_value=False)
+        mock_client.add_native_tags = AsyncMock(return_value=0)
+        mock_client.unlink_all_native_tags = AsyncMock()
         mock_client.base_url = "http://localhost:7912"
         mock_client.health_check = AsyncMock(return_value=True)
         mock_client.get_spool = AsyncMock(return_value=spool_with_tag)
@@ -2416,6 +2422,9 @@ class TestCreateSpoolWithFilamentId:
     async def test_create_with_filament_id_skips_find_or_create(self, async_client: AsyncClient, spoolman_settings):
         """When spoolman_filament_id is provided, find_or_create_filament must NOT be called."""
         mock_client = MagicMock()
+        mock_client.has_tag_api = AsyncMock(return_value=False)
+        mock_client.add_native_tags = AsyncMock(return_value=0)
+        mock_client.unlink_all_native_tags = AsyncMock()
         mock_client.find_or_create_filament = AsyncMock(return_value=7)
         mock_client.create_spool = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
         mock_client.update_spool_full = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
@@ -2441,6 +2450,9 @@ class TestCreateSpoolWithFilamentId:
         from backend.app.services.spoolman import SpoolmanNotFoundError
 
         mock_client = MagicMock()
+        mock_client.has_tag_api = AsyncMock(return_value=False)
+        mock_client.add_native_tags = AsyncMock(return_value=0)
+        mock_client.unlink_all_native_tags = AsyncMock()
         mock_client.create_spool = AsyncMock(side_effect=SpoolmanNotFoundError("filament not found"))
         with patch(
             "backend.app.api.routes.spoolman_inventory._get_client",
@@ -2470,6 +2482,9 @@ class TestBulkCreateWithFilamentId:
     ):
         """Bulk POST with spoolman_filament_id must NOT call find_or_create_filament."""
         mock_client = MagicMock()
+        mock_client.has_tag_api = AsyncMock(return_value=False)
+        mock_client.add_native_tags = AsyncMock(return_value=0)
+        mock_client.unlink_all_native_tags = AsyncMock()
         mock_client.find_or_create_filament = AsyncMock(return_value=7)
         mock_client.create_spool = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)
         mock_client.update_spool_full = AsyncMock(return_value=SAMPLE_SPOOLMAN_SPOOL)

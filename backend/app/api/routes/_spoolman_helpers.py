@@ -359,6 +359,16 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     _raw_is_hex = bool(_TAG_HEX_RE.match(raw_tag))
     tag_uid = raw_tag if _raw_is_hex and 8 <= len(raw_tag) <= 30 else None
     tray_uuid = raw_tag if _raw_is_hex and len(raw_tag) == 32 else None
+    # Spoolman 0.27+ native tags fill whichever of the two extra.tag left empty,
+    # so a spool linked there shows as tagged here as well.
+    for native in spool.get("tags") or []:
+        uid = str(native.get("uid") or "").upper()
+        if not _TAG_HEX_RE.match(uid):
+            continue
+        if len(uid) == 32:
+            tray_uuid = tray_uuid or uid
+        elif 8 <= len(uid) <= 30:
+            tag_uid = tag_uid or uid
 
     # Subtype = filament name with material prefix stripped
     material: str = (filament.get("material") or "").strip()

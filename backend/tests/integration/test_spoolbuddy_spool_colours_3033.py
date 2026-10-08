@@ -86,6 +86,9 @@ class TestTheScanBroadcastCarriesTheSpoolsColours:
             "registered": "2024-01-01T00:00:00Z",
         }
         client = MagicMock()
+        client.has_tag_api = AsyncMock(return_value=False)
+        client.add_native_tags = AsyncMock(return_value=0)
+        client.unlink_all_native_tags = AsyncMock()
         client.base_url = "http://spoolman.local:7912"
         client.get_spools = AsyncMock(return_value=[sm_spool])
         client.find_spool_by_tag = AsyncMock(return_value=sm_spool)

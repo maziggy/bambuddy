@@ -30,6 +30,7 @@ _TERMINAL = {"IDLE", "FINISH", "FAILED", "COMPLETED", "CANCELLED", "ABORTED", "S
 _STOPPED = {"ended", "suppressed"}
 _ROLLOVER = {"expired", "overdue", "abandoned"}
 _INTERVAL = 60
+_STARTUP_GRACE = timedelta(minutes=2)
 
 
 def _now() -> datetime:
@@ -243,6 +244,7 @@ class NotifyLiveActivityService(NotifyWorkerLifecycle):
         self._wake = asyncio.Event()
         self._task: asyncio.Task | None = None
         self._init_worker()
+        self._status_grace_until: datetime | None = None
 
     def _on_activated(self):
         # No MQTT observations are accepted while dormant. Anything retained
@@ -252,6 +254,7 @@ class NotifyLiveActivityService(NotifyWorkerLifecycle):
         self._new_fallbacks.clear()
         self._started_at.clear()
         self._progress_resets.clear()
+        self._status_grace_until = None
 
     def observe(self, printer_id: int, state) -> None:
         if self._provider_enabled is False:
@@ -364,6 +367,9 @@ class NotifyLiveActivityService(NotifyWorkerLifecycle):
                 self._provider_enabled = any_enabled
                 if any_enabled and previously_enabled is False:
                     self._on_activated()
+                if any_enabled and self._status_grace_until is None:
+                    # Start when reconciliation begins, not at module import.
+                    self._status_grace_until = _now() + _STARTUP_GRACE
                 if not any_enabled and not previously_enabled and not self._cleanup_once and not self._cleanup_pending:
                     return
                 rows = (await db.scalars(select(NotificationLiveActivity))).all()
@@ -434,9 +440,9 @@ class NotifyLiveActivityService(NotifyWorkerLifecycle):
                         await self._end(row, config, snapshot.state)
                     elif snapshot and snapshot.connected and snapshot.state in _RUNNING and not same_print:
                         await self._end(row, config, "STOPPED")
-                    elif snapshot is None:
-                        # Startup silence is not evidence of a disconnect. Wait
-                        # for this printer's first real status before changing it.
+                    elif snapshot is None and self._status_grace_until and _now() < self._status_grace_until:
+                        # Allow reconnect time without leaving a switched-off
+                        # printer's saved countdown running indefinitely.
                         continue
                     else:
                         # A missing/offline printer is not evidence the print ended.
@@ -445,7 +451,9 @@ class NotifyLiveActivityService(NotifyWorkerLifecycle):
                             snapshot.content(names[row.printer_id], config) if snapshot else json.loads(row.content)
                         )
                         if snapshot is None or not snapshot.connected:
-                            content.update(status="Printer offline", endsIn=None)
+                            content.update(status="Printer offline", endsIn=None, trailing=None)
+                        if snapshot is None:
+                            content["metrics"] = None  # Saved ETA/temperature chips are stale after a restart.
                         await self._sync(
                             row,
                             config,

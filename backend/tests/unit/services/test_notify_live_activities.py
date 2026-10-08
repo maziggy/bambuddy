@@ -730,6 +730,93 @@ async def test_startup_waits_for_real_status_before_touching_existing_activity(s
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("connected", [None, False, True])
+async def test_startup_grace_expires_without_real_status_and_reconnect_resumes(setup, connected):
+    service, api, factory, clock = await start(setup)
+    clock[0] += timedelta(minutes=2)
+    restarted = NotifyLiveActivityService(factory, api)
+    # Importing the service before worker startup must not consume the grace.
+    clock[0] += timedelta(minutes=5)
+
+    # Neither complete silence nor broker-only status may extend the grace.
+    for seconds in (0, 90, 29):
+        clock[0] += timedelta(seconds=seconds)
+        if connected is not None:
+            restarted.observe(1, state(state="unknown", connected=connected, progress=0))
+        await restarted.tick()
+        api.get_activity.assert_not_awaited()
+        api.update_activity.assert_not_awaited()
+
+    clock[0] += timedelta(seconds=1)
+    await restarted.tick()
+    api.get_activity.assert_awaited_once_with("LA123456", "secret")
+    content = api.update_activity.call_args.args[2]
+    assert content["status"] == "Printer offline"
+    assert content["endsIn"] is None
+    assert content["progress"] == 42
+    saved = (await rows(factory))[0]
+    assert saved.eta_seconds is None
+    assert saved.eta_deadline is None
+    assert saved.activity_id == "LA123456"
+    api.end_activity.assert_not_awaited()
+    assert api.start_activity.await_count == 1
+
+    # A real status resumes the same tile immediately, even during throttling.
+    restarted.observe(1, state(progress=46, remaining_time=10))
+    await restarted.tick()
+    assert api.update_activity.await_count == 2
+    assert api.update_activity.call_args.args[0] == "LA123456"
+    content = api.update_activity.call_args.args[2]
+    assert content["status"] == "Printing"
+    assert content["endsIn"] == 600
+    assert content["progress"] == 46
+    assert api.start_activity.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", ["expired", "dismissed"])
+async def test_startup_grace_never_restarts_an_offline_printers_activity(setup, reason):
+    service, api, factory, clock = await start(setup)
+    restarted = NotifyLiveActivityService(factory, api)
+    await restarted.tick()
+    api.get_activity.return_value = {"state": "ended", "endReason": reason}
+    clock[0] += timedelta(minutes=2)
+    await restarted.tick()
+    api.get_activity.assert_awaited_once_with("LA123456", "secret")
+    api.update_activity.assert_not_awaited()
+    api.end_activity.assert_not_awaited()
+    assert api.start_activity.await_count == 1
+    assert (await rows(factory))[0].state == ("pending" if reason == "expired" else "suppressed")
+
+
+@pytest.mark.asyncio
+async def test_startup_offline_clears_saved_eta_labels(setup):
+    service, api, factory, clock = setup
+    async with factory() as db:
+        provider = await db.get(NotificationProvider, 1)
+        config = json.loads(provider.config)
+        config["live_activity_metrics"] = ["progress", "eta", "nozzle"]
+        provider.config = json.dumps(config)
+        await db.commit()
+    service.observe(1, state(remaining_time=25 * 60))
+    await service.tick()
+    original = api.start_activity.call_args.args[2]
+    assert original["trailing"] == "25h 0m"
+    assert any(metric["label"] == "Remaining" for metric in original["metrics"])
+
+    restarted = NotifyLiveActivityService(factory, api)
+    await restarted.tick()
+    clock[0] += timedelta(minutes=2)
+    await restarted.tick()
+    content = api.update_activity.call_args.args[2]
+    assert content["status"] == "Printer offline"
+    assert content["endsIn"] is None
+    assert content["trailing"] is None
+    assert content["metrics"] is None
+    assert content["progress"] == 42
+
+
+@pytest.mark.asyncio
 async def test_scheduled_cleanup_does_not_wait_for_create_and_keeps_late_handle(setup):
     import asyncio
 

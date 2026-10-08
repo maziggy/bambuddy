@@ -724,6 +724,29 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_status_reports_the_trays_the_print_drew_from(self, async_client: AsyncClient, printer_factory):
+        """Restored after a restart as lists, recorded live as tuples: both serialise alike."""
+        from unittest.mock import MagicMock, patch
+
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory()
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "RUNNING"
+        state.tray_change_log = [[2, 0], (1, 350)]
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/status")
+
+        assert response.json()["tray_change_log"] == [[2, 0], [1, 350]]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_cover_uses_dispatched_plate_when_gcode_file_lacks_path(
         self, async_client: AsyncClient, printer_factory, db_session, tmp_path
     ):

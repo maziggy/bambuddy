@@ -409,6 +409,11 @@ class PrinterStatus(BaseModel):
     extruder_slots: dict[str, ExtruderSlotResponse] = {}
     # Currently loaded tray (global ID): 254 = external spool, 255 = no filament
     tray_now: int = 255
+    # The trays this print has drawn from, in order: [[global tray ID, layer the
+    # switch happened at], ...]. A tray outside the job's AMS mapping is a backup
+    # spool the printer switched to (AMS Filament Backup); the queue card shows it
+    # in place of the slot that ran out. Reset at the start of each print.
+    tray_change_log: list[list[int]] = []
     # Runout / filament-replacement guidance (#2587). Populated only while the
     # print is PAUSED. Both are globalised tray IDs (ams_id*4+slot, or 128-135 for
     # AMS-HT, or 254 for external) so the frontend can highlight them with the same

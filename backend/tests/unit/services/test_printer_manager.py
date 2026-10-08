@@ -989,6 +989,12 @@ class TestPrinterStateToDict:
             "1": {"ams_id": None, "slot_id": None, "has_filament": False},
         }
 
+    def test_the_tray_change_log_rides_the_websocket(self, mock_state):
+        """The queue card reads the backup spool a print switched to from it."""
+        mock_state.tray_change_log = [(2, 0), (1, 350)]
+
+        assert printer_state_to_dict(mock_state)["tray_change_log"] == [[2, 0], [1, 350]]
+
     def test_extruder_slots_are_empty_when_unreported(self, mock_state):
         """Printers outside the H2/X2 series never send the block."""
         assert printer_state_to_dict(mock_state)["extruder_slots"] == {}

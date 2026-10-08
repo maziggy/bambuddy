@@ -1,0 +1,1 @@
+import{i as e}from"./chunk-aKtaBQYM.js";import{D as t}from"./client-D0Q3EIO2.js";var n=e(t(),1);function r(){let e=(0,n.useRef)(null),t=(0,n.useCallback)(()=>{e.current!==null&&(clearTimeout(e.current),e.current=null)},[]),r=(0,n.useCallback)((n,r)=>{t(),e.current=setTimeout(()=>{e.current=null,n()},r)},[t]);return(0,n.useEffect)(()=>t,[t]),{schedule:r,cancel:t}}export{r as t};

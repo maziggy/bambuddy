@@ -5462,6 +5462,8 @@ export const api = {
     if (dateTo) params.set('date_to', dateTo);
     return request<Archive[]>(`/archives/?${params}`);
   },
+  // Latest archive of every printer in one request, for the printer cards.
+  getLastArchivePerPrinter: () => request<Archive[]>('/archives/last-per-printer'),
   getArchivesSlim: (dateFrom?: string, dateTo?: string, createdById?: number) => {
     const params = new URLSearchParams();
     if (dateFrom) params.set('date_from', dateFrom);

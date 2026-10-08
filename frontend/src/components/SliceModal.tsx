@@ -42,7 +42,7 @@ import {
   isConnectedModelPreset,
   matchedFilamentRefs,
   pickConnectedPrinterPreset,
-  printerPresetModel,
+  printerProfileModel,
   printersOfModel,
 } from '../utils/sliceLoadedSpools';
 
@@ -523,16 +523,7 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
   // AMS says nothing about what an X1C job can start on. A profile whose
   // model can't be read keeps every connected printer.
   const spoolPrinters = useMemo(
-    // The parent names the model reliably; the user's own name may not.
-    () => printersOfModel(
-      loadedPrinters,
-      printerPresetModel(
-        (selectedPrinterName && Object.hasOwn(printerParents, selectedPrinterName)
-          ? printerParents[selectedPrinterName]
-          : null) || selectedPrinterName,
-        printerModels,
-      ),
-    ),
+    () => printersOfModel(loadedPrinters, printerProfileModel(selectedPrinterName, printerModels, printerParents)),
     [loadedPrinters, selectedPrinterName, printerModels, printerParents],
   );
   const filamentNameIndex = useMemo(
@@ -551,8 +542,8 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
   const printerFilter = useMemo(() => {
     if (!onlyConnectedModels || loadedPrinters.length === 0) return null;
     const models = loadedPrinters.map((p) => p.model);
-    return (p: UnifiedPreset) => isConnectedModelPreset(p, models, printerModels);
-  }, [onlyConnectedModels, loadedPrinters, printerModels]);
+    return (p: UnifiedPreset) => isConnectedModelPreset(p, models, printerModels, printerParents);
+  }, [onlyConnectedModels, loadedPrinters, printerModels, printerParents]);
   const filamentFilter = useMemo(() => {
     if (!onlyLoadedSpools || loadedFilamentRefs.size === 0) return null;
     return (p: UnifiedPreset) => loadedFilamentRefs.has(`${p.source}:${p.id}`);
@@ -692,9 +683,18 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
     const embeddedPreset = findPreset(data, embedded, 'printer');
     const next = embeddedPreset && printerFilter(embeddedPreset)
       ? embedded
-      : pickConnectedPrinterPreset(data, loadedPrinters.map((p) => p.model), printerModels);
+      : pickConnectedPrinterPreset(data, loadedPrinters.map((p) => p.model), printerModels, printerParents);
     if (next) setPrinterPreset(next);
-  }, [presetsQuery.data, printerFilter, printerPreset, embeddedPrinter, loadedPrinters, printerModels, useEmbedded]);
+  }, [
+    presetsQuery.data,
+    printerFilter,
+    printerPreset,
+    embeddedPrinter,
+    loadedPrinters,
+    printerModels,
+    printerParents,
+    useEmbedded,
+  ]);
 
   // Process pre-pick / re-pick (#1325): defaults to a process compatible with
   // the selected printer, and re-defaults when a printer change leaves the

@@ -1494,6 +1494,8 @@ class BambuMQTTClient:
         # True once the printer has sent `cfg`; from then on AMS Filament Backup
         # is read from cfg only, never from home_flag (#3259).
         self._backup_cfg_seen: bool = False
+        # Last home_flag written by the #3259 probe log below.
+        self._backup_home_flag_logged: int | None = None
 
         # Track last requested tray ID for H2D dual-nozzle printers
         # H2D only reports slot number (0-3) in tray_now, not global tray ID
@@ -2339,6 +2341,25 @@ class BambuMQTTClient:
                     new_backup = parse_ams_filament_backup_from_cfg(print_data["cfg"])
                 elif not self._backup_cfg_seen and len(print_data) > 30:
                     new_backup = parse_ams_filament_backup_from_home_flag(print_data.get("home_flag"))
+                # Probe for #3259: does bit 10 stay right in the small update
+                # frames these printers send between full reports? Logged on
+                # every change, so a heartbeat that clears bit 10 shows up as
+                # a flip. Remove once a P1S capture answers it.
+                home_flag = print_data.get("home_flag")
+                if (
+                    not self._backup_cfg_seen
+                    and isinstance(home_flag, int)
+                    and not isinstance(home_flag, bool)
+                    and home_flag != self._backup_home_flag_logged
+                ):
+                    self._backup_home_flag_logged = home_flag
+                    logger.debug(
+                        "[%s] home_flag probe: 0x%08X bit10=%d keys=%d",
+                        self.serial_number,
+                        home_flag & 0xFFFFFFFF,
+                        (home_flag >> 10) & 1,
+                        len(print_data),
+                    )
             if new_backup is not None and new_backup != self.state.ams_filament_backup:
                 hold_start = self._xcam_hold_start.get("print_option_auto_switch_filament")
                 if hold_start is not None and (time.time() - hold_start) <= self._xcam_hold_time:

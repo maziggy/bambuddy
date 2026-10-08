@@ -77,13 +77,29 @@ export function printersOfModel(
   return printers.filter((p) => sameModel(p.model, model));
 }
 
+/**
+ * The model of a printer profile, read from the profile it was saved from
+ * when there is one: the parent names the model reliably, the user's own name
+ * ("Bambu Lab P1S 0.4 nozzle - Copy") may not (#3250, #3172).
+ */
+export function printerProfileModel(
+  name: string | null | undefined,
+  printerModels: Record<string, string>,
+  printerParents: Record<string, string> = {},
+): string | null {
+  if (!name) return null;
+  const parent = Object.hasOwn(printerParents, name) ? printerParents[name] : null;
+  return printerPresetModel(parent || name, printerModels);
+}
+
 /** Whether a printer profile belongs to a connected model, or can't be told. */
 export function isConnectedModelPreset(
   preset: Pick<UnifiedPreset, 'name'>,
   connectedModels: (string | null)[],
   printerModels: Record<string, string>,
+  printerParents: Record<string, string> = {},
 ): boolean {
-  const model = printerPresetModel(preset.name, printerModels);
+  const model = printerProfileModel(preset.name, printerModels, printerParents);
   if (model === null) return true;
   return connectedModels.some((c) => sameModel(c, model));
 }
@@ -97,11 +113,12 @@ export function pickConnectedPrinterPreset(
   data: UnifiedPresetsResponse,
   connectedModels: (string | null)[],
   printerModels: Record<string, string>,
+  printerParents: Record<string, string> = {},
 ): PresetRef | null {
   let fallback: PresetRef | null = null;
   for (const source of SLICE_MODAL_TIER_ORDER) {
     for (const preset of data[source].printer) {
-      const model = printerPresetModel(preset.name, printerModels);
+      const model = printerProfileModel(preset.name, printerModels, printerParents);
       if (model === null || !connectedModels.some((c) => sameModel(c, model))) continue;
       const ref = { source, id: preset.id };
       if (/\b0\.4\s*nozzle\b/i.test(preset.name)) return ref;

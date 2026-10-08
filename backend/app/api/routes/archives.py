@@ -548,6 +548,65 @@ async def list_archives(
     return result
 
 
+@router.get("/last-per-printer", response_model=list[ArchiveResponse])
+async def list_last_archive_per_printer(
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+):
+    """The most recent archive of every printer, for the printer cards.
+
+    One query for the whole Printers page instead of one list request per card.
+    Leaves out the duplicate detection the full listing does: the card shows a
+    name and an outcome prompt, and on a farm that scan ran once per printer
+    on every page load.
+    """
+    user, can_read_all = auth_result
+    filters = [PrintArchive.deleted_at.is_(None), PrintArchive.printer_id.isnot(None)]
+    if user is not None and not can_read_all:
+        filters.append(PrintArchive.created_by_id == user.id)
+    # Only printers the caller may see (#1727)
+    if (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
+        filters.append(clause)
+
+    ranked = (
+        select(
+            PrintArchive.id,
+            func.row_number()
+            .over(
+                partition_by=PrintArchive.printer_id,
+                # A reprint reuses its archive row, moving it to the printer it
+                # runs on with a fresh started_at, so the latest run start, not
+                # the row's age, tells which print a printer ran last.
+                order_by=(
+                    func.coalesce(PrintArchive.started_at, PrintArchive.created_at).desc(),
+                    PrintArchive.id.desc(),
+                ),
+            )
+            .label("rn"),
+        )
+        .where(*filters)
+        .subquery()
+    )
+
+    from sqlalchemy.orm import selectinload
+
+    result = await db.execute(
+        select(PrintArchive)
+        .options(selectinload(PrintArchive.project), selectinload(PrintArchive.created_by))
+        .where(PrintArchive.id.in_(select(ranked.c.id).where(ranked.c.rn == 1)))
+        .order_by(PrintArchive.printer_id)
+    )
+    archives = list(result.scalars().all())
+    run_aggregates = await _load_run_aggregates(db, [a.id for a in archives])
+    return [archive_to_response(a, run_aggregate=run_aggregates.get(a.id)) for a in archives]
+
+
 @router.get("/no-3mf-warning")
 async def no_3mf_warning(
     db: AsyncSession = Depends(get_db),

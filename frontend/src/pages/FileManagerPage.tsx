@@ -1183,6 +1183,7 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
         {file.thumbnail_path ? (
           <img
             src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersion ? ((api.getLibraryFileThumbnailUrl(file.id).includes('?') ? '&' : '?') + `v=${thumbnailVersion}`) : ''}`}
+            loading="lazy"
             alt={file.filename}
             className="w-full h-full object-cover"
           />
@@ -1559,6 +1560,7 @@ function ColumnFileRow({ file, isSelected, isFocused, showModified, thumbnailVer
         {file.thumbnail_path ? (
           <img
             src={`${thumbnailUrl}${thumbnailVersion ? ((thumbnailUrl.includes('?') ? '&' : '?') + `v=${thumbnailVersion}`) : ''}`}
+            loading="lazy"
             alt=""
             className="w-full h-full object-cover"
           />
@@ -3734,6 +3736,7 @@ export function FileManagerPage() {
                           {file.thumbnail_path ? (
                             <img
                               src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersions[file.id] ? ((api.getLibraryFileThumbnailUrl(file.id).includes('?') ? '&' : '?') + `v=${thumbnailVersions[file.id]}`) : ''}`}
+                              loading="lazy"
                               alt=""
                               className="w-full h-full object-cover"
                             />
@@ -3749,6 +3752,7 @@ export function FileManagerPage() {
                             <div className="w-48 h-48 rounded-lg bg-bambu-dark-secondary border border-bambu-dark-tertiary shadow-xl overflow-hidden">
                               <img
                                 src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersions[file.id] ? ((api.getLibraryFileThumbnailUrl(file.id).includes('?') ? '&' : '?') + `v=${thumbnailVersions[file.id]}`) : ''}`}
+                                loading="lazy"
                                 alt={file.filename}
                                 className="w-full h-full object-contain"
                               />

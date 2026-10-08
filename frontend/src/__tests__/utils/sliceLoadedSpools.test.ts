@@ -9,6 +9,7 @@ import {
   isConnectedModelPreset,
   matchSlotPreset,
   matchedFilamentRefs,
+  pickConnectedPrinterPreset,
   presetBaseName,
   printerPresetModel,
   printersOfModel,
@@ -91,6 +92,25 @@ describe('isConnectedModelPreset', () => {
 
   it('understands the short A1 Mini code', () => {
     expect(isConnectedModelPreset({ name: 'Bambu Lab A1 mini 0.4 nozzle' }, ['A1M'], MODELS)).toBe(true);
+  });
+
+  it('reads a renamed copy by the profile it was saved from', () => {
+    const copy = { name: 'Bambu Lab H2D 0.4 nozzle - Copy' };
+    const parents = { [copy.name]: H2D };
+    expect(isConnectedModelPreset(copy, ['H2D'], MODELS, parents)).toBe(true);
+    expect(isConnectedModelPreset(copy, ['X1C'], MODELS, parents)).toBe(false);
+  });
+});
+
+describe('pickConnectedPrinterPreset', () => {
+  it('can pick a renamed copy of an online model', () => {
+    const copy = { id: 'copy-1', name: 'Bambu Lab H2D 0.4 nozzle - Copy', source: 'local' as const };
+    const data = presets({ local: { printer: [copy], process: [], filament: [] } });
+    expect(pickConnectedPrinterPreset(data, ['H2D'], MODELS)).toBeNull();
+    expect(pickConnectedPrinterPreset(data, ['H2D'], MODELS, { [copy.name]: H2D })).toEqual({
+      source: 'local',
+      id: 'copy-1',
+    });
   });
 });
 

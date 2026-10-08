@@ -2598,13 +2598,13 @@ function PrinterCard({
   // Combine both sources: queue item user takes precedence, then reprint user
   const currentPrintUser = printingQueueItems?.[0]?.created_by_username || reprintUser?.username;
 
-  // Fetch last completed print for this printer
-  const { data: lastPrints } = useQuery({
-    queryKey: ['archives', printer.id, 'last'],
-    queryFn: () => api.getArchives(printer.id, 1, 0),
-    enabled: status?.connected && status?.state !== 'RUNNING',
+  // Last print of this printer. One shared request for every card on the page
+  // (the key is the same for all of them); each card picks its own row.
+  const { data: lastPrint } = useQuery({
+    queryKey: ['archives', 'last-per-printer'],
+    queryFn: () => api.getLastArchivePerPrinter(),
+    select: (archives) => archives.find((a) => a.printer_id === printer.id),
   });
-  const lastPrint = lastPrints?.[0];
   const isPrintingOrPaused = status?.state === 'RUNNING' || status?.state === 'PAUSE';
   const needsPlateClear = requirePlateClear && status?.awaiting_plate_clear === true;
   // Post-print outcome confirmation on the card (#1898): while the plate-clear

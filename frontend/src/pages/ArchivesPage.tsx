@@ -915,6 +915,7 @@ function ArchiveCard({
                 ? api.getArchivePlateThumbnail(archive.id, plates[displayPlateIndex]?.index ?? 0)
                 : api.getArchiveThumbnail(archive.id)
             }
+            loading="lazy"
             alt={archive.print_name || archive.filename}
             className="w-full h-full object-cover"
           />
@@ -2385,6 +2386,7 @@ function ArchiveListRow({
           {archive.thumbnail_path ? (
             <img
               src={api.getArchiveThumbnail(archive.id)}
+              loading="lazy"
               alt=""
               className="w-10 h-10 object-cover rounded"
             />

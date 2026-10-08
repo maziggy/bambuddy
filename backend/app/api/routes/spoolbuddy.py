@@ -466,14 +466,33 @@ async def nfc_tag_scanned(
     if client is not None:
         # Spoolman mode — exclusive lookup, no local-DB fallback.
         try:
-            cached_spools = await client.get_spools()
             sm_spool: dict | None = None
-            if tray_uuid:
-                sm_spool = await client.find_spool_by_tag(tray_uuid, cached_spools=cached_spools)
-            if sm_spool is None and req.tag_uid:
-                sm_spool = await client.find_spool_by_tag(req.tag_uid, cached_spools=cached_spools)
+            native = await client.has_tag_api()
+            cached_spools: list[dict] | None = None
+            # The tray UUID is settled before the tag UID, as it always was: a spool
+            # that carries the UUID only in extra.tag still wins over one holding the
+            # chip UID natively. Spoolman 0.27+ answers each identifier with one exact
+            # query; the whole inventory is loaded only when that misses.
+            for uid in (tray_uuid, req.tag_uid):
+                if not uid or sm_spool is not None:
+                    continue
+                if native:
+                    try:
+                        sm_spool = await client.find_spool_by_native_tag(uid.upper())
+                    except SpoolmanClientError as exc:
+                        logger.warning("Native tag lookup refused for %s, using extra.tag: %s", uid, exc)
+                if sm_spool is None:
+                    if cached_spools is None:
+                        cached_spools = await client.get_spools()
+                    sm_spool = await client.find_spool_by_tag(uid, cached_spools=cached_spools)
 
             if sm_spool is not None:
+                # What this scan read becomes a native tag of the spool: a spool found
+                # through extra.tag moves over on its first scan, and a Bambu spool
+                # collects the chip UID of each side as it is read.
+                await client.add_native_tags(
+                    sm_spool, [tray_uuid, req.tag_uid], "bambu" if tray_uuid else None, retry_refused=True
+                )
                 mapped = _map_spoolman_spool(sm_spool)
                 await ws_manager.broadcast(
                     {
@@ -801,7 +820,39 @@ async def nfc_write_result(
                         req.spool_id,
                     )
 
-                await sm_client.merge_spool_extra(req.spool_id, {"tag": tag_value})
+                # Spoolman 0.27+: the same tag as a native one. It was just written onto
+                # this spool, so a previous holder gives it up here too. Linked before
+                # extra.tag, as the step Spoolman can refuse; a failed extra.tag write
+                # takes back what was added.
+                uid = req.tag_uid.upper()
+                added_native = False
+                if await sm_client.has_tag_api():
+                    before = await sm_client.get_spool(req.spool_id)
+                    had = any(t.get("uid") == uid for t in before.get("tags") or [])
+                    # A spool that already holds the tag has nothing to link or move.
+                    if not had:
+                        holder = await sm_client.link_native_tag(req.spool_id, uid)
+                        if holder is not None and holder > 0:
+                            previous = holder
+                            await sm_client.unlink_native_tag(previous, uid)
+                            holder = await sm_client.link_native_tag(req.spool_id, uid)
+                            logger.info(
+                                "Spoolman: native tag %s moved from spool %d to %d", uid, previous, req.spool_id
+                            )
+                        if holder is not None:
+                            logger.warning("Native tag %s belongs to a filament or location, not linked", uid)
+                        added_native = holder is None
+                try:
+                    await sm_client.merge_spool_extra(req.spool_id, {"tag": tag_value})
+                except Exception:
+                    if added_native:
+                        try:
+                            await sm_client.unlink_native_tag(req.spool_id, uid)
+                        except (SpoolmanClientError, SpoolmanUnavailableError) as undo_exc:
+                            logger.warning(
+                                "Could not take back native tag %s from spool %d: %s", uid, req.spool_id, undo_exc
+                            )
+                    raise
                 logger.info(
                     "Spoolman tag written and linked: spool %d -> tag %s",
                     req.spool_id,

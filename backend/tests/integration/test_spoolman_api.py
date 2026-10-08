@@ -36,6 +36,9 @@ class TestSpoolmanAPI:
     def mock_spoolman_client(self):
         """Mock the Spoolman client functions."""
         mock_client = MagicMock()
+        mock_client.has_tag_api = AsyncMock(return_value=False)
+        mock_client.add_native_tags = AsyncMock(return_value=0)
+        mock_client.unlink_all_native_tags = AsyncMock()
         mock_client.is_connected = True
         mock_client.base_url = "http://localhost:7912"
         mock_client.health_check = AsyncMock(return_value=True)
@@ -1162,6 +1165,9 @@ class TestLinkSpoolMqttConfigure:
     @pytest.fixture
     def mock_spoolman_client(self):
         mock_client = MagicMock()
+        mock_client.has_tag_api = AsyncMock(return_value=False)
+        mock_client.add_native_tags = AsyncMock(return_value=0)
+        mock_client.unlink_all_native_tags = AsyncMock()
         mock_client.is_connected = True
         mock_client.base_url = "http://localhost:7912"
         mock_client.health_check = AsyncMock(return_value=True)

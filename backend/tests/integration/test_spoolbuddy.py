@@ -456,6 +456,9 @@ class TestNfcEndpoints:
             "used_weight": 0.0,
         }
         mock_client = MagicMock()
+        mock_client.has_tag_api = AsyncMock(return_value=False)
+        mock_client.add_native_tags = AsyncMock(return_value=0)
+        mock_client.unlink_all_native_tags = AsyncMock()
         mock_client.get_spools = AsyncMock(return_value=[sm_match])
         mock_client.find_spool_by_tag = AsyncMock(return_value=sm_match)
 
@@ -520,6 +523,9 @@ class TestNfcEndpoints:
         }
 
         mock_client = MagicMock()
+        mock_client.has_tag_api = AsyncMock(return_value=False)
+        mock_client.add_native_tags = AsyncMock(return_value=0)
+        mock_client.unlink_all_native_tags = AsyncMock()
         mock_client.get_spools = AsyncMock(return_value=[spool_a_with_tag])
         mock_client.find_spool_by_tag = AsyncMock(return_value=spool_a_with_tag)
         mock_client.merge_spool_extra = AsyncMock(return_value={})
@@ -713,6 +719,9 @@ class TestNfcEndpoints:
             "used_weight": 0.0,
         }
         mock_client = MagicMock()
+        mock_client.has_tag_api = AsyncMock(return_value=False)
+        mock_client.add_native_tags = AsyncMock(return_value=0)
+        mock_client.unlink_all_native_tags = AsyncMock()
         mock_client.get_spools = AsyncMock(return_value=[sm_spool])
         mock_client.find_spool_by_tag = AsyncMock(
             side_effect=lambda tag, cached_spools=None: sm_spool if tag == "AABB1122" else None
@@ -739,6 +748,9 @@ class TestNfcEndpoints:
             "used_weight": 0.0,
         }
         mock_client = MagicMock()
+        mock_client.has_tag_api = AsyncMock(return_value=False)
+        mock_client.add_native_tags = AsyncMock(return_value=0)
+        mock_client.unlink_all_native_tags = AsyncMock()
         mock_client.get_spools = AsyncMock(return_value=[sm_spool])
         mock_client.find_spool_by_tag = AsyncMock(return_value=sm_spool)
         mock_client.merge_spool_extra = AsyncMock(return_value={})
@@ -763,6 +775,9 @@ class TestNfcEndpoints:
             "used_weight": 0.0,
         }
         mock_client = MagicMock()
+        mock_client.has_tag_api = AsyncMock(return_value=False)
+        mock_client.add_native_tags = AsyncMock(return_value=0)
+        mock_client.unlink_all_native_tags = AsyncMock()
         mock_client.get_spools = AsyncMock(return_value=[sm_spool])
         mock_client.find_spool_by_tag = AsyncMock(
             side_effect=lambda tag, cached_spools=None: sm_spool if tag == "AABB1122" else None
@@ -1681,6 +1696,9 @@ async def spoolman_settings(db_session: AsyncSession):
 
 def _mock_spoolman_client(base_url: str = "http://spoolman.local:7912") -> MagicMock:
     client = MagicMock()
+    client.has_tag_api = AsyncMock(return_value=False)
+    client.add_native_tags = AsyncMock(return_value=0)
+    client.unlink_all_native_tags = AsyncMock()
     client.base_url = base_url
     client.get_spools = AsyncMock(return_value=[])
     client.get_spool = AsyncMock(return_value={})

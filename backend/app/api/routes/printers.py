@@ -831,6 +831,7 @@ async def get_printer_status(
             for ext_id, slot in state.extruder_slots.items()
         },
         tray_now=tray_now,
+        tray_change_log=[[tray, layer] for tray, layer in state.tray_change_log],
         # Runout guidance (#2587): resolve the firmware's target/previous slot to a
         # global tray ID, but only while PAUSED — the moment the operator needs it.
         expected_tray=(

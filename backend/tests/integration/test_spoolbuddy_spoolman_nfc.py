@@ -70,6 +70,9 @@ def _spoolman_spool(spool_id: int) -> dict:
 
 def _mock_spoolman_client_local() -> MagicMock:
     client = MagicMock()
+    client.has_tag_api = AsyncMock(return_value=False)
+    client.add_native_tags = AsyncMock(return_value=0)
+    client.unlink_all_native_tags = AsyncMock()
     client.base_url = "http://spoolman.local:7912"
     client.get_spools = AsyncMock(return_value=[])
     client.find_spool_by_tag = AsyncMock(return_value=None)
@@ -265,6 +268,9 @@ class TestLinkTagToSpoolmanSpool:
 
     def _mock_client(self, spool_id: int) -> MagicMock:
         client = MagicMock()
+        client.has_tag_api = AsyncMock(return_value=False)
+        client.add_native_tags = AsyncMock(return_value=0)
+        client.unlink_all_native_tags = AsyncMock()
         client.base_url = "http://localhost:7912"
         # get_all_spools returns empty list — no duplicate tags in Spoolman.
         client.get_all_spools = AsyncMock(return_value=[])
@@ -339,6 +345,9 @@ class TestLinkTagToSpoolmanSpool:
     async def test_spool_not_found_returns_404(self, async_client: AsyncClient):
         """404 when Spoolman reports the spool does not exist."""
         mock_client = MagicMock()
+        mock_client.has_tag_api = AsyncMock(return_value=False)
+        mock_client.add_native_tags = AsyncMock(return_value=0)
+        mock_client.unlink_all_native_tags = AsyncMock()
         mock_client.get_all_spools = AsyncMock(return_value=[])
         mock_client.get_spool = AsyncMock(side_effect=SpoolmanNotFoundError("Spool 999 not found"))
 

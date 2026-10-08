@@ -1332,6 +1332,71 @@ class TestTOTPReplay:
         )
         assert second.status_code == 400
 
+    @staticmethod
+    def _freeze_mfa_clock(monkeypatch, at: float) -> type:
+        """Pin the clock the MFA routes read; set ``clock.at`` to move it."""
+        from backend.app.api.routes import mfa as mfa_module
+
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime.fromtimestamp(Clock.at, tz)
+
+        Clock.at = at
+        monkeypatch.setattr(mfa_module, "datetime", Clock)
+        return Clock
+
+    async def _verify(self, client: AsyncClient, username: str, password: str, code: str):
+        pre_auth = await _login_get_pre_auth_token(client, username, password)
+        return await client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth, "method": "totp", "code": code},
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_totp_replay_in_the_next_step_is_rejected(self, async_client: AsyncClient, monkeypatch):
+        """A code stays valid into the next 30-second step; its reuse there must still fail."""
+        _token, secret = await _setup_totp_user(async_client, "replaynext", "replaynext1")
+        totp = pyotp.TOTP(secret)
+        step_start = (int(time.time()) // 30 + 1) * 30
+        code = totp.at(step_start)
+        clock = self._freeze_mfa_clock(monkeypatch, step_start + 29)
+
+        first = await self._verify(async_client, "replaynext", "replaynext1", code)
+        assert first.status_code == 200
+
+        clock.at = step_start + 31
+        second = await self._verify(async_client, "replaynext", "replaynext1", code)
+        assert second.status_code == 400
+        assert second.json()["detail"] == "TOTP code already used"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_previous_step_code_records_its_own_step(self, async_client: AsyncClient, monkeypatch):
+        """Used first in the next step, the code is recorded under its own step: the
+        current step's code is still accepted afterwards, the replay is not."""
+        _token, secret = await _setup_totp_user(async_client, "prevstep", "prevstep12")
+        totp = pyotp.TOTP(secret)
+        step_start = (int(time.time()) // 30 + 1) * 30
+        old_code, new_code = totp.at(step_start), totp.at(step_start + 30)
+        self._freeze_mfa_clock(monkeypatch, step_start + 35)
+
+        assert (await self._verify(async_client, "prevstep", "prevstep12", old_code)).status_code == 200
+        assert (await self._verify(async_client, "prevstep", "prevstep12", old_code)).status_code == 400
+        assert (await self._verify(async_client, "prevstep", "prevstep12", new_code)).status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_code_two_steps_old_is_rejected(self, async_client: AsyncClient, monkeypatch):
+        _token, secret = await _setup_totp_user(async_client, "stalecode", "stalecode12")
+        step_start = (int(time.time()) // 30 + 1) * 30
+        code = pyotp.TOTP(secret).at(step_start)
+        self._freeze_mfa_clock(monkeypatch, step_start + 61)
+
+        resp = await self._verify(async_client, "stalecode", "stalecode12", code)
+        assert resp.status_code == 401
+
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_totp_replay_rejected_on_disable(self, async_client: AsyncClient):

@@ -63,6 +63,9 @@ def _spoolman_spool(material, spool_id=11, slicer_filament=None):
 
 def _spoolman_client(spool):
     client = MagicMock()
+    client.has_tag_api = AsyncMock(return_value=False)
+    client.add_native_tags = AsyncMock(return_value=0)
+    client.unlink_all_native_tags = AsyncMock()
     client.base_url = "http://localhost:7912"
     client.health_check = AsyncMock(return_value=True)
     client.get_spool = AsyncMock(return_value=spool)

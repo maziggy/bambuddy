@@ -73,7 +73,7 @@ from backend.app.services.spoolman import (
     get_spoolman_client,
     init_spoolman_client,
 )
-from backend.app.services.spoolman_tracking import get_fallback_spool_tag_for_slot
+from backend.app.services.spoolman_tracking import get_fallback_spool_tag_for_slot, is_slot_fallback_tag
 from backend.app.services.tag_conflict import tag_already_linked
 from backend.app.utils.color_utils import spoolman_color_hex
 from backend.app.utils.filament_ids import (
@@ -953,6 +953,15 @@ async def update_spool(
                 spool_weight=data.core_weight,
             )
 
+        # Spoolman 0.27+: the native tags go as well, or the spool would still be
+        # found by every one of them after "Clear RFID Tag". Only once the update
+        # went through, so a failed one leaves the spool as it was; a failure here
+        # is reported, and clearing again removes what is left.
+        if tag_nulled:
+            async with _translate_spoolman_errors():
+                await client.unlink_all_native_tags(fresh)
+            updated = {**updated, "tags": []}
+
     # Persist BambuStudio slicer preset AND color_name under spool.extra.
     # Spoolman has no native fields for these — color_name was confirmed
     # absent from the FilamentUpdateParameters schema in 0.23.1 (#1357), so
@@ -1336,14 +1345,133 @@ async def link_tag_to_spoolman_spool(
         # Re-fetch inside the lock so cur_extra reflects any concurrent update.
         async with _translate_spoolman_errors():
             current = await client.get_spool(spool_id)
-        cur_extra = dict(current.get("extra") or {})
-        cur_extra["tag"] = tag_json
-        async with _translate_spoolman_errors():
-            updated = await client.update_spool_full(spool_id=spool_id, extra=cur_extra)
+
+        # Spoolman 0.27+: both identifiers become native tags of the spool, added to
+        # what it already carries rather than replacing it. Spoolman refuses a UID
+        # another spool holds with a 409 naming that spool, the same answer as above.
+        # Whatever this request added is taken back if anything after it fails, a
+        # refused second identifier or the extra.tag write, so the spool is left as
+        # it was found.
+        added: list[str] = []
+        try:
+            if await client.has_tag_api():
+                had = {t.get("uid") for t in current.get("tags") or []}
+                for field, uid in (("tray_uuid", data.tray_uuid), ("tag_uid", data.tag_uid)):
+                    if not uid:
+                        continue
+                    async with _translate_spoolman_errors():
+                        holder = await client.claim_native_tag(
+                            spool_id, uid.upper(), "bambu" if data.tray_uuid else None
+                        )
+                    if holder is not None and holder != spool_id:
+                        if holder < 0:
+                            # A filament or a location holds it: no spool to name or move it from.
+                            raise HTTPException(
+                                status_code=409,
+                                detail={
+                                    "code": "tag_linked_elsewhere",
+                                    "message": f"{field} is linked to a filament or location in Spoolman",
+                                    "field": field,
+                                },
+                            )
+                        raise tag_already_linked(field, holder)
+                    if uid.upper() not in had:
+                        added.append(uid.upper())
+
+            cur_extra = dict(current.get("extra") or {})
+            cur_extra["tag"] = tag_json
+            async with _translate_spoolman_errors():
+                updated = await client.update_spool_full(spool_id=spool_id, extra=cur_extra)
+        except HTTPException:
+            for uid_added in added:
+                try:
+                    await client.unlink_native_tag(spool_id, uid_added)
+                except (SpoolmanClientError, SpoolmanUnavailableError) as exc:
+                    logger.warning("Could not take back native tag %s from spool %s: %s", uid_added, spool_id, exc)
+            raise
 
     logger.info("Linked tag %s to Spoolman spool %s", tag, spool_id)
     await ws_manager.broadcast({"type": "inventory_changed"})
     return _map_spoolman_spool(updated)
+
+
+_HEX_TAG_RE = re.compile(r"^[0-9A-F]{8,64}$")
+_AMS_CHIP_UID_PADDING = "00000100"
+
+
+@router.post("/tags/migrate")
+async def migrate_tags_to_native(
+    dry_run: bool = Query(True, description="Only count what would move, change nothing"),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> dict:
+    """Move tags from Spoolman's extra.tag into its native tags (Spoolman 0.27+).
+
+    extra.tag itself is left as it is, so older readers keep working and a
+    downgrade loses nothing. A slot's fallback ID is not a physical tag and
+    stays behind. Archived spools are skipped, and a tag an archived spool still
+    holds moves to the active one. A tag Spoolman holds on another active spool
+    is reported as a conflict for the user to settle, never moved by guessing.
+    """
+    client = await _get_client(db)
+    if not await client.has_tag_api():
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "spoolman_without_tags", "message": "Spoolman 0.27 or later is required"},
+        )
+    serials = (await db.execute(select(Printer.serial_number))).scalars().all()
+    async with _translate_spoolman_errors():
+        spools = await client.get_all_spools(allow_archived=True)
+
+    # Who holds which native tag, from the listing: the dry run sees the same
+    # conflicts the real one would, and two spools sharing one extra.tag are
+    # caught on the second, with no request spent on either. Archived spools are
+    # listed only for this: nothing looks an archived spool up, so they get no
+    # tags, and one that still holds a tag gives it up to the active spool.
+    archived = {spool["id"] for spool in spools if spool.get("archived")}
+    native_holder = {t.get("uid"): spool["id"] for spool in spools for t in spool.get("tags") or []}
+    report: dict = {"dry_run": dry_run, "moved": [], "already": 0, "slot_ids": 0, "conflicts": []}
+    for spool in spools:
+        if spool["id"] in archived:
+            continue
+        tag = _extra_tag(spool)
+        if not _HEX_TAG_RE.match(tag) or set(tag) == {"0"}:
+            continue
+        if is_slot_fallback_tag(tag, serials):
+            report["slot_ids"] += 1
+            continue
+        # The AMS pads a Bambu chip's 4-byte UID to 8 bytes ("D3E68F32" arrives as
+        # "D3E68F3200000100"). The native tag is the chip's own UID, as the AMS
+        # sync stores it, so it matches what a reader sees.
+        bambu = len(tag) == 32
+        if len(tag) == 16 and tag.endswith(_AMS_CHIP_UID_PADDING):
+            tag, bambu = tag[:8], True
+        holder = native_holder.get(tag)
+        if holder == spool["id"]:
+            report["already"] += 1
+            continue
+        if holder in archived:
+            holder = None
+        if holder is None and not dry_run:
+            async with _translate_spoolman_errors():
+                holder = await client.claim_native_tag(spool["id"], tag, "bambu" if bambu else None)
+        if holder is not None:
+            report["conflicts"].append({"spool_id": spool["id"], "tag": tag, "holder": holder})
+            continue
+        native_holder[tag] = spool["id"]
+        report["moved"].append(spool["id"])
+
+    logger.info(
+        "Native tag migration (dry_run=%s): %d moved, %d already, %d slot ids, %d conflicts",
+        dry_run,
+        len(report["moved"]),
+        report["already"],
+        report["slot_ids"],
+        len(report["conflicts"]),
+    )
+    if not dry_run and report["moved"]:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+    return report
 
 
 @router.get("/slot-assignments/all", response_model=list[SpoolmanSlotAssignmentEnriched])

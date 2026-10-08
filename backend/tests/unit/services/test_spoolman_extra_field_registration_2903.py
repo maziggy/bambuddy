@@ -67,6 +67,10 @@ class FakeSpoolman:
         self.log.append(f"{request.method} {path}")
         body = json.loads(request.content) if request.content else {}
 
+        # A Spoolman before 0.27, which has no tag endpoints.
+        if path.startswith("/tag/"):
+            return httpx.Response(404, json={"detail": "Not Found"})
+
         if path == "/field/spool" and request.method == "GET":
             if self.field_status != 200:
                 return httpx.Response(self.field_status)

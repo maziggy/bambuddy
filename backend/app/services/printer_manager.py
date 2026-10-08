@@ -1577,6 +1577,8 @@ def printer_state_to_dict(
         "ams_status_main": state.ams_status_main,
         "ams_status_sub": state.ams_status_sub,
         "tray_now": state.tray_now,
+        # Grows only when tray_now changes, which already triggers a push.
+        "tray_change_log": [[tray, layer] for tray, layer in getattr(state, "tray_change_log", None) or []],
         # Runout / filament-replacement guidance (#2587). Only meaningful while
         # PAUSED — resolve the firmware's target/previous slot to a global tray ID
         # so the AMS graphic can highlight the slot the print now expects and name

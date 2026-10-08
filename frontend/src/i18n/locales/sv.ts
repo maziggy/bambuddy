@@ -7813,7 +7813,7 @@ errors: {
     learnMore: 'Läs mer',
     apiKey: 'Gadget-API-nyckel',
     apiKeyPlaceholder: 'Klistra in din OctoEverywhere Gadget-API-nyckel',
-    apiKeyHint: 'Kamerabilder från övervakade utskrifter skickas till OctoEverywhere för analys. Bilderna raderas efter AI-kontrollen och används inte för att träna AI.',
+    apiKeyHint: 'Kamerabilder från övervakade utskrifter skickas till OctoEverywhere för analys. OctoEverywhere uppger att bilderna raderas efter AI-kontrollen och inte används för att träna AI.',
     privacyPolicy: 'Integritetspolicy',
     testSuccess: 'OctoEverywhere Gadget-API-nyckeln har verifierats!',
     confidence: 'Konfidens',

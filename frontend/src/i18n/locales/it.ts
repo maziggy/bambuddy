@@ -7750,7 +7750,7 @@ export default {
     learnMore: 'Scopri di più',
     apiKey: 'Chiave API Gadget',
     apiKeyPlaceholder: 'Incolla la tua chiave API Gadget di OctoEverywhere',
-    apiKeyHint: 'Durante le stampe monitorate, le immagini della telecamera vengono inviate a OctoEverywhere per l\'analisi. Vengono eliminate dopo il controllo dell\'IA e non vengono usate per addestrare modelli di IA.',
+    apiKeyHint: 'Durante le stampe monitorate, le immagini della telecamera vengono inviate a OctoEverywhere per l\'analisi. OctoEverywhere dichiara che vengono eliminate dopo il controllo dell\'IA e non vengono usate per addestrare modelli di IA.',
     privacyPolicy: 'Informativa sulla privacy',
     testSuccess: 'Chiave API Gadget di OctoEverywhere verificata correttamente!',
     confidence: 'Livello di confidenza',

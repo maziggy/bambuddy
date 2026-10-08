@@ -7815,7 +7815,7 @@ export default {
     learnMore: 'Meer informatie',
     apiKey: 'Gadget-API-sleutel',
     apiKeyPlaceholder: 'Plak je OctoEverywhere-Gadget-API-sleutel',
-    apiKeyHint: 'Camerabeelden van bewaakte afdrukken worden voor analyse naar OctoEverywhere verzonden. De beelden worden na de AI-controle verwijderd en niet gebruikt om AI-modellen te trainen.',
+    apiKeyHint: 'Camerabeelden van bewaakte afdrukken worden voor analyse naar OctoEverywhere verzonden. Volgens OctoEverywhere worden de beelden na de AI-controle verwijderd en niet gebruikt om AI-modellen te trainen.',
     privacyPolicy: 'Privacybeleid',
     testSuccess: 'OctoEverywhere-Gadget-API-sleutel succesvol geverifieerd!',
     confidence: 'Betrouwbaarheid',

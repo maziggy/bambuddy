@@ -743,7 +743,7 @@ class GitHubBackupService:
         settings = result.scalars().all()
 
         # Filter out sensitive settings
-        sensitive_keys = {"bambu_cloud_token", "auth_secret_key", "manyfold_client_secret"}
+        sensitive_keys = {"bambu_cloud_token", "auth_secret_key", "manyfold_client_secret", "octoeverywhere_api_key"}
         settings_data = {s.key: s.value for s in settings if s.key not in sensitive_keys}
 
         files["settings/app_settings.json"] = {

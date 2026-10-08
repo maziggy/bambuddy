@@ -7764,7 +7764,7 @@ export default {
     learnMore: 'Mehr erfahren',
     apiKey: 'Gadget-API-Schlüssel',
     apiKeyPlaceholder: 'OctoEverywhere-Gadget-API-Schlüssel einfügen',
-    apiKeyHint: 'Kamerabilder überwachter Drucke werden zur Analyse an OctoEverywhere gesendet. Die Bilder werden nach der KI-Prüfung gelöscht und nicht zum Trainieren von KI-Modellen verwendet.',
+    apiKeyHint: 'Kamerabilder überwachter Drucke werden zur Analyse an OctoEverywhere gesendet. Laut OctoEverywhere werden die Bilder nach der KI-Prüfung gelöscht und nicht zum Trainieren von KI-Modellen verwendet.',
     privacyPolicy: 'Datenschutzerklärung',
     testSuccess: 'OctoEverywhere-Gadget-API-Schlüssel erfolgreich verifiziert!',
     confidence: 'Erkennungssicherheit',

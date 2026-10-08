@@ -9,10 +9,11 @@ from backend.app.services.octoeverywhere_actions import execute_action
 
 
 @pytest.mark.parametrize("action", ["notify", "pause", "pause_and_off"])
-async def test_dispatches_action_with_quality_without_fake_confidence(action):
+@pytest.mark.parametrize("frame", [None, b"flagged-jpeg"])
+async def test_dispatches_action_with_quality_without_fake_confidence(action, frame):
     with patch("backend.app.services.octoeverywhere_actions.execute_detection_action", new_callable=AsyncMock) as run:
-        await execute_action(1, action, "benchy", 2)
-    run.assert_awaited_once_with(1, action, "benchy", None, print_quality=2)
+        await execute_action(1, action, "benchy", 2, frame)
+    run.assert_awaited_once_with(1, action, "benchy", None, frame, print_quality=2)
 
 
 async def test_pause_and_power_off_also_notify():
@@ -45,7 +46,9 @@ async def test_notification_shows_quality_and_preserves_event_subscription():
         await service.on_ai_failure_detection(1, "Printer", "benchy", None, "notify", db, print_quality=2)
     providers.assert_awaited_once_with(db, "on_ai_failure_detection", 1)
     assert send.await_args.args[1] == "Possible Print Failure Detected"
-    assert send.await_args.args[2] == "Printer: benchy\nOctoEverywhere print quality: 2/10\nAction taken: notify"
+    assert send.await_args.args[2] == (
+        "Printer: benchy\nProvider: OctoEverywhere\nPrint quality: 2/10\nConfidence: N/A\nAction taken: notify"
+    )
     assert send.await_args.kwargs["variables"]["confidence"] == "N/A"
     assert template.body_template == original_body
 
@@ -88,7 +91,9 @@ async def test_obico_default_notification_keeps_confidence():
         patch.object(service, "_send_to_providers", new_callable=AsyncMock) as send,
     ):
         await service.on_ai_failure_detection(1, "Printer", "benchy", 0.85, "pause", MagicMock())
-    assert send.await_args.args[2] == "Printer: benchy\nConfidence: 0.85\nAction taken: pause"
+    assert send.await_args.args[2] == (
+        "Printer: benchy\nProvider: Obico\nPrint quality: N/A\nConfidence: 0.85\nAction taken: pause"
+    )
 
 
 async def test_ai_notification_template_preview_includes_quality_variables():
@@ -107,3 +112,26 @@ async def test_ai_notification_template_preview_includes_quality_variables():
     )
     assert result.title == "OctoEverywhere: Bambu X1C"
     assert result.body == "Benchy.3mf: 2/10, N/A, pause"
+
+
+async def test_default_ai_template_preview_matches_delivered_message():
+    from backend.app.api.routes.notification_templates import preview_template
+    from backend.app.schemas.notification_template import EventType, TemplatePreviewRequest
+    from backend.app.services.notification_service import NotificationService
+
+    template = NotificationTemplate(**next(t for t in DEFAULT_TEMPLATES if t["event_type"] == "ai_failure_detection"))
+    preview = await preview_template(
+        TemplatePreviewRequest(
+            event_type=EventType.AI_FAILURE_DETECTION,
+            title_template=template.title_template,
+            body_template=template.body_template,
+        )
+    )
+    service = NotificationService()
+    with (
+        patch.object(service, "_get_providers_for_event", return_value=["provider"]),
+        patch.object(service, "_get_template", return_value=template),
+        patch.object(service, "_send_to_providers", new_callable=AsyncMock) as send,
+    ):
+        await service.on_ai_failure_detection(1, "Bambu X1C", "Benchy.3mf", None, "pause", MagicMock(), print_quality=2)
+    assert send.await_args.args[1:3] == (preview.title, preview.body)

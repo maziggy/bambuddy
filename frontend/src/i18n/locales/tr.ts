@@ -7701,7 +7701,7 @@ export default {
     learnMore: 'Daha fazla bilgi',
     apiKey: 'Gadget API anahtarı',
     apiKeyPlaceholder: 'OctoEverywhere Gadget API anahtarınızı yapıştırın',
-    apiKeyHint: 'İzlenen baskıların kamera görüntüleri analiz için OctoEverywhere hizmetine gönderilir. Görüntüler yapay zekâ kontrolünden sonra silinir ve yapay zekâ eğitimi için kullanılmaz.',
+    apiKeyHint: 'İzlenen baskıların kamera görüntüleri analiz için OctoEverywhere hizmetine gönderilir. OctoEverywhere, görüntülerin yapay zekâ kontrolünden sonra silindiğini ve yapay zekâ eğitimi için kullanılmadığını belirtir.',
     privacyPolicy: 'Gizlilik politikası',
     testSuccess: 'OctoEverywhere Gadget API anahtarı başarıyla doğrulandı!',
     confidence: 'Güven düzeyi',

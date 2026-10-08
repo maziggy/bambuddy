@@ -7805,7 +7805,7 @@ export default {
     learnMore: "Докладніше",
     apiKey: "Ключ API Gadget",
     apiKeyPlaceholder: "Вставте ключ API Gadget від OctoEverywhere",
-    apiKeyHint: "Знімки з камери під час відстежуваного друку надсилаються до OctoEverywhere на аналіз. Після перевірки знімки видаляються й не використовуються для навчання ШІ.",
+    apiKeyHint: "Знімки з камери під час відстежуваного друку надсилаються до OctoEverywhere на аналіз. За заявою OctoEverywhere, після перевірки знімки видаляються й не використовуються для навчання ШІ.",
     privacyPolicy: "Політика конфіденційності",
     testSuccess: "Ключ API Gadget OctoEverywhere успішно перевірено!",
     confidence: "Рівень впевненості",

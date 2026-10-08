@@ -29,11 +29,16 @@ class TestConnectionRequest(BaseModel):
 async def get_status(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
     db: AsyncSession = Depends(get_db),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Scheduler status, print quality, and recent detection history."""
     settings = await octoeverywhere_detection_service._load_settings()
     providers = await notification_service._get_providers_for_event(db, "on_ai_failure_detection")
+    providers = [provider for provider in providers if printer_scope.allows(provider.printer_id)]
     printers = select(Printer.id).where(Printer.is_active.is_(True))
+    scope_filter = printer_scope.where_strict(Printer.id)
+    if scope_filter is not None:
+        printers = printers.where(scope_filter)
     if settings["enabled_printers"] is not None:
         printers = printers.where(Printer.id.in_(settings["enabled_printers"]))
     printer_ids = (await db.execute(printers)).scalars().all()
@@ -42,8 +47,11 @@ async def get_status(
     uncovered_printers = (
         sorted(pid for pid in printer_ids if pid not in covered_printers) if None not in covered_printers else []
     )
+    status = octoeverywhere_detection_service.get_status()
     return {
-        **octoeverywhere_detection_service.get_status(),
+        **status,
+        "per_printer": {pid: entry for pid, entry in status["per_printer"].items() if printer_scope.allows(int(pid))},
+        "history": [entry for entry in status["history"] if printer_scope.allows(entry["printer_id"])],
         "enabled": settings["enabled"],
         "api_key_configured": bool(settings["api_key"]),
         "confidence": settings["confidence"],

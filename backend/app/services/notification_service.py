@@ -24,7 +24,7 @@ from backend.app.models.notification import (
     NotificationProvider,
     TelegramPendingVerdict,
 )
-from backend.app.models.notification_template import DEFAULT_TEMPLATES, NotificationTemplate
+from backend.app.models.notification_template import NotificationTemplate
 from backend.app.services.print_confirmation import one_tap_url
 from backend.app.utils.notification_photos import save_notification_photo
 
@@ -2106,18 +2106,6 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "ai_failure_detection", variables)
-        if print_quality is not None:
-            template = await self._get_template(db, "ai_failure_detection")
-            default_body = next(
-                t["body_template"] for t in DEFAULT_TEMPLATES if t["event_type"] == "ai_failure_detection"
-            )
-            # Adapt the untouched Obico default without replacing custom text
-            # or changing the saved template used by either provider.
-            if template and template.body_template == default_body:
-                message = self._render_template(
-                    "{printer}: {task_name}\nOctoEverywhere print quality: {print_quality}\nAction taken: {action}",
-                    variables,
-                )
         await self._send_to_providers(
             providers,
             title,

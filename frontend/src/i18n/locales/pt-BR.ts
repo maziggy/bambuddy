@@ -7750,7 +7750,7 @@ export default {
     learnMore: 'Saiba mais',
     apiKey: 'Chave da API Gadget',
     apiKeyPlaceholder: 'Cole sua chave da API Gadget do OctoEverywhere',
-    apiKeyHint: 'Durante as impressões monitoradas, as imagens da câmera são enviadas ao OctoEverywhere para análise. Elas são excluídas após a verificação por IA e não são usadas para treinar modelos de IA.',
+    apiKeyHint: 'Durante as impressões monitoradas, as imagens da câmera são enviadas ao OctoEverywhere para análise. O OctoEverywhere afirma que elas são excluídas após a verificação por IA e não são usadas para treinar modelos de IA.',
     privacyPolicy: 'Política de privacidade',
     testSuccess: 'Chave da API Gadget do OctoEverywhere verificada com sucesso!',
     confidence: 'Nível de confiança',

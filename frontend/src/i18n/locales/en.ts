@@ -7817,7 +7817,7 @@ export default {
     learnMore: 'Learn more',
     apiKey: 'Gadget API key',
     apiKeyPlaceholder: 'Paste your OctoEverywhere Gadget API key',
-    apiKeyHint: 'Camera images from monitored prints are sent to OctoEverywhere for analysis. Images are deleted after the AI check and are not used for AI training.',
+    apiKeyHint: 'Camera images from monitored prints are sent to OctoEverywhere for analysis. OctoEverywhere states that images are deleted after the AI check and are not used for AI training.',
     privacyPolicy: 'Privacy policy',
     testSuccess: 'OctoEverywhere Gadget API key verification successful!',
     confidence: 'Confidence',

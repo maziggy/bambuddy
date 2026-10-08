@@ -218,14 +218,22 @@ async def test_printer_status_respects_error_permissions(can_see_error):
 
 
 @pytest.mark.integration
-async def test_printer_status_hides_diagnostics_from_api_keys(async_client):
+@pytest.mark.parametrize("can_see_error", [False, True])
+async def test_printer_status_checks_api_key_owner_permissions(async_client, can_see_error):
     from backend.app.core.auth import ApiKeyActor, get_request_actor
+    from backend.app.core.permissions import Permission
     from backend.app.main import app
     from backend.app.models.api_key import APIKey
+    from backend.app.models.group import Group
+    from backend.app.models.user import User
 
     # Permission dependencies return user=None for API keys too. Their actor
     # must still enforce settings:read when deciding whether to expose errors.
-    actor = ApiKeyActor(APIKey(can_read_status=True), owner=None)
+    permissions = [Permission.PRINTERS_READ.value]
+    if can_see_error:
+        permissions.append(Permission.SETTINGS_READ.value)
+    owner = User(id=1, username="viewer", role="user", groups=[Group(name="Viewer", permissions=permissions)])
+    actor = ApiKeyActor(APIKey(can_read_status=True), owner=owner)
     service._last_error = "private diagnostic"
     service._last_error_code = "OE_FREE_USAGE_LIMIT_REACHED"
     entry = {
@@ -245,10 +253,10 @@ async def test_printer_status_hides_diagnostics_from_api_keys(async_client):
         assert response.status_code == 200
         result = response.json()
         assert result["per_printer"]["1"]["class"] == "error"
-        assert result["per_printer"]["1"]["error"] is None
-        assert result["per_printer"]["1"]["error_code"] is None
-        assert result["last_error"] is None
-        assert result["last_error_code"] is None
+        assert result["per_printer"]["1"]["error"] == ("private diagnostic" if can_see_error else None)
+        assert result["per_printer"]["1"]["error_code"] == ("OE_FREE_USAGE_LIMIT_REACHED" if can_see_error else None)
+        assert result["last_error"] == ("private diagnostic" if can_see_error else None)
+        assert result["last_error_code"] == ("OE_FREE_USAGE_LIMIT_REACHED" if can_see_error else None)
     finally:
         app.dependency_overrides.pop(get_request_actor, None)
 
@@ -274,6 +282,74 @@ async def test_printer_status_hides_printers_outside_caller_scope(async_client, 
         result = response.json()
         assert set(result["per_printer"]) == {str(pid) for pid in allowed_ids}
         assert result["monitored_printers"] == (None if enabled_printers is None else sorted(allowed_ids))
+    finally:
+        app.dependency_overrides.pop(get_printer_scope_if_auth_enabled, None)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("allowed_ids", [None, frozenset({1}), frozenset()])
+@pytest.mark.parametrize("provider_printer_id", [None, 1, 2])
+async def test_status_limits_history_and_notification_readiness_to_caller_scope(
+    async_client, db_session, allowed_ids, provider_printer_id
+):
+    from backend.app.core.auth import get_printer_scope_if_auth_enabled
+    from backend.app.main import app
+    from backend.app.models.notification import NotificationProvider
+    from backend.app.models.printer import Printer
+
+    for pid in (1, 2):
+        db_session.add(
+            Printer(
+                id=pid,
+                name=f"Printer {pid}",
+                serial_number=f"TEST{pid}",
+                ip_address="192.0.2.1",
+                access_code="12345678",
+                is_active=True,
+            )
+        )
+    await db_session.flush()
+    db_session.add(
+        NotificationProvider(
+            name="Alerts",
+            provider_type="ntfy",
+            config="{}",
+            enabled=True,
+            on_ai_failure_detection=True,
+            printer_id=provider_printer_id,
+        )
+    )
+    await db_session.commit()
+
+    entry = {"class": "safe", "print_quality": 95, "frame_count": 1, "error": None, "error_code": None}
+    status = {
+        "is_running": True,
+        "last_error": None,
+        "last_error_code": None,
+        "per_printer": {1: entry, 2: entry},
+        "history": [
+            {"printer_id": 2, "task_name": "Private print"},
+            {"printer_id": 1, "task_name": "Allowed print"},
+        ],
+    }
+    app.dependency_overrides[get_printer_scope_if_auth_enabled] = lambda: PrinterScope(allowed_ids)
+    try:
+        with patch.object(service, "get_status", return_value=status):
+            response = await async_client.get("/api/v1/octoeverywhere/status")
+        assert response.status_code == 200
+        result = response.json()
+        visible_ids = {1, 2} if allowed_ids is None else allowed_ids
+        assert set(result["per_printer"]) == {str(pid) for pid in visible_ids}
+        assert result["history"] == [entry for entry in status["history"] if entry["printer_id"] in visible_ids]
+        assert result["notifications"] == {
+            "configured": provider_printer_id is None or provider_printer_id in visible_ids,
+            "uncovered_printers": ([] if provider_printer_id is None else sorted(visible_ids - {provider_printer_id})),
+        }
+        if 2 not in visible_ids:
+            assert "Private print" not in response.text
+        # Filtering a response must not remove another caller's service state.
+        assert set(status["per_printer"]) == {1, 2}
+        assert len(status["history"]) == 2
     finally:
         app.dependency_overrides.pop(get_printer_scope_if_auth_enabled, None)
 

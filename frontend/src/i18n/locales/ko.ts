@@ -7206,7 +7206,7 @@ export default {
     learnMore: '자세히 알아보기',
     apiKey: 'Gadget API 키',
     apiKeyPlaceholder: 'OctoEverywhere Gadget API 키를 붙여넣으세요',
-    apiKeyHint: '모니터링 중인 인쇄의 카메라 이미지가 분석을 위해 OctoEverywhere로 전송됩니다. 이미지는 AI 검사 후 삭제되며 AI 학습에 사용되지 않습니다.',
+    apiKeyHint: '모니터링 중인 인쇄의 카메라 이미지가 분석을 위해 OctoEverywhere로 전송됩니다. OctoEverywhere는 이미지가 AI 검사 후 삭제되며 AI 학습에 사용되지 않는다고 설명합니다.',
     privacyPolicy: '개인정보 처리방침',
     testSuccess: 'OctoEverywhere Gadget API 키가 성공적으로 확인되었습니다!',
     confidence: '신뢰도',

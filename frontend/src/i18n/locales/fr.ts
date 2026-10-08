@@ -7751,7 +7751,7 @@ export default {
     learnMore: 'En savoir plus',
     apiKey: 'Clé API Gadget',
     apiKeyPlaceholder: 'Collez votre clé API Gadget OctoEverywhere',
-    apiKeyHint: 'Pendant les impressions surveillées, les images de la caméra sont envoyées à OctoEverywhere pour analyse. Elles sont supprimées après la vérification par l\'IA et ne servent pas à entraîner des modèles d\'IA.',
+    apiKeyHint: 'Pendant les impressions surveillées, les images de la caméra sont envoyées à OctoEverywhere pour analyse. OctoEverywhere indique qu\'elles sont supprimées après la vérification par l\'IA et ne servent pas à entraîner des modèles d\'IA.',
     privacyPolicy: 'Politique de confidentialité',
     testSuccess: 'Clé API Gadget OctoEverywhere vérifiée avec succès !',
     confidence: 'Niveau de confiance',

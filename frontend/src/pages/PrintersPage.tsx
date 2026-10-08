@@ -9078,7 +9078,9 @@ export function PrintersPage() {
   const { data: octoEverywherePrinterStatus } = useQuery({
     queryKey: ['octoeverywhere-printer-status'],
     queryFn: api.getOctoEverywherePrinterStatus,
-    refetchInterval: 10000,
+    // Discover whether detection is enabled once, then poll only while active.
+    // Settings changes invalidate this query; stale data also refreshes on mount/focus.
+    refetchInterval: (query) => query.state.data?.enabled ? 10000 : false,
   });
   const aiPrinterStatus = octoEverywherePrinterStatus?.enabled ? octoEverywherePrinterStatus : obicoPrinterStatus;
   // Badge visibility: detection enabled AND this printer in the monitored set

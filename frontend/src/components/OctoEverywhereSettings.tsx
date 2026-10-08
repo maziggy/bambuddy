@@ -118,13 +118,18 @@ export function OctoEverywhereSettings() {
     );
   }, [settings, initialized, enabled, pendingApiKey, confidence, action, pollInterval, enabledPrinters]);
 
+  // A failed payload waits for another edit or an explicit Test. Compare the
+  // values so an equivalent payload recreated after a refetch cannot retry it.
+  const currentSaveFailed = saveMutation.isError
+    && JSON.stringify(saveMutation.variables) === JSON.stringify(settingsToSave);
+
   // Auto-save on change (debounced), matching the other detection provider.
   useEffect(() => {
-    if (!hasUnsavedChanges || testing || editingApiKey || saveMutation.isPending || !canUpdate) return;
+    if (!hasUnsavedChanges || currentSaveFailed || testing || editingApiKey || saveMutation.isPending || !canUpdate) return;
     const id = setTimeout(() => saveMutation.mutate(settingsToSave), 500);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasUnsavedChanges, settingsToSave, testing, editingApiKey, saveMutation.isPending, canUpdate]);
+  }, [hasUnsavedChanges, currentSaveFailed, settingsToSave, testing, editingApiKey, saveMutation.isPending, canUpdate]);
 
   const handleTest = async () => {
     if (!canUpdate) return;

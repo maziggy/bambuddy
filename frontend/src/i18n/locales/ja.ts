@@ -7764,7 +7764,7 @@ export default {
     learnMore: '詳細はこちら',
     apiKey: 'Gadget API キー',
     apiKeyPlaceholder: 'OctoEverywhere の Gadget API キーを貼り付け',
-    apiKeyHint: '監視中の印刷のカメラ画像は、分析のため OctoEverywhere に送信されます。画像は AI チェック後に削除され、AI の学習には使用されません。',
+    apiKeyHint: '監視中の印刷のカメラ画像は、分析のため OctoEverywhere に送信されます。OctoEverywhere によると、画像は AI チェック後に削除され、AI の学習には使用されません。',
     privacyPolicy: 'プライバシーポリシー',
     testSuccess: 'OctoEverywhere Gadget API キーの確認に成功しました！',
     confidence: '信頼度',

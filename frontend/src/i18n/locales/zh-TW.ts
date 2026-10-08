@@ -7748,7 +7748,7 @@ export default {
     learnMore: '瞭解更多',
     apiKey: 'Gadget API 金鑰',
     apiKeyPlaceholder: '貼上您的 OctoEverywhere Gadget API 金鑰',
-    apiKeyHint: '受監控列印工作的攝影機影像會傳送至 OctoEverywhere 進行分析。影像會在 AI 檢查完成後刪除，且不會用於 AI 訓練。',
+    apiKeyHint: '受監控列印工作的攝影機影像會傳送至 OctoEverywhere 進行分析。OctoEverywhere 表示，影像會在 AI 檢查完成後刪除，且不會用於 AI 訓練。',
     privacyPolicy: '隱私權政策',
     testSuccess: 'OctoEverywhere Gadget API 金鑰驗證成功！',
     confidence: '信賴度',

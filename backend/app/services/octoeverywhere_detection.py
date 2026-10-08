@@ -201,6 +201,8 @@ class OctoEverywhereDetectionService:
         self._checks: dict[int, asyncio.Task] = {}
         self._states: dict[int, _PrintState] = {}
         self._configuration: tuple[str, str] | None = None
+        self._settings: dict | None = None
+        self._settings_refresh_at = 0.0
         self._generation = 0
         self._blocked_api_key: str | None = None
         self._blocked_error_code: str | None = None
@@ -253,6 +255,7 @@ class OctoEverywhereDetectionService:
         self._states.clear()
         self._generation += 1
         self._configuration = None
+        self._settings = None
         self._clear_account_error()
         self._set_last_error(None)
 
@@ -269,6 +272,7 @@ class OctoEverywhereDetectionService:
     async def refresh_settings(self):
         """Invalidate in-flight decisions immediately after settings are saved."""
         self._generation += 1
+        self._settings = None
         generation = self._generation
         task = self._task
         restart = task is not None and not task.done()
@@ -285,9 +289,14 @@ class OctoEverywhereDetectionService:
             await asyncio.gather(*checks, return_exceptions=True)
         settings = await self._load_settings()
         if self._generation == generation:
+            self._cache_settings(settings)
             self._apply_settings(settings)
         if restart and self._task is None:
             await self.start()
+
+    def _cache_settings(self, settings: dict):
+        self._settings = settings
+        self._settings_refresh_at = time.monotonic() + settings["poll_interval"]
 
     def _apply_settings(self, settings: dict):
         configuration = (settings["api_key"], settings["confidence"])
@@ -371,10 +380,16 @@ class OctoEverywhereDetectionService:
     async def _loop(self):
         while True:
             try:
-                generation = self._generation
-                settings = await self._load_settings()
-                if generation != self._generation:
-                    continue
+                # Printer deadlines need one-second resolution, but settings
+                # only need the configured polling cadence or an explicit refresh.
+                if self._settings is None or time.monotonic() >= self._settings_refresh_at:
+                    generation = self._generation
+                    settings = await self._load_settings()
+                    if generation != self._generation:
+                        continue
+                    self._cache_settings(settings)
+                else:
+                    settings = self._settings
                 await self._poll_once(settings)
                 # Enabled printers need whole-second scheduling for values such
                 # as 21 seconds; disabled detection can check settings less often.
@@ -725,21 +740,23 @@ class OctoEverywhereDetectionService:
             # user needs to know the printer stopped. Notify-only would just
             # repeat the warning, so it stays silent.
             if action != "notify" or not state.warning_fired:
-                await self._dispatch_action(printer_id, action, task_name, print_quality)
+                await self._dispatch_action(printer_id, action, task_name, print_quality, frame)
             state.action_fired = True
             state.warning_fired = True
         elif warning and not state.warning_fired:
-            await self._dispatch_action(printer_id, "notify", task_name, print_quality)
+            await self._dispatch_action(printer_id, "notify", task_name, print_quality, frame)
             state.warning_fired = True
 
-    async def _dispatch_action(self, printer_id: int, action: str, task_name: str, print_quality: int):
+    async def _dispatch_action(
+        self, printer_id: int, action: str, task_name: str, print_quality: int, frame: bytes | None = None
+    ):
         from backend.app.services.octoeverywhere_actions import execute_action
 
         logger.warning(
             "OctoEverywhere: print issue on printer %s (quality=%s) — action=%s", printer_id, print_quality, action
         )
         try:
-            await execute_action(printer_id, action, task_name, print_quality)
+            await execute_action(printer_id, action, task_name, print_quality, frame)
         except Exception as exc:
             self._set_last_error("OctoEverywhere could not execute the configured failure action.")
             logger.error("OctoEverywhere action dispatch failed: %s", type(exc).__name__)

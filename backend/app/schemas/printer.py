@@ -87,6 +87,7 @@ class PrinterUpdate(BaseModel):
     camera_light_auto: bool | None = None  # #1655
     plate_detection_enabled: bool | None = None
     plate_detection_roi: PlateDetectionROI | None = None
+    plate_clear_door_enabled: bool | None = None
 
 
 class PrinterResponse(PrinterBase):
@@ -108,6 +109,7 @@ class PrinterResponse(PrinterBase):
     camera_light_auto: bool = False  # #1655
     plate_detection_enabled: bool = False
     plate_detection_roi: PlateDetectionROI | None = None
+    plate_clear_door_enabled: bool = True
     created_at: datetime
     updated_at: datetime
 
@@ -137,6 +139,7 @@ class PrinterResponse(PrinterBase):
             "print_hours_offset": printer.print_hours_offset,
             "wear_cost_per_hour": printer.wear_cost_per_hour,
             "plate_detection_enabled": printer.plate_detection_enabled,
+            "plate_clear_door_enabled": printer.plate_clear_door_enabled,
             "created_at": printer.created_at,
             "updated_at": printer.updated_at,
         }

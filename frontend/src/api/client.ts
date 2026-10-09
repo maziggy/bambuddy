@@ -457,6 +457,7 @@ export interface Printer {
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
+  plate_clear_door_enabled: boolean;  // Per-printer opt-out from the door plate-clear trigger (#2805)
   created_at: string;
   updated_at: string;
 }
@@ -769,6 +770,7 @@ export interface PrinterCreate {
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
   wear_cost_per_hour?: number | null;
+  plate_clear_door_enabled?: boolean;
 }
 
 // Plate Detection
@@ -1555,6 +1557,8 @@ export interface AppSettings {
   finance_budget_reset_timezone: string;
   // Plate-clear confirmation
   require_plate_clear: boolean;
+  // What releases that confirmation: the button alone, or also the door closing (#2805)
+  plate_clear_trigger: 'manual' | 'door';
   // Shortest job first scheduling
   queue_shortest_first: boolean;
   // How many printers the queue may upload to at once (#2555). 1 restores the
@@ -6134,6 +6138,7 @@ export const api = {
   getUiPreferences: () =>
     request<{
       require_plate_clear?: boolean;
+      plate_clear_trigger?: 'manual' | 'door';
       check_printer_firmware?: boolean;
       camera_view_mode?: 'window' | 'embedded';
       time_format?: 'system' | '12h' | '24h';

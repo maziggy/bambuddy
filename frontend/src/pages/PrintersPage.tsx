@@ -8470,6 +8470,7 @@ function EditPrinterModal({
     auto_archive: printer.auto_archive,
     is_active: printer.is_active,
     wear_cost_per_hour: printer.wear_cost_per_hour ? String(printer.wear_cost_per_hour) : '',
+    plate_clear_door_enabled: printer.plate_clear_door_enabled ?? true,
   });
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
   const currency = getCurrencySymbol(settings?.currency || 'USD');
@@ -8492,6 +8493,16 @@ function EditPrinterModal({
           )
           .map((g) => g.name)
       : [];
+
+  // The door plate-clear opt-out is only a choice when the door trigger is the
+  // configured one, so the field is hidden otherwise rather than shown inert.
+  // Same cached query the printer cards already use — no extra request.
+  const { data: uiPreferences } = useQuery({
+    queryKey: ['ui-preferences'],
+    queryFn: api.getUiPreferences,
+  });
+  const doorTriggerConfigured =
+    uiPreferences?.require_plate_clear === true && uiPreferences?.plate_clear_trigger === 'door';
 
   // Setup-time pre-flight — same warn-on-save as the Add-Printer dialog, so an
   // edit that breaks connectivity (e.g. a mistyped IP) is caught before save.
@@ -8528,6 +8539,7 @@ function EditPrinterModal({
       is_active: form.is_active,
       // Empty or 0 turns wear cost off for this printer (#694)
       wear_cost_per_hour: Number(form.wear_cost_per_hour) > 0 ? Number(form.wear_cost_per_hour) : null,
+      plate_clear_door_enabled: form.plate_clear_door_enabled,
     };
     // Only include access_code if it was changed
     if (form.access_code) {
@@ -8713,6 +8725,26 @@ function EditPrinterModal({
                 {t('printers.maintenance.editFieldHelp')}
               </p>
             </div>
+            {doorTriggerConfigured ? (
+              <div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="edit_plate_clear_door_enabled"
+                    checked={form.plate_clear_door_enabled}
+                    onChange={(e) => setForm({ ...form, plate_clear_door_enabled: e.target.checked })}
+                    className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
+                  />
+                  <label htmlFor="edit_plate_clear_door_enabled" className="text-sm text-bambu-gray flex items-center gap-1.5">
+                    <DoorClosed className="w-3.5 h-3.5 text-bambu-green" />
+                    {t('printers.plateClearDoor.editFieldLabel', 'Closing the door confirms the plate')}
+                  </label>
+                </div>
+                <p className="text-xs text-bambu-gray/70 mt-1 ml-6">
+                  {t('printers.plateClearDoor.editFieldHelp', 'Uncheck for a printer whose door gets opened for other reasons — it then waits for the button like before.')}
+                </p>
+              </div>
+            ) : null}
             {saveWarning ? (
               <div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 p-3 space-y-3">
                 <div className="flex items-start gap-2">

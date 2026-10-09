@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy import event, select, update
+from sqlalchemy import delete, event, select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import backend.app.models  # noqa: F401
@@ -509,6 +509,60 @@ async def test_dormant_widgets_stop_all_periodic_database_work(setup):
     finally:
         await service.close()
         event.remove(engine.sync_engine, "before_cursor_execute", record)
+
+
+@pytest.mark.asyncio
+async def test_restart_drops_rows_of_deleted_provider_before_id_is_reused(setup):
+    service, api, factory, clock, states = setup
+    await service.tick()
+    assert len(await rows(factory)) == 1
+    # Production SQLite does not enforce the cascade, and the in-memory cleanup
+    # job is lost when Bambuddy restarts before it drains.
+    async with factory() as db:
+        await db.execute(text("PRAGMA foreign_keys=OFF"))
+        await db.execute(delete(NotificationProvider).where(NotificationProvider.id == 1))
+        await db.commit()
+        await db.execute(text("PRAGMA foreign_keys=ON"))
+    assert len(await rows(factory)) == 1
+
+    restarted = NotifyWidgetService(factory, api, states.get)
+    restarted.start()
+    try:
+        for _ in range(100):
+            if not restarted._initial_discovery:
+                break
+            await asyncio.sleep(0.001)
+    finally:
+        await restarted.close()
+    assert await rows(factory) == []
+
+    # The next provider reuses the freed id and starts from a clean slate.
+    async with factory() as db:
+        db.add(
+            NotificationProvider(
+                id=1,
+                name="New phone",
+                provider_type="notify",
+                enabled=True,
+                config=json.dumps({"device_id": "XYZ98765", "token": "other", "lock_screen_widgets": True}),
+            )
+        )
+        await db.commit()
+
+    api.create_widget.reset_mock()
+    await restarted.tick()
+    api.create_widget.assert_awaited_once()
+    assert [row.credential_key for row in await rows(factory)] == [
+        module._credential_key({"device_id": "XYZ98765", "token": "other"})
+    ]
+
+
+@pytest.mark.asyncio
+async def test_purge_leaves_rows_of_existing_providers_alone(setup):
+    service, api, factory, clock, states = setup
+    await service.tick()
+    await service._purge_orphans()
+    assert len(await rows(factory)) == 1
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from backend.app.models.notification import NotificationProvider
 
@@ -92,6 +92,22 @@ class NotifyWorkerLifecycle:
         self.providers_changed()
         self.start()
 
+    async def _purge_orphans(self):
+        """Drop ownership rows whose provider no longer exists.
+
+        SQLite does not enforce the provider cascade, and queued cleanup lives
+        only in memory. A restart before it drains leaves rows behind, which a
+        new provider reusing the same id would inherit. Their credentials are
+        gone, so the remote resources can no longer be removed from here.
+        """
+        orphaned = self.ownership_model.provider_id.not_in(select(NotificationProvider.id))
+        async with self._session() as db:
+            if await db.scalar(select(self.ownership_model.id).where(orphaned).limit(1)) is None:
+                return
+            result = await db.execute(delete(self.ownership_model).where(orphaned))
+            await db.commit()
+        logger.info("%s removed %d rows left by deleted providers", self.worker_name, result.rowcount)
+
     def start(self):
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._run(), name=self.worker_name)
@@ -116,6 +132,8 @@ class NotifyWorkerLifecycle:
             try:
                 if self._providers_dirty:
                     self._providers_dirty = False
+                    if self._initial_discovery:
+                        await self._purge_orphans()
                     async with self._session() as db:
                         providers = (
                             await db.scalars(

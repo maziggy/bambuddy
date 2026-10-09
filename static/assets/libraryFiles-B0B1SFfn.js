@@ -1,1 +1,0 @@
-import{i as e,n as t}from"./slicer-DgCA7cW6.js";function n(e){let t=(e.file_type||``).toLowerCase();if(t===`gcode`||t===`gcode.3mf`)return!0;let n=(e.filename||``).toLowerCase();return n.endsWith(`.gcode`)||n.endsWith(`.gcode.3mf`)}function r(r,i,a){return n(r)?!1:i?t(r.filename):e(r.filename,a)}export{n,r as t};

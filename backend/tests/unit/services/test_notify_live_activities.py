@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy import event, select
+from sqlalchemy import delete, event, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import backend.app.models  # noqa: F401
@@ -116,6 +116,21 @@ async def test_start_independent_of_push_digest_and_group_thread(setup):
     assert (await rows(factory))[0].activity_id == "LA123456"
     await service.tick()
     assert api.start_activity.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_startup_drops_rows_of_provider_deleted_before_cleanup_drained(setup):
+    service, api, factory, clock = await start(setup)
+    assert len(await rows(factory)) == 1
+    # Production SQLite does not enforce the cascade.
+    async with factory() as db:
+        await db.execute(text("PRAGMA foreign_keys=OFF"))
+        await db.execute(delete(NotificationProvider).where(NotificationProvider.id == 1))
+        await db.commit()
+        await db.execute(text("PRAGMA foreign_keys=ON"))
+    restarted = NotifyLiveActivityService(factory, api)
+    await restarted._purge_orphans()
+    assert await rows(factory) == []
 
 
 @pytest.mark.asyncio

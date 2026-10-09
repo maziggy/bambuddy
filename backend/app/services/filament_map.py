@@ -156,9 +156,9 @@ async def auto_filament_map(
         return None
 
     try:
-        from backend.app.api.routes.printers import get_available_filaments
+        from backend.app.services.loaded_filaments import loaded_filaments
 
-        loaded = await get_available_filaments(model=target_model, location=None, _=None, db=db)
+        loaded = await loaded_filaments(db, target_model)
         mapping = plan_filament_map(printer_json, filament_jsons, list(loaded or []))
     except Exception as exc:
         logger.warning("Filament map skipped, slicing with the default grouping: %s", exc)

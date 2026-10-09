@@ -127,7 +127,7 @@ class TestPlanFilamentMap:
 class TestAutoFilamentMap:
     async def _run(self, model: str | None, spools=None, error: Exception | None = None):
         lookup = AsyncMock(return_value=spools or [], side_effect=error)
-        with patch("backend.app.api.routes.printers.get_available_filaments", new=lookup):
+        with patch("backend.app.services.loaded_filaments.loaded_filaments", new=lookup):
             result = await auto_filament_map(
                 object(),
                 target_model=model,
@@ -139,7 +139,7 @@ class TestAutoFilamentMap:
     async def test_looks_up_the_target_model_and_plans(self):
         result, lookup = await self._run("X2D", GREEN_ON_EXTERNAL)
         assert result == [1, 2]
-        assert lookup.await_args.kwargs["model"] == "X2D"
+        assert lookup.await_args.args[1] == "X2D"
 
     async def test_single_nozzle_model_does_not_look_anything_up(self):
         result, lookup = await self._run("X1C", GREEN_ON_EXTERNAL)
@@ -266,7 +266,7 @@ class TestSliceRouteWiring:
         with (
             patch("backend.app.api.routes.settings.get_setting", new=AsyncMock(side_effect=_setting)),
             patch("backend.app.services.preset_resolver.resolve_preset_ref", new=AsyncMock(side_effect=_resolve)),
-            patch("backend.app.api.routes.printers.get_available_filaments", new=lookup),
+            patch("backend.app.services.loaded_filaments.loaded_filaments", new=lookup),
             patch.object(slicer_api_module, "SlicerApiService", return_value=service),
             patch.object(slicer_api_module, "get_stall_timeout_seconds", new=AsyncMock(return_value=60.0)),
         ):

@@ -1600,6 +1600,13 @@ export interface AppSettings {
   obico_action: 'notify' | 'pause' | 'pause_and_off';
   obico_poll_interval: number;
   obico_enabled_printers: string;
+  octoeverywhere_enabled: boolean;
+  octoeverywhere_api_key: string;
+  octoeverywhere_api_key_configured: boolean;
+  octoeverywhere_confidence: OctoEverywhereConfidence;
+  octoeverywhere_action: 'notify' | 'pause' | 'pause_and_off';
+  octoeverywhere_enabled_printers: string;
+  octoeverywhere_poll_interval: number;
   // Inventory forecasting global lead time
   forecast_global_lead_time_days: number;
   location_sensor_poll_interval: number;
@@ -1610,7 +1617,7 @@ export interface AppSettings {
   location_sensor_alert_defaults: string;
 }
 
-export type AppSettingsUpdate = Partial<AppSettings>;
+export type AppSettingsUpdate = Partial<Omit<AppSettings, 'octoeverywhere_api_key_configured'>>;
 
 // MQTT relay status
 export interface MQTTStatus {
@@ -3586,6 +3593,54 @@ export interface ObicoTestConnection {
   // Whether the ML API accepted the token. null = not determined (the health
   // check failed first, or the token probe itself errored).
   auth_ok: boolean | null;
+}
+
+// How sure Gadget must be before suggesting a warning or pause (API levels 1-5).
+export type OctoEverywhereConfidence = 'lowest' | 'low' | 'medium' | 'high' | 'highest';
+
+export interface OctoEverywhereDetection {
+  class: 'safe' | 'warning' | 'failure' | 'error' | 'unknown';
+  print_quality: number | null;
+  frame_count: number;
+  error?: string | null;
+  error_code: string | null;
+}
+
+export interface OctoEverywhereDetectionEvent {
+  timestamp: string;
+  printer_id: number;
+  class: OctoEverywhereDetection['class'];
+  print_quality: number | null;
+}
+
+export interface OctoEverywhereStatus {
+  enabled: boolean;
+  api_key_configured: boolean;
+  confidence: OctoEverywhereConfidence;
+  action: 'notify' | 'pause' | 'pause_and_off';
+  poll_interval: number;
+  is_running: boolean;
+  last_error: string | null;
+  last_error_code: string | null;
+  per_printer: Record<string, OctoEverywhereDetection>;
+  history: OctoEverywhereDetectionEvent[];
+  notifications: { configured: boolean; uncovered_printers: number[] };
+}
+
+export interface OctoEverywherePrinterStatus {
+  enabled: boolean;
+  // null = all printers are monitored
+  monitored_printers: number[] | null;
+  per_printer: Record<string, OctoEverywhereDetection>;
+  last_error: string | null;
+  last_error_code: string | null;
+}
+
+export interface OctoEverywhereTestConnection {
+  ok: boolean;
+  status_code: number | null;
+  error: string | null;
+  error_code: string | null;
 }
 
 export interface GitHubTestConnectionResponse {
@@ -8234,6 +8289,20 @@ export const api = {
     request<ObicoTestConnection>('/obico/test-connection', {
       method: 'POST',
       body: JSON.stringify(token === undefined ? { url } : { url, token }),
+    }),
+
+  // OctoEverywhere AI failure detection
+  getOctoEverywhereStatus: () =>
+    request<OctoEverywhereStatus>('/octoeverywhere/status'),
+
+  getOctoEverywherePrinterStatus: () =>
+    request<OctoEverywherePrinterStatus>('/octoeverywhere/printer-status'),
+
+  // An omitted key uses the saved key; an explicit empty key is rejected.
+  testOctoEverywhereConnection: (apiKey?: string, confidence?: OctoEverywhereConfidence) =>
+    request<OctoEverywhereTestConnection>('/octoeverywhere/test-connection', {
+      method: 'POST',
+      body: JSON.stringify({ api_key: apiKey, confidence }),
     }),
 
   // Slicer API — slice in the background. Both endpoints return 202 + a

@@ -5166,6 +5166,10 @@ async def run_migrations(conn):
     # a template an admin has edited is left alone.
     await _migrate_stock_alert_template_sku_variables(conn)
 
+    # Migration: use the same AI detection template for either provider (#3236).
+    # Seeding only inserts missing templates; preserve any customized wording.
+    await _migrate_ai_failure_detection_template(conn)
+
     # Migration: supplier master list + spool assignments (#2988).
     # create_all() covers fresh installs; this covers upgrades.
     await _migrate_create_supplier_tables(conn)
@@ -5748,6 +5752,23 @@ async def _migrate_stock_alert_template_sku_variables(conn) -> None:
             ),
             {"new": new, "et": event_type, "old": old},
         )
+
+
+async def _migrate_ai_failure_detection_template(conn) -> None:
+    """Replace the legacy confidence-only AI body while preserving custom text."""
+    from sqlalchemy import text
+
+    from backend.app.models.notification_template import DEFAULT_TEMPLATES
+
+    default = next(t for t in DEFAULT_TEMPLATES if t["event_type"] == "ai_failure_detection")
+    await conn.execute(
+        text("UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"),
+        {
+            "new": default["body_template"],
+            "et": "ai_failure_detection",
+            "old": "{printer}: {task_name}\nConfidence: {confidence}\nAction taken: {action}",
+        },
+    )
 
 
 async def _migrate_location_ha_sensor_unique_binding(conn) -> None:

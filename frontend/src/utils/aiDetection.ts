@@ -1,20 +1,26 @@
-// Shared shape + class mapping for the Obico AI failure-detection surfaces
+// Shared shape + class mapping for the AI failure-detection surfaces
 // (the printer card badge and the detail modal), so the two cannot disagree
 // about what a given backend class means.
 
 export type AiDetectionClass = 'failure' | 'warning' | 'safe' | 'error' | 'unknown' | 'idle';
 
-export interface AiDetection {
+export const OCTOEVERYWHERE_USAGE_LIMIT = 'OE_FREE_USAGE_LIMIT_REACHED';
+
+interface AiDetectionState {
   class: string;
   frame_count: number;
-  score: number;
   // Why the most recent poll produced no verdict. null when the last poll
   // succeeded, and also when the viewer lacks settings:read — the backend
   // withholds the reason (it can name configured URLs) but still sends the
   // 'error' class, because "your print is not being watched" is not
   // configuration.
   error?: string | null;
+  error_code?: string | null;
 }
+
+// Provider measurements have different scales: Obico returns a failure score,
+// while OctoEverywhere returns print quality from 1 (worst) to 10 (best).
+export type AiDetection = AiDetectionState & ({ score: number } | { print_quality: number | null });
 
 /**
  * Canonical display class for a printer's detection state.

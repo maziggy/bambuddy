@@ -7231,9 +7231,34 @@ class TestCommandAckIsNotTelemetry:
 
         assert mqtt_client.state.ams_filament_backup is False
 
-    def test_small_frame_home_flag_is_ignored(self, mqtt_client):
-        """Heartbeat-style frames carry a partial home_flag (H2D, SD-card badge)."""
+    def test_small_frame_home_flag_ignored_before_full_report(self, mqtt_client):
+        """Until a full report without cfg arrives, the printer may still be a cfg family."""
         mqtt_client.state.ams_filament_backup = True
+
+        mqtt_client._process_message({"print": {"command": "push_status", "home_flag": 0}})
+
+        assert mqtt_client.state.ams_filament_backup is True
+
+    def test_small_frame_home_flag_read_after_full_report_without_cfg(self, mqtt_client):
+        """P1S sends a slicer toggle in a 4-6 key update frame, not a full report (#3259)."""
+        mqtt_client._process_message(self._full_status(home_flag=0x00634518))  # bit10=1
+        assert mqtt_client.state.ams_filament_backup is True
+
+        mqtt_client._process_message({"print": {"command": "push_status", "home_flag": 0x00634118}})
+        assert mqtt_client.state.ams_filament_backup is False
+
+        mqtt_client._process_message({"print": {"command": "push_status", "home_flag": 0x00634518}})
+        assert mqtt_client.state.ams_filament_backup is True
+
+    def test_small_frame_without_home_flag_keeps_backup_state(self, mqtt_client):
+        mqtt_client._process_message(self._full_status(home_flag=0x00634518))  # bit10=1
+
+        mqtt_client._process_message({"print": {"command": "push_status", "wifi_signal": "-38dBm"}})
+
+        assert mqtt_client.state.ams_filament_backup is True
+
+    def test_small_frame_home_flag_ignored_on_cfg_printer(self, mqtt_client):
+        mqtt_client._process_message(self._full_status(cfg="C0340FC219"))  # bit18=1
 
         mqtt_client._process_message({"print": {"command": "push_status", "home_flag": 0}})
 
@@ -7268,27 +7293,6 @@ class TestCommandAckIsNotTelemetry:
         mqtt_client._process_message(self._full_status(home_flag=7554719 & ~(1 << 10)))
 
         assert mqtt_client.state.ams_filament_backup is True
-
-    def test_home_flag_probe_logs_each_change_with_frame_size(self, mqtt_client, caplog):
-        """#3259 probe: small frames are logged too, but only when home_flag changes."""
-        caplog.set_level(logging.DEBUG, logger="backend.app.services.bambu_mqtt")
-
-        mqtt_client._process_message(self._full_status(home_flag=7554719))  # bit10=1
-        mqtt_client._process_message({"print": {"command": "push_status", "home_flag": 7554719}})
-        mqtt_client._process_message({"print": {"command": "push_status", "home_flag": -1024}})
-
-        probes = [r.getMessage() for r in caplog.records if "home_flag probe" in r.getMessage()]
-        assert len(probes) == 2
-        assert "0x0073469F bit10=1 keys=32" in probes[0]
-        assert "0xFFFFFC00 bit10=1 keys=2" in probes[1]
-
-    def test_home_flag_probe_silent_once_printer_sent_cfg(self, mqtt_client, caplog):
-        caplog.set_level(logging.DEBUG, logger="backend.app.services.bambu_mqtt")
-
-        mqtt_client._process_message(self._full_status(cfg="C0340FC219"))
-        mqtt_client._process_message({"print": {"command": "push_status", "home_flag": 0}})
-
-        assert not [r for r in caplog.records if "home_flag probe" in r.getMessage()]
 
     def test_project_file_ack_does_not_clear_timelapse_state(self, mqtt_client):
         """The ack echoes the per-job timelapse request, not the recorder."""

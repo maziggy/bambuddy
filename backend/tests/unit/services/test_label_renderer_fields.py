@@ -171,7 +171,12 @@ def _assert_size(image: Image.Image, w_mm: float, h_mm: float, dpi: int) -> None
 
 @pytest.mark.parametrize(
     ("template", "size_mm"),
-    [("box_40x30", (40.0, 30.0)), ("avery_l7160", (63.5, 38.1)), ("avery_5160", (66.675, 25.4))],
+    [
+        ("box_40x30", (40.0, 30.0)),
+        ("avery_l7160", (63.5, 38.1)),
+        ("avery_5160", (66.675, 25.4)),
+        ("avery_3490", (70.0, 36.0)),
+    ],
 )
 def test_label_size_is_the_cell_for_a_sheet(template, size_mm):
     assert label_size_mm(template) == size_mm

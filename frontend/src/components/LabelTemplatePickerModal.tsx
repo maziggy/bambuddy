@@ -72,6 +72,12 @@ const TEMPLATE_OPTIONS: TemplateOption[] = [
     fallbackHint: 'EU sheet stock; 21 labels per A4 page.',
   },
   {
+    value: 'avery_3490',
+    i18nKey: 'avery3490',
+    fallbackLabel: 'Avery 3490 — A4 sheet (36 × 70 mm × 24)',
+    fallbackHint: 'EU sheet stock; 24 labels per A4 page, edge to edge.',
+  },
+  {
     value: 'avery_5160',
     i18nKey: 'avery5160',
     fallbackLabel: 'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
@@ -81,6 +87,7 @@ const TEMPLATE_OPTIONS: TemplateOption[] = [
 
 const SHEET_CAPACITIES: Partial<Record<SpoolLabelTemplate, number>> = {
   avery_l7160: 21,
+  avery_3490: 24,
   avery_5160: 30,
 };
 

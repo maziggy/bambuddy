@@ -171,6 +171,7 @@ const DE_COGNATES = [
   'Material (optional)', 'Custom Headers (JSON)', '({{count}}/8)',
   'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
+  'Avery 3490 — A4 sheet (36 × 70 mm × 24)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'China', 'Proxy', 'Start',
   'Diagnose',  // DE: same spelling/meaning as EN — camera diagnostic button label
@@ -214,6 +215,7 @@ const FR_COGNATES = [
   '{{name}} ({{count}} copies)',  // FR plural of "copie" is also "copies"
   'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
+  'Avery 3490 — A4 sheet (36 × 70 mm × 24)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   '({{count}}/8)', 'Custom Headers (JSON)', 'Permissions',
   'Expand dispatch details', 'Collapse dispatch details',
@@ -256,6 +258,7 @@ const IT_COGNATES = [
   '({{count}}/8)', 'Custom Headers (JSON)', 'ETA {{minutes}} min',
   '{{name}} - Timelapse', 'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
+  'Avery 3490 — A4 sheet (36 × 70 mm × 24)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'Hex: #{{hex}}',
   'EC984C,#6CD4BC,A66EB9,D87694',
@@ -274,6 +277,7 @@ const JA_COGNATES = [
   '({{count}}/8)', 'Custom Headers (JSON)',
   'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
+  'Avery 3490 — A4 sheet (36 × 70 mm × 24)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
@@ -304,6 +308,7 @@ const PT_BR_COGNATES = [
   '({{count}}/8)', 'Custom Headers (JSON)', '{{name}} - Timelapse',
   'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
+  'Avery 3490 — A4 sheet (36 × 70 mm × 24)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'Cancelling upload...', 'EC984C,#6CD4BC,A66EB9,D87694',
   'Expand dispatch details', 'Collapse dispatch details',
@@ -319,6 +324,7 @@ const ZH_CN_COGNATES = [
   '({{count}}/8)', 'Custom Headers (JSON)',
   'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
+  'Avery 3490 — A4 sheet (36 × 70 mm × 24)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
@@ -330,6 +336,7 @@ const ZH_TW_COGNATES = [
   '({{count}}/8)', 'Custom Headers (JSON)',
   'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
+  'Avery 3490 — A4 sheet (36 × 70 mm × 24)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
@@ -344,6 +351,7 @@ const KO_COGNATES = [
   'Custom Headers (JSON)',
   'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
+  'Avery 3490 — A4 sheet (36 × 70 mm × 24)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{weight}}g',                                      // unit suffix format string
@@ -374,6 +382,7 @@ const ES_COGNATES = [
   'ntfy, Pushover, Discord, etc.',
   'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
+  'Avery 3490 — A4 sheet (36 × 70 mm × 24)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
   'Simple',  // slicer settings visibility tier — identical word in Spanish

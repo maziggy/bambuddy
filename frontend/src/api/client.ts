@@ -3801,7 +3801,8 @@ export type SpoolLabelTemplate =
   | 'box_40x30'
   | 'box_62x29'
   | 'avery_5160'
-  | 'avery_l7160';
+  | 'avery_l7160'
+  | 'avery_3490';
 
 // Mirror of backend.app.services.label_renderer.LabelField, in print order (#2981).
 export const SPOOL_LABEL_FIELDS = [

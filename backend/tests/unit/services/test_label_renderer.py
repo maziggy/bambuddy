@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.units import mm
 
 from backend.app.services.label_renderer import LabelData, render_labels
@@ -17,6 +17,7 @@ ALL_TEMPLATES = (
     "box_62x29",
     "avery_5160",
     "avery_l7160",
+    "avery_3490",
 )
 
 
@@ -100,6 +101,22 @@ def test_sheet_template_paginates_when_count_exceeds_one_sheet():
     assert len(two) > len(one)
 
 
+def test_avery_3490_fills_the_a4_sheet_edge_to_edge():
+    """Avery 3490 = 3 × 8 cells of 70 × 36 mm with no gaps: the columns span
+    the full 210 mm width and the 288 mm of rows sit centred on the page."""
+    data = [_sample(i) for i in range(1, 26)]
+    with patch("backend.app.services.label_renderer._draw_label") as draw_label:
+        render_labels("avery_3490", data)
+
+    calls = [call.args for call in draw_label.call_args_list]
+    first, last_first_page, first_second_page = calls[0], calls[23], calls[24]
+    assert first[1] == pytest.approx(0.0)
+    assert first[2] == pytest.approx(A4[1] - 4.5 * mm - 36 * mm)
+    assert last_first_page[1] + last_first_page[3] == pytest.approx(A4[0])
+    assert last_first_page[2] == pytest.approx(4.5 * mm)
+    assert first_second_page[1:3] == first[1:3]
+
+
 def test_sheet_starting_position_offsets_first_label():
     with patch("backend.app.services.label_renderer._draw_label") as draw_label:
         render_labels("avery_5160", [_sample(1)], starting_position=8)
@@ -124,7 +141,7 @@ def test_sheet_starting_position_resets_on_second_page():
 
 @pytest.mark.parametrize(
     ("template", "starting_position"),
-    (("avery_5160", 0), ("avery_5160", 31), ("avery_l7160", 22), ("box_62x29", 2)),
+    (("avery_5160", 0), ("avery_5160", 31), ("avery_l7160", 22), ("avery_3490", 25), ("box_62x29", 2)),
 )
 def test_invalid_starting_position_raises(template, starting_position):
     with pytest.raises(ValueError, match="Starting position"):

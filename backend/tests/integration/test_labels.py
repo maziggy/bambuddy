@@ -72,6 +72,7 @@ class TestLocalInventoryLabels:
             "box_62x29",
             "avery_5160",
             "avery_l7160",
+            "avery_3490",
         ):
             resp = await async_client.post(
                 "/api/v1/inventory/labels",

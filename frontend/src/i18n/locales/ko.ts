@@ -4811,6 +4811,10 @@ export default {
           label: 'Avery L7160 — A4 시트 (38.1 × 63.5 mm × 21)',
           hint: 'EU 시트; A4 페이지당 21개 라벨.'
         },
+        avery3490: {
+          label: 'Avery 3490 — A4 시트 (36 × 70 mm × 24)',
+          hint: 'EU 시트; 여백 없이 A4 페이지당 24개 라벨.'
+        },
         avery5160: {
           label: 'Avery 5160 — US Letter 시트 (25.4 × 66.7 mm × 30)',
           hint: 'US 시트; Letter 페이지당 30개 라벨.'

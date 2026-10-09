@@ -391,6 +391,7 @@ describe('LabelTemplatePickerModal', () => {
       'box_40x30',
       'box_62x29',
       'avery_l7160',
+      'avery_3490',
       'avery_5160',
     ]);
     expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument();

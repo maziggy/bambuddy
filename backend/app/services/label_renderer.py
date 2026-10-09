@@ -1,6 +1,6 @@
 """PDF spool label rendering.
 
-Six fixed templates:
+Seven fixed templates:
 
 - ``ams_holder_74x33`` — 74×33 mm single label, matches the printable label
   STL bundled with the Makerworld AMS Filament Label Holder (model 752566).
@@ -14,6 +14,7 @@ Six fixed templates:
   generic small labels. One label per page.
 - ``avery_5160`` — US Letter sheet, 25.4×66.7 mm × 30 per sheet.
 - ``avery_l7160`` — A4 sheet, 38.1×63.5 mm × 21 per sheet.
+- ``avery_3490`` — A4 sheet, 36×70 mm × 24 per sheet.
 
 The legacy ``ams_30x15`` preset (#809) was incorrect — the original 30×15 mm
 dimension didn't fit any documented variant of model 752566. Replaced by the
@@ -57,6 +58,7 @@ TemplateName = Literal[
     "box_62x29",
     "avery_5160",
     "avery_l7160",
+    "avery_3490",
 ]
 
 
@@ -504,6 +506,7 @@ _SINGLE_LABEL_SIZES_MM: dict[str, tuple[float, float]] = {
 _SHEET_TEMPLATES: dict[str, tuple] = {
     "avery_5160": (letter, 66.675, 25.4, 3, 10, 12.7, 4.76, 3.175, 0.0),
     "avery_l7160": (A4, 63.5, 38.1, 3, 7, 15.15, 7.0, 2.5, 0.0),
+    "avery_3490": (A4, 70.0, 36.0, 3, 8, 4.5, 0.0, 0.0, 0.0),
 }
 
 

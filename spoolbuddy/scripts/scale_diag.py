@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""NAU7802 Scale Diagnostic.
+"""Scale diagnostic for the configured NAU7802 or HX711 board.
 
 I2C address: 0x2A
 Bus: /dev/i2c-1 (GPIO2/GPIO3 on RPi)
@@ -8,12 +8,10 @@ Bus: /dev/i2c-1 (GPIO2/GPIO3 on RPi)
 import os
 import sys
 import time
+from pathlib import Path
 
-import smbus2
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "daemon")))
-
-from nau7802 import NAU7802
+SPOOLBUDDY_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SPOOLBUDDY_DIR))
 
 
 def _env_int(name: str, default: int) -> int:
@@ -52,7 +50,10 @@ PU_OSCS = 0x40  # Oscillator select
 PU_AVDDS = 0x80  # AVDD source select
 
 
-def main():
+def nau7802_diagnostic():
+    import smbus2
+    from daemon.nau7802 import NAU7802
+
     print("=" * 60)
     print("NAU7802 Scale Diagnostic")
     print("=" * 60)
@@ -222,6 +223,67 @@ def main():
         sys.exit(1)
     finally:
         scale.close()
+
+
+def load_scale_environment():
+    """Read only scale settings; do not execute or print the environment file."""
+    path = SPOOLBUDDY_DIR / ".env"
+    allowed = {
+        "SPOOLBUDDY_SCALE_DRIVER",
+        "SPOOLBUDDY_HX711_DATA_PIN",
+        "SPOOLBUDDY_HX711_CLOCK_PIN",
+        "SPOOLBUDDY_I2C_BUS",
+    }
+    if path.is_file():
+        saved = {}
+        for line in path.read_text().splitlines():
+            key, separator, value = line.strip().partition("=")
+            if separator and key in allowed:
+                saved[key] = value.strip().strip("\"'")
+        for key, value in saved.items():
+            os.environ.setdefault(key, value)
+
+
+def hx711_diagnostic():
+    from daemon.hx711 import HX711
+
+    scale = HX711(
+        data_pin=int(os.environ.get("SPOOLBUDDY_HX711_DATA_PIN", "5")),
+        clock_pin=int(os.environ.get("SPOOLBUDDY_HX711_CLOCK_PIN", "6")),
+    )
+    try:
+        print("HX711 Scale Diagnostic")
+        scale.init()
+        print(scale.diagnostic_info())
+        readings = []
+        deadline = time.monotonic() + 5
+        while len(readings) < 10:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Timed out collecting HX711 samples")
+            readings.append(scale.read_raw())
+            print(f"Sample {len(readings):2d}: {readings[-1]}")
+        print(f"Average: {sum(readings) / len(readings):.1f}")
+        print(f"Min: {min(readings)}; Max: {max(readings)}; Spread: {max(readings) - min(readings)}")
+        print("Diagnostic complete. Tare and calibration were not changed.")
+    finally:
+        scale.close()
+
+
+def main():
+    global I2C_BUS
+    try:
+        load_scale_environment()
+        driver = os.environ.get("SPOOLBUDDY_SCALE_DRIVER", "nau7802").strip().lower()
+        if driver == "hx711":
+            hx711_diagnostic()
+        elif driver == "nau7802":
+            I2C_BUS = _env_int("SPOOLBUDDY_I2C_BUS", 1)
+            nau7802_diagnostic()
+        else:
+            raise ValueError(f"Unknown scale board: {driver}")
+    except Exception as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        raise SystemExit(1) from error
 
 
 if __name__ == "__main__":

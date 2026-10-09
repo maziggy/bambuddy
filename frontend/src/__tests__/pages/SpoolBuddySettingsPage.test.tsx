@@ -13,6 +13,7 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes, Outlet } from 'react-router-dom';
+import { spoolbuddyApi } from '../../api/client';
 import { SpoolBuddySettingsPage } from '../../pages/spoolbuddy/SpoolBuddySettingsPage';
 
 vi.mock('../../api/client', () => ({
@@ -307,5 +308,28 @@ describe('SpoolBuddySettingsPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Waiting for system stats...')).toBeDefined();
     });
+  });
+});
+
+
+describe('Scale hardware identity', () => {
+  it.each(['hx711', 'nau7802'] as const)('shows the daemon-reported %s board', async (driver) => {
+    const [device] = await spoolbuddyApi.getDevices();
+    vi.mocked(spoolbuddyApi.getDevices).mockResolvedValueOnce([
+      { ...device, system_stats: { ...device.system_stats, scale_driver: driver } },
+    ]);
+    renderPage();
+    await screen.findByText("spoolbuddy-pi");
+    expect(screen.queryByText(driver.toUpperCase())).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Scale', exact: true }));
+    expect(screen.getByText(driver.toUpperCase())).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tare', exact: true })).toBeInTheDocument();
+  });
+
+  it('does not guess a board for an older daemon', async () => {
+    renderPage();
+    await screen.findByText('spoolbuddy-pi');
+    expect(screen.queryByText('HX711')).not.toBeInTheDocument();
+    expect(screen.queryByText('NAU7802')).not.toBeInTheDocument();
   });
 });

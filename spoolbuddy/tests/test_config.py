@@ -167,3 +167,30 @@ class TestGetMacId:
 
         assert result.startswith("sb-")
         assert len(result) == 15  # "sb-" + 12 hex chars
+
+
+@pytest.mark.parametrize("driver", ["nau7802", "hx711"])
+def test_scale_driver_selection(monkeypatch, driver):
+    monkeypatch.setenv("SPOOLBUDDY_BACKEND_URL", "http://localhost:8030")
+    monkeypatch.setenv("SPOOLBUDDY_API_KEY", "test")
+    monkeypatch.setenv("SPOOLBUDDY_SCALE_DRIVER", driver)
+    cfg = Config.load()
+    assert cfg.scale_driver == driver
+    assert (cfg.hx711_data_pin, cfg.hx711_clock_pin) == (5, 6)
+
+
+@pytest.mark.parametrize(
+    "name,value",
+    [
+        ("SPOOLBUDDY_SCALE_DRIVER", "typo"),
+        ("SPOOLBUDDY_HX711_DATA_PIN", "6"),
+        ("SPOOLBUDDY_HX711_CLOCK_PIN", "99"),
+    ],
+)
+def test_invalid_scale_configuration(monkeypatch, name, value):
+    monkeypatch.setenv("SPOOLBUDDY_BACKEND_URL", "http://localhost:8030")
+    monkeypatch.setenv("SPOOLBUDDY_API_KEY", "test")
+    monkeypatch.setenv("SPOOLBUDDY_SCALE_DRIVER", "hx711")
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError):
+        Config.load()

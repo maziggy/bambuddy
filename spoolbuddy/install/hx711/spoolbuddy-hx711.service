@@ -1,0 +1,16 @@
+[Unit]
+Description=SpoolBuddy HX711 scale hardware
+After=systemd-modules-load.service
+Before=spoolbuddy.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/spoolbuddy-hx711/setup.sh start
+ExecStop=/usr/local/lib/spoolbuddy-hx711/setup.sh stop
+ExecStopPost=/usr/local/lib/spoolbuddy-hx711/setup.sh stop
+TimeoutStartSec=30
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

@@ -2828,7 +2828,10 @@ export default {
     styleVibrant: 'Vibrante',
     themeToggleHint: 'Alterne entre modo oscuro, claro y sistema con el icono en la barra lateral.',
     progressInTitle: 'Progreso en la pestaña',
-    progressInTitleDescription: 'Muestra el porcentaje de la impresión activa y un anillo de progreso en la pestaña del navegador.',
+    progressInTitleDescription: 'Mostrar el progreso de la impresión activa en la pestaña del navegador y el favicon.',
+    tabDisplay: 'Visualización de pestaña',
+    tabDisplayPercentage: 'Porcentaje',
+    tabDisplayTime: 'Tiempo restante',
     // Archive
     autoArchivePrints: 'Archivar impresiones automáticamente',
     autoArchiveDescription: 'Guardar automáticamente los archivos 3MF cuando se completan las impresiones',

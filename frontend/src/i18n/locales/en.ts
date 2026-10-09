@@ -2848,7 +2848,10 @@ export default {
     styleVibrant: 'Vibrant',
     themeToggleHint: 'Toggle between dark, light, and system mode using the icon in the sidebar.',
     progressInTitle: 'Print progress in tab',
-    progressInTitleDescription: 'Show the active print\'s percentage and a progress ring in the browser tab.',
+    progressInTitleDescription: 'Show the active print\'s progress in the browser tab title and favicon.',
+    tabDisplay: 'Tab display',
+    tabDisplayPercentage: 'Percentage',
+    tabDisplayTime: 'Time remaining',
     // Archive
     autoArchivePrints: 'Auto-archive prints',
     autoArchiveDescription: 'Automatically save 3MF files when prints complete',

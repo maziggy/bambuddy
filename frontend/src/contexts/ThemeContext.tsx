@@ -22,6 +22,8 @@ interface ThemeContextType {
   // Show live print progress (% + accent-coloured ring favicon) in the browser tab
   progressInTitle: boolean;
   setProgressInTitle: (v: boolean) => void;
+  tabDisplay: 'percentage' | 'time';
+  setTabDisplay: (v: 'percentage' | 'time') => void;
   // Actions
   toggleMode: () => void;
   setMode: (mode: ThemeMode) => void;
@@ -99,6 +101,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const setProgressInTitle = (v: boolean) => {
     setProgressInTitleState(v);
     localStorage.setItem('progress-in-title', String(v));
+  };
+
+  const [tabDisplay, setTabDisplayState] = useState<'percentage' | 'time'>(() =>
+    localStorage.getItem('tab-display') === 'time' ? 'time' : 'percentage'
+  );
+  const setTabDisplay = (v: 'percentage' | 'time') => {
+    setTabDisplayState(v);
+    localStorage.setItem('tab-display', v);
   };
 
   // Sync from API once auth state is known. Same gate shape as
@@ -216,7 +226,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       resolvedMode,
       darkStyle, darkBackground, darkAccent,
       lightStyle, lightBackground, lightAccent,
-      progressInTitle, setProgressInTitle,
+      progressInTitle, setProgressInTitle, tabDisplay, setTabDisplay,
       toggleMode, setMode,
       setDarkStyle, setDarkBackground, setDarkAccent,
       setLightStyle, setLightBackground, setLightAccent,

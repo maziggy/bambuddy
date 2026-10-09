@@ -2846,7 +2846,10 @@ export default {
     styleVibrant: 'Levendig',
     themeToggleHint: 'Schakel met het pictogram in de zijbalk tussen donkere, lichte en systeemmodus.',
     progressInTitle: 'Afdrukvoortgang in tabblad',
-    progressInTitleDescription: 'Toon het percentage van de actieve afdruk en een voortgangsring in het browsertabblad.',
+    progressInTitleDescription: 'Toon de voortgang van de actieve print in het browsertabblad en favicon.',
+    tabDisplay: 'Tabweergave',
+    tabDisplayPercentage: 'In procenten',
+    tabDisplayTime: 'Resterende tijd',
     // Archive
     autoArchivePrints: 'Afdrukken automatisch archiveren',
     autoArchiveDescription: '3MF-bestanden automatisch opslaan wanneer afdrukken zijn voltooid',

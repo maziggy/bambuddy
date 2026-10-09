@@ -235,7 +235,7 @@ export function SettingsPage() {
     setMode,
     setDarkStyle, setDarkBackground, setDarkAccent,
     setLightStyle, setLightBackground, setLightAccent,
-    progressInTitle, setProgressInTitle,
+    progressInTitle, setProgressInTitle, tabDisplay, setTabDisplay,
   } = useTheme();
   const [localSettings, setLocalSettings] = useState<AppSettings | null>(null);
   // Transient typed strings for the per-filament humidity threshold inputs
@@ -2054,6 +2054,27 @@ export function SettingsPage() {
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
                 </label>
               </div>
+              {progressInTitle && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-bambu-gray">{t('settings.tabDisplay')}:</span>
+                  <div className="flex gap-1">
+                    {([
+                      { id: 'percentage', label: t('settings.tabDisplayPercentage') },
+                      { id: 'time', label: t('settings.tabDisplayTime') },
+                    ] as const).map(({ id, label }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        aria-pressed={tabDisplay === id}
+                        onClick={() => { setTabDisplay(id); showToast(t('settings.toast.settingsSaved'), 'success'); }}
+                        className={`px-3 py-1 text-xs rounded-lg border transition-colors ${tabDisplay === id ? 'border-bambu-green bg-bambu-green/10 text-bambu-green' : 'border-gray-300 dark:border-bambu-dark-tertiary text-gray-500 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white cursor-pointer'}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 

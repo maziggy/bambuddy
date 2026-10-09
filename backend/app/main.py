@@ -115,6 +115,7 @@ from backend.app.services.camera_light import camera_light
 from backend.app.services.energy_plug import energy_plug_candidates, select_energy_reading
 from backend.app.services.github_backup import github_backup_service
 from backend.app.services.ha_sensor_manager import ha_sensor_manager
+from backend.app.services.hms_errors import hms_fault_counts as _hms_fault_counts
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.library_trash import library_trash_service
 from backend.app.services.local_backup import local_backup_service
@@ -160,6 +161,7 @@ from backend.app.services.spoolman_tracking import (
 )
 from backend.app.services.tasmota import tasmota_service
 from backend.app.services.telegram_reactions import telegram_reaction_poller
+from backend.app.services.wled import wled_manager
 from backend.app.utils.ams_drying import is_drying_active, temperature_alarm_suppressed
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.filament_types import printer_filament_type
@@ -1497,24 +1499,6 @@ def _hms_notify_key(error) -> str:
     return f"{error.attr:08X}:{error.code}"
 
 
-def _hms_fault_counts(error) -> bool:
-    """Whether a fault counts as a problem: the same rule the frontend's
-    ``filterKnownHMSErrors`` applies to the printer card, badge and camera wall.
-
-    It counts when Bambu publishes text for it or it offers action buttons, and
-    its level is a real one. An ``hms[]`` fault at level 3 (notification) with
-    no actions does not count: those are things like "the top cover is open" or
-    "the chamber is hot, fan speed increased", which a printer can hold through
-    a whole print. A ``print_error`` at the same level (0xCxxx) still counts, as
-    it always has; those are prompts such as "unable to start drying" (#2728).
-    """
-    if error.severity < 1:
-        return False
-    has_actions = bool(getattr(error, "actions", None))
-    is_hms_notice = len(getattr(error, "full_code", "") or "") == 16 and error.severity == 3
-    return has_actions or (bool(getattr(error, "description", None)) and not is_hms_notice)
-
-
 def _hms_errors_to_notify(errors: list, new_error_codes: set[str]) -> list:
     """The new faults that count (see ``_hms_fault_counts``).
 
@@ -1621,6 +1605,11 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         notify_live_activities.observe(printer_id, state)
     except Exception:
         logging.getLogger(__name__).exception("Notify Live Activity status hook failed for printer %s", printer_id)
+    wled_manager.handle_status(
+        printer_id,
+        state,
+        awaiting_plate_clear=printer_manager.is_awaiting_plate_clear(printer_id),
+    )
     # Connected-edge reconciliation (#1542 follow-up). When the printer
     # transitions disconnected → connected — which covers both Bambuddy
     # startup (no prior connection) and a mid-session MQTT reconnect — fire
@@ -10031,6 +10020,15 @@ async def lifespan(app: FastAPI):
     # Rehydrate persisted awaiting-plate-clear gate (#961) so prompts survive restarts
     await printer_manager.load_awaiting_plate_clear_from_db()
 
+    # WLED is entirely optional. Seed its in-memory per-printer configuration
+    # before MQTT connections begin emitting status callbacks.
+    async with async_session() as db:
+        from backend.app.models.printer import Printer
+
+        result = await db.execute(select(Printer.id, Printer.wled_config))
+        for printer_id, config in result.all():
+            wled_manager.configure_printer(printer_id, config)
+
     # Layer change callback for external camera timelapse
     async def on_layer_change(printer_id: int, layer_num: int):
         """Capture timelapse frame on layer change + first layer notification."""
@@ -10476,6 +10474,8 @@ async def lifespan(app: FastAPI):
     await mqtt_smart_plug_service.disconnect(timeout=2)
 
     await mqtt_relay.disconnect(timeout=2)
+
+    await wled_manager.shutdown()
 
     # Drop the shared Bambu Cloud HTTP client we registered at startup.
     set_shared_http_client(None)

@@ -430,6 +430,36 @@ export interface PrinterLocationUpdate {
   color?: string | null;
 }
 
+export interface WLEDPresets {
+  idle: number | null;
+  prepare: number | null;
+  printing: number | null;
+  paused: number | null;
+  finished: number | null;
+  error: number | null;
+  queue_waiting: number | null;
+  filament_problem: number | null;
+  hms_error: number | null;
+  offline: number | null;
+}
+
+export interface WLEDConfig {
+  enabled: boolean;
+  base_url: string | null;
+  presets: WLEDPresets;
+  finished_timeout_seconds: number | null;
+}
+
+export interface WLEDPreset {
+  id: number;
+  name: string;
+}
+
+export interface WLEDConnectionInfo {
+  name: string | null;
+  version: string | null;
+}
+
 export interface Printer {
   id: number;
   name: string;
@@ -457,6 +487,7 @@ export interface Printer {
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   wear_cost_per_hour: number | null;  // Wear cost per printing hour (#694)
+  wled_config: WLEDConfig | null;
   created_at: string;
   updated_at: string;
 }
@@ -769,6 +800,7 @@ export interface PrinterCreate {
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
   wear_cost_per_hour?: number | null;
+  wled_config?: WLEDConfig | null;
 }
 
 // Plate Detection
@@ -5077,6 +5109,21 @@ export const api = {
     request<Printer>(`/printers/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
+    }),
+  getWledPresets: (id: number, baseUrl: string) =>
+    request<WLEDPreset[]>(`/printers/${id}/wled/presets`, {
+      method: 'POST',
+      body: JSON.stringify({ base_url: baseUrl }),
+    }),
+  testWledConnection: (id: number, baseUrl: string) =>
+    request<WLEDConnectionInfo>(`/printers/${id}/wled/test-connection`, {
+      method: 'POST',
+      body: JSON.stringify({ base_url: baseUrl }),
+    }),
+  testWledPreset: (id: number, baseUrl: string, presetId: number) =>
+    request<{ success: boolean }>(`/printers/${id}/wled/test-preset`, {
+      method: 'POST',
+      body: JSON.stringify({ base_url: baseUrl, preset_id: presetId }),
     }),
   deletePrinter: (id: number, deleteArchives: boolean = true) =>
     request<{ status: string; archives_deleted: boolean }>(

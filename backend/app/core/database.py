@@ -5335,6 +5335,8 @@ async def _run_migrations(conn):
         await conn.execute(
             text("UPDATE printers SET camera_light_auto = :off WHERE camera_light_auto IS NULL"), {"off": False}
         )
+    # Migration: optional per-printer WLED preset configuration (#1528).
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN wled_config JSON")
 
     # Migration: printer-scoped groups (#1727). Defaults off, so no existing
     # group narrows anyone's printers on upgrade; the group_printers table

@@ -1,7 +1,7 @@
 """Pydantic schemas for slice requests."""
 
 import re
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -98,6 +98,19 @@ class SliceRequest(BaseModel):
             "same for that one slot. An omitted list (older clients) falls back to "
             "the preset's own ``default_filament_colour``, then to the colour the "
             "source file's plate was designed with."
+        ),
+    )
+
+    filament_map: list[Annotated[int, Field(ge=1)]] | None = Field(
+        default=None,
+        description=(
+            "Dual-nozzle printers only. The 1-based slicer extruder each filament "
+            "prints from, in the same plate-slot order as ``filament_presets`` "
+            "(for example ``[1, 2]``). Sent to the slicer as ``--filament-map`` "
+            "in Manual mode, which is the only place the CLI reads it from. "
+            "``None`` lets Bambuddy work one out from the spools loaded on the "
+            "target printer, and leaves the slicer's default grouping when it "
+            "cannot. An explicit list is used as given."
         ),
     )
 
@@ -252,6 +265,14 @@ class SliceRequest(BaseModel):
                 raise ValueError(f"filament_colours[{i}] must be '#RRGGBB' or '#RRGGBBAA', got {colour!r}")
             normalised.append("#" + value[1:].upper())
         self.filament_colours = normalised
+
+        # The slicer pairs the map with the loaded filaments index by index,
+        # so a map of another length cannot mean what the caller intended.
+        if self.filament_map is not None and len(self.filament_map) != len(self.filament_presets):
+            raise ValueError(
+                f"filament_map has {len(self.filament_map)} entries but there are "
+                f"{len(self.filament_presets)} filament presets"
+            )
         return self
 
 

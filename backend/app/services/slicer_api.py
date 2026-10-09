@@ -643,6 +643,7 @@ class SlicerApiService:
         orient: bool = False,
         request_id: str | None = None,
         on_progress: Callable[[dict], None] | None = None,
+        filament_map: list[int] | None = None,
     ) -> SliceResult:
         """POST /slice with model + printer/process/filament profiles.
 
@@ -675,6 +676,14 @@ class SlicerApiService:
         dispatch polls ``GET /slice/progress/{request_id}`` in parallel
         to drive the live-progress toast.
 
+        ``filament_map``: on a dual-nozzle printer, the 1-based extruder each
+        filament prints from, in the same order as ``filament_profile_jsons``.
+        Sent as the sidecar's ``filamentMap`` field, which it passes to the CLI
+        as ``--filament-map`` in Manual mode. The CLI ignores the same value
+        anywhere else. ``None`` or empty sends nothing, so the request is
+        byte-identical to one made before this parameter existed, and a
+        sidecar too old to know the field slices exactly as before.
+
         Raises:
             SlicerInputError: 4xx from sidecar (caller-supplied input is bad).
             SlicerApiUnavailableError: connection error or 5xx from sidecar.
@@ -703,6 +712,8 @@ class SlicerApiService:
         _add_layout_flags(data, arrange=arrange, orient=orient)
         if request_id is not None:
             data["requestId"] = request_id
+        if filament_map:
+            data["filamentMap"] = ",".join(str(extruder) for extruder in filament_map)
 
         # When the caller supplied a request_id, kick off a parallel
         # poller that reads the sidecar's --pipe-fed progress endpoint

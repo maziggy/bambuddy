@@ -4451,6 +4451,50 @@ async def _run_slicer_with_fallback(
 
         filament_jsons = substitute_unused_plate_filaments(primary_bytes, request.plate or 1, filament_jsons)
 
+    # Dual-nozzle printers: which extruder each filament prints from. Without
+    # a map the CLI puts every filament on one extruder, so the printer swaps
+    # filament at each colour change while the other nozzle stays cold. An
+    # explicit map from the caller is used as given; otherwise one is worked
+    # out from the spools loaded on the target printer, and anything that
+    # stops that from working leaves the slice exactly as it was. Planned after
+    # the unused-slot substitution above, so it sees the list the CLI gets.
+    # The embedded-settings path loads no filament profiles to map.
+    filament_map = request.filament_map
+    if filament_map is None and not embedded_mode:
+        from backend.app.services.filament_map import auto_filament_map
+
+        filament_map = await auto_filament_map(
+            db,
+            target_model=_printer_model_from_profile(presets["printer"]),
+            printer_json=presets["printer"],
+            filament_jsons=filament_jsons,
+        )
+    map_was_planned = filament_map is not None and request.filament_map is None
+
+    async def _slice_with_profiles(**kwargs):
+        """``service.slice_with_profiles`` plus the filament map, if there is one.
+
+        A map Bambuddy planned itself is withdrawn if the slicer refuses the
+        job with it, and the slice is retried exactly as it would have run
+        without one: the second extruder cannot reach every part of the bed
+        (on the X2D it stops 20.5 mm short of the left edge), so a map that
+        matches the spools can still describe a job the slicer will not cut.
+        A map the caller asked for is theirs, so its failure is reported.
+        """
+        if not filament_map:
+            return await service.slice_with_profiles(**kwargs)
+        try:
+            return await service.slice_with_profiles(**kwargs, filament_map=filament_map)
+        except (SlicerApiServerError, SlicerInputError) as exc:
+            if not map_was_planned:
+                raise
+            logger.warning(
+                "Slice with filament_map=%s was refused (%s); retrying with the default grouping",
+                filament_map,
+                exc,
+            )
+            return await service.slice_with_profiles(**kwargs)
+
     # Arrange slice-all loop (#1493): when the user asks for ``plate=0``
     # (all plates) AND arrange is on, ``--slice 0 --arrange 1``
     # consolidates every plate's objects onto a single target bed (BS's
@@ -4536,7 +4580,7 @@ async def _run_slicer_with_fallback(
                             on_progress=plate_cb,
                         )
                     else:
-                        per_plate = await service.slice_with_profiles(
+                        per_plate = await _slice_with_profiles(
                             model_bytes=primary_bytes,
                             model_filename=model_filename,
                             printer_profile_json=presets["printer"],
@@ -4592,7 +4636,7 @@ async def _run_slicer_with_fallback(
                 )
                 used_embedded_settings = True
             else:
-                result = await service.slice_with_profiles(
+                result = await _slice_with_profiles(
                     model_bytes=primary_bytes,
                     model_filename=model_filename,
                     printer_profile_json=presets["printer"],
@@ -4727,6 +4771,17 @@ def _canonical_printer_model(raw: str | None) -> str | None:
         cleaned = cleaned[2:].strip()
     cleaned = re.sub(r"\s+0\.\d+\s+nozzle$", "", cleaned, flags=re.IGNORECASE)
     return normalize_printer_model(cleaned) if cleaned else None
+
+
+def _printer_model_from_profile(printer_json: str) -> str | None:
+    """Canonical model code of an already-resolved printer profile, or None."""
+    try:
+        data = json.loads(printer_json)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return _canonical_printer_model(data.get("printer_model") or data.get("printer_settings_id") or data.get("name"))
 
 
 async def _resolve_target_printer_model(db: AsyncSession, user: User | None, request: SliceRequest) -> str | None:

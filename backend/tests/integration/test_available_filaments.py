@@ -50,7 +50,7 @@ class TestAvailableFilaments:
             ]
         )
 
-        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+        with patch("backend.app.services.loaded_filaments.printer_manager") as mock_pm:
             mock_pm.get_status.return_value = status
 
             response = await async_client.get("/api/v1/printers/available-filaments?model=X1C")
@@ -91,7 +91,7 @@ class TestAvailableFilaments:
             ]
         )
 
-        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+        with patch("backend.app.services.loaded_filaments.printer_manager") as mock_pm:
             mock_pm.get_status.return_value = status
 
             response = await async_client.get("/api/v1/printers/available-filaments?model=X1C")
@@ -143,7 +143,7 @@ class TestAvailableFilaments:
             ]
         )
 
-        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+        with patch("backend.app.services.loaded_filaments.printer_manager") as mock_pm:
             mock_pm.get_status.side_effect = [status1, status2]
 
             response = await async_client.get("/api/v1/printers/available-filaments?model=X1C")
@@ -169,7 +169,7 @@ class TestAvailableFilaments:
             ]
         )
 
-        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+        with patch("backend.app.services.loaded_filaments.printer_manager") as mock_pm:
             mock_pm.get_status.return_value = status
 
             response = await async_client.get("/api/v1/printers/available-filaments?model=X1C")
@@ -198,7 +198,7 @@ class TestAvailableFilaments:
             ],
         )
 
-        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+        with patch("backend.app.services.loaded_filaments.printer_manager") as mock_pm:
             mock_pm.get_status.return_value = status
 
             response = await async_client.get("/api/v1/printers/available-filaments?model=X1C")
@@ -217,3 +217,40 @@ class TestAvailableFilaments:
 
         assert response.status_code == 200
         assert response.json() == []
+
+
+class TestFilamentMapReadsLoadedSpools:
+    """The slicer's filament map reads the spools without going through the route."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_map_planned_from_a_real_lookup(self, db_session, printer_factory):
+        import json
+
+        from backend.app.services.filament_map import auto_filament_map
+
+        await printer_factory(name="Dual", model="X2D")
+        # White in the AMS (left extruder), green on the external spool (right).
+        status = _make_mock_status(
+            ams_data=[{"id": 0, "tray": [{"id": 0, "tray_type": "PLA", "tray_color": "FFFFFFFF"}]}],
+            vt_tray=[{"id": 255, "tray_type": "PLA", "tray_color": "00AE42FF"}],
+            ams_extruder_map={"0": 1},
+        )
+        printer = json.dumps(
+            {
+                "name": "Bambu Lab X2D 0.4 nozzle",
+                "printer_model": "Bambu Lab X2D",
+                "nozzle_diameter": ["0.4", "0.4"],
+                "physical_extruder_map": ["1", "0"],
+            }
+        )
+        white = json.dumps({"name": "Test PLA White", "filament_colour": ["#FFFFFF"]})
+        green = json.dumps({"name": "Test PLA Green", "filament_colour": ["#00AE42"]})
+
+        with patch("backend.app.services.loaded_filaments.printer_manager") as mock_pm:
+            mock_pm.get_status.return_value = status
+            result = await auto_filament_map(
+                db_session, target_model="X2D", printer_json=printer, filament_jsons=[white, green]
+            )
+
+        assert result == [1, 2]

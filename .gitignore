@@ -1,6 +1,8 @@
 # Claude
 .claude/
 CLAUDE.md
+CLAUDE.local.md
+.mcp.json
 
 # macOS
 .DS_Store

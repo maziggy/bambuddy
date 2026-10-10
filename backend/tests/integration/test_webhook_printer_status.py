@@ -437,7 +437,10 @@ class TestWebhookStopAndCancelSendTheStop:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    @pytest.mark.parametrize(("action", "state"), [("stop", "RUNNING"), ("cancel", "RUNNING"), ("cancel", "PAUSE")])
+    @pytest.mark.parametrize(
+        ("action", "state"),
+        [(action, state) for action in ("stop", "cancel") for state in ("RUNNING", "PAUSE")],
+    )
     async def test_sends_the_stop_and_marks_the_printer(self, async_client, api_key_data, printer_row, action, state):
         from backend.app.main import _user_stopped_printers
 
@@ -458,3 +461,13 @@ class TestWebhookStopAndCancelSendTheStop:
         assert resp.status_code == 503, resp.text
         stop_print.assert_called_once_with(printer_row.id)
         assert printer_row.id not in _user_stopped_printers
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("action", ["stop", "cancel"])
+    async def test_a_print_still_preparing_is_not_stopped(self, async_client, api_key_data, printer_row, action):
+        """As on the printer card, whose Stop works only while printing or paused."""
+        resp, stop_print = await _send(async_client, api_key_data, printer_row.id, action, "PREPARE", stop_result=True)
+
+        assert resp.status_code == 409
+        stop_print.assert_not_called()

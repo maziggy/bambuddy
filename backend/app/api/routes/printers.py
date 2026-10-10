@@ -62,6 +62,7 @@ from backend.app.services.bambu_ftp import (
     get_storage_info_async,
     list_files_result_async,
 )
+from backend.app.services.hms_actions import HMSAction
 from backend.app.services.print_storage import ftp_probe_paths, print_file_reachable_over_ftp
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
 from backend.app.services.printer_manager import (
@@ -3572,20 +3573,12 @@ async def stop_print(
     if not client:
         raise HTTPException(400, "Printer not connected")
 
-    success = client.stop_print()
-    if not success:
+    # Sends the stop and marks the printer as stopped by the user, so the
+    # resulting "failed"/"aborted" status ends the print as cancelled.
+    from backend.app.services.print_control import stop_print_by_user
+
+    if not stop_print_by_user(printer_id):
         raise HTTPException(500, "Failed to stop print")
-
-    # Mark this printer as user-stopped so on_print_complete reclassifies
-    # the resulting "failed"/"aborted" MQTT status as "cancelled" — otherwise
-    # the HMS heuristic in _dispatch_archive_update mislabels user-cancels
-    # (e.g. the H2D's cancel-sequence module-0x0C HMS) as "Layer shift".
-    try:
-        from backend.app.main import mark_printer_stopped_by_user
-
-        mark_printer_stopped_by_user(printer_id)
-    except Exception as _mark_err:
-        logger.warning("Failed to mark printer %s as user-stopped: %s", printer_id, _mark_err)
 
     return {"success": True, "message": "Print stop command sent"}
 
@@ -4800,6 +4793,13 @@ async def execute_hms_action(
     success = client.execute_hms_action(body.print_error, body.action, body.job_id)
     if not success:
         raise HTTPException(400, "Failed to execute HMS action")
+
+    if body.action == HMSAction.STOP_PRINTING:
+        # A user stop like the Stop button: mark it before the wait below, so a
+        # completion arriving meanwhile ends the print as cancelled, not failed.
+        from backend.app.services.print_control import mark_stopped_by_user
+
+        mark_stopped_by_user(printer_id)
 
     # Give the printer time to push a state update. The dispatch helper already
     # publishes a pushall after every command, so a fresh status should arrive

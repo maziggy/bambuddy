@@ -2391,8 +2391,6 @@ async def stop_queue_item(
     holding only _OWN saw the Stop button in the queue UI but got 403 on click.
     """
 
-    from backend.app.services.printer_manager import printer_manager
-
     user, can_modify_all = auth_result
 
     result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))
@@ -2414,25 +2412,22 @@ async def stop_queue_item(
     printer_id = item.printer_id
     auto_off_after = item.auto_off_after
 
-    # Try to send stop command to printer
+    # Send the stop and mark the printer as user-stopped, even when the stop
+    # couldn't be sent: the job is closed below either way, so a "failed" the
+    # printer reports later is the user's cancel. Marked before the first await
+    # so an on_print_complete arriving during the db.commit() yield already
+    # sees the flag (no spurious "print failed" notification).
+    from backend.app.services.print_control import stop_print_by_user
+
     stop_sent = False
     try:
-        stop_sent = printer_manager.stop_print(printer_id)
+        # A printing job always has a printer; without one there is nothing to stop.
+        if printer_id is not None:
+            stop_sent = stop_print_by_user(printer_id, mark_when_unsent=True)
         if not stop_sent:
             logger.warning("stop_print returned False for printer %s - printer may not be connected", printer_id)
     except Exception as e:
         logger.error("Error sending stop command for queue item %s: %s", item_id, e)
-
-    # Mark this printer as user-stopped BEFORE the first await so that if the
-    # MQTT on_print_complete callback fires during the db.commit() yield the flag
-    # is already set and the "failed" status will be correctly overridden to
-    # "cancelled" (preventing a spurious "print failed" notification).
-    try:
-        from backend.app.main import mark_printer_stopped_by_user
-
-        mark_printer_stopped_by_user(printer_id)
-    except Exception as _mark_err:
-        logger.warning("Failed to mark printer %s as user-stopped: %s", printer_id, _mark_err)
 
     # Update queue item status regardless - if printer is off, print is already stopped
     item.status = "cancelled"

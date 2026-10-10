@@ -21,6 +21,7 @@ from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.schemas.printer import HMSErrorResponse, hms_error_responses
 from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
+from backend.app.services.print_control import stop_print_by_user
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.queue_position import next_queue_position
 
@@ -235,24 +236,20 @@ async def webhook_start_print(
     return {"message": "Print started", "queue_item_id": queue_item.id}
 
 
-def _stop_current_print(printer_id: int) -> None:
-    """Send the stop command and mark the printer as stopped by the user.
+# States in which a print can be stopped, as with the Stop button on the
+# printer card: printing or paused.
+_STOPPABLE_STATES = ("RUNNING", "PAUSE")
 
-    Cancel and stop are the same MQTT command on Bambu printers. The mark makes
-    the print end as stopped rather than failed, as a stop from the printer
-    card or the queue does (mark_printer_stopped_by_user).
-    """
+
+def _stop_current_print(printer_id: int) -> None:
+    """Stop the print on the user's behalf (cancel and stop are the same command)."""
     try:
-        sent = printer_manager.stop_print(printer_id)
+        sent = stop_print_by_user(printer_id)
     except Exception as e:
         logger.error("Failed to stop print on printer %s: %s", printer_id, e)
         raise HTTPException(status_code=500, detail=str(e))
     if not sent:
         raise HTTPException(status_code=503, detail="Printer not connected")
-
-    from backend.app.main import mark_printer_stopped_by_user
-
-    mark_printer_stopped_by_user(printer_id)
 
 
 @router.post("/printer/{printer_id}/stop")
@@ -275,7 +272,7 @@ async def webhook_stop_print(
     if not status or not status.connected:
         raise HTTPException(status_code=503, detail="Printer not connected")
 
-    if status.state != "RUNNING":
+    if status.state not in _STOPPABLE_STATES:
         raise HTTPException(status_code=409, detail="No print in progress")
 
     _stop_current_print(printer_id)
@@ -301,7 +298,7 @@ async def webhook_cancel_print(
     if not status or not status.connected:
         raise HTTPException(status_code=503, detail="Printer not connected")
 
-    if status.state not in ["RUNNING", "PAUSE"]:
+    if status.state not in _STOPPABLE_STATES:
         raise HTTPException(status_code=409, detail="No print to cancel")
 
     _stop_current_print(printer_id)

@@ -1,0 +1,25 @@
+# Input for requirements-typecheck.lock, the pinned environment the backend
+# type check (basedpyright) runs in. Not for running Bambuddy.
+#
+# requirements.txt only sets lower bounds, so a fresh install picks up whatever
+# is newest, and library typings (SQLAlchemy above all) change what the checker
+# reports. The baseline in .basedpyright/baseline.json is only valid for the
+# exact versions in the lock, so CI installs the lock, never requirements.txt.
+#
+# Added or changed a dependency in requirements.txt? Add it to the lock, keeping
+# every other pin:
+#   uv pip compile requirements-typecheck.txt --python-version 3.11 \
+#       --python-platform x86_64-unknown-linux-gnu -o requirements-typecheck.lock
+# If that moves the pin of a package already in the lock and the type check
+# then reports errors in code you did not touch, regenerate the baseline as
+# below in the same commit.
+#
+# Refresh all versions (or bump basedpyright) on purpose: the same command with
+# --upgrade, then rebuild the venv from the lock and regenerate the baseline:
+#   basedpyright --pythonpath <venv>/bin/python --writebaseline
+# and commit lock and baseline together.
+
+-r requirements.txt
+
+# Exact pin: the baseline is only valid for one checker version.
+basedpyright==1.40.2

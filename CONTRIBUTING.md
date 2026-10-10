@@ -195,6 +195,18 @@ ruff format backend/
 ruff format --check backend/
 ```
 
+Types are checked with [basedpyright](https://docs.basedpyright.com/) (configuration in `pyproject.toml`). Errors that existed when the check was introduced are listed in `.basedpyright/baseline.json` and pass; a new one fails the check. The check runs against the pinned library versions in `requirements-typecheck.lock`, because other versions report different errors. It needs Python 3.11 or newer on Linux, macOS on Apple Silicon, or WSL (the lock is built for Linux; on Intel Macs some pinned packages have no wheels). Once `.typecheck-venv` exists, `./test_backend.sh` runs it for you and rebuilds the venv whenever the lock changes. Running the commands by hand, re-run the `pip install` after a lock change:
+
+```bash
+python3 -m venv .typecheck-venv          # Python 3.11 or newer
+.typecheck-venv/bin/pip install -r requirements-typecheck.lock
+.typecheck-venv/bin/basedpyright --pythonpath .typecheck-venv/bin/python
+```
+
+- **Fixed an error from the baseline?** A local run without new errors removes it from `baseline.json`; commit that change with your fix. (With a new error in the same run, the baseline is left as it is until that error is fixed.) CI never rewrites the baseline and fails if it still lists an error that is gone.
+- **Added or changed a dependency in `requirements.txt`?** Add it to the lock in the same PR, with the command in `requirements-typecheck.txt` (needs [uv](https://docs.astral.sh/uv/): `pip install uv`). The check fails if the lock does not cover `requirements.txt`. If that moves the pin of a package already in the lock and the check then reports errors in code you did not touch, regenerate the baseline in the same commit (see `requirements-typecheck.txt`).
+- **Moved or edited code that has a baselined error?** The baseline matches each file's errors in order by rule and column span, not by line number. Editing such a line, re-indenting it (wrapping it in `if`/`try`/`with`) or reordering functions that hold baselined errors can bring them back as new ones. Fix them while you are there.
+
 ### Frontend (TypeScript/React)
 
 We use ESLint for linting and TypeScript for type checking:
@@ -320,7 +332,7 @@ The easiest way to run tests is with the provided scripts in the project root:
 
 ```bash
 ./test_frontend.sh    # TypeScript check + ESLint + Vitest
-./test_backend.sh     # Ruff lint/format + pytest (parallel)
+./test_backend.sh     # Ruff lint/format + type check (if .typecheck-venv exists) + pytest (parallel)
 ./test_docker.sh      # Full Docker build, unit tests, and integration tests
 ./test_all.sh         # All of the above (frontend → backend → docker)
 ./test_security.sh    # Security scans (bandit, pip-audit, npm-audit)
@@ -360,7 +372,7 @@ npm run test:coverage  # With coverage
 
 Pull requests trigger automated CI checks via GitHub Actions (`.github/workflows/ci.yml`):
 
-- **Backend**: Ruff lint + format check, unit/integration tests, pip-audit
+- **Backend**: Ruff lint + format check, basedpyright type check (against the baseline), unit/integration tests, pip-audit
 - **Frontend**: ESLint, TypeScript type check, Vitest tests, production build
 - **Docker**: Full image build, backend/frontend tests in Docker, integration health checks
 - **Security**: CodeQL analysis, dependency audits

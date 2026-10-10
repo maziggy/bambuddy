@@ -53,6 +53,43 @@ jobs:
       - name: Run ruff format check
         run: ruff format --check backend/
 
+  backend-typecheck:
+    name: Backend Type Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install the pinned type-check environment
+        # requirements-typecheck.lock, not requirements.txt: the baseline only
+        # holds for these exact library versions (see requirements-typecheck.txt).
+        run: pip install -r requirements-typecheck.lock
+
+      - name: Check the lock covers requirements.txt
+        # A dependency added to requirements.txt but not to the lock would show
+        # up below as an unresolved import instead of saying what is wrong.
+        run: |
+          if ! out=$(pip install --dry-run -r requirements.txt 2>&1); then
+            echo "$out"
+            echo "::error::pip could not resolve requirements.txt against the type-check environment."
+            exit 1
+          fi
+          if echo "$out" | grep '^Would install'; then
+            echo "::error::requirements-typecheck.lock is missing packages from requirements.txt. Regenerate it as described in requirements-typecheck.txt."
+            exit 1
+          fi
+
+      - name: Run basedpyright
+        # Errors recorded in .basedpyright/baseline.json pass; any new one fails.
+        # Lock mode also fails when a baselined error was fixed but the smaller
+        # baseline was not committed.
+        run: basedpyright --pythonpath "$(which python)" --baselinemode=lock
+
   backend-security:
     name: Backend Security
     runs-on: ubuntu-latest

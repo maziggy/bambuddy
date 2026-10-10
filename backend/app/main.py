@@ -163,7 +163,7 @@ from backend.app.utils.ams_drying import is_drying_active, temperature_alarm_sup
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.filament_types import printer_filament_type
 from backend.app.utils.fts_routing import extruder_for_inlet
-from backend.app.utils.local_time import utcnow_naive
+from backend.app.utils.local_time import to_naive_utc, utcnow_naive
 from backend.app.utils.print_jobs import is_internal_printer_job
 
 
@@ -7809,11 +7809,8 @@ async def on_print_complete(printer_id: int, data: dict):
     if not archive_id:
         # The printer's own calibration run has no archive by design, so this
         # arrives here every time one finishes. Returning before the no-archive
-        # notification is not just noise control: that path attributes an
-        # unmatched completion to any queue item this printer finished in the
-        # last five minutes, which for a calibration that runs alongside a real
-        # print means emailing its owner that their print is done, twice and
-        # early. Everything above this point has already run — the plate-clear
+        # notification keeps a calibration from being announced as a finished
+        # print. Everything above this point has already run — the plate-clear
         # gate, the queue reconciliation, the SD-card cleanup — so only the
         # notification is skipped.
         if is_internal_printer_job(filename, subtask_name):
@@ -7839,33 +7836,35 @@ async def on_print_complete(printer_id: int, data: dict):
                     printer_obj = result.scalar_one_or_none()
                     p_name = printer_obj.name if printer_obj else f"Printer {printer_id}"
 
-                    # Try to find the most-recent queue item for this printer so we can
-                    # recover created_by_id and estimated print time.
-                    # NOTE: By the time this task runs the queue item status has already
-                    # been updated to a terminal state (completed/failed/cancelled), so
-                    # we look for recently-completed items (within the last 5 minutes).
+                    # Only the queue item this completion itself closed (the
+                    # reconciliation above, which checks the run belongs to it).
+                    # A print started outside Bambuddy closed none, and must not
+                    # borrow an earlier job's owner, email or times.
                     no_archive_data: dict | None = None
                     try:
-                        cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
-                        q_result = await db.execute(
-                            select(PrintQueueItem)
-                            .where(PrintQueueItem.printer_id == printer_id)
-                            .where(PrintQueueItem.status.in_(["completed", "failed", "cancelled"]))
-                            .where(PrintQueueItem.completed_at >= cutoff)
-                            .order_by(PrintQueueItem.completed_at.desc())
-                            .limit(1)
-                        )
-                        queue_item = q_result.scalar_one_or_none()
+                        queue_item = await db.get(PrintQueueItem, queue_item_id) if queue_item_id else None
                         if queue_item:
                             no_archive_data = {"created_by_id": queue_item.created_by_id}
-                            # Pull estimated time from library file when available
-                            if queue_item.library_file_id:
+                            # How long it really ran, as the archive path reports it (#1198).
+                            started = to_naive_utc(queue_item.started_at)
+                            ended = to_naive_utc(queue_item.completed_at)
+                            if started and ended and (ended - started).total_seconds() > 0:
+                                no_archive_data["actual_time_seconds"] = int((ended - started).total_seconds())
+                            # Estimated time: the queue item caches it from its
+                            # archive or library file; otherwise read the library
+                            # file's metadata (LibraryFile has no column for it).
+                            if queue_item.print_time_seconds:
+                                no_archive_data["print_time_seconds"] = queue_item.print_time_seconds
+                            elif queue_item.library_file_id:
                                 lib_result = await db.execute(
                                     select(LibraryFile).where(LibraryFile.id == queue_item.library_file_id)
                                 )
                                 lib_file = lib_result.scalar_one_or_none()
-                                if lib_file and lib_file.print_time_seconds:
-                                    no_archive_data["print_time_seconds"] = lib_file.print_time_seconds
+                                estimate = (
+                                    (lib_file.file_metadata or {}).get("print_time_seconds") if lib_file else None
+                                )
+                                if estimate:
+                                    no_archive_data["print_time_seconds"] = estimate
                     except Exception as lookup_err:
                         logger.debug(
                             "[NOTIFY-BG] Could not look up queue item for no-archive notification: %s", lookup_err

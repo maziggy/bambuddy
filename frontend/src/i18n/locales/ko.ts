@@ -2289,12 +2289,12 @@ export default {
     webhookEndpoints: '웹훅 엔드포인트',
     webhookApiKeyHint: 'X-API-Key 헤더에 API 키를 사용하세요.',
     webhook: {
-      getAllStatus: '모든 프린터 상태 가져오기',
-      getSpecificStatus: '특정 프린터 상태 가져오기',
       addToQueue: '인쇄 대기열에 추가',
-      pausePrint: '인쇄 일시정지',
-      resumePrint: '인쇄 재개',
-      stopPrint: '인쇄 정지'
+      startNext: '대기열의 다음 작업 시작',
+      stopPrint: '인쇄 정지',
+      cancelPrint: '인쇄 취소',
+      getSpecificStatus: '특정 프린터 상태 가져오기',
+      queueStatus: '대기열 상태 가져오기',
     },
     apiBrowser: 'API 브라우저',
     apiBrowserDescription: '사용 가능한 모든 API 엔드포인트를 탐색하고 테스트하세요.',

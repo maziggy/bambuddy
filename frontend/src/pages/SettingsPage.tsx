@@ -4984,34 +4984,34 @@ export function SettingsPage() {
                 </p>
                 <div className="space-y-2 font-mono text-xs">
                   <div className="p-2 bg-bambu-dark rounded">
-                    <span className="text-blue-700 dark:text-blue-400">GET</span>{' '}
-                    <span className="text-white">/api/v1/webhook/status</span>
-                    <span className="text-bambu-gray"> - {t('settings.webhook.getAllStatus')}</span>
-                  </div>
-                  <div className="p-2 bg-bambu-dark rounded">
-                    <span className="text-blue-700 dark:text-blue-400">GET</span>{' '}
-                    <span className="text-white">/api/v1/webhook/status/:id</span>
-                    <span className="text-bambu-gray"> - {t('settings.webhook.getSpecificStatus')}</span>
-                  </div>
-                  <div className="p-2 bg-bambu-dark rounded">
                     <span className="text-green-700 dark:text-green-400">POST</span>{' '}
-                    <span className="text-white">/api/v1/webhook/queue</span>
+                    <span className="text-white">/api/v1/webhook/queue/add</span>
                     <span className="text-bambu-gray"> - {t('settings.webhook.addToQueue')}</span>
                   </div>
                   <div className="p-2 bg-bambu-dark rounded">
                     <span className="text-orange-700 dark:text-orange-400">POST</span>{' '}
-                    <span className="text-white">/api/v1/webhook/printer/:id/pause</span>
-                    <span className="text-bambu-gray"> - {t('settings.webhook.pausePrint')}</span>
-                  </div>
-                  <div className="p-2 bg-bambu-dark rounded">
-                    <span className="text-orange-700 dark:text-orange-400">POST</span>{' '}
-                    <span className="text-white">/api/v1/webhook/printer/:id/resume</span>
-                    <span className="text-bambu-gray"> - {t('settings.webhook.resumePrint')}</span>
+                    <span className="text-white">/api/v1/webhook/printer/:id/start</span>
+                    <span className="text-bambu-gray"> - {t('settings.webhook.startNext')}</span>
                   </div>
                   <div className="p-2 bg-bambu-dark rounded">
                     <span className="text-red-700 dark:text-red-400">POST</span>{' '}
                     <span className="text-white">/api/v1/webhook/printer/:id/stop</span>
                     <span className="text-bambu-gray"> - {t('settings.webhook.stopPrint')}</span>
+                  </div>
+                  <div className="p-2 bg-bambu-dark rounded">
+                    <span className="text-red-700 dark:text-red-400">POST</span>{' '}
+                    <span className="text-white">/api/v1/webhook/printer/:id/cancel</span>
+                    <span className="text-bambu-gray"> - {t('settings.webhook.cancelPrint')}</span>
+                  </div>
+                  <div className="p-2 bg-bambu-dark rounded">
+                    <span className="text-blue-700 dark:text-blue-400">GET</span>{' '}
+                    <span className="text-white">/api/v1/webhook/printer/:id/status</span>
+                    <span className="text-bambu-gray"> - {t('settings.webhook.getSpecificStatus')}</span>
+                  </div>
+                  <div className="p-2 bg-bambu-dark rounded">
+                    <span className="text-blue-700 dark:text-blue-400">GET</span>{' '}
+                    <span className="text-white">/api/v1/webhook/queue</span>
+                    <span className="text-bambu-gray"> - {t('settings.webhook.queueStatus')}</span>
                   </div>
                 </div>
               </CardContent>

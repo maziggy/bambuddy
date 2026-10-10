@@ -278,6 +278,13 @@ fi
 
 create_backup
 
+# The code needs Python 3.11+. An install whose venv is older has not started
+# since then anyway; say so before stopping anything rather than half-update it.
+VENV_PY="$(dirname "$VENV_PIP")/python"
+if [ -x "$VENV_PY" ] && ! "$VENV_PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'; then
+  die "Bambuddy needs Python 3.11 or newer, but this install's environment uses $("$VENV_PY" -c 'import platform; print(platform.python_version())'). Nothing has been changed. How to move it to Python 3.11: https://wiki.bambuddy.cool/reference/troubleshooting/#bambuddy-needs-python-311-or-newer"
+fi
+
 log "Stopping service: $SERVICE_NAME"
 systemctl stop "$SERVICE_NAME"
 SERVICE_STOPPED=1

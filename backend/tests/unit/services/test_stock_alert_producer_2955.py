@@ -962,7 +962,7 @@ async def test_subtype_and_colour_are_optional_so_the_old_call_shape_still_works
 
 @pytest.mark.asyncio
 async def test_a_spoolman_registered_date_with_a_trailing_z_still_gives_the_spool_an_age(db_session, scheduler, notify):
-    """Python 3.10's fromisoformat rejects a trailing "Z" (pyproject still allows 3.10), which
+    """Python 3.10's fromisoformat rejects a trailing "Z" (Bambuddy ran on 3.10 when this was written), which
     silently dropped the spool's age and with it the delta rate. Simulated here so the test
     means the same on every interpreter."""
 

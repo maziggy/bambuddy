@@ -59,7 +59,7 @@ def _make_factory(
                 try:
                     await asyncio.wait_for(disconnect.wait(), timeout=delay)
                     return
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
             yield chunk
 

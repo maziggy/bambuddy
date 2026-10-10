@@ -1,11 +1,9 @@
-"""Compatibility shims for older Python versions."""
+"""Kept for the modules that import StrEnum from here.
 
-import sys
+Python 3.11 is the minimum, so this is enum.StrEnum itself; new code can
+import it from enum directly.
+"""
 
-if sys.version_info >= (3, 11):
-    from enum import StrEnum
-else:
-    from enum import Enum
+from enum import StrEnum
 
-    class StrEnum(str, Enum):
-        """Drop-in replacement for enum.StrEnum on Python < 3.11."""
+__all__ = ["StrEnum"]

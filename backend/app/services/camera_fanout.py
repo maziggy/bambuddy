@@ -224,7 +224,7 @@ class MjpegBroadcaster:
             if predecessor is not None:
                 try:
                     await asyncio.wait_for(predecessor.wait_until_torn_down(), timeout=_TEARDOWN_WAIT_SECONDS)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning("Prior broadcaster %r didn't tear down in time; dialing anyway", self._key)
             async for chunk in self._factory(self._upstream_disconnect):
                 # Snapshot subscribers under lock so we don't iterate a list
@@ -365,7 +365,7 @@ async def iter_subscriber(
         while True:
             try:
                 chunk = await asyncio.wait_for(queue.get(), timeout=_DISCONNECT_POLL_SECONDS)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # No frame this tick — is the client still there? This used to
                 # wait 30 s before asking, and the disconnect check after a yield
                 # only fires when frames are actually flowing. So a viewer that

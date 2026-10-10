@@ -852,7 +852,7 @@ class VirtualPrinterInstance:
             try:
                 await asyncio.wait_for(event.wait(), timeout=_SLICER_OPTIONS_WAIT_TIMEOUT)
                 slicer_opts = self._slicer_print_options.pop(file_path.name, None)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 slicer_opts = None
             finally:
                 self._slicer_print_options_events.pop(file_path.name, None)

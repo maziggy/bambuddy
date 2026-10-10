@@ -382,7 +382,7 @@ async def close_tls_proxy(server: "asyncio.Server") -> None:
     way to guarantee no handler outlives the server that owns it.
 
     ``Server.close_clients()`` would do this natively, but it landed in Python
-    3.13 and Bambuddy supports 3.10, so the handler set is tracked by hand in
+    3.13 and Bambuddy supports 3.11, so the handler set is tracked by hand in
     ``_proxy_handlers``.
 
     Safe to call on any ``asyncio.Server`` from anywhere else: a server that
@@ -901,7 +901,7 @@ async def extract_video_last_frame(video_path: Path, output_path: Path) -> bool:
             logger.warning("ffmpeg produced no output for %s", video_path)
             return False
         return True
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning("ffmpeg timed out extracting last frame from %s", video_path)
         if process is not None:
             try:

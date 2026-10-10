@@ -8372,7 +8372,7 @@ async def on_print_complete(printer_id: int, data: dict):
                 if in_flight is not None:
                     try:
                         await asyncio.wait_for(in_flight.wait(), timeout=_FINISH_PHOTO_PRODUCER_WAIT_SECONDS)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         logger.warning(
                             "[PHOTO-BG] timed out waiting for stage-22 producer for printer %s — proceeding to fallback",
                             printer_id,

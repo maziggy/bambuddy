@@ -109,7 +109,7 @@ jobs:
           # setuptools that trips pip-audit (PYSEC-2026-3447, fixed in 83.0.0).
           # A fix exists, so we upgrade rather than --ignore-vuln.
           python -m pip install --upgrade pip setuptools
-          pip install -r requirements.txt
+          pip install -r requirements.lock
           pip install pip-audit
 
       - name: Run pip-audit
@@ -150,14 +150,15 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.lock', 'requirements-dev.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # The pinned versions that ship (Docker, installers), not whatever is newest.
+          pip install -r requirements.lock
           pip install -r requirements-dev.txt
 
       - name: Run tests (shard ${{ matrix.shard }}/4)

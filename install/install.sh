@@ -428,14 +428,14 @@ setup_virtualenv() {
     if [[ "$OS_TYPE" == "macos" ]]; then
         $PYTHON_CMD -m venv $venv_args venv
         "$INSTALL_PATH/venv/bin/pip" install --upgrade pip
-        "$INSTALL_PATH/venv/bin/pip" install -r requirements.txt
+        "$INSTALL_PATH/venv/bin/pip" install -r requirements.lock
     else
         # Venv is owned by the service user, so pip must also run as that user —
         # otherwise `pip install --upgrade pip` fails trying to rewrite its own
         # binary inside the venv it doesn't own.
         sudo -u "$SERVICE_USER" $PYTHON_CMD -m venv $venv_args venv 2>/dev/null || $PYTHON_CMD -m venv $venv_args venv
         sudo -u "$SERVICE_USER" "$INSTALL_PATH/venv/bin/pip" install --upgrade pip
-        sudo -u "$SERVICE_USER" "$INSTALL_PATH/venv/bin/pip" install -r requirements.txt
+        sudo -u "$SERVICE_USER" "$INSTALL_PATH/venv/bin/pip" install -r requirements.lock
     fi
 
     log_success "Virtual environment configured"
@@ -1128,7 +1128,7 @@ main() {
     echo ""
     echo -e "  ${BOLD}Update BamBuddy:${NC}"
     echo -e "    cd $INSTALL_PATH && git pull && source venv/bin/activate"
-    echo -e "    pip install -r requirements.txt && cd frontend && npm ci && npm run build"
+    echo -e "    pip install -r requirements.lock && cd frontend && npm ci && npm run build"
     if [[ "$OS_TYPE" != "macos" ]]; then
         echo -e "    sudo systemctl restart bambuddy"
     fi

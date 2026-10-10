@@ -302,11 +302,15 @@ log "Updating code to origin/$BRANCH"
 git reset --hard "origin/$BRANCH"
 CODE_UPDATED=1
 
-if [ -x "$VENV_PIP" ] && [ -f requirements.txt ]; then
-  log "Updating Python dependencies"
-  "$VENV_PIP" install -r requirements.txt
+# requirements.lock holds the exact, tested versions; requirements.txt only
+# their lower bounds (kept as the fallback for a checkout without the lock).
+REQUIREMENTS=requirements.lock
+[ -f "$REQUIREMENTS" ] || REQUIREMENTS=requirements.txt
+if [ -x "$VENV_PIP" ] && [ -f "$REQUIREMENTS" ]; then
+  log "Updating Python dependencies ($REQUIREMENTS)"
+  "$VENV_PIP" install -r "$REQUIREMENTS"
 else
-  warn "Skipping Python dependency update (venv pip or requirements.txt missing)."
+  warn "Skipping Python dependency update (venv pip or requirements file missing)."
 fi
 
 if [ -f "$FRONTEND_DIR/package.json" ]; then

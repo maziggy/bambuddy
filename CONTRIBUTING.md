@@ -109,8 +109,8 @@ Both docs repos can be edited directly in the browser, no `git clone` required:
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies: the pinned versions that ship (see "Dependencies" below)
+pip install -r requirements.lock
 pip install -r requirements-dev.txt  # Dev/test dependencies (pytest, ruff, bandit, etc.)
 
 # Install pre-commit hooks
@@ -204,8 +204,24 @@ python3 -m venv .typecheck-venv          # Python 3.11 or newer
 ```
 
 - **Fixed an error from the baseline?** A local run without new errors removes it from `baseline.json`; commit that change with your fix. (With a new error in the same run, the baseline is left as it is until that error is fixed.) CI never rewrites the baseline and fails if it still lists an error that is gone.
-- **Added or changed a dependency in `requirements.txt`?** Add it to the lock in the same PR, with the command in `requirements-typecheck.txt` (needs [uv](https://docs.astral.sh/uv/): `pip install uv`). The check fails if the lock does not cover `requirements.txt`. If that moves the pin of a package already in the lock and the check then reports errors in code you did not touch, regenerate the baseline in the same commit (see `requirements-typecheck.txt`).
+- **Added or changed a dependency in `requirements.txt`?** Regenerate `requirements.lock` (see [Dependencies](#dependencies)) and then the type-check lock, with the command in `requirements-typecheck.txt`, in the same PR. If that moves the pin of a package already in the lock and the check then reports errors in code you did not touch, regenerate the baseline in the same commit (see `requirements-typecheck.txt`).
 - **Moved or edited code that has a baselined error?** The baseline matches each file's errors in order by rule and column span, not by line number. Editing such a line, re-indenting it (wrapping it in `if`/`try`/`with`) or reordering functions that hold baselined errors can bring them back as new ones. Fix them while you are there.
+
+### Dependencies
+
+`requirements.txt` lists what Bambuddy needs, with lower bounds. `requirements.lock` pins the exact versions, for every supported Python (3.11+) and platform, and it is what Docker, the installers, the update scripts and CI install: everyone runs the versions that were tested. Both files change together, and a test (`test_requirements_lock.py`) fails if the lock doesn't cover `requirements.txt`.
+
+Regenerating needs [uv](https://docs.astral.sh/uv/) (`pip install uv`):
+
+```bash
+# After adding or changing a dependency (keeps every other pin)
+uv pip compile requirements.txt --universal --python-version 3.11 -o requirements.lock
+
+# Moving every package to its newest version, on purpose (e.g. before a release)
+uv pip compile requirements.txt --universal --python-version 3.11 --upgrade -o requirements.lock
+```
+
+Then regenerate the type-check lock (command in `requirements-typecheck.txt`), install the new lock into your venv, and run the full test suite before committing.
 
 ### Frontend (TypeScript/React)
 

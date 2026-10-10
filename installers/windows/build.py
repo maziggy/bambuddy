@@ -9,7 +9,7 @@ Steps:
     1. Download python.org embeddable distribution for Windows x64
     2. Configure embedded Python (allow site-packages)
     3. Bootstrap pip into the embedded distribution
-    4. Install ``requirements.txt`` into the embedded Python
+    4. Install ``requirements.lock`` into the embedded Python
     5. Build the React frontend (``frontend/npm run build``)
     6. Stage backend source + frontend bundle
     7. Download NSSM
@@ -185,10 +185,10 @@ def stage_vcruntime(python_dir: Path) -> None:
 
 
 def install_requirements(python_dir: Path) -> None:
-    """Install Bambuddy's requirements.txt into the embedded Python."""
+    """Install Bambuddy's pinned dependencies (requirements.lock) into the embedded Python."""
     py = python_dir / "python.exe"
-    requirements = REPO_ROOT / "requirements.txt"
-    log(f"installing requirements.txt into {python_dir}")
+    requirements = REPO_ROOT / "requirements.lock"
+    log(f"installing requirements.lock into {python_dir}")
     subprocess.run(
         [
             str(py),
@@ -378,7 +378,7 @@ def main() -> int:
         log("ERROR: this build script must run on Windows.")
         log("")
         log("It downloads a Windows embeddable Python distribution and")
-        log("pip-installs Bambuddy's requirements.txt against it — both")
+        log("pip-installs Bambuddy's requirements.lock against it — both")
         log("require executing python.exe, which only runs on Windows.")
         log("")
         log("Supported build paths:")

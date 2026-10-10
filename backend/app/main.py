@@ -215,9 +215,9 @@ def _start_error_server(missing_packages: list):
         <h2>Missing Python packages</h2>
         <div class="packages"><ul>{packages_html}</ul></div>
         <p>To fix, run this command on your server:</p>
-        <div class="command">pip install -r requirements.txt</div>
+        <div class="command">pip install -r requirements.lock</div>
         <p>Or if using a virtual environment:</p>
-        <div class="command">./venv/bin/pip install -r requirements.txt</div>
+        <div class="command">./venv/bin/pip install -r requirements.lock</div>
         <p class="note">After installing, restart Bambuddy:<br>
         <code>sudo systemctl restart bambuddy</code></p>
     </div>
@@ -277,9 +277,9 @@ def check_dependencies():
         print("=" * 60)
         print(f"\nMissing packages: {', '.join(missing)}")
         print("\nTo fix, run:")
-        print("  pip install -r requirements.txt")
+        print("  pip install -r requirements.lock")
         print("\nOr if using a virtual environment:")
-        print("  ./venv/bin/pip install -r requirements.txt")
+        print("  ./venv/bin/pip install -r requirements.lock")
         print("=" * 60 + "\n")
         _start_error_server(missing)
 

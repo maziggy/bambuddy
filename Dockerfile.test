@@ -14,10 +14,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # cache so the second build only does install work — the slow ~60-90s
 # fetch step from the first build becomes ~5s. Requires DOCKER_BUILDKIT=1
 # (already set in test_docker.sh).
-COPY requirements.txt ./
+COPY requirements.txt requirements.lock ./
 COPY requirements-dev.txt ./
+# Two installs, as in CI: the lock pins the newest ruff (requirements.txt only
+# has a floor) and requirements-dev.txt pins the one CI enforces, so a single
+# install would have two exact pins for ruff and fail. The second one wins.
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r requirements.txt -r requirements-dev.txt
+    pip install -r requirements.lock && pip install -r requirements-dev.txt
 
 # Copy backend code
 COPY backend/ ./backend/

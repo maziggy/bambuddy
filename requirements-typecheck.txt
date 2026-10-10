@@ -6,8 +6,8 @@
 # reports. The baseline in .basedpyright/baseline.json is only valid for the
 # exact versions in the lock, so CI installs the lock, never requirements.txt.
 #
-# Added or changed a dependency in requirements.txt? Add it to the lock, keeping
-# every other pin:
+# Added or changed a dependency in requirements.txt? Regenerate requirements.lock
+# first (see CONTRIBUTING.md), then this lock, keeping every other pin:
 #   uv pip compile requirements-typecheck.txt --python-version 3.11 \
 #       --python-platform x86_64-unknown-linux-gnu -o requirements-typecheck.lock
 # If that moves the pin of a package already in the lock and the type check
@@ -19,7 +19,8 @@
 #   basedpyright --pythonpath <venv>/bin/python --writebaseline
 # and commit lock and baseline together.
 
--r requirements.txt
+# The same versions that ship (see requirements.lock).
+-r requirements.lock
 
 # Exact pin: the baseline is only valid for one checker version.
 basedpyright==1.40.2

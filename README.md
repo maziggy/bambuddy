@@ -757,7 +757,7 @@ git clone https://github.com/maziggy/bambuddy.git
 cd bambuddy
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.lock
 
 # Run (--loop asyncio avoids a uvloop TLS bug that can truncate VP FTP uploads)
 uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --loop asyncio

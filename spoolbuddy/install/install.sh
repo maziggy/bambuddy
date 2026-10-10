@@ -697,7 +697,10 @@ setup_bambuddy_venv() {
 
     run_with_progress "Creating Bambuddy venv" $PYTHON_CMD -m venv venv
     run_with_progress "Upgrading pip" "$INSTALL_PATH/venv/bin/pip" install --upgrade pip
-    run_with_progress "Installing Bambuddy dependencies" "$INSTALL_PATH/venv/bin/pip" install -r requirements.txt
+    # The tested pins; requirements.txt only for a checkout from before the lock.
+    local requirements=requirements.lock
+    [ -f "$requirements" ] || requirements=requirements.txt
+    run_with_progress "Installing Bambuddy dependencies" "$INSTALL_PATH/venv/bin/pip" install -r "$requirements"
 
     chown -R "$BAMBUDDY_SERVICE_USER:$BAMBUDDY_SERVICE_USER" "$INSTALL_PATH/venv"
 }

@@ -115,7 +115,6 @@ from backend.app.services.camera_light import camera_light
 from backend.app.services.energy_plug import energy_plug_candidates, select_energy_reading
 from backend.app.services.github_backup import github_backup_service
 from backend.app.services.ha_sensor_manager import ha_sensor_manager
-from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.library_trash import library_trash_service
 from backend.app.services.local_backup import local_backup_service
 from backend.app.services.location_ha_sensor_manager import location_ha_sensor_manager
@@ -125,6 +124,7 @@ from backend.app.services.notification_service import notification_service
 from backend.app.services.notify_live_activities import notify_live_activities
 from backend.app.services.notify_widgets import notify_widgets
 from backend.app.services.obico_detection import obico_detection_service
+from backend.app.services.plug_energy import get_plug_energy as _get_plug_energy
 from backend.app.services.print_cost_estimate import plate_scoped_run_estimate as _plate_scoped_run_estimate
 from backend.app.services.print_scheduler import scheduler as print_scheduler
 from backend.app.services.print_storage import (
@@ -158,7 +158,6 @@ from backend.app.services.spoolman_tracking import (
     report_usage as _report_spoolman_usage,
     store_print_data as _store_spoolman_print_data,
 )
-from backend.app.services.tasmota import tasmota_service
 from backend.app.services.telegram_reactions import telegram_reaction_poller
 from backend.app.utils.ams_drying import is_drying_active, temperature_alarm_suppressed
 from backend.app.utils.ams_humidity import ams_humidity_percent
@@ -946,38 +945,6 @@ async def _kill_switch_notification_already_sent(task: asyncio.Task[bool] | None
     except Exception as e:
         logging.getLogger(__name__).warning("[KILL SWITCH] Notification task failed: %s", e)
         return False
-
-
-async def _get_plug_energy(plug, db) -> dict | None:
-    """Get energy from plug regardless of type (Tasmota, Home Assistant, MQTT, or REST).
-
-    For HA plugs, configures the service with current settings from DB.
-    For MQTT plugs, returns data from the subscription service.
-    For REST plugs, polls the status URL with JSON path extraction.
-    """
-    if plug.plug_type == "homeassistant":
-        from backend.app.api.routes.settings import get_homeassistant_settings
-
-        ha_settings = await get_homeassistant_settings(db)
-        homeassistant_service.configure(ha_settings["ha_url"], ha_settings["ha_token"])
-        return await homeassistant_service.get_energy(plug)
-    elif plug.plug_type == "mqtt":
-        # MQTT plugs report "today" energy, not lifetime total
-        # For per-print tracking, we use "today" as the counter (resets at midnight)
-        mqtt_data = mqtt_relay.smart_plug_service.get_plug_data(plug.id)
-        if mqtt_data:
-            return {
-                "power": mqtt_data.power,
-                "today": mqtt_data.energy,
-                "total": mqtt_data.energy,  # Use today as total for per-print calculations
-            }
-        return None
-    elif plug.plug_type == "rest":
-        from backend.app.services.rest_smart_plug import rest_smart_plug_service
-
-        return await rest_smart_plug_service.get_energy(plug)
-    else:
-        return await tasmota_service.get_energy(plug)
 
 
 async def _record_energy_start(archive, printer_id: int, db, *, context: str = "") -> bool:

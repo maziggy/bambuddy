@@ -3342,32 +3342,6 @@
                 }
             }
         ],
-        "./backend/app/api/routes/smart_plugs.py": [
-            {
-                "code": "reportOperatorIssue",
-                "range": {
-                    "startColumn": 26,
-                    "endColumn": 88,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportAttributeAccessIssue",
-                "range": {
-                    "startColumn": 35,
-                    "endColumn": 52,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportOptionalMemberAccess",
-                "range": {
-                    "startColumn": 50,
-                    "endColumn": 55,
-                    "lineCount": 1
-                }
-            }
-        ],
         "./backend/app/api/routes/spoolbuddy.py": [
             {
                 "code": "reportAssignmentType",

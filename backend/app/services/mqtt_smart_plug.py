@@ -26,7 +26,9 @@ class SmartPlugMQTTData:
     power: float | None = None  # Current power in watts
     energy: float | None = None  # Energy in kWh (today)
     state: str | None = None  # "ON" or "OFF"
-    last_seen: datetime = field(default_factory=datetime.utcnow)
+    # Aware, like the value a received message sets: is_reachable subtracts it
+    # from an aware now, which raised TypeError before the first message.
+    last_seen: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass

@@ -1,7 +1,6 @@
 """API routes for smart plug management."""
 
 import logging
-from datetime import timedelta
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
@@ -40,12 +39,11 @@ from backend.app.services.discovery import tasmota_scanner
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.mqtt_relay import mqtt_relay
 from backend.app.services.mqtt_smart_plug import subscribe_plug_to_mqtt
-from backend.app.services.notification_service import notification_service
 from backend.app.services.plug_energy_history import fill_derived_energy
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.rest_smart_plug import rest_smart_plug_service
 from backend.app.services.tasmota import tasmota_service
-from backend.app.utils.local_time import to_naive_utc, utcnow_naive
+from backend.app.utils.local_time import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -784,9 +782,6 @@ async def get_plug_status(
                     power=data.power,
                     today=data.energy,
                 )
-                # Check power alerts
-                if data.power is not None:
-                    await check_power_alerts(plug, data.power, db)
 
             return SmartPlugStatus(
                 state=data.state,
@@ -824,9 +819,8 @@ async def get_plug_status(
             # knows its own daily figures, is left alone.
             energy = await fill_derived_energy(db, plug.id, energy)
             energy_data = SmartPlugEnergy(**energy)
-
-            # Check power alerts
-            await check_power_alerts(plug, energy.get("power"), db)
+            # Power alerts are checked in the background (services/power_alerts.py),
+            # not here: this is only read while someone has a printer page open.
 
     return SmartPlugStatus(
         state=status["state"],
@@ -834,64 +828,6 @@ async def get_plug_status(
         device_name=status.get("device_name"),
         energy=energy_data,
     )
-
-
-async def check_power_alerts(plug: SmartPlug, current_power: float | None, db: AsyncSession):
-    """Check if power crosses alert thresholds and send notifications."""
-    if not plug.power_alert_enabled or current_power is None:
-        return
-
-    # Cooldown: don't alert more than once per 5 minutes
-    cooldown_minutes = 5
-    if plug.power_alert_last_triggered:
-        # Naive UTC on both sides: the column is naive, so a row loaded fresh from
-        # the DB comes back without an offset and subtracting an aware now() would
-        # raise TypeError.
-        time_since_last = utcnow_naive() - to_naive_utc(plug.power_alert_last_triggered)
-        if time_since_last < timedelta(minutes=cooldown_minutes):
-            return
-
-    alert_triggered = False
-    alert_type = None
-    threshold = None
-
-    # Check high threshold
-    if plug.power_alert_high is not None and current_power > plug.power_alert_high:
-        alert_triggered = True
-        alert_type = "high"
-        threshold = plug.power_alert_high
-
-    # Check low threshold
-    if plug.power_alert_low is not None and current_power < plug.power_alert_low:
-        alert_triggered = True
-        alert_type = "low"
-        threshold = plug.power_alert_low
-
-    if alert_triggered:
-        plug.power_alert_last_triggered = utcnow_naive()
-        await db.commit()
-
-        # Send notification
-        title = f"Power Alert: {plug.name}"
-        if alert_type == "high":
-            message = f"Power consumption is {current_power:.1f}W, above threshold of {threshold:.1f}W"
-        else:
-            message = f"Power consumption is {current_power:.1f}W, below threshold of {threshold:.1f}W"
-
-        logger.info("Power alert triggered for %s: %s", plug.name, message)
-
-        # Use printer_error event type for power alerts (closest match)
-        await notification_service.send_notification(
-            event_type="printer_error",
-            title=title,
-            message=message,
-            printer_id=plug.printer_id,
-            printer_name=plug.name,
-            context={
-                "error_type": f"Power {alert_type.title()}",
-                "error_detail": message,
-            },
-        )
 
 
 @router.post("/test-connection")

@@ -2093,7 +2093,7 @@ class NotificationService:
 
     async def on_printer_error(
         self,
-        printer_id: int,
+        printer_id: int | None,
         printer_name: str,
         error_type: str,
         db: AsyncSession,

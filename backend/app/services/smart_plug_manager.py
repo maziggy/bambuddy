@@ -29,6 +29,7 @@ class SmartPlugManager:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._scheduler_task: asyncio.Task | None = None
         self._snapshot_task: asyncio.Task | None = None
+        self._power_alert_task: asyncio.Task | None = None
         self._last_schedule_check: dict[int, str] = {}  # plug_id -> "HH:MM" last executed
 
     async def get_service_for_plug(self, plug: "SmartPlug", db: AsyncSession | None = None):
@@ -75,6 +76,9 @@ class SmartPlugManager:
         if self._snapshot_task is None:
             self._snapshot_task = asyncio.create_task(self._snapshot_loop())
             logger.info("Smart plug energy snapshot loop started")
+        if self._power_alert_task is None:
+            self._power_alert_task = asyncio.create_task(self._power_alert_loop())
+            logger.info("Smart plug power alert loop started")
 
     def stop_scheduler(self):
         """Stop the background scheduler."""
@@ -86,6 +90,10 @@ class SmartPlugManager:
             self._snapshot_task.cancel()
             self._snapshot_task = None
             logger.info("Smart plug energy snapshot loop stopped")
+        if self._power_alert_task:
+            self._power_alert_task.cancel()
+            self._power_alert_task = None
+            logger.info("Smart plug power alert loop stopped")
 
     async def _schedule_loop(self):
         """Background loop that checks scheduled on/off times every minute."""
@@ -96,6 +104,25 @@ class SmartPlugManager:
                 logger.error("Error in schedule check: %s", e)
 
             # Wait until the next minute
+            await asyncio.sleep(60)
+
+    async def _power_alert_loop(self):
+        """Background loop that checks plugs with power alerts on, once a minute.
+
+        Without it an alert would only be noticed while someone had a printer
+        page open, since the plug status is otherwise only read for display.
+        """
+        from backend.app.core import database
+        from backend.app.services.power_alerts import check_all_plugs
+
+        await asyncio.sleep(30)
+        while True:
+            try:
+                # Looked up on each pass: a backup restore replaces the session factory.
+                async with database.async_session() as db:
+                    await check_all_plugs(db)
+            except Exception as e:
+                logger.error("Error in power alert check: %s", e)
             await asyncio.sleep(60)
 
     async def _snapshot_loop(self):

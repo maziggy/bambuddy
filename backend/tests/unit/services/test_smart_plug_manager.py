@@ -391,12 +391,20 @@ class TestSmartPlugManager:
         assert manager._scheduler_task is None
 
         # Mock _schedule_loop to return a mock coroutine to avoid unawaited coroutine warning
-        with patch.object(manager, "_schedule_loop") as mock_loop, patch("asyncio.create_task") as mock_create:
+        with (
+            patch.object(manager, "_schedule_loop") as mock_loop,
+            patch.object(manager, "_snapshot_loop"),
+            patch.object(manager, "_power_alert_loop") as mock_power_alert,
+            patch("asyncio.create_task") as mock_create,
+        ):
             mock_create.return_value = MagicMock()
             manager.start_scheduler()
 
             assert manager._scheduler_task is not None
             mock_loop.assert_called_once()
+            # Power alerts are checked in the background, not only while a page is open.
+            assert manager._power_alert_task is not None
+            mock_power_alert.assert_called_once()
 
     def test_stop_scheduler(self, manager):
         """Verify scheduler can be stopped."""
@@ -414,11 +422,13 @@ class TestSmartPlugManager:
         mock_snapshot_task = MagicMock()
         manager._scheduler_task = mock_schedule_task
         manager._snapshot_task = mock_snapshot_task
+        manager._power_alert_task = MagicMock()
 
         # Mock the loop coroutines to avoid unawaited coroutine warnings
         with (
             patch.object(manager, "_schedule_loop") as mock_loop,
             patch.object(manager, "_snapshot_loop") as mock_snapshot,
+            patch.object(manager, "_power_alert_loop") as mock_power_alert,
             patch("asyncio.create_task") as mock_create,
         ):
             manager.start_scheduler()
@@ -426,6 +436,7 @@ class TestSmartPlugManager:
             mock_create.assert_not_called()  # Should not create new tasks
             mock_loop.assert_not_called()
             mock_snapshot.assert_not_called()
+            mock_power_alert.assert_not_called()
 
     def test_stop_scheduler_cancels_snapshot_task(self, manager):
         """Verify stopping scheduler also cancels the snapshot loop (#941)."""
@@ -434,10 +445,15 @@ class TestSmartPlugManager:
         manager._scheduler_task = mock_schedule_task
         manager._snapshot_task = mock_snapshot_task
 
+        mock_power_alert_task = MagicMock()
+        manager._power_alert_task = mock_power_alert_task
+
         manager.stop_scheduler()
 
         mock_schedule_task.cancel.assert_called_once()
         mock_snapshot_task.cancel.assert_called_once()
+        mock_power_alert_task.cancel.assert_called_once()
+        assert manager._power_alert_task is None
         assert manager._scheduler_task is None
         assert manager._snapshot_task is None
 

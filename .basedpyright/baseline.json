@@ -3658,22 +3658,6 @@
                     "endColumn": 40,
                     "lineCount": 1
                 }
-            },
-            {
-                "code": "reportGeneralTypeIssues",
-                "range": {
-                    "startColumn": 14,
-                    "endColumn": 52,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportAttributeAccessIssue",
-                "range": {
-                    "startColumn": 30,
-                    "endColumn": 42,
-                    "lineCount": 1
-                }
             }
         ],
         "./backend/app/core/auth.py": [

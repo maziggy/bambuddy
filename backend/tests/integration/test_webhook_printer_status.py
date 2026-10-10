@@ -398,3 +398,63 @@ class TestWebhookCancelPrint:
                 headers={"X-API-Key": api_key_data},
             )
         assert resp.status_code == 409
+
+
+async def _send(async_client: AsyncClient, key: str, printer_id: int, action: str, state: str, stop_result: bool):
+    """POST stop/cancel with a live-looking printer; returns (response, stop_print mock)."""
+    stop_print = MagicMock(return_value=stop_result)
+    with (
+        patch(
+            "backend.app.api.routes.webhook.printer_manager.get_status",
+            MagicMock(return_value=PrinterState(connected=True, state=state)),
+        ),
+        patch("backend.app.api.routes.webhook.printer_manager.stop_print", stop_print),
+    ):
+        resp = await async_client.post(
+            f"/api/v1/webhook/printer/{printer_id}/{action}",
+            headers={"X-API-Key": key},
+        )
+    return resp, stop_print
+
+
+class TestWebhookStopAndCancelSendTheStop:
+    """Both routes send the stop and mark the printer as stopped by the user.
+
+    Pre-fix, /stop awaited the synchronous ``stop_print`` (the stop went out,
+    then ``await True`` raised and the route answered 500) and /cancel called a
+    ``cancel_print`` that does not exist (500, print kept running). Neither
+    marked the printer, so the print ended up classified as failed instead of
+    stopped, like a stop from the printer card does.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clear_user_stopped(self):
+        from backend.app.main import _user_stopped_printers
+
+        _user_stopped_printers.clear()
+        yield
+        _user_stopped_printers.clear()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(("action", "state"), [("stop", "RUNNING"), ("cancel", "RUNNING"), ("cancel", "PAUSE")])
+    async def test_sends_the_stop_and_marks_the_printer(self, async_client, api_key_data, printer_row, action, state):
+        from backend.app.main import _user_stopped_printers
+
+        resp, stop_print = await _send(async_client, api_key_data, printer_row.id, action, state, stop_result=True)
+
+        assert resp.status_code == 200, resp.text
+        stop_print.assert_called_once_with(printer_row.id)
+        assert printer_row.id in _user_stopped_printers
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("action", ["stop", "cancel"])
+    async def test_reports_503_when_the_stop_cannot_be_sent(self, async_client, api_key_data, printer_row, action):
+        from backend.app.main import _user_stopped_printers
+
+        resp, stop_print = await _send(async_client, api_key_data, printer_row.id, action, "RUNNING", stop_result=False)
+
+        assert resp.status_code == 503, resp.text
+        stop_print.assert_called_once_with(printer_row.id)
+        assert printer_row.id not in _user_stopped_printers

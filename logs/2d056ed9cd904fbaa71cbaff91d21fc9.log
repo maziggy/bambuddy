@@ -1,0 +1,200 @@
+2026-10-10 08:23:24,872 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:23:26,914 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 6
+2026-10-10 08:23:28,290 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 188044 bytes
+2026-10-10 08:23:28,290 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 188044 bytes (no second connection opened)
+2026-10-10 08:23:28,290 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 188044 bytes
+2026-10-10 08:23:35,692 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 7
+2026-10-10 08:23:35,692 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:23:37,300 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-10-10 08:23:37,402 INFO [uvicorn.access] [-] [IP]:52133 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-10-10 08:23:37,412 INFO [uvicorn.access] [-] [IP]:52139 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-10-10 08:23:37,429 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 205202 bytes
+2026-10-10 08:23:37,474 INFO [uvicorn.access] [-] [IP]:52135 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-10-10 08:23:37,500 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-10-10 08:23:37,506 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-10-10 08:23:37,507 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 5 printers
+2026-10-10 08:23:38,211 INFO [backend.app.api.routes.cloud] [cfb1eda8] get_filament_info called with 1 IDs: ['GFG99']
+2026-10-10 08:23:38,213 INFO [uvicorn.access] [-] [IP]:52139 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-10-10 08:23:50,761 INFO [uvicorn.access] [-] [IP]:52124 - "POST /api/v1/printers/4/connect HTTP/1.1" 200
+2026-10-10 08:24:02,947 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-10 08:24:02,948 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:24:03,520 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 6
+2026-10-10 08:24:03,520 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:24:04,671 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 194858 bytes
+2026-10-10 08:24:06,760 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 192501 bytes
+2026-10-10 08:24:30,279 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 7
+2026-10-10 08:24:30,279 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:24:34,039 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 174250 bytes
+2026-10-10 08:24:36,165 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 6
+2026-10-10 08:24:36,165 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:24:36,238 INFO [backend.app.services.camera] [c8b1a9a5] Found ffmpeg at: C:\Program Files\Bambuddy\bin\ffmpeg.EXE
+2026-10-10 08:24:38,047 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 199902 bytes
+2026-10-10 08:24:43,305 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-10 08:24:43,305 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:24:46,138 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 203247 bytes
+2026-10-10 08:25:08,747 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 6
+2026-10-10 08:25:08,747 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:25:10,802 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 6
+2026-10-10 08:25:10,900 INFO [uvicorn.access] [-] [IP]:52193 - "POST /api/v1/library/bulk-delete HTTP/1.1" 200
+2026-10-10 08:25:12,728 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 183580 bytes
+2026-10-10 08:25:12,728 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 183580 bytes (no second connection opened)
+2026-10-10 08:25:12,728 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 183580 bytes
+2026-10-10 08:25:12,763 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 7
+2026-10-10 08:25:12,763 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 7
+2026-10-10 08:25:12,763 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:25:15,191 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 202163 bytes
+2026-10-10 08:25:15,191 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 202163 bytes (no second connection opened)
+2026-10-10 08:25:15,191 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 202163 bytes
+2026-10-10 08:25:25,676 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-10 08:25:25,676 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:25:28,087 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 191693 bytes
+2026-10-10 08:25:35,078 INFO [backend.app.main] [-] [Printer 7] Broadcasting AMS change via WebSocket
+2026-10-10 08:25:37,098 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Tray change during print: tray=254 at layer=91
+2026-10-10 08:25:43,352 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 6
+2026-10-10 08:25:43,352 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:25:45,605 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 197827 bytes
+2026-10-10 08:25:56,076 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 7
+2026-10-10 08:25:56,076 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:25:58,626 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 173549 bytes
+2026-10-10 08:26:06,997 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-10 08:26:06,997 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:26:09,088 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-10 08:26:11,153 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 202858 bytes
+2026-10-10 08:26:11,153 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 202858 bytes (no second connection opened)
+2026-10-10 08:26:11,153 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 202858 bytes
+2026-10-10 08:26:15,945 INFO [backend.app.main] [-] Recorded 3 AMS sensor history entries
+2026-10-10 08:26:17,644 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 6
+2026-10-10 08:26:17,645 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:26:19,904 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 182949 bytes
+2026-10-10 08:26:32,820 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 7
+2026-10-10 08:26:32,820 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:26:35,563 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 207618 bytes
+2026-10-10 08:26:52,463 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 6
+2026-10-10 08:26:52,463 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:26:53,690 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-10 08:26:53,690 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:26:54,487 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 193410 bytes
+2026-10-10 08:26:55,760 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 200405 bytes
+2026-10-10 08:27:15,261 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 7
+2026-10-10 08:27:15,261 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:27:18,433 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 201787 bytes
+2026-10-10 08:27:27,068 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 6
+2026-10-10 08:27:27,068 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:27:29,435 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 194332 bytes
+2026-10-10 08:27:40,084 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-10 08:27:40,085 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-10 08:27:40,085 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:27:42,359 INFO [uvicorn.access] [-] [IP]:52325 - "DELETE /api/v1/printers/4?delete_archives=true HTTP/1.1" 200
+2026-10-10 08:27:42,547 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 205042 bytes
+2026-10-10 08:27:42,547 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 205042 bytes (no second connection opened)
+2026-10-10 08:27:42,547 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 205042 bytes
+2026-10-10 08:27:52,196 INFO [backend.app.services.discovery] [d1f3db8e] Starting SSDP discovery on port 2021 for Bambu Lab printers...
+2026-10-10 08:27:52,197 INFO [uvicorn.access] [-] [IP]:52349 - "POST /api/v1/discovery/start?duration=10 HTTP/1.1" 200
+2026-10-10 08:27:52,519 INFO [backend.app.services.discovery] [d1f3db8e] Discovered printer: [PRINTER] ([SERIAL]) at [IP]
+2026-10-10 08:27:55,648 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 7
+2026-10-10 08:27:55,648 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:27:57,579 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 213223 bytes
+2026-10-10 08:27:57,748 INFO [backend.app.services.discovery] [d1f3db8e] Discovered printer: [PRINTER] ([SERIAL]) at [IP]
+2026-10-10 08:27:57,854 INFO [backend.app.services.discovery] [d1f3db8e] Discovered printer: [PRINTER] ([SERIAL]) at [IP]
+2026-10-10 08:28:01,696 INFO [backend.app.services.discovery] [d1f3db8e] Discovered printer: [PRINTER] ([SERIAL]) at [IP]
+2026-10-10 08:28:01,805 INFO [backend.app.services.discovery] [d1f3db8e] Discovered printer: A1 ([SERIAL]) at [IP]
+2026-10-10 08:28:02,217 INFO [backend.app.services.discovery] [d1f3db8e] Discovery complete. Found 5 printers.
+2026-10-10 08:28:02,218 INFO [uvicorn.access] [-] [IP]:52349 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-10-10 08:28:03,689 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 6
+2026-10-10 08:28:03,690 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:28:05,542 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 195076 bytes
+2026-10-10 08:28:26,525 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-10 08:28:26,525 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:28:30,179 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 178330 bytes
+2026-10-10 08:28:30,563 INFO [backend.app.api.routes.support] [f6444fa8] Log level changed to DEBUG
+2026-10-10 08:28:30,563 INFO [backend.app.api.routes.bug_report] [f6444fa8] Bug report: enabled debug logging
+2026-10-10 08:28:30,563 DEBUG [backend.app.services.bambu_mqtt] [f6444fa8] [[SERIAL]] Requesting status update (pushall)
+2026-10-10 08:28:30,563 DEBUG [backend.app.services.bambu_mqtt] [f6444fa8] [[SERIAL]] Requesting status update (pushall)
+2026-10-10 08:28:30,564 DEBUG [backend.app.services.bambu_mqtt] [f6444fa8] [[SERIAL]] Requesting status update (pushall)
+2026-10-10 08:28:30,564 DEBUG [backend.app.services.bambu_mqtt] [f6444fa8] [[SERIAL]] Requesting status update (pushall)
+2026-10-10 08:28:30,564 INFO [uvicorn.access] [-] [IP]:52380 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-10-10 08:28:30,567 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-10 08:28:30,567 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -35dBm
+2026-10-10 08:28:31,028 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': False}
+2026-10-10 08:28:31,029 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-10-10 08:28:31,029 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: este.gcode.3mf, subtask_name: este
+2026-10-10 08:28:31,029 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '9', 'tray_exist_bits': '4000', 'tray_is_bbl_bits': '4000', 'tray_tar': '13', 'tray_now': '254', 'tray_pre': '254', 'tray_read_done_bits': '4000', 'tray_reading_bits': '0', 'version': 25, 'insert_flag': True, 'power_on_flag': False}
+2026-10-10 08:28:31,029 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 254
+2026-10-10 08:28:31,029 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-10-10 08:28:31,029 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-10-10 08:28:31,029 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 3 info=0x1001 -> extruder 0
+2026-10-10 08:28:31,029 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '3': 0}
+2026-10-10 08:28:31,030 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-10-10 08:28:31,030 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-10 08:28:31,030 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-10-10 08:28:31,030 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-10-10 08:28:31,030 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-10-10 08:28:31,030 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-10-10 08:28:31,030 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83887104, 'code': 65604, 'action': 0, 'timestamp': 1791574204}, {'attr': 84083712, 'code': 65604, 'action': 0, 'timestamp': 1791627271}, {'attr': 117645824, 'code': 196610, 'action': 0, 'timestamp': 1791630458}]
+2026-10-10 08:28:31,031 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-10-10 08:28:31,031 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-10-10 08:28:31,031 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-10-10 08:28:31,031 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: este.gcode.3mf, subtask: este
+2026-10-10 08:28:31,232 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-10-10 08:28:31,232 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-10-10 08:28:31,232 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: este.gcode.3mf, subtask_name: este
+2026-10-10 08:28:31,232 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': '2', 'tray_is_bbl_bits': '2', 'tray_tar': '1', 'tray_now': '1', 'tray_pre': '1', 'tray_read_done_bits': '2', 'tray_reading_bits': '0', 'version': 33, 'insert_flag': True, 'power_on_flag': False}
+2026-10-10 08:28:31,232 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 1
+2026-10-10 08:28:31,232 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-10-10 08:28:31,233 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-10-10 08:28:31,233 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-10-10 08:28:31,233 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-10-10 08:28:31,233 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-10 08:28:31,233 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-10-10 08:28:31,233 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-10-10 08:28:31,233 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-10-10 08:28:31,233 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-10-10 08:28:31,233 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-10-10 08:28:31,233 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-10-10 08:28:31,233 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -52dBm
+2026-10-10 08:28:31,234 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-10-10 08:28:31,234 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: este.gcode.3mf, subtask: este
+2026-10-10 08:28:31,511 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-10-10 08:28:31,511 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-10-10 08:28:31,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FAILED, gcode_file: , subtask_name: este.gcode.3mf
+2026-10-10 08:28:31,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '0', 'tray_exist_bits': '0', 'tray_is_bbl_bits': '0', 'tray_tar': '254', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': '0', 'tray_reading_bits': '0', 'version': 1, 'insert_flag': True, 'power_on_flag': False}
+2026-10-10 08:28:31,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-10-10 08:28:31,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 0 new units, 0 total
+2026-10-10 08:28:31,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-10-10 08:28:31,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-10 08:28:31,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-10-10 08:28:31,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-10-10 08:28:31,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-10-10 08:28:31,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-10-10 08:28:31,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-10-10 08:28:31,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-10-10 08:28:31,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -43dBm
+2026-10-10 08:28:31,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-10-10 08:28:31,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FAILED -> FAILED, file: , subtask: este.gcode.3mf
+2026-10-10 08:28:31,643 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': False}
+2026-10-10 08:28:31,643 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-10-10 08:28:31,643 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: este.gcode.3mf, subtask_name: este.gcode.3mf
+2026-10-10 08:28:31,644 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '0', 'tray_exist_bits': '0', 'tray_is_bbl_bits': '0', 'tray_tar': '254', 'tray_now': '254', 'tray_pre': '254', 'tray_read_done_bits': '0', 'tray_reading_bits': '0', 'version': 2, 'insert_flag': True, 'power_on_flag': False}
+2026-10-10 08:28:31,644 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 254
+2026-10-10 08:28:31,644 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 0 new units, 0 total
+2026-10-10 08:28:31,644 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 1280 (main=5, sub=0)
+2026-10-10 08:28:31,644 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-10 08:28:31,644 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-10-10 08:28:31,644 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-10-10 08:28:31,644 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-10-10 08:28:31,644 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-10-10 08:28:31,644 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-10-10 08:28:31,644 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-10-10 08:28:31,644 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-10-10 08:28:31,645 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: este.gcode.3mf, subtask: este.gcode.3mf
+2026-10-10 08:28:33,040 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-10 08:28:33,040 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm
+2026-10-10 08:28:33,272 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-10 08:28:33,272 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -51dBm
+2026-10-10 08:28:33,603 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-10 08:28:35,056 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-10 08:28:35,056 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -49dBm
+2026-10-10 08:28:35,305 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-10 08:28:35,309 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 6
+2026-10-10 08:28:35,309 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-10 08:28:35,618 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status

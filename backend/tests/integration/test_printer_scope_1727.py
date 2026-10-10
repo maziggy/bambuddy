@@ -857,3 +857,47 @@ class TestLocationsPage:
         assert (await async_client.get(f"/api/v1/printers/{theirs.id}", headers=_auth(admin))).json()[
             "location"
         ] == "Lab A"
+
+
+class TestProjectTimeline:
+    async def test_timeline_hides_other_printers(self, async_client, printer_factory, archive_factory, db_session):
+        """Like the project's archive and queue lists, the timeline shows only the
+        member's printers: neither a finished print nor a queued job on another
+        printer appears, by name or by id."""
+        from backend.app.models.print_queue import PrintQueueItem
+        from backend.app.models.project import Project
+
+        a, b = await printer_factory(name="A"), await printer_factory(name="B")
+        project = Project(name="Shared")
+        db_session.add(project)
+        await db_session.commit()
+        project_id = project.id
+        await archive_factory(a.id, project_id=project_id, print_name="Mine done")
+        await archive_factory(b.id, project_id=project_id, print_name="Theirs done")
+        # The queued jobs' archives belong to no project, so their names can only
+        # reach the timeline through the queue events.
+        mine = await archive_factory(a.id, print_name="Mine queued", status="archived", with_run=False)
+        theirs = await archive_factory(b.id, print_name="Theirs queued", status="archived", with_run=False)
+        db_session.add_all(
+            [
+                PrintQueueItem(project_id=project_id, printer_id=a.id, archive_id=mine.id, status="pending"),
+                PrintQueueItem(project_id=project_id, printer_id=b.id, archive_id=theirs.id, status="pending"),
+            ]
+        )
+        await db_session.commit()
+
+        admin = await _admin_token(async_client)
+        perms = await _group(async_client, admin, "perms_timeline", permissions=[*TEAM_PERMISSIONS, "projects:read"])
+        team = await _group(async_client, admin, "team_timeline", printer_ids=[a.id])
+        jwt, _ = await _user(async_client, admin, "timeline_member", [perms, team])
+
+        def events(response) -> set[tuple[str, str | None]]:
+            assert response.status_code == 200, response.text
+            return {(e["event_type"], e.get("description")) for e in response.json()}
+
+        member = events(await async_client.get(f"/api/v1/projects/{project_id}/timeline", headers=_auth(jwt)))
+        assert {("print_completed", "Mine done"), ("queued", "Mine queued")} <= member
+        assert not {d for _, d in member} & {"Theirs done", "Theirs queued"}
+
+        full = events(await async_client.get(f"/api/v1/projects/{project_id}/timeline", headers=_auth(admin)))
+        assert {("print_completed", "Theirs done"), ("queued", "Theirs queued")} <= full

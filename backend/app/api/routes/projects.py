@@ -24,7 +24,7 @@ from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.print_log import PrintLogEntry
-from backend.app.models.print_queue import PrintQueueItem
+from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
 from backend.app.models.project import Project
 from backend.app.models.project_bom import ProjectBOMItem
 from backend.app.models.user import User
@@ -1797,12 +1797,32 @@ async def create_template_from_project(
 # ============ Phase 9: Timeline Endpoint ============
 
 
+def _queue_item_name(item: PrintQueueItem) -> str | None:
+    """The name a queued job goes by, from its archive or library file.
+
+    Same sources as the queue page: the archive's print name or file name, but
+    not from a deleted archive, then the library file's print name or file name,
+    then for a job for any of several models (#671) its first candidate's file.
+    """
+    if item.archive is not None and item.archive.deleted_at is None:
+        name = item.archive.print_name or item.archive.filename
+        if name:
+            return name
+    if item.library_file is not None:
+        metadata = item.library_file.file_metadata or {}
+        return metadata.get("print_name") or item.library_file.filename
+    if item.variants and item.variants[0].library_file is not None:
+        return item.variants[0].library_file.filename
+    return None
+
+
 @router.get("/{project_id}/timeline", response_model=list[TimelineEvent])
 async def get_project_timeline(
     project_id: int,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get timeline of events for a project."""
     # Verify project exists
@@ -1824,13 +1844,17 @@ async def get_project_timeline(
     )
 
     # Get archives and add events
-    archives_result = await db.execute(
+    archive_query = (
         select(PrintArchive)
         .where(PrintArchive.project_id == project_id, _LIVE_ARCHIVE)
         .order_by(PrintArchive.created_at.desc())
         .limit(limit)
     )
-    archives = archives_result.scalars().all()
+    # Only events from printers the caller may see, as the archive and queue
+    # lists of the project (#1727)
+    if (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
+        archive_query = archive_query.where(clause)
+    archives = (await db.execute(archive_query)).scalars().all()
 
     for archive in archives:
         if archive.status == "completed":
@@ -1859,13 +1883,20 @@ async def get_project_timeline(
             )
 
     # Get queue items
-    queue_result = await db.execute(
+    queue_query = (
         select(PrintQueueItem)
         .where(PrintQueueItem.project_id == project_id)
+        .options(
+            selectinload(PrintQueueItem.archive),
+            selectinload(PrintQueueItem.library_file),
+            selectinload(PrintQueueItem.variants).selectinload(PrintQueueVariant.library_file),
+        )
         .order_by(PrintQueueItem.created_at.desc())
         .limit(limit)
     )
-    queue_items = queue_result.scalars().all()
+    if (clause := printer_scope.where(PrintQueueItem.printer_id)) is not None:
+        queue_query = queue_query.where(clause)
+    queue_items = (await db.execute(queue_query)).scalars().all()
 
     for item in queue_items:
         if item.status == "printing":
@@ -1874,7 +1905,7 @@ async def get_project_timeline(
                     event_type="print_started",
                     timestamp=item.started_at or item.created_at,
                     title="Print started",
-                    description=item.print_name,
+                    description=_queue_item_name(item),
                     metadata={"queue_item_id": item.id},
                 )
             )
@@ -1884,7 +1915,7 @@ async def get_project_timeline(
                     event_type="queued",
                     timestamp=item.created_at,
                     title="Added to queue",
-                    description=item.print_name,
+                    description=_queue_item_name(item),
                     metadata={"queue_item_id": item.id},
                 )
             )

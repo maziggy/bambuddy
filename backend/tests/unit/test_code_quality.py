@@ -287,3 +287,35 @@ class TestLogErrorPatterns:
             client._process_message(msg)
 
         assert not capture_logs.has_errors(), f"Errors during MQTT processing:\n{capture_logs.format_errors()}"
+
+
+class TestDateTimeColumns:
+    """No model column may be DateTime(timezone=True).
+
+    On PostgreSQL every bound datetime reaches asyncpg naive (the engine strips
+    tzinfo), and asyncpg reads a naive value for a timestamptz bind as
+    process-local time. With TZ set on the host such a column is stored shifted
+    by the UTC offset. Every column is plain DateTime holding naive UTC.
+    """
+
+    def test_no_timezone_aware_datetime_columns(self):
+        import importlib
+        import pkgutil
+
+        from sqlalchemy import DateTime
+
+        import backend.app.models
+        from backend.app.core.database import Base
+
+        # The package __init__ does not import every model module, so load them
+        # all here; otherwise a table outside it would never be checked.
+        for module in pkgutil.iter_modules(backend.app.models.__path__):
+            importlib.import_module(f"backend.app.models.{module.name}")
+
+        offenders = [
+            f"{table.name}.{column.name}"
+            for table in Base.metadata.sorted_tables
+            for column in table.columns
+            if isinstance(column.type, DateTime) and column.type.timezone
+        ]
+        assert not offenders, f"DateTime(timezone=True) columns: {offenders}"

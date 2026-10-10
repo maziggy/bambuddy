@@ -160,9 +160,9 @@ def _etag_matches(if_none_match: str | None, etag_raw: str | None) -> bool:
 def _as_utc(dt: datetime) -> datetime:
     """Return *dt* with UTC timezone attached.
 
-    SQLite/aiosqlite strips timezone info when reading DateTime(timezone=True)
-    columns back – the stored value is always UTC, so we just re-attach the
-    info when doing Python-level comparisons.
+    DateTime columns come back naive on both SQLite and PostgreSQL – the
+    stored value is always UTC, so we just re-attach the info when doing
+    Python-level comparisons.
     """
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 

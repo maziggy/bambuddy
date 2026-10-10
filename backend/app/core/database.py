@@ -5411,6 +5411,80 @@ async def _run_migrations(conn):
     # default -- identical DDL on SQLite and Postgres.
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN timelapse_plate_id INTEGER")
 
+    await _migrate_auth_datetimes_to_timestamp(conn)
+
+
+# Columns that used to be declared DateTime(timezone=True). Every bound datetime
+# reaches asyncpg naive (see _strip_tz_from_params), and asyncpg reads a naive
+# value for a timestamptz bind as process-local time, so on a host with TZ set
+# these were stored shifted by its UTC offset. They are plain DateTime now, like
+# every other column; this converts the PostgreSQL columns to match.
+_AUTH_DATETIME_COLUMNS = (
+    ("users", "password_changed_at"),
+    ("auth_ephemeral_tokens", "expires_at"),
+    ("auth_ephemeral_tokens", "created_at"),
+    ("auth_rate_limit_events", "occurred_at"),
+)
+
+
+async def _migrate_auth_datetimes_to_timestamp(conn) -> None:
+    """Convert the auth datetime columns from timestamptz to TIMESTAMP (UTC).
+
+    PostgreSQL only; SQLite has no time zone type. Only a column that is still
+    timestamptz is converted: the same USING on a TIMESTAMP column would shift
+    it by the session time zone.
+
+    The values already stored keep their offset error (the host's offset at
+    write time is not recorded), and that includes password_changed_at on
+    installs where the column is already TIMESTAMP: the bind followed the
+    model's type, not the column's. So when anything was converted, which
+    happens exactly once on an install that ran the old models, every session
+    is invalidated (see invalidate_all_sessions).
+    """
+    from sqlalchemy import text
+
+    if is_sqlite():
+        return
+    converted = False
+    for table, column in _AUTH_DATETIME_COLUMNS:
+        result = await conn.execute(
+            text(
+                "SELECT data_type FROM information_schema.columns "
+                "WHERE table_schema = current_schema() AND table_name = :t AND column_name = :c"
+            ),
+            {"t": table, "c": column},
+        )
+        row = result.fetchone()
+        if row and row[0] == "timestamp with time zone":
+            await _safe_execute(
+                conn,
+                f"ALTER TABLE {table} ALTER COLUMN {column} TYPE TIMESTAMP USING ({column} AT TIME ZONE 'UTC')",
+            )
+            converted = True
+    if converted:
+        await invalidate_all_sessions(conn)
+
+
+async def invalidate_all_sessions(conn) -> None:
+    """Make every user sign in again and drop every short-lived auth record.
+
+    Sets password_changed_at to now for all users, so every JWT issued before
+    is rejected, and deletes the pending auth tokens (reset links, 2FA and OIDC
+    state, media/camera/websocket tokens, slicer downloads, connect codes) and
+    the rate-limit events, so their counters start from zero. The logout
+    blocklist (revoked_jti) is kept. Used once after the auth
+    datetime conversion and after every backup restore, where the restored
+    rows may carry values written by older code.
+    """
+    from sqlalchemy import text
+
+    from backend.app.utils.local_time import utcnow_naive
+
+    async with conn.begin_nested():
+        await conn.execute(text("UPDATE users SET password_changed_at = :now"), {"now": utcnow_naive()})
+        await conn.execute(text("DELETE FROM auth_ephemeral_tokens WHERE token_type <> 'revoked_jti'"))
+        await conn.execute(text("DELETE FROM auth_rate_limit_events"))
+
 
 async def _backfill_snapshot_prices(conn) -> None:
     """Give the energy snapshots taken before #1251 the price set at upgrade.

@@ -1594,6 +1594,14 @@ async def restore_backup(
             await reinitialize_database()
             await init_db()
 
+            # 9. Sign everyone out. The restored users and auth tokens come from
+            # another point in time, possibly written by older code, so no
+            # session issued before the restore should stay valid.
+            from backend.app.core import database as _db_mod
+
+            async with _db_mod.engine.begin() as conn:
+                await _db_mod.invalidate_all_sessions(conn)
+
             logger.info("Restore complete - restart required")
             message = "Backup restored successfully. Please restart Bambuddy for changes to take effect."
             if skipped_dirs:

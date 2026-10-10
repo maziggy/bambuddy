@@ -91,9 +91,9 @@ class AuthEphemeralToken(Base):
     # (XSS can read JS memory but cannot read HttpOnly cookies).
     challenge_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        DateTime,
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
@@ -224,7 +224,7 @@ class AuthRateLimitEvent(Base):
     username: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String(20), nullable=False)  # '2fa_attempt' | 'email_send'
     occurred_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        DateTime,
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )

@@ -117,6 +117,7 @@ async def test_overlay_logo_survives_backup_and_restore(async_client, monkeypatc
         patch("backend.app.core.database.close_all_connections", new_callable=AsyncMock),
         patch("backend.app.core.database.reinitialize_database", new_callable=AsyncMock),
         patch("backend.app.core.database.init_db", new_callable=AsyncMock),
+        patch("backend.app.core.database.invalidate_all_sessions", new_callable=AsyncMock),
         patch("backend.app.services.print_scheduler.scheduler.stop"),
         patch("backend.app.services.smart_plug_manager.smart_plug_manager.stop_scheduler"),
         patch("backend.app.services.notification_service.notification_service.stop_digest_scheduler"),

@@ -2014,6 +2014,7 @@ class TestBackupKeyFiles:
             patch("backend.app.core.database.close_all_connections", new_callable=AsyncMock),
             patch("backend.app.core.database.reinitialize_database", new_callable=AsyncMock),
             patch("backend.app.core.database.init_db", new_callable=AsyncMock),
+            patch("backend.app.core.database.invalidate_all_sessions", new_callable=AsyncMock),
         ):
             resp = await async_client.post(
                 "/api/v1/settings/restore",
@@ -2054,6 +2055,7 @@ class TestBackupKeyFiles:
             patch("backend.app.core.database.close_all_connections", new_callable=AsyncMock),
             patch("backend.app.core.database.reinitialize_database", new_callable=AsyncMock),
             patch("backend.app.core.database.init_db", new_callable=AsyncMock),
+            patch("backend.app.core.database.invalidate_all_sessions", new_callable=AsyncMock),
         ):
             resp = await async_client.post(
                 "/api/v1/settings/restore",
@@ -2175,6 +2177,7 @@ class TestBackupKeyFiles:
             patch("backend.app.core.database.close_all_connections", new_callable=AsyncMock),
             patch("backend.app.core.database.reinitialize_database", new_callable=AsyncMock),
             patch("backend.app.core.database.init_db", new_callable=AsyncMock),
+            patch("backend.app.core.database.invalidate_all_sessions", new_callable=AsyncMock),
         ):
             resp = await async_client.post(
                 "/api/v1/settings/restore",
@@ -2388,6 +2391,7 @@ class TestBackupKeyFiles:
                 patch("backend.app.core.database.close_all_connections", new_callable=AsyncMock),
                 patch("backend.app.core.database.reinitialize_database", new_callable=AsyncMock),
                 patch("backend.app.core.database.init_db", new_callable=AsyncMock),
+                patch("backend.app.core.database.invalidate_all_sessions", new_callable=AsyncMock),
                 open(zip_path, "rb") as f,
             ):
                 resp = await async_client.post(

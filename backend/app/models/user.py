@@ -37,7 +37,7 @@ class User(Base):
 
     # Set whenever the local password is changed/reset — used to invalidate JWTs
     # issued before the change (M-R7-B).  NULL means no password change recorded yet.
-    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Per-user Bambu Cloud credentials (when auth is enabled, each user has their own)
     cloud_token: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)

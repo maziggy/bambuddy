@@ -51,8 +51,8 @@ def local_zone() -> tzinfo:
 def utcnow_naive() -> datetime:
     """Current UTC time, tzinfo stripped.
 
-    Bambuddy's ``DateTime`` columns are naive and hold UTC; only the few that
-    genuinely need an offset are declared ``DateTime(timezone=True)``. SQLite
+    Bambuddy's ``DateTime`` columns are naive and hold UTC; none is declared
+    ``DateTime(timezone=True)`` (test_code_quality.py enforces it). SQLite
     silently tolerates an aware value written to a naive column (its bind
     processor reads the fields and drops the offset), which is why aware writes
     survived here for so long — but **asyncpg rejects them outright** with

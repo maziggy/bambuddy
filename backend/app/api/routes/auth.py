@@ -1230,7 +1230,7 @@ async def forgot_password_confirm(request: ForgotPasswordConfirmRequest, db: Asy
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired password reset token")
 
     username, expires_at = row
-    # SQLite returns naive datetimes; treat them as UTC.
+    # Stored as naive UTC on both databases; treat it as UTC.
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if now > expires_at:

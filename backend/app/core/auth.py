@@ -14,6 +14,7 @@ from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import PyJWTError as JWTError
 from passlib.context import CryptContext
+from passlib.exc import PasswordSizeError
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -1402,18 +1403,35 @@ _validated_api_key: ContextVar[tuple[str, APIKey] | None] = ContextVar("_validat
 _authenticated_user: ContextVar[tuple[str, User] | None] = ContextVar("_authenticated_user", default=None)
 
 
+def _api_key_check_unavailable(error: Exception) -> HTTPException:
+    """The 503 for a key that couldn't be checked (database, pool), logged.
+
+    Not 401: the key may well be valid, and clients treat 401 "Invalid API key"
+    as final (the web interface clears its sign-in on it). Still fail-closed:
+    the request is refused either way.
+    """
+    logger.error("API key check failed: %s", error, exc_info=error)
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Authentication service temporarily unavailable",
+    )
+
+
 async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | None:
     """Validate an API key and return the APIKey object if valid, None otherwise.
+
+    Raises a 503 HTTPException when the key can't be checked at all (database
+    or pool error): that is not an invalid key, and must not read as one.
 
     L-1: Pre-filter by key_prefix (first 8 chars) before running pbkdf2 so only
     O(1) candidate rows are hashed instead of the full key table.  The prefix is
     not secret (it is shown in the admin UI), so this does not reduce security.
     """
+    # key_prefix is stored as "<first-8-chars>..." (e.g. "bb_Abc12...").
+    # Matching on the first 8 chars of the submitted key reduces the scan to
+    # at most one row in practice (2^40 collision space for 5 base64 chars).
+    key_lookup = api_key_value[:8] if len(api_key_value) >= 8 else api_key_value
     try:
-        # key_prefix is stored as "<first-8-chars>..." (e.g. "bb_Abc12...").
-        # Matching on the first 8 chars of the submitted key reduces the scan to
-        # at most one row in practice (2^40 collision space for 5 base64 chars).
-        key_lookup = api_key_value[:8] if len(api_key_value) >= 8 else api_key_value
         result = await db.execute(
             select(APIKey).where(
                 APIKey.enabled.is_(True),
@@ -1423,23 +1441,38 @@ async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | No
             )
         )
         api_keys = result.scalars().all()
+    except Exception as e:  # SEC-AUTH-EXC: key lookup failed -> raises 503, request refused (no key returned)
+        raise _api_key_check_unavailable(e) from e
 
-        for api_key in api_keys:
-            if verify_password(api_key_value, api_key.key_hash):
-                # Check expiration
-                if api_key.expires_at:
-                    expires = api_key.expires_at
-                    if expires.tzinfo is None:
-                        expires = expires.replace(tzinfo=timezone.utc)
-                    if expires < datetime.now(timezone.utc):
-                        return None  # Expired
-                # Update last_used timestamp
-                api_key.last_used = datetime.now(timezone.utc)
-                await db.commit()
-                _validated_api_key.set((api_key_value, api_key))
-                return api_key
-    except Exception as e:  # SEC-AUTH-EXC: validation failure returns None; every caller treats None as "invalid key" → 401 (fail-closed)
-        logger.warning("API key validation error: %s", e)
+    for api_key in api_keys:
+        try:
+            matches = verify_password(api_key_value, api_key.key_hash)
+        except PasswordSizeError:
+            # The submitted value is too long to hash (passlib's limit): the
+            # client's input, not this row, and certainly not a match.
+            continue
+        except Exception as e:  # SEC-AUTH-EXC: unverifiable hash counts as no match -> None -> 401
+            # An unreadable stored hash can't vouch for anything: not a match.
+            logger.warning("API key %s has an unreadable hash: %s", api_key.id, e)
+            continue
+        if not matches:
+            continue
+        # Check expiration
+        if api_key.expires_at:
+            expires = api_key.expires_at
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if expires < datetime.now(timezone.utc):
+                return None  # Expired
+        # Update last_used timestamp
+        api_key.last_used = datetime.now(timezone.utc)
+        try:
+            await db.commit()
+        except Exception as e:  # SEC-AUTH-EXC: last_used write failed -> rollback + raise 503, key not returned
+            await db.rollback()
+            raise _api_key_check_unavailable(e) from e
+        _validated_api_key.set((api_key_value, api_key))
+        return api_key
     return None
 
 

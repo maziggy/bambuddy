@@ -328,6 +328,19 @@ console_handler.setFormatter(logging.Formatter(log_format))
 console_handler.addFilter(_trace_id_filter)
 root_logger.addHandler(console_handler)
 
+
+def _attach_file_handler_to_uvicorn(handler: logging.Handler) -> None:
+    """Send uvicorn's own loggers to bambuddy.log as well.
+
+    Both ship with propagate=False, so the root handler never sees them.
+    uvicorn.access is the record of which endpoint changed server state;
+    uvicorn.error is where an unhandled route error is logged with its
+    traceback ("Exception in ASGI application").
+    """
+    for name in ("uvicorn.access", "uvicorn.error"):
+        logging.getLogger(name).addHandler(handler)
+
+
 # File handler - only in production or if explicitly enabled
 if app_settings.log_to_file:
     log_file = app_settings.log_dir / "bambuddy.log"
@@ -355,8 +368,8 @@ if app_settings.log_to_file:
         WriteRequestsOnlyFilter,
     )
 
+    _attach_file_handler_to_uvicorn(file_handler)
     uvicorn_access_logger = logging.getLogger("uvicorn.access")
-    uvicorn_access_logger.addHandler(file_handler)
     uvicorn_access_logger.addFilter(WriteRequestsOnlyFilter())
     # Uvicorn's access logger has propagate=False (its own default), so the
     # root-attached TraceIDFilter never sees these records. Attach a
@@ -10810,21 +10823,23 @@ async def auth_middleware(request, call_next):
     # probe — GHSA-6mf4-q26m-47pv: the previous fail-open path here let
     # an attacker who could force a DB exception (e.g. file-descriptor
     # exhaustion via login flood) bypass auth on every protected endpoint.
+    # Only the probe is guarded: the request itself runs outside the try, so an
+    # error in a route surfaces as the 500 it is rather than as an auth outage.
     try:
         async with async_session() as db:
             from backend.app.core.auth import is_auth_enabled
 
             auth_enabled = await is_auth_enabled(db)
-
-        if not auth_enabled:
-            # Auth disabled, allow all requests
-            return await call_next(request)
     except Exception:
         logging.getLogger(__name__).exception("auth_middleware: failing closed on auth-probe error from %s", path)
         return JSONResponse(
             status_code=503,
             content={"detail": "Authentication service temporarily unavailable"},
         )
+
+    if not auth_enabled:
+        # Auth disabled, allow all requests
+        return await call_next(request)
 
     # Auth is enabled - require valid token
     auth_header = request.headers.get("Authorization")
@@ -10895,11 +10910,20 @@ async def auth_middleware(request, call_next):
             content={"detail": "Token has expired"},
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except (jwt.InvalidTokenError, ValueError, Exception):
+    except (jwt.InvalidTokenError, ValueError):
         return JSONResponse(
             status_code=401,
             content={"detail": "Invalid token"},
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    except Exception:
+        # Not a bad token but a failure checking it (database, pool): refuse,
+        # as for the probe above, rather than answer 401 -- the frontend reads
+        # a 401 from /auth/me as final and signs the user out.
+        logging.getLogger(__name__).exception("auth_middleware: failing closed on token-check error from %s", path)
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Authentication service temporarily unavailable"},
         )
 
     return await call_next(request)

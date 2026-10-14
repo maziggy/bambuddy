@@ -5,7 +5,9 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { X, ScanEye, AlertCircle, Settings } from 'lucide-react';
-import { aiDetectionClass, hasVerdict, type AiDetection } from '../utils/aiDetection';
+import { aiDetectionClass, hasVerdict, OCTOEVERYWHERE_USAGE_LIMIT, type AiDetection } from '../utils/aiDetection';
+import { useAuth } from '../contexts/AuthContext';
+import { OctoEverywhereLimitNotice } from './OctoEverywhereLimitNotice';
 
 interface AiDetectionModalProps {
   printerName: string;
@@ -13,12 +15,14 @@ interface AiDetectionModalProps {
   // null = no error, or the viewer lacks settings:read (the backend withholds
   // error strings from non-settings users because they can embed config URLs)
   lastError: string | null;
+  lastErrorCode?: string | null;
   onClose: () => void;
 }
 
-export function AiDetectionModal({ printerName, detection, lastError, onClose }: AiDetectionModalProps) {
+export function AiDetectionModal({ printerName, detection, lastError, lastErrorCode, onClose }: AiDetectionModalProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { hasPermission } = useAuth();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -43,7 +47,10 @@ export function AiDetectionModal({ printerName, detection, lastError, onClose }:
   // This printer's own reason beats the service-wide one: with several printers
   // monitored, the global string is whichever failed most recently and may be
   // about someone else's printer entirely.
-  const reason = detection?.error ?? lastError;
+  const hasPrinterError = !!(detection?.error || detection?.error_code);
+  const reason = hasPrinterError ? detection?.error : lastError;
+  const errorCode = hasPrinterError ? detection?.error_code : lastErrorCode;
+  const canSeeError = hasPermission('settings:read');
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -75,8 +82,14 @@ export function AiDetectionModal({ printerName, detection, lastError, onClose }:
             {detection && hasVerdict(cls) && (
               <>
                 <div className="flex justify-between">
-                  <span className="text-bambu-gray">{t('printers.aiDetection.score')}</span>
-                  <span className="text-white font-mono">{detection.score.toFixed(3)}</span>
+                  <span className="text-bambu-gray">
+                    {t('print_quality' in detection ? 'octoeverywhere.printQuality' : 'printers.aiDetection.score')}
+                  </span>
+                  <span className="text-white font-mono">
+                    {'print_quality' in detection
+                      ? detection.print_quality === null ? '—' : `${detection.print_quality}/10`
+                      : detection.score.toFixed(3)}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-bambu-gray">{t('printers.aiDetection.framesAnalyzed')}</span>
@@ -91,7 +104,9 @@ export function AiDetectionModal({ printerName, detection, lastError, onClose }:
             {!detection && <p className="text-bambu-gray">{t('printers.aiDetection.idleHint')}</p>}
           </div>
 
-          {reason && (
+          {canSeeError && errorCode === OCTOEVERYWHERE_USAGE_LIMIT ? (
+            <OctoEverywhereLimitNotice />
+          ) : canSeeError && reason && (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30">
               <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-red-700 dark:text-red-400" />
               <div className="min-w-0">

@@ -39,6 +39,7 @@ _SENSITIVE_FIELDS_FOR_API_KEY = (
     "prometheus_token",
     "virtual_printer_access_code",
     "ldap_bind_password",
+    "octoeverywhere_api_key",
 )
 
 
@@ -261,6 +262,7 @@ _INT_SETTING_KEYS = frozenset(
         "queue_keep_warm_max_minutes",
         "queue_max_concurrent_uploads",
         "ambient_drying_sustained_minutes",
+        "octoeverywhere_poll_interval",
     }
 )
 
@@ -310,6 +312,10 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
     # ldap_bind_password is never returned to any caller
     settings_dict["ldap_bind_password"] = ""
 
+    # The saved key is write-only, including for authenticated administrators.
+    settings_dict["octoeverywhere_api_key_configured"] = bool(settings_dict["octoeverywhere_api_key"].strip())
+    settings_dict["octoeverywhere_api_key"] = ""
+
     if is_api_key:
         for field in _SENSITIVE_FIELDS_FOR_API_KEY:
             if field in settings_dict:
@@ -337,6 +343,18 @@ async def update_settings(
 ):
     """Update application settings."""
     update_data = settings_update.model_dump(exclude_unset=True)
+
+    # Omitted/null preserves the saved key; an explicit empty string removes it.
+    if update_data.get("octoeverywhere_api_key") is None:
+        update_data.pop("octoeverywhere_api_key", None)
+
+    # Only one failure detection provider may control a print at a time.
+    if update_data.get("obico_enabled") and update_data.get("octoeverywhere_enabled"):
+        raise HTTPException(status_code=400, detail="Enable only one AI failure detection provider at a time.")
+    if update_data.get("octoeverywhere_enabled"):
+        update_data["obico_enabled"] = False
+    elif update_data.get("obico_enabled"):
+        update_data["octoeverywhere_enabled"] = False
 
     # An explicit null for a boolean or numeric setting has no meaning -- these
     # are not clearable -- and would be stored as the literal "None".
@@ -408,6 +426,15 @@ async def update_settings(
     await db.commit()
     # Expire all objects to ensure fresh reads after commit
     db.expire_all()
+
+    if update_data.get("obico_enabled") is False:
+        from backend.app.services.obico_detection import obico_detection_service
+
+        await obico_detection_service.refresh_settings()
+    if any(key.startswith("octoeverywhere_") for key in update_data):
+        from backend.app.services.octoeverywhere_detection import octoeverywhere_detection_service
+
+        await octoeverywhere_detection_service.refresh_settings()
 
     if {"camera_light_mode", "camera_light_delay"} & set(update_data.keys()):
         camera_light.invalidate_settings()

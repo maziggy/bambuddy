@@ -549,6 +549,24 @@ export const handlers = [
   http.get('/api/v1/obico/printer-status', () =>
     HttpResponse.json({ enabled: false, monitored_printers: null, per_printer: {}, last_error: null })
   ),
+  http.get('/api/v1/octoeverywhere/status', () =>
+    HttpResponse.json({
+      enabled: false,
+      api_key_configured: false,
+      confidence: 'medium',
+      action: 'notify',
+      poll_interval: 20,
+      is_running: false,
+      last_error: null,
+      last_error_code: null,
+      per_printer: {},
+      history: [],
+      notifications: { configured: false, uncovered_printers: [] },
+    })
+  ),
+  http.get('/api/v1/octoeverywhere/printer-status', () =>
+    HttpResponse.json({ enabled: false, monitored_printers: null, per_printer: {}, last_error: null, last_error_code: null })
+  ),
   // Per-file project print progress (#1897) — empty means "no completed runs"
   http.get('/api/v1/projects/:id/file-progress', () => HttpResponse.json([])),
   http.get('/api/v1/printers/:id/current-print-user', () => HttpResponse.json(null)),

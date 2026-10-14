@@ -37,7 +37,8 @@ def _patch_session(fake_printer):
         yield
 
 
-async def test_notify_routes_to_on_ai_failure_detection(fake_printer):
+@pytest.mark.parametrize("frame", [None, b"detected-frame"])
+async def test_notify_routes_to_on_ai_failure_detection(fake_printer, frame):
     """Regression guard for #1794: action='notify' must call
     on_ai_failure_detection, not on_printer_error. If anyone reverts the
     handoff, the reporter's symptom (Discord silent when "Printer Error"
@@ -57,6 +58,7 @@ async def test_notify_routes_to_on_ai_failure_detection(fake_printer):
             action="notify",
             task_name="benchy.3mf",
             score=0.91,
+            frame=frame,
         )
 
         mock_ai.assert_awaited_once()
@@ -68,6 +70,8 @@ async def test_notify_routes_to_on_ai_failure_detection(fake_printer):
         assert call_kwargs["task_name"] == "benchy.3mf"
         assert call_kwargs["confidence"] == 0.91
         assert call_kwargs["action"] == "notify"
+        assert call_kwargs["image_data"] == frame
+        assert call_kwargs["print_quality"] is None
 
 
 async def test_pause_action_still_pauses_and_notifies(fake_printer):

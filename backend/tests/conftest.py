@@ -344,6 +344,7 @@ async def async_client(test_engine, db_session) -> AsyncGenerator[AsyncClient, N
         # Obico endpoints load settings through the service's module-level binding;
         # without this patch they'd read whatever DB the cwd resolves to (#1546).
         patch("backend.app.services.obico_detection.async_session", test_async_session),
+        patch("backend.app.services.octoeverywhere_detection.async_session", test_async_session),
         patch("backend.app.main.init_printer_connections", mock_init_printer_connections),
     ):
         # Seed default groups for tests that need them

@@ -78,6 +78,7 @@ class TestUiPreferencesEndpoint:
         data = response.json()
         expected = {
             "require_plate_clear",
+            "plate_clear_trigger",
             "check_printer_firmware",
             "camera_view_mode",
             "time_format",

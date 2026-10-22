@@ -1,5 +1,6 @@
 import json
 import logging
+from contextlib import AsyncExitStack
 from datetime import date, datetime, timezone
 
 import httpx
@@ -2300,7 +2301,31 @@ async def assign_spool(
 
     # 3. Upsert assignment (replace if same printer+ams+tray), under the lock
     # the AMS change handler writes the printer's slots with.
-    async with get_ams_assignment_lock(data.printer_id):
+    #
+    # A move (#1574) also takes the spool out of every other slot it holds, in
+    # the same commit, so a failed move leaves it where it was instead of in no
+    # slot. Those slots' printers are locked as well, in id order so two moves
+    # can't take the same two locks the other way round. A slot on a printer
+    # outside the caller's scope stays assigned, as unassigning leaves it (#1727).
+    locked_printer_ids = {data.printer_id}
+    if data.move:
+        held = await db.execute(select(SpoolAssignment.printer_id).where(SpoolAssignment.spool_id == data.spool_id))
+        locked_printer_ids.update(pid for pid in held.scalars() if printer_scope.allows(pid))
+    vacated: list[tuple[int, int, int]] = []
+    async with AsyncExitStack() as locks:
+        for pid in sorted(locked_printer_ids):
+            await locks.enter_async_context(get_ams_assignment_lock(pid))
+        if data.move:
+            others = await db.execute(
+                select(SpoolAssignment).where(
+                    SpoolAssignment.spool_id == data.spool_id,
+                    SpoolAssignment.printer_id.in_(locked_printer_ids),
+                )
+            )
+            for row in others.scalars().all():
+                if (row.printer_id, row.ams_id, row.tray_id) != (data.printer_id, data.ams_id, data.tray_id):
+                    vacated.append((row.printer_id, row.ams_id, row.tray_id))
+                    await db.delete(row)
         existing = await db.execute(
             select(SpoolAssignment).where(
                 SpoolAssignment.printer_id == data.printer_id,
@@ -2325,6 +2350,15 @@ async def assign_spool(
         await db.commit()
     await db.refresh(assignment)
     slot_unlink_grace.forget_slot(data.printer_id, data.ams_id, data.tray_id)
+    if vacated:
+        logger.info(
+            "Moved spool %d to printer %d AMS%d-T%d from %s",
+            spool.id,
+            data.printer_id,
+            data.ams_id,
+            data.tray_id,
+            ", ".join(f"printer {p} AMS{a}-T{t}" for p, a, t in vacated),
+        )
 
     # 4. Auto-configure AMS slot via MQTT.
     #
@@ -2440,14 +2474,15 @@ async def assign_spool(
             data.tray_id,
         )
 
-    await ws_manager.broadcast(
-        {
-            "type": "spool_assignment_changed",
-            "printer_id": data.printer_id,
-            "ams_id": data.ams_id,
-            "tray_id": data.tray_id,
-        }
-    )
+    for printer_id, ams_id, tray_id in [*vacated, (data.printer_id, data.ams_id, data.tray_id)]:
+        await ws_manager.broadcast(
+            {
+                "type": "spool_assignment_changed",
+                "printer_id": printer_id,
+                "ams_id": ams_id,
+                "tray_id": tray_id,
+            }
+        )
 
     return response
 

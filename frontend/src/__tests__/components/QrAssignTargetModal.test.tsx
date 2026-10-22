@@ -5,13 +5,38 @@
  * platform path not exercisable in jsdom.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, fireEvent, render, waitFor } from '../utils';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { QrAssignTargetModal } from '../../components/QrAssignTargetModal';
 
 function noop() {}
+
+/**
+ * jsdom has no camera, so a scan goes through the photo fallback: the platform
+ * decoder is stubbed to read `rawValue` off whatever photo is picked.
+ */
+function stubPhotoDecoder(rawValue: string) {
+  vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 10, height: 10, close: vi.fn() }));
+  vi.stubGlobal(
+    'BarcodeDetector',
+    class {
+      detect = vi.fn().mockResolvedValue([{ rawValue }]);
+    },
+  );
+}
+
+function pickPhoto() {
+  const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+  fireEvent.change(input, { target: { files: [new File(['qr'], 'qr.jpg', { type: 'image/jpeg' })] } });
+}
+
+async function openScanStepForSlotA1() {
+  fireEvent.click(await screen.findByRole('button', { name: 'A1' }));
+  fireEvent.click(screen.getByRole('button', { name: /set target & scan/i }));
+  await screen.findByRole('button', { name: /take photo/i });
+}
 
 describe('QrAssignTargetModal', () => {
   beforeEach(() => {
@@ -91,5 +116,87 @@ describe('QrAssignTargetModal', () => {
     await waitFor(() => expect(startBtn).toBeEnabled());
     fireEvent.click(startBtn);
     expect(await screen.findByText(/Target: Bin 7/)).toBeInTheDocument();
+  });
+
+  describe('assigning a scanned spool to a slot', () => {
+    let unassigned: string[];
+
+    beforeEach(() => {
+      unassigned = [];
+      server.use(
+        http.delete('/api/v1/inventory/assignments/:printerId/:amsId/:trayId', ({ request }) => {
+          unassigned.push(request.url);
+          return HttpResponse.json({ status: 'deleted' });
+        }),
+        http.delete('/api/v1/spoolman/inventory/slot-assignments/:spoolId', ({ request }) => {
+          unassigned.push(request.url);
+          return HttpResponse.json({ id: 0 });
+        }),
+      );
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('built-in: one request moves the spool, with no unassign before or after (#1574)', async () => {
+      let body: unknown = null;
+      server.use(
+        http.post('/api/v1/inventory/assignments', async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json({ id: 1, spool_id: 42, printer_id: 1, ams_id: 0, tray_id: 0 });
+        }),
+      );
+      stubPhotoDecoder('https://bambuddy.local/inventory?spool=42');
+      const onClose = vi.fn();
+      render(<QrAssignTargetModal isOpen onClose={onClose} spoolmanMode={false} />);
+
+      await openScanStepForSlotA1();
+      pickPhoto();
+
+      await waitFor(() => expect(onClose).toHaveBeenCalled());
+      expect(body).toEqual({ spool_id: 42, printer_id: 1, ams_id: 0, tray_id: 0, move: true });
+      expect(unassigned).toEqual([]);
+    });
+
+    it('Spoolman: one request moves the spool, with no unassign before it (#1574)', async () => {
+      let body: unknown = null;
+      server.use(
+        http.post('/api/v1/spoolman/inventory/slot-assignments', async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json({ id: 42 });
+        }),
+      );
+      stubPhotoDecoder('https://bambuddy.local/inventory?spool=42');
+      const onClose = vi.fn();
+      render(<QrAssignTargetModal isOpen onClose={onClose} spoolmanMode />);
+
+      await openScanStepForSlotA1();
+      pickPhoto();
+
+      await waitFor(() => expect(onClose).toHaveBeenCalled());
+      expect(body).toEqual({ spoolman_spool_id: 42, printer_id: 1, ams_id: 0, tray_id: 0, move: true });
+      expect(unassigned).toEqual([]);
+    });
+
+    it('a failed move keeps the scan step open', async () => {
+      server.use(
+        http.post('/api/v1/inventory/assignments', () =>
+          HttpResponse.json({ detail: 'Spool not found' }, { status: 404 }),
+        ),
+      );
+      stubPhotoDecoder('https://bambuddy.local/inventory?spool=42');
+      const onClose = vi.fn();
+      render(<QrAssignTargetModal isOpen onClose={onClose} spoolmanMode={false} />);
+
+      await openScanStepForSlotA1();
+      pickPhoto();
+
+      // The take-photo button is disabled while the request runs, so it being
+      // enabled again means the failed request has settled.
+      await waitFor(() => expect(screen.getByRole('button', { name: /take photo/i })).toBeEnabled());
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByText('Scan a spool QR')).toBeInTheDocument();
+    });
   });
 });

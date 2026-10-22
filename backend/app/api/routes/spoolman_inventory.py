@@ -183,6 +183,47 @@ async def _clear_stale_slot_fallback_tag_links(
     )
 
 
+async def _clear_vacated_slot_fallback_tag(
+    client: SpoolmanClient,
+    db: AsyncSession,
+    *,
+    spool_id: int,
+    spool: dict,
+    vacated: list[tuple[int, int, int]],
+) -> str | None:
+    """Clear the spool's extra.tag when it is the fallback tag of a slot it leaves (#1574).
+
+    A spool linked to a slot without RFID carries that slot's fallback tag, and
+    the tag lookup keeps finding it for the old slot after it moved. A real RFID
+    or any other tag is the spool's own and stays. Returns the tag it cleared,
+    or None. Raises when Spoolman refuses, before anything local has changed,
+    so the spool stays where it was.
+    """
+    tag = str((spool.get("extra") or {}).get("tag") or "").strip('"').upper()
+    if not tag or not vacated:
+        return None
+    serials = dict(
+        (await db.execute(select(Printer.id, Printer.serial_number).where(Printer.id.in_({p for p, _, _ in vacated}))))
+        .tuples()
+        .all()
+    )
+    if not any(
+        tag == get_fallback_spool_tag_for_slot(serials.get(printer_id) or "", ams_id, tray_id)
+        for printer_id, ams_id, tray_id in vacated
+    ):
+        return None
+    try:
+        await client.merge_spool_extra(spool_id, {"tag": json.dumps("")})
+    except (SpoolmanClientError, SpoolmanUnavailableError, SpoolmanNotFoundError) as exc:
+        logger.warning("Could not clear the old slot's fallback tag from Spoolman spool %s: %s", spool_id, exc)
+        raise HTTPException(
+            status_code=503 if isinstance(exc, SpoolmanUnavailableError) else 502,
+            detail="Spoolman did not clear the spool's tag for its old slot, so the spool was not moved",
+        ) from exc
+    logger.info("Cleared the old slot's fallback tag from Spoolman spool %s before moving it", spool_id)
+    return tag
+
+
 async def _get_client(db: AsyncSession) -> SpoolmanClient:
     """Return a validated Spoolman client (URL checked, health-checked) or raise an HTTP error."""
     result = await db.execute(select(Settings))
@@ -458,6 +499,9 @@ class SpoolSlotAssignmentRequest(BaseModel):
     printer_id: int = Field(..., gt=0)
     ams_id: SlotAmsId
     tray_id: SlotTrayId
+    # The spool also leaves any other slot it is assigned to, in the same
+    # transaction (#1574): a scanned spool is the one in the user's hand.
+    move: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -1796,9 +1840,31 @@ async def assign_spoolman_slot(
     if spool.get("archived"):
         raise HTTPException(status_code=400, detail="Cannot assign an archived spool")
 
+    # A move (#1574) takes the spool out of every other slot it holds, in the
+    # same commit as the upsert below, so a failed move leaves it where it was
+    # instead of in no slot. Its fallback tag for a slot it leaves is cleared
+    # first. A slot on a printer outside the caller's scope stays assigned, as
+    # unassigning leaves it (#1727).
+    vacated: list[tuple[int, int, int]] = []
+    vacated_ids: list[int] = []
+    cleared_tag: str | None = None
+    if body.move:
+        held = select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == body.spoolman_spool_id)
+        if (clause := printer_scope.where_strict(SpoolmanSlotAssignment.printer_id)) is not None:
+            held = held.where(clause)
+        for row in (await db.execute(held)).scalars().all():
+            if (row.printer_id, row.ams_id, row.tray_id) != (body.printer_id, body.ams_id, body.tray_id):
+                vacated.append((row.printer_id, row.ams_id, row.tray_id))
+                vacated_ids.append(row.id)
+        cleared_tag = await _clear_vacated_slot_fallback_tag(
+            client, db, spool_id=body.spoolman_spool_id, spool=spool, vacated=vacated
+        )
+
     # Spool confirmed in Spoolman — upsert into local slot-assignment table
     # assigned_at is intentionally not refreshed on re-assign (original timestamp preserved)
     try:
+        if vacated_ids:
+            await db.execute(delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.id.in_(vacated_ids)))
         await db.execute(
             text(
                 "INSERT INTO spoolman_slot_assignments"
@@ -1819,7 +1885,24 @@ async def assign_spoolman_slot(
     except Exception as exc:
         await db.rollback()
         logger.error("Failed to persist slot assignment: %s", exc)
+        if cleared_tag:
+            # The spool stays in its old slot, so it gets that slot's tag back.
+            try:
+                await client.merge_spool_extra(body.spoolman_spool_id, {"tag": json.dumps(cleared_tag)})
+            except (SpoolmanClientError, SpoolmanUnavailableError, SpoolmanNotFoundError) as restore_exc:
+                logger.warning(
+                    "Could not put back the fallback tag of Spoolman spool %s: %s", body.spoolman_spool_id, restore_exc
+                )
         raise HTTPException(status_code=500, detail="Failed to save slot assignment") from exc
+    if vacated:
+        logger.info(
+            "Moved Spoolman spool %d to printer %d AMS%d-T%d from %s",
+            body.spoolman_spool_id,
+            body.printer_id,
+            body.ams_id,
+            body.tray_id,
+            ", ".join(f"printer {p} AMS{a}-T{t}" for p, a, t in vacated),
+        )
 
     # #1457: clear stale fallback-tag links on OTHER spools still bound to this
     # slot. Without this, a non-RFID slot's deterministic fallback tag stays

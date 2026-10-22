@@ -301,24 +301,13 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
   const assignMutation = useMutation({
     mutationFn: async ({ spoolId, tg }: { spoolId: number; tg: AssignTarget }) => {
       if (tg.kind === 'ams') {
-        // Move semantics: a spool lives in one slot at a time. The backend assign
-        // route upserts per (printer, ams, tray) and does NOT clear the spool's
-        // previous slot (AssignSpoolModal sidesteps this by hiding already-assigned
-        // spools from its picker — a filter the QR flow can't apply), so we strip
-        // the spool's other slot(s) ourselves.
+        // A spool lives in one slot at a time. `move` has the backend take it
+        // out of its other slot(s) in the same transaction as the assign, so a
+        // failure leaves it where it was rather than in no slot.
         if (spoolmanMode) {
-          // Spoolman unassign is keyed by spool id (clears whatever slot it's in),
-          // so we must clear first, then assign to the new slot.
-          await api.unassignSpoolmanSlot(spoolId).catch(() => {});
-          await api.assignSpoolmanSlot({ spoolman_spool_id: spoolId, printer_id: tg.printerId, ams_id: tg.amsId, tray_id: tg.trayId });
+          await api.assignSpoolmanSlot({ spoolman_spool_id: spoolId, printer_id: tg.printerId, ams_id: tg.amsId, tray_id: tg.trayId, move: true });
         } else {
-          await api.assignSpool({ spool_id: spoolId, printer_id: tg.printerId, ams_id: tg.amsId, tray_id: tg.trayId });
-          const existing = await api.getAssignments();
-          await Promise.all(
-            existing
-              .filter((a) => a.spool_id === spoolId && !(a.printer_id === tg.printerId && a.ams_id === tg.amsId && a.tray_id === tg.trayId))
-              .map((a) => api.unassignSpool(a.printer_id, a.ams_id, a.tray_id).catch(() => {})),
-          );
+          await api.assignSpool({ spool_id: spoolId, printer_id: tg.printerId, ams_id: tg.amsId, tray_id: tg.trayId, move: true });
         }
       } else if (spoolmanMode) {
         await api.updateSpoolmanInventorySpool(spoolId, { location_id: tg.locationId });
@@ -337,7 +326,8 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
       );
       queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
       queryClient.invalidateQueries({ queryKey: spoolmanMode ? ['spoolman-inventory-spools'] : ['inventory-spools'] });
-      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments-all'] });
+      // Prefix match: the per-printer lists and the all-printers one.
+      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
       if (tg.kind === 'ams') {
         // #1414 parity: nudge the printer to republish so its card doesn't show
         // stale tray state until the next poll. Best-effort.

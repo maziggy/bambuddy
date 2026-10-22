@@ -33,7 +33,7 @@ function pickPhoto() {
 }
 
 async function openScanStepForSlotA1() {
-  fireEvent.click(await screen.findByRole('button', { name: 'A1' }));
+  fireEvent.click(await screen.findByRole('button', { name: /^A1\b/ }));
   fireEvent.click(screen.getByRole('button', { name: /set target & scan/i }));
   await screen.findByRole('button', { name: /take photo/i });
 }
@@ -59,8 +59,9 @@ describe('QrAssignTargetModal', () => {
   it('gates the scan button until an AMS slot is chosen, then opens the photo step', async () => {
     render(<QrAssignTargetModal isOpen onClose={noop} spoolmanMode={false} />);
 
-    // Slots render from the printer status (formatSlotLabel(0,0,..) => "A1").
-    const slotA1 = await screen.findByRole('button', { name: 'A1' });
+    // Slots render from the printer status (formatSlotLabel(0,0,..) => "A1"),
+    // each with what is in it after the label.
+    const slotA1 = await screen.findByRole('button', { name: /^A1\b/ });
 
     const startBtn = screen.getByRole('button', { name: /set target & scan/i });
     expect(startBtn).toBeDisabled();
@@ -116,6 +117,44 @@ describe('QrAssignTargetModal', () => {
     await waitFor(() => expect(startBtn).toBeEnabled());
     fireEvent.click(startBtn);
     expect(await screen.findByText(/Target: Bin 7/)).toBeInTheDocument();
+  });
+
+  it("slot tiles say what is in each slot by the printer card's rules, never Empty for a present spool", async () => {
+    server.use(
+      http.get('/api/v1/printers/1/status', () =>
+        HttpResponse.json({
+          ams: [
+            {
+              id: 0,
+              is_ams_ht: false,
+              tray: [
+                // loaded, with what is left on it
+                { id: 0, tray_type: 'PLA', tray_color: 'FF0000FF', remain: 80, state: 11, exists: true },
+                // the firmware says no spool is there
+                { id: 1, tray_type: '', tray_color: null, remain: -1, state: 11, exists: false },
+                // a spool without RFID: present, no filament data — "?", not Empty
+                { id: 2, tray_type: '', tray_color: null, remain: -1, state: 11, exists: true },
+                // no presence data: state 9/10 reads empty...
+                { id: 3, tray_type: '', tray_color: null, remain: -1, state: 10, exists: null },
+              ],
+            },
+          ],
+          vt_tray: [
+            // ...anything else reads unknown, on an external slot too
+            { id: 254, tray_type: '', tray_color: null, remain: -1, state: 3, exists: null },
+            { id: 255, tray_type: '', tray_color: null, remain: -1, state: 11, exists: true },
+          ],
+        }),
+      ),
+    );
+    render(<QrAssignTargetModal isOpen onClose={noop} spoolmanMode={false} />);
+
+    expect(await screen.findByRole('button', { name: 'A1 PLA 80%' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'A2 Empty' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'A3 ?' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'A4 Empty' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ext-L ?' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ext-R ?' })).toBeInTheDocument();
   });
 
   describe('assigning a scanned spool to a slot', () => {

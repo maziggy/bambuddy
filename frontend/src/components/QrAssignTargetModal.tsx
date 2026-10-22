@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, Loader2, QrCode, Cpu, MapPin, ArrowLeft, Camera } from 'lucide-react';
-import { api } from '../api/client';
+import { X, Loader2, QrCode, Cpu, MapPin, ArrowLeft } from 'lucide-react';
+import { api, type AMSTray } from '../api/client';
 import { Button } from './Button';
+import { QrSpoolScanner } from './QrSpoolScanner';
 import { useToast } from '../contexts/ToastContext';
-import { formatSlotLabel } from '../utils/amsHelpers';
+import { formatSlotLabel, getEmptySlotKind } from '../utils/amsHelpers';
+import { getSwatchStyle } from '../utils/colors';
 import { inventoryLocationsQueryKey, invalidateInventoryLocations } from '../utils/inventoryQueries';
 import { parseSpoolQr, scannedSpoolId, type AssignTarget } from '../utils/qrAssignTarget';
-import { createFrameDecoder, decodeImageBlob } from '../utils/qrDecode';
 
 interface QrAssignTargetModalProps {
   isOpen: boolean;
@@ -22,7 +23,34 @@ type SlotOption = {
   isHt: boolean;
   isExternal: boolean;
   label: string;
+  /** What the printer reports in the slot, for its tile. */
+  tray?: AMSTray;
 };
+
+/**
+ * What a slot's tile says is in it, by the printer card's rules
+ * (getEmptySlotKind): filament it reports, "?" for a spool it can't identify,
+ * and Empty only where it says no spool is there. A missing tray_type alone is
+ * not empty — a spool without RFID reads that way (#2527).
+ */
+function SlotContents({ tray }: { tray?: AMSTray }) {
+  const { t } = useTranslation();
+  const kind = getEmptySlotKind(tray);
+  if (kind === 'physical') return <span className="text-[10px] font-normal text-bambu-gray">{t('ams.slotEmpty')}</span>;
+  if (kind === 'reset' || !tray) return <span className="text-xs font-normal text-bambu-gray">{t('ams.slotUnconfigured')}</span>;
+  return (
+    <span className="flex flex-col items-center gap-0.5 max-w-full">
+      <span className="flex items-center gap-1 max-w-full">
+        {tray.tray_color && (
+          <span className="w-2.5 h-2.5 shrink-0 rounded-full border border-bambu-gray/50" style={getSwatchStyle(tray.tray_color)} />
+        )}
+        <span className="text-[10px] font-normal text-white truncate">{tray.tray_type}</span>
+      </span>
+      {/* Spaces keep the button's accessible name readable ("A1 PLA 80%"). */}
+      {tray.remain >= 0 && <> <span className="text-[10px] font-normal text-bambu-gray">{tray.remain}%</span></>}
+    </span>
+  );
+}
 
 const TABS = [
   { key: 'ams' as const, Icon: Cpu, labelKey: 'inventory.qrAssign.tabAms' },
@@ -35,101 +63,6 @@ function targetLocationLabel(target: AssignTarget): string {
       ? `${target.printerName} · ${target.label}`
       : target.label
     : target.locationName;
-}
-
-/**
- * Live in-page camera scanner (primary path). Continuously decodes the preview
- * frame with BarcodeDetector (→ jsQR fallback). Fast for QRs the user can frame
- * well; the photo-capture fallback covers small/hard ones this can't focus on.
- * Callbacks go through refs so the camera starts once and survives re-renders.
- */
-function LiveScanner({
-  onDecode,
-  onError,
-  paused,
-}: {
-  onDecode: (text: string) => void;
-  onError: () => void;
-  paused: boolean;
-}) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const onDecodeRef = useRef(onDecode);
-  const onErrorRef = useRef(onError);
-  const pausedRef = useRef(paused);
-  onDecodeRef.current = onDecode;
-  onErrorRef.current = onError;
-  pausedRef.current = paused;
-
-  useEffect(() => {
-    let cancelled = false;
-    let raf = 0;
-    let stream: MediaStream | null = null;
-    let busy = false;
-    let lastScan = 0;
-    const INTERVAL_MS = 200;
-    const canvas = document.createElement('canvas'); // reused across frames
-    const decodeFrame = createFrameDecoder();
-
-    const tick = () => {
-      if (cancelled) return;
-      raf = requestAnimationFrame(tick);
-      const video = videoRef.current;
-      const now = Date.now();
-      if (!video || pausedRef.current || busy || video.readyState < video.HAVE_ENOUGH_DATA) return;
-      if (now - lastScan < INTERVAL_MS) return;
-      lastScan = now;
-      busy = true;
-      void decodeFrame(video, canvas)
-        .then((value) => {
-          if (value && !cancelled) onDecodeRef.current(value);
-        })
-        // Whatever happened to this frame, the next one gets decoded.
-        .catch(() => {})
-        .finally(() => {
-          busy = false;
-        });
-    };
-
-    const start = async () => {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        onErrorRef.current();
-        return;
-      }
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false,
-        });
-        if (cancelled) {
-          stream.getTracks().forEach((tr) => tr.stop());
-          return;
-        }
-        try {
-          await stream.getVideoTracks()[0]?.applyConstraints({ advanced: [{ focusMode: 'continuous' }] as unknown as MediaTrackConstraintSet[] });
-        } catch {
-          /* unsupported */
-        }
-        const video = videoRef.current;
-        if (!video) return;
-        video.srcObject = stream;
-        await video.play().catch(() => {});
-        raf = requestAnimationFrame(tick);
-      } catch {
-        // Permission denied / no camera / insecure context — hide the live view;
-        // the photo-capture fallback covers all of these.
-        onErrorRef.current();
-      }
-    };
-
-    void start();
-    return () => {
-      cancelled = true;
-      if (raf) cancelAnimationFrame(raf);
-      stream?.getTracks().forEach((tr) => tr.stop());
-    };
-  }, []);
-
-  return <video ref={videoRef} muted playsInline className="w-full aspect-square rounded-lg bg-black object-cover" />;
 }
 
 function externalLabel(t: (k: string) => string, vtCount: number, trayId: number): string {
@@ -154,9 +87,6 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
   const [creatingLocation, setCreatingLocation] = useState(false);
   const [target, setTarget] = useState<AssignTarget | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [decoding, setDecoding] = useState(false);
-  const [cameraFailed, setCameraFailed] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
   // Synchronous in-flight guard: mutation.isPending only updates next render.
   const inFlightRef = useRef(false);
 
@@ -169,8 +99,6 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
       setCreatingLocation(false);
       setTarget(null);
       setError(null);
-      setDecoding(false);
-      setCameraFailed(false);
       inFlightRef.current = false;
     }
   }, [isOpen]);
@@ -209,6 +137,7 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
           isHt: ams.is_ams_ht,
           isExternal: false,
           label: formatSlotLabel(ams.id, tray.id, ams.is_ams_ht, false),
+          tray,
         });
       }
     }
@@ -217,7 +146,7 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
     const externals = status.vt_tray ?? [];
     for (const vt of externals) {
       const trayId = (vt.id ?? 254) - 254;
-      out.push({ amsId: 255, trayId, isHt: false, isExternal: true, label: externalLabel(t, externals.length, trayId) });
+      out.push({ amsId: 255, trayId, isHt: false, isExternal: true, label: externalLabel(t, externals.length, trayId), tray: vt });
     }
     return out;
   }, [status, t]);
@@ -273,7 +202,7 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
 
   const printerName = printers?.find((p) => p.id === effectivePrinterId)?.name ?? '';
   const canStart = tab === 'ams' ? selectedSlot !== null && effectivePrinterId !== null : pickedLocation !== null;
-  const isBusy = decoding || assignMutation.isPending;
+  const isBusy = assignMutation.isPending;
 
   // A freshly created location may not be in the fetched list yet, so make sure
   // the current pick is always offered.
@@ -319,7 +248,6 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
     }
     setTarget(tg);
     setError(null);
-    setCameraFailed(false);
     setStep('scan');
   };
 
@@ -340,23 +268,6 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
     setError(null);
     inFlightRef.current = true;
     assignMutation.mutate({ spoolId: id, tg: target });
-  };
-
-  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ''; // allow re-picking the same file; the File is GC'd after decode
-    if (!file || !target || inFlightRef.current) return;
-    setError(null);
-    setDecoding(true);
-    try {
-      const text = await decodeImageBlob(file);
-      if (!text) setError(t('inventory.qrAssign.noQrInPhoto'));
-      else handleDecode(text);
-    } catch {
-      setError(t('inventory.qrAssign.noQrInPhoto'));
-    } finally {
-      setDecoding(false);
-    }
   };
 
   return (
@@ -441,13 +352,13 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
                             <button
                               key={`${slot.amsId}-${slot.trayId}`}
                               onClick={() => setSelectedSlot(slot)}
-                              className={`aspect-square rounded-lg border text-sm font-semibold transition-colors ${
+                              className={`aspect-square min-w-0 px-1 flex flex-col items-center justify-center gap-1 rounded-lg border text-sm font-semibold transition-colors ${
                                 isSel
                                   ? 'bg-bambu-green/20 border-bambu-green text-white'
                                   : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:border-bambu-gray'
                               }`}
                             >
-                              {slot.label}
+                              <span>{slot.label}</span> <SlotContents tray={slot.tray} />
                             </button>
                           );
                         })}
@@ -512,44 +423,12 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
               )}
             </>
           ) : (
-            <div className="space-y-3">
-              {target && (
-                <p className="text-sm text-bambu-gray">{t('inventory.qrAssign.scanningTarget', { location: targetLocationLabel(target) })}</p>
-              )}
-
-              {/* Primary: live camera scan. Hidden once it fails (no camera /
-                  permission denied) — the photo-capture fallback below covers it. */}
-              {!cameraFailed && (
-                <div className="relative">
-                  <LiveScanner onDecode={handleDecode} onError={() => setCameraFailed(true)} paused={isBusy} />
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                    <div className="w-2/3 aspect-square border-2 border-bambu-green/70 rounded-xl" />
-                  </div>
-                  {isBusy && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
-                      <Loader2 className="w-8 h-8 text-bambu-green animate-spin" />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <p className="text-xs text-bambu-gray text-center">{t('inventory.qrAssign.scanInstruction')}</p>
-
-              {/* Fallback: capture a photo with the native camera (better focus). */}
-              <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
-              <button
-                onClick={() => inputRef.current?.click()}
-                disabled={isBusy}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-gray transition-colors disabled:opacity-50"
-              >
-                {decoding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
-                <span className="text-sm font-medium">
-                  {decoding ? t('inventory.qrAssign.decoding') : t('inventory.qrAssign.takePhoto')}
-                </span>
-              </button>
-
-              {error && <p className="text-xs text-red-400 text-center">{error}</p>}
-            </div>
+            <QrSpoolScanner
+              onDecode={handleDecode}
+              busy={isBusy}
+              error={error}
+              targetLabel={target ? targetLocationLabel(target) : undefined}
+            />
           )}
         </div>
 

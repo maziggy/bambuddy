@@ -5297,6 +5297,7 @@ export default {
       scanningTarget: 'Destino: {{location}}',
       back: 'Atrás',
       invalidQr: 'Ese código QR no es una etiqueta de bobina.',
+      spoolmanLabel: 'Es una etiqueta de Spoolman, pero el inventario no usa Spoolman.',
       takePhoto: 'Hacer foto',
       noQrInPhoto: 'No se encontró ningún código QR en la foto — inténtalo de nuevo.',
       decoding: 'Leyendo…',

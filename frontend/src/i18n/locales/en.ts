@@ -5337,6 +5337,7 @@ export default {
       scanningTarget: 'Target: {{location}}',
       back: 'Back',
       invalidQr: 'That QR code is not a spool label.',
+      spoolmanLabel: 'That is a Spoolman label, but the inventory is not using Spoolman.',
       takePhoto: 'Take photo',
       noQrInPhoto: 'No QR code found in the photo — try again.',
       decoding: 'Reading…',

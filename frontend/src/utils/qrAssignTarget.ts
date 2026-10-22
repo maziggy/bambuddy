@@ -27,21 +27,54 @@ export type AssignTarget =
     };
 
 /**
- * Extract a positive integer spool id from a scanned QR payload.
- *
- * Accepts the deeplink form the label printer emits (`…/inventory?spool=42`,
- * any host/scheme), a bare query fragment (`?spool=42` / `spool=42`), or a bare
- * numeric string. Returns null for anything else — including 0, negatives, and
- * non-spool QRs — so the caller can keep scanning instead of acting on garbage.
+ * The spool a scanned label names. A Bambuddy label (`…/inventory?spool=42`)
+ * carries the id of the inventory it was printed from — built-in or Spoolman,
+ * whichever Bambuddy was using. Spoolman's own labels carry a Spoolman id:
+ * `web+spoolman:s-42`, or `…/spool/show/42` when Spoolman prints URLs.
  */
-export function parseSpoolIdFromQr(raw: string): number | null {
-  if (!raw) return null;
-  const text = raw.trim();
+export type ScannedSpool = { source: 'bambuddy' | 'spoolman'; id: number };
+
+function positiveId(text: string | null | undefined): number | null {
+  if (!text || !/^\d+$/.test(text)) return null;
+  const n = Number(text);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+/**
+ * Read a scanned QR payload. Returns null for anything that isn't a spool
+ * label — including 0, negatives, and non-spool QRs — so the caller can keep
+ * scanning instead of acting on garbage.
+ *
+ * A payload marked as Spoolman's (its scheme, or a /spool/show/ path) is read
+ * as a Spoolman label or not at all: `web+spoolman:s-x?spool=5` is not
+ * Bambuddy spool 5.
+ *
+ * A Bambuddy label is the deeplink the label printer emits (any host/scheme),
+ * a bare query fragment (`?spool=42` / `spool=42`), or a bare numeric string.
+ */
+export function parseSpoolQr(raw: string): ScannedSpool | null {
+  const text = (raw ?? '').trim();
+  if (!text) return null;
+
+  if (/^web\+spoolman:/i.test(text)) {
+    const id = positiveId(text.match(/^web\+spoolman:s-(\d+)$/i)?.[1]);
+    return id ? { source: 'spoolman', id } : null;
+  }
+  if (/\/spool\/show\//i.test(text)) {
+    let path = text;
+    try {
+      path = new URL(text).pathname;
+    } catch {
+      /* not a full URL — match the path as written */
+    }
+    const id = positiveId(path.match(/\/spool\/show\/(\d+)\/?$/i)?.[1]);
+    return id ? { source: 'spoolman', id } : null;
+  }
 
   // Whole payload is just digits.
   if (/^\d+$/.test(text)) {
-    const n = Number(text);
-    return Number.isInteger(n) && n > 0 ? n : null;
+    const id = positiveId(text);
+    return id ? { source: 'bambuddy', id } : null;
   }
 
   // Try a real URL first (handles any host/scheme + extra params).
@@ -57,10 +90,16 @@ export function parseSpoolIdFromQr(raw: string): number | null {
     const m = text.match(/(?:[?&]|\b)spool=(\d+)/);
     spoolParam = m ? m[1] : null;
   }
+  const id = positiveId(spoolParam);
+  return id ? { source: 'bambuddy', id } : null;
+}
 
-  if (spoolParam && /^\d+$/.test(spoolParam)) {
-    const n = Number(spoolParam);
-    return Number.isInteger(n) && n > 0 ? n : null;
-  }
-  return null;
+/**
+ * The id to assign in the inventory in use, or null when the label is for an
+ * inventory that isn't: a Spoolman label means nothing to the built-in one. A
+ * Bambuddy label is taken in either mode, as it carries the id of whichever
+ * inventory printed it.
+ */
+export function scannedSpoolId(spool: ScannedSpool, spoolmanMode: boolean): number | null {
+  return spool.source === 'spoolman' && !spoolmanMode ? null : spool.id;
 }

@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, QrCode, Cpu, MapPin, ArrowLeft, Camera } from 'lucide-react';
-import jsQR from 'jsqr';
 import { api } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { formatSlotLabel } from '../utils/amsHelpers';
 import { inventoryLocationsQueryKey, invalidateInventoryLocations } from '../utils/inventoryQueries';
-import { parseSpoolIdFromQr, type AssignTarget } from '../utils/qrAssignTarget';
+import { parseSpoolQr, scannedSpoolId, type AssignTarget } from '../utils/qrAssignTarget';
+import { createFrameDecoder, decodeImageBlob } from '../utils/qrDecode';
 
 interface QrAssignTargetModalProps {
   isOpen: boolean;
@@ -24,16 +24,6 @@ type SlotOption = {
   label: string;
 };
 
-// BarcodeDetector (platform QR decoder, e.g. Android Chrome) isn't in the TS DOM
-// lib yet — minimal shape for the bit we use.
-interface DetectedBarcode {
-  rawValue: string;
-}
-interface BarcodeDetectorLike {
-  detect(source: CanvasImageSource): Promise<DetectedBarcode[]>;
-}
-type BarcodeDetectorCtor = new (opts?: { formats?: string[] }) => BarcodeDetectorLike;
-
 const TABS = [
   { key: 'ams' as const, Icon: Cpu, labelKey: 'inventory.qrAssign.tabAms' },
   { key: 'storage' as const, Icon: MapPin, labelKey: 'inventory.qrAssign.tabStorage' },
@@ -45,63 +35,6 @@ function targetLocationLabel(target: AssignTarget): string {
       ? `${target.printerName} · ${target.label}`
       : target.label
     : target.locationName;
-}
-
-/**
- * Decode a QR from a captured photo. The photo is taken with the phone's native
- * camera (file input + capture) — which focuses far better than an in-page
- * getUserMedia preview — so a small/dense spool QR resolves cleanly. Prefer the
- * platform BarcodeDetector; fall back to jsQR (downscaling huge stills for speed
- * — a focused QR survives the downscale).
- */
-/**
- * Draw a frame/bitmap onto a canvas and decode a QR with jsQR. getContext is
- * guarded because jsdom (test env) throws without the canvas package; the
- * caller owns the canvas so the live loop can reuse one across frames.
- */
-function decodeCanvas(
-  canvas: HTMLCanvasElement,
-  source: CanvasImageSource,
-  w: number,
-  h: number,
-  inversionAttempts: 'dontInvert' | 'attemptBoth',
-): string | undefined {
-  if (w <= 0 || h <= 0) return undefined;
-  canvas.width = w;
-  canvas.height = h;
-  let ctx: CanvasRenderingContext2D | null = null;
-  try {
-    ctx = canvas.getContext('2d', { willReadFrequently: true });
-  } catch {
-    ctx = null;
-  }
-  if (!ctx) return undefined;
-  ctx.drawImage(source, 0, 0, w, h);
-  const img = ctx.getImageData(0, 0, w, h);
-  return jsQR(img.data, w, h, { inversionAttempts })?.data ?? undefined;
-}
-
-async function decodeImageBlob(blob: Blob): Promise<string | undefined> {
-  const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
-  try {
-    const BD = (globalThis as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
-    if (BD) {
-      try {
-        const codes = await new BD({ formats: ['qr_code'] }).detect(bitmap);
-        if (codes[0]?.rawValue) return codes[0].rawValue;
-      } catch {
-        /* BarcodeDetector present but unusable — fall through to jsQR */
-      }
-    }
-    // Downscale huge stills so jsQR stays fast — a focused QR survives it.
-    const maxSide = 1600;
-    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-    const w = Math.max(1, Math.round(bitmap.width * scale));
-    const h = Math.max(1, Math.round(bitmap.height * scale));
-    return decodeCanvas(document.createElement('canvas'), bitmap, w, h, 'attemptBoth');
-  } finally {
-    bitmap.close?.();
-  }
 }
 
 /**
@@ -135,21 +68,7 @@ function LiveScanner({
     let lastScan = 0;
     const INTERVAL_MS = 200;
     const canvas = document.createElement('canvas'); // reused across frames
-    const BD = (globalThis as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
-    let detector = BD ? new BD({ formats: ['qr_code'] }) : null;
-
-    const decode = async (video: HTMLVideoElement): Promise<string | undefined> => {
-      if (detector) {
-        try {
-          const codes = await detector.detect(video);
-          return codes[0]?.rawValue;
-        } catch {
-          detector = null; // exists but unusable — fall back to jsQR
-        }
-      }
-      // 'dontInvert' (cheapest) for the hot loop; the photo path uses 'attemptBoth'.
-      return decodeCanvas(canvas, video, video.videoWidth, video.videoHeight, 'dontInvert');
-    };
+    const decodeFrame = createFrameDecoder();
 
     const tick = () => {
       if (cancelled) return;
@@ -160,10 +79,15 @@ function LiveScanner({
       if (now - lastScan < INTERVAL_MS) return;
       lastScan = now;
       busy = true;
-      void decode(video).then((value) => {
-        if (value && !cancelled) onDecodeRef.current(value);
-        busy = false;
-      });
+      void decodeFrame(video, canvas)
+        .then((value) => {
+          if (value && !cancelled) onDecodeRef.current(value);
+        })
+        // Whatever happened to this frame, the next one gets decoded.
+        .catch(() => {})
+        .finally(() => {
+          busy = false;
+        });
     };
 
     const start = async () => {
@@ -403,9 +327,14 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
   // and fire the assignment (guarded so one scan can't assign twice).
   const handleDecode = (text: string) => {
     if (inFlightRef.current || assignMutation.isPending || !target) return;
-    const id = parseSpoolIdFromQr(text);
-    if (!id) {
+    const scanned = parseSpoolQr(text);
+    if (!scanned) {
       setError(t('inventory.qrAssign.invalidQr'));
+      return;
+    }
+    const id = scannedSpoolId(scanned, spoolmanMode);
+    if (id === null) {
+      setError(t('inventory.qrAssign.spoolmanLabel'));
       return;
     }
     setError(null);

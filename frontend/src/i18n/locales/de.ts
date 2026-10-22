@@ -5294,6 +5294,7 @@ export default {
       scanningTarget: 'Ziel: {{location}}',
       back: 'Zurück',
       invalidQr: 'Dieser QR-Code ist kein Spulenetikett.',
+      spoolmanLabel: 'Das ist ein Spoolman-Etikett, aber das Inventar nutzt Spoolman nicht.',
       takePhoto: 'Foto aufnehmen',
       noQrInPhoto: 'Kein QR-Code im Foto gefunden — versuche es erneut.',
       decoding: 'Wird gelesen…',

@@ -179,6 +179,45 @@ describe('QrAssignTargetModal', () => {
       expect(unassigned).toEqual([]);
     });
 
+    it("built-in: a Spoolman label is turned down, not read as one of the inventory's spools", async () => {
+      let requested = false;
+      server.use(
+        http.post('/api/v1/inventory/assignments', () => {
+          requested = true;
+          return HttpResponse.json({});
+        }),
+      );
+      stubPhotoDecoder('web+spoolman:s-5');
+      const onClose = vi.fn();
+      render(<QrAssignTargetModal isOpen onClose={onClose} spoolmanMode={false} />);
+
+      await openScanStepForSlotA1();
+      pickPhoto();
+
+      expect(await screen.findByText(/That is a Spoolman label/)).toBeInTheDocument();
+      expect(requested).toBe(false);
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it("Spoolman: Spoolman's own label assigns that Spoolman spool", async () => {
+      let body: unknown = null;
+      server.use(
+        http.post('/api/v1/spoolman/inventory/slot-assignments', async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json({ id: 5 });
+        }),
+      );
+      stubPhotoDecoder('https://spoolman.local/spool/show/5');
+      const onClose = vi.fn();
+      render(<QrAssignTargetModal isOpen onClose={onClose} spoolmanMode />);
+
+      await openScanStepForSlotA1();
+      pickPhoto();
+
+      await waitFor(() => expect(onClose).toHaveBeenCalled());
+      expect(body).toEqual({ spoolman_spool_id: 5, printer_id: 1, ams_id: 0, tray_id: 0, move: true });
+    });
+
     it('a failed move keeps the scan step open', async () => {
       server.use(
         http.post('/api/v1/inventory/assignments', () =>

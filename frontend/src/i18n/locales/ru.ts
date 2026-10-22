@@ -5069,6 +5069,7 @@ export default {
       scanningTarget: "Цель: {{location}}",
       back: "Назад",
       invalidQr: "Этот QR-код не является этикеткой катушки.",
+      spoolmanLabel: 'Это этикетка Spoolman, а учёт катушек не использует Spoolman.',
       takePhoto: "Сделать фото",
       noQrInPhoto: "QR-код на фото не найден — попробуйте снова.",
       decoding: "Чтение…",

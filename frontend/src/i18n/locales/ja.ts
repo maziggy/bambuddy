@@ -5293,6 +5293,7 @@ export default {
       scanningTarget: '割り当て先: {{location}}',
       back: '戻る',
       invalidQr: 'このQRコードはスプールラベルではありません。',
+      spoolmanLabel: 'これは Spoolman のラベルですが、在庫管理は Spoolman を使用していません。',
       takePhoto: '写真を撮る',
       noQrInPhoto: '写真にQRコードが見つかりませんでした — もう一度お試しください。',
       decoding: '読み取り中…',

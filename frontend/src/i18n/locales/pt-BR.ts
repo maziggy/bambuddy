@@ -5279,6 +5279,7 @@ export default {
       scanningTarget: 'Destino: {{location}}',
       back: 'Voltar',
       invalidQr: 'Esse QR code não é uma etiqueta de carretel.',
+      spoolmanLabel: 'É uma etiqueta do Spoolman, mas o inventário não usa o Spoolman.',
       takePhoto: 'Tirar foto',
       noQrInPhoto: 'Nenhum QR code encontrado na foto — tente novamente.',
       decoding: 'Lendo…',

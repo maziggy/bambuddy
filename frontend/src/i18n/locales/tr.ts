@@ -5280,6 +5280,7 @@ export default {
       scanningTarget: 'Hedef: {{location}}',
       back: 'Geri',
       invalidQr: 'Bu QR kodu bir makara etiketi değil.',
+      spoolmanLabel: 'Bu bir Spoolman etiketi, ancak envanter Spoolman kullanmıyor.',
       takePhoto: 'Fotoğraf çek',
       noQrInPhoto: 'Fotoğrafta QR kodu bulunamadı — tekrar deneyin.',
       decoding: 'Okunuyor…',

@@ -5333,6 +5333,7 @@ errors: {
       scanningTarget: 'Mål: {{location}}',
       back: 'Tillbaka',
       invalidQr: 'Den QR-koden är inte en rulletikett.',
+      spoolmanLabel: 'Det är en Spoolman-etikett, men inventariet använder inte Spoolman.',
       takePhoto: 'Ta foto',
       noQrInPhoto: 'Ingen QR-kod hittades i fotot — försök igen.',
       decoding: 'Läser…',

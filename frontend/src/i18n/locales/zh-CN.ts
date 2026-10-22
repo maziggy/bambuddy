@@ -5285,6 +5285,7 @@ export default {
       scanningTarget: '目标：{{location}}',
       back: '返回',
       invalidQr: '该二维码不是耗材标签。',
+      spoolmanLabel: '这是 Spoolman 标签，但耗材库存未使用 Spoolman。',
       takePhoto: '拍照',
       noQrInPhoto: '照片中未找到二维码 — 请重试。',
       decoding: '正在读取…',

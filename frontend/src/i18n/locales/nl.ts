@@ -5335,6 +5335,7 @@ export default {
       scanningTarget: 'Doel: {{location}}',
       back: 'Terug',
       invalidQr: 'Deze QR-code is geen spoellabel.',
+      spoolmanLabel: 'Dit is een Spoolman-label, maar de spoelvoorraad gebruikt Spoolman niet.',
       takePhoto: 'Foto maken',
       noQrInPhoto: 'Geen QR-code gevonden in de foto — probeer het opnieuw.',
       decoding: 'Bezig met lezen…',

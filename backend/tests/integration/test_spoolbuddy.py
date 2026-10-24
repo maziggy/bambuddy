@@ -712,6 +712,25 @@ class TestNfcEndpoints:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_full_uid_scan_saves_full_uid_over_cascade_level_1_link(
+        self, async_client: AsyncClient, spool_factory, db_session
+    ):
+        """A spool linked from a level-1 read (#3258) gets the full UID on its first full scan."""
+        from sqlalchemy import select
+
+        spool_id = (await spool_factory(tag_uid="8804ECE6")).id
+
+        data = await self._scan(async_client, "04ECE673D32A81", None)
+
+        assert data["spool_id"] == spool_id
+        db_session.expire_all()
+        stored = (await db_session.execute(select(Spool.tag_uid).where(Spool.id == spool_id))).scalar_one()
+        assert stored == "04ECE673D32A81"
+        # A daemon not updated yet still finds it.
+        assert (await self._scan(async_client, "8804ECE6", None))["spool_id"] == spool_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_spoolman_exact_tag_match_stores_tray_uuid_as_tag(self, async_client: AsyncClient):
         sm_spool = {
             "id": 7,

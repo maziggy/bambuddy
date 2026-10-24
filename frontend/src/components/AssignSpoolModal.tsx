@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, Loader2, Package, Search } from 'lucide-react';
+import { X, Loader2, Package, Search, QrCode, ArrowLeft } from 'lucide-react';
 import { api } from '../api/client';
 import type { InventorySpool, SpoolAssignment } from '../api/client';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
+import { QrSpoolScanner } from './QrSpoolScanner';
 import { useToast } from '../contexts/ToastContext';
 import { exactSpoolIdQuery, filterSpoolsByQuery } from '../utils/inventorySearch';
 import { getSwatchStyle, resolveSpoolColorName } from '../utils/colors';
+import { parseSpoolQr, scannedSpoolId } from '../utils/qrAssignTarget';
 import { useUiSettings } from '../hooks/useUiSettings';
 
 interface AssignSpoolModalProps {
@@ -23,8 +25,18 @@ interface AssignSpoolModalProps {
     profile?: string;
     color: string;
     location: string;
+    /**
+     * For a slot reporting no filament: getEmptySlotKind's answer. Only
+     * 'physical' (the firmware says no spool) reads as an empty slot; anything
+     * else may be a spool it can't identify (#2527).
+     */
+    emptyKind?: 'physical' | 'reset' | null;
   };
   spoolmanEnabled?: boolean;
+}
+
+function spoolSummary(spool: InventorySpool): string {
+  return [spool.brand, spool.material, spool.subtype].filter(Boolean).join(' ');
 }
 
 export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, trayInfo, spoolmanEnabled }: AssignSpoolModalProps) {
@@ -39,8 +51,15 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
     setSelectedSpoolmanSpoolId(null);
   }, [disableFiltering]);
   const [searchFilter, setSearchFilter] = useState('');
-  const [pendingAssignId, setPendingAssignId] = useState<number | null>(null);
+  // A pick waiting on the material-mismatch confirm. `move` for a scanned spool
+  // (#1574): the one in the user's hand leaves any other slot it is in.
+  const [pendingAssign, setPendingAssign] = useState<{ spoolId: number; move: boolean } | null>(null);
   const [showMismatchConfirm, setShowMismatchConfirm] = useState(false);
+  // Scanning a spool's QR instead of picking it (#1574), into this same slot.
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  // Synchronous in-flight guard: a mutation's isPending only updates next render.
+  const scanInFlightRef = useRef(false);
   // Profile-only mismatch no longer triggers the popup — the backend's
   // `apply_spool_to_slot_via_mqtt` pushes the spool's slicer profile to the
   // AMS slot on every assign anyway, so warning the user about a profile
@@ -60,6 +79,9 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
   useEffect(() => {
     if (isOpen) {
       setDisableFiltering(false);
+      setScanning(false);
+      setScanError(null);
+      scanInFlightRef.current = false;
     }
   }, [isOpen]);
 
@@ -135,13 +157,15 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
   };
 
   const assignMutation = useMutation({
-    mutationFn: (spoolId: number) =>
-      api.assignSpool({ spool_id: spoolId, printer_id: printerId, ams_id: amsId, tray_id: trayId }),
-    onSuccess: (newAssignment) => {
+    mutationFn: ({ spoolId, move }: { spoolId: number; move?: boolean }) =>
+      api.assignSpool({ spool_id: spoolId, printer_id: printerId, ams_id: amsId, tray_id: trayId, ...(move && { move }) }),
+    onSuccess: (newAssignment, { move }) => {
       // Immediately update cache so UI reflects the new assignment without waiting for refetch
       queryClient.setQueryData<SpoolAssignment[]>(['spool-assignments'], (old) => {
         const filtered = (old || []).filter(a =>
-          !(a.printer_id === printerId && a.ams_id === amsId && a.tray_id === trayId)
+          !(a.printer_id === printerId && a.ams_id === amsId && a.tray_id === trayId) &&
+          // A move took the spool out of its other slots as well.
+          !(move && a.spool_id === newAssignment.spool_id)
         );
         filtered.push(newAssignment);
         return filtered;
@@ -162,22 +186,24 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
         : 'inventory.assignSuccess';
       showToast(t(toastKey), 'success');
       setShowMismatchConfirm(false);
-      setPendingAssignId(null);
+      setPendingAssign(null);
       setMismatchDetails(null);
       onClose();
     },
     onError: (error: Error) => {
       showToast(`${t('inventory.assignFailed')}: ${error.message}`, 'error');
+      scanInFlightRef.current = false; // a scan can try again
     },
   });
 
   const assignSpoolmanMutation = useMutation({
-    mutationFn: (spoolmanSpoolId: number) =>
+    mutationFn: ({ spoolmanSpoolId, move }: { spoolmanSpoolId: number; move?: boolean }) =>
       api.assignSpoolmanSlot({
         spoolman_spool_id: spoolmanSpoolId,
         printer_id: printerId,
         ams_id: amsId,
         tray_id: trayId,
+        ...(move && { move }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
@@ -190,6 +216,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
     },
     onError: (error: Error) => {
       showToast(`${t('inventory.assignFailed')}: ${error.message}`, 'error');
+      scanInFlightRef.current = false; // a scan can try again
     },
   });
 
@@ -309,22 +336,13 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
         : t('inventory.spoolIdInOtherSlot', { id: exactSpoolId });
   }
 
-  const handleAssign = () => {
-    if (selectedSpoolmanSpoolId !== null) {
-      assignSpoolmanMutation.mutate(selectedSpoolmanSpoolId);
-      return;
-    }
-    if (!selectedSpoolId) return;
-    const selectedSpool = spools?.find((spool: InventorySpool) => spool.id === selectedSpoolId);
-    if (!selectedSpool) {
-      showToast(t('inventory.assignFailed'), 'error');
-      return;
-    }
-
+  // Assign a built-in spool, asking first when its material doesn't match the
+  // slot's. Shared by the picker and the QR scan.
+  const requestAssign = (spool: InventorySpool, move: boolean) => {
     if (!settings?.disable_filament_warnings && trayInfo) {
       const trayMaterial = trayInfo.material || trayInfo.type;
-      const materialMatchResult = checkMaterialMatch(selectedSpool.material, trayMaterial);
-      const spoolProfile = selectedSpool.slicer_filament_name || selectedSpool.slicer_filament;
+      const materialMatchResult = checkMaterialMatch(spool.material, trayMaterial);
+      const spoolProfile = spool.slicer_filament_name || spool.slicer_filament;
       const trayProfile = trayInfo.profile || trayInfo.type;
       const profileMatches = checkProfileMatch(spoolProfile, trayProfile);
 
@@ -343,10 +361,10 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
           mismatchType = 'partial';
         }
 
-        setPendingAssignId(selectedSpoolId);
+        setPendingAssign({ spoolId: spool.id, move });
         setMismatchDetails({
           type: mismatchType,
-          spoolMaterial: selectedSpool.material || '',
+          spoolMaterial: spool.material || '',
           trayMaterial: trayMaterial || '',
           spoolProfile: spoolProfile || undefined,
           trayProfile: trayProfile || undefined,
@@ -355,15 +373,97 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
         return;
       }
     }
-    assignMutation.mutate(selectedSpoolId);
+    assignMutation.mutate({ spoolId: spool.id, move });
+  };
+
+  const handleAssign = () => {
+    if (selectedSpoolmanSpoolId !== null) {
+      assignSpoolmanMutation.mutate({ spoolmanSpoolId: selectedSpoolmanSpoolId });
+      return;
+    }
+    if (!selectedSpoolId) return;
+    const selectedSpool = spools?.find((spool: InventorySpool) => spool.id === selectedSpoolId);
+    if (!selectedSpool) {
+      showToast(t('inventory.assignFailed'), 'error');
+      return;
+    }
+    requestAssign(selectedSpool, false);
   };
 
   const handleConfirmMismatch = () => {
-    if (!pendingAssignId) return;
-    assignMutation.mutate(pendingAssignId);
+    if (!pendingAssign) return;
+    assignMutation.mutate(pendingAssign);
     setShowMismatchConfirm(false);
-    setPendingAssignId(null);
+    setPendingAssign(null);
   };
+
+  const cancelMismatch = () => {
+    setShowMismatchConfirm(false);
+    setPendingAssign(null);
+    setMismatchDetails(null);
+    scanInFlightRef.current = false; // back to scanning, if that's where it came from
+  };
+
+  // A scanned label (#1574) goes to this slot — the one the dialog was opened
+  // for, so there is no target to pick. The spool is the one in the user's
+  // hand, so it moves here from any other slot; the picker's "assigned
+  // elsewhere" filter doesn't apply. The dialog closes when the assign succeeds.
+  const handleScan = (text: string) => {
+    if (scanInFlightRef.current || assignMutation.isPending || assignSpoolmanMutation.isPending) return;
+    const scanned = parseSpoolQr(text);
+    if (!scanned) {
+      setScanError(t('inventory.qrAssign.invalidQr'));
+      return;
+    }
+    const id = scannedSpoolId(scanned, !!spoolmanEnabled);
+    if (id === null) {
+      setScanError(t('inventory.qrAssign.spoolmanLabel'));
+      return;
+    }
+    if (spoolmanEnabled) {
+      // Spoolman's spool list here leaves archived spools out, so the backend,
+      // which looks the spool up itself, is the one to refuse a missing or
+      // archived spool.
+      setScanError(null);
+      scanInFlightRef.current = true;
+      assignSpoolmanMutation.mutate({ spoolmanSpoolId: id, move: true });
+      return;
+    }
+    const spool = spools?.find((s: InventorySpool) => s.id === id);
+    if (!spool) {
+      setScanError(t('inventory.spoolIdNotFound', { id }));
+      return;
+    }
+    if (spool.archived_at) {
+      setScanError(t('inventory.spoolIdArchived', { id }));
+      return;
+    }
+    setScanError(null);
+    scanInFlightRef.current = true;
+    requestAssign(spool, true);
+  };
+
+  const stopScanning = () => {
+    setScanning(false);
+    setScanError(null);
+    scanInFlightRef.current = false;
+  };
+
+  const isAssigning = assignMutation.isPending || assignSpoolmanMutation.isPending;
+
+  // What the slot holds now, for the context box: the spool assigned to it,
+  // else what the printer reports there.
+  const currentSpool: { id: number; spool?: InventorySpool } | null = (() => {
+    if (spoolmanEnabled) {
+      const row = allSpoolmanAssignments?.find(a => a.printer_id === printerId && a.ams_id === amsId && a.tray_id === trayId);
+      return row ? { id: row.spoolman_spool_id, spool: spoolmanSpools?.find(s => s.id === row.spoolman_spool_id) } : null;
+    }
+    const row = assignments?.find(a => a.printer_id === printerId && a.ams_id === amsId && a.tray_id === trayId);
+    return row ? { id: row.spool_id, spool: row.spool ?? spools?.find(s => s.id === row.spool_id) } : null;
+  })();
+  // No filament reported is an empty slot only when the firmware says so; a
+  // spool it can't identify reports none too (#2527).
+  const physicalLabel = trayInfo?.type || (trayInfo?.emptyKind === 'physical' ? t('ams.emptySlot') : t('ams.emptySlotReset'));
 
   return (
     <>
@@ -377,8 +477,10 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
           <div className="flex items-center gap-2">
-            <Package className="w-5 h-5 text-bambu-green" />
-            <h2 className="text-lg font-semibold text-white">{t('inventory.assignSpool')}</h2>
+            {scanning ? <QrCode className="w-5 h-5 text-bambu-green" /> : <Package className="w-5 h-5 text-bambu-green" />}
+            <h2 className="text-lg font-semibold text-white">
+              {scanning ? t('inventory.qrAssign.scanTitle') : t('inventory.assignSpool')}
+            </h2>
           </div>
           <button
             onClick={onClose}
@@ -390,7 +492,8 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
 
         {/* Content */}
         <div className="p-4 space-y-4 overflow-y-auto">
-          {/* Tray info */}
+          {/* Tray info: the slot being filled, what the printer reports in it,
+              and the spool assigned to it now. */}
           {trayInfo && (
             <div className="p-3 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary">
               <p className="text-xs text-bambu-gray mb-1">{t('inventory.selectSpool')}:</p>
@@ -401,22 +504,47 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                     style={getSwatchStyle(trayInfo.color)}
                   />
                 )}
-                <span className="text-white font-medium">{trayInfo.type || t('ams.emptySlot')}</span>
+                <span className="text-white font-medium">{physicalLabel}</span>
                 <span className="text-bambu-gray">({trayInfo.location})</span>
               </div>
+              {currentSpool && (
+                <p className="mt-1 text-xs text-bambu-gray truncate">
+                  {t('inventory.assigned')}:{' '}
+                  <span className="text-white">
+                    #{currentSpool.id}
+                    {currentSpool.spool ? ` ${spoolSummary(currentSpool.spool)}` : ''}
+                  </span>
+                </p>
+              )}
             </div>
           )}
 
-          {/* Search filter */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray" />
-            <input
-              type="text"
-              value={searchFilter}
-              onChange={(e) => setSearchFilter(e.target.value)}
-              placeholder={t('inventory.searchSpools')}
-              className="w-full pl-9 pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray focus:outline-none focus:border-bambu-green"
-            />
+          {scanning ? (
+            <QrSpoolScanner onDecode={handleScan} busy={isAssigning || showMismatchConfirm} error={scanError} />
+          ) : (
+          <>
+          {/* Search filter, and scanning the spool's QR instead (#1574) */}
+          <div className="flex flex-wrap gap-2">
+            <div className="relative flex-1 min-w-[12rem]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray" />
+              <input
+                type="text"
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                placeholder={t('inventory.searchSpools')}
+                className="w-full pl-9 pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray focus:outline-none focus:border-bambu-green"
+              />
+            </div>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setScanError(null);
+                setScanning(true);
+              }}
+            >
+              <QrCode className="w-4 h-4" />
+              <span className="whitespace-nowrap">{t('inventory.qrAssign.scanTitle')}</span>
+            </Button>
           </div>
 
           {/* Spool list */}
@@ -562,9 +690,21 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
               </>
             )}
           </div>
+          </>
+          )}
         </div>
 
-        {/* Footer with filtering toggle */}
+        {/* Footer: Back returns from the scan to the picker; the dialog itself
+            closes once an assign succeeds. */}
+        {scanning ? (
+          <div className="flex justify-start p-4 border-t border-bambu-dark-tertiary">
+            <Button variant="secondary" onClick={stopScanning} disabled={isAssigning}>
+              <ArrowLeft className="w-4 h-4" />
+              {t('inventory.qrAssign.back')}
+            </Button>
+          </div>
+        ) : (
+        /* Footer with filtering toggle */
         <div className="flex justify-between items-center p-4 border-t border-bambu-dark-tertiary">
           <div className="flex items-center gap-2">
             <input
@@ -600,6 +740,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
             </Button>
           </div>
         </div>
+        )}
 
 
         {assignMutation.isError && (
@@ -611,7 +752,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
       </div>
       </div>
 
-      {showMismatchConfirm && trayInfo && selectedSpoolId && mismatchDetails && (() => {
+      {showMismatchConfirm && trayInfo && pendingAssign && mismatchDetails && (() => {
         let message = '';
 
         if (mismatchDetails.type === 'material') {
@@ -666,11 +807,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
             isLoading={assignMutation.isPending}
             onConfirm={handleConfirmMismatch}
             onCancel={() => {
-              if (!assignMutation.isPending) {
-                setShowMismatchConfirm(false);
-                setPendingAssignId(null);
-                setMismatchDetails(null);
-              }
+              if (!assignMutation.isPending) cancelMismatch();
             }}
           />
         );

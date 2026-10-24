@@ -2,6 +2,7 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { api } from '../api/client';
 import { useTheme } from '../contexts/ThemeContext';
+import { formatDuration } from '../utils/date';
 
 const FALLBACK_ACCENT = '#00ae42'; // Bambuddy green, if --accent can't be read (e.g. jsdom)
 
@@ -100,7 +101,7 @@ function setFavicon(dataUrl: string | null, originals: Map<HTMLLinkElement, stri
  * Mounted once, globally, inside WebSocketProvider.
  */
 export function usePrintProgressTitle() {
-  const { progressInTitle, resolvedMode, darkAccent, lightAccent } = useTheme();
+  const { progressInTitle, tabDisplay, resolvedMode, darkAccent, lightAccent } = useTheme();
   // Re-draw the ring when the active accent changes.
   const accent = resolvedMode === 'dark' ? darkAccent : lightAccent;
 
@@ -132,10 +133,14 @@ export function usePrintProgressTitle() {
 
   const active = progressInTitle ? pickActivePrint(statusQueries.map((q) => q.data)) : null;
   const pct = active && active.progress != null ? Math.round(active.progress) : null;
+  const remaining = active?.remaining_time;
+  const titleValue = pct == null ? null : tabDisplay === 'time' && remaining != null && Number.isFinite(remaining) && remaining > 0
+    ? formatDuration(remaining * 60)
+    : `${pct}%`;
 
   useEffect(() => {
     if (progressInTitle && pct != null) {
-      document.title = `${pct}% · ${defaultTitleRef.current}`;
+      document.title = `${titleValue} · ${defaultTitleRef.current}`;
       setFavicon(drawProgressFavicon(pct), originalsRef.current);
       ownsRef.current = true;
     } else if (ownsRef.current) {
@@ -145,7 +150,7 @@ export function usePrintProgressTitle() {
       ownsRef.current = false;
     }
     // else: never owned the tab → leave it entirely alone.
-  }, [progressInTitle, pct, accent]);
+  }, [progressInTitle, pct, titleValue, accent]);
 
   // Restore the tab to defaults on unmount, but only if we own it.
   useEffect(() => {

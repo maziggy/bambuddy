@@ -871,13 +871,63 @@ async def get_homeassistant_settings(db: AsyncSession) -> dict:
     }
 
 
+def _copy_sqlite_database(src: Path, dest: Path) -> None:
+    """Copy the live SQLite database through SQLite's backup API.
+
+    Runs in a worker thread, so the app keeps writing while it copies. A plain
+    file copy could then catch the main file in the middle of a checkpoint; the
+    backup API copies one consistent snapshot instead.
+    """
+    import sqlite3
+
+    source = sqlite3.connect(src)
+    try:
+        target = sqlite3.connect(dest)
+        try:
+            source.backup(target)
+        finally:
+            target.close()
+    finally:
+        source.close()
+
+
+def _copy_backup_dirs(dirs_to_backup: list[tuple[str, Path]], temp_path: Path) -> None:
+    """Copy the data directories into the backup staging folder (worker thread)."""
+    import shutil
+
+    for name, src_dir in dirs_to_backup:
+        if src_dir.exists() and any(src_dir.iterdir()):
+            try:
+                shutil.copytree(
+                    src_dir, temp_path / name
+                )  # SEC-PATH-OK: name iterates the dirs_to_backup tuple of constant strings ("archive", "virtual_printer", ...)
+            except shutil.Error as e:
+                logger.warning("Some files in %s could not be copied: %s", name, e)
+            except PermissionError as e:
+                logger.warning("Permission denied copying %s: %s", name, e)
+
+
+def _write_backup_zip(temp_path: Path, zip_file: Path) -> None:
+    """Deflate the staging folder into the backup ZIP (worker thread)."""
+    with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file_path in temp_path.rglob("*"):
+            if file_path.is_file():
+                arcname = file_path.relative_to(temp_path)
+                zf.write(file_path, arcname)
+
+
 async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]:
     """Create a complete backup ZIP (database + all data directories).
 
     If output_path is given, the ZIP is written there.
     Otherwise a temporary file is created (caller must clean up).
     Returns (zip_path, filename).
+
+    Copying the archive and deflating the ZIP can take minutes on a large
+    install, so that file work runs in worker threads. On the event loop it
+    stalled the whole app for as long: no printer status, no queue, no API.
     """
+    import asyncio
     import shutil
     import tempfile
 
@@ -886,8 +936,11 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
     base_dir = app_settings.base_dir
     filename = f"bambuddy-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
+    # Not a `with` block: its exit would delete the staged copy of the archive
+    # on the event loop again.
+    temp_dir = tempfile.TemporaryDirectory()
+    try:
+        temp_path = Path(temp_dir.name)
 
         if is_sqlite():
             from sqlalchemy import text
@@ -901,7 +954,7 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
                 await conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
 
             # Copy database file
-            shutil.copy2(db_path, temp_path / "bambuddy.db")
+            await asyncio.to_thread(_copy_sqlite_database, db_path, temp_path / "bambuddy.db")
         else:
             # PostgreSQL: export to a portable SQLite file via SQLAlchemy.
             # This makes backups restorable on both SQLite and Postgres installs.
@@ -928,11 +981,13 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             # renders as BLOB, so OIDC icon bytes survive the round trip.
             schema_engine = create_sync_engine(f"sqlite:///{backup_db_path}")
             try:
-                metadata.create_all(schema_engine)
+                await asyncio.to_thread(metadata.create_all, schema_engine)
             finally:
                 schema_engine.dispose()
 
-            dst = sqlite3.connect(str(backup_db_path))
+            # The inserts and the commit run in worker threads, one at a time,
+            # so the connection must not be tied to the thread that opened it.
+            dst = sqlite3.connect(str(backup_db_path), check_same_thread=False)
 
             # Export data from Postgres to SQLite
             async with engine.connect() as conn:
@@ -949,9 +1004,9 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
                     def _serialize_row(row):
                         return tuple(json.dumps(v) if isinstance(v, (list, dict)) else v for v in row)
 
-                    dst.executemany(insert_sql, [_serialize_row(row) for row in rows])
+                    await asyncio.to_thread(dst.executemany, insert_sql, [_serialize_row(row) for row in rows])
 
-            dst.commit()
+            await asyncio.to_thread(dst.commit)
             dst.close()
             logger.info("PostgreSQL backup exported to portable SQLite format")
 
@@ -965,16 +1020,7 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             ("overlay-branding", base_dir / "overlay-branding"),
         ]
 
-        for name, src_dir in dirs_to_backup:
-            if src_dir.exists() and any(src_dir.iterdir()):
-                try:
-                    shutil.copytree(
-                        src_dir, temp_path / name
-                    )  # SEC-PATH-OK: name iterates the dirs_to_backup tuple of constant strings ("archive", "virtual_printer", ...)
-                except shutil.Error as e:
-                    logger.warning("Some files in %s could not be copied: %s", name, e)
-                except PermissionError as e:
-                    logger.warning("Permission denied copying %s: %s", name, e)
+        await asyncio.to_thread(_copy_backup_dirs, dirs_to_backup, temp_path)
 
         # Say which version made this, so a restore that cannot import it can
         # name the versions rather than a list of columns. Backups from before
@@ -1018,11 +1064,9 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             os.close(fd)
             zip_file = Path(tmp)
 
-        with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED) as zf:
-            for file_path in temp_path.rglob("*"):
-                if file_path.is_file():
-                    arcname = file_path.relative_to(temp_path)
-                    zf.write(file_path, arcname)
+        await asyncio.to_thread(_write_backup_zip, temp_path, zip_file)
+    finally:
+        await asyncio.to_thread(temp_dir.cleanup)
 
     return zip_file, filename
 

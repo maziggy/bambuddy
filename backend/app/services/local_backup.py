@@ -196,7 +196,9 @@ class LocalBackupService:
 
                 from backend.app.api.routes.settings import create_backup_zip
 
-                zip_path, filename = await create_backup_zip(output_path=backup_dir)
+                # Waits for a backup download that is running, rather than
+                # staging a second copy of the archive next to it.
+                zip_path, filename = await create_backup_zip(output_path=backup_dir, wait=True)
             except OSError as e:
                 # A raw "[Errno 30] Read-only file system" sends people off to check
                 # folder permissions, which is exactly where the answer is not (#2544).

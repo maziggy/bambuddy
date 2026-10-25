@@ -12,13 +12,13 @@ import json
 import logging
 import re
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from datetime import datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select, text, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -56,6 +56,7 @@ from backend.app.schemas.spool import SpoolFilamentPresetBase, SpoolKProfileBase
 from backend.app.schemas.spoolman import SlotAmsId, SlotTrayId, SpoolmanFilamentPatch, SpoolmanSlotAssignmentEnriched
 from backend.app.schemas.supplier import SpoolSupplierLinkInput
 from backend.app.services import filament_profile_default as profile_defaults, slot_unlink_grace, spool_swaps
+from backend.app.services.ams_assignment_lock import get_spool_move_lock
 from backend.app.services.location_service import (
     enrich_spool_dicts_with_location_id,
     maybe_sync_spoolman_locations,
@@ -1898,60 +1899,67 @@ async def assign_spoolman_slot(
     # A move (#1574) takes the spool out of every other slot it holds, in the
     # same commit as the upsert below, so a failed move leaves it where it was
     # instead of in no slot. Its fallback tag for a slot it leaves is cleared
-    # first. A slot on a printer outside the caller's scope stays assigned, as
-    # unassigning leaves it (#1727).
+    # first. Moves of one spool take turns (get_spool_move_lock): on PostgreSQL
+    # a move's DELETE doesn't see the slot another move inserts and commits
+    # after it began, and both left the spool assigned. A slot on a printer
+    # outside the caller's scope stays assigned, as unassigning leaves it
+    # (#1727).
+    target = (body.printer_id, body.ams_id, body.tray_id)
+    slot_columns = (SpoolmanSlotAssignment.printer_id, SpoolmanSlotAssignment.ams_id, SpoolmanSlotAssignment.tray_id)
+    others = [SpoolmanSlotAssignment.spoolman_spool_id == body.spoolman_spool_id, tuple_(*slot_columns) != target]
+    if (in_scope := printer_scope.where_strict(SpoolmanSlotAssignment.printer_id)) is not None:
+        others.append(in_scope)
     vacated: list[tuple[int, int, int]] = []
-    vacated_ids: list[int] = []
     cleared_tag: str | None = None
-    if body.move:
-        held = select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == body.spoolman_spool_id)
-        if (clause := printer_scope.where_strict(SpoolmanSlotAssignment.printer_id)) is not None:
-            held = held.where(clause)
-        for row in (await db.execute(held)).scalars().all():
-            if (row.printer_id, row.ams_id, row.tray_id) != (body.printer_id, body.ams_id, body.tray_id):
-                vacated.append((row.printer_id, row.ams_id, row.tray_id))
-                vacated_ids.append(row.id)
-        cleared_tag = await _clear_vacated_slot_fallback_tag(
-            client, db, spool_id=body.spoolman_spool_id, spool=spool, vacated=vacated
-        )
+    async with get_spool_move_lock("spoolman", body.spoolman_spool_id) if body.move else nullcontext():
+        if body.move:
+            vacated = list((await db.execute(select(*slot_columns).where(*others))).tuples())
+            cleared_tag = await _clear_vacated_slot_fallback_tag(
+                client, db, spool_id=body.spoolman_spool_id, spool=spool, vacated=vacated
+            )
 
-    # Spool confirmed in Spoolman — upsert into local slot-assignment table
-    # assigned_at is intentionally not refreshed on re-assign (original timestamp preserved)
-    try:
-        if vacated_ids:
-            await db.execute(delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.id.in_(vacated_ids)))
-        await db.execute(
-            text(
-                "INSERT INTO spoolman_slot_assignments"
-                " (printer_id, ams_id, tray_id, spoolman_spool_id)"
-                " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
-                " ON CONFLICT(printer_id, ams_id, tray_id)"
-                " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
-            ),
-            {
-                "printer_id": body.printer_id,
-                "ams_id": body.ams_id,
-                "tray_id": body.tray_id,
-                "spool_id": body.spoolman_spool_id,
-            },
-        )
-        await spool_swaps.record_assignment(
-            db, body.printer_id, body.ams_id, body.tray_id, body.spoolman_spool_id, spool_swaps.SPOOLMAN
-        )
-        await db.commit()
-        slot_unlink_grace.forget_slot(body.printer_id, body.ams_id, body.tray_id)
-    except Exception as exc:
-        await db.rollback()
-        logger.error("Failed to persist slot assignment: %s", exc)
-        if cleared_tag:
-            # The spool stays in its old slot, so it gets that slot's tag back.
-            try:
-                await client.merge_spool_extra(body.spoolman_spool_id, {"tag": json.dumps(cleared_tag)})
-            except (SpoolmanClientError, SpoolmanUnavailableError, SpoolmanNotFoundError) as restore_exc:
-                logger.warning(
-                    "Could not put back the fallback tag of Spoolman spool %s: %s", body.spoolman_spool_id, restore_exc
-                )
-        raise HTTPException(status_code=500, detail="Failed to save slot assignment") from exc
+        # Spool confirmed in Spoolman — upsert into local slot-assignment table
+        # assigned_at is intentionally not refreshed on re-assign (original timestamp preserved)
+        try:
+            if body.move:
+                # Every other slot of the spool, not only those read above: a
+                # link or the AMS sync may have given it one more meanwhile.
+                result = await db.execute(delete(SpoolmanSlotAssignment).where(*others).returning(*slot_columns))
+                vacated = list(result.tuples())
+            await db.execute(
+                text(
+                    "INSERT INTO spoolman_slot_assignments"
+                    " (printer_id, ams_id, tray_id, spoolman_spool_id)"
+                    " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
+                    " ON CONFLICT(printer_id, ams_id, tray_id)"
+                    " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
+                ),
+                {
+                    "printer_id": body.printer_id,
+                    "ams_id": body.ams_id,
+                    "tray_id": body.tray_id,
+                    "spool_id": body.spoolman_spool_id,
+                },
+            )
+            await spool_swaps.record_assignment(
+                db, body.printer_id, body.ams_id, body.tray_id, body.spoolman_spool_id, spool_swaps.SPOOLMAN
+            )
+            await db.commit()
+            slot_unlink_grace.forget_slot(body.printer_id, body.ams_id, body.tray_id)
+        except Exception as exc:
+            await db.rollback()
+            logger.error("Failed to persist slot assignment: %s", exc)
+            if cleared_tag:
+                # The spool stays in its old slot, so it gets that slot's tag back.
+                try:
+                    await client.merge_spool_extra(body.spoolman_spool_id, {"tag": json.dumps(cleared_tag)})
+                except (SpoolmanClientError, SpoolmanUnavailableError, SpoolmanNotFoundError) as restore_exc:
+                    logger.warning(
+                        "Could not put back the fallback tag of Spoolman spool %s: %s",
+                        body.spoolman_spool_id,
+                        restore_exc,
+                    )
+            raise HTTPException(status_code=500, detail="Failed to save slot assignment") from exc
     if vacated:
         logger.info(
             "Moved Spoolman spool %d to printer %d AMS%d-T%d from %s",
@@ -1961,6 +1969,10 @@ async def assign_spoolman_slot(
             body.tray_id,
             ", ".join(f"printer {p} AMS{a}-T{t}" for p, a, t in vacated),
         )
+    # Other tabs and the SpoolBuddy kiosk follow slot changes over the
+    # websocket, as the built-in assign announces them: the slots the spool
+    # left, and the one it went to.
+    await _announce_freed_slots([*vacated, target])
 
     # #1457: clear stale fallback-tag links on OTHER spools still bound to this
     # slot. Without this, a non-RFID slot's deterministic fallback tag stays

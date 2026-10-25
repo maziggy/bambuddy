@@ -48,7 +48,7 @@ async def preview_archive_purge(
             "hard-delete). #1390."
         ),
     ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = Depends(require_permission_if_auth_enabled(Permission.ARCHIVES_PURGE)),
 ):
     """Count + size of archives eligible for purge. Read-only."""
@@ -59,7 +59,7 @@ async def preview_archive_purge(
 @router.post("/purge", response_model=ArchivePurgeResponse)
 async def execute_archive_purge(
     body: ArchivePurgeRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = Depends(require_permission_if_auth_enabled(Permission.ARCHIVES_PURGE)),
 ):
     """Bulk-delete archives older than the threshold.
@@ -78,7 +78,7 @@ async def execute_archive_purge(
 
 @router.get("/purge/settings", response_model=ArchivePurgeSettings)
 async def get_archive_purge_settings(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = Depends(require_permission_if_auth_enabled(Permission.ARCHIVES_PURGE)),
 ):
     cfg = await archive_purge_service.get_settings(db)
@@ -88,7 +88,7 @@ async def get_archive_purge_settings(
 @router.put("/purge/settings", response_model=ArchivePurgeSettings)
 async def update_archive_purge_settings(
     body: ArchivePurgeSettings,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = Depends(require_permission_if_auth_enabled(Permission.ARCHIVES_PURGE)),
 ):
     if body.days < MIN_AUTO_PURGE_DAYS or body.days > MAX_AUTO_PURGE_DAYS:

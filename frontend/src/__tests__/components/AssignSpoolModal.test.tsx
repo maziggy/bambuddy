@@ -505,6 +505,28 @@ describe('AssignSpoolModal — Spoolman enabled (T-Gap 7)', () => {
     expect(screen.queryByText(/Polymaker/)).not.toBeInTheDocument();
   });
 
+  it('refreshes the slots it filters "assigned elsewhere" by after an assignment', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    (api.assignSpoolmanSlot as ReturnType<typeof vi.fn>).mockResolvedValue({});
+    const slotsCall = api.getSpoolmanSlotAssignments as ReturnType<typeof vi.fn>;
+    render(
+      <AssignSpoolModal
+        {...defaultProps}
+        spoolmanEnabled
+        trayInfo={{ type: 'PETG', material: 'PETG', profile: 'PETG HF', color: '0000FF', location: 'AMS 1 - Slot 1' }}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText(/Bambu Lab/)).toBeInTheDocument());
+    const before = slotsCall.mock.calls.length;
+    await user.click(screen.getByText(/Bambu Lab/));
+    await user.click(screen.getByRole('button', { name: /assign spool/i }));
+
+    await waitFor(() => expect(api.assignSpoolmanSlot).toHaveBeenCalled());
+    await waitFor(() => expect(slotsCall.mock.calls.length).toBeGreaterThan(before));
+  });
+
   it('hides archived Spoolman spools', async () => {
     const archivedSpool = { ...spoolmanSpool, id: 201, brand: 'Prusa', archived_at: '2025-01-01T00:00:00Z' };
     (api.getSpoolmanInventorySpools as ReturnType<typeof vi.fn>).mockResolvedValue([spoolmanSpool, archivedSpool]);

@@ -32,6 +32,7 @@ import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useCancellableTimeout } from '../hooks/useCancellableTimeout';
+import { kprofileWriteToast, writeUnconfirmed } from '../utils/kprofileWrite';
 
 interface KProfileCardProps {
   profile: KProfile;
@@ -269,7 +270,8 @@ function KProfileModal({
     },
     onSuccess: (result, variables) => {
       console.log('[KProfile] Save success:', result);
-      showToast(t('kProfiles.toast.profileSaved'));
+      const toast = kprofileWriteToast(result, 'kProfiles.toast.profileSaved');
+      showToast(t(toast.key), toast.type);
       // Save note if it changed (including clearing it)
       if (onSaveNote && note !== initialNote) {
         let profileKey: string;
@@ -310,7 +312,8 @@ function KProfileModal({
     },
     onSuccess: (result) => {
       console.log('[KProfile] Delete success:', result);
-      showToast(t('kProfiles.toast.profileDeleted'));
+      const toast = kprofileWriteToast(result, 'kProfiles.toast.profileDeleted');
+      showToast(t(toast.key), toast.type);
       // Show syncing indicator while printer processes the command
       setIsSyncing(true);
       // Add longer delay for delete - printer needs more time to process
@@ -423,8 +426,9 @@ function KProfileModal({
     console.log(`[KProfile] Saving ${batchPayload.length} profiles in batch:`, batchPayload);
 
     try {
-      await api.setKProfilesBatch(printerId, batchPayload);
-      showToast(t('kProfiles.toast.profilesSaved', { count: selectedExtruders.length }));
+      const result = await api.setKProfilesBatch(printerId, batchPayload);
+      const toast = kprofileWriteToast(result, 'kProfiles.toast.profilesSaved');
+      showToast(t(toast.key, { count: selectedExtruders.length }), toast.type);
       // Save note for new batch profiles
       if (onSaveNote && note) {
         const profileKey = `name_${name}_${resolvedFilamentId}`;
@@ -1139,11 +1143,12 @@ export function KProfilesView() {
 
         // Import profiles one by one
         let imported = 0;
+        let unconfirmed = 0;
         for (const p of data.profiles) {
           if (!p.name || !p.k_value || !p.filament_id) continue;
 
           try {
-            await api.setKProfile(selectedPrinter!, {
+            const result = await api.setKProfile(selectedPrinter!, {
               name: p.name,
               k_value: parseFloat(p.k_value).toFixed(6),
               filament_id: p.filament_id,
@@ -1156,6 +1161,7 @@ export function KProfilesView() {
               slot_id: 0, // Always create new
             });
             imported++;
+            if (writeUnconfirmed(result)) unconfirmed++;
             // Small delay between imports
             await new Promise(resolve => setTimeout(resolve, 500));
           } catch (err) {
@@ -1164,6 +1170,7 @@ export function KProfilesView() {
         }
 
         showToast(t('kProfiles.toast.importedProfiles', { count: imported, total: data.profiles.length }));
+        if (unconfirmed > 0) showToast(t('kProfiles.toast.writesUnconfirmed', { count: unconfirmed }), 'warning');
         refetchProfiles();
       } catch (err) {
         console.error('Import error:', err);
@@ -1203,9 +1210,10 @@ export function KProfilesView() {
     setBulkDeleteInProgress(true);
 
     let deleted = 0;
+    let unconfirmed = 0;
     for (const profile of profilesToDelete) {
       try {
-        await api.deleteKProfile(selectedPrinter!, {
+        const result = await api.deleteKProfile(selectedPrinter!, {
           slot_id: profile.slot_id,
           extruder_id: profile.extruder_id,
           nozzle_id: profile.nozzle_id,
@@ -1214,6 +1222,7 @@ export function KProfilesView() {
           setting_id: profile.setting_id,
         });
         deleted++;
+        if (writeUnconfirmed(result)) unconfirmed++;
         // Small delay between deletes
         await new Promise(resolve => setTimeout(resolve, 300));
       } catch (err) {
@@ -1222,6 +1231,7 @@ export function KProfilesView() {
     }
 
     showToast(t('kProfiles.toast.profilesDeleted', { count: deleted }));
+    if (unconfirmed > 0) showToast(t('kProfiles.toast.writesUnconfirmed', { count: unconfirmed }), 'warning');
     setBulkDeleteInProgress(false);
     setShowBulkDeleteConfirm(false);
     setSelectionMode(false);

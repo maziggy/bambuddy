@@ -15,6 +15,7 @@ import {
 import { api, type AMSHistoryResponse } from '../api/client';
 import { parseUTCDate, applyTimeFormat, type TimeFormat } from '../utils/date';
 import { useTranslation } from 'react-i18next';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 interface AMSHistoryModalProps {
   isOpen: boolean;
@@ -55,10 +56,7 @@ export function AMSHistoryModal({
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
   const [mode, setMode] = useState<'humidity' | 'temperature'>(initialMode);
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
 
   const timeFormat: TimeFormat = settings?.time_format || 'system';
 

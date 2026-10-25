@@ -10,6 +10,7 @@ from backend.app import main as main_module
 def clear_kill_switch_state():
     main_module._kill_switch_setting_cache = None
     main_module._unauthorized_print_kill_sent.clear()
+    main_module._kill_switch_stopped.clear()
     main_module._kill_switch_notification_tasks.clear()
     main_module._expected_prints.clear()
     main_module._active_prints.clear()
@@ -20,6 +21,7 @@ def clear_kill_switch_state():
         if not task.done():
             task.cancel()
     main_module._unauthorized_print_kill_sent.clear()
+    main_module._kill_switch_stopped.clear()
     main_module._kill_switch_notification_tasks.clear()
     main_module._expected_prints.clear()
     main_module._active_prints.clear()
@@ -93,6 +95,10 @@ async def test_unauthorized_active_print_triggers_stop(monkeypatch):
         tray_now=255,
         door_open=False,
         ams_filament_backup=False,
+        firmware_version=None,
+        developer_mode=None,
+        airduct_mode=0,
+        print_ams_mapping=None,
         current_print=None,
         subtask_name="foreign_job",
         subtask_id="external-task-1",
@@ -105,6 +111,8 @@ async def test_unauthorized_active_print_triggers_stop(monkeypatch):
     assert stop_calls == [7]
     unauthorized.assert_awaited_once()
     assert 7 in main_module._unauthorized_print_kill_sent
+    # Its completion is archived as a cancel with the kill switch as reason.
+    assert 7 in main_module._kill_switch_stopped
     broadcast.assert_awaited_once_with(
         {
             "type": "kill_switch_triggered",
@@ -186,6 +194,10 @@ async def test_bambuddy_authorized_print_is_not_stopped(monkeypatch):
         tray_now=255,
         door_open=False,
         ams_filament_backup=False,
+        firmware_version=None,
+        developer_mode=None,
+        airduct_mode=0,
+        print_ams_mapping=None,
         current_print=None,
         subtask_name="foreign_job",
         gcode_file="foreign_job.gcode",
@@ -271,6 +283,10 @@ async def test_unauthorized_print_state_is_cleared_when_print_ends(monkeypatch):
         tray_now=255,
         door_open=False,
         ams_filament_backup=False,
+        firmware_version=None,
+        developer_mode=None,
+        airduct_mode=0,
+        print_ams_mapping=None,
         current_print=None,
         subtask_name="foreign_job",
         subtask_id="external-task-1",
@@ -301,6 +317,10 @@ async def test_unauthorized_print_state_is_cleared_when_print_ends(monkeypatch):
         tray_now=255,
         door_open=False,
         ams_filament_backup=False,
+        firmware_version=None,
+        developer_mode=None,
+        airduct_mode=0,
+        print_ams_mapping=None,
         current_print=None,
         subtask_name="",
         subtask_id=None,
@@ -385,6 +405,10 @@ async def test_persisted_print_is_authorized_after_restart(monkeypatch, printer_
         tray_now=255,
         door_open=False,
         ams_filament_backup=False,
+        firmware_version=None,
+        developer_mode=None,
+        airduct_mode=0,
+        print_ams_mapping=None,
         current_print=None,
         subtask_name="owned_job",
         subtask_id="bambuddy-task-123",

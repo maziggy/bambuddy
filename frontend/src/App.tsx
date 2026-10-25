@@ -10,8 +10,10 @@ import { ToastProvider } from './contexts/ToastContext';
 import { SliceJobTrackerProvider } from './contexts/SliceJobTrackerContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ColorCatalogProvider } from './contexts/ColorCatalogContext';
+import { EmbeddedCameraProvider } from './contexts/EmbeddedCameraContext';
 import { SpoolBuddyLayout } from './components/spoolbuddy/SpoolBuddyLayout';
 import { PageLoading } from './components/PageLoading';
+import { AuthRetrying } from './components/AuthRetrying';
 import { lazyPage } from './utils/lazyPage';
 
 // Every page loads as its own file when first opened (#3175).
@@ -44,7 +46,6 @@ const GCodeViewerPage = lazyPage(() => import('./pages/GCodeViewerPage'), 'GCode
 const SpoolBuddyDashboard = lazyPage(() => import('./pages/spoolbuddy/SpoolBuddyDashboard'), 'SpoolBuddyDashboard');
 const SpoolBuddyAmsPage = lazyPage(() => import('./pages/spoolbuddy/SpoolBuddyAmsPage'), 'SpoolBuddyAmsPage');
 const SpoolBuddySettingsPage = lazyPage(() => import('./pages/spoolbuddy/SpoolBuddySettingsPage'), 'SpoolBuddySettingsPage');
-const SpoolBuddyCalibrationPage = lazyPage(() => import('./pages/spoolbuddy/SpoolBuddyCalibrationPage'), 'SpoolBuddyCalibrationPage');
 const SpoolBuddyWriteTagPage = lazyPage(() => import('./pages/spoolbuddy/SpoolBuddyWriteTagPage'), 'SpoolBuddyWriteTagPage');
 const SpoolBuddyInventoryPage = lazyPage(() => import('./pages/spoolbuddy/SpoolBuddyInventoryPage'), 'SpoolBuddyInventoryPage');
 
@@ -102,12 +103,18 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { authEnabled, loading, user } = useAuth();
+export function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { authEnabled, loading, user, authUnconfirmed } = useAuth();
   const location = useLocation();
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+
+  // A stored sign-in the server couldn't check yet: wait here, so a kiosk
+  // isn't left on a login page it can't use (#3360).
+  if (authUnconfirmed) {
+    return <AuthRetrying />;
   }
 
   if (authEnabled && !user) {
@@ -117,17 +124,21 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function PermissionRoute({ permission, children }: { permission: string | string[]; children: React.ReactNode }) {
+export function PermissionRoute({ permission, children }: { permission: string | string[]; children: React.ReactNode }) {
   // Permission-gated route: any user with the given permission can enter, not
   // just admins. Individual components below this guard apply their own
   // per-action permission checks. Used for pages where delegation is supported
   // (e.g. settings:read grants read-only access to Settings; specific tabs
   // require their own permissions like users:read, groups:update, etc.).
-  const { authEnabled, loading, user, hasPermission } = useAuth();
+  const { authEnabled, loading, user, hasPermission, authUnconfirmed } = useAuth();
   const location = useLocation();
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+
+  if (authUnconfirmed) {
+    return <AuthRetrying />;
   }
 
   // Auth disabled → open access (backward compatibility)
@@ -214,11 +225,12 @@ function App() {
                   <Route path="spoolbuddy/write-tag" element={<SpoolBuddyWriteTagPage />} />
                   <Route path="spoolbuddy/inventory" element={<SpoolBuddyInventoryPage />} />
                   <Route path="spoolbuddy/settings" element={<SpoolBuddySettingsPage />} />
-                  <Route path="spoolbuddy/calibration" element={<SpoolBuddyCalibrationPage />} />
+                  {/* Calibration moved into the settings page; old bookmarks land there. */}
+                  <Route path="spoolbuddy/calibration" element={<Navigate to="/spoolbuddy/settings" replace />} />
                 </Route>
 
                 {/* Main app with WebSocket for real-time updates */}
-                <Route element={<ProtectedRoute><WebSocketProvider><Layout /></WebSocketProvider></ProtectedRoute>}>
+                <Route element={<ProtectedRoute><WebSocketProvider><EmbeddedCameraProvider><Layout /></EmbeddedCameraProvider></WebSocketProvider></ProtectedRoute>}>
                   <Route index element={<PrintersPage />} />
                   <Route path="archives" element={<ArchivesPage />} />
                   <Route path="queue" element={<QueuePage />} />

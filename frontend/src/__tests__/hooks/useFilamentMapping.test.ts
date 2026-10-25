@@ -5,7 +5,7 @@
  * selected during slicing is used when multiple trays have identical filament.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import {
   buildAmsMapping,
@@ -15,7 +15,7 @@ import {
   useFilamentMapping,
 } from '../../hooks/useFilamentMapping';
 import { effectivePreferLowest } from '../../utils/amsHelpers';
-import { getColorName } from '../../utils/colors';
+import { getColorName, setColorCatalog, __resetColorCatalogForTests } from '../../utils/colors';
 import type { PrinterStatus } from '../../api/client';
 
 // Helper to create a minimal printer status with AMS data
@@ -60,6 +60,17 @@ describe('buildLoadedFilaments', () => {
       globalTrayId: 1,
       trayInfoIdx: 'GFA01',
     });
+  });
+
+  it('tells AMS-HT by its unit id, not by a one-tray list', () => {
+    const status = createPrinterStatus([
+      { id: 1, tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000', tray_info_idx: 'GFA00' }] },
+      { id: 128, tray: [{ id: 0, tray_type: 'PETG', tray_color: '00FF00', tray_info_idx: 'GFG00' }] },
+    ] as PrinterStatus['ams']);
+
+    const result = buildLoadedFilaments(status);
+
+    expect(result.map(f => [f.globalTrayId, f.isHt])).toEqual([[4, false], [128, true]]);
   });
 
   it('includes tray_info_idx from AMS trays', () => {
@@ -1611,5 +1622,32 @@ describe('buildLoadedFilaments — naming a slot after its bound spool', () => {
     expect(slot.isExternal).toBe(true);
     expect(slot.spoolName).toBe('Devil Design PLA Basic');
     expect(slot.colorName).toBe('Orange');
+  });
+});
+
+describe('buildLoadedFilaments — a slot set on the printer screen (#3279)', () => {
+  afterEach(() => {
+    __resetColorCatalogForTests();
+  });
+
+  it("names the slot from its preset's range when the printer sends no sub-brand", () => {
+    __resetColorCatalogForTests();
+    setColorCatalog(
+      {},
+      {},
+      [
+        { hex: 'ff9016', name: 'Pumpkin Orange', material: 'PLA Basic' },
+        { hex: 'ff911a', name: 'Translucent Orange', material: 'PETG Translucent' },
+      ],
+      { GFG01: 'PETG Translucent' },
+    );
+    const status = createPrinterStatus(
+      [{ id: 0, tray: [{ id: 0, tray_type: 'PETG', tray_color: 'FF9017FF', tray_info_idx: 'GFG01' }] }],
+      [{ id: 254, tray_type: 'PETG', tray_color: 'FF9017FF', tray_info_idx: 'GFG01' }],
+    );
+
+    const names = buildLoadedFilaments(status).map((f) => f.colorName);
+
+    expect(names).toEqual(['Translucent Orange', 'Translucent Orange']);
   });
 });

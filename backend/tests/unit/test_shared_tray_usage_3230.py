@@ -21,6 +21,21 @@ from backend.app.services.usage_tracker import _track_from_3mf
 pytestmark = pytest.mark.unit
 
 
+async def _charge_in_memory(_db, spool, grams):
+    """The fake session has no database for the tracker's UPDATE: add the
+    grams to the mock spool, which is what these tests check. The statement
+    itself is tested against a real database in test_usage_tracker_charge_race."""
+    spool.weight_used = (spool.weight_used or 0) + grams
+    spool.last_used = datetime.now(timezone.utc)
+    return True
+
+
+@pytest.fixture(autouse=True)
+def _charge_spools_in_memory():
+    with patch("backend.app.services.usage_tracker._charge_spool", _charge_in_memory):
+        yield
+
+
 def _spool(spool_id: int):
     spool = MagicMock()
     spool.id = spool_id

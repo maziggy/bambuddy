@@ -7,7 +7,7 @@ import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { api, type ConnectedApp } from '../../api/client';
 
-const mockUseAuth = { authEnabled: true };
+const mockUseAuth = { authEnabled: true, hasPermission: () => true };
 vi.mock('../../contexts/AuthContext', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../contexts/AuthContext')>();
   return { ...actual, useAuth: () => mockUseAuth };

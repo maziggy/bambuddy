@@ -6,9 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, RequirePrinterPermissionIfAuthEnabled
+from backend.app.core.auth import (
+    RequestPrinterScope,
+    RequirePermissionIfAuthEnabled,
+    RequirePrinterPermissionIfAuthEnabled,
+)
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.printer import Printer
 from backend.app.models.printer_ha_sensor import PrinterHASensor
 from backend.app.models.user import User
@@ -49,14 +54,25 @@ async def _refresh_quietly(sensor: PrinterHASensor, db: AsyncSession) -> None:
         logger.warning("Could not read %s right after saving it: %s", sensor.entity_id, e)
 
 
+async def _load_sensor(db: AsyncSession, sensor_id: int, printer_scope: PrinterScope) -> PrinterHASensor:
+    """The sensor, if its printer is one the caller may use; otherwise the 404 of a missing one."""
+    sensor = await db.get(PrinterHASensor, sensor_id)
+    if not sensor or not printer_scope.allows(sensor.printer_id):
+        raise HTTPException(404, "Sensor not found")
+    return sensor
+
+
 @router.get("/", response_model=list[PrinterHASensorResponse])
 async def list_ha_sensors(
     printer_id: int | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _READ,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """List configured sensors, grouped by printer and in display order."""
     query = select(PrinterHASensor)
+    if (scope_clause := printer_scope.where(PrinterHASensor.printer_id)) is not None:
+        query = query.where(scope_clause)
     if printer_id is not None:
         query = query.where(PrinterHASensor.printer_id == printer_id)
     result = await db.execute(query.order_by(PrinterHASensor.printer_id, PrinterHASensor.sort_order))
@@ -67,7 +83,7 @@ async def list_ha_sensors(
 @router.get("/entities", response_model=list[HADisplayEntity])
 async def list_bindable_entities(
     search: str | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _READ,
 ):
     """List the Home Assistant entities that can be bound to a printer."""
@@ -87,7 +103,7 @@ async def list_bindable_entities(
 @router.get("/by-printer/{printer_id}/readings", response_model=list[PrinterHASensorReading])
 async def get_printer_sensor_readings(
     printer_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
 ):
     """Live state of a printer's card-visible sensors.
@@ -97,44 +113,50 @@ async def get_printer_sensor_readings(
     to its last persisted state, marked unreachable, rather than vanishing
     from the card on every restart.
     """
+    return [_reading(sensor) for sensor in await _card_sensors(db, PrinterHASensor.printer_id == printer_id)]
+
+
+async def _card_sensors(db: AsyncSession, printer_clause) -> list[PrinterHASensor]:
+    """The card-visible sensors matching *printer_clause*, in card order."""
     result = await db.execute(
         select(PrinterHASensor)
         .where(
-            PrinterHASensor.printer_id == printer_id,
+            printer_clause,
             PrinterHASensor.show_on_printer_card.is_(True),
         )
         .order_by(PrinterHASensor.sort_order, PrinterHASensor.id)
     )
+    return list(result.scalars().all())
 
-    readings = []
-    for sensor in result.scalars().all():
-        cached = ha_sensor_manager.get_reading(sensor.id)
-        readings.append(
-            PrinterHASensorReading(
-                id=sensor.id,
-                name=sensor.name,
-                entity_id=sensor.entity_id,
-                kind=sensor.kind,
-                device_class=sensor.device_class,
-                unit=sensor.unit,
-                state=cached.state if cached else sensor.last_state,
-                value=cached.value if cached else None,
-                alerting=cached.alerting if cached else False,
-                block_print=sensor.block_print,
-                reachable=cached.reachable if cached else False,
-                last_changed=sensor.last_changed,
-            )
-        )
-    return readings
+
+def _reading(sensor: PrinterHASensor) -> PrinterHASensorReading:
+    """A sensor's live reading from the poller's cache, else its last persisted state."""
+    cached = ha_sensor_manager.get_reading(sensor.id)
+    return PrinterHASensorReading(
+        id=sensor.id,
+        name=sensor.name,
+        entity_id=sensor.entity_id,
+        kind=sensor.kind,
+        device_class=sensor.device_class,
+        unit=sensor.unit,
+        state=cached.state if cached else sensor.last_state,
+        value=cached.value if cached else None,
+        alerting=cached.alerting if cached else False,
+        block_print=sensor.block_print,
+        reachable=cached.reachable if cached else False,
+        last_changed=sensor.last_changed,
+    )
 
 
 @router.post("/", response_model=PrinterHASensorResponse)
 async def create_ha_sensor(
     data: PrinterHASensorCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _CREATE,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Bind a Home Assistant entity to a printer."""
+    printer_scope.ensure(data.printer_id)
     printer = await db.get(Printer, data.printer_id)
     if not printer:
         raise HTTPException(404, "Printer not found")
@@ -165,25 +187,22 @@ async def create_ha_sensor(
 @router.get("/{sensor_id}", response_model=PrinterHASensorResponse)
 async def get_ha_sensor(
     sensor_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _READ,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
-    sensor = await db.get(PrinterHASensor, sensor_id)
-    if not sensor:
-        raise HTTPException(404, "Sensor not found")
-    return sensor
+    return await _load_sensor(db, sensor_id, printer_scope)
 
 
 @router.patch("/{sensor_id}", response_model=PrinterHASensorResponse)
 async def update_ha_sensor(
     sensor_id: int,
     data: PrinterHASensorUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _UPDATE,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
-    sensor = await db.get(PrinterHASensor, sensor_id)
-    if not sensor:
-        raise HTTPException(404, "Sensor not found")
+    sensor = await _load_sensor(db, sensor_id, printer_scope)
 
     updates = data.model_dump(exclude_unset=True)
 
@@ -224,12 +243,11 @@ async def update_ha_sensor(
 @router.delete("/{sensor_id}")
 async def delete_ha_sensor(
     sensor_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _DELETE,
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
-    sensor = await db.get(PrinterHASensor, sensor_id)
-    if not sensor:
-        raise HTTPException(404, "Sensor not found")
+    sensor = await _load_sensor(db, sensor_id, printer_scope)
 
     name = sensor.name
     await db.delete(sensor)

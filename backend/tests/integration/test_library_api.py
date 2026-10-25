@@ -4,6 +4,7 @@ import io
 import tempfile
 import zipfile
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -307,6 +308,60 @@ class TestLibraryFilesAPI:
         result = response.json()
         assert len(result) == 1
         assert result[0]["id"] == other_file.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("direction", ["into", "out of"])
+    async def test_an_edit_does_not_move_a_file_across_the_external_boundary(
+        self, async_client: AsyncClient, folder_factory, file_factory, db_session, direction
+    ):
+        """F8: the edit route only changed folder_id -- no byte move, no
+        read-only check -- so the file showed in a folder its bytes are not
+        in. Such a move goes through POST /library/files/move."""
+        internal = await folder_factory(name="Mine")
+        nas = await folder_factory(name="NAS", is_external=True, external_path="/mnt/nas")
+        if direction == "into":
+            file = await file_factory(folder_id=internal.id, filename="a.3mf", is_external=False)
+            target = nas.id
+        else:
+            file = await file_factory(folder_id=nas.id, filename="a.3mf", is_external=True)
+            target = internal.id
+
+        response = await async_client.put(f"/api/v1/library/files/{file.id}", json={"folder_id": target})
+
+        assert response.status_code == 400
+        assert "/library/files/move" in response.json()["detail"]
+        await db_session.refresh(file)
+        assert file.folder_id != target
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_external_file_sent_with_its_own_folder_is_no_move(
+        self, async_client: AsyncClient, folder_factory, file_factory
+    ):
+        nas = await folder_factory(name="NAS", is_external=True, external_path="/mnt/nas")
+        file = await file_factory(folder_id=nas.id, filename="a.3mf", is_external=True)
+
+        response = await async_client.put(
+            f"/api/v1/library/files/{file.id}", json={"folder_id": nas.id, "notes": "kept"}
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_edit_still_moves_a_file_between_its_own_folders(
+        self, async_client: AsyncClient, folder_factory, file_factory, db_session
+    ):
+        first = await folder_factory(name="One")
+        second = await folder_factory(name="Two")
+        file = await file_factory(folder_id=first.id, filename="a.3mf", is_external=False)
+
+        response = await async_client.put(f"/api/v1/library/files/{file.id}", json={"folder_id": second.id})
+
+        assert response.status_code == 200
+        await db_session.refresh(file)
+        assert file.folder_id == second.id
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -695,13 +750,15 @@ class TestLibraryAddToQueueAPI:
         written: list[Path] = []
 
         async def _create(**kwargs):
-            counter = len(written) + 1
-            rel_path = kwargs.pop("file_path", f"archive/library/files/queue_probe_{counter}.gcode.3mf")
+            # A unique name: this is the checkout's real library folder, shared by
+            # every xdist worker, and a sibling's teardown deleted a same-named
+            # probe this test still needed ("File not found on disk").
+            rel_path = kwargs.pop("file_path", f"archive/library/files/queue_probe_{uuid4().hex}.gcode.3mf")
             abs_path = Path(app_settings.base_dir) / rel_path
             abs_path.parent.mkdir(parents=True, exist_ok=True)
             abs_path.write_bytes(b"probe")
             written.append(abs_path)
-            kwargs.setdefault("filename", f"queue_probe_{counter}.gcode.3mf")
+            kwargs.setdefault("filename", Path(rel_path).name)
             return await library_file_factory(file_path=rel_path, **kwargs)
 
         yield _create

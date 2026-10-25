@@ -92,6 +92,11 @@ def _track(poller: TelegramReactionPoller, *providers, token: str = BOT_TOKEN):
     poller._providers.setdefault(token, set()).update(p.id for p in providers)
 
 
+def _polling(poller: TelegramReactionPoller, provider_id: int) -> bool:
+    """Whether a running poll serves this provider."""
+    return any(provider_id in ids for token, ids in poller._providers.items() if token in poller._tasks)
+
+
 @pytest.fixture
 def telegram_provider(notification_provider_factory):
     async def _create(**kwargs):
@@ -740,9 +745,9 @@ class TestPoller:
         disabled = await telegram_provider(name="D", telegram_verdict_mode="both", enabled=False)
 
         await poller.sync()
-        assert poller.is_polling(reactions.id)
-        assert not poller.is_polling(buttons.id)
-        assert not poller.is_polling(disabled.id)
+        assert _polling(poller, reactions.id)
+        assert not _polling(poller, buttons.id)
+        assert not _polling(poller, disabled.id)
         assert set(poller._tasks) == {BOT_TOKEN}
 
         # The bot keeps its single poll while any provider wants it; the
@@ -752,8 +757,8 @@ class TestPoller:
         buttons.telegram_verdict_mode = "both"
         await db_session.commit()
         await poller.sync()
-        assert not poller.is_polling(reactions.id)
-        assert poller.is_polling(buttons.id)
+        assert not _polling(poller, reactions.id)
+        assert _polling(poller, buttons.id)
         assert poller._tasks[BOT_TOKEN] is first_task
         assert poller._providers[BOT_TOKEN] == {buttons.id}
 
@@ -764,7 +769,7 @@ class TestPoller:
         await poller.sync()
         assert first_task.cancelled() or first_task.cancelling()
         assert set(poller._tasks) == {"999:newtoken"}
-        assert poller.is_polling(buttons.id)
+        assert _polling(poller, buttons.id)
 
         await poller.aclose()
         assert poller._tasks == {}
@@ -786,7 +791,7 @@ class TestPoller:
 
         await poller.sync()
         assert len(poller._tasks) == 1
-        assert poller.is_polling(first.id) and poller.is_polling(second.id)
+        assert _polling(poller, first.id) and _polling(poller, second.id)
         poller.stop()
         _track(poller, first, second)
 

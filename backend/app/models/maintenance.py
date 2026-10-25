@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -35,6 +35,8 @@ class PrinterMaintenance(Base):
     """Tracks maintenance status for a specific printer."""
 
     __tablename__ = "printer_maintenance"
+    # One row per printer and type: they are created on first read (FO-C14).
+    __table_args__ = (Index("uq_printer_maintenance_printer_type", "printer_id", "maintenance_type_id", unique=True),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     printer_id: Mapped[int] = mapped_column(ForeignKey("printers.id", ondelete="CASCADE"))

@@ -198,6 +198,25 @@ class TestMaintenanceItemsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_perform_reports_the_item_s_own_interval_type(self, async_client: AsyncClient, printer_factory):
+        """dbcol-09: an item set to days on an hours-based type was answered in
+        hours by "performed", while the list honoured the item's setting."""
+        printer = await printer_factory(name="Interval Type Printer")
+        overview = (await async_client.get(f"/api/v1/maintenance/printers/{printer.id}")).json()
+        item = next(i for i in overview["maintenance_items"] if i["interval_type"] == "hours")
+        patched = await async_client.patch(
+            f"/api/v1/maintenance/items/{item['id']}",
+            json={"custom_interval_type": "days", "custom_interval_hours": 30},
+        )
+        assert patched.status_code == 200
+
+        data = (await async_client.post(f"/api/v1/maintenance/items/{item['id']}/perform", json={})).json()
+
+        assert data["interval_type"] == "days"
+        assert data["days_until_due"] == 30
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_perform_maintenance(self, async_client: AsyncClient, maintenance_item):
         """Verify maintenance can be marked as performed."""
         if not maintenance_item:

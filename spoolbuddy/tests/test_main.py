@@ -24,7 +24,6 @@ def _make_config(**overrides):
 
 def _make_api():
     api = AsyncMock()
-    api.report_update_status = AsyncMock(return_value={"ok": True})
     api.heartbeat = AsyncMock(return_value=None)
     api.update_tare = AsyncMock(return_value={"ok": True})
     return api
@@ -320,3 +319,36 @@ class TestScalePollLoopWakeGating:
         # would still wake (delta 120 > 50), so this asserts both gating AND
         # the absence of poisoning.
         assert display.wake.call_count == 2
+
+
+class TestReRegistration:
+    """An admin removed the device while the daemon kept running: the next
+    heartbeat is refused, and the daemon registers again (#sb-1)."""
+
+    @pytest.mark.asyncio
+    async def test_a_refused_heartbeat_registers_the_device_again(self):
+        config = _make_config()
+        api = _make_api()
+        api.unregistered = False
+        api.register_device = AsyncMock(return_value={"tare_offset": 5, "calibration_factor": 2.0})
+
+        async def mock_heartbeat(*args, **kwargs):
+            api.unregistered = True
+            return None
+
+        api.heartbeat = mock_heartbeat
+        display = MagicMock()
+        display.has_backlight = False
+        shared = {"nfc": None, "scale": None, "display": display}
+
+        task = asyncio.create_task(heartbeat_loop(config, api, time.monotonic(), shared))
+        await asyncio.sleep(0.05)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        api.register_device.assert_awaited()
+        assert api.register_device.await_args.kwargs["device_id"] == "dev-1"
+        assert config.tare_offset == 5

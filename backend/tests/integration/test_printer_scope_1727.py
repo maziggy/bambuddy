@@ -296,6 +296,40 @@ class TestTokens:
         assert wall.status_code == 200, wall.text
         assert [p["id"] for p in wall.json()] == [a.id]
 
+    async def _long_lived(self, async_client, jwt: str, scope: str) -> str:
+        created = await async_client.post(
+            "/api/v1/auth/tokens", headers=_auth(jwt), json={"name": scope, "expires_in_days": 30, "scope": scope}
+        )
+        assert created.status_code in (200, 201), created.text
+        return created.json()["token"]
+
+    async def test_long_lived_overlay_token_keeps_to_its_owners_printers(
+        self, async_client, printer_factory, mock_printer_manager
+    ):
+        a, b = await printer_factory(name="A"), await printer_factory(name="B")
+        admin = await _admin_token(async_client)
+        jwt, _ = await _team_member(async_client, admin, "member", [a.id])
+        token = await self._long_lived(async_client, jwt, "overlay")
+
+        hidden = await async_client.get(f"/api/v1/printers/{b.id}/overlay-status?token={token}")
+        own = await async_client.get(f"/api/v1/printers/{a.id}/overlay-status?token={token}")
+
+        assert hidden.status_code == 404
+        assert own.status_code == 200, own.text
+
+    async def test_long_lived_camera_token_keeps_to_its_owners_printers(self, async_client, printer_factory):
+        from backend.app.core.auth import verify_camera_stream_token
+
+        a, b = await printer_factory(name="A"), await printer_factory(name="B")
+        admin = await _admin_token(async_client)
+        jwt, _ = await _team_member(async_client, admin, "member", [a.id])
+        token = await self._long_lived(async_client, jwt, "camera_stream")
+
+        scope = await verify_camera_stream_token(token)
+        assert scope is not None and scope.printer_ids == frozenset({a.id})
+        snapshot = await async_client.get(f"/api/v1/printers/{b.id}/camera/snapshot?token={token}")
+        assert snapshot.status_code == 404
+
     async def test_websocket_token_carries_its_minters_scope(self, async_client, printer_factory):
         from backend.app.core.auth import principal_printer_scope, verify_websocket_token_principal
         from backend.app.core.database import async_session
@@ -425,6 +459,120 @@ class TestQueueAndHistory:
         ids = {row["id"] for row in listed.json()}
         assert on_a.id in ids
         assert on_b.id not in ids
+
+
+class TestModelTargetsOfALimitedKey:
+    """A limited key may not reach "any printer of a model" by any route."""
+
+    async def _key(self, async_client, admin: str, printer_id: int) -> dict[str, str]:
+        created = await async_client.post(
+            "/api/v1/api-keys/",
+            headers=_auth(admin),
+            json={"name": "k", "can_queue": True, "can_manage_library": True, "printer_ids": [printer_id]},
+        )
+        assert created.status_code == 200, created.text
+        return {"X-API-Key": created.json()["key"]}
+
+    async def test_editing_a_job_onto_a_model(self, async_client, printer_factory, archive_factory, db_session):
+        from backend.app.models.print_queue import PrintQueueItem
+
+        a = await printer_factory(name="A", model="X1C")
+        await printer_factory(name="B", model="X1C")
+        archive = await archive_factory(a.id)
+        admin = await _admin_token(async_client)
+        key = await self._key(async_client, admin, a.id)
+        item = await async_client.post(
+            "/api/v1/queue/", headers=key, json={"archive_id": archive.id, "printer_id": a.id}
+        )
+        assert item.status_code == 200, item.text
+
+        moved = await async_client.patch(
+            f"/api/v1/queue/{item.json()['id']}", headers=key, json={"printer_id": None, "target_model": "X1C"}
+        )
+
+        assert moved.status_code == 400, moved.text
+        assert "specific printer" in moved.json()["detail"]
+        row = await db_session.get(PrintQueueItem, item.json()["id"])
+        await db_session.refresh(row)
+        assert (row.printer_id, row.target_model) == (a.id, None)
+
+    async def test_dispatching_a_batch_of_model_jobs(self, async_client, printer_factory, archive_factory):
+        a = await printer_factory(name="A", model="X1C")
+        await printer_factory(name="B", model="X1C")
+        archive = await archive_factory(a.id)
+        admin = await _admin_token(async_client)
+        batch = await async_client.post(
+            "/api/v1/queue/batches",
+            headers=_auth(admin),
+            json={"name": "o", "archive_id": archive.id, "plates": [{"plate_id": None, "quantity_target": 3}]},
+        )
+        assert batch.status_code in (200, 201), batch.text
+        batch_id = batch.json()["id"]
+        first = await async_client.post(
+            "/api/v1/queue/",
+            headers=_auth(admin),
+            json={"archive_id": archive.id, "target_model": "X1C", "batch_id": batch_id},
+        )
+        assert first.status_code == 200, first.text
+        key = await self._key(async_client, admin, a.id)
+
+        dispatched = await async_client.post(f"/api/v1/queue/batches/{batch_id}/dispatch", headers=key, json={})
+
+        assert dispatched.status_code == 400, dispatched.text
+        assert "specific printer" in dispatched.json()["detail"]
+        listed = await async_client.get("/api/v1/queue/", headers=_auth(admin))
+        assert len(listed.json()) == 1
+
+    async def test_running_a_pipeline_aimed_at_a_model(self, async_client, printer_factory, db_session, request):
+        import uuid
+        from pathlib import Path
+
+        from backend.app.core.config import settings as app_settings
+        from backend.app.models.library import LibraryFile
+
+        a = await printer_factory(name="A", model="X1C")
+        admin = await _admin_token(async_client)
+        pipeline = await async_client.post(
+            "/api/v1/slicer-pipelines/",
+            headers=_auth(admin),
+            json={
+                "name": "p",
+                "printer_preset": {"source": "local", "id": "1"},
+                "process_preset": {"source": "local", "id": "2"},
+                "filament_presets": [{"source": "local", "id": "3"}],
+            },
+        )
+        assert pipeline.status_code == 201, pipeline.text
+        aimed = await async_client.put(
+            f"/api/v1/slicer-pipelines/{pipeline.json()['id']}",
+            headers=_auth(admin),
+            json={"target_kind": "printer_class", "target_model_class": "X1C"},
+        )
+        assert aimed.status_code == 200, aimed.text
+        name = f"scope_pipeline_{uuid.uuid4().hex}.3mf"
+        source_path = Path(app_settings.base_dir) / name
+        source_path.write_bytes(b"")
+        request.addfinalizer(lambda: source_path.unlink(missing_ok=True))
+        source = LibraryFile(
+            filename="cube.3mf",
+            file_path=name,
+            file_type="3mf",
+            file_size=0,
+            file_hash="scope-pipeline",
+            source_type="uploaded",
+        )
+        db_session.add(source)
+        await db_session.commit()
+        key = await self._key(async_client, admin, a.id)
+
+        run = await async_client.post(
+            f"/api/v1/slicer-pipelines/{pipeline.json()['id']}/run",
+            headers=key,
+            json={"source_library_file_id": source.id},
+        )
+
+        assert run.status_code == 400, run.text
+        assert "specific printer" in run.json()["detail"]
 
 
 class TestScheduler:
@@ -857,3 +1005,47 @@ class TestLocationsPage:
         assert (await async_client.get(f"/api/v1/printers/{theirs.id}", headers=_auth(admin))).json()[
             "location"
         ] == "Lab A"
+
+
+class TestProjectTimeline:
+    async def test_timeline_hides_other_printers(self, async_client, printer_factory, archive_factory, db_session):
+        """Like the project's archive and queue lists, the timeline shows only the
+        member's printers: neither a finished print nor a queued job on another
+        printer appears, by name or by id."""
+        from backend.app.models.print_queue import PrintQueueItem
+        from backend.app.models.project import Project
+
+        a, b = await printer_factory(name="A"), await printer_factory(name="B")
+        project = Project(name="Shared")
+        db_session.add(project)
+        await db_session.commit()
+        project_id = project.id
+        await archive_factory(a.id, project_id=project_id, print_name="Mine done")
+        await archive_factory(b.id, project_id=project_id, print_name="Theirs done")
+        # The queued jobs' archives belong to no project, so their names can only
+        # reach the timeline through the queue events.
+        mine = await archive_factory(a.id, print_name="Mine queued", status="archived", with_run=False)
+        theirs = await archive_factory(b.id, print_name="Theirs queued", status="archived", with_run=False)
+        db_session.add_all(
+            [
+                PrintQueueItem(project_id=project_id, printer_id=a.id, archive_id=mine.id, status="pending"),
+                PrintQueueItem(project_id=project_id, printer_id=b.id, archive_id=theirs.id, status="pending"),
+            ]
+        )
+        await db_session.commit()
+
+        admin = await _admin_token(async_client)
+        perms = await _group(async_client, admin, "perms_timeline", permissions=[*TEAM_PERMISSIONS, "projects:read"])
+        team = await _group(async_client, admin, "team_timeline", printer_ids=[a.id])
+        jwt, _ = await _user(async_client, admin, "timeline_member", [perms, team])
+
+        def events(response) -> set[tuple[str, str | None]]:
+            assert response.status_code == 200, response.text
+            return {(e["event_type"], e.get("description")) for e in response.json()}
+
+        member = events(await async_client.get(f"/api/v1/projects/{project_id}/timeline", headers=_auth(jwt)))
+        assert {("print_completed", "Mine done"), ("queued", "Mine queued")} <= member
+        assert not {d for _, d in member} & {"Theirs done", "Theirs queued"}
+
+        full = events(await async_client.get(f"/api/v1/projects/{project_id}/timeline", headers=_auth(admin)))
+        assert {("print_completed", "Theirs done"), ("queued", "Theirs queued")} <= full

@@ -342,6 +342,8 @@ class TestOnlyWhatTheUserMustActOnMakesANoise:
         waiting.assert_called_once()
         assert waiting.call_args.kwargs["waiting_reason"] == "Waiting for plate confirmation: X1C-01"
         assert waiting.call_args.kwargs["target_model"] == "X1C"
+        # Names its printer: a channel limited to X1C-01 is told too.
+        assert waiting.call_args.kwargs["printer_id"] == 1
 
     @pytest.mark.asyncio
     async def test_the_plate_notification_survives_the_print_that_came_before_it(self, ctx):

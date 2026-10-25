@@ -238,3 +238,22 @@ class TestSumLivePlugTotalsRest:
         total = await _sum_live_plug_totals(db_session)
 
         assert total == pytest.approx(0.4)
+
+
+@pytest.mark.asyncio
+async def test_live_totals_use_the_home_assistant_token_from_the_environment(db_session, monkeypatch):
+    """The environment's token wins over a stored one, as everywhere else."""
+    from backend.app.api.routes.archives import _sum_live_plug_totals
+    from backend.app.models.settings import Settings
+    from backend.app.services.homeassistant import homeassistant_service
+
+    monkeypatch.setenv("HA_TOKEN", "env-value")
+    monkeypatch.delenv("HA_URL", raising=False)
+    db_session.add_all([Settings(key="ha_url", value="http://ha.local"), Settings(key="ha_token", value="row-value")])
+    await db_session.commit()
+    configured = []
+    monkeypatch.setattr(homeassistant_service, "configure", lambda url, token: configured.append((url, token)))
+
+    await _sum_live_plug_totals(db_session)
+
+    assert configured == [("http://ha.local", "env-value")]

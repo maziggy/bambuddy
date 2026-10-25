@@ -104,24 +104,6 @@ class SlicerSettingUpdate(BaseModel):
     setting: dict | None = Field(None, description="Setting key-value pairs to update")
 
 
-class SlicerSettingDetail(BaseModel):
-    """Detailed slicer setting/preset response."""
-
-    message: str | None = None
-    code: str | None = None
-    error: str | None = None
-    public: bool = False
-    version: str | None = None
-    type: str
-    name: str
-    update_time: str | None = None
-    nickname: str | None = None
-    base_id: str | None = None
-    setting: dict = Field(default_factory=dict)
-    filament_id: str | None = None
-    setting_id: str | None = None  # For response after create
-
-
 class SlicerSettingDeleteResponse(BaseModel):
     """Response from deleting a preset."""
 

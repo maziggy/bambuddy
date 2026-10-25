@@ -25,7 +25,7 @@ async def resolve_configured_currency(db: AsyncSession) -> str:
 
 
 def transaction_affects_personal_balance(
-    user_id: int,
+    user_id: int | None,
     cost_center_id: int | None,
     *,
     is_private: bool = False,
@@ -33,6 +33,8 @@ def transaction_affects_personal_balance(
 ) -> bool:
     """Apply the canonical definition to already-loaded transaction data."""
 
+    if user_id is None:  # a deleted user's; they have no wallet any more
+        return False
     return cost_center_id is None or (is_private and owner_user_id == user_id)
 
 

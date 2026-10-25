@@ -30,6 +30,7 @@ class _FakeMjpegResponse:
         self._chunks = list(chunks)
         self._raise_after = raise_after
         self._raise_exc = raise_exc
+        self.headers = {}
         self.content = self  # the function calls `response.content.iter_chunked(...)`
 
     def iter_chunked(self, _size):  # noqa: ARG002 — chunk size is informational
@@ -59,7 +60,7 @@ class _FakeMjpegSession:
     def __init__(self, response):
         self._response = response
 
-    def get(self, _url):
+    def get(self, _url, **_kwargs):
         return self._response
 
     async def __aenter__(self):
@@ -615,6 +616,7 @@ def _fake_snapshot_session(body: bytes, status: int = 200):
     class _Resp:
         def __init__(self):
             self.status = status
+            self.headers = {}
 
         async def __aenter__(self):
             return self
@@ -635,7 +637,7 @@ def _fake_snapshot_session(body: bytes, status: int = 200):
         async def __aexit__(self, *a):
             return False
 
-        def get(self, _url):
+        def get(self, _url, **_kwargs):
             return _Resp()
 
     return _Session
@@ -696,12 +698,76 @@ class TestSnapshotTranscode:
         assert out == jpeg  # identical object bytes — proves no transcode ran
 
     @pytest.mark.asyncio
-    async def test_capture_snapshot_non_image_falls_back_to_raw(self):
-        """Undecodable (non-image) responses return the raw bytes unchanged, so
-        behaviour is never worse than before the fix."""
+    async def test_capture_snapshot_non_image_is_not_passed_on(self):
+        """An undecodable (non-image) response is no frame: whatever a URL
+        returns would otherwise reach the viewer of the camera stream."""
         from backend.app.services import external_camera as ec
 
         html = b"<html><body>unauthorized</body></html>"
         with patch.object(ec.aiohttp, "ClientSession", _fake_snapshot_session(html)):
             out = await ec._capture_snapshot("http://192.168.50.50/snapshot", 10)
-        assert out == html
+        assert out is None
+
+
+class TestUsbOneShotIsSparedByTheJanitor:
+    """The janitor kills unregistered USB ffmpeg every 60 s; the one-shot
+    capture never registered itself, so a finish photo or timelapse frame
+    in flight could be killed under it (SP-C6)."""
+
+    @pytest.mark.asyncio
+    async def test_pid_is_registered_while_capturing(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from backend.app.services import external_camera
+        from backend.app.services.camera import _active_capture_pids
+
+        seen: list[bool] = []
+        process = MagicMock()
+        process.pid = 51515
+        process.returncode = 0
+
+        async def communicate():
+            seen.append(51515 in _active_capture_pids)
+            return b"\xff\xd8" + b"x" * 200, b""
+
+        process.communicate = communicate
+        with (
+            patch.object(external_camera, "get_ffmpeg_path", return_value="/usr/bin/ffmpeg"),
+            patch.object(external_camera, "_safe_usb_device_path", return_value="/dev/video0"),
+            patch("asyncio.create_subprocess_exec", AsyncMock(return_value=process)),
+        ):
+            frame = await external_camera._capture_usb_frame("/dev/video0", timeout=5)
+
+        assert frame is not None
+        assert seen == [True]
+        assert 51515 not in _active_capture_pids
+
+    @pytest.mark.asyncio
+    async def test_a_timed_out_capture_is_killed_reaped_and_unregistered(self):
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from backend.app.services import external_camera
+        from backend.app.services.camera import _active_capture_pids
+
+        process = MagicMock()
+        process.pid = 51516
+        process.returncode = None
+        process.kill = MagicMock()
+        process.wait = AsyncMock(return_value=-9)
+
+        async def communicate():
+            await asyncio.sleep(10)
+
+        process.communicate = communicate
+        with (
+            patch.object(external_camera, "get_ffmpeg_path", return_value="/usr/bin/ffmpeg"),
+            patch.object(external_camera, "_safe_usb_device_path", return_value="/dev/video0"),
+            patch("asyncio.create_subprocess_exec", AsyncMock(return_value=process)),
+        ):
+            frame = await external_camera._capture_usb_frame("/dev/video0", timeout=0.05)
+
+        assert frame is None
+        process.kill.assert_called_once()
+        process.wait.assert_awaited()
+        assert 51516 not in _active_capture_pids

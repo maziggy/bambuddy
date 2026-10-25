@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.app.core.compat import StrEnum
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 
 
 class ProviderType(StrEnum):
@@ -104,6 +105,9 @@ class NotificationProviderBase(BaseModel):
     # Event triggers - First layer complete
     on_first_layer_complete: bool = Field(default=False, description="Notify when first layer completes")
 
+    # Event triggers - A slicer pause coming up (#2984)
+    on_print_pause_upcoming: bool = Field(default=False, description="Notify before a pause in the print")
+
     # Messages from connected apps (POST /notifications/app-message)
     on_app_message: bool = Field(default=False, description="Deliver messages other applications send")
 
@@ -164,8 +168,10 @@ class NotificationProviderCreate(NotificationProviderBase):
     pass
 
 
-class NotificationProviderUpdate(BaseModel):
+class NotificationProviderUpdate(IgnoresNullForRequiredColumns):
     """Schema for updating a notification provider (all fields optional)."""
+
+    __orm_table__ = "notification_providers"
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
     provider_type: ProviderType | None = None
@@ -217,6 +223,9 @@ class NotificationProviderUpdate(BaseModel):
 
     # Event triggers - First layer complete
     on_first_layer_complete: bool | None = None
+
+    # Event triggers - A slicer pause coming up
+    on_print_pause_upcoming: bool | None = None
 
     # Messages from connected apps
     on_app_message: bool | None = None
@@ -341,6 +350,9 @@ class NotificationTestRequest(BaseModel):
     attach_photo: bool = Field(
         default=True, description="Include a sample photo in the test, mirroring the provider's own toggle"
     )
+    provider_id: int | None = Field(
+        default=None, description="The saved provider being edited: its stored secrets fill in the placeholders"
+    )
 
 
 class NotificationTestResponse(BaseModel):
@@ -348,78 +360,6 @@ class NotificationTestResponse(BaseModel):
 
     success: bool
     message: str
-
-
-# Provider-specific config schemas for documentation/validation reference
-class CallMeBotConfig(BaseModel):
-    """CallMeBot/WhatsApp configuration."""
-
-    phone: str = Field(..., description="Phone number with country code (e.g., +1234567890)")
-    apikey: str = Field(..., description="API key from CallMeBot")
-
-
-class NtfyConfig(BaseModel):
-    """ntfy configuration."""
-
-    server: str = Field(default="https://ntfy.sh", description="ntfy server URL")
-    topic: str = Field(..., description="Topic name to publish to")
-    auth_token: str | None = Field(default=None, description="Optional authentication token")
-    event_priorities: dict[str, int] | None = Field(
-        default=None,
-        description=(
-            "Per-event priority override. Keys are event names, either the provider's "
-            "toggle column ('on_print_failed', what the UI writes) or the bare event "
-            "name ('print_failed'); both are accepted. Values are ntfy priorities 1-5 "
-            "(1=min, 2=low, 3=default, 4=high, 5=urgent). Events without an entry use "
-            "ntfy's server-side default."
-        ),
-    )
-
-
-class GotifyConfig(BaseModel):
-    """Gotify configuration (#2743)."""
-
-    server: str = Field(..., description="Gotify server URL")
-    app_token: str = Field(..., description="Token of the Gotify application to post as")
-    event_priorities: dict[str, int] | None = Field(
-        default=None,
-        description=(
-            "Per-event priority override, keyed like NtfyConfig.event_priorities. Values are "
-            "levels 1-5 (min, low, default, high, urgent), sent to Gotify as 0, 2, 5, 8 and 10. "
-            "Events without an entry are sent at 5."
-        ),
-    )
-
-
-class PushoverConfig(BaseModel):
-    """Pushover configuration."""
-
-    user_key: str = Field(..., description="Your Pushover user key")
-    app_token: str = Field(..., description="Your Pushover application token")
-    priority: int = Field(default=0, ge=-2, le=2, description="Message priority (-2 to 2)")
-    # Emergency priority (2) only: how often to re-alert and when to stop.
-    # Pushover requires retry >= 30s and expire <= 10800s (3h).
-    retry: int = Field(default=60, ge=30, le=10800, description="Emergency re-alert interval in seconds (priority 2)")
-    expire: int = Field(default=3600, ge=30, le=10800, description="Emergency alert expiry in seconds (priority 2)")
-
-
-class TelegramConfig(BaseModel):
-    """Telegram bot configuration."""
-
-    bot_token: str = Field(..., description="Bot token from @BotFather")
-    chat_id: str = Field(..., description="Chat ID to send messages to")
-
-
-class EmailConfig(BaseModel):
-    """Email/SMTP configuration."""
-
-    smtp_server: str = Field(..., description="SMTP server hostname")
-    smtp_port: int = Field(default=587, description="SMTP port (587 for TLS, 465 for SSL)")
-    username: str = Field(..., description="SMTP username/email")
-    password: str = Field(..., description="SMTP password or app password")
-    from_email: str = Field(..., description="From email address")
-    to_email: str = Field(..., description="Recipient email address")
-    use_tls: bool = Field(default=True, description="Use TLS encryption")
 
 
 # Notification Log schemas

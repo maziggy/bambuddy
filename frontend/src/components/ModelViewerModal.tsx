@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
 import { ExternalLink, Box, Cog, Loader2, Layers, Check, ChevronDown } from 'lucide-react';
 import { ModelViewer } from './ModelViewer';
 import { Button } from './Button';
@@ -10,6 +9,7 @@ import { api, withMediaToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { isApiSliceableFileType, isSliceableFileType, openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import type { ArchivePlatesResponse, LibraryFilePlatesResponse, PlateMetadata } from '../types/plates';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 // The modal shows the model only; G-code has its own full-page viewer.
 type ViewTab = '3d';
@@ -144,7 +144,7 @@ function SlicerSplitButton({ icon, label, dropdownLabel, onPrimary, items }: Sli
 export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, onClose, onSliceWithBambuddy, onSnapshot }: ModelViewerModalProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+  const { data: settings } = useUiSettings();
   // Desktop "Open in Slicer" target — falls back to preferred_slicer when the
   // user hasn't explicitly chosen a different desktop slicer (#1329). This
   // variable is only used for URI-handoff; sidecar slicing keeps using

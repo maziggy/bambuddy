@@ -113,7 +113,16 @@ export function LDAPSettings() {
 
   // Test connection
   const testMutation = useMutation({
-    mutationFn: () => api.testLDAP(),
+    // What the form holds, saved or not.
+    mutationFn: () =>
+      api.testLDAP({
+        ldap_server_url: form.ldap_server_url,
+        ldap_bind_dn: form.ldap_bind_dn,
+        ldap_bind_password: form.ldap_bind_password,
+        ldap_search_base: form.ldap_search_base,
+        ldap_user_filter: form.ldap_user_filter,
+        ldap_security: form.ldap_security,
+      }),
     onSuccess: (data: { success: boolean; message: string }) => {
       showToast(data.message, data.success ? 'success' : 'error');
     },
@@ -121,6 +130,13 @@ export function LDAPSettings() {
       showToast(error.message, 'error');
     },
   });
+
+  // A saved bind password only goes to the server it was entered for.
+  const bindPasswordNeedsReentry =
+    !!settings?.ldap_bind_dn &&
+    !form.ldap_bind_password &&
+    (form.ldap_server_url !== (settings.ldap_server_url || '') ||
+      form.ldap_security !== (settings.ldap_security || 'starttls'));
 
   const handleSave = () => {
     if (!form.ldap_server_url) {
@@ -314,6 +330,9 @@ export function LDAPSettings() {
                   value={form.ldap_bind_password}
                   onChange={e => setForm({ ...form, ldap_bind_password: e.target.value })}
                 />
+                {bindPasswordNeedsReentry && (
+                  <p className="text-xs mt-1 text-yellow-400">{t('common.secretReenter')}</p>
+                )}
               </div>
             </div>
 

@@ -1,4 +1,4 @@
-"""Regression tests for ``_ams_assignment_locks`` (per-printer serialisation
+"""Regression tests for ``ams_assignment_locks`` (per-printer serialisation
 of ``on_ams_change``'s spool-assignment block).
 
 Background
@@ -31,7 +31,7 @@ import asyncio
 
 import pytest
 
-from backend.app.main import _ams_assignment_locks, _get_ams_assignment_lock
+from backend.app.services.ams_assignment_lock import ams_assignment_locks, get_ams_assignment_lock
 
 
 @pytest.fixture(autouse=True)
@@ -40,28 +40,28 @@ def _isolate_locks_dict():
     tests' lazy-created locks leak across runs and a stale ``Lock`` object
     bound to an already-closed event loop trips uvloop's "Future attached to
     a different loop" assertion."""
-    saved = dict(_ams_assignment_locks)
-    _ams_assignment_locks.clear()
+    saved = dict(ams_assignment_locks)
+    ams_assignment_locks.clear()
     try:
         yield
     finally:
-        _ams_assignment_locks.clear()
-        _ams_assignment_locks.update(saved)
+        ams_assignment_locks.clear()
+        ams_assignment_locks.update(saved)
 
 
 class TestLockKeySeparation:
     def test_same_printer_returns_same_lock(self):
         """Two callbacks for the same printer must contend on the same lock —
         otherwise serialisation buys us nothing."""
-        a = _get_ams_assignment_lock(7)
-        b = _get_ams_assignment_lock(7)
+        a = get_ams_assignment_lock(7)
+        b = get_ams_assignment_lock(7)
         assert a is b
 
     def test_different_printers_get_different_locks(self):
         """Per-printer scope: one printer's slow assignment must not block
         unrelated printers from processing their own AMS pushes."""
-        a = _get_ams_assignment_lock(7)
-        b = _get_ams_assignment_lock(8)
+        a = get_ams_assignment_lock(7)
+        b = get_ams_assignment_lock(8)
         assert a is not b
 
 
@@ -77,7 +77,7 @@ class TestLockSerialisesConcurrentCallbacks:
         first_release = asyncio.Event()
 
         async def first():
-            async with _get_ams_assignment_lock(printer_id):
+            async with get_ams_assignment_lock(printer_id):
                 order.append("first-enter")
                 first_inside.set()
                 # Hold the lock until the test allows release; this is what
@@ -88,7 +88,7 @@ class TestLockSerialisesConcurrentCallbacks:
 
         async def second():
             await first_inside.wait()  # ensure first holds the lock
-            async with _get_ams_assignment_lock(printer_id):
+            async with get_ams_assignment_lock(printer_id):
                 order.append("second-enter")
 
         task_a = asyncio.create_task(first())
@@ -118,7 +118,7 @@ class TestLockSerialisesConcurrentCallbacks:
         printer_a_release = asyncio.Event()
 
         async def printer_a():
-            async with _get_ams_assignment_lock(1):
+            async with get_ams_assignment_lock(1):
                 order.append("a-enter")
                 printer_a_inside.set()
                 await printer_a_release.wait()
@@ -126,7 +126,7 @@ class TestLockSerialisesConcurrentCallbacks:
 
         async def printer_b():
             await printer_a_inside.wait()
-            async with _get_ams_assignment_lock(2):
+            async with get_ams_assignment_lock(2):
                 order.append("b-enter-and-exit")
 
         task_a = asyncio.create_task(printer_a())

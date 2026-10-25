@@ -959,3 +959,42 @@ class TestSharedHttpClient:
         assert svc._owns_client is True
         await svc.close()
         assert svc._client.is_closed
+
+
+class TestADownloadIsAZip:
+    """Only the status code was checked, so a truncated body or an error page
+    served with 200 was stored as the model's 3MF and kept."""
+
+    @staticmethod
+    def _info():
+        from backend.app.services.model_providers.base import ProviderDownloadInfo
+
+        return ProviderDownloadInfo(
+            ref=ProviderResourceRef(source_type="makerworld", external_id="1"),
+            url="https://makerworld.bblmw.com/f.3mf",
+            suggested_filename="f.3mf",
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("body", [b"<html>Access denied</html>", b"PK\x03\x04truncated"])
+    async def test_a_body_that_is_not_a_zip_is_refused(self, body):
+        svc = MakerWorldService(client=MagicMock(spec=httpx.AsyncClient))
+        svc.download_3mf = AsyncMock(return_value=(body, "f.3mf"))
+
+        with pytest.raises(MakerWorldUnavailableError, match="not a valid 3MF"):
+            await svc.download(self._info())
+
+    @pytest.mark.asyncio
+    async def test_a_zip_is_returned(self):
+        import io
+        import zipfile
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+        svc = MakerWorldService(client=MagicMock(spec=httpx.AsyncClient))
+        svc.download_3mf = AsyncMock(return_value=(buffer.getvalue(), "f.3mf"))
+
+        result = await svc.download(self._info())
+
+        assert result.file_bytes == buffer.getvalue()

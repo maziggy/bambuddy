@@ -33,6 +33,7 @@ import { ConfigureAmsSlotModal } from '../../components/ConfigureAmsSlotModal';
 import { AssignSpoolModal } from '../../components/AssignSpoolModal';
 import { LinkSpoolModal } from '../../components/LinkSpoolModal';
 import { useToast } from '../../contexts/ToastContext';
+import { useUiSettings } from '../../hooks/useUiSettings';
 
 function getAmsName(amsId: number): string {
   if (amsId <= 3) return `AMS ${String.fromCharCode(65 + amsId)}`;
@@ -76,11 +77,7 @@ export function SpoolBuddyAmsPage() {
     staleTime: 2 * 60 * 1000,
   });
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: () => api.getSettings(),
-    staleTime: 5 * 60 * 1000,
-  });
+  const { data: settings } = useUiSettings({ staleTime: 5 * 60 * 1000 });
 
   // Fetch Spoolman status to enable fill-level chain
   const { data: spoolmanStatus } = useQuery({
@@ -105,7 +102,7 @@ export function SpoolBuddyAmsPage() {
   // Without these, AmsUnitCard shows an empty fill bar and the Link button
   // stays active even though the slot is occupied.
   const { data: spoolmanSlotAssignmentsAll = [] } = useQuery({
-    queryKey: ['spoolman-slot-assignments-all'],
+    queryKey: ['spoolman-slot-assignments', 'all'],
     queryFn: () => api.getSpoolmanSlotAssignments(),
     enabled: !!spoolmanEnabled,
     staleTime: 30 * 1000,
@@ -247,7 +244,6 @@ export function SpoolBuddyAmsPage() {
   const [configureSlotModal, setConfigureSlotModal] = useState<{
     amsId: number;
     trayId: number;
-    trayCount: number;
     trayType?: string;
     trayColor?: string;
     traySubBrands?: string;
@@ -261,7 +257,6 @@ export function SpoolBuddyAmsPage() {
   const [slotActionPicker, setSlotActionPicker] = useState<{
     amsId: number;
     trayId: number;
-    trayCount: number;
     tray: AMSTray | null;
     trayType?: string;
     trayColor?: string;
@@ -329,7 +324,7 @@ export function SpoolBuddyAmsPage() {
       // these PrintersPage / InventoryPage / SpoolBuddyDashboard keep showing
       // the spool as still assigned for ~30s until refetchInterval kicks in.
       queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
-      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments-all'] });
+      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments', 'all'] });
       queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
       setSlotActionPicker(null);
     },
@@ -352,7 +347,7 @@ export function SpoolBuddyAmsPage() {
       // unlinkSpoolMutation does the same set — keep them aligned so both
       // unbind paths refresh the same caches.
       queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
-      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments-all'] });
+      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments', 'all'] });
       queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
       queryClient.invalidateQueries({ queryKey: ['unlinked-spools'] });
       queryClient.invalidateQueries({ queryKey: ['linked-spools'] });
@@ -385,7 +380,6 @@ export function SpoolBuddyAmsPage() {
     const slotData = {
       amsId,
       trayId,
-      trayCount: tray ? (amsId >= 128 ? 1 : 4) : 4,
       tray,
       trayType: tray?.tray_type || undefined,
       trayColor: tray?.tray_color || undefined,
@@ -410,7 +404,6 @@ export function SpoolBuddyAmsPage() {
     const slotData = {
       amsId: 255,
       trayId: slotTrayId,
-      trayCount: 1,
       tray: isTrayEmpty(extTray) ? null : extTray,
       trayType: extTray.tray_type || undefined,
       trayColor: extTray.tray_color || undefined,
@@ -697,6 +690,7 @@ export function SpoolBuddyAmsPage() {
           slotInfo={configureSlotModal}
           printerModel={mapModelCode(printer?.model ?? null) || undefined}
           nozzleDiameter={resolveSlotNozzleDiameter(status, configureSlotModal.amsId)}
+          printerState={status?.state}
           fullScreen
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['slotPresets', selectedPrinterId] });

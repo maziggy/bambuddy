@@ -5,22 +5,7 @@ import type { MatchedSpool } from '../../hooks/useSpoolBuddyState';
 import { spoolbuddyApi } from '../../api/client';
 import { SpoolIcon } from './SpoolIcon';
 import { resolveSpoolColorName, spoolColorString } from '../../utils/colors';
-
-// Storage key for default core weight
-const DEFAULT_CORE_WEIGHT_KEY = 'spoolbuddy-default-core-weight';
-
-function getDefaultCoreWeight(): number {
-  try {
-    const stored = localStorage.getItem(DEFAULT_CORE_WEIGHT_KEY);
-    if (stored) {
-      const weight = parseInt(stored, 10);
-      if (weight >= 0 && weight <= 500) return weight;
-    }
-  } catch {
-    // Ignore errors
-  }
-  return 250; // Default 250g (typical Bambu spool core)
-}
+import { DEFAULT_CORE_WEIGHT_G } from '../../utils/weight';
 
 interface SpoolInfoCardProps {
   spool: MatchedSpool;
@@ -46,7 +31,7 @@ export function SpoolInfoCard({ spool, scaleWeight, onClose, onSyncWeight, onAss
   // Use spool's core_weight if set, otherwise fall back to default
   const coreWeight = (spool.core_weight && spool.core_weight > 0)
     ? spool.core_weight
-    : getDefaultCoreWeight();
+    : DEFAULT_CORE_WEIGHT_G;
 
   // Gross weight from scale (live) or fallback
   const grossWeight = scaleWeight !== null
@@ -243,7 +228,7 @@ interface UnknownTagCardProps {
 
 export function UnknownTagCard({ tagUid, scaleWeight, coreWeight, onLinkSpool, onAddToInventory, onClose }: UnknownTagCardProps) {
   const { t } = useTranslation();
-  const defaultCoreWeight = coreWeight ?? getDefaultCoreWeight();
+  const defaultCoreWeight = coreWeight ?? DEFAULT_CORE_WEIGHT_G;
   const grossWeight = scaleWeight !== null
     ? Math.round(Math.max(0, scaleWeight))
     : null;

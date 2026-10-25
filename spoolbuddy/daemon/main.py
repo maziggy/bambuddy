@@ -234,6 +234,37 @@ async def scale_poll_loop(config: Config, api: APIClient, shared: dict):
         scale.close()
 
 
+async def _register(config: Config, api: APIClient, nfc, scale, display, ip: str) -> None:
+    """Register with the backend (retries until it answers) and take its
+    calibration. At startup, and again when the device was unregistered."""
+    reg = await api.register_device(
+        device_id=config.device_id,
+        hostname=config.hostname,
+        ip_address=ip,
+        firmware_version=__version__,
+        has_nfc=True,
+        has_scale=True,
+        tare_offset=config.tare_offset,
+        calibration_factor=config.calibration_factor,
+        nfc_reader_type=nfc.reader_type if nfc else None,
+        nfc_connection=nfc.connection if nfc else None,
+        backend_url=config.backend_url,
+        has_backlight=display.has_backlight,
+    )
+
+    # Use server-side calibration if available
+    if reg:
+        config.tare_offset = reg.get("tare_offset", config.tare_offset)
+        config.calibration_factor = reg.get("calibration_factor", config.calibration_factor)
+        if scale:
+            scale.update_calibration(config.tare_offset, config.calibration_factor)
+
+        # Auto-deploy Bambuddy's SSH public key for remote updates
+        ssh_key = reg.get("ssh_public_key")
+        if ssh_key:
+            _deploy_ssh_key(ssh_key)
+
+
 async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shared: dict):
     """Periodic heartbeat to keep device registered and pick up commands."""
     display: DisplayControl = shared["display"]
@@ -258,6 +289,14 @@ async def heartbeat_loop(config: Config, api: APIClient, start_time: float, shar
             backend_url=config.backend_url,
             system_stats=stats,
         )
+
+        if api.unregistered is True:
+            # An admin removed the device while it kept running: register again
+            # so it reappears (the route's documented behaviour).
+            logger.info("Backend no longer knows this device, registering again")
+            api.unregistered = False
+            await _register(config, api, nfc, scale, display, ip)
+            continue
 
         if result:
             ssh_key = result.get("ssh_public_key")
@@ -441,31 +480,7 @@ async def main():
     display = DisplayControl()
 
     # Register with backend (retries until success)
-    reg = await api.register_device(
-        device_id=config.device_id,
-        hostname=config.hostname,
-        ip_address=ip,
-        firmware_version=__version__,
-        has_nfc=True,
-        has_scale=True,
-        tare_offset=config.tare_offset,
-        calibration_factor=config.calibration_factor,
-        nfc_reader_type=nfc.reader_type,
-        nfc_connection=nfc.connection,
-        backend_url=config.backend_url,
-        has_backlight=display.has_backlight,
-    )
-
-    # Use server-side calibration if available
-    if reg:
-        config.tare_offset = reg.get("tare_offset", config.tare_offset)
-        config.calibration_factor = reg.get("calibration_factor", config.calibration_factor)
-        scale.update_calibration(config.tare_offset, config.calibration_factor)
-
-        # Auto-deploy Bambuddy's SSH public key for remote updates
-        ssh_key = reg.get("ssh_public_key")
-        if ssh_key:
-            _deploy_ssh_key(ssh_key)
+    await _register(config, api, nfc, scale, display, ip)
 
     logger.info("Device registered, starting poll loops")
 

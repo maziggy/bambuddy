@@ -355,7 +355,7 @@ Get-Content "C:\Bambuddy\bambuddy-runtime-error.log" -Tail 100
 ## Requirements
 
 ### Native Installation
-- Python 3.10+ (automatically installed if missing)
+- Python 3.11+ (automatically installed if missing; on Ubuntu 22.04, whose own `python3` is 3.10, the installer adds the `python3.11` package)
 - Node.js 18+ (automatically installed if missing)
 - Git (automatically installed if missing)
 - ~500MB disk space

@@ -7,6 +7,7 @@ import type { NotificationProvider, NotificationProviderCreate, NotificationProv
 import { Button } from './Button';
 import { Toggle } from './Toggle';
 import { isNotifyPushOnlyTarget, isNotifyPhotoUnsupported } from '../utils/notify';
+import { SECRET_PLACEHOLDER, selectPlaceholderOnFocus } from '../utils/secrets';
 
 interface ConfigField {
   key: string;
@@ -80,6 +81,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
     provider?.on_location_ha_sensor_alert ?? false
   );
   const [onFirstLayerComplete, setOnFirstLayerComplete] = useState(provider?.on_first_layer_complete ?? false);
+  const [onPrintPauseUpcoming, setOnPrintPauseUpcoming] = useState(provider?.on_print_pause_upcoming ?? false);
   const [onAppMessage, setOnAppMessage] = useState(provider?.on_app_message ?? false);
 
   const [notifyLiveActivities, setNotifyLiveActivities] = useState(
@@ -102,7 +104,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       ? Object.fromEntries(
           Object.entries(provider.config)
             .filter(([k]) => k !== 'event_priorities' && k !== 'live_activities' && k !== 'live_activity_metrics' && k !== 'lock_screen_widgets')
-            .map(([k, v]) => [k, String(v)]),
+            .map(([k, v]) => [k, v == null ? '' : String(v)]),
         )
       : {},
   );
@@ -155,7 +157,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
 
   // Test configuration mutation
   const testMutation = useMutation({
-    mutationFn: () => api.testNotificationConfig({ provider_type: providerType, config: configForRequest(), attach_photo: attachPhoto && !notifyPhotosUnsupported }),
+    mutationFn: () => api.testNotificationConfig({ provider_type: providerType, config: configForRequest(), attach_photo: attachPhoto && !notifyPhotosUnsupported, provider_id: provider?.id }),
     onSuccess: (result) => {
       setTestResult(result);
       setError(null);
@@ -269,6 +271,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       on_ha_sensor_alert: onHaSensorAlert,
       on_location_ha_sensor_alert: onLocationHaSensorAlert,
       on_first_layer_complete: onFirstLayerComplete,
+      on_print_pause_upcoming: onPrintPauseUpcoming,
       on_app_message: onAppMessage,
     };
 
@@ -287,7 +290,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       case 'callmebot':
         return [
           { key: 'phone', label: 'Phone Number', placeholder: '+1234567890', type: 'text', required: true },
-          { key: 'apikey', label: 'API Key', placeholder: 'Your CallMeBot API key', type: 'text', required: true },
+          { key: 'apikey', label: 'API Key', placeholder: 'Your CallMeBot API key', type: 'password', required: true },
         ];
       case 'ntfy':
         return [
@@ -297,8 +300,8 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
         ];
       case 'pushover':
         return [
-          { key: 'user_key', label: 'User Key', placeholder: 'Your Pushover user key', type: 'text', required: true },
-          { key: 'app_token', label: 'App Token', placeholder: 'Your Pushover app token', type: 'text', required: true },
+          { key: 'user_key', label: 'User Key', placeholder: 'Your Pushover user key', type: 'password', required: true },
+          { key: 'app_token', label: 'App Token', placeholder: 'Your Pushover app token', type: 'password', required: true },
           { key: 'priority', label: 'Priority', placeholder: '0 (normal)', type: 'number', required: false },
           // Emergency priority (2) requires retry/expire — Pushover rejects the
           // message otherwise. Only shown when priority is set to 2.
@@ -386,11 +389,11 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
         ];
       case 'discord':
         return [
-          { key: 'webhook_url', label: 'Webhook URL', placeholder: 'https://discord.com/api/webhooks/...', type: 'text', required: true },
+          { key: 'webhook_url', label: 'Webhook URL', placeholder: 'https://discord.com/api/webhooks/...', type: 'password', required: true },
         ];
       case 'webhook':
         return [
-          { key: 'webhook_url', label: 'Webhook URL', placeholder: 'https://example.com/webhook', type: 'text', required: true },
+          { key: 'webhook_url', label: 'Webhook URL', placeholder: 'https://example.com/webhook', type: 'password', required: true },
           { key: 'payload_format', label: 'Payload Format', type: 'select', required: false, options: [
             { value: 'generic', label: 'Generic JSON' },
             { value: 'slack', label: 'Slack / Mattermost' },
@@ -413,7 +416,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
         ];
       case 'bark':
         return [
-          { key: 'device_key', label: 'Device Key', placeholder: 'Your Bark device key', type: 'text', required: true },
+          { key: 'device_key', label: 'Device Key', placeholder: 'Your Bark device key', type: 'password', required: true },
           { key: 'server', label: 'Server URL', placeholder: 'https://api.day.app', type: 'text', required: false },
           { key: 'group', label: 'Group', placeholder: 'Bambuddy', type: 'text', required: false },
           { key: 'sound', label: 'Sound', placeholder: 'minuet', type: 'text', required: false },
@@ -494,9 +497,13 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                 }
                 setTestResult(null);
               }}
+              onFocus={selectPlaceholderOnFocus}
               placeholder={field.placeholder}
               className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
             />
+          )}
+          {config[field.key] === SECRET_PLACEHOLDER && (
+            <p className="text-xs text-bambu-gray mt-1">{t('common.secretKept')}</p>
           )}
           {field.help && (
             <p className="text-xs text-bambu-gray mt-1">{field.help}</p>
@@ -876,6 +883,13 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                   </div>
                   <Toggle checked={onFirstLayerComplete} onChange={setOnFirstLayerComplete} />
                 </div>
+                <div className="flex items-center justify-between col-span-2">
+                  <div>
+                    <span className="text-sm text-white">{t('notifications.pauseUpcomingLabel')}</span>
+                    <span className="text-xs text-bambu-gray ml-1">{t('notifications.pauseUpcomingDescription')}</span>
+                  </div>
+                  <Toggle checked={onPrintPauseUpcoming} onChange={setOnPrintPauseUpcoming} />
+                </div>
               </div>
             </div>
 
@@ -966,6 +980,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               if (onPrintConfirmRequest) enabledEvents.push({ key: 'on_print_confirm_request', label: t('notifications.printConfirmRequest') });
               if (onBedCooled) enabledEvents.push({ key: 'on_bed_cooled', label: t('notifications.bedCooled') });
               if (onFirstLayerComplete) enabledEvents.push({ key: 'on_first_layer_complete', label: t('notifications.firstLayerCompleteLabel') });
+              if (onPrintPauseUpcoming) enabledEvents.push({ key: 'on_print_pause_upcoming', label: t('notifications.pauseUpcomingLabel') });
               if (onPrinterOffline) enabledEvents.push({ key: 'on_printer_offline', label: t('notifications.offline') });
               if (onPrinterError) enabledEvents.push({ key: 'on_printer_error', label: t('notifications.error') });
               if (onHaSensorAlert) enabledEvents.push({ key: 'on_ha_sensor_alert', label: t('notifications.haSensorAlert') });

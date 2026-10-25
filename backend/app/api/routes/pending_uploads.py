@@ -8,10 +8,11 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_ownership_permission
+from backend.app.core.auth import ApiKeyActor, RequirePermissionIfAuthEnabled, require_ownership_permission
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.pending_upload import PendingUpload
+from backend.app.models.project import Project
 from backend.app.models.user import User
 from backend.app.services.archive import ArchiveService, resolve_display_stem
 
@@ -90,8 +91,8 @@ async def _augment_with_display_name(
 
 @router.get("/", response_model=list[PendingUploadResponse])
 async def list_pending_uploads(
-    db: AsyncSession = Depends(get_db),
-    _: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_READ_ALL,
             Permission.QUEUE_READ_OWN,
@@ -108,8 +109,8 @@ async def list_pending_uploads(
 
 @router.get("/count")
 async def get_pending_count(
-    db: AsyncSession = Depends(get_db),
-    _: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_READ_ALL,
             Permission.QUEUE_READ_OWN,
@@ -129,7 +130,7 @@ async def get_pending_count(
 
 @router.post("/archive-all")
 async def archive_all_pending(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
 ):
     """Archive all pending uploads."""
@@ -189,7 +190,7 @@ async def archive_all_pending(
 
 @router.delete("/discard-all")
 async def discard_all_pending(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_DELETE_ALL),
 ):
     """Discard all pending uploads."""
@@ -217,8 +218,8 @@ async def discard_all_pending(
 @router.get("/{upload_id}", response_model=PendingUploadResponse)
 async def get_pending_upload(
     upload_id: int,
-    db: AsyncSession = Depends(get_db),
-    _: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_READ_ALL,
             Permission.QUEUE_READ_OWN,
@@ -239,7 +240,7 @@ async def get_pending_upload(
 async def archive_pending_upload(
     upload_id: int,
     request: ArchiveRequest = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
 ):
     """Archive a pending upload."""
@@ -255,6 +256,11 @@ async def archive_pending_upload(
     file_path = Path(pending.file_path)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Upload file not found on disk")
+
+    # The project must exist before anything is archived; 0 means none.
+    project_id = (request.project_id or None) if request else None
+    if project_id is not None and await db.get(Project, project_id) is None:
+        raise HTTPException(status_code=400, detail="Project not found")
 
     # Archive the file
     from backend.app.api.routes.settings import get_setting
@@ -281,8 +287,8 @@ async def archive_pending_upload(
             archive.tags = request.tags
         if request.notes:
             archive.notes = request.notes
-        if request.project_id:
-            archive.project_id = request.project_id
+        if project_id is not None:
+            archive.project_id = project_id
 
     # Update pending record
     pending.status = "archived"
@@ -291,7 +297,7 @@ async def archive_pending_upload(
     if request:
         pending.tags = request.tags
         pending.notes = request.notes
-        pending.project_id = request.project_id
+        pending.project_id = project_id
 
     await db.commit()
 
@@ -311,7 +317,7 @@ async def archive_pending_upload(
 @router.delete("/{upload_id}")
 async def discard_pending_upload(
     upload_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_DELETE_ALL),
 ):
     """Discard a pending upload without archiving."""

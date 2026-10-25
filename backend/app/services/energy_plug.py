@@ -53,7 +53,7 @@ def _is_script_entity(plug: SmartPlug) -> bool:
     """A Home Assistant ``script.*`` entity linked to a printer for automation.
 
     Stored as plugs so they can follow the print cycle (see
-    ``trigger_associated_scripts``), but a script has nothing to meter.
+    ``run_linked_scripts``), but a script has nothing to meter.
     """
     return bool(plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."))
 

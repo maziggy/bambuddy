@@ -2,12 +2,14 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, ScanEye, Check, X, AlertTriangle, Info } from 'lucide-react';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
+import type { AppSettings } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { Toggle } from './Toggle';
 import { useToast } from '../contexts/ToastContext';
 import { NumberInput } from './NumberInput';
+import { SECRET_PLACEHOLDER, selectPlaceholderOnFocus } from '../utils/secrets';
 
 type TestResult = { ok: boolean; message: string } | null;
 
@@ -22,6 +24,16 @@ function isValidInternalUrl(value: string): boolean {
     return new URL(trimmed).hostname !== '';
   } catch {
     return false;
+  }
+}
+
+// The printers Obico watches as stored; null is all of them.
+function storedPrinterList(stored: AppSettings): number[] | null {
+  try {
+    const list = stored.obico_enabled_printers ? (JSON.parse(stored.obico_enabled_printers) as number[]) : null;
+    return Array.isArray(list) ? list : null;
+  } catch {
+    return null;
   }
 }
 
@@ -67,14 +79,7 @@ export function FailureDetectionSettings() {
     setSensitivity(settings.obico_sensitivity ?? 'medium');
     setAction(settings.obico_action ?? 'notify');
     setPollInterval(settings.obico_poll_interval ?? 10);
-    try {
-      const list = settings.obico_enabled_printers
-        ? (JSON.parse(settings.obico_enabled_printers) as number[])
-        : null;
-      setEnabledPrinters(Array.isArray(list) ? list : null);
-    } catch {
-      setEnabledPrinters(null);
-    }
+    setEnabledPrinters(storedPrinterList(settings));
     setInitialized(true);
   }, [settings]);
 
@@ -92,6 +97,23 @@ export function FailureDetectionSettings() {
         obico_poll_interval: pollInterval,
         obico_enabled_printers: enabledPrinters === null ? '' : JSON.stringify(enabledPrinters),
       }),
+    onError: async (error: Error) => {
+      showToast(t('settings.toast.settingsSaveFailed', { message: error.message }), 'error');
+      // A 400 is a printer deleted while this page was open. The printer list
+      // goes back to what the server kept, or every later edit would send the
+      // refused id again; set here, as unchanged settings keep their reference
+      // and the effect would not run. Not filtered against the printers list,
+      // which holds only the caller's printers. Other fields keep what was
+      // typed: a half-typed address is refused with 422 until it is finished.
+      if (!(error instanceof ApiError) || error.status !== 400) return;
+      queryClient.invalidateQueries({ queryKey: ['printers'] });
+      try {
+        const stored = await queryClient.fetchQuery({ queryKey: ['settings'], queryFn: api.getSettings, staleTime: 0 });
+        setEnabledPrinters(storedPrinterList(stored));
+      } catch {
+        // Server not reachable: the list keeps the edit, and the next one tries again.
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       queryClient.invalidateQueries({ queryKey: ['obico-status'] });
@@ -116,13 +138,18 @@ export function FailureDetectionSettings() {
     );
   }, [settings, initialized, enabled, mlUrl, bambuddyInternalUrl, internalUrlValid, mlToken, sensitivity, action, pollInterval, enabledPrinters]);
 
+  // A saved token does not follow a changed URL: it must be entered again, and
+  // nothing is saved until it is (the backend would refuse it).
+  const tokenNeedsReentry =
+    mlToken === SECRET_PLACEHOLDER && (settings?.obico_ml_url ?? '') !== mlUrl;
+
   // Auto-save on change (debounced)
   useEffect(() => {
-    if (!hasUnsavedChanges) return;
+    if (!hasUnsavedChanges || tokenNeedsReentry) return;
     const id = setTimeout(() => saveMutation.mutate(), 500);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasUnsavedChanges, enabled, mlUrl, bambuddyInternalUrl, mlToken, sensitivity, action, pollInterval, enabledPrinters]);
+  }, [hasUnsavedChanges, tokenNeedsReentry, enabled, mlUrl, bambuddyInternalUrl, mlToken, sensitivity, action, pollInterval, enabledPrinters]);
 
   const handleTest = async () => {
     setTestResult(null);
@@ -133,7 +160,7 @@ export function FailureDetectionSettings() {
       // auto-save debounce — or after a save that failed — those are different
       // values, and "reachable and healthy" for a token the service never
       // received is the reassuring-green-light problem all over again (#2952).
-      if (hasUnsavedChanges) {
+      if (hasUnsavedChanges && !tokenNeedsReentry) {
         await saveMutation.mutateAsync();
       }
       const res = await api.testObicoConnection(mlUrl, mlToken);
@@ -218,11 +245,17 @@ export function FailureDetectionSettings() {
                 type="password"
                 value={mlToken}
                 onChange={(e) => setMlToken(e.target.value)}
+                onFocus={selectPlaceholderOnFocus}
                 autoComplete="off"
                 placeholder={t('failureDetection.mlTokenPlaceholder')}
                 className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white text-sm"
                 disabled={!enabled}
               />
+              {mlToken === SECRET_PLACEHOLDER && (
+                <p className={`text-xs mt-1 ${tokenNeedsReentry ? 'text-yellow-400' : 'text-bambu-gray'}`}>
+                  {t(tokenNeedsReentry ? 'common.secretReenter' : 'common.secretKept')}
+                </p>
+              )}
               <p className="text-xs text-bambu-gray mt-1">{t('failureDetection.mlTokenHint')}</p>
               {testResult && (
                 <div

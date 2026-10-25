@@ -5,6 +5,7 @@ Generates thumbnail images from STL files using trimesh and matplotlib.
 
 import logging
 import os
+import threading
 import uuid
 from pathlib import Path
 
@@ -197,7 +198,22 @@ def _import_renderer():
     return plt, LightSource, Poly3DCollection
 
 
+# One thumbnail at a time. Callers run in worker threads (asyncio.to_thread) so
+# a slow mesh never blocks the event loop. pyplot's current-figure state is
+# global and not thread-safe, so two renders at once could draw into each
+# other's figure; and one load at a time keeps several large meshes from being
+# held in memory together. Re-entrant: generate_stl_thumbnail holds it around
+# the load and render_mesh_png takes it again.
+_RENDER_LOCK = threading.RLock()
+
+
 def render_mesh_png(mesh, size: int = 256, label: str = "mesh") -> bytes:
+    """Render ``mesh`` to PNG bytes; see ``_render_mesh_png``. One at a time."""
+    with _RENDER_LOCK:
+        return _render_mesh_png(mesh, size=size, label=label)
+
+
+def _render_mesh_png(mesh, size: int = 256, label: str = "mesh") -> bytes:
     """Render ``mesh`` (a ``trimesh.Trimesh``) to PNG bytes.
 
     The caller owns the face budget: this draws every face it is given, so a
@@ -295,6 +311,19 @@ def render_mesh_png(mesh, size: int = 256, label: str = "mesh") -> bytes:
 
 
 def generate_stl_thumbnail(
+    stl_path: Path,
+    thumbnails_dir: Path,
+    size: int = 256,
+) -> str | None:
+    """Generate a thumbnail image from an STL file; see ``_generate_stl_thumbnail``.
+
+    One at a time (``_RENDER_LOCK``). Blocking: call it in a worker thread.
+    """
+    with _RENDER_LOCK:
+        return _generate_stl_thumbnail(stl_path, thumbnails_dir, size)
+
+
+def _generate_stl_thumbnail(
     stl_path: Path,
     thumbnails_dir: Path,
     size: int = 256,

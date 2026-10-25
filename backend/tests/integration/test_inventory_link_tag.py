@@ -8,11 +8,11 @@ when two active spools carry one tag. Nothing prevents that duplicate: no
 unique index, no conflict check on PATCH /spools/{id}, and POST /spools/bulk
 copies one tag into every row it creates.
 
-That exception escapes the route into the auth middleware's fail-closed
-``except Exception`` (main.py:9685), so the caller does not even get a 500 --
-they get 503 "Authentication service temporarily unavailable" for a request
-that has nothing to do with auth. The middleware is right to fail closed
-(GHSA-6mf4-q26m-47pv); the route is what must not raise.
+That exception escaped the route as an unhandled error. (It used to be
+reported as 503 "Authentication service temporarily unavailable", because the
+auth middleware ran the request inside the try that guards its auth probe; the
+middleware now guards only the probe, so such an error is a 500.) Either way
+the route is what must not raise.
 """
 
 from datetime import datetime, timezone

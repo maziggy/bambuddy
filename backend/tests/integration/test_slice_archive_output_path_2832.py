@@ -84,7 +84,7 @@ class TestTheReportedFailure:
 
     async def test_the_archive_row_points_at_the_file(self, db_session, archive_factory, printer_factory, archive_root):
         """A row whose file_path does not exist is the same class of bug one
-        step later -- every reprint and rescan reads it back."""
+        step later -- every reprint reads it back."""
         from backend.app.core.config import settings
         from backend.app.models.archive import PrintArchive
 
@@ -137,3 +137,31 @@ class TestOrdinaryNamesAreUnchanged:
 
         assert response.name == "Benchy (re-sliced)"
         assert [p.name for p in await _written_files(archive_root) if p.suffix == ".3mf"] == ["Benchy.gcode.3mf"]
+
+
+async def test_the_new_archive_can_be_someone_other_than_the_cloud_user(
+    db_session, archive_factory, printer_factory, archive_root
+):
+    """A key without the cloud scope slices: nobody resolves cloud presets, its
+    owner owns the result."""
+    from backend.app.models.archive import PrintArchive
+    from backend.app.models.user import User
+
+    owner = User(username="archiveowner", password_hash="x", role="user")
+    db_session.add(owner)
+    await db_session.commit()
+    printer = await printer_factory()
+    source = await archive_factory(printer.id, print_name="Part", filename="Part.3mf")
+
+    with _stub_slicer():
+        response = await slice_and_persist_as_archive(
+            db_session,
+            model_bytes=b"source model",
+            model_filename="Part.3mf",
+            request=SliceRequest(printer_preset_id=1, process_preset_id=2, filament_preset_id=3),
+            source_archive=source,
+            current_user_id=None,
+            owner_id=owner.id,
+        )
+
+    assert (await db_session.get(PrintArchive, response.archive_id)).created_by_id == owner.id

@@ -109,7 +109,7 @@ def _not_checked(printer: Printer) -> FirmwareUpdateInfo:
 
 @router.get("/updates", response_model=FirmwareUpdatesResponse)
 async def check_firmware_updates(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -168,7 +168,7 @@ async def check_firmware_updates(
 @router.get("/updates/{printer_id}", response_model=FirmwareUpdateInfo)
 async def check_printer_firmware(
     printer_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.FIRMWARE_READ),
 ):
     """
@@ -185,7 +185,11 @@ async def check_printer_firmware(
 
     if not await _checks_enabled(db):
         return _not_checked(printer)
+    return await _printer_update_info(firmware_service, printer)
 
+
+async def _printer_update_info(firmware_service, printer: Printer) -> FirmwareUpdateInfo:
+    """Whether *printer* has a firmware update, as ``GET /updates/{printer_id}`` reports it."""
     current_version = _current_version(printer.id)
 
     # Check for update
@@ -272,7 +276,7 @@ class FirmwareUploadStartResponse(BaseModel):
 async def prepare_firmware_upload(
     printer_id: int,
     version: str | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.FIRMWARE_READ),
 ):
     """
@@ -295,7 +299,7 @@ async def prepare_firmware_upload(
 async def start_firmware_upload(
     printer_id: int,
     version: str | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.FIRMWARE_UPDATE),
 ):
     """
@@ -305,8 +309,7 @@ async def start_firmware_upload(
     1. Downloads the firmware from Bambu Lab
     2. Uploads it to the printer's SD card via FTP
 
-    Progress is broadcast via WebSocket with type "firmware_upload_progress".
-    Use GET /firmware/updates/{printer_id}/upload/status for polling fallback.
+    Poll GET /firmware/updates/{printer_id}/upload/status for progress.
 
     After upload completes, the user must trigger the update from the
     printer's screen (Settings > Firmware).
@@ -339,7 +342,7 @@ async def start_firmware_upload(
 
     return FirmwareUploadStartResponse(
         started=True,
-        message="Firmware upload started. Progress will be broadcast via WebSocket.",
+        message="Firmware upload started. Poll the upload status for progress.",
     )
 
 
@@ -349,11 +352,7 @@ async def get_firmware_upload_status(
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.FIRMWARE_READ),
 ):
     """
-    Get the current status of a firmware upload operation.
-
-    This is a polling fallback for clients that don't use WebSocket.
-    For real-time updates, connect to WebSocket and listen for
-    "firmware_upload_progress" messages.
+    Get the current status of a firmware upload operation (poll for progress).
     """
     state = get_upload_state(printer_id)
     return FirmwareUploadStatusResponse(

@@ -324,7 +324,12 @@ class TestCostCalculationScenarios:
     async def test_archive_cost_with_archive_id_and_print_name(
         self, async_client, archive_factory, printer_factory, db_session
     ):
-        """Test archive cost recalculation using both archive_id and print_name fallback."""
+        """Recalculation uses usage linked by archive_id; unlinked usage is not matched by name.
+
+        Matching unlinked usage by print name charged a deleted print's (or every
+        earlier run's) spool cost to each archive of that name, so an archive
+        without linked usage gets the estimate from the filament price.
+        """
         from backend.app.models.spool import Spool
         from backend.app.models.spool_usage_history import SpoolUsageHistory
 
@@ -408,9 +413,10 @@ class TestCostCalculationScenarios:
         assert response_new.status_code == 200
         assert response_new.json()["cost"] == 0.50
 
-        # Verify archive_old cost from legacy print_name fallback
+        # archive_old: the unlinked 0.45 is not used; 30 g of PLA at the default
+        # 25.00 per kg instead.
         response_old = await async_client.get(f"/api/v1/archives/{archive_old.id}")
         assert response_old.status_code == 200
-        assert response_old.json()["cost"] == 0.45
+        assert response_old.json()["cost"] == 0.75
 
         await db_session.rollback()

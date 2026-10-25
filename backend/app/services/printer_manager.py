@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 import re
 import traceback
 from collections.abc import Callable
@@ -16,6 +17,7 @@ from backend.app.services.bambu_mqtt import (
     PrinterState,
     get_stage_name,
 )
+from backend.app.services.pause_eta import next_pause
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.kprofile_lookup import build_slot_k_resolver
 
@@ -58,7 +60,6 @@ A1_MODELS = frozenset(
     [
         # Display names
         "A1",
-        "A1 MINI",
         "A1-MINI",
         "A1MINI",
         # Internal codes (from MQTT/SSDP)
@@ -81,6 +82,16 @@ STG_CUR_IDLE_BUG_MODELS = A1_MODELS | frozenset(
 )
 
 
+def _normalize_model(model: str) -> str:
+    """Upper case without spaces, the form the model sets below hold (#3335).
+
+    A printer is stored as "H2D Pro" or "A1 Mini"; upper-casing alone kept the
+    space, and "H2D PRO" matched no set. Dashes stay: the sets name the X1C's
+    code as "BL-P001".
+    """
+    return model.strip().upper().replace(" ", "")
+
+
 def supports_chamber_temp(model: str | None) -> bool:
     """Check if a printer model has a real chamber temperature sensor.
 
@@ -89,15 +100,13 @@ def supports_chamber_temp(model: str | None) -> bool:
     """
     if not model:
         return False
-    # Normalize model name (uppercase, strip whitespace)
-    model_upper = model.strip().upper()
-    return model_upper in CHAMBER_TEMP_SUPPORTED_MODELS
+    return _normalize_model(model) in CHAMBER_TEMP_SUPPORTED_MODELS
 
 
 # Models with an ACTIVE chamber heater (M141 has an effect).
 # Many printers in CHAMBER_TEMP_SUPPORTED_MODELS only have a passive sensor —
-# X1C, X1E, P2S report chamber temperature but cannot actively heat it. Only
-# the models below ship a PTC heater that responds to M141.
+# X1C and P2S report chamber temperature but cannot actively heat it. Only
+# the models below ship a heater that responds to M141; the X1E heats to 60 °C.
 CHAMBER_HEATER_MODELS = frozenset(
     [
         # Display names
@@ -105,8 +114,10 @@ CHAMBER_HEATER_MODELS = frozenset(
         "H2D",
         "H2DPRO",
         "H2S",
+        "X1E",
         "X2D",
         # Internal codes (from MQTT/SSDP)
+        "C13",  # X1E
         "O1C",  # H2C
         "O1C2",  # H2C dual-nozzle variant
         "O1D",  # H2D
@@ -122,17 +133,17 @@ def supports_chamber_heater(model: str | None) -> bool:
     """Check if a printer model has an active chamber heater (responds to M141).
 
     The chamber temperature SENSOR is more widely deployed than the chamber
-    HEATER — X1C/X1E/P2S report chamber temp but ignore M141. Only H2C, H2D,
-    H2D Pro, H2S, X2D actually heat. Sensor-only models silently swallow the
+    HEATER — X1C/P2S report chamber temp but ignore M141. Only H2C, H2D,
+    H2D Pro, H2S, X1E, X2D actually heat. Sensor-only models silently swallow the
     command at the firmware level, so we 400 at the route to surface that.
     """
     if not model:
         return False
-    return model.strip().upper() in CHAMBER_HEATER_MODELS
+    return _normalize_model(model) in CHAMBER_HEATER_MODELS
 
 
 # Models with a cooling / heating airduct flap. Same set as the frontend
-# PrintersPage airduct-toggle whitelist (P2S, X2D, H2D, H2C, H2S, H2D Pro).
+# PrintersPage airduct-toggle whitelist (P2S, X2D, H2D, H2D Pro, H2C, H2S).
 # X1E has a chamber heater but NO airduct flap — the warm-air recirculation
 # happens via the fixed front-door inlet, so no `set_airduct` command is
 # needed (and the firmware ignores it). P2S has an airduct but no heater —
@@ -173,7 +184,7 @@ def supports_airduct(model: str | None) -> bool:
     """
     if not model:
         return False
-    return model.strip().upper() in CHAMBER_AIRDUCT_MODELS
+    return _normalize_model(model) in CHAMBER_AIRDUCT_MODELS
 
 
 def has_stg_cur_idle_bug(model: str | None) -> bool:
@@ -185,12 +196,11 @@ def has_stg_cur_idle_bug(model: str | None) -> bool:
     """
     if not model:
         return False
-    model_upper = model.strip().upper()
-    return model_upper in STG_CUR_IDLE_BUG_MODELS
+    return _normalize_model(model) in STG_CUR_IDLE_BUG_MODELS
 
 
 # Minimum firmware versions for AMS drying support (confirmed via capture testing)
-# Keys are exact model names (upper-cased). Do NOT use substring matching — it would
+# Keys are exact model names (upper-cased, no spaces). Do NOT use substring matching — it would
 # incorrectly gate X1E (matched by "X1") and H2D Pro (matched by "H2D").
 _DRYING_MIN_FIRMWARE: dict[str, str] = {
     "H2D": "01.02.30.00",
@@ -204,7 +214,7 @@ _DRYING_MIN_FIRMWARE: dict[str, str] = {
     "N7": "01.02.00.00",  # P2S internal model code
 }
 # Models that definitely don't support AMS drying (no AMS 2 Pro / AMS-HT compatibility)
-_DRYING_UNSUPPORTED_MODELS = frozenset({"A1", "A1MINI", "A1-MINI", "A1 MINI", "O1S", "N1", "N2S"})
+_DRYING_UNSUPPORTED_MODELS = frozenset({"A1", "A1MINI", "A1-MINI", "O1S", "N1", "N2S"})
 
 # Models whose AMS can dry, but only from the printer's own touchscreen. Bambu's P1
 # manual is explicit: "P1S connected AMS drying functions may only be controlled from
@@ -226,7 +236,7 @@ def drying_screen_only(model: str | None) -> bool:
     """
     if not model:
         return False
-    return model.strip().upper() in _DRYING_SCREEN_ONLY_MODELS
+    return _normalize_model(model) in _DRYING_SCREEN_ONLY_MODELS
 
 
 # Temperature keys the UI actually draws. `state.temperatures` is also working
@@ -320,7 +330,7 @@ def supports_drying(model: str | None, firmware: str | None) -> bool:
     """
     if not model:
         return False
-    model_upper = model.strip().upper()
+    model_upper = _normalize_model(model)
     if model_upper in _DRYING_UNSUPPORTED_MODELS or model_upper in _DRYING_SCREEN_ONLY_MODELS:
         return False
     if model_upper in _DRYING_MIN_FIRMWARE:
@@ -337,7 +347,6 @@ def supports_drying(model: str | None, firmware: str | None) -> bool:
 # will reject the command in those cases anyway via dry_sf_reason=[0] (TaskOccupied).
 _DRY_WHILE_PRINTING_MIN_FIRMWARE: dict[str, str] = {
     "H2D": "01.03.00.00",
-    "H2D PRO": "01.02.00.00",
     "H2DPRO": "01.02.00.00",
     "O1E": "01.02.00.00",  # H2D Pro SSDP code
     "O2D": "01.02.00.00",  # H2D Pro alternate code
@@ -368,7 +377,7 @@ def supports_drying_while_printing(model: str | None, firmware: str | None) -> b
     """
     if not model:
         return False
-    model_upper = model.strip().upper()
+    model_upper = _normalize_model(model)
     if model_upper not in _DRY_WHILE_PRINTING_MIN_FIRMWARE:
         return False
     return bool(firmware and firmware >= _DRY_WHILE_PRINTING_MIN_FIRMWARE[model_upper])
@@ -422,9 +431,13 @@ class PrinterManager:
         """Get printer info by ID."""
         return self._printer_info.get(printer_id)
 
-    def set_current_print_user(self, printer_id: int, user_id: int, username: str):
-        """Track who started the current print (Issue #206)."""
-        self._current_print_user[printer_id] = {"user_id": user_id, "username": username}
+    def set_current_print_user(self, printer_id: int, user_id: int, username: str, queue_item_id: int | None = None):
+        """Track who started the current print (Issue #206), and for which queue item."""
+        self._current_print_user[printer_id] = {
+            "user_id": user_id,
+            "username": username,
+            "queue_item_id": queue_item_id,
+        }
 
     def get_current_print_user(self, printer_id: int) -> dict | None:
         """Get the user who started the current print (Issue #206)."""
@@ -433,6 +446,28 @@ class PrinterManager:
     def clear_current_print_user(self, printer_id: int):
         """Clear the current print user when print completes (Issue #206)."""
         self._current_print_user.pop(printer_id, None)
+
+    def clear_current_print_user_for_item(self, printer_id: int, queue_item_id: int) -> None:
+        """Clear the print user if a queue item's dispatch set it and that print never started.
+
+        A later dispatch's user, set for another item, stays.
+        """
+        user = self._current_print_user.get(printer_id)
+        if user is not None and user.get("queue_item_id") == queue_item_id:
+            del self._current_print_user[printer_id]
+
+    def forget_user(self, user_id: int) -> None:
+        """A deleted user is credited with none of the prints still running."""
+        for printer_id, user in list(self._current_print_user.items()):
+            if user.get("user_id") == user_id:
+                del self._current_print_user[printer_id]
+
+    def forget_printer(self, printer_id: int) -> None:
+        """A deleted printer's print owner, plate-clear gate and last trays go
+        with it, not to the next printer given its id (SQLite reuses it)."""
+        self._current_print_user.pop(printer_id, None)
+        self._awaiting_plate_clear.discard(printer_id)
+        self._last_trays.pop(printer_id, None)
 
     def is_awaiting_plate_clear(self, printer_id: int) -> bool:
         """Return True when the printer finished/failed a print and is waiting for the
@@ -963,6 +998,7 @@ class PrinterManager:
         nozzle_offset_cali: str = "auto",
         nozzle_mapping: str | None = None,
         nozzle_slot_extruders: str | None = None,
+        plate_uses_only_external: bool = False,
     ) -> bool:
         """Start a print on a connected printer.
 
@@ -998,6 +1034,7 @@ class PrinterManager:
                 nozzle_offset_cali=nozzle_offset_cali,
                 nozzle_mapping=nozzle_mapping,
                 nozzle_slot_extruders=nozzle_slot_extruders,
+                plate_uses_only_external=plate_uses_only_external,
             )
         return False
 
@@ -1005,51 +1042,6 @@ class PrinterManager:
         """Stop the current print on a connected printer."""
         if printer_id in self._clients:
             return self._clients[printer_id].stop_print()
-        return False
-
-    async def wait_for_cooldown(
-        self,
-        printer_id: int,
-        target_temp: float = 50.0,
-        timeout: int = 600,
-        check_interval: int = 10,
-    ) -> bool:
-        """Wait for the nozzle to cool down to a safe temperature.
-
-        Args:
-            printer_id: The printer to monitor
-            target_temp: Target temperature to wait for (default 50°C)
-            timeout: Maximum seconds to wait (default 600s = 10 min)
-            check_interval: Seconds between temperature checks (default 10s)
-
-        Returns:
-            True if cooled down, False if timeout or not connected
-        """
-        import logging
-
-        logger = logging.getLogger(__name__)
-
-        elapsed = 0
-        while elapsed < timeout:
-            state = self.get_status(printer_id)
-            if not state or not state.connected:
-                logger.warning("Printer %s disconnected during cooldown wait", printer_id)
-                return False
-
-            # Check nozzle temperature (and nozzle_2 for dual extruders)
-            nozzle_temp = state.temperatures.get("nozzle", 0)
-            nozzle_2_temp = state.temperatures.get("nozzle_2", 0)
-            max_temp = max(nozzle_temp, nozzle_2_temp)
-
-            if max_temp <= target_temp:
-                logger.info("Printer %s cooled down to %s°C", printer_id, max_temp)
-                return True
-
-            logger.debug("Printer %s nozzle at %s°C, waiting for %s°C...", printer_id, max_temp, target_temp)
-            await asyncio.sleep(check_interval)
-            elapsed += check_interval
-
-        logger.warning("Printer %s cooldown timeout after %ss", printer_id, timeout)
         return False
 
     def enable_logging(self, printer_id: int, enabled: bool = True) -> bool:
@@ -1275,10 +1267,59 @@ def resolve_plate_id(state) -> int | None:
     return parse_plate_id(state.gcode_file)
 
 
+def print_ams_mapping(state: PrinterState) -> list:
+    """The running print's AMS mapping: the one captured from its print command,
+    else whatever the printer's push carried (it rarely does)."""
+    if isinstance(state.print_ams_mapping, list):
+        return list(state.print_ams_mapping)
+    raw = (state.raw_data or {}).get("ams_mapping")
+    return list(raw) if isinstance(raw, list) else []
+
+
+def nozzle_wiring(state: PrinterState) -> dict | None:
+    """Which nozzle each AMS is wired to, for the runout hint; None with a
+    Filament Track Switch fitted, where an AMS can feed either nozzle and the
+    map can still hold an AMS's wiring from before it moved onto the switch."""
+    if state.fila_switch and state.fila_switch.installed:
+        return None
+    return state.ams_extruder_map
+
+
+def _trays_on_extruder(
+    raw_slot: int,
+    ams_layout: list[tuple[int, bool]],
+    active_extruder: int | None,
+    ams_extruder_map: dict | None,
+) -> set[int] | None:
+    """The global trays a local ``raw_slot`` can be on the AMS units wired to
+    ``active_extruder`` (an AMS-HT's one tray for slot 0), or None when the
+    wiring is unknown.
+
+    An AMS on the Filament Track Switch has no entry in the map (it can feed
+    either nozzle), so one without an entry makes the answer unknown too.
+    """
+    if active_extruder is None or not ams_extruder_map:
+        return None
+    trays: set[int] = set()
+    for ams_id, is_ht in ams_layout:
+        nozzle = ams_extruder_map.get(str(ams_id))
+        if nozzle is None:
+            return None
+        if nozzle != active_extruder:
+            continue
+        if not is_ht:
+            trays.add(ams_id * 4 + raw_slot)
+        elif raw_slot == 0:
+            trays.add(ams_id)
+    return trays
+
+
 def resolve_expected_tray(
     raw_slot: int | None,
     ams_layout: list[tuple[int, bool]],
     mapping_raw: object,
+    active_extruder: int | None = None,
+    ams_extruder_map: dict | None = None,
 ) -> int | None:
     """Globalise a raw firmware ``tray_tar``/``tray_pre`` value for the runout UI (#2587).
 
@@ -1295,8 +1336,10 @@ def resolve_expected_tray(
     - ``0``-``3`` local slot:
         * exactly one regular AMS -> ``ams_id*4 + slot``
         * several regular AMS -> resolved via the snow-encoded ``mapping`` field
-          (each entry = ``ams_hw_id*256 + slot``; ``65535`` = unmapped), or
-          ``None`` when it stays ambiguous (honest "can't determine")
+          (each entry = ``ams_hw_id*256 + slot``; ``65535`` = unmapped), then
+          narrowed to the AMS that feed ``active_extruder`` (``ams_extruder_map``,
+          dual-nozzle printers), or ``None`` when it stays ambiguous (honest
+          "can't determine")
         * no regular AMS -> ``None``
     - ``4``-``15`` -> already a global regular-AMS ID, returned as-is
 
@@ -1314,10 +1357,8 @@ def resolve_expected_tray(
         if len(regular) == 1:
             return regular[0] * 4 + raw_slot
         if len(regular) > 1:
-            if not isinstance(mapping_raw, list):
-                return None
             candidates: set[int] = set()
-            for value in mapping_raw:
+            for value in mapping_raw if isinstance(mapping_raw, list) else []:
                 if not isinstance(value, int) or value >= 65535:
                     continue
                 ams_hw_id = value >> 8
@@ -1326,7 +1367,16 @@ def resolve_expected_tray(
                     candidates.add(ams_hw_id * 4 + raw_slot)
                 elif 128 <= ams_hw_id <= 135 and raw_slot == 0:
                     candidates.add(ams_hw_id)
-            return candidates.pop() if len(candidates) == 1 else None
+            if len(candidates) == 1:
+                return candidates.pop()
+            # The print paused on the active nozzle, so the slot is on an AMS
+            # that feeds it.
+            narrowed = _trays_on_extruder(raw_slot, ams_layout, active_extruder, ams_extruder_map)
+            if narrowed is None:
+                return None
+            if candidates:
+                narrowed &= candidates
+            return narrowed.pop() if len(narrowed) == 1 else None
         return None
     if 4 <= raw_slot <= 15:
         return raw_slot
@@ -1334,6 +1384,210 @@ def resolve_expected_tray(
     if 24 <= raw_slot <= 27:
         return raw_slot
     return None
+
+
+def _ams_temp(raw: object) -> float | None:
+    """The AMS unit temperature as a number, or None when it is not one."""
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    # NaN or infinity would put a token in the WebSocket frame that the
+    # browser's JSON.parse rejects, dropping the whole status push.
+    return value if math.isfinite(value) else None
+
+
+def ams_units_to_dicts(
+    ams_list: list,
+    resolve_slot_k: Callable,
+    drying_targets: dict[int, dict] | None = None,
+) -> list[dict]:
+    """The AMS units of a printer's ``raw_data["ams"]``, as the printer card reads them.
+
+    The one serialiser for both the WebSocket push and the REST status
+    (routes/printers.py). The card is seeded from REST and shallow-merged with
+    every push, so any field one of them lacks reads as missing on the page:
+    ``exists`` (#2670), the stalled-countdown flag and the drying status were
+    each lost that way while the two were separate copies.
+    """
+    ams_units: list[dict] = []
+    for ams_data in ams_list:
+        # Skip if ams_data is not a dict (defensive check)
+        if not isinstance(ams_data, dict):
+            continue
+        ams_id = int(ams_data.get("id", 0))
+        trays = []
+        for tray in ams_data.get("tray", []):
+            tag_uid = tray.get("tag_uid")
+            if tag_uid in ("", "0000000000000000"):
+                tag_uid = None
+            tray_uuid = tray.get("tray_uuid")
+            if tray_uuid in ("", "00000000000000000000000000000000"):
+                tray_uuid = None
+
+            # Get K value: first try tray's k field, then lookup from K-profiles
+            k_value = tray.get("k")
+            cali_idx = tray.get("cali_idx")
+            if k_value is None:
+                k_value = resolve_slot_k(cali_idx, ams_id, int(tray.get("id", 0)))
+
+            # P1S / A1 Mini physically-empty-slot signal (#1322 follow-up by
+            # @RosdasHH): for a truly empty slot the firmware sends only
+            # {"id": N} — no state, no tray_type, no anything else. Treat
+            # that as the firmware's "no spool" indicator (state=9) so the
+            # assign-spool path in inventory.py can short-circuit a MQTT
+            # publish the firmware would silently drop anyway. The
+            # post-"Reset Slot" A1 Mini BMCU case sends a populated payload
+            # (state=3, tray_type="") — different shape, doesn't match this
+            # guard, still attempts the MQTT push per the #1322 fix.
+            state_val = tray.get("state")
+            if state_val is None and len(tray) == 1 and "id" in tray:
+                state_val = 9
+
+            trays.append(
+                {
+                    "id": int(tray.get("id", 0)),
+                    "tray_color": tray.get("tray_color"),
+                    "tray_type": tray.get("tray_type"),
+                    "tray_sub_brands": tray.get("tray_sub_brands"),
+                    "tray_id_name": tray.get("tray_id_name"),
+                    "tray_info_idx": tray.get("tray_info_idx"),
+                    "remain": tray.get("remain", 0),
+                    "k": k_value,
+                    "cali_idx": cali_idx,
+                    "tag_uid": tag_uid,
+                    "tray_uuid": tray_uuid,
+                    "nozzle_temp_min": tray.get("nozzle_temp_min"),
+                    "nozzle_temp_max": tray.get("nozzle_temp_max"),
+                    "drying_temp": tray.get("drying_temp"),
+                    "drying_time": tray.get("drying_time"),
+                    "state": state_val,
+                    # Firmware's authoritative presence bit (tray_exist_bits),
+                    # set by apply_tray_exist_bits. Without it getEmptySlotKind
+                    # falls back to the firmware-variant state 9/10 heuristic,
+                    # wrong for AMS-HT in both directions (#2670).
+                    "exists": tray.get("exists"),
+                }
+            )
+        # Percentage only — the 1-5 index is inverted and must never stand
+        # in for one (#3140). See utils/ams_humidity.
+        humidity_pct = ams_humidity_percent(ams_data)
+        humidity_value = int(round(humidity_pct)) if humidity_pct is not None else None
+
+        # AMS-HT by its unit id: a regular AMS can report fewer than 4 trays.
+        is_ams_ht = 128 <= ams_id <= 135
+
+        # Active-cycle filament + target temperature for the badge.
+        # Bambu does not echo the cycle's chosen filament/temp on the
+        # per-tick AMS push, so prefer the cached target from the last
+        # ``send_drying_command``. When we have no record (drying
+        # started in a previous backend lifetime, or the cache was
+        # never seeded), the loaded trays can still name the filament
+        # if they agree — but never the temperature, which only the
+        # cache knows. See uniform_tray_filament_hint.
+        ams_id_int = int(ams_data.get("id", 0))
+        target = (drying_targets or {}).get(ams_id_int)
+        dry_target_temp: int | None = None
+        dry_filament: str | None = None
+        if target:
+            temp_val = target.get("temp")
+            fil_val = target.get("filament") or ""
+            if temp_val is not None:
+                try:
+                    dry_target_temp = int(temp_val)
+                except (TypeError, ValueError):
+                    dry_target_temp = None
+            if fil_val:
+                dry_filament = str(fil_val)
+        if not dry_filament:
+            dry_filament = uniform_tray_filament_hint([tray.get("tray_type") or "" for tray in trays])
+
+        ams_units.append(
+            {
+                "id": ams_id_int,
+                "humidity": humidity_value,
+                # A number, as the REST schema has always coerced it: the
+                # firmware sends a string, and the card showed "24°C" after a
+                # page load but "24.0°C" after the first push.
+                "temp": _ams_temp(ams_data.get("temp")),
+                "is_ams_ht": is_ams_ht,
+                "tray": trays,
+                # Serial number: Bambu MQTT uses "sn" key on AMS unit objects
+                "serial_number": str(ams_data.get("sn") or ams_data.get("serial_number") or ""),
+                # Firmware version: populated by _handle_version_info from get_version
+                "sw_ver": str(ams_data.get("sw_ver") or ""),
+                # Drying: dry_time > 0 means drying is active (minutes remaining)
+                "dry_time": int(ams_data.get("dry_time") or 0),
+                # Stall flag stamped onto raw_data by the MQTT layer: the
+                # firmware set the countdown but it never ticked. Without it
+                # the card falls back to the amber "active cycle" badge, so
+                # the neutral "Drying not started" state is unreachable.
+                "dry_countdown_stalled": bool(ams_data.get("dry_countdown_stalled") or False),
+                # Drying status from info hex bits (0=Off, 1=Checking, 2=Drying, 3=Cooling, etc.)
+                "dry_status": int(ams_data.get("dry_status") or 0),
+                "dry_sub_status": int(ams_data.get("dry_sub_status") or 0),
+                # Cannot-dry reasons from firmware (e.g. 1=InsufficientPower, 8=NeedPluginPower)
+                "dry_sf_reason": list(ams_data.get("dry_sf_reason") or []),
+                # Active-cycle filament name + target temperature
+                "dry_target_temp": dry_target_temp,
+                "dry_filament": dry_filament,
+                # Module type: "ams", "n3f", "n3s" (from get_version)
+                "module_type": str(ams_data.get("module_type") or ""),
+            }
+        )
+    return ams_units
+
+
+def vt_trays_to_dicts(raw: object, resolve_slot_k: Callable) -> list[dict]:
+    """The external spools of a printer's ``raw_data["vt_tray"]``.
+
+    Shared by the WebSocket push and the REST status, like ``ams_units_to_dicts``.
+    """
+    vt_tray: list[dict] = []
+    vt_tray_raw = raw
+    # Defensive: MQTT sends vt_tray as a dict; normalize to list
+    if isinstance(vt_tray_raw, dict):
+        vt_tray_raw = [vt_tray_raw]
+    elif not isinstance(vt_tray_raw, list):
+        vt_tray_raw = []
+    for vt_data in vt_tray_raw:
+        vt_tag_uid = vt_data.get("tag_uid")
+        if vt_tag_uid in ("", "0000000000000000"):
+            vt_tag_uid = None
+        vt_tray_uuid = vt_data.get("tray_uuid")
+        if vt_tray_uuid in ("", "00000000000000000000000000000000"):
+            vt_tray_uuid = None
+
+        # Get K value for vt_tray
+        vt_k_value = vt_data.get("k")
+        vt_cali_idx = vt_data.get("cali_idx")
+        if vt_k_value is None:
+            # External holder: id 254 is Ext-L, 255 is Ext-R. The resolver
+            # takes the 0/1 tray index, so normalise before asking.
+            vt_id = int(vt_data.get("id", 254))
+            vt_k_value = resolve_slot_k(vt_cali_idx, 255, vt_id - 254 if vt_id >= 254 else vt_id)
+
+        tray_id = int(vt_data.get("id", 254))
+        vt_tray.append(
+            {
+                "id": tray_id,
+                "tray_color": vt_data.get("tray_color"),
+                "tray_type": vt_data.get("tray_type"),
+                "tray_sub_brands": vt_data.get("tray_sub_brands"),
+                "tray_id_name": vt_data.get("tray_id_name"),
+                "tray_info_idx": vt_data.get("tray_info_idx"),
+                "remain": vt_data.get("remain", 0),
+                "k": vt_k_value,
+                "cali_idx": vt_cali_idx,
+                "tag_uid": vt_tag_uid,
+                "tray_uuid": vt_tray_uuid,
+                "nozzle_temp_min": vt_data.get("nozzle_temp_min"),
+                "nozzle_temp_max": vt_data.get("nozzle_temp_max"),
+            }
+        )
+    return vt_tray
 
 
 def printer_state_to_dict(
@@ -1364,173 +1618,11 @@ def printer_state_to_dict(
     resolve_slot_k = build_slot_k_resolver(state)
 
     if "ams" in raw_data and isinstance(raw_data["ams"], list):
-        for ams_data in raw_data["ams"]:
-            trays = []
-            for tray in ams_data.get("tray", []):
-                tag_uid = tray.get("tag_uid")
-                if tag_uid in ("", "0000000000000000"):
-                    tag_uid = None
-                tray_uuid = tray.get("tray_uuid")
-                if tray_uuid in ("", "00000000000000000000000000000000"):
-                    tray_uuid = None
-
-                # Get K value: first try tray's k field, then lookup from K-profiles
-                k_value = tray.get("k")
-                cali_idx = tray.get("cali_idx")
-                if k_value is None:
-                    k_value = resolve_slot_k(cali_idx, int(ams_data.get("id", 0)), int(tray.get("id", 0)))
-
-                # P1S / A1 Mini physically-empty-slot signal (#1322 follow-up by
-                # @RosdasHH): for a truly empty slot the firmware sends only
-                # {"id": N} — no state, no tray_type, no anything else. Treat
-                # that as the firmware's "no spool" indicator (state=9) so the
-                # assign-spool path in inventory.py can short-circuit a MQTT
-                # publish the firmware would silently drop anyway. The
-                # post-"Reset Slot" A1 Mini BMCU case sends a populated payload
-                # (state=3, tray_type="") — different shape, doesn't match this
-                # guard, still attempts the MQTT push per the #1322 fix.
-                state_val = tray.get("state")
-                if state_val is None and len(tray) == 1 and "id" in tray:
-                    state_val = 9
-
-                trays.append(
-                    {
-                        "id": int(tray.get("id", 0)),
-                        "tray_color": tray.get("tray_color"),
-                        "tray_type": tray.get("tray_type"),
-                        "tray_sub_brands": tray.get("tray_sub_brands"),
-                        "tray_id_name": tray.get("tray_id_name"),
-                        "tray_info_idx": tray.get("tray_info_idx"),
-                        "remain": tray.get("remain", 0),
-                        "k": k_value,
-                        "cali_idx": cali_idx,
-                        "tag_uid": tag_uid,
-                        "tray_uuid": tray_uuid,
-                        "nozzle_temp_min": tray.get("nozzle_temp_min"),
-                        "nozzle_temp_max": tray.get("nozzle_temp_max"),
-                        "drying_temp": tray.get("drying_temp"),
-                        "drying_time": tray.get("drying_time"),
-                        "state": state_val,
-                        # Firmware's authoritative presence bit (tray_exist_bits),
-                        # set by apply_tray_exist_bits. The REST serializer already
-                        # emits it (routes/printers.py); without it here the WS
-                        # shallow-merge drops `exists` after the first frame and
-                        # getEmptySlotKind falls back to the firmware-variant state
-                        # 9/10 heuristic — wrong for AMS-HT in both directions (#2670).
-                        "exists": tray.get("exists"),
-                    }
-                )
-            # Percentage only — the 1-5 index is inverted and must never stand
-            # in for one (#3140). See utils/ams_humidity.
-            humidity_pct = ams_humidity_percent(ams_data)
-            humidity_value = int(round(humidity_pct)) if humidity_pct is not None else None
-
-            # AMS-HT has 1 tray, regular AMS has 4 trays
-            is_ams_ht = len(trays) == 1
-
-            # Active-cycle filament + target temperature for the badge.
-            # Bambu does not echo the cycle's chosen filament/temp on the
-            # per-tick AMS push, so prefer the cached target from the last
-            # ``send_drying_command``. When we have no record (drying
-            # started in a previous backend lifetime, or the cache was
-            # never seeded), the loaded trays can still name the filament
-            # if they agree — but never the temperature, which only the
-            # cache knows. See uniform_tray_filament_hint.
-            ams_id_int = int(ams_data.get("id", 0))
-            target = (drying_targets or {}).get(ams_id_int)
-            dry_target_temp: int | None = None
-            dry_filament: str | None = None
-            if target:
-                temp_val = target.get("temp")
-                fil_val = target.get("filament") or ""
-                if temp_val is not None:
-                    try:
-                        dry_target_temp = int(temp_val)
-                    except (TypeError, ValueError):
-                        dry_target_temp = None
-                if fil_val:
-                    dry_filament = str(fil_val)
-            if not dry_filament:
-                dry_filament = uniform_tray_filament_hint([tray.get("tray_type") or "" for tray in trays])
-
-            ams_units.append(
-                {
-                    "id": ams_id_int,
-                    "humidity": humidity_value,
-                    "temp": ams_data.get("temp"),
-                    "is_ams_ht": is_ams_ht,
-                    "tray": trays,
-                    # Serial number: Bambu MQTT uses "sn" key on AMS unit objects
-                    "serial_number": str(ams_data.get("sn") or ams_data.get("serial_number") or ""),
-                    # Firmware version: populated by _handle_version_info from get_version
-                    "sw_ver": str(ams_data.get("sw_ver") or ""),
-                    # Drying: dry_time > 0 means drying is active (minutes remaining)
-                    "dry_time": int(ams_data.get("dry_time") or 0),
-                    # Stall flag stamped onto raw_data by the MQTT layer: the
-                    # firmware set the countdown but it never ticked. The REST
-                    # serializer already emits it (routes/printers.py); without
-                    # it here the WS shallow-merge replaces the REST-seeded ams
-                    # object a second later, the field reads undefined, and the
-                    # card falls back to the amber "active cycle" badge — so the
-                    # neutral "Drying not started" state would never be reachable
-                    # in the live UI. Same failure mode as `exists` in #2670.
-                    "dry_countdown_stalled": bool(ams_data.get("dry_countdown_stalled") or False),
-                    # Drying status from info hex bits (0=Off, 1=Checking, 2=Drying, 3=Cooling, etc.)
-                    "dry_status": int(ams_data.get("dry_status") or 0),
-                    "dry_sub_status": int(ams_data.get("dry_sub_status") or 0),
-                    # Cannot-dry reasons from firmware (e.g. 1=InsufficientPower, 8=NeedPluginPower)
-                    "dry_sf_reason": list(ams_data.get("dry_sf_reason") or []),
-                    # Active-cycle filament name + target temperature
-                    "dry_target_temp": dry_target_temp,
-                    "dry_filament": dry_filament,
-                    # Module type: "ams", "n3f", "n3s" (from get_version)
-                    "module_type": str(ams_data.get("module_type") or ""),
-                }
-            )
+        ams_units = ams_units_to_dicts(raw_data["ams"], resolve_slot_k, drying_targets)
 
     # Parse virtual tray (external spool) — now a list
     if "vt_tray" in raw_data:
-        vt_tray_raw = raw_data["vt_tray"]
-        # Defensive: MQTT sends vt_tray as a dict; normalize to list
-        if isinstance(vt_tray_raw, dict):
-            vt_tray_raw = [vt_tray_raw]
-        elif not isinstance(vt_tray_raw, list):
-            vt_tray_raw = []
-        for vt_data in vt_tray_raw:
-            vt_tag_uid = vt_data.get("tag_uid")
-            if vt_tag_uid in ("", "0000000000000000"):
-                vt_tag_uid = None
-            vt_tray_uuid = vt_data.get("tray_uuid")
-            if vt_tray_uuid in ("", "00000000000000000000000000000000"):
-                vt_tray_uuid = None
-
-            # Get K value for vt_tray
-            vt_k_value = vt_data.get("k")
-            vt_cali_idx = vt_data.get("cali_idx")
-            if vt_k_value is None:
-                # External holder: id 254 is Ext-L, 255 is Ext-R. The resolver
-                # takes the 0/1 tray index, so normalise before asking.
-                vt_id = int(vt_data.get("id", 254))
-                vt_k_value = resolve_slot_k(vt_cali_idx, 255, vt_id - 254 if vt_id >= 254 else vt_id)
-
-            tray_id = int(vt_data.get("id", 254))
-            vt_tray.append(
-                {
-                    "id": tray_id,
-                    "tray_color": vt_data.get("tray_color"),
-                    "tray_type": vt_data.get("tray_type"),
-                    "tray_sub_brands": vt_data.get("tray_sub_brands"),
-                    "tray_id_name": vt_data.get("tray_id_name"),
-                    "tray_info_idx": vt_data.get("tray_info_idx"),
-                    "remain": vt_data.get("remain", 0),
-                    "k": vt_k_value,
-                    "cali_idx": vt_cali_idx,
-                    "tag_uid": vt_tag_uid,
-                    "tray_uuid": vt_tray_uuid,
-                    "nozzle_temp_min": vt_data.get("nozzle_temp_min"),
-                    "nozzle_temp_max": vt_data.get("nozzle_temp_max"),
-                }
-            )
+        vt_tray = vt_trays_to_dicts(raw_data["vt_tray"], resolve_slot_k)
 
     # Get ams_extruder_map from raw_data (populated by MQTT handler from AMS info field)
     ams_extruder_map = raw_data.get("ams_extruder_map", {})
@@ -1588,6 +1680,8 @@ def printer_state_to_dict(
                 state.tray_tar,
                 [(u["id"], u.get("is_ams_ht", False)) for u in ams_units],
                 raw_data.get("mapping"),
+                active_extruder=state.active_extruder,
+                ams_extruder_map=nozzle_wiring(state),
             )
             if state.state == "PAUSE"
             else None
@@ -1597,12 +1691,23 @@ def printer_state_to_dict(
                 state.tray_pre,
                 [(u["id"], u.get("is_ams_ht", False)) for u in ams_units],
                 raw_data.get("mapping"),
+                active_extruder=state.active_extruder,
+                ams_extruder_map=nozzle_wiring(state),
             )
             if state.state == "PAUSE"
             else None
         ),
         # Per-AMS extruder map: {ams_id: extruder_id} where 0=right, 1=left
         "ams_extruder_map": ams_extruder_map,
+        # The running print's mapping, for the slot pills (#1762).
+        "ams_mapping": print_ams_mapping(state),
+        # Pushed so a change reaches the card at once rather than with the
+        # 30 s REST poll; the frontend shallow-merges each push over its status.
+        "nozzles": [
+            {"nozzle_type": n.nozzle_type, "nozzle_diameter": n.nozzle_diameter} for n in (state.nozzles or [])
+        ],
+        "firmware_version": state.firmware_version,
+        "developer_mode": state.developer_mode,
         # Filament Track Switch. Both fields have to travel on the WebSocket, not
         # only on the REST status: the frontend shallow-merges each push over its
         # cached status, so a field that is absent here keeps whatever the last
@@ -1663,6 +1768,8 @@ def printer_state_to_dict(
         "stg_cur_name": get_derived_status_name(state, model),
         # Printable objects count for skip objects feature
         "printable_objects_count": len(state.printable_objects),
+        # The next pause the slicer put into the running print (#2984)
+        "next_pause": next_pause(state),
         # Fan speeds (0-100 percentage, None if not available)
         "cooling_fan_speed": state.cooling_fan_speed,
         "big_fan1_speed": state.big_fan1_speed,
@@ -1676,6 +1783,9 @@ def printer_state_to_dict(
         "active_extruder": state.active_extruder,
         # Print speed mode (1=silent, 2=standard, 3=sport, 4=ludicrous)
         "speed_level": state.speed_level,
+        # Switched on the printer's screen too; REST-only, the card showed the
+        # old mode until the next poll (PSF-4).
+        "airduct_mode": state.airduct_mode,
         # H2C nozzle rack (tool-changer dock positions)
         # Map raw MQTT field names (type/diameter) to schema names (nozzle_type/nozzle_diameter)
         "nozzle_rack": [
@@ -1689,6 +1799,9 @@ def printer_state_to_dict(
                 "serial_number": n.get("serial_number", ""),
                 "filament_color": n.get("filament_color", ""),
                 "filament_id": n.get("filament_id", ""),
+                # The push replaces the whole rack: without it a slot lost its
+                # material label on every push (PSF-3).
+                "filament_type": n.get("filament_type", ""),
             }
             for n in (state.nozzle_rack or [])
         ],
@@ -1713,10 +1826,10 @@ def printer_state_to_dict(
         result["cover_url"] = f"/api/v1/printers/{printer_id}/cover"
     else:
         result["cover_url"] = None
-    # Surface the display name + model so WS consumers (gcode viewer printer
-    # selector) can render proper labels on the initial snapshot without racing
-    # a separate /api/v1/printers fetch (#963 follow-up). PrinterInfo only
-    # carries name/serial_number; the model comes through via the `model` arg.
+    # The display name + model, so a WS consumer can label the printer from the
+    # snapshot alone (#963 follow-up; the SPA itself takes them from
+    # /api/v1/printers). PrinterInfo only carries name/serial_number; the model
+    # comes through via the `model` arg.
     if printer_id:
         _printer_info = printer_manager.get_printer(printer_id)
         if _printer_info is not None:

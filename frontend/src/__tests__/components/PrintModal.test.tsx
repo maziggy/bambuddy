@@ -20,6 +20,7 @@ import { ToastProvider } from '../../contexts/ToastContext';
 import { http, HttpResponse } from 'msw';
 import { setAuthToken } from '../../api/client';
 import { server } from '../mocks/server';
+import { setColorCatalog, __resetColorCatalogForTests } from '../../utils/colors';
 import type { PrintQueueItem } from '../../api/client';
 
 const mockPrinters = [
@@ -494,7 +495,10 @@ describe('PrintModal', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: /save/i }));
+    // Save waits for the printer's live status (#2589)
+    const save = screen.getByRole('button', { name: /save/i });
+    await waitFor(() => expect(save).toBeEnabled());
+    await user.click(save);
 
     await waitFor(() => expect(body).not.toBeNull());
     expect(body!.manual_start).toBe(true);
@@ -2036,6 +2040,41 @@ describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
     expect(plate1?.ams_mapping).toEqual([0]);
   });
 
+  it('sets Print Anyway only on the printers whose filament warning it answered', async () => {
+    // X1 Carbon is short on the mapped spool, P1S is not. Answering the warning
+    // for X1 Carbon must not wave P1S's job through the scheduler's own check.
+    const queued: { printer_id: number; skip_filament_check?: boolean }[] = [];
+    server.use(
+      http.get('/api/v1/printers/:id/inventory-remain', ({ params }) => {
+        const grams = params.id === '1' ? 10 : 1000;
+        return HttpResponse.json({
+          inventory_remain_g: { '0': grams },
+          slot_materials: [
+            { ams_id: 0, tray_id: 0, global_tray_id: 0, material_key: 'preset:GFA00|color:FF0000', remaining_g: grams, extruder: 0 },
+          ],
+        });
+      }),
+      http.post('/api/v1/queue/', async ({ request }) => {
+        queued.push((await request.json()) as { printer_id: number; skip_filament_check?: boolean });
+        return HttpResponse.json({ id: queued.length, status: 'pending' });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+    await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+    await user.click(screen.getByText('X1 Carbon'));
+    await user.click(screen.getByText('P1S'));
+
+    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await waitFor(() => expect(screen.getByText(/Not enough filament/i)).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /print anyway/i }));
+
+    await waitFor(() => expect(queued.length).toBe(2));
+    const byPrinter = Object.fromEntries(queued.map((q) => [q.printer_id, q.skip_filament_check]));
+    expect(byPrinter).toEqual({ 1: true, 2: undefined });
+  });
+
   it('sums what the plates draw from one spool before warning about it', async () => {
     // Both plates map to the same red tray. 60 g left covers either plate on its
     // own (40 g), but not both — the check has to add them up, not test them
@@ -2345,6 +2384,92 @@ describe('PrintModal — per-plate filament override in model mode (#2552)', () 
     expect(plate2?.filament_overrides).toEqual([
       expect.objectContaining({ slot_id: 2, force_color_match: true }),
     ]);
+  });
+
+  // The queue page shows the stored colour name. The same blue is "Marine
+  // Blue" in PLA Matte; the plain type "PLA" only reaches the generic name (SN-C9).
+  it("stores a forced slot's colour name within its sliced product line", async () => {
+    setColorCatalog({ '0000ff': 'Blue' }, { 'PLA Matte|0000ff': 'Marine Blue' });
+    type Queued = { plate_id: number; filament_overrides?: Array<{ slot_id: number; color_name?: string }> | null };
+    const queued: Queued[] = [];
+    server.use(
+      http.get('/api/v1/archives/:id/filament-requirements', () =>
+        HttpResponse.json({ filaments: [{ ...SLOT_2_BLUE, tray_info_idx: 'GFA01' }] }),
+      ),
+      http.get('/api/v1/cloud/builtin-filaments', () =>
+        HttpResponse.json([{ filament_id: 'GFA01', name: 'Bambu PLA Matte' }]),
+      ),
+      http.get('/api/v1/cloud/filament-id-map', () => HttpResponse.json({})),
+      http.post('/api/v1/queue/', async ({ request }) => {
+        queued.push((await request.json()) as Queued);
+        return HttpResponse.json({ id: queued.length, status: 'pending' });
+      }),
+    );
+
+    try {
+      const user = userEvent.setup();
+      renderWithCache(
+        <PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />,
+        (qc) => qc.setQueryData(['archive-plates', 1], PLATES),
+      );
+      await selectAnyX1CAndBothPlates(user);
+      await waitFor(() => expect(screen.getByText(/Filament Override — Plate 2/)).toBeInTheDocument());
+      // Wait for the preset names, which the stored colour name is derived from.
+      await waitFor(() => expect(screen.getAllByText(/PLA Matte/).length).toBeGreaterThan(0));
+
+      await user.click(screen.getAllByRole('checkbox', { name: /force color match/i })[1]);
+      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+      await waitFor(() => expect(queued.length).toBe(2));
+      expect(queued.find((q) => q.plate_id === 2)?.filament_overrides).toEqual([
+        expect.objectContaining({ slot_id: 2, color_name: 'Marine Blue' }),
+      ]);
+    } finally {
+      __resetColorCatalogForTests();
+    }
+  });
+
+  it("does not name a swapped slot's colour by the preset it was sliced with", async () => {
+    setColorCatalog({ '00ff00': 'Green' }, { 'PLA Matte|00ff00': 'Matte Green' });
+    type Queued = { plate_id: number; filament_overrides?: Array<{ slot_id: number; color_name?: string }> | null };
+    const queued: Queued[] = [];
+    server.use(
+      http.get('/api/v1/archives/:id/filament-requirements', () =>
+        HttpResponse.json({ filaments: [{ ...SLOT_2_BLUE, tray_info_idx: 'GFA01' }] }),
+      ),
+      http.get('/api/v1/cloud/builtin-filaments', () =>
+        HttpResponse.json([{ filament_id: 'GFA01', name: 'Bambu PLA Matte' }]),
+      ),
+      http.get('/api/v1/cloud/filament-id-map', () => HttpResponse.json({})),
+      http.post('/api/v1/queue/', async ({ request }) => {
+        queued.push((await request.json()) as Queued);
+        return HttpResponse.json({ id: queued.length, status: 'pending' });
+      }),
+    );
+
+    try {
+      const user = userEvent.setup();
+      renderWithCache(
+        <PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />,
+        (qc) => qc.setQueryData(['archive-plates', 1], PLATES),
+      );
+      await selectAnyX1CAndBothPlates(user);
+      await waitFor(() => expect(screen.getByText(/Filament Override — Plate 2/)).toBeInTheDocument());
+      await waitFor(() => expect(screen.getAllByText(/PLA Matte/).length).toBeGreaterThan(0));
+
+      // Swap the PLA Matte blue for the loaded PLA Basic green.
+      const pickers = screen.getAllByRole('combobox', { name: /filament override for/i });
+      await user.click(pickers[pickers.length - 1]);
+      await user.click(within(await screen.findByRole('listbox')).getByText(/Green/));
+      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+      await waitFor(() => expect(queued.length).toBe(2));
+      expect(queued.find((q) => q.plate_id === 2)?.filament_overrides).toEqual([
+        expect.objectContaining({ slot_id: 2, color: '#00FF00', color_name: 'Green' }),
+      ]);
+    } finally {
+      __resetColorCatalogForTests();
+    }
   });
 });
 
@@ -2750,6 +2875,50 @@ describe('PrintModal — override survives "Any model" -> "Specific Printer" (#3
     ]);
   });
 
+  it("names a kept pin's colour within its product line when the file's filaments can't be read", async () => {
+    const hex = BROWN.replace('#', '').toLowerCase();
+    setColorCatalog({ [hex]: 'Brown' }, { [`PLA Matte|${hex}`]: 'Matte Brown' });
+    server.use(
+      http.get('/api/v1/archives/:id/filament-requirements', () => HttpResponse.json({ detail: 'gone' }, { status: 500 })),
+    );
+    const vpItem = createMockQueueItem({
+      printer_id: null,
+      target_model: 'P2S',
+      filament_overrides: [
+        { slot_id: 1, type: 'PLA', color: BROWN, tray_info_idx: 'GFA01', force_color_match: true },
+      ],
+    } as Partial<PrintQueueItem>);
+    // The preset names are known from the first render, so the save can't race them.
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    queryClient.setQueryData(['builtin-filaments'], [{ filament_id: 'GFA01', name: 'Bambu PLA Matte' }]);
+    queryClient.setQueryData(['filament-id-map'], {});
+
+    try {
+      const user = userEvent.setup();
+      rtlRender(
+        <QueryClientProvider client={queryClient}>
+          <BrowserRouter>
+            <AuthProvider>
+              <ThemeProvider>
+                <ToastProvider>
+                  <PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={vpItem} onClose={mockOnClose} />
+                </ToastProvider>
+              </ThemeProvider>
+            </AuthProvider>
+          </BrowserRouter>
+        </QueryClientProvider>,
+      );
+      await submit(user);
+
+      await waitFor(() => expect(patched).toHaveLength(1));
+      expect(patched[0].filament_overrides).toEqual([
+        expect.objectContaining({ slot_id: 1, tray_info_idx: 'GFA01', color_name: 'Matte Brown' }),
+      ]);
+    } finally {
+      __resetColorCatalogForTests();
+    }
+  });
+
   it('carries an override picked in model mode into a specific-printer job when creating', async () => {
     const user = userEvent.setup();
     render(<PrintModal mode="create" archiveId={1} archiveName="Job" onClose={mockOnClose} />);
@@ -2876,5 +3045,98 @@ describe('PrintModal — a deliberate material substitution is acknowledged (#27
 
     expect(saved.ams_mapping).toEqual([0]);
     expect(saved.skip_filament_check).toBeUndefined();
+  });
+});
+
+describe('PrintModal edit: moving a job to another printer', () => {
+  const mockOnClose = vi.fn();
+  let patched: Record<string, unknown>[];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    patched = [];
+    server.use(
+      http.get('/api/v1/printers/', () =>
+        HttpResponse.json([
+          { id: 1, name: 'Printer 01', model: 'H2C', ip_address: '192.168.1.101', enabled: true, is_active: true },
+          { id: 2, name: 'Printer 02', model: 'H2C', ip_address: '192.168.1.102', enabled: true, is_active: true },
+        ]),
+      ),
+      http.get('/api/v1/archives/:id/plates', () => HttpResponse.json({ is_multi_plate: false, plates: [] })),
+      http.get('/api/v1/printers/:id/status', () =>
+        HttpResponse.json({ connected: true, state: 'IDLE', ams: [], vt_tray: [] }),
+      ),
+      http.patch('/api/v1/queue/:id', async ({ request }) => {
+        patched.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ id: 1, status: 'pending' });
+      }),
+    );
+  });
+
+  it("does not carry the old printer's nozzle rack picks over", async () => {
+    const user = userEvent.setup();
+    const item = createMockQueueItem({
+      printer_id: 1,
+      target_model: null,
+      nozzle_rack_choice: { 0: 3 },
+    } as Partial<PrintQueueItem>);
+    render(<PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={item} onClose={mockOnClose} />);
+
+    // The dialog adds printers; moving the job is deselecting one, selecting the other.
+    await user.click(await screen.findByText('Printer 01'));
+    await user.click(screen.getByText('Printer 02'));
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(patched[0].printer_id).toBe(2);
+    expect(patched[0].nozzle_rack_choice).toBeNull();
+  });
+});
+
+describe('PrintModal default printer', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json(mockPrinters)),
+      http.get('/api/v1/settings/', () => HttpResponse.json({ default_printer_id: 2, currency: 'USD' })),
+      http.get('/api/v1/archives/:id/plates', () => HttpResponse.json({ is_multi_plate: false, plates: [] })),
+      http.get('/api/v1/archives/:id/filament-requirements', () => HttpResponse.json({ filaments: [] })),
+      http.get('/api/v1/printers/:id/status', () =>
+        HttpResponse.json({ connected: true, state: 'IDLE', ams: [], vt_tray: [] }),
+      ),
+    );
+  });
+
+  it('preselects the default printer from Settings', async () => {
+    render(<PrintModal mode="create" archiveId={1} archiveName="Test Print" onClose={vi.fn()} />);
+
+    expect(await screen.findByText('1 printer selected')).toBeInTheDocument();
+  });
+
+  it('does not bring the default back once it was deselected', async () => {
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Test Print" onClose={vi.fn()} />);
+    await screen.findByText('1 printer selected');
+
+    await user.click(screen.getByText('P1S'));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByText('1 printer selected')).not.toBeInTheDocument();
+  });
+  it('does not select a default printer of another model than the file was sliced for', async () => {
+    server.use(
+      http.get('/api/v1/archives/:id', async () => {
+        // Later than printers and settings: the model must be waited for.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return HttpResponse.json({ id: 1, filename: 'test.3mf', sliced_for_model: 'X1C' });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Test Print" onClose={vi.fn()} />);
+    // The P1S is hidden behind "show all" as another model than X1C.
+    await user.click(await screen.findByText('show all'));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(screen.getByText('P1S').closest('button')).not.toHaveClass('border-bambu-green');
   });
 });

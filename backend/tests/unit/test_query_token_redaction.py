@@ -111,3 +111,16 @@ def test_support_bundle_sanitizer_masks_tokens():
     line = f'INFO: 192.168.255.4:0 - "WebSocket /api/v1/ws?token={TOKEN}" [accepted]'
     assert TOKEN not in sanitize_log_content(line)
     assert "token=[REDACTED]" in sanitize_log_content(line)
+
+
+def test_a_camera_url_in_the_query_is_masked():
+    """The camera test sent the camera URL, login included, in its query."""
+    line = (
+        '"POST /api/v1/printers/1/camera/external/test'
+        '?url=rtsp%3A%2F%2Fcam%3Apw123%40192.168.1.50%3A554%2Fs&camera_type=rtsp HTTP/1.1" 200'
+    )
+
+    result = redact_query_tokens(line)
+
+    assert "pw123" not in result
+    assert "camera_type=rtsp" in result

@@ -1,6 +1,5 @@
 import json
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -95,7 +94,6 @@ class TagScannedRequest(BaseModel):
     tray_uuid: str | None = Field(None, max_length=32, pattern=r"^[0-9A-Fa-f]*$")
     sak: int | None = None
     tag_type: str | None = Field(None, max_length=50)
-    raw_blocks: dict | None = None
 
 
 class TagRemovedRequest(BaseModel):
@@ -172,11 +170,6 @@ class SystemCommandResultRequest(BaseModel):
     command: str = Field(..., max_length=50)
     success: bool
     message: str | None = Field(None, max_length=500)
-
-
-class UpdateStatusRequest(BaseModel):
-    status: Literal["updating", "complete", "error"]
-    message: str | None = Field(None, max_length=255)
 
 
 # --- Diagnostics schemas ---

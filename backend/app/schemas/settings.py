@@ -127,6 +127,11 @@ class AppSettings(BaseModel):
         default=35.0, description="Bed temperature threshold for cooled notification (°C)"
     )
 
+    # Heads-up before a pause the slicer put into the print (#2984)
+    pause_warning_minutes: int = Field(
+        default=5, description="Minutes before a pause to send the pause-coming-up notification"
+    )
+
     # AMS threshold settings for humidity and temperature coloring
     ams_humidity_good: int = Field(default=40, description="Humidity threshold for good (green): <= this value")
     ams_humidity_fair: int = Field(
@@ -233,12 +238,6 @@ class AppSettings(BaseModel):
     )
 
     # Virtual Printer
-    virtual_printer_enabled: bool = Field(default=False, description="Enable virtual printer for slicer uploads")
-    virtual_printer_access_code: str = Field(default="", description="Access code for virtual printer authentication")
-    virtual_printer_mode: str = Field(
-        default="archive",
-        description="Mode: 'archive' (archive now), 'review' (pending review), 'queue' (add to print queue), or 'proxy' (relay to real printer)",
-    )
     virtual_printer_archive_name_source: str = Field(
         default="metadata",
         description="Source for the archive's display name on virtual-printer uploads: 'metadata' uses the 3MF's embedded print_name (default, matches Bambu's behavior), 'filename' uses the filename Bambu Studio sent over FTP (lets users rename via the slicer's 'send to printer' dialog).",
@@ -297,10 +296,6 @@ class AppSettings(BaseModel):
     )
 
     # File Manager / Library settings
-    library_archive_mode: str = Field(
-        default="ask",
-        description="When printing from File Manager, create archive entry: 'always', 'never', or 'ask'",
-    )
     library_disk_warning_gb: float = Field(
         default=5.0,
         description="Show warning when free disk space falls below this threshold (GB)",
@@ -757,13 +752,15 @@ class AppSettingsUpdate(BaseModel):
     language: str | None = None
     notification_language: str | None = None
     bed_cooled_threshold: float | None = None
+    pause_warning_minutes: int | None = Field(default=None, ge=1, le=120)
     ams_humidity_good: int | None = None
     ams_humidity_fair: int | None = None
     ams_temp_good: float | None = None
     ams_temp_fair: float | None = None
     ams_temp_alarm: float | None = None
-    ams_history_retention_days: int | None = None
-    printer_sensor_history_retention_days: int | None = None
+    # At least a day: 0 or less put the cleanup cutoff at now and deleted all history daily.
+    ams_history_retention_days: int | None = Field(default=None, ge=1)
+    printer_sensor_history_retention_days: int | None = Field(default=None, ge=1)
     queue_drying_enabled: bool | None = None
     queue_drying_block: bool | None = None
     ambient_drying_enabled: bool | None = None
@@ -776,9 +773,6 @@ class AppSettingsUpdate(BaseModel):
     time_format: str | None = None
     default_printer_id: int | None = None
     pipeline_max_copies: int | None = None
-    virtual_printer_enabled: bool | None = None
-    virtual_printer_access_code: str | None = None
-    virtual_printer_mode: str | None = None
     virtual_printer_archive_name_source: str | None = None
     dark_style: str | None = None
     dark_background: str | None = None
@@ -802,7 +796,6 @@ class AppSettingsUpdate(BaseModel):
     ha_enabled: bool | None = None
     ha_url: str | None = None
     ha_token: str | None = None
-    library_archive_mode: str | None = None
     library_disk_warning_gb: float | None = None
     camera_view_mode: str | None = None
     camera_light_mode: Literal["off", "all", "selected"] | None = None
@@ -1099,3 +1092,23 @@ class AppSettingsUpdate(BaseModel):
         if not isinstance(order, list) or not all(isinstance(item, str) for item in order):
             raise ValueError("sidebar order must be an array of strings")
         return v
+
+
+# Settings that decide who can sign in or where credential material goes: a
+# directory server that hands out groups, local sign-in, the session length,
+# the address password-reset and welcome links point at, the metrics
+# endpoint's token, and the folder full backups (every password hash) are
+# written to. Admin-only to change (routes/settings.update_settings, and a
+# GitHub restore by a non-admin skips them); the settings permissions keep
+# everything else.
+ADMIN_ONLY_SETTING_KEYS = frozenset(
+    {key for key in AppSettingsUpdate.model_fields if key.startswith("ldap_")}
+    | {
+        "local_login_enabled",
+        "session_max_hours",
+        "external_url",
+        "prometheus_enabled",
+        "prometheus_token",
+        "local_backup_path",
+    }
+)

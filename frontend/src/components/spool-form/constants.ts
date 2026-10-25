@@ -6,9 +6,6 @@ export const MATERIALS = [
   'PA-CF', 'PETG-CF', 'PLA-CF',
 ];
 
-// Common spool weights
-export const WEIGHTS = [250, 500, 750, 1000, 2000, 3000];
-
 // Default brand options (will be augmented with cloud presets)
 export const DEFAULT_BRANDS = [
   'Bambu', 'PolyLite', 'PolyTerra', 'eSUN', 'Overture',

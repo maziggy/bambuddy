@@ -1,3 +1,6 @@
+from collections.abc import Sequence
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -181,12 +184,14 @@ class ArchiveComparisonService:
         self,
         archive_id: int,
         limit: int = 10,
+        visible: Sequence[Any] = (),
     ) -> list[dict]:
         """Find archives with similar settings for comparison.
 
         Args:
             archive_id: The archive to find similar ones for
             limit: Maximum number of results
+            visible: WHERE clauses limiting matches to archives the caller may see
 
         Returns:
             List of similar archives with match reasons
@@ -210,6 +215,7 @@ class ArchiveComparisonService:
                     PrintArchive.id != archive_id,
                     PrintArchive.print_name == reference.print_name,
                     PrintArchive.deleted_at.is_(None),
+                    *visible,
                 )
                 .order_by(PrintArchive.created_at.desc())
                 .limit(limit)
@@ -236,6 +242,7 @@ class ArchiveComparisonService:
                     PrintArchive.id != archive_id,
                     PrintArchive.content_hash == reference.content_hash,
                     PrintArchive.deleted_at.is_(None),
+                    *visible,
                 )
                 .order_by(PrintArchive.created_at.desc())
                 .limit(limit - len(similar))
@@ -262,6 +269,8 @@ class ArchiveComparisonService:
                 .where(
                     PrintArchive.id != archive_id,
                     PrintArchive.filament_type == reference.filament_type,
+                    PrintArchive.deleted_at.is_(None),
+                    *visible,
                 )
                 .order_by(PrintArchive.created_at.desc())
                 .limit(limit - len(similar))

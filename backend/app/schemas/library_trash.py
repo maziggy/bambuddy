@@ -7,11 +7,6 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-class PurgePreviewRequest(BaseModel):
-    older_than_days: int = Field(ge=1, le=3650, description="Age threshold in days.")
-    include_never_printed: bool = True
-
-
 class PurgePreviewResponse(BaseModel):
     count: int
     total_bytes: int

@@ -1,16 +1,29 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useToast } from '../contexts/ToastContext';
 import { useTranslation } from 'react-i18next';
 import { api, ApiError } from '../api/client';
 import { inventoryLocationsQueryKey, inventorySuppliersQueryKey } from '../utils/inventoryQueries';
 
-// The only auth-failure close code /api/v1/ws emits (websocket.py
-// _WS_CLOSE_UNAUTHORIZED). A 4401 means the ws-token was missing / invalid /
-// expired, or the caller lacks WEBSOCKET_CONNECT — none of which a reconnect can
-// fix without a fresh login (which remounts this provider anyway). Treat it as
-// terminal so we don't respawn the /auth/ws-token loop.
+// The auth-failure close code of /api/v1/ws (websocket.py
+// _WS_CLOSE_UNAUTHORIZED). It reaches the browser only for a socket the server
+// had accepted: one closed when its session ended (password change or reset,
+// 2FA removal, deactivation, rename), when authentication was turned on, when a
+// scope refresh failed, or by the server's check right after accepting it. The
+// hook asks AuthContext to re-check (a tab whose session ended goes to the
+// login page, which unmounts this provider) and reconnects with a fresh token.
+// Each 4401 before a socket's first message doubles the wait, up to five
+// minutes: no /auth/ws-token loop, and a failure that clears still recovers.
+//
+// A socket refused before it was accepted (no or invalid token, user or key
+// gone, a failed lookup) gets an HTTP 403 on the handshake, which the browser
+// reports as 1006 with no open, as for a server that is down. Those can't be
+// told apart, so they get no re-check, and a backoff capped at 30 s, so tabs
+// still come back quickly after a restart.
 const WS_CLOSE_UNAUTHORIZED = 4401;
+const UNAUTHORIZED_RETRY_FIRST_MS = 3000;
+const UNAUTHORIZED_RETRY_MAX_MS = 300000;
+const HANDSHAKE_RETRY_MAX_MS = 30000;
 
 interface WebSocketMessage {
   type: string;
@@ -23,7 +36,6 @@ interface WebSocketMessage {
   slot?: string;
   verified?: boolean;
   kprofile_applied?: boolean;
-  saw_tray?: boolean;
   // Slicer Pipeline run events (#1425 PR C). ``run`` carries the full
   // PipelineRunResponse payload — typed loosely here so the WebSocket hook
   // doesn't pull the full client.ts types in.
@@ -38,8 +50,13 @@ export function useWebSocket() {
   // reconnectTimeoutRef, then .close() ran ws.onclose which set a *fresh*
   // timeout — a leaked reconnect that kept minting ws-tokens post-logout).
   const disposedRef = useRef(false);
+  // The wait before the next reconnect after a 4401; 0 once a socket is
+  // admitted (its first message).
+  const unauthorizedDelayRef = useRef(0);
+  // The wait before the next reconnect after a handshake that failed (the
+  // socket never opened); 0 once one opens.
+  const handshakeDelayRef = useRef(0);
   const queryClient = useQueryClient();
-  const [isConnected, setIsConnected] = useState(false);
   const lastMissingSpoolWarningRef = useRef<Map<number, string>>(new Map());
   const { showToast } = useToast();
   const { t } = useTranslation();
@@ -106,12 +123,18 @@ export function useWebSocket() {
     } catch (err) {
       // A 401/403 from the token mint is an AUTH decision, not a transient
       // blip, so retrying is pointless and hammers /auth/ws-token every 3s:
-      //   401 — the JWT expired. ``request()`` already cleared it and
-      //         dispatched ``auth:expired``, so the route guard is redirecting
-      //         to /login and this provider is about to unmount.
+      //   401 — not signed in. An expired JWT: ``request()`` already cleared
+      //         it and dispatched ``auth:expired``, so the route guard is
+      //         redirecting to /login. "Authentication required" (no token,
+      //         e.g. a tab opened while auth was off, which was turned on while
+      //         its socket was down) is not treated as a sign-out there, so
+      //         ask AuthContext to re-check, which then shows the login.
       //   403 — the user is validly logged in but their group lacks
-      //         WEBSOCKET_CONNECT. They stay logged in; live updates simply
-      //         degrade to the REST polling the query cache already does.
+      //         WEBSOCKET_CONNECT (they stay logged in; live updates simply
+      //         degrade to the REST polling the query cache already does), or
+      //         an API key (a kiosk) whose owner was deactivated while its
+      //         socket was down. Re-checked as well: the first gets their user
+      //         back and nothing changes, the second goes to the login.
       // Either way: do NOT open a tokenless socket (the server just closes it
       // 4401) and do NOT reconnect. The old catch-all fell through to a
       // tokenless socket whose 4401 close rescheduled connect() forever. A
@@ -120,6 +143,7 @@ export function useWebSocket() {
       // no token and connect fine).
       const status = err instanceof ApiError ? err.status : 0;
       if (status === 401 || status === 403) {
+        window.dispatchEvent(new CustomEvent('auth:recheck'));
         return;
       }
     }
@@ -135,10 +159,12 @@ export function useWebSocket() {
     const ws = new WebSocket(wsUrl);
 
     let pingInterval: number | null = null;
+    let opened = false;
 
     ws.onopen = () => {
+      opened = true;
+      handshakeDelayRef.current = 0;
       if (import.meta.env.MODE !== 'test') console.log('[WebSocket] Connected');
-      setIsConnected(true);
       // Start ping interval
       pingInterval = window.setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -148,6 +174,7 @@ export function useWebSocket() {
     };
 
     ws.onmessage = (event) => {
+      unauthorizedDelayRef.current = 0;
       try {
         const message: WebSocketMessage = JSON.parse(event.data);
         // Handle printer_status directly (already throttled) to avoid queue delays
@@ -170,14 +197,35 @@ export function useWebSocket() {
         clearInterval(pingInterval);
         pingInterval = null;
       }
-      setIsConnected(false);
       wsRef.current = null;
 
-      // Don't reconnect after an auth rejection (4401) or once the provider has
-      // unmounted — both would just respawn the /auth/ws-token loop. A 4401 is
-      // terminal (needs a fresh login, which remounts us); every other close
-      // code is treated as a network drop and gets the 3s reconnect.
-      if (disposedRef.current || event.code === WS_CLOSE_UNAUTHORIZED) {
+      // Don't reconnect once the provider has unmounted. After an auth
+      // rejection (4401): re-check auth, and reconnect with a growing wait (see
+      // WS_CLOSE_UNAUTHORIZED). A socket that never opened (a refused handshake
+      // or a server that is down) also waits longer each time, up to 30 s. One
+      // that opened and then dropped is a network drop: the 3s reconnect.
+      if (disposedRef.current) {
+        return;
+      }
+      if (event.code === WS_CLOSE_UNAUTHORIZED) {
+        window.dispatchEvent(new CustomEvent('auth:recheck'));
+        const delay = unauthorizedDelayRef.current
+          ? Math.min(unauthorizedDelayRef.current * 2, UNAUTHORIZED_RETRY_MAX_MS)
+          : UNAUTHORIZED_RETRY_FIRST_MS;
+        unauthorizedDelayRef.current = delay;
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+          connect();
+        }, delay);
+        return;
+      }
+      if (!opened) {
+        const delay = handshakeDelayRef.current
+          ? Math.min(handshakeDelayRef.current * 2, HANDSHAKE_RETRY_MAX_MS)
+          : UNAUTHORIZED_RETRY_FIRST_MS;
+        handshakeDelayRef.current = delay;
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+          connect();
+        }, delay);
         return;
       }
 
@@ -300,6 +348,8 @@ export function useWebSocket() {
     queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
     queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
     queryClient.invalidateQueries({ queryKey: ['slotPresets'] });
+    // Both modes' bindings, which the print dialog prices and weighs slots from.
+    queryClient.invalidateQueries({ queryKey: ['printer-inventory-remain'] });
   }, [queryClient]);
 
   const handleMessage = useCallback((message: WebSocketMessage) => {
@@ -403,6 +453,17 @@ export function useWebSocket() {
         }));
         break;
 
+      case 'plate_check_failed':
+        // The plate check before a print could not run; the print goes on.
+        window.dispatchEvent(new CustomEvent('plate-check-failed', {
+          detail: {
+            printer_id: message.printer_id,
+            printer_name: (message as unknown as { printer_name?: string }).printer_name,
+            reason: (message as unknown as { reason?: string }).reason,
+          }
+        }));
+        break;
+
       case 'announcements_changed':
         // The backend fetched a newer feed: re-read the list so the sidebar dot
         // and the banner appear without a reload. The event says nothing itself.
@@ -425,6 +486,8 @@ export function useWebSocket() {
         debouncedInvalidate(inventorySuppliersQueryKey[0]);
         // The per-material-number aggregate is derived from the same rows (#2870).
         debouncedInvalidate('material-number-stats');
+        // Printer cards and slot views read a spool's weight from the slot rows.
+        debouncedInvalidate('spool-assignments');
         break;
 
       case 'spool_assignment_changed':
@@ -472,8 +535,10 @@ export function useWebSocket() {
         break;
 
       case 'spool_usage_logged':
-        // Filament consumption recorded - refresh spool data
+        // Filament consumption recorded - refresh spool data, and the slot rows
+        // printer cards read a spool's remaining weight from.
         debouncedInvalidate('inventory-spools');
+        debouncedInvalidate('spool-assignments');
         break;
 
       case 'unknown_tag': {
@@ -532,6 +597,24 @@ export function useWebSocket() {
 
       case 'spoolbuddy_tag_write_failed':
         window.dispatchEvent(new CustomEvent('spoolbuddy-tag-write-failed', { detail: message }));
+        break;
+
+      // Written to the chip, but not linked to the spool.
+      case 'spoolbuddy_tag_link_failed':
+        window.dispatchEvent(new CustomEvent('spoolbuddy-tag-link-failed', { detail: message }));
+        break;
+
+      // A scanned tag could not be looked up at all, as opposed to an unknown tag.
+      case 'spoolman_unavailable':
+        window.dispatchEvent(new CustomEvent('spoolman-unavailable', { detail: message }));
+        break;
+
+      case 'spoolbuddy_lookup_error':
+        window.dispatchEvent(new CustomEvent('spoolbuddy-lookup-error', { detail: message }));
+        break;
+
+      case 'spoolbuddy_unregistered':
+        debouncedInvalidate('spoolbuddy-devices');
         break;
 
       case 'spoolbuddy_online':
@@ -607,12 +690,4 @@ export function useWebSocket() {
       }
     };
   }, [connect]);
-
-  const sendMessage = useCallback((message: Record<string, unknown>) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
-    }
-  }, []);
-
-  return { isConnected, sendMessage };
 }

@@ -111,16 +111,15 @@ export function FilamentOverride({
 
           return (
             <div key={req.slot_id} className="space-y-1">
-              <div
-                className="grid items-center gap-2 text-xs"
-                style={{ gridTemplateColumns: '16px minmax(70px, 1fr) auto 2fr 20px' }}
-              >
+              {/* Below `sm` the picker gets a line of its own, as on the
+                  mapping row (#3294). */}
+              <div className="grid items-center gap-2 text-xs grid-cols-[16px_minmax(0,1fr)_20px] sm:grid-cols-[16px_minmax(70px,1fr)_auto_2fr_20px]">
                 {/* Original color swatch */}
                 <span title={`${t('printModal.originalFilament')}: ${resolvedName} - ${colorLabel}`}>
                   <Circle className="w-3 h-3" fill={req.color} stroke={req.color} />
                 </span>
                 {/* Original type + grams */}
-                <span className="text-white truncate">
+                <span className="text-white truncate col-span-2 sm:col-span-1">
                   {resolvedName} <span className="text-bambu-gray">({req.used_grams}g)</span>
                 </span>
                 {/* Arrow */}
@@ -153,7 +152,7 @@ export function FilamentOverride({
                     // keeps the sub-brand and the index as it did before.
                     value: `${f.type}|${f.color}`,
                     key: `${f.type}-${f.color}-${f.tray_sub_brands}-${idx}`,
-                    label: `${f.tray_sub_brands || f.type} (${getColorName(f.color, f.tray_sub_brands)})`,
+                    label: `${f.tray_sub_brands || f.type} (${getColorName(f.color, f.tray_sub_brands, f.tray_info_idx)})`,
                     rgba: f.color,
                     hex: displayHex(f.color),
                     exactMatch:

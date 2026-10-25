@@ -1,4 +1,20 @@
-from pydantic import BaseModel, Field, model_validator
+from typing import Annotated
+
+from pydantic import AfterValidator, BaseModel, Field, model_validator
+
+
+def _a_slot_ams_id(ams_id: int) -> int:
+    """The ams_ids spoolman_slot_assignments' CHECK admits: AMS units 0-7,
+    AMS-HT 128-191, the external slot 255. Checked on the request, so a write
+    to Spoolman that goes with the slot row is never made for a row the
+    database then refuses (SSA-9)."""
+    if 0 <= ams_id <= 7 or 128 <= ams_id <= 191 or ams_id == 255:
+        return ams_id
+    raise ValueError("ams_id must be 0-7 (AMS), 128-191 (AMS-HT) or 255 (external)")
+
+
+SlotAmsId = Annotated[int, AfterValidator(_a_slot_ams_id)]
+SlotTrayId = Annotated[int, Field(ge=0, le=3)]
 
 
 class SpoolmanFilamentPatch(BaseModel):

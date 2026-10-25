@@ -488,6 +488,8 @@ class TestSpoolmanAPI:
         mock_spoolman_client.merge_spool_extra = AsyncMock(
             return_value={"id": 5, "extra": {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'}}
         )
+        # A link onto a slot checks the spool is not archived first.
+        mock_spoolman_client.get_spool = AsyncMock(return_value={"id": 5, "archived": False, "extra": {}})
         printer = await printer_factory()
 
         response = await async_client.post(
@@ -607,6 +609,8 @@ class TestSpoolmanAPI:
         mock_spoolman_client.merge_spool_extra = AsyncMock(
             return_value={"id": 7, "extra": {"tag": '"A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4"'}}
         )
+        # A link onto a slot checks the spool is not archived first.
+        mock_spoolman_client.get_spool = AsyncMock(return_value={"id": 7, "archived": False, "extra": {}})
         printer = await printer_factory()
 
         # First link to create the slot assignment
@@ -1045,9 +1049,7 @@ class TestSpoolmanAPI:
             tray_weight=1000,
         )
         mock_spoolman_client.parse_ams_tray.return_value = mock_tray
-        mock_spoolman_client.convert_ams_slot_to_location = MagicMock(return_value="AMS A1")
         mock_spoolman_client.sync_ams_tray = AsyncMock(return_value={"id": 42})
-        mock_spoolman_client.clear_location_for_removed_spools = AsyncMock(return_value=0)
 
         with patch("backend.app.api.routes.spoolman.printer_manager") as pm_mock:
             mock_state = MagicMock()

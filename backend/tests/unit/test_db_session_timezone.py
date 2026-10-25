@@ -152,6 +152,7 @@ class TestQueueAgeUsesUtc:
     """The support bundle's ``oldest_pending_age_seconds`` (#2855)."""
 
     @pytest.mark.asyncio
+    @pytest.mark.usefixtures("printer_1")
     async def test_age_of_a_fresh_item_is_near_zero_on_a_non_utc_host(self, db_session, istanbul_tz):
         """The old code subtracted a naive *local* now() from a naive UTC column,
         so on UTC+3 a just-queued item reported as three hours old — and west of

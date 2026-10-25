@@ -170,6 +170,12 @@ DEFAULT_TEMPLATES = [
         "body_template": "{printer}: {filename}\nLayer 1/{total_layers} done",
     },
     {
+        "event_type": "print_pause_upcoming",
+        "name": "Pause Coming Up",
+        "title_template": "Pause Coming Up",
+        "body_template": "{printer}: {filename}\nPauses in {time_to_pause} (about {eta}), at layer {layer}/{total_layers}",
+    },
+    {
         "event_type": "test",
         "name": "Test Notification",
         "title_template": "Bambuddy Test",
@@ -222,13 +228,13 @@ DEFAULT_TEMPLATES = [
         "event_type": "user_created",
         "name": "Welcome Email",
         "title_template": "Welcome to {app_name}",
-        "body_template": "Welcome {username}!\n\nYour account has been created.\nUsername: {username}\nPassword: {password}\n\nLogin at: {login_url}",
+        "body_template": "Welcome {username}!\n\nYour {app_name} account has been created. Please change your password after your first login.\n\nLogin at: {login_url}\n\nYour login details:",
     },
     {
         "event_type": "password_reset",
         "name": "Password Reset",
         "title_template": "{app_name} - Password Reset",
-        "body_template": "Hello {username},\n\nYour password has been reset.\nNew Password: {password}\n\nLogin at: {login_url}",
+        "body_template": "Hello {username},\n\nA password reset was requested for your {app_name} account. If you did not request it, you can ignore this email: your password has not been changed.\n\nSet a new password with the link below (valid for 1 hour, usable once):",
     },
     # Inventory stock alert templates
     {

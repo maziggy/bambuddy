@@ -45,7 +45,7 @@ async def get_printer_sensor_history(
         default=None,
         description="Comma-separated list of sensor kinds (nozzle, nozzle_2, bed, chamber). All by default.",
     ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_READ),
 ):
     """Return per-sensor heater history for a printer."""
@@ -105,36 +105,3 @@ async def get_printer_sensor_history(
         )
 
     return PrinterSensorHistoryResponse(printer_id=printer_id, series=series_out)
-
-
-@router.delete("/{printer_id}")
-async def delete_old_history(
-    printer_id: int,
-    days: int = Query(default=30, ge=1, le=365, description="Delete data older than X days"),
-    db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_READ),
-):
-    """Delete old printer sensor history for a printer."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-
-    result = await db.execute(
-        select(func.count(PrinterSensorHistory.id)).where(
-            and_(
-                PrinterSensorHistory.printer_id == printer_id,
-                PrinterSensorHistory.recorded_at < cutoff,
-            )
-        )
-    )
-    count = result.scalar()
-
-    await db.execute(
-        PrinterSensorHistory.__table__.delete().where(
-            and_(
-                PrinterSensorHistory.printer_id == printer_id,
-                PrinterSensorHistory.recorded_at < cutoff,
-            )
-        )
-    )
-    await db.commit()
-
-    return {"deleted": count, "message": f"Deleted {count} records older than {days} days"}

@@ -717,6 +717,44 @@ describe('SliceModal', () => {
     });
   });
 
+  it("sends the slicer's own names for the SuperTack and Smooth PEI plates (#3359)", async () => {
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+
+    const bedSelect = presetSelects().find((el) =>
+      (el as HTMLSelectElement).options[0]?.textContent?.toLowerCase().includes('auto'),
+    ) as HTMLSelectElement;
+    // BambuStudio and OrcaSlicer slice any other name as Cool Plate.
+    expect(Array.from(bedSelect.options).map((o) => o.value)).toEqual([
+      '',
+      'Cool Plate',
+      'Supertack Plate',
+      'Engineering Plate',
+      'High Temp Plate',
+      'Textured PEI Plate',
+    ]);
+    const user = userEvent.setup();
+    await user.selectOptions(bedSelect, 'Supertack Plate');
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => {
+      expect(mockApi.sliceLibraryFile).toHaveBeenCalledWith(
+        100,
+        expect.objectContaining({ bed_type: 'Supertack Plate' }),
+      );
+    });
+  });
+
   it('omits bed_type when the user leaves it on Auto (no override)', async () => {
     const onClose = vi.fn();
     mockApi.sliceLibraryFile.mockResolvedValue({
@@ -1703,6 +1741,47 @@ describe('SliceModal', () => {
       expect(body.filament_presets[0]).toEqual({ source: 'local', id: '3' });
       expect(body.bed_type).toBe('Textured PEI Plate');
     });
+  });
+
+  it("shows a pipeline's plate the list doesn't offer instead of Auto (#3359)", async () => {
+    mockApi.listSlicerPipelines.mockResolvedValue({
+      pipelines: [
+        {
+          id: 7,
+          name: 'Orca textured',
+          description: null,
+          printer_preset: { source: 'local', id: '1' },
+          process_preset: { source: 'local', id: '2' },
+          filament_presets: [{ source: 'local', id: '3' }],
+          bed_type: 'Textured Cool Plate',
+          target_kind: 'printer_class',
+          target_printer_id: null,
+          target_model_class: null,
+          fanout_strategy: 'max_parallel',
+          created_by: null,
+          created_at: '2026-06-27T00:00:00Z',
+          updated_at: '2026-06-27T00:00:00Z',
+        },
+      ],
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => {
+      const select = screen.getByLabelText(/Apply pipeline/i) as HTMLSelectElement;
+      expect(within(select).getByText('Orca textured')).toBeDefined();
+    });
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText(/Apply pipeline/i), '7');
+
+    const bedSelect = presetSelects().find((el) =>
+      (el as HTMLSelectElement).options[0]?.textContent?.toLowerCase().includes('auto'),
+    ) as HTMLSelectElement;
+    expect(bedSelect.value).toBe('Textured Cool Plate');
+    expect(bedSelect.selectedOptions[0].textContent).toBe('Textured Cool Plate');
   });
 
   it('saves the current four-slot selection as a new pipeline when the user clicks Save as pipeline', async () => {

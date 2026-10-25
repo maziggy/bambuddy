@@ -27,6 +27,7 @@ from backend.app.api.routes.orca_cloud import (
     _load_credentials as _load_orca_credentials,
 )
 from backend.app.core.auth import (
+    ApiKeyActor,
     RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
     is_auth_enabled,
@@ -601,7 +602,7 @@ async def get_preset_values(
     source: str = Query(..., description="Preset tier: 'local', 'cloud', 'orca_cloud' or 'standard'."),
     id: str = Query(..., description="Preset id within that tier."),
     slot: str = Query("process", description="Preset slot. Only 'process' is supported today."),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
 ) -> dict:
@@ -663,7 +664,7 @@ async def get_preset_values(
 
 @router.get("/presets", response_model=UnifiedPresetsResponse)
 async def list_unified_presets(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
     refresh: bool = Query(
@@ -735,7 +736,7 @@ def _loaded_spool_tray(raw: dict, ams_id: int, tray_id: int, saved: SlotPresetMa
 
 @router.get("/loaded-spools", response_model=LoadedSpoolsResponse)
 async def list_loaded_spools(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD, Permission.PRINTERS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ) -> LoadedSpoolsResponse:
@@ -788,8 +789,8 @@ async def list_loaded_spools(
                 _loaded_spool_tray(t, ams_id, int(t.get("id", 0)), saved.get((printer.id, ams_id, int(t.get("id", 0)))))
                 for t in raw_trays
             ]
-            # Same rule as the printer status: an AMS-HT reports a single tray.
-            units.append(LoadedSpoolUnit(id=ams_id, is_ams_ht=len(trays) == 1, trays=trays))
+            # Same rule as the printer status: an AMS-HT is a unit id 128-135.
+            units.append(LoadedSpoolUnit(id=ams_id, is_ams_ht=128 <= ams_id <= 135, trays=trays))
 
         external: list[LoadedSpoolTray] = []
         holders = [vt for vt in raw_data.get("vt_tray") or [] if isinstance(vt, dict)]
@@ -817,8 +818,8 @@ async def list_loaded_spools(
 @router.get("/preview-progress/{request_id}")
 async def get_preview_slice_progress(
     request_id: str,
-    db: AsyncSession = Depends(get_db),
-    _: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
             Permission.LIBRARY_READ_OWN,
@@ -848,6 +849,10 @@ async def get_preview_slice_progress(
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(url)
+    except httpx.TimeoutException:
+        # Busy, not gone: a heavy slice can hold the progress answer past 5 s
+        # (TO-C14). Still 503, so the poller keeps trying.
+        raise HTTPException(status_code=503, detail="Slicer sidecar did not answer in time") from None
     except httpx.RequestError:
         # Sidecar unreachable: surface as 503 instead of 500 so the
         # frontend's poller can keep trying without flagging a hard error.

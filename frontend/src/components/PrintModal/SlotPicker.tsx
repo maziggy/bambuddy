@@ -74,6 +74,8 @@ interface SlotPickerProps {
 }
 
 const SWATCH_CLASS = 'w-3 h-3';
+/** Gap kept between the open list and the screen's left and right edges. */
+const EDGE = 8;
 
 export function SlotPicker({
   value,
@@ -89,7 +91,7 @@ export function SlotPicker({
 }: SlotPickerProps) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number; minWidth: number; maxWidth: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -116,10 +118,27 @@ export function SlotPicker({
     const below = window.innerHeight - rect.bottom;
     const height = Math.min(listRef.current?.scrollHeight ?? 0, 240);
     const flip = below < height + 8 && rect.top > below;
+    // As wide as the rows want, never narrower than the trigger and never
+    // wider than the screen. Taking the trigger's width alone made the list
+    // unreadable on a phone held upright, where the trigger is a swatch and a
+    // chevron (#3294). clientWidth leaves out a desktop's vertical scrollbar,
+    // which innerWidth counts; jsdom reports 0 for it.
+    const screenWidth = document.documentElement.clientWidth || window.innerWidth;
+    const maxWidth = screenWidth - 2 * EDGE;
+    const minWidth = Math.min(rect.width, maxWidth);
+    // Measured with this trigger's minimum, not the one left from the last
+    // open, so the width used to keep it on screen is the one it will have.
+    // The maximum needs no such care: a list that wants more than the screen
+    // starts at the left margin either way.
+    const list = listRef.current;
+    if (list) list.style.minWidth = `${minWidth}px`;
+    const width = list?.offsetWidth ?? minWidth;
     setCoords({
       top: flip ? Math.max(8, rect.top - height - 4) : rect.bottom + 4,
-      left: rect.left,
-      width: rect.width,
+      // Under the trigger, moved left when that would run off the right edge.
+      left: Math.max(EDGE, Math.min(rect.left, screenWidth - EDGE - width)),
+      minWidth,
+      maxWidth,
     });
   }, []);
 
@@ -251,7 +270,9 @@ export function SlotPicker({
             style={{
               top: coords?.top ?? -9999,
               left: coords?.left ?? -9999,
-              width: coords?.width,
+              width: 'max-content',
+              minWidth: coords?.minWidth,
+              maxWidth: coords?.maxWidth,
               // Hide until placed, so there is no flash at (-9999,-9999) —
               // same trick FilamentHoverCard uses.
               visibility: coords ? 'visible' : 'hidden',

@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
+
 
 class KProfile(BaseModel):
     """A pressure advance (K) calibration profile stored on the printer."""
@@ -53,8 +55,10 @@ class KProfileDelete(BaseModel):
     setting_id: str | None = None  # Setting ID (for X1C series)
 
 
-class KProfileNote(BaseModel):
+class KProfileNote(IgnoresNullForRequiredColumns):
     """Schema for K-profile notes (stored locally, not on printer)."""
+
+    __orm_table__ = "kprofile_notes"
 
     setting_id: str  # Unique identifier for the K-profile
     note: str  # The note content

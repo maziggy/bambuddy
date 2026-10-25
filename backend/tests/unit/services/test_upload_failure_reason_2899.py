@@ -426,3 +426,65 @@ class TestWhatTheQueueEntrySays:
         assert "server log" in message, message
         assert "SD card" not in message, message
         assert reason == message
+
+
+class TestAnOwnerDeletedDuringTheUpload:
+    async def test_the_failure_toast_goes_to_nobody(self, dispatch_case):
+        """The dispatch read the owner before the upload. Deleted meanwhile, and
+        their id given to bob (as SQLite once did), the toast must not go to bob."""
+        from sqlalchemy import delete
+
+        import backend.app.services.print_scheduler as scheduler_module
+        from backend.app.models.print_queue import PrintQueueItem
+        from backend.app.models.user import User
+        from backend.app.services.print_scheduler import PrintScheduler
+        from backend.tests._fixtures.background_tasks import discarding_spawn_patch
+
+        async with dispatch_case.session_maker() as db:
+            alice = User(username="alice", password_hash="x", role="user")
+            db.add(alice)
+            await db.commit()
+            (await db.get(PrintQueueItem, dispatch_case.item_id)).created_by_id = alice.id
+            await db.commit()
+            alice_id = alice.id
+
+        async def _upload(*_args, **kwargs):
+            async with dispatch_case.session_maker() as admin_db:
+                await admin_db.execute(delete(User).where(User.id == alice_id))
+                await admin_db.commit()
+                admin_db.add(User(id=alice_id, username="bob", password_hash="x", role="user"))
+                await admin_db.commit()
+            kwargs["failure"].failure = FtpFailure(FtpFailureKind.STORAGE, "553 Could not create file.", "553")
+            return False
+
+        failed = AsyncMock()
+        scheduler = PrintScheduler()
+        async with dispatch_case.session_maker() as db:
+            item = await db.get(PrintQueueItem, dispatch_case.item_id)
+            assert item.created_by_id == alice_id
+            patches = [
+                patch.object(scheduler_module.settings, "base_dir", dispatch_case.base_dir),
+                patch(
+                    "backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=True)
+                ),
+                patch("backend.app.services.print_scheduler.printer_manager.get_status", MagicMock(return_value=None)),
+                patch(
+                    "backend.app.services.print_scheduler.get_ftp_retry_settings",
+                    AsyncMock(return_value=(False, 0, 0, 1.0)),
+                ),
+                patch("backend.app.services.print_scheduler.delete_file_async", AsyncMock(return_value=True)),
+                patch("backend.app.services.print_scheduler.upload_file_async", _upload),
+                patch("backend.app.services.print_scheduler.notification_service.on_queue_job_failed", AsyncMock()),
+                patch("backend.app.services.print_scheduler.ws_manager.send_queue_item_failed", failed),
+                discarding_spawn_patch(),
+                patch.object(scheduler, "_propagate_owner_to_printer_manager", AsyncMock()),
+                patch.object(scheduler, "_power_off_if_needed", AsyncMock()),
+                patch.object(scheduler, "_preheat_and_soak", AsyncMock()),
+            ]
+            with ExitStack() as stack:
+                for p in patches:
+                    stack.enter_context(p)
+                await scheduler._start_print(db, item)
+
+        assert failed.await_count == 1
+        assert failed.await_args.kwargs["user_id"] is None

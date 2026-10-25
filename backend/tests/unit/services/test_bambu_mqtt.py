@@ -2087,6 +2087,26 @@ class TestRequestTopicIsCaptured:
         assert mqtt_client.get_logs() == []
         assert mqtt_client._captured_ams_mapping == [0, -1, -1, -1]
 
+    def test_a_push_is_logged_as_the_printer_sent_it(self, mqtt_client):
+        """Processing writes Bambuddy's merged AMS list into the payload's
+        "print" dict; the log must keep the printer's own AMS block (#3356)."""
+        unit = {"id": "0", "tray": [{"id": "0", "tray_type": "PLA"}]}
+        self._deliver(mqtt_client, mqtt_client.topic_subscribe, {"print": {"ams": {"ams": [unit]}}})
+        no_ams = {"print": {"command": "push_status", "ams": {"ams": [], "ams_exist_bits": "0"}}}
+        self._deliver(mqtt_client, mqtt_client.topic_subscribe, no_ams)
+
+        assert mqtt_client.get_logs()[1].payload == no_ams
+
+    def test_a_later_message_does_not_change_an_earlier_entry(self, mqtt_client):
+        first = {"print": {"command": "push_status", "vt_tray": {"id": "254", "tray_type": "PLA"}}}
+        self._deliver(mqtt_client, mqtt_client.topic_subscribe, first)
+        self._deliver(mqtt_client, mqtt_client.topic_subscribe, {"print": {"ams": {"ams": [{"id": "0", "tray": []}]}}})
+        self._deliver(mqtt_client, mqtt_client.topic_publish, {"print": {"command": "gcode_line", "param": "M400"}})
+
+        logs = mqtt_client.get_logs()
+        assert logs[0].payload == first
+        assert logs[2].payload == {"print": {"command": "gcode_line", "param": "M400"}}
+
     def test_the_report_topic_is_still_logged_as_incoming(self, mqtt_client):
         """Telemetry keeps its direction -- the two must stay distinguishable."""
         self._deliver(mqtt_client, mqtt_client.topic_subscribe, {"print": {"gcode_state": "IDLE"}})
@@ -2932,8 +2952,8 @@ class TestTrayNowDualNozzleH2DSnow(_H2DFixtureMixin):
 
     def test_snow_disambiguates_ams0_slot(self, h2d_client):
         """snow ext[0]=AMS 0 slot 2, tray_now='2' → global 2."""
-        # Send snow update FIRST (snow is parsed AFTER tray_now in the same message,
-        # so we need it in a prior message).
+        # Snow in a prior message here; a frame carrying both is covered in
+        # test_h2d_tray_now_same_frame_g11.py.
         snow_val = 0 << 8 | 2  # AMS 0 slot 2 = raw 2
         h2d_client._process_message(
             _extruder_info_payload(
@@ -2948,6 +2968,17 @@ class TestTrayNowDualNozzleH2DSnow(_H2DFixtureMixin):
         # Now send tray_now=2
         h2d_client._process_message(_ams_payload(2))
         assert h2d_client.state.tray_now == 2
+
+    @pytest.mark.parametrize("unit", [128, 129, 131, 135])
+    def test_a_load_from_an_ams_ht_resolves_to_that_unit(self, h2d_client, unit):
+        """An AMS-HT reports its one tray as tray_now '0'; slot 0 is what the
+        pending load expects, not unit % 4 (which put 129 on AMS 0 slot 1)."""
+        h2d_client.state.pending_tray_target = unit
+
+        h2d_client._process_message(_ams_payload(0))
+
+        assert h2d_client.state.tray_now == unit
+        assert h2d_client.state.pending_tray_target is None
 
     def test_snow_disambiguates_ams_ht_to_128(self, h2d_client):
         """snow ext[1]=AMS HT (128), left active, tray_now='0' → global 128."""
@@ -3029,6 +3060,19 @@ class TestTrayNowDualNozzleH2DPendingTarget(_H2DFixtureMixin):
         h2d_client._process_message(_ams_payload(1))
         assert h2d_client.state.tray_now == 5
         assert h2d_client.state.pending_tray_target is None  # cleared
+
+    def test_a_pending_target_from_a_load_long_ago_is_not_used(self, h2d_client):
+        """FW-C7: a manual load the printer refused leaves its target pending
+        (tray_now stays 255, which keeps it). A print loading the same slot
+        number on another AMS much later was shown as that old target."""
+        import time
+
+        h2d_client.state.pending_tray_target = 5
+        h2d_client.state.pending_tray_target_at = time.monotonic() - 600
+        h2d_client._process_message(_ams_payload(1))
+
+        assert h2d_client.state.tray_now != 5
+        assert h2d_client.state.pending_tray_target is None
 
     def test_pending_target_slot_mismatch(self, h2d_client):
         """pending=5, tray_now='2' → uses raw slot, clears pending."""
@@ -5534,6 +5578,14 @@ class TestHMSUserActionFiltering:
         assert len(mqtt_client.state.hms_errors) == 1
         assert mqtt_client.state.hms_errors[0].code == "0x8061"
 
+    def test_a_fault_in_both_hms_and_print_error_is_listed_once(self, mqtt_client):
+        """M-U9: an hms[] code carries its alert level in the high half
+        (0x00018061); the dedupe read it unmasked, so it never matched
+        print_error's 0500_8061 and the card listed the fault twice."""
+        mqtt_client._update_state({"hms": [{"attr": 0x05000100, "code": 0x00018061}], "print_error": 0x0500_8061})
+
+        assert len(mqtt_client.state.hms_errors) == 1
+
 
 class TestHMSFullCode:
     """full_code is the firmware-matching key for HMS-related commands.
@@ -7037,6 +7089,116 @@ class TestPrintRunningObservedCallback:
         }
 
 
+class TestPreviousPrintLayerIgnored:
+    """#3317: right after a print starts, an H2S sent one frame carrying the
+    previous print's last layer (`layer_num` 357, `mc_percent` 0), then 0. The
+    0 saved 357 as the new print's last layer, so a print failing at layer 0
+    was charged to Spoolman as if it had finished.
+    """
+
+    FILE = "/data/Metadata/plate_1.gcode"
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client.on_print_start = lambda data: None
+        client.layer_changes = []
+        client.on_layer_change = client.layer_changes.append
+        client.completions = []
+        client.on_print_complete = client.completions.append
+        return client
+
+    def _finished_previous_print(self, client, layers: int):
+        client._previous_gcode_state = "FINISH"
+        client._previous_gcode_file = self.FILE
+        client._was_running = False
+        client.state.state = "FINISH"
+        client.state.gcode_file = self.FILE
+        client.state.layer_num = layers
+        client.state.total_layers = layers
+
+    def _start(self, client):
+        client._process_message({"print": {"gcode_state": "RUNNING", "gcode_file": self.FILE, "subtask_name": "t"}})
+
+    def _fail(self, client) -> dict:
+        client._process_message({"print": {"gcode_state": "FAILED", "gcode_file": self.FILE}})
+        assert len(client.completions) == 1
+        return client.completions[0]
+
+    def test_failure_before_first_layer_reports_layer_zero(self, mqtt_client):
+        # The 2026-10-14 sequence from the report: same layer count as before.
+        self._finished_previous_print(mqtt_client, 357)
+        self._start(mqtt_client)
+        mqtt_client._process_message({"print": {"layer_num": 357, "total_layer_num": 357, "mc_percent": 0}})
+        assert mqtt_client.state.layer_num == 0
+        mqtt_client._process_message({"print": {"layer_num": 0}})
+
+        assert self._fail(mqtt_client)["last_layer_num"] == 0
+        assert mqtt_client.layer_changes == []
+
+    def test_stale_layer_above_new_total_is_ignored(self, mqtt_client):
+        # The 2026-10-13 sequence: 357 from the previous print, 55 for this one.
+        self._finished_previous_print(mqtt_client, 357)
+        self._start(mqtt_client)
+        mqtt_client._process_message({"print": {"layer_num": 357, "total_layer_num": 55, "mc_percent": 0}})
+        mqtt_client._process_message({"print": {"layer_num": 0}})
+
+        assert mqtt_client.state.layer_num == 0
+        assert mqtt_client.state.total_layers == 55
+        assert self._fail(mqtt_client)["last_layer_num"] == 0
+
+    def test_new_print_can_reach_the_previous_last_layer(self, mqtt_client):
+        # Once the print reports a layer of its own, the old value is just a
+        # layer number again.
+        self._finished_previous_print(mqtt_client, 3)
+        self._start(mqtt_client)
+        for layer in (3, 0, 1, 2, 3, 4):
+            mqtt_client._process_message({"print": {"layer_num": layer}})
+        assert mqtt_client.state.layer_num == 4
+        mqtt_client._process_message({"print": {"layer_num": 0}})
+
+        assert self._fail(mqtt_client)["last_layer_num"] == 4
+        assert mqtt_client.layer_changes == [1, 2, 3, 4]
+
+    def test_previous_print_ending_on_layer_one_does_not_hide_layer_one(self, mqtt_client):
+        # A one-layer print printed again: its own layer 1 is the only layer it
+        # reports, so it must not be taken for the previous print's.
+        self._finished_previous_print(mqtt_client, 1)
+        self._start(mqtt_client)
+        mqtt_client._process_message({"print": {"layer_num": 1, "total_layer_num": 1}})
+        assert mqtt_client.state.layer_num == 1
+        mqtt_client._process_message({"print": {"layer_num": 0}})
+
+        assert self._fail(mqtt_client)["last_layer_num"] == 1
+        assert mqtt_client.layer_changes == [1]
+
+    def test_cancel_mid_print_still_keeps_last_layer(self, mqtt_client):
+        # The firmware's reset-to-0 on cancel is what `_last_valid_layer_num`
+        # exists for; the guard must not get in its way.
+        self._finished_previous_print(mqtt_client, 0)
+        self._start(mqtt_client)
+        for layer in (1, 2, 50):
+            mqtt_client._process_message({"print": {"layer_num": layer}})
+        mqtt_client._process_message({"print": {"layer_num": 0}})
+
+        assert self._fail(mqtt_client)["last_layer_num"] == 50
+
+    def test_stale_layer_does_not_open_end_of_print_probe(self, mqtt_client, caplog):
+        self._finished_previous_print(mqtt_client, 357)
+        self._start(mqtt_client)
+        with caplog.at_level(logging.DEBUG, logger="backend.app.services.bambu_mqtt"):
+            mqtt_client._process_message({"print": {"layer_num": 357, "total_layer_num": 357, "mc_percent": 0}})
+
+        assert "EOP-PROBE open" not in caplog.text
+        assert mqtt_client._eop_probe_open is False
+
+
 class TestTotalLayersPreservation:
     """#1771: P1S firmware resets `total_layer_num` to 0 at print end. Without
     this guard, the usage tracker's split path saw `state.total_layers = 0` at
@@ -8463,6 +8625,29 @@ class TestAmsFilamentSettingRefusalLogging:
         assert "ams_id=0" in refusals[0]
         assert "tray_id=1" in refusals[0]
 
+    def test_a_refused_k_profile_selection_is_logged_too(self, mqtt_client, caplog):
+        """FW-C3: an RFID re-read re-applies the spool's K-profile and logs
+        "Applied PA profile"; the printer's refusal of it stayed at DEBUG, so
+        a support bundle showed only the success."""
+        caplog.set_level(logging.INFO, logger="backend.app.services.bambu_mqtt")
+
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "command": "extrusion_cali_sel",
+                    "result": "fail",
+                    "reason": "cali_idx not found",
+                    "ams_id": 0,
+                    "tray_id": 2,
+                    "sequence_id": "0",
+                }
+            }
+        )
+
+        lines = [line for line in caplog.text.splitlines() if "extrusion_cali_sel refused" in line]
+        assert len(lines) == 1
+        assert "cali_idx not found" in lines[0]
+
     def test_success_stays_quiet(self, mqtt_client, caplog):
         caplog.set_level(logging.INFO, logger="backend.app.services.bambu_mqtt")
 
@@ -8518,16 +8703,6 @@ class TestAmsFilamentSettingRefusalLogging:
         )
 
         assert len(self._refusals(caplog)) == 1
-
-    def test_extrusion_cali_sel_is_untouched(self, mqtt_client, caplog):
-        """The sibling in the same branch keeps its DEBUG-only handling; this
-        change is scoped to the write #2756 is about."""
-        caplog.set_level(logging.INFO, logger="backend.app.services.bambu_mqtt")
-
-        mqtt_client._process_message({"print": {"command": "extrusion_cali_sel", "result": "fail", "sequence_id": "0"}})
-
-        assert self._refusals(caplog) == []
-        assert "extrusion_cali_sel" not in caplog.text
 
 
 class TestDryingCycleEndReport:

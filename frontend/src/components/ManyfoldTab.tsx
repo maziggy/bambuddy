@@ -33,6 +33,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { isSliceableLibraryFile } from '../utils/libraryFiles';
 import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 const MANYFOLD_ERROR_CODES = new Set([
   'manyfold_not_configured',
@@ -404,7 +405,7 @@ function ManyfoldModelView({
     queryKey: ['manyfold-model', modelId],
     queryFn: () => api.getManyfoldModel(modelId),
   });
-  const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: () => api.getSettings() });
+  const settingsQuery = useUiSettings();
   const useSlicerApi = settingsQuery.data?.use_slicer_api ?? false;
   const desktopSlicer: SlicerType = resolveDesktopSlicer(
     settingsQuery.data?.open_in_slicer,
@@ -703,7 +704,7 @@ export function ManyfoldTab() {
     setPicked(new Map());
   };
 
-  const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: () => api.getSettings() });
+  const settingsQuery = useUiSettings();
   const statusQuery = useQuery({ queryKey: ['manyfold-status'], queryFn: () => api.getManyfoldStatus() });
   const configured = statusQuery.data?.configured ?? false;
   const modelsQuery = useQuery({

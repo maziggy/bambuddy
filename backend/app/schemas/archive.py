@@ -3,6 +3,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator, Field, model_validator
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 from backend.app.utils.filename import clean_display_name
 
 # Free text, punctuation and all -- only control characters are taken out, and
@@ -16,7 +17,8 @@ class ArchiveBase(BaseModel):
     is_favorite: bool | None = None
     tags: str | None = None
     notes: str | None = None
-    cost: float | None = None
+    # Added to every total: a negative (or infinite) cost would wreck them
+    cost: Annotated[float | None, Field(ge=0, le=1_000_000)] = None
     failure_reason: str | None = None
     # Number of items printed. 0 is a legal answer -- a plate that jammed and
     # came off ruined produced nothing, and the project's completed-items count
@@ -27,11 +29,13 @@ class ArchiveBase(BaseModel):
     external_url: str | None = None
 
 
-class ArchiveUpdate(ArchiveBase):
+class ArchiveUpdate(IgnoresNullForRequiredColumns, ArchiveBase):
+    __orm_table__ = "print_archives"
     printer_id: int | None = None
     project_id: int | None = None
-    # Allow changing status (e.g., clearing failed flag)
-    status: str | None = None
+    # A finished outcome only. 'printing' would be closed again at the next
+    # reconnect as a missed completion, with notifications and a run of its own.
+    status: str | None = Field(default=None, pattern="^(completed|failed|aborted|cancelled)$")
     # Post-print quality verdict (#1898): 'good' / 'reject'; null clears it.
     user_verdict: str | None = Field(default=None, pattern="^(good|reject)$")
     # Which surface the verdict came from, for the "recorded when the plate was
@@ -41,8 +45,8 @@ class ArchiveUpdate(ArchiveBase):
     # 'api' — some script or integration did it.
     user_verdict_source: str | None = Field(default=None, pattern="^(dialog|printer_card|api)$")
     # Editable because a print archived without its 3MF has no figure at all,
-    # and nothing else can supply one after the fact -- rescan needs a file
-    # this archive does not have (#1820). Bounded because it feeds the filament
+    # and nothing else can supply one after the fact -- the figure is read from
+    # a 3MF this archive does not have (#1820). Bounded because it feeds the filament
     # totals: 100 kg is far past any single print and well short of a value
     # that would swamp a chart.
     filament_used_grams: Annotated[float | None, Field(ge=0, le=100_000)] = None
@@ -250,15 +254,3 @@ class ProjectPageResponse(BaseModel):
     model_pictures: list[ProjectPageImage] = []
     profile_pictures: list[ProjectPageImage] = []
     thumbnails: list[ProjectPageImage] = []
-
-
-class ProjectPageUpdate(BaseModel):
-    """Update project page data in 3MF file."""
-
-    title: str | None = None
-    description: str | None = None
-    designer: str | None = None
-    license: str | None = None
-    copyright: str | None = None
-    profile_title: str | None = None
-    profile_description: str | None = None

@@ -144,8 +144,6 @@ class TestReportUsagePricesTheArchive:
         def _next_row(*_args, **_kwargs):
             result = MagicMock()
             result.scalar_one_or_none.return_value = next(rows, archive)
-            # The first-run guard counts PrintLogEntry rows.
-            result.scalar.return_value = existing_runs
             return result
 
         db = AsyncMock()
@@ -182,6 +180,8 @@ class TestReportUsagePricesTheArchive:
                     AsyncMock(return_value=None),
                 ),
                 patch("backend.app.services.printer_manager.printer_manager", pm),
+                # The first-run guard: entries of runs other than this one.
+                patch("backend.app.services.print_log.other_runs_of", AsyncMock(return_value=existing_runs)),
             ):
                 await report_usage(printer_id=1, archive_id=7)
 

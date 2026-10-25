@@ -5,7 +5,7 @@ Both cost recalculations rebuild a print's cost from ``SpoolUsageHistory``, and
 Spoolman mode never writes rows there -- the built-in usage tracker is handed
 ``spoolman_owns_usage`` at print start. Their catalogue-or-default fallback
 would therefore overwrite the Spoolman figure with a default-rate one on the
-next rescan or bulk recalculate, silently undoing the fix, and the per-slot
+next bulk recalculate, silently undoing the fix, and the per-slot
 spool resolution it came from is transient and cannot be rebuilt from the
 archive row.
 """

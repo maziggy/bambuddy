@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, Field, field_validator
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
+
 # printers.location, print_queue.target_location and printer_locations.name are
 # all VARCHAR(100). PostgreSQL refuses a longer value with an error mid-write,
 # so it is refused here instead.
@@ -72,12 +74,14 @@ class PrinterLocationCreate(BaseModel):
     _blank = field_validator("icon", "color", mode="before")(_blank_to_none)
 
 
-class PrinterLocationUpdate(BaseModel):
+class PrinterLocationUpdate(IgnoresNullForRequiredColumns):
     """Rename and/or restyle the location called ``name``.
 
     ``icon`` and ``color`` are only changed when sent; sending null or "" clears
     them.
     """
+
+    __orm_table__ = "printer_locations"
 
     name: str
     new_name: str | None = None

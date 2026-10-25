@@ -130,7 +130,6 @@ class TestNotificationService:
                 },
             )
             assert mock_send.await_args.args[4:7] == ("billing_charge_failed", 7, "Printer B")
-            assert mock_send.await_args.kwargs["force_immediate"] is True
 
     # ========================================================================
     # Tests for on_print_complete (status routing)
@@ -347,9 +346,6 @@ class TestNotificationService:
             )
 
             mock_send.assert_called_once()
-            # Verify force_immediate is True for alarms
-            call_kwargs = mock_send.call_args[1]
-            assert call_kwargs.get("force_immediate") is True
 
     @pytest.mark.asyncio
     async def test_on_ams_temperature_high_sends_notification(self, service, mock_provider, mock_db):
@@ -374,9 +370,6 @@ class TestNotificationService:
             )
 
             mock_send.assert_called_once()
-            # Verify force_immediate is True for alarms
-            call_kwargs = mock_send.call_args[1]
-            assert call_kwargs.get("force_immediate") is True
 
     @pytest.mark.asyncio
     async def test_ams_alarm_skipped_when_toggle_disabled(self, service, mock_provider, mock_db):
@@ -430,33 +423,6 @@ class TestNotificationService:
             # When digest is enabled, _send_to_providers should still be called
             # but internally it will queue instead of send immediately
             mock_send.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_force_immediate_bypasses_digest(self, service, mock_provider, mock_db):
-        """Verify force_immediate=True bypasses digest mode."""
-        mock_provider.daily_digest_enabled = True
-        mock_provider.on_ams_humidity_high = True
-
-        with (
-            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
-            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
-            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
-        ):
-            mock_get.return_value = [mock_provider]
-            mock_build.return_value = ("Alert", "Alert message")
-
-            await service.on_ams_humidity_high(
-                printer_id=1,
-                printer_name="Test",
-                ams_label="AMS-A",
-                humidity=75.0,
-                threshold=60.0,
-                db=mock_db,
-            )
-
-            # Verify force_immediate is passed
-            call_kwargs = mock_send.call_args[1]
-            assert call_kwargs.get("force_immediate") is True
 
 
 class TestDigestModeAlwaysSendsImmediately:
@@ -2437,9 +2403,6 @@ class TestPlateNotEmptyNotifications:
 
             mock_get.assert_called_once()
             mock_send.assert_called_once()
-            # Verify force_immediate is True (critical alert)
-            call_kwargs = mock_send.call_args[1]
-            assert call_kwargs.get("force_immediate") is True
 
     @pytest.mark.asyncio
     async def test_on_plate_not_empty_skipped_when_disabled(self, service, mock_provider, mock_db):

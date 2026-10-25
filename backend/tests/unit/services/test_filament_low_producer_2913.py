@@ -625,3 +625,156 @@ async def test_the_event_reaches_a_provider_with_the_toggle_on():
     assert variables["slot"] == "A1"
     assert variables["remaining_percent"] == "15"
     assert variables["color"] == "Jade White"
+
+
+# -- the MQTT relay ------------------------------------------------------------
+
+
+@pytest.fixture
+def relay():
+    """The MQTT relay, switched on and connected, with the publish replaced."""
+    with patch("backend.app.services.print_scheduler.mqtt_relay") as relay:
+        relay.enabled = True
+        relay.connected = True
+        relay.on_filament_low = AsyncMock()
+        yield relay
+
+
+@pytest.mark.asyncio
+async def test_the_relay_gets_the_slot_with_its_printer_and_spool(db_session, scheduler, notify, relay):
+    printer = await _printer(db_session)
+    spool = await _assigned_spool(db_session, printer, weight_used=850.0, color_name="Jade White")
+    await db_session.commit()
+
+    await _pass(scheduler, db_session)
+
+    relay.on_filament_low.assert_awaited_once_with(printer.id, "X2D", "S-X2D", "A1", 15, "Jade White", spool.id)
+    notify.on_filament_low.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_the_relay_is_told_once_per_crossing(db_session, scheduler, notify, relay):
+    printer = await _printer(db_session)
+    await _assigned_spool(db_session, printer, weight_used=850.0)
+    await db_session.commit()
+
+    await _pass(scheduler, db_session)
+    await _pass(scheduler, db_session)
+
+    assert relay.on_filament_low.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_the_relay_alone_is_enough_to_run_the_check(db_session, scheduler, real_providers, relay):
+    """No provider wants the alert, but the relay is on: the check runs for the
+    relay, and no notification is attempted."""
+    printer = await _printer(db_session)
+    await _assigned_spool(db_session, printer, weight_used=850.0)
+    await db_session.commit()
+
+    await _pass(scheduler, db_session)
+
+    relay.on_filament_low.assert_awaited_once()
+    real_providers.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_disconnected_relay_does_not_run_the_check(db_session, scheduler, real_providers, relay):
+    relay.connected = False
+    printer = await _printer(db_session)
+    await _assigned_spool(db_session, printer, weight_used=850.0)
+    await db_session.commit()
+
+    with patch.object(scheduler, "_get_low_stock_threshold", new_callable=AsyncMock) as work:
+        work.return_value = 20.0
+        await _pass(scheduler, db_session)
+
+    work.assert_not_awaited()
+    relay.on_filament_low.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_failing_relay_does_not_stop_the_notification(db_session, scheduler, notify, relay):
+    printer = await _printer(db_session)
+    await _assigned_spool(db_session, printer, weight_used=850.0)
+    await db_session.commit()
+    relay.on_filament_low.side_effect = RuntimeError("broker down")
+
+    await _pass(scheduler, db_session)
+
+    notify.on_filament_low.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_a_provider_switched_on_after_a_relay_only_send_is_still_notified(
+    db_session, scheduler, real_providers, relay
+):
+    """Each channel has its own once-per-crossing record: the relay having been
+    told must not silence the notification switched on afterwards."""
+    printer = await _printer(db_session)
+    await _assigned_spool(db_session, printer, weight_used=850.0)
+    await db_session.commit()
+
+    await _pass(scheduler, db_session)
+    assert relay.on_filament_low.await_count == 1
+    real_providers.assert_not_awaited()
+
+    await _provider(db_session, enabled=True, on_filament_low=True)
+    await db_session.commit()
+    await _pass(scheduler, db_session)
+
+    real_providers.assert_awaited_once()
+    assert relay.on_filament_low.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_a_crossing_while_the_relay_was_down_reaches_it_after_reconnecting(db_session, scheduler, notify, relay):
+    printer = await _printer(db_session)
+    await _assigned_spool(db_session, printer, weight_used=850.0)
+    await db_session.commit()
+
+    relay.connected = False
+    await _pass(scheduler, db_session)
+    relay.on_filament_low.assert_not_awaited()
+
+    relay.connected = True
+    await _pass(scheduler, db_session)
+    await _pass(scheduler, db_session)
+
+    assert relay.on_filament_low.await_count == 1
+    assert notify.on_filament_low.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_a_relay_reconnect_does_not_resend_every_low_slot(db_session, scheduler, real_providers, relay):
+    """A broker blip is not the relay being switched off: what it was told stays told."""
+    printer = await _printer(db_session)
+    await _assigned_spool(db_session, printer, weight_used=850.0)
+    await db_session.commit()
+
+    await _pass(scheduler, db_session)
+    relay.connected = False
+    await _pass(scheduler, db_session)
+    relay.connected = True
+    await _pass(scheduler, db_session)
+
+    assert relay.on_filament_low.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_switching_the_relay_off_and_on_again_re_arms(db_session, scheduler, real_providers, relay):
+    """The relay counterpart of re-arming the notification: switched off, it
+    forgets what it sent, and switched on again it reports what is low now."""
+    printer = await _printer(db_session)
+    await _assigned_spool(db_session, printer, weight_used=850.0)
+    await db_session.commit()
+
+    await _pass(scheduler, db_session)
+    relay.enabled = False
+    relay.connected = False
+    await _pass(scheduler, db_session)
+    relay.enabled = True
+    relay.connected = True
+    await _pass(scheduler, db_session)
+
+    assert relay.on_filament_low.await_count == 2

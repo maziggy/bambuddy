@@ -110,22 +110,22 @@ export function useSpoolBuddyState() {
     const detail = (e as CustomEvent).detail;
     dispatch({
       type: 'WEIGHT_UPDATE',
-      weight: detail.weight_grams ?? detail.data?.weight_grams,
-      stable: detail.stable ?? detail.data?.stable ?? false,
-      rawAdc: detail.raw_adc ?? detail.data?.raw_adc ?? null,
-      deviceId: detail.device_id ?? detail.data?.device_id ?? '',
+      weight: detail.weight_grams,
+      stable: detail.stable ?? false,
+      rawAdc: detail.raw_adc ?? null,
+      deviceId: detail.device_id ?? '',
     });
   }, []);
 
   const handleTagMatched = useCallback((e: Event) => {
     const detail = (e as CustomEvent).detail;
-    const spool = detail.spool ?? detail.data?.spool;
+    const spool = detail.spool;
     if (spool) {
       dispatch({
         type: 'TAG_MATCHED',
         spool: {
           id: spool.id,
-          tag_uid: detail.tag_uid ?? detail.data?.tag_uid ?? '',
+          tag_uid: detail.tag_uid ?? '',
           material: spool.material ?? '',
           subtype: spool.subtype ?? null,
           color_name: spool.color_name ?? null,
@@ -138,7 +138,7 @@ export function useSpoolBuddyState() {
           core_weight: spool.core_weight ?? 0,
           weight_used: spool.weight_used ?? 0,
         },
-        deviceId: detail.device_id ?? detail.data?.device_id ?? '',
+        deviceId: detail.device_id ?? '',
       });
     }
   }, []);
@@ -147,9 +147,9 @@ export function useSpoolBuddyState() {
     const detail = (e as CustomEvent).detail;
     dispatch({
       type: 'UNKNOWN_TAG',
-      tagUid: detail.tag_uid ?? detail.data?.tag_uid ?? '',
-      trayUuid: detail.tray_uuid ?? detail.data?.tray_uuid ?? null,
-      deviceId: detail.device_id ?? detail.data?.device_id ?? '',
+      tagUid: detail.tag_uid ?? '',
+      trayUuid: detail.tray_uuid ?? null,
+      deviceId: detail.device_id ?? '',
     });
   }, []);
 
@@ -157,7 +157,7 @@ export function useSpoolBuddyState() {
     const detail = (e as CustomEvent).detail;
     dispatch({
       type: 'TAG_REMOVED',
-      deviceId: detail.device_id ?? detail.data?.device_id ?? '',
+      deviceId: detail.device_id ?? '',
     });
   }, []);
 
@@ -165,7 +165,7 @@ export function useSpoolBuddyState() {
     const detail = (e as CustomEvent).detail;
     dispatch({
       type: 'DEVICE_ONLINE',
-      deviceId: detail.device_id ?? detail.data?.device_id ?? '',
+      deviceId: detail.device_id ?? '',
     });
   }, []);
 
@@ -173,7 +173,7 @@ export function useSpoolBuddyState() {
     const detail = (e as CustomEvent).detail;
     dispatch({
       type: 'DEVICE_OFFLINE',
-      deviceId: detail.device_id ?? detail.data?.device_id ?? '',
+      deviceId: detail.device_id ?? '',
     });
   }, []);
 

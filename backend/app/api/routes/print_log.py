@@ -7,6 +7,7 @@ from sqlalchemy import delete, func, nullslast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import (
+    ApiKeyActor,
     MediaOrRequestPrinterScope,
     RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
@@ -63,8 +64,8 @@ async def get_print_log(
     offset: int = Query(default=0, ge=0),
     sort_by: str = Query(default="date"),
     sort_dir: str = Query(default="desc", pattern="^(asc|desc)$"),
-    db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
             Permission.ARCHIVES_READ_OWN,
@@ -144,8 +145,8 @@ async def get_print_log(
 @router.get("/{entry_id}/thumbnail")
 async def get_print_log_thumbnail(
     entry_id: int,
-    db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.ARCHIVES_READ_ALL,
             Permission.ARCHIVES_READ_OWN,
@@ -189,7 +190,7 @@ async def get_print_log_thumbnail(
 
 @router.delete("/")
 async def clear_print_log(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_ALL),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -212,8 +213,8 @@ async def clear_print_log(
 @router.delete("/{entry_id}")
 async def delete_print_log_entry(
     entry_id: int,
-    db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_DELETE_ALL,
             Permission.ARCHIVES_DELETE_OWN,
@@ -270,6 +271,8 @@ _FAILURE_REASON_KEYS = frozenset(
         # recognise, so leaving it out would delete the classification on the
         # next save of such an archive.
         "noStatusUpdate",
+        # A print the printer kill switch stopped (written at its completion).
+        "killSwitch",
         "other",
     }
 )
@@ -282,8 +285,8 @@ _STATUS_KEYS = frozenset({"completed", "failed", "stopped", "cancelled", "skippe
 async def update_print_log_entry(
     entry_id: int,
     update: PrintLogEntryUpdate,
-    db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_UPDATE_ALL,
             Permission.ARCHIVES_UPDATE_OWN,

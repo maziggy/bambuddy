@@ -5,13 +5,14 @@ import { Circle, Check, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Palett
 import { api } from '../../api/client';
 import type { SlotSpoolIdentity } from '../../api/client';
 import { useFilamentMapping } from '../../hooks/useFilamentMapping';
-import { getGlobalTrayId, effectivePreferLowest, FTS_INLET_SIDE, normalizeColorForCompare } from '../../utils/amsHelpers';
+import { effectivePreferLowest, FTS_INLET_SIDE, normalizeColorForCompare } from '../../utils/amsHelpers';
 import { disambiguateColorNames, getColorName } from '../../utils/colors';
 import { SlotPicker } from './SlotPicker';
 import { displayHex } from './displayHex';
 import { useFilamentLabels } from './useFilamentLabels';
 import { autoAssignRackPositions, rackOptionsForGroup } from '../../utils/nozzleRack';
 import type { FilamentMappingProps, RackGroupInfo } from './types';
+import { useUiSettings } from '../../hooks/useUiSettings';
 
 /**
  * Filament mapping UI for comparing required filaments with loaded AMS slots.
@@ -97,19 +98,10 @@ export function FilamentMapping({
     enabled: !!printerId,
   });
 
-  const { data: assignments } = useQuery({
-    queryKey: ['spool-assignments', printerId],
-    queryFn: () => api.getAssignments(printerId),
-    enabled: !!printerId,
-  });
-
   // Settings + inventory map drive the same prefer-lowest + AMS-backup gate
   // the dispatcher uses (#1766). Without this, the per-slot dropdown's
   // auto-suggestion could disagree with what actually gets dispatched.
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
   const { data: inventoryRemain } = useQuery({
     queryKey: ['printer-inventory-remain', printerId],
     queryFn: () => api.getInventoryRemain(printerId),
@@ -169,30 +161,25 @@ export function FilamentMapping({
   // resolved — never blanks out the required row.
   const filamentLabels = useFilamentLabels(filamentReqs?.filaments);
 
+  // Price and grams left per slot, from the mode-aware bindings above. The
+  // built-in assignment table these came from holds nothing in Spoolman mode,
+  // or rows from before the switch, so the estimate priced a Spoolman print at
+  // the default rate or at a spool the printer is not drawing on.
   const trayCostMap = useMemo(() => {
     const map = new Map<number, number | null>();
-    for (const assignment of assignments || []) {
-      const isExternal = assignment.ams_id === 255;
-      const globalTrayId = getGlobalTrayId(assignment.ams_id, assignment.tray_id, isExternal);
-      map.set(globalTrayId, assignment.spool?.cost_per_kg ?? null);
+    for (const slot of inventoryRemain?.slot_materials ?? []) {
+      map.set(slot.global_tray_id, slot.cost_per_kg ?? null);
     }
     return map;
-  }, [assignments]);
+  }, [inventoryRemain]);
 
   const trayRemainingWeightMap = useMemo(() => {
     const map = new Map<number, number | null>();
-    for (const assignment of assignments || []) {
-      const isExternal = assignment.ams_id === 255;
-      const globalTrayId = getGlobalTrayId(assignment.ams_id, assignment.tray_id, isExternal);
-      const spool = assignment.spool;
-      if (!spool) {
-        map.set(globalTrayId, null);
-        continue;
-      }
-      map.set(globalTrayId, Math.max(0, Math.round((spool.label_weight ?? 0) - (spool.weight_used ?? 0))));
+    for (const slot of inventoryRemain?.slot_materials ?? []) {
+      map.set(slot.global_tray_id, Math.max(0, Math.round(slot.remaining_g)));
     }
     return map;
-  }, [assignments]);
+  }, [inventoryRemain]);
 
   const totalCost = useMemo(() => {
     let total = 0;
@@ -427,19 +414,24 @@ export function FilamentMapping({
             );
             return (
             <div key={idx} className="space-y-1">
+              {/*
+                The rack picker sits inside the required-filament cell, so on a
+                rack machine that cell has to carry the name *and* an ~85px
+                dropdown. Raising only the floor (not the fraction) keeps every
+                other printer's layout exactly as it was, and keeps the AMS
+                dropdown — which names type, colour and remaining weight — the
+                widest column.
+
+                Below `sm` the slot picker gets a line of its own under the
+                required filament (#3294): on a phone held upright, the 210px
+                floor left it about 55px, a swatch and a chevron.
+              */}
               <div
-                className="grid items-center gap-2 text-xs"
-                style={{
-                  // The rack picker sits inside the required-filament cell, so
-                  // on a rack machine that cell has to carry the name *and* an
-                  // ~85px dropdown. Raising only the floor (not the fraction)
-                  // keeps every other printer's layout exactly as it was, and
-                  // keeps the AMS dropdown — which names type, colour and
-                  // remaining weight — the widest column.
-                  gridTemplateColumns: hasRack
-                    ? '16px minmax(210px, 1.4fr) auto 2fr 16px'
-                    : '16px minmax(70px, 1fr) auto 2fr 16px',
-                }}
+                className={`grid items-center gap-2 text-xs grid-cols-[16px_minmax(0,1fr)_16px] ${
+                  hasRack
+                    ? 'sm:grid-cols-[16px_minmax(210px,1.4fr)_auto_2fr_16px]'
+                    : 'sm:grid-cols-[16px_minmax(70px,1fr)_auto_2fr_16px]'
+                }`}
               >
                 {/* Required color */}
                 <span title={t('printModal.requiredTooltip', { name: resolvedName, color: requiredColorLabel })}>
@@ -448,7 +440,7 @@ export function FilamentMapping({
                 {/* Required type + grams + nozzle badge. Only the name
                     truncates; the gram usage is pinned (shrink-0) so it never
                     clips on narrow/mobile widths (#2669). */}
-                <span className="text-white flex items-center gap-1 min-w-0">
+                <span className="text-white flex items-center gap-1 min-w-0 col-span-2 sm:col-span-1">
                   {hasRack && item.group_id != null && item.group ? (
                     item.group.on_rack ? (
                       <select

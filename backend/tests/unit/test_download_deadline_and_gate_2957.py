@@ -130,7 +130,7 @@ class TestASlowTransferSurvivesItsDeadline:
 
         with (
             patch.object(ftp_mod, "BambuFTPClient", _Client),
-            patch.object(ftp_mod, "_download_extension", lambda size, base: 0.2 if size else 0.0),
+            patch.object(ftp_mod, "_download_extension", lambda size, base, ceiling=300.0: 0.2 if size else 0.0),
             pytest.raises(ftp_mod.DownloadDeadlineExceeded),
         ):
             await ftp_mod.with_ftp_retry(
@@ -288,6 +288,77 @@ class TestOnlyOneDownloadPerPrinter:
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
+class TestAPathWalkFollowsTheFileToo:
+    """The archive recovery retry walks the printer's paths for a 3MF, and had
+    a flat 90 s cap whatever the file's size."""
+
+    async def test_a_path_that_reports_its_size_is_given_the_time(self, tmp_path):
+        payload = b"y" * 2048
+
+        class _Client(_FakeClient):
+            def download_to_file(self, remote_path, local_path, *, size_callback=None, cancel_event=None, **kwargs):
+                size_callback(1_000_000)
+                for _ in range(40):
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise ftp_mod.DownloadCancelled(remote_path)
+                    time.sleep(0.01)
+                local_path.write_bytes(payload)
+                return True
+
+        with patch.object(ftp_mod, "BambuFTPClient", _Client):
+            hit = await download_file_try_paths_async(
+                "10.0.0.7", "x", ["/a.3mf"], tmp_path / "a.3mf", timeout=0.05, max_total_timeout=60
+            )
+
+        assert hit == "/a.3mf"
+        assert (tmp_path / "a.3mf").read_bytes() == payload
+
+    async def test_a_caller_that_does_not_ask_keeps_its_cap(self, tmp_path):
+        """The objects route holds a DB session through this download."""
+
+        class _Client(_FakeClient):
+            def download_to_file(self, remote_path, local_path, *, size_callback=None, cancel_event=None, **kwargs):
+                size_callback(1_000_000)
+                for _ in range(40):
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise ftp_mod.DownloadCancelled(remote_path)
+                    time.sleep(0.01)
+                return True
+
+        with patch.object(ftp_mod, "BambuFTPClient", _Client):
+            hit = await download_file_try_paths_async("10.0.0.6", "x", ["/a.3mf"], tmp_path / "a.3mf", timeout=0.05)
+
+        assert hit is None
+
+    async def test_without_a_size_the_cap_stands(self, tmp_path):
+        class _Client(_FakeClient):
+            def download_to_file(self, remote_path, local_path, *, cancel_event=None, **kwargs):
+                for _ in range(40):
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise ftp_mod.DownloadCancelled(remote_path)
+                    time.sleep(0.01)
+                return True
+
+        with patch.object(ftp_mod, "BambuFTPClient", _Client):
+            hit = await download_file_try_paths_async("10.0.0.8", "x", ["/a.3mf"], tmp_path / "a.3mf", timeout=0.05)
+
+        assert hit is None
+
+
+def test_the_recovery_retry_holds_no_session_and_may_wait_longer():
+    import inspect
+
+    from backend.app import main as main_module
+
+    source = inspect.getsource(main_module)
+    retry = source[source.index("async def _retry() -> None:") :]
+    call = retry[retry.index("download_file_try_paths_async(") :]
+    call = call[: call.index("except Exception")]
+    assert "max_total_timeout=RECOVERY_DOWNLOAD_MAX_TIMEOUT" in call
+    assert ftp_mod.RECOVERY_DOWNLOAD_MAX_TIMEOUT == 900.0
+
+
 class TestTheCapNoLongerLeavesAWorkerOnTheSocket:
     async def test_a_capped_path_walk_stops_its_worker(self, tmp_path):
         """``asyncio.wait_for`` cannot cancel an executor thread, so the cap used

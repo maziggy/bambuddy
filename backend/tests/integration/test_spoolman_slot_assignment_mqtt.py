@@ -112,6 +112,28 @@ class TestAssignSlotMqtt:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_a_silk_spool_gets_the_silk_generic(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
+    ):
+        """Same generic as internal mode: the finish picks Generic PLA Silk."""
+        mock_spoolman_client.get_spool = AsyncMock(
+            return_value={**SAMPLE_SPOOL, "filament": {**SAMPLE_SPOOL["filament"], "name": "PLA Silk+"}}
+        )
+        mqtt_mock = MagicMock()
+        mqtt_mock.printer_state = None
+
+        with patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock:
+            pm_mock.get_client = MagicMock(return_value=mqtt_mock)
+            response = await async_client.post(
+                "/api/v1/spoolman/inventory/slot-assignments",
+                json={"spoolman_spool_id": 10, "printer_id": test_printer.id, "ams_id": 0, "tray_id": 1},
+            )
+
+        assert response.status_code == 200
+        assert mqtt_mock.ams_set_filament_setting.call_args[1]["tray_info_idx"] == "GFL96"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_mqtt_failure_does_not_rollback_assignment(
         self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
     ):

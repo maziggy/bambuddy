@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, field_validator
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
+
 
 def _validate_project_url(value: str | None) -> str | None:
     """Reject anything that isn't an http(s) URL — the URL is rendered as a
@@ -41,8 +43,10 @@ class ProjectCreate(BaseModel):
         return _validate_project_url(v)
 
 
-class ProjectUpdate(BaseModel):
+class ProjectUpdate(IgnoresNullForRequiredColumns):
     """Schema for updating a project."""
+
+    __orm_table__ = "projects"
 
     name: str | None = None
     description: str | None = None
@@ -232,8 +236,10 @@ class BOMItemCreate(BaseModel):
     remarks: str | None = None
 
 
-class BOMItemUpdate(BaseModel):
+class BOMItemUpdate(IgnoresNullForRequiredColumns):
     """Schema for updating a BOM item."""
+
+    __orm_table__ = "project_bom_items"
 
     name: str | None = None
     quantity_needed: int | None = None
@@ -296,25 +302,6 @@ class LinkedFolderExport(BaseModel):
     """Schema for exporting a linked library folder."""
 
     name: str
-
-
-class ProjectExport(BaseModel):
-    """Schema for exporting a project."""
-
-    name: str
-    description: str | None
-    color: str | None
-    status: str
-    target_count: int | None
-    target_parts_count: int | None
-    target_sets: int | None = None
-    notes: str | None
-    tags: str | None
-    due_date: datetime | None
-    priority: str
-    budget: float | None
-    bom_items: list[BOMItemExport] = []
-    linked_folders: list[LinkedFolderExport] = []
 
 
 class ProjectImport(BaseModel):

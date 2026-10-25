@@ -1,5 +1,5 @@
 import { api } from '../../api/client';
-import type { SlicerSetting, LocalPreset, BuiltinFilament } from '../../api/client';
+import type { SlicerSetting, LocalPreset, BuiltinFilament, SpoolKProfileInput } from '../../api/client';
 import { installedNozzleDiameters } from '../../utils/amsHelpers';
 import type { CalibrationProfile, ColorPreset, FilamentOption } from './types';
 import { KNOWN_VARIANTS, DEFAULT_BRANDS, RECENT_COLORS_KEY, MAX_RECENT_COLORS, STANDARD_NOZZLE_DIAMETERS } from './constants';
@@ -463,6 +463,70 @@ export function genericFilamentIdMatchesMaterial(id: string, material: string): 
  */
 export function hotendKey(printerId: number, extruder: number, diameter: string): string {
   return `${printerId}:${extruder}:${diameter}`;
+}
+
+/**
+ * K profiles picked for a new spool, plus its product's profile default
+ * (#1326) for every hotend nothing was picked for. For a page that saves a
+ * new spool's K profiles without showing the default: the save replaces the
+ * whole list, so the default the create applied would otherwise be lost. A
+ * failed lookup returns the picks alone.
+ */
+export async function withProductDefaultKProfiles(
+  picked: SpoolKProfileInput[],
+  product: { brand: string; material: string; subtype: string; color_name: string },
+): Promise<SpoolKProfileInput[]> {
+  const keyOf = (k: SpoolKProfileInput) =>
+    hotendKey(k.printer_id, k.extruder ?? 0, (k.nozzle_diameter || '').trim() || '0.4');
+  let resolved: Awaited<ReturnType<typeof api.resolveProfileDefault>>;
+  try {
+    resolved = await api.resolveProfileDefault({
+      brand: product.brand.trim(),
+      material: product.material.trim(),
+      subtype: product.subtype.trim(),
+      color_name: product.color_name.trim(),
+    });
+  } catch {
+    return picked;
+  }
+  const taken = new Set(picked.map(keyOf));
+  const merged = [...picked];
+  for (const k of resolved?.k_profiles ?? []) {
+    if (taken.has(keyOf(k))) continue;
+    merged.push(k);
+    taken.add(keyOf(k));
+  }
+  return merged;
+}
+
+/**
+ * The Printers tab's selection, one entry per hotend, from stored K profiles:
+ * a spool's, or a profile default's. The stored row carries everything the
+ * picker needs to show the selection before the printer answers, so an
+ * offline printer still renders what was chosen for it. Rows without a
+ * calibration slot are skipped -- there is nothing on the printer to select.
+ */
+export function selectionFromKProfiles(rows: SpoolKProfileInput[]): Map<string, CalibrationProfile> {
+  const chosen = new Map<string, CalibrationProfile>();
+  for (const p of rows) {
+    if (p.cali_idx === null || p.cali_idx === undefined) continue;
+    const diameter = (p.nozzle_diameter || '').trim() || '0.4';
+    const extruder = p.extruder ?? 0;
+    chosen.set(hotendKey(p.printer_id, extruder, diameter), {
+      cali_idx: p.cali_idx,
+      filament_id: '',
+      setting_id: p.setting_id || '',
+      name: p.name || '',
+      k_value: p.k_value,
+      n_coef: 0,
+      extruder_id: extruder,
+      nozzle_diameter: diameter,
+      // Stored as the bare flow code; the picker re-derives its label
+      // from the same field it reads off a live profile.
+      nozzle_id: p.nozzle_type || '',
+    });
+  }
+  return chosen;
 }
 
 /**

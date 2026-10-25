@@ -40,6 +40,9 @@ from backend.app.services.usage_tracker import (
     _resolve_3mf_fallback,
 )
 
+# Their rows refer to printer 1.
+pytestmark = pytest.mark.usefixtures("printer_1")
+
 
 def _write_3mf(path: Path, *, plate: int, filaments: int) -> Path:
     """A single-plate 3MF declaring *filaments* filaments on plate *plate*."""

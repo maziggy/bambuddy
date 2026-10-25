@@ -159,7 +159,7 @@ class TestBulkResetSpoolUsage:
         )
 
         assert response.status_code == 200
-        assert response.json() == {"reset": 2}
+        assert response.json() == {"reset": 2, "not_found": []}
 
         # The endpoint commits via its own session — expire our session so the
         # next read pulls fresh values rather than the cached pre-reset state.
@@ -172,6 +172,19 @@ class TestBulkResetSpoolUsage:
         assert by_id[target2.id].weight_used_baseline == 200.0
         assert by_id[untouched.id].weight_used == 300.0, "Spool not in request must keep its usage"
         assert by_id[untouched.id].weight_used_baseline == 0, "Untouched baseline must stay at 0"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_reset_reports_unknown_ids(self, async_client: AsyncClient, spool_factory):
+        """As the other bulk actions do, so the page can tell a partial reset (FO-C8)."""
+        spool = await spool_factory(weight_used=100.0)
+
+        response = await async_client.post(
+            "/api/v1/inventory/spools/reset-consumed-counter-bulk",
+            json={"spool_ids": [spool.id, 99999]},
+        )
+
+        assert response.json() == {"reset": 1, "not_found": [99999]}
 
     @pytest.mark.asyncio
     @pytest.mark.integration

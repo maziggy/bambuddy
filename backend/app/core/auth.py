@@ -5,7 +5,7 @@ import os
 import secrets
 import time
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
@@ -14,6 +14,7 @@ from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import PyJWTError as JWTError
 from passlib.context import CryptContext
+from passlib.exc import PasswordSizeError
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -31,6 +32,8 @@ from backend.app.models.api_key import APIKey
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, TokenType
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
+from backend.app.services.last_used import LastUsedThrottle
+from backend.app.utils.local_time import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -151,11 +154,11 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str | tuple[str, ...]] = {
     # can_manage_library — file-manager scope (upload/rename/delete library
     # entries + MakerWorld import which downloads files into the library).
     # OWN and ALL ownership variants map to the same scope so the
-    # `require_ownership_permission` checker (which gates on `all_perm`)
-    # passes the API key through. This matches `can_queue` and the
-    # archives/inventory scopes — API keys have no per-row ownership identity
-    # (line 1663), so splitting OWN/ALL across allowlist/denylist made the
-    # whole library curation surface unreachable for API keys (#1832).
+    # `require_ownership_permission` checker passes the API key through and
+    # lets its owner's OWN/ALL permission decide the rows. This matches
+    # `can_queue` and the archives/inventory scopes; splitting OWN/ALL across
+    # allowlist/denylist made the whole library curation surface unreachable
+    # for API keys (#1832).
     # LIBRARY_PURGE stays admin-only as a genuinely destructive op that
     # bypasses the soft-delete window.
     Permission.LIBRARY_UPLOAD: "can_manage_library",
@@ -191,10 +194,9 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str | tuple[str, ...]] = {
     # can_manage_archives — print-history curation. Carved out of the admin
     # denylist so automations can prune old prints via API key (#1888): the
     # archive delete/update routes gate on
-    # ``require_ownership_permission(ARCHIVES_*_ALL, ARCHIVES_*_OWN)``, which
-    # resolves the ALL permission for API keys (no per-row ownership identity,
-    # same as can_queue / can_manage_library), so OWN and ALL map to the same
-    # scope. ARCHIVES_PURGE stays admin-only (see denylist) as a genuinely
+    # ``require_ownership_permission(ARCHIVES_*_ALL, ARCHIVES_*_OWN)``, where
+    # the key's owner's OWN/ALL permission decides the rows (same as can_queue
+    # / can_manage_library), so OWN and ALL map to the same scope. ARCHIVES_PURGE stays admin-only (see denylist) as a genuinely
     # destructive op that drops the stats contribution, mirroring LIBRARY_PURGE.
     # ARCHIVES_REPRINT_* stays under can_queue (it enqueues a print).
     Permission.ARCHIVES_CREATE: "can_manage_archives",
@@ -440,7 +442,7 @@ def _check_apikey_permissions(
     ``resolve_apikey_owner``.
 
     By default ALL requested permissions must pass (mirrors
-    ``require_permission`` / ``require_permission_if_auth_enabled``).
+    ``require_permission_if_auth_enabled``).
     When ``require_any=True``, only one needs to pass (mirrors
     ``require_any_permission_if_auth_enabled``).
     """
@@ -641,9 +643,11 @@ def require_energy_cost_update():
 
 
 def require_notification_send():
-    """Dependency for ``POST /notifications/app-message``: another application
-    sending a message through the channels that accept app messages. API keys
-    need ``can_send_notifications``; users need ``NOTIFICATIONS_UPDATE``."""
+    """Dependency for ``POST /notifications/app-message`` and ``PUT
+    /external-links/badge``: another application sending a message through the
+    channels that accept app messages, or setting the count on its sidebar
+    link. API keys need ``can_send_notifications``; users need
+    ``NOTIFICATIONS_UPDATE``."""
     return require_api_key_scope(
         "can_send_notifications", "send_notifications", Permission.NOTIFICATIONS_UPDATE, owner_needs_permission=True
     )
@@ -839,6 +843,79 @@ async def verify_slicer_download_token(
         return True
 
 
+async def token_outlived_its_session(db: AsyncSession, username: str | None, minted_at: datetime | None) -> bool:
+    """Whether a token named after a user was minted before that user's session began.
+
+    password_changed_at marks it: set for a new user, and on a rename, a
+    password change or reset, a 2FA removal or a restore. A token from before
+    belongs to an earlier holder of the name or an ended session; deletes and
+    renames drop those, but one minted while they commit would survive.
+
+    A token naming a user that does not exist counts as outlived: its callers
+    look the user up again on their own, and a user created with the name in
+    between would be served. Compared to the microsecond (both are written by
+    Python): every user is committed before any token is minted for it, so
+    there is nothing to round for, unlike a JWT's whole-second iat.
+    """
+    if not username:
+        return False
+    if minted_at is None:
+        return True
+    changed = (
+        await db.execute(select(User.password_changed_at).where(func.lower(User.username) == func.lower(username)))
+    ).first()
+    if changed is None:
+        return True  # no such user
+    session_start = changed[0]
+    if session_start is None:
+        return False  # no session start recorded (an old row the start-up backfill has not reached)
+    return minted_at.replace(tzinfo=None) < session_start.replace(tzinfo=None)
+
+
+def _minting_session_start() -> datetime | None:
+    """When the session of the request minting a token began, as a created_at.
+
+    A token minted by a signed-in user counts from their JWT's issue time, not
+    from when its row is written: a password change, reset or 2FA removal that
+    commits in between (a stolen JWT minting in a loop) would otherwise leave a
+    token dated after it. The end of the iat second, as _is_token_fresh treats
+    a JWT from the second the session began as fresh. None outside a request
+    signed in with a JWT (API keys, auth off, sign-in steps).
+    """
+    cached = _authenticated_user.get()
+    if cached is None:
+        return None
+    try:
+        iat = jwt.decode(cached[0], SECRET_KEY, algorithms=[ALGORITHM]).get("iat")
+    except JWTError:
+        return None
+    if iat is None:
+        return None
+    return datetime.fromtimestamp(int(iat), tz=timezone.utc).replace(tzinfo=None) + timedelta(microseconds=999999)
+
+
+def session_dated(username: str | None) -> dict:
+    """created_at for a token a signed-in user mints for themself (see
+    _minting_session_start); nothing when the request's session is someone
+    else's (an admin minting for a user) or there is none."""
+    cached = _authenticated_user.get()
+    if not username or cached is None or cached[1].username.lower() != username.lower():
+        return {}
+    start = _minting_session_start()
+    return {"created_at": start} if start is not None else {}
+
+
+def _api_key_still_the_minter(current_prefix: str | None, minted_prefix: str | None) -> bool:
+    """Whether a key-minted token's key is still the one that minted it.
+
+    The prefix is recorded at mint (in ``nonce``): SQLite gives a deleted key's
+    id to the next key created, and a token minted while the key was deleted
+    would otherwise work with the new key's printers. Tokens from before the
+    prefix was recorded have none and pass (they expire within the hour).
+    """
+    return minted_prefix is None or current_prefix == minted_prefix
+
+
 # --- Camera stream tokens ---
 # Reusable tokens for camera stream/snapshot endpoints loaded via <img>/<video>
 # tags (these cannot send Authorization headers).  Unlike slicer tokens they are
@@ -852,7 +929,9 @@ async def verify_slicer_download_token(
 CAMERA_STREAM_TOKEN_EXPIRE_MINUTES = 60
 
 
-async def create_camera_stream_token(username: str | None = None, api_key_id: int | None = None) -> str:
+async def create_camera_stream_token(
+    username: str | None = None, api_key_id: int | None = None, api_key_prefix: str | None = None
+) -> str:
     """Create a reusable token for camera stream/snapshot access.
 
     Records who minted it -- ``username`` for a user, ``api_key_id`` for an
@@ -876,7 +955,9 @@ async def create_camera_stream_token(username: str | None = None, api_key_id: in
                 token_type="camera_stream",
                 username=username or "",
                 api_key_id=api_key_id,
+                nonce=api_key_prefix if api_key_id is not None else None,
                 expires_at=expires_at,
+                **session_dated(username),
             )
         )
         await db.commit()
@@ -886,7 +967,9 @@ async def create_camera_stream_token(username: str | None = None, api_key_id: in
 WEBSOCKET_TOKEN_EXPIRE_MINUTES = 60
 
 
-async def create_websocket_token(username: str | None, api_key_id: int | None = None) -> str:
+async def create_websocket_token(
+    username: str | None, api_key_id: int | None = None, api_key_prefix: str | None = None
+) -> str:
     """Create a short-lived token for ``/api/v1/ws`` connections.
 
     Mirrors the camera-stream-token pattern: opaque random string stored
@@ -919,7 +1002,9 @@ async def create_websocket_token(username: str | None, api_key_id: int | None = 
                 token_type="websocket",
                 username=username or "",
                 api_key_id=api_key_id,
+                nonce=api_key_prefix if api_key_id is not None else None,
                 expires_at=expires_at,
+                **session_dated(username),
             )
         )
         await db.commit()
@@ -945,23 +1030,83 @@ async def verify_websocket_token_principal(token: str) -> tuple[str, int | None]
             )
         )
         row = result.scalar_one_or_none()
-        if row is None:
+        if row is None or await token_outlived_its_session(db, row.username, row.created_at):
+            return None
+        if row.api_key_id is not None and not _api_key_still_the_minter(
+            await usable_api_key_prefix(db, row.api_key_id), row.nonce
+        ):
             return None
         return row.username or "", row.api_key_id
 
 
-async def verify_websocket_token(token: str) -> str | None:
-    """Verify a WebSocket connect token.
-
-    Returns the recorded ``username`` (possibly ``""`` for API-key
-    callers, never ``None`` on success) when the token is valid, or
-    ``None`` when it is missing / expired / unknown.
-    """
-    principal = await verify_websocket_token_principal(token)
-    return None if principal is None else principal[0]
-
-
 _NO_PRINTERS = PrinterScope(frozenset())
+
+
+async def usable_api_key_prefix(db: AsyncSession, api_key_id: int) -> str | None:
+    """The prefix of an API key that may still be used, else None.
+
+    None for a key that is gone, disabled or expired. The prefix tells a key
+    from a later one given its id (SQLite reuses ids), so an open WebSocket can
+    tell whether its key is still the one it connected with.
+    """
+    api_key = (await db.execute(select(APIKey).where(APIKey.id == api_key_id))).scalar_one_or_none()
+    if api_key is None or not api_key.enabled:
+        return None
+    if api_key.expires_at is not None:
+        expires = api_key.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires < datetime.now(timezone.utc):
+            return None
+    return api_key.key_prefix
+
+
+async def principal_holds(
+    db: AsyncSession, username: str | None, api_key_id: int | None, permission: Permission
+) -> bool:
+    """Whether a token's principal still holds the permission minting it needed.
+
+    A group change can take it away while the token is still valid (an hour,
+    or months for a long-lived one) and a connection or stream is open. A key
+    is checked as at the mint (its scope flags and its owner's permissions); a
+    user must exist, be active and hold it.
+    """
+    if api_key_id is not None:
+        api_key = (await db.execute(select(APIKey).where(APIKey.id == api_key_id))).scalar_one_or_none()
+        if api_key is None:
+            return False
+        try:
+            await authorize_api_key(db, api_key, [permission.value])
+        except HTTPException:
+            return False
+        return True
+    if username:
+        user = await get_user_by_username(db, username)
+        return user is not None and user.is_active and user.has_permission(permission.value)
+    return False
+
+
+async def user_id_holds(
+    db: AsyncSession, user_id: int, permission: Permission, minted_at: datetime | None = None
+) -> bool:
+    """principal_holds for the owner of a long-lived token, named by id.
+
+    With ``minted_at`` (the token's created_at), a user created after the token
+    is not its owner: SQLite gives a deleted user's id to the next user, and a
+    token minted while the user was deleted would stream with the new user's
+    printers for up to a year. Both created_at are set by the database, so they
+    share one clock.
+    """
+    result = await db.execute(select(User).where(User.id == user_id).options(selectinload(User.groups)))
+    user = result.scalar_one_or_none()
+    if user is None or not user.is_active or not user.has_permission(permission.value):
+        return False
+    return minted_at is None or user.created_at is None or minted_at >= user.created_at
+
+
+async def principal_may_connect(db: AsyncSession, username: str | None, api_key_id: int | None) -> bool:
+    """Whether a WebSocket token's principal still holds websocket:connect."""
+    return await principal_holds(db, username, api_key_id, Permission.WEBSOCKET_CONNECT)
 
 
 async def principal_printer_scope(db: AsyncSession, username: str | None, api_key_id: int | None) -> PrinterScope:
@@ -993,14 +1138,35 @@ async def principal_printer_scope(db: AsyncSession, username: str | None, api_ke
     return _NO_PRINTERS
 
 
-async def verify_camera_stream_token(token: str) -> PrinterScope | None:
-    """Verify a camera stream token (reusable -- does not consume it).
+@dataclass(frozen=True)
+class StreamOpener:
+    """Who opened a camera stream, and on what authority; re-checked while it runs.
 
-    Returns the printer scope of whoever minted it (#1727), or None when the
-    token is invalid. Tries the ephemeral 60-minute token first (the common,
-    browser-bound case) and falls through to long-lived tokens (#1108) for HA
-    / kiosk integrations that paste a token once and expect it to keep
-    working for days; those carry their owner's scope.
+    A live view runs for hours on a token checked once. Its opener is a user
+    (a 60-minute token minted with their session), an API key, a long-lived
+    token (Cam Wall, overlay, Home Assistant), or nobody while auth was off.
+    ``started_at`` is the token's created_at -- when the session that minted it
+    began -- not when the stream opened: a session that ended in between must
+    still end the stream.
+    """
+
+    auth_on: bool
+    username: str | None = None
+    api_key_id: int | None = None
+    api_key_prefix: str | None = None
+    long_lived_id: int | None = None
+    long_lived_user_id: int | None = None
+    long_lived_prefix: str | None = None
+    started_at: datetime = field(default_factory=utcnow_naive)
+
+
+async def camera_stream_access(token: str) -> tuple[PrinterScope, StreamOpener] | None:
+    """Verify a camera stream token: the minter's printer scope and who it is.
+
+    Tries the ephemeral 60-minute token first (the common, browser-bound case)
+    and falls through to long-lived tokens (#1108) for HA / kiosk integrations
+    that paste a token once and expect it to keep working for days; those
+    carry their owner's scope. None when the token is invalid.
     """
     now = datetime.now(timezone.utc)
     async with async_session() as db:
@@ -1012,17 +1178,110 @@ async def verify_camera_stream_token(token: str) -> PrinterScope | None:
             )
         )
         row = result.scalar_one_or_none()
+        if row is not None and await token_outlived_its_session(db, row.username, row.created_at):
+            return None
+        if (
+            row is not None
+            and row.api_key_id is not None
+            and not _api_key_still_the_minter(await usable_api_key_prefix(db, row.api_key_id), row.nonce)
+        ):
+            return None
         if row is not None:
-            return await principal_printer_scope(db, row.username, row.api_key_id)
+            # Minting it needed camera:view; a group or key change can take it away.
+            if not await principal_holds(db, row.username, row.api_key_id, Permission.CAMERA_VIEW):
+                return None
+            scope = await principal_printer_scope(db, row.username, row.api_key_id)
+            prefix = await usable_api_key_prefix(db, row.api_key_id) if row.api_key_id is not None else None
+            # When the minting session began (see _minting_session_start), or
+            # when the token was minted for one that is not a user's session.
+            minted = row.created_at.replace(tzinfo=None)
+            return scope, StreamOpener(
+                auth_on=True,
+                username=row.username or None,
+                api_key_id=row.api_key_id,
+                api_key_prefix=prefix,
+                started_at=minted,
+            )
 
         # Long-lived path. Imported lazily so the auth module stays importable
         # at startup before the long_lived_tokens model is registered.
         from backend.app.services.long_lived_tokens import STREAM_SCOPES, verify_token as verify_long_lived
 
         record = await verify_long_lived(db, token, scope=STREAM_SCOPES)
-        if record is None:
+        if record is None or not await user_id_holds(db, record.user_id, Permission.CAMERA_VIEW, record.created_at):
             return None
-        return await resolve_user_id_printer_scope(db, record.user_id)
+        scope = await resolve_user_id_printer_scope(db, record.user_id)
+        return scope, StreamOpener(
+            auth_on=True,
+            long_lived_id=record.id,
+            long_lived_user_id=record.user_id,
+            long_lived_prefix=record.lookup_prefix,
+        )
+
+
+async def verify_camera_stream_token(token: str) -> PrinterScope | None:
+    """Verify a camera stream token (reusable -- does not consume it).
+
+    Returns the printer scope of whoever minted it (#1727), or None when the
+    token is invalid. See camera_stream_access.
+    """
+    access = await camera_stream_access(token)
+    return access[0] if access is not None else None
+
+
+async def stream_opener_still_allowed(opener: StreamOpener, printer_id: int) -> bool:
+    """Whether a stream's opener may still watch this printer. Raises when it
+    can't be read: the stream decides how long it may run unchecked.
+
+    A user's sessions must not have ended since the stream started (password
+    change or reset, 2FA removal, restore), and they must still exist and be
+    active; a key must still be usable and the same key; a long-lived token
+    must not be revoked or expired; a stream opened while auth was off ends
+    once it is on. In every case camera:view must still be held (by the
+    token's owner for a long-lived one) and the printer must still be in scope.
+    """
+    from backend.app.models.long_lived_token import LongLivedToken
+    from backend.app.services.long_lived_tokens import _is_expired
+
+    try:
+        async with async_session() as db:
+            auth_on = await is_auth_enabled(db)
+            if not opener.auth_on:
+                return not auth_on
+            if not auth_on:
+                return True
+            if opener.long_lived_id is not None:
+                record = await db.get(LongLivedToken, opener.long_lived_id)
+                if (
+                    record is None
+                    or record.revoked_at is not None
+                    or record.user_id != opener.long_lived_user_id
+                    or record.lookup_prefix != opener.long_lived_prefix
+                    or _is_expired(record, datetime.now(timezone.utc))
+                    or not await user_id_holds(db, record.user_id, Permission.CAMERA_VIEW, record.created_at)
+                ):
+                    return False
+                scope = await resolve_user_id_printer_scope(db, record.user_id)
+            elif opener.api_key_id is not None:
+                if await usable_api_key_prefix(db, opener.api_key_id) != opener.api_key_prefix:
+                    return False
+                if not await principal_holds(db, None, opener.api_key_id, Permission.CAMERA_VIEW):
+                    return False
+                scope = await principal_printer_scope(db, None, opener.api_key_id)
+            elif opener.username:
+                user = await get_user_by_username(db, opener.username)
+                if user is None or not user.is_active or not user.has_permission(Permission.CAMERA_VIEW.value):
+                    return False
+                changed = user.password_changed_at
+                if changed is not None and changed.replace(tzinfo=None) > opener.started_at:
+                    return False
+                scope = await principal_printer_scope(db, opener.username, None)
+            else:
+                return False
+            return scope.allows(printer_id)
+    except Exception:  # SEC-AUTH-EXC: logged and re-raised, never an answer
+        logger.warning("Camera stream re-check failed", exc_info=True)
+        raise
 
 
 async def verify_camwall_token(token: str) -> PrinterScope | None:
@@ -1042,7 +1301,8 @@ async def verify_camwall_token(token: str) -> PrinterScope | None:
         from backend.app.services.long_lived_tokens import verify_token as verify_long_lived
 
         record = await verify_long_lived(db, token, scope="camwall")
-        if record is None:
+        # Minting it needed camera:view; a group change can take it away.
+        if record is None or not await user_id_holds(db, record.user_id, Permission.CAMERA_VIEW, record.created_at):
             return None
         return await resolve_user_id_printer_scope(db, record.user_id)
 
@@ -1063,7 +1323,8 @@ async def verify_overlay_token(token: str) -> PrinterScope | None:
         from backend.app.services.long_lived_tokens import verify_token as verify_long_lived
 
         record = await verify_long_lived(db, token, scope="overlay")
-        if record is None:
+        # Minting it needed camera:view; a group change can take it away.
+        if record is None or not await user_id_holds(db, record.user_id, Permission.CAMERA_VIEW, record.created_at):
             return None
         return await resolve_user_id_printer_scope(db, record.user_id)
 
@@ -1115,6 +1376,7 @@ async def create_media_token(username: str | None) -> str:
                 token_type="media",
                 username=username or "",
                 expires_at=expires_at,
+                **session_dated(username),
             )
         )
         await db.commit()
@@ -1146,7 +1408,7 @@ async def verify_media_token(token: str) -> str | None:
             )
         )
         row = result.scalar_one_or_none()
-        if row is None:
+        if row is None or await token_outlived_its_session(db, row.username, row.created_at):
             return None
         return row.username or ""
 
@@ -1402,18 +1664,50 @@ _validated_api_key: ContextVar[tuple[str, APIKey] | None] = ContextVar("_validat
 _authenticated_user: ContextVar[tuple[str, User] | None] = ContextVar("_authenticated_user", default=None)
 
 
+# A key's last-used time is written at most once a minute (#3360).
+_api_key_last_used = LastUsedThrottle(timedelta(minutes=1))
+
+
+def _api_key_expired(api_key: APIKey) -> bool:
+    if not api_key.expires_at:
+        return False
+    expires = api_key.expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    return expires < datetime.now(timezone.utc)
+
+
+def _api_key_check_unavailable(error: Exception) -> HTTPException:
+    """The 503 for a key that couldn't be checked (database, pool), logged.
+
+    Not 401: the key may well be valid, and clients treat 401 "Invalid API key"
+    as final (the web interface clears its sign-in on it). Still fail-closed:
+    the request is refused either way.
+    """
+    logger.error("API key check failed: %s", error, exc_info=error)
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Authentication service temporarily unavailable",
+    )
+
+
 async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | None:
     """Validate an API key and return the APIKey object if valid, None otherwise.
+
+    Raises a 503 HTTPException when the key can't be checked at all (database
+    or pool error): that is not an invalid key, and must not read as one. A
+    failed ``last_used`` write is not such a case: the key has been checked by
+    then, so it is logged and the key is accepted (#3360).
 
     L-1: Pre-filter by key_prefix (first 8 chars) before running pbkdf2 so only
     O(1) candidate rows are hashed instead of the full key table.  The prefix is
     not secret (it is shown in the admin UI), so this does not reduce security.
     """
+    # key_prefix is stored as "<first-8-chars>..." (e.g. "bb_Abc12...").
+    # Matching on the first 8 chars of the submitted key reduces the scan to
+    # at most one row in practice (2^40 collision space for 5 base64 chars).
+    key_lookup = api_key_value[:8] if len(api_key_value) >= 8 else api_key_value
     try:
-        # key_prefix is stored as "<first-8-chars>..." (e.g. "bb_Abc12...").
-        # Matching on the first 8 chars of the submitted key reduces the scan to
-        # at most one row in practice (2^40 collision space for 5 base64 chars).
-        key_lookup = api_key_value[:8] if len(api_key_value) >= 8 else api_key_value
         result = await db.execute(
             select(APIKey).where(
                 APIKey.enabled.is_(True),
@@ -1423,23 +1717,45 @@ async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | No
             )
         )
         api_keys = result.scalars().all()
+    except Exception as e:  # SEC-AUTH-EXC: key lookup failed -> raises 503, request refused (no key returned)
+        raise _api_key_check_unavailable(e) from e
 
-        for api_key in api_keys:
-            if verify_password(api_key_value, api_key.key_hash):
-                # Check expiration
-                if api_key.expires_at:
-                    expires = api_key.expires_at
-                    if expires.tzinfo is None:
-                        expires = expires.replace(tzinfo=timezone.utc)
-                    if expires < datetime.now(timezone.utc):
-                        return None  # Expired
-                # Update last_used timestamp
-                api_key.last_used = datetime.now(timezone.utc)
+    for api_key in api_keys:
+        try:
+            matches = verify_password(api_key_value, api_key.key_hash)
+        except PasswordSizeError:
+            # The submitted value is too long to hash (passlib's limit): the
+            # client's input, not this row, and certainly not a match.
+            continue
+        except Exception as e:  # SEC-AUTH-EXC: unverifiable hash counts as no match -> None -> 401
+            # An unreadable stored hash can't vouch for anything: not a match.
+            logger.warning("API key %s has an unreadable hash: %s", api_key.id, e)
+            continue
+        if not matches:
+            continue
+        if _api_key_expired(api_key):
+            return None
+        now = datetime.now(timezone.utc)
+        if _api_key_last_used.due(api_key.key_hash, api_key.last_used, now):
+            key_id = api_key.id
+            api_key.last_used = now
+            try:
                 await db.commit()
-                _validated_api_key.set((api_key_value, api_key))
-                return api_key
-    except Exception as e:  # SEC-AUTH-EXC: validation failure returns None; every caller treats None as "invalid key" → 401 (fail-closed)
-        logger.warning("API key validation error: %s", e)
+            except Exception as e:  # SEC-AUTH-EXC: last_used write failed, key already matched -> re-read below
+                # A read-only replica after a failover, a locked database: the
+                # key matched, only the bookkeeping failed.
+                await db.rollback()
+                logger.warning("Could not record API key %s as used: %s", key_id, e)
+                try:
+                    await db.refresh(api_key)
+                except Exception as e:  # SEC-AUTH-EXC: re-reading the key failed -> raise 503, key not returned
+                    raise _api_key_check_unavailable(e) from e
+                # Re-read, so it is checked again: it may have been turned off
+                # or set to expire in the meantime.
+                if not api_key.enabled or _api_key_expired(api_key):
+                    return None
+        _validated_api_key.set((api_key_value, api_key))
+        return api_key
     return None
 
 
@@ -1524,6 +1840,8 @@ async def get_current_user(
             )
         if not _is_token_fresh(iat, user):
             raise credentials_exception
+        # What this request mints counts from this session (_minting_session_start)
+        _authenticated_user.set((token, user))
         return user
 
 
@@ -1615,6 +1933,8 @@ async def require_auth_if_enabled(
                     detail="Could not validate credentials",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
+            # What this request mints counts from this session (_minting_session_start)
+            _authenticated_user.set((credentials.credentials, user))
             return user
 
         # No credentials provided
@@ -1623,20 +1943,6 @@ async def require_auth_if_enabled(
             detail="Authentication required",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-
-def require_role(required_role: str):
-    """Dependency factory for role-based access control."""
-
-    async def role_checker(current_user: Annotated[User, Depends(get_current_user)]) -> User:
-        if current_user.role != required_role:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Requires {required_role} role",
-            )
-        return current_user
-
-    return role_checker
 
 
 def require_admin_if_auth_enabled():
@@ -1753,11 +2059,13 @@ def generate_api_key() -> tuple[str, str, str]:
 async def get_api_key(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> APIKey:
-    """Get and validate API key from request headers.
+    """Get and validate API key from request headers (the webhook routes).
 
-    Checks both 'Authorization: Bearer <key>' and 'X-API-Key: <key>' headers.
+    Checks both 'Authorization: Bearer <key>' and 'X-API-Key: <key>' headers;
+    the key itself is checked by _validate_api_key. An expired key is an
+    invalid key, as on every other route.
     """
     api_key_value = None
     if x_api_key:
@@ -1771,41 +2079,15 @@ async def get_api_key(
             detail="API key required. Provide 'X-API-Key' header or 'Authorization: Bearer <key>'",
         )
 
-    # Pre-filter by key_prefix to avoid O(n) pbkdf2 hashes across all enabled keys.
-    key_lookup = api_key_value[:8] if len(api_key_value) >= 8 else api_key_value
-    result = await db.execute(
-        select(APIKey).where(
-            APIKey.enabled.is_(True),
-            APIKey.key_prefix.like(
-                key_lookup.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%",
-                escape="\\",
-            ),
+    # The same check as every other API-key route: a key that can't be checked
+    # (database error) is a 503 raised in there, not an invalid key.
+    api_key = await _validate_api_key(db, api_key_value)
+    if api_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
         )
-    )
-    api_keys = result.scalars().all()
-
-    for api_key in api_keys:
-        # Check if key matches (verify against hash)
-        if verify_password(api_key_value, api_key.key_hash):
-            # Check expiration
-            if api_key.expires_at:
-                expires = api_key.expires_at
-                if expires.tzinfo is None:
-                    expires = expires.replace(tzinfo=timezone.utc)
-                if expires < datetime.now(timezone.utc):
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="API key has expired",
-                    )
-            # Update last_used timestamp
-            api_key.last_used = datetime.now(timezone.utc)
-            await db.commit()
-            return api_key
-
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid API key",
-    )
+    return api_key
 
 
 async def caller_is_api_key(
@@ -1902,9 +2184,11 @@ async def validated_api_key_from_request(
     """Return the validated API key carried by a request, if any.
 
     Permission dependencies intentionally return ``None`` for API-key callers so
-    routes do not mistake a key for a user identity. Printer-bound routes still
-    need the key row to enforce ``printer_ids`` after the normal scope/owner
-    permission gate has run. This helper recognizes both supported transports.
+    routes do not mistake a key for a user identity (the ownership dependency
+    returns an ``ApiKeyActor`` for a key whose owner may act on own rows only).
+    Printer-bound routes still need the key row to enforce ``printer_ids`` after
+    the normal scope/owner permission gate has run. This helper recognizes both
+    supported transports.
     """
 
     candidate = x_api_key
@@ -1980,7 +2264,7 @@ async def get_printer_scope_if_auth_enabled(
 RequestPrinterScope = Depends(get_printer_scope_if_auth_enabled)
 
 
-def queue_review_required_for(user: User | None) -> bool:
+def queue_review_required_for(user: User | ApiKeyActor | None) -> bool:
     """Whether jobs ``user`` queues must wait for someone to start them (#1620).
 
     None is auth-off or a legacy ownerless API key, neither of which has a
@@ -1994,7 +2278,7 @@ def queue_review_required_for(user: User | None) -> bool:
     )
 
 
-def may_start_queue_item(user: User | None, can_modify_all: bool, created_by_id: int | None) -> bool:
+def may_start_queue_item(user: User | ApiKeyActor | None, can_modify_all: bool, created_by_id: int | None) -> bool:
     """Whether the caller may start a waiting queue item (#1620).
 
     ``can_modify_all`` is what ``require_ownership_permission`` answered for
@@ -2076,6 +2360,27 @@ async def get_request_actor(
 RequestActor = Depends(get_request_actor)
 
 
+async def actor_still_exists(db: AsyncSession, actor: User | ApiKeyActor | None) -> bool:
+    """Whether the user a request started as still exists.
+
+    A request that downloads or extracts for seconds to minutes writes the id
+    it started with. A user deleted meanwhile leaves it pointing at nobody, or
+    on SQLite, which gives a freed id to the next user created, at someone
+    else; the name tells them apart. No actor (auth off) or a key without an
+    owner has no user to lose.
+    """
+    if actor is None or actor.id is None:
+        return True
+    found = await db.scalar(select(User.id).where(User.id == actor.id, User.username == actor.username))
+    return found is not None
+
+
+async def require_actor_still_exists(db: AsyncSession, actor: User | ApiKeyActor | None) -> None:
+    """Stop a request whose user was deleted while it ran, before it saves anything as theirs."""
+    if not await actor_still_exists(db, actor):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="This account was deleted")
+
+
 async def get_media_or_request_printer_scope(
     token: str | None = None,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
@@ -2084,10 +2389,11 @@ async def get_media_or_request_printer_scope(
     """``RequestPrinterScope`` for routes an ``<img>`` may load with ``?token=``.
 
     Such a request carries a media token and no headers, so the header-based
-    lookup would find nobody and answer with no printers. With headers present
-    they win, exactly as in ``require_media_token_*``.
+    lookup would find nobody and answer with no printers. A media token wins
+    over any headers sent with it, exactly as in ``require_media_token_*``:
+    the printers are always those of the caller the permission check named.
     """
-    if token and credentials is None and x_api_key is None:
+    if token:
         async with async_session() as db:
             if not await is_auth_enabled(db):
                 return ALL_PRINTERS
@@ -2127,92 +2433,11 @@ def require_printer_permission_if_auth_enabled(*permissions: str | Permission):
 
 
 # Convenience dependencies - these are functions that return Depends objects
-def RequireAdmin():
-    """Dependency that requires admin role."""
-    return Depends(require_role("admin"))
 
 
 def RequireAdminIfAuthEnabled():
     """Dependency that requires admin role if auth is enabled."""
     return Depends(require_admin_if_auth_enabled())
-
-
-def require_permission(*permissions: str | Permission):
-    """Dependency factory that requires user to have ALL specified permissions.
-
-    Accepts both JWT tokens (via Authorization: Bearer header) and API keys
-    (via X-API-Key header or Authorization: Bearer bb_xxx).
-
-    Args:
-        *permissions: Permission strings or Permission enum values to require
-
-    Returns:
-        A dependency function that validates permissions
-    """
-    # Convert Permission enums to strings
-    perm_strings = [p.value if isinstance(p, Permission) else p for p in permissions]
-
-    async def permission_checker(
-        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
-        x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
-    ) -> User | None:
-        async with async_session() as db:
-            # Check for API key first (X-API-Key header)
-            if x_api_key:
-                api_key = await _validate_api_key(db, x_api_key)
-                if api_key:
-                    await authorize_api_key(db, api_key, perm_strings)
-                    return None  # API key valid, allow access
-
-            credentials_exception = HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-            if credentials is None:
-                raise credentials_exception
-
-            token = credentials.credentials
-            # Check if it's an API key (starts with bb_)
-            if token.startswith("bb_"):
-                api_key = await _validate_api_key(db, token)
-                if api_key:
-                    await authorize_api_key(db, api_key, perm_strings)
-                    return None  # API key valid, allow access
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid API key",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-
-            # Otherwise treat as JWT
-            try:
-                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-                username: str = payload.get("sub")
-                if username is None:
-                    raise credentials_exception
-                jti: str | None = payload.get("jti")
-                if not jti or await is_jti_revoked(jti, db):
-                    raise credentials_exception
-                iat: int | float | None = payload.get("iat")
-            except JWTError:
-                raise credentials_exception
-
-            user = await get_user_by_username(db, username)
-            if user is None or not user.is_active:
-                raise credentials_exception
-            if not _is_token_fresh(iat, user):
-                raise credentials_exception
-
-            if not user.has_all_permissions(*perm_strings):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Missing required permissions: {', '.join(perm_strings)}",
-                )
-            return user
-
-    return permission_checker
 
 
 def require_permission_if_auth_enabled(*permissions: str | Permission):
@@ -2324,11 +2549,6 @@ def require_permission_if_auth_enabled(*permissions: str | Permission):
             )
 
     return permission_checker
-
-
-def RequirePermission(*permissions: str | Permission):
-    """Convenience dependency that requires ALL specified permissions."""
-    return Depends(require_permission(*permissions))
 
 
 def RequirePermissionIfAuthEnabled(*permissions: str | Permission):
@@ -2476,18 +2696,20 @@ def require_camera_stream_token_if_auth_enabled():
     tell one user's rows from another's (#3025).
     """
 
-    async def checker(printer_id: int, token: str | None = None) -> None:
+    async def checker(printer_id: int, token: str | None = None) -> StreamOpener:
         async with async_session() as db:
             if not await is_auth_enabled(db):
-                return  # Auth disabled, allow access
-        scope = await verify_camera_stream_token(token) if token else None
-        if scope is None:
+                return StreamOpener(auth_on=False)  # Auth disabled, allow access
+        access = await camera_stream_access(token) if token else None
+        if access is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Valid camera stream token required. Obtain one from POST /api/v1/printers/camera/stream-token",
             )
+        scope, opener = access
         # The token's minter may not see this printer (#1727)
         scope.ensure(printer_id)
+        return opener
 
     return checker
 
@@ -2582,14 +2804,15 @@ def require_ownership_permission(
     - User with ``all_permission`` can modify any item
     - User with ``own_permission`` can only modify items where created_by_id == user.id
     - Ownerless items (created_by_id = null) require ``all_permission``
-    - API keys (via X-API-Key header or Bearer bb_xxx) must satisfy the
-      ``all_permission``'s API-key scope flag (e.g. ``can_queue`` for
-      ``QUEUE_UPDATE_ALL``) and then receive ``can_modify_all=True``.
-      OWN/ALL ownership pairs map to the same scope flag in
-      ``_APIKEY_SCOPE_BY_PERMISSION`` so checking ``all_permission`` is the
-      correct gate; API keys have no per-row ownership identity. Pre-
-      GHSA-r2qv-8222-hqg3 fix this returned ``(None, True)`` for any valid
-      key with no scope check — see ``core/auth.py`` allowlist commentary.
+    - API keys (via X-API-Key header or Bearer bb_xxx) act as their owner:
+      a key whose owner holds ``all_permission`` gets ``(None, True)``; a key
+      whose owner holds only ``own_permission`` gets ``(ApiKeyActor, False)``,
+      so the route's per-row check compares rows against the owner's id.
+      Either way the key needs the permission's scope flag (OWN and ALL map
+      to the same one). A legacy key without an owner owns nothing and still
+      needs ``all_permission``. Pre-GHSA-r2qv-8222-hqg3 this returned
+      ``(None, True)`` for any valid key with no scope check — see
+      ``core/auth.py`` allowlist commentary.
 
     Returns:
         A dependency function that returns (user, can_modify_all).
@@ -2599,10 +2822,22 @@ def require_ownership_permission(
     all_perm = all_permission.value if isinstance(all_permission, Permission) else all_permission
     own_perm = own_permission.value if isinstance(own_permission, Permission) else own_permission
 
+    async def _api_key_ownership(db: AsyncSession, api_key: APIKey) -> tuple[ApiKeyActor | None, bool]:
+        owner = await resolve_apikey_owner(db, api_key)
+        if owner is None:
+            # A legacy key without an owner has no id to own rows by.
+            _check_apikey_permissions(api_key, [all_perm])
+            return None, True
+        _check_apikey_permissions(api_key, [all_perm, own_perm], owner=owner, require_any=True)
+        actor = ApiKeyActor(api_key, owner)
+        if actor.has_permission(all_perm):
+            return None, True
+        return actor, False
+
     async def checker(
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
         x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
-    ) -> tuple[User | None, bool]:
+    ) -> tuple[User | ApiKeyActor | None, bool]:
         """Returns (user, can_modify_all).
 
         - can_modify_all=True: user can modify any item
@@ -2616,17 +2851,11 @@ def require_ownership_permission(
             # GHSA-r2qv-8222-hqg3: previously API keys received (None, True)
             # unconditionally on ownership-modify routes — a "queue-only" key
             # could delete any user's archives, library files, queue items.
-            # OWN and ALL ownership perms both map to the same scope flag
-            # (e.g. both QUEUE_UPDATE_OWN and QUEUE_UPDATE_ALL → can_queue),
-            # so checking ``all_perm`` against the api_key's scope is the
-            # correct gate. API keys don't have per-row ownership identity, so
-            # on pass we keep can_modify_all=True (preserves prior intent,
-            # narrows access to keys with the right scope flag).
+            # A key now passes only with the scope flag, and acts as its owner.
             if x_api_key:
                 api_key = await _validate_api_key(db, x_api_key)
                 if api_key:
-                    await authorize_api_key(db, api_key, [all_perm])
-                    return None, True
+                    return await _api_key_ownership(db, api_key)
 
             # Check for Bearer token (could be JWT or API key)
             if credentials is not None:
@@ -2635,8 +2864,7 @@ def require_ownership_permission(
                 if token.startswith("bb_"):
                     api_key = await _validate_api_key(db, token)
                     if api_key:
-                        await authorize_api_key(db, api_key, [all_perm])
-                        return None, True
+                        return await _api_key_ownership(db, api_key)
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Invalid API key",
@@ -2778,9 +3006,9 @@ def require_media_token_ownership(
     token holder.
 
     Header callers are delegated to :func:`require_ownership_permission`
-    unchanged -- including its API-key rule, where a key satisfying the ALL
-    permission's scope flag gets ``can_read_all=True`` because keys have no
-    per-row identity.
+    unchanged -- including its API-key rule, where a key acts as its owner: its
+    owner's ALL permission gives ``can_read_all=True``, the OWN one an
+    ``ApiKeyActor`` limited to the owner's rows.
     """
     all_perm = all_permission.value if isinstance(all_permission, Permission) else all_permission
     own_perm = own_permission.value if isinstance(own_permission, Permission) else own_permission
@@ -2790,7 +3018,7 @@ def require_media_token_ownership(
         token: str | None = None,
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
         x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
-    ) -> tuple[User | None, bool]:
+    ) -> tuple[User | ApiKeyActor | None, bool]:
         async with async_session() as db:
             if not await is_auth_enabled(db):
                 return None, True  # Auth disabled, allow all

@@ -181,7 +181,7 @@ async def list_permissions(
 @router.get("/", response_model=list[GroupResponse])
 async def list_groups(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all groups."""
     result = await db.execute(select(Group).options(selectinload(Group.users)).order_by(Group.name))
@@ -202,7 +202,7 @@ async def create_group(
     group_data: GroupCreate,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_CREATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Create a new group."""
     # Check if group name already exists
@@ -241,7 +241,7 @@ async def create_group(
 async def get_group(
     group_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get a group by ID with user list. Read-only — gated on
     ``GROUPS_READ`` only."""
@@ -275,7 +275,7 @@ async def update_group(
     group_data: GroupUpdate,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Update a group."""
     result = await db.execute(select(Group).where(Group.id == group_id).options(selectinload(Group.users)))
@@ -331,7 +331,9 @@ async def update_group(
 
     await db.commit()
     await db.refresh(group)
-    if scope_changed:
+    if scope_changed or group_data.permissions is not None:
+        # Printers, or websocket:connect itself (a socket of a user who lost it
+        # is closed)
         await ws_manager.refresh_printer_scopes()
 
     return _group_response(
@@ -344,7 +346,7 @@ async def delete_group(
     group_id: int,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_DELETE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Delete a group (non-system groups only)."""
     result = await db.execute(select(Group).where(Group.id == group_id))
@@ -361,14 +363,13 @@ async def delete_group(
             detail="Cannot delete system groups",
         )
 
-    restricted = bool(group.restrict_printers)
     # SQLite doesn't enforce the FK cascade
     await db.execute(delete(group_printers).where(group_printers.c.group_id == group_id))
     await db.execute(delete(group_locations).where(group_locations.c.group_id == group_id))
     await db.delete(group)
     await db.commit()
-    if restricted:
-        await ws_manager.refresh_printer_scopes()
+    # Its members may lose printers, or websocket:connect itself
+    await ws_manager.refresh_printer_scopes()
 
 
 @router.post("/{group_id}/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -377,7 +378,7 @@ async def add_user_to_group(
     user_id: int,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Add a user to a group."""
     # Get group with users
@@ -407,8 +408,7 @@ async def add_user_to_group(
 
     group.users.append(user)
     await db.commit()
-    if group.restrict_printers:
-        await ws_manager.refresh_printer_scopes()
+    await ws_manager.refresh_printer_scopes()
 
 
 @router.delete("/{group_id}/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -417,7 +417,7 @@ async def remove_user_from_group(
     user_id: int,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Remove a user from a group."""
     # Get group with users
@@ -447,5 +447,5 @@ async def remove_user_from_group(
 
     group.users.remove(user)
     await db.commit()
-    if group.restrict_printers:
-        await ws_manager.refresh_printer_scopes()
+    # They may lose printers, or websocket:connect itself
+    await ws_manager.refresh_printer_scopes()

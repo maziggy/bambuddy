@@ -94,6 +94,8 @@ class TestAScreenStartedPrintNamesItsFile:
         """The slicer's own mapping describes the same print and arrived first;
         the echo can carry a different shape or none at all."""
         client._captured_ams_mapping = [0, -1, -1, -1]
+        # Captured from the request for this same destination.
+        client._captured_mapping_url = "file:///userdata/model/history/JOB_A.gcode.3mf"
 
         client._process_message(screen_start(ams_mapping=[3]))
 

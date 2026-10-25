@@ -408,17 +408,6 @@ class SlicerApiService:
     async def __aexit__(self, *_: object) -> None:
         await self.close()
 
-    async def health(self) -> dict:
-        """GET /health — used to surface a clear "sidecar offline" error before
-        accepting a slice request from the user."""
-        try:
-            response = await self._client.get(f"{self.base_url}/health", timeout=10.0)
-        except httpx.RequestError as exc:
-            raise SlicerApiUnavailableError(f"Slicer sidecar unreachable: {_transport_error_reason(exc)}") from exc
-        if response.status_code >= 400:
-            raise SlicerApiUnavailableError(f"Slicer sidecar /health returned {response.status_code}")
-        return response.json()
-
     async def resolve_profile(self, profile_json: str, category: str) -> "ResolvedProfile":
         """POST /profiles/resolve — flatten a preset's ``inherits:`` chain.
 

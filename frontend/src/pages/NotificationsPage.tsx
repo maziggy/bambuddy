@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Button } from '../components/Button';
 import { Card, CardContent, CardHeader } from '../components/Card';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 export function NotificationsPage() {
   const { t } = useTranslation();
@@ -29,11 +30,7 @@ export function NotificationsPage() {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  const { data: settings, isLoading: isSettingsLoading } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-    staleTime: 5 * 60 * 1000,
-  });
+  const { data: settings, isLoading: isSettingsLoading } = useUiSettings({ staleTime: 5 * 60 * 1000 });
 
   // Fetch current preferences
   const { data: preferences, isLoading } = useQuery({

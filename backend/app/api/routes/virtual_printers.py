@@ -1,15 +1,19 @@
 import logging
+import os
+from pathlib import Path
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.user import User
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 from backend.app.schemas.virtual_printer import VPDiagnosticResult
 
 # Imported at module scope so tests can patch
@@ -45,7 +49,8 @@ class VirtualPrinterCreate(BaseModel):
     remote_interface_ip: str | None = None
 
 
-class VirtualPrinterUpdate(BaseModel):
+class VirtualPrinterUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "virtual_printers"
     name: str | None = None
     enabled: bool | None = None
     mode: str | None = None
@@ -76,6 +81,14 @@ def _resolve_printer_model(printer_model: str | None) -> str | None:
         return printer_model
     # Map display name to SSDP code
     return DISPLAY_NAME_TO_MODEL_CODE.get(printer_model)
+
+
+def _target_missing(target_printer_id: int) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"detail": f"Printer with ID {target_printer_id} not found"})
+
+
+def _vp_missing() -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": "Virtual printer not found"})
 
 
 async def _vp_to_dict(vp, db: AsyncSession, status: dict | None = None) -> dict:
@@ -123,8 +136,9 @@ async def _vp_to_dict(vp, db: AsyncSession, status: dict | None = None) -> dict:
 
 @router.get("")
 async def list_virtual_printers(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """List all virtual printers with status."""
     from backend.app.models.virtual_printer import VirtualPrinter
@@ -135,6 +149,10 @@ async def list_virtual_printers(
 
     printers = []
     for vp in vps:
+        # One bridging to a printer the caller can't use is left out: its
+        # status names that printer.
+        if not printer_scope.allows(vp.target_printer_id):
+            continue
         instance = virtual_printer_manager.get_instance(vp.id)
         status = instance.get_status() if instance else {"running": False, "pending_files": 0}
         printers.append(await _vp_to_dict(vp, db, status))
@@ -148,8 +166,9 @@ async def list_virtual_printers(
 @router.post("")
 async def create_virtual_printer(
     body: VirtualPrinterCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Create a new virtual printer."""
     from backend.app.models.virtual_printer import VP_MODE_VALUES, VirtualPrinter, normalize_vp_mode
@@ -189,15 +208,13 @@ async def create_virtual_printer(
 
     # Validate proxy target printer exists
     target_printer = None
-    if body.target_printer_id:
+    if body.target_printer_id is not None:
         from backend.app.models.printer import Printer
 
         result = await db.execute(select(Printer).where(Printer.id == body.target_printer_id))
         target_printer = result.scalar_one_or_none()
-        if not target_printer:
-            return JSONResponse(
-                status_code=400, content={"detail": f"Printer with ID {body.target_printer_id} not found"}
-            )
+        if not target_printer or not printer_scope.allows(target_printer.id):
+            return _target_missing(body.target_printer_id)
 
     # Validate bind_ip uniqueness (against all enabled VPs)
     if body.bind_ip:
@@ -313,8 +330,9 @@ async def get_ca_certificate(
 @router.get("/{vp_id}/diagnostic", response_model=VPDiagnosticResult)
 async def diagnose_virtual_printer(
     vp_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Run setup diagnostics for a virtual printer.
 
@@ -327,8 +345,8 @@ async def diagnose_virtual_printer(
 
     result = await db.execute(select(VirtualPrinter).where(VirtualPrinter.id == vp_id))
     vp = result.scalar_one_or_none()
-    if not vp:
-        return JSONResponse(status_code=404, content={"detail": "Virtual printer not found"})
+    if not vp or not printer_scope.allows(vp.target_printer_id):
+        return _vp_missing()
 
     instance = virtual_printer_manager.get_instance(vp.id)
     return await run_vp_diagnostic(vp, instance)
@@ -337,8 +355,9 @@ async def diagnose_virtual_printer(
 @router.get("/{vp_id}")
 async def get_virtual_printer(
     vp_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get a single virtual printer with status."""
     from backend.app.models.virtual_printer import VirtualPrinter
@@ -346,8 +365,8 @@ async def get_virtual_printer(
 
     result = await db.execute(select(VirtualPrinter).where(VirtualPrinter.id == vp_id))
     vp = result.scalar_one_or_none()
-    if not vp:
-        return JSONResponse(status_code=404, content={"detail": "Virtual printer not found"})
+    if not vp or not printer_scope.allows(vp.target_printer_id):
+        return _vp_missing()
 
     instance = virtual_printer_manager.get_instance(vp.id)
     status = instance.get_status() if instance else {"running": False, "pending_files": 0}
@@ -359,8 +378,9 @@ async def get_virtual_printer(
 async def update_virtual_printer(
     vp_id: int,
     body: VirtualPrinterUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Update a virtual printer."""
     from backend.app.models.virtual_printer import VirtualPrinter
@@ -368,8 +388,9 @@ async def update_virtual_printer(
 
     result = await db.execute(select(VirtualPrinter).where(VirtualPrinter.id == vp_id))
     vp = result.scalar_one_or_none()
-    if not vp:
-        return JSONResponse(status_code=404, content={"detail": "Virtual printer not found"})
+    # One bridging to a printer the caller can't use is not theirs to change.
+    if not vp or not printer_scope.allows(vp.target_printer_id):
+        return _vp_missing()
 
     # Redact the access code before logging — model_dump otherwise includes
     # the plaintext value at DEBUG, violating the project no-secrets-in-logs
@@ -415,10 +436,8 @@ async def update_virtual_printer(
 
         result = await db.execute(select(Printer).where(Printer.id == body.target_printer_id))
         target_printer = result.scalar_one_or_none()
-        if not target_printer:
-            return JSONResponse(
-                status_code=400, content={"detail": f"Printer with ID {body.target_printer_id} not found"}
-            )
+        if not target_printer or not printer_scope.allows(target_printer.id):
+            return _target_missing(body.target_printer_id)
         vp.target_printer_id = body.target_printer_id
         # Auto-inherit model from target printer in proxy mode (unless user explicitly set model)
         if body.model is None and vp.mode == "proxy" and target_printer.model:
@@ -491,7 +510,11 @@ async def update_virtual_printer(
             )
             return JSONResponse(
                 status_code=400,
-                content={"detail": f"Bind IP {vp.bind_ip} is already in use by '{conflict.name}'"},
+                content={
+                    "detail": f"Bind IP {vp.bind_ip} is already in use by '{conflict.name}'"
+                    if printer_scope.allows(conflict.target_printer_id)
+                    else f"Bind IP {vp.bind_ip} is already in use"
+                },
             )
         if effective_mode == "proxy":
             if not vp.target_printer_id:
@@ -534,56 +557,73 @@ async def update_virtual_printer(
     return await _vp_to_dict(vp, db, status)
 
 
-@router.delete("/{vp_id}")
-async def delete_virtual_printer(
-    vp_id: int,
-    db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-):
-    """Delete a virtual printer."""
+async def drop_virtual_printer(db: AsyncSession, vp_id: int) -> Path:
+    """Delete a virtual printer's row and discard its pending uploads.
+
+    Its instance must be stopped first, if one runs. The caller commits, then
+    calls remove_upload_dir with what this returns. *db* is a session or a
+    connection.
+    """
     from sqlalchemy import delete as sql_delete
 
+    from backend.app.models.pending_upload import PendingUpload
     from backend.app.models.virtual_printer import VirtualPrinter
     from backend.app.services.virtual_printer import virtual_printer_manager
 
-    result = await db.execute(select(VirtualPrinter).where(VirtualPrinter.id == vp_id))
-    vp = result.scalar_one_or_none()
-    if not vp:
-        return JSONResponse(status_code=404, content={"detail": "Virtual printer not found"})
-
-    vp_name = vp.name
-
-    # Stop instance if running
-    await virtual_printer_manager.remove_instance(vp_id)
-
+    upload_dir = virtual_printer_manager._base_dir / "uploads" / str(vp_id)
     # Mark any PendingUpload rows that referenced this VP's upload_dir as
     # discarded — without this the rows live on as phantom entries in
     # /pending-uploads/ pointing at file paths that no longer exist, and
     # the user only learns they're orphaned by trying to archive one and
     # getting a flip-to-discarded on file-missing.
-    upload_prefix = str(virtual_printer_manager._base_dir / "uploads" / str(vp_id))
     try:
-        from backend.app.models.pending_upload import PendingUpload
-
-        stale = await db.execute(select(PendingUpload).where(PendingUpload.file_path.startswith(upload_prefix)))
-        for pending in stale.scalars().all():
-            pending.status = "discarded"
-        await db.flush()
+        await db.execute(
+            update(PendingUpload)
+            # The folder, not every path that starts with its name (uploads/12 for 1).
+            .where(PendingUpload.file_path.startswith(f"{upload_dir}{os.sep}", autoescape=True))
+            .values(status="discarded")
+        )
     except Exception as e:
         logger.error("Failed to discard orphan PendingUpload rows for VP %d: %s", vp_id, e)
-
-    # Delete from DB
     await db.execute(sql_delete(VirtualPrinter).where(VirtualPrinter.id == vp_id))
-    await db.commit()
+    return upload_dir
 
-    # Remove the on-disk upload directory after the DB commit succeeds, so
-    # a crash between commit and rmtree only leaves orphan files (vs orphan
-    # rows pointing at a now-missing tree).
-    upload_dir = virtual_printer_manager._base_dir / "uploads" / str(vp_id)
+
+def remove_upload_dir(upload_dir: Path) -> None:
+    """Remove a deleted virtual printer's upload directory.
+
+    After the DB commit succeeds, so a crash between commit and rmtree only
+    leaves orphan files (vs orphan rows pointing at a now-missing tree).
+    """
     if upload_dir.exists():
         import shutil
 
         shutil.rmtree(upload_dir, ignore_errors=True)
+
+
+@router.delete("/{vp_id}")
+async def delete_virtual_printer(
+    vp_id: int,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
+):
+    """Delete a virtual printer."""
+    from backend.app.models.virtual_printer import VirtualPrinter
+    from backend.app.services.virtual_printer import virtual_printer_manager
+
+    result = await db.execute(select(VirtualPrinter).where(VirtualPrinter.id == vp_id))
+    vp = result.scalar_one_or_none()
+    if not vp or not printer_scope.allows(vp.target_printer_id):
+        return _vp_missing()
+
+    vp_name = vp.name
+
+    # Stop instance if running
+    await virtual_printer_manager.remove_instance(vp_id)
+    upload_dir = await drop_virtual_printer(db, vp_id)
+    await db.commit()
+    remove_upload_dir(upload_dir)
 
     logger.info("Deleted virtual printer: %s (id=%d)", vp_name, vp_id)
 

@@ -422,10 +422,21 @@ class TestPrinterManager:
         mock_loop.is_running.return_value = True
         manager._loop = mock_loop
 
-        manager.mark_printer_offline(1)
+        # The stand-in loop never runs the callback, so the scheduled
+        # coroutine is closed here instead of being reported in a later test.
+        def _close_and_stand_in(coro, loop):
+            coro.close()
+            return MagicMock()
+
+        with patch(
+            "backend.app.services.printer_manager.asyncio.run_coroutine_threadsafe",
+            side_effect=_close_and_stand_in,
+        ) as scheduled:
+            manager.mark_printer_offline(1)
 
         # Callback should be scheduled via run_coroutine_threadsafe
         mock_loop.is_running.assert_called()
+        scheduled.assert_called_once()
         # State should be updated
         assert mock_client.state.connected is False
 
@@ -467,8 +478,18 @@ class TestPrinterManager:
             nozzle_offset_cali="auto",
             nozzle_mapping=None,
             nozzle_slot_extruders=None,
+            plate_uses_only_external=False,
         )
         assert result is True
+
+    def test_start_print_passes_the_plates_external_spool_answer(self, manager, mock_client):
+        """The scheduler's exact use_ams=False for the plate (#3087) reaches the builder."""
+        mock_client.start_print.return_value = True
+        manager._clients[1] = mock_client
+
+        manager.start_print(1, "test.gcode", use_ams=False, plate_uses_only_external=True)
+
+        assert mock_client.start_print.call_args.kwargs["plate_uses_only_external"] is True
 
     def test_start_print_returns_false_for_unknown(self, manager):
         """Verify start_print returns False for unknown printer."""
@@ -517,51 +538,6 @@ class TestPrinterManager:
         """Verify stop_print returns False for unknown printer."""
         result = manager.stop_print(999)
         assert result is False
-
-    # ========================================================================
-    # Tests for wait_for_cooldown
-    # ========================================================================
-
-    @pytest.mark.asyncio
-    async def test_wait_for_cooldown_returns_true_when_cool(self, manager, mock_client):
-        """Verify wait_for_cooldown returns True when printer is cool."""
-        mock_client.state.connected = True
-        mock_client.state.temperatures = {"nozzle": 40, "bed": 30}
-        mock_client.check_staleness.return_value = True
-        manager._clients[1] = mock_client
-
-        result = await manager.wait_for_cooldown(1, target_temp=50)
-
-        assert result is True
-
-    @pytest.mark.asyncio
-    async def test_wait_for_cooldown_returns_false_on_disconnect(self, manager, mock_client):
-        """Verify wait_for_cooldown returns False when printer disconnects."""
-        mock_client.state.connected = False
-        mock_client.check_staleness.return_value = False
-        manager._clients[1] = mock_client
-
-        result = await manager.wait_for_cooldown(1, target_temp=50, timeout=1)
-
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_wait_for_cooldown_returns_false_for_unknown(self, manager):
-        """Verify wait_for_cooldown returns False for unknown printer."""
-        result = await manager.wait_for_cooldown(999, target_temp=50, timeout=1)
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_wait_for_cooldown_checks_both_nozzles(self, manager, mock_client):
-        """Verify wait_for_cooldown checks both nozzles for dual extruders."""
-        mock_client.state.connected = True
-        mock_client.state.temperatures = {"nozzle": 40, "nozzle_2": 45, "bed": 30}
-        mock_client.check_staleness.return_value = True
-        manager._clients[1] = mock_client
-
-        result = await manager.wait_for_cooldown(1, target_temp=50)
-
-        assert result is True
 
     # ========================================================================
     # Tests for is_print_active (#1890)
@@ -1308,12 +1284,12 @@ class TestPrinterStateToDict:
         assert result["cover_url"] is None
 
     def test_ams_ht_detection(self, mock_state):
-        """Verify AMS-HT is detected (1 tray vs 4)."""
+        """Verify AMS-HT is detected by its unit id (128-135)."""
         mock_state.raw_data = {
             "ams": [
                 {
-                    "id": 0,
-                    "tray": [{"id": 0}],  # Only 1 tray = AMS-HT
+                    "id": 128,
+                    "tray": [{"id": 0}],
                 }
             ]
         }

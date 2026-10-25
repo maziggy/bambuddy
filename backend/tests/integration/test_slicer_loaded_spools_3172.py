@@ -147,6 +147,15 @@ class TestLoadedSpools:
         assert ext["saved_preset"]["preset_name"] == "Generic PETG"
         assert entry["external_holders"] == 2
 
+    async def test_a_regular_ams_listing_one_tray_is_not_ht(self, async_client: AsyncClient, printer_factory):
+        """AMS-HT is the unit id 128-135, not a one-tray list."""
+        printer = await printer_factory()
+        with _patched_status({printer.id: _status({"ams": [_ams(1, [_tray(0, "PLA")])]})}):
+            response = await async_client.get(URL)
+
+        [unit] = response.json()["printers"][0]["ams"]
+        assert (unit["id"], unit["is_ams_ht"]) == (1, False)
+
     async def test_tolerates_malformed_status(self, async_client: AsyncClient, printer_factory):
         printer = await printer_factory()
         raw = {"ams": ["garbage", {"id": 1, "tray": [None, _tray(0, "ABS")]}], "vt_tray": None}

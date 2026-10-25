@@ -1,15 +1,20 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, RefreshCw, AlertTriangle, Maximize2, Minimize2, GripVertical, WifiOff, ZoomIn, ZoomOut, Fullscreen, Minimize, Stethoscope } from 'lucide-react';
+import { X, RefreshCw, AlertTriangle, Maximize2, Minimize2, GripVertical, WifiOff, ZoomIn, ZoomOut, Fullscreen, Minimize, Stethoscope, ExternalLink } from 'lucide-react';
 import { api, getAuthToken, withStreamToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { ChamberLight } from './icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from './SkipObjectsModal';
 import { CameraDiagnoseModal } from './CameraDiagnoseModal';
+import { useStreamImgRef } from '../hooks/useStreamImgRef';
+import { useCameraViewerId } from '../hooks/useCameraViewerId';
+import { isSideways, useSidewaysBox } from '../hooks/useSidewaysBox';
+import { openCameraWindow } from '../utils/camera';
+import { useIsSidebarCompact } from '../hooks/useIsSidebarCompact';
 
-interface EmbeddedCameraViewerProps {
+export interface EmbeddedCameraViewerProps {
   printerId: number;
   printerName: string;
   viewerIndex?: number;  // Used to offset multiple viewers
@@ -29,12 +34,21 @@ interface CameraState {
   height: number;
 }
 
-const DEFAULT_STATE: CameraState = {
-  x: window.innerWidth - 420,
-  y: 20,
-  width: 400,
-  height: 300,
-};
+// The compact header (56px) holds the camera launcher and the bug report
+// (#2737); a viewer, on every page now, stays below it there.
+const COMPACT_HEADER_HEIGHT = 56;
+
+// Below that header and within the window on a phone; worked out when a
+// viewer opens, not at load.
+function defaultState(): CameraState {
+  const width = Math.min(400, Math.max(200, window.innerWidth - 16));
+  return {
+    x: Math.max(0, window.innerWidth - width - 20),
+    y: 64,
+    width,
+    height: 300,
+  };
+}
 
 export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, onClose }: EmbeddedCameraViewerProps) {
   const { t } = useTranslation();
@@ -44,6 +58,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
 
   // Printer-specific storage key
   const storageKey = `${STORAGE_KEY_PREFIX}${printerId}`;
+  const minY = useIsSidebarCompact() ? COMPACT_HEADER_HEIGHT : 0;
 
   // Load saved state or use defaults (offset for new viewers without saved state)
   const loadState = (): CameraState => {
@@ -64,14 +79,21 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     }
     // Offset new viewers so they don't stack exactly on top of each other
     const offset = viewerIndex * 30;
+    const initial = defaultState();
     return {
-      ...DEFAULT_STATE,
-      x: Math.max(0, DEFAULT_STATE.x - offset),
-      y: Math.max(0, DEFAULT_STATE.y + offset),
+      ...initial,
+      x: Math.max(0, initial.x - offset),
+      y: Math.max(0, initial.y + offset),
     };
   };
 
   const [state, setState] = useState<CameraState>(loadState);
+  // Below the compact header: a position saved before it held the launcher,
+  // or a window narrowed into the compact layout. Before paint, so a viewer
+  // never shows over the header first.
+  useLayoutEffect(() => {
+    setState(prev => (prev.y < minY ? { ...prev, y: minY } : prev));
+  }, [minY]);
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -93,7 +115,12 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   const [reconnectCountdown, setReconnectCountdown] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
+  // Every img the viewer drops (minimized, re-keyed by a reconnect, closed)
+  // has its stream closed.
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  // On its stream and its /camera/stop: the stop ends this viewer's stream only.
+  const viewerId = useCameraViewerId();
+  const attachImg = useStreamImgRef(imgRef);
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const stallCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -110,6 +137,12 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     queryFn: () => api.getPrinter(printerId),
     enabled: printerId > 0,
   });
+
+  // A camera turned sideways is laid out with the video area's sides swapped,
+  // or it is cut off in a wide window and boxed in a tall one (#3362).
+  const videoAreaRef = useRef<HTMLDivElement>(null);
+  const sideways = isSideways(printer?.camera_rotation);
+  const videoArea = useSidewaysBox(videoAreaRef, sideways && !isMinimized);
 
   // Fetch printer status for light toggle and skip objects
   const { data: status } = useQuery({
@@ -156,7 +189,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   const stopSentRef = useRef(false);
   useEffect(() => {
     stopSentRef.current = false;
-    const stopUrl = `/api/v1/printers/${printerId}/camera/stop`;
+    const stopUrl = `/api/v1/printers/${printerId}/camera/stop?viewer=${viewerId}`;
 
     const sendStopOnce = () => {
       if (printerId > 0 && !stopSentRef.current) {
@@ -168,18 +201,13 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       }
     };
 
-    const imgElement = imgRef.current;
-
     return () => {
-      if (imgElement) {
-        imgElement.src = '';
-      }
       sendStopOnce();
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
       if (stallCheckIntervalRef.current) clearInterval(stallCheckIntervalRef.current);
     };
-  }, [printerId]);
+  }, [printerId, viewerId]);
 
   // Auto-hide loading after timeout
   useEffect(() => {
@@ -430,7 +458,9 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     setPanOffset({ x: 0, y: 0 });
   };
 
-  const handleStreamError = () => {
+  const handleStreamError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    // Clearing the src (reconnect, Refresh) fires error with an empty src.
+    if (!e.currentTarget.getAttribute('src')) return;
     setStreamLoading(false);
     if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
       attemptReconnect();
@@ -459,7 +489,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
     const stopHeaders: Record<string, string> = {};
     const stopToken = getAuthToken();
     if (stopToken) stopHeaders['Authorization'] = `Bearer ${stopToken}`;
-    fetch(`/api/v1/printers/${printerId}/camera/stop`, { method: 'POST', headers: stopHeaders }).catch(() => {});
+    fetch(`/api/v1/printers/${printerId}/camera/stop?viewer=${viewerId}`, { method: 'POST', headers: stopHeaders }).catch(() => {});
 
     if (imgRef.current) imgRef.current.src = '';
     setTimeout(() => setImageKey(Date.now()), 100);
@@ -502,7 +532,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
         setState((prev) => ({
           ...prev,
           x: Math.max(0, Math.min(e.clientX - dragOffset.x, window.innerWidth - prev.width)),
-          y: Math.max(0, Math.min(e.clientY - dragOffset.y, window.innerHeight - prev.height)),
+          y: Math.max(minY, Math.min(e.clientY - dragOffset.y, window.innerHeight - prev.height)),
         }));
       } else if (isResizing && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
@@ -522,7 +552,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
         setState((prev) => ({
           ...prev,
           x: Math.max(0, Math.min(touch.clientX - dragOffset.x, window.innerWidth - prev.width)),
-          y: Math.max(0, Math.min(touch.clientY - dragOffset.y, window.innerHeight - prev.height)),
+          y: Math.max(minY, Math.min(touch.clientY - dragOffset.y, window.innerHeight - prev.height)),
         }));
       } else if (isResizing && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
@@ -553,9 +583,9 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
         document.removeEventListener('touchcancel', handleMouseUp);
       };
     }
-  }, [isDragging, isResizing, dragOffset]);
+  }, [isDragging, isResizing, dragOffset, minY]);
 
-  const streamUrl = withStreamToken(`/api/v1/printers/${printerId}/camera/stream?fps=15&t=${imageKey}`);
+  const streamUrl = withStreamToken(`/api/v1/printers/${printerId}/camera/stream?fps=15&t=${imageKey}&viewer=${viewerId}`);
 
   return (
     <div
@@ -629,6 +659,17 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
             )}
           </button>
           <button
+            onClick={() => {
+              // The overlay stays when a popup blocker stopped the window.
+              if (openCameraWindow(printerId)) onClose();
+            }}
+            className="p-1 hover:bg-bambu-dark-tertiary rounded"
+            title={t('camera.popOut')}
+            aria-label={t('camera.popOut')}
+          >
+            <ExternalLink className="w-3.5 h-3.5 text-bambu-gray" />
+          </button>
+          <button
             onClick={() => setIsMinimized(!isMinimized)}
             className="p-1 hover:bg-bambu-dark-tertiary rounded"
             title={isMinimized ? 'Expand' : 'Minimize'}
@@ -652,6 +693,7 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
       {/* Video area */}
       {!isMinimized && (
         <div
+          ref={videoAreaRef}
           className={`relative w-full bg-black flex items-center justify-center overflow-hidden ${isFullscreen ? 'h-[calc(100%-40px)]' : 'h-[calc(100%-40px)]'}`}
           onWheel={handleWheel}
           onMouseMove={handleImageMouseMove}
@@ -700,14 +742,18 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
             </div>
           )}
           <img
-            ref={imgRef}
+            ref={attachImg}
             key={imageKey}
             src={streamUrl}
             alt="Camera stream"
             className="max-w-full max-h-full object-contain select-none"
             style={{
               transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px) rotate(${printer?.camera_rotation || 0}deg)`,
-              ...(printer?.camera_rotation === 90 || printer?.camera_rotation === 270 ? { maxWidth: '100%', maxHeight: '100%' } : {}),
+              ...(sideways
+                ? videoArea
+                  ? { maxWidth: videoArea.height, maxHeight: videoArea.width }
+                  : { maxWidth: '100%', maxHeight: '100%' }
+                : {}),
               cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
             }}
             onError={handleStreamError}

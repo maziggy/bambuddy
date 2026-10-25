@@ -493,3 +493,52 @@ class TestSubstituteUnusedPlateFilaments:
         items = ["a.json", "b.json"]
 
         assert substitute_unused_plate_filaments(zip_bytes, plate_id=-1, items=items) == items
+
+    def test_a_substituted_slot_keeps_its_own_colour(self):
+        """The anchor's profile, for the slicer's material checks, but the
+        slot's own colour (#3355): copying the anchor's colour recoloured the
+        slot in the sliced file and the AMS mapping then matched it to the
+        anchor's spool."""
+        zip_bytes = _make_3mf({"Metadata/model_settings.config": self._model_settings_xml([(1, [1])])})
+        items = [
+            json.dumps({"name": "Bambu PLA Basic", "filament_colour": ["#FFFFFF"]}),
+            json.dumps({"name": "Bambu ABS", "filament_colour": ["#000000"]}),
+            json.dumps({"name": "Bambu ABS"}),
+        ]
+
+        result = [json.loads(p) for p in substitute_unused_plate_filaments(zip_bytes, plate_id=1, items=items)]
+
+        assert result[1] == {"name": "Bambu PLA Basic", "filament_colour": ["#000000"]}
+        # A slot with no colour of its own takes the anchor's profile as is.
+        assert result[2] == {"name": "Bambu PLA Basic", "filament_colour": ["#FFFFFF"]}
+
+    def test_a_painted_model_keeps_every_colour(self):
+        """The reporter's case end to end (#3355): an object on filament 3
+        with filaments 1 and 2 painted on. Every slot is used."""
+        triangles = "".join(f'<triangle v1="0" v2="1" v3="2" paint_color="{p}"/>' for p in ["4"] * 30 + ["8"] * 30)
+        zip_bytes = _make_3mf(
+            {
+                "Metadata/model_settings.config": self._model_settings_xml([(1, [3])]),
+                "3D/3dmodel.model": (
+                    b'<?xml version="1.0"?>'
+                    b'<model xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"'
+                    b' xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">'
+                    b'<resources><object id="1" type="model"><components>'
+                    b'<component p:path="/3D/Objects/object_1.model" objectid="2"/>'
+                    b"</components></object></resources><build/></model>"
+                ),
+                "3D/Objects/object_1.model": (
+                    '<?xml version="1.0"?><model><resources><object id="2" type="model"><mesh>'
+                    f"<triangles>{triangles}</triangles></mesh></object></resources><build/></model>"
+                ).encode(),
+            }
+        )
+        items = [
+            json.dumps({"name": "Bambu PLA Basic", "filament_colour": [c]})
+            for c in ["#000000", "#FFFFFF", "#00AE42", "#00AE42"]
+        ]
+
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=1, items=items)
+
+        # Slot 4 is unused and takes slot 1's profile, with its own colour.
+        assert [json.loads(p)["filament_colour"][0] for p in result] == ["#000000", "#FFFFFF", "#00AE42", "#00AE42"]

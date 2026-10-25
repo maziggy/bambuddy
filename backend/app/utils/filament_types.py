@@ -67,11 +67,6 @@ def canonical_filament_type(ftype: str | None) -> str:
     return _EQUIV_MAP.get(upper, upper)
 
 
-def filament_types_compatible(a: str | None, b: str | None) -> bool:
-    """Whether two filament types may stand in for one another."""
-    return canonical_filament_type(a) == canonical_filament_type(b)
-
-
 # ---------------------------------------------------------------------------
 # Printer-side material names
 # ---------------------------------------------------------------------------

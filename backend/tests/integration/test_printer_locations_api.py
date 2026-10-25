@@ -313,6 +313,7 @@ class TestExistingData:
         assert styled.status_code == 201
         assert third.status_code == 409
 
+    @pytest.mark.sqlite_only  # an over-length value only SQLite stores
     async def test_an_overlong_stored_name_can_be_renamed_and_deleted(self, async_client, printer_factory, db_session):
         """SQLite never enforced VARCHAR(100)."""
         long_name = "L" * 150

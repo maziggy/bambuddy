@@ -59,11 +59,10 @@ class TestURLValidation:
         """
         assert service._validate_url("http://127.0.0.1/api") is True
 
-    def test_link_local_allowed(self, service):
-        """Also deliberate: a generic APIPA address is a LAN host like any
-        other. The cloud-metadata address inside that range is blocked by
-        name, not by rejecting the whole /16 — see test_metadata_blocked."""
-        assert service._validate_url("http://169.254.1.1/api") is True
+    def test_link_local_refused(self, service):
+        """The IPv4 link-local range is where cloud providers put their
+        metadata endpoints, listed or not, so the whole /16 is refused."""
+        assert service._validate_url("http://169.254.1.1/api") is False
 
     @pytest.mark.parametrize(
         "url",
@@ -440,3 +439,110 @@ class TestTestConnection:
         result = await service.test_connection("http://169.254.169.254/latest/meta-data/")
         assert result["success"] is False
         assert "cloud metadata" in result["error"].lower()
+
+
+class TestLogsKeepCredentialsOut:
+    """A REST URL may carry the device credential in its login, query or path.
+
+    The log names the device by scheme and host only, also inside an error's
+    own text.
+    """
+
+    URL = "http://admin:login-value@plug.elsewhere.example:8080/api/webhook/path-value?auth_key=query-value"
+
+    @pytest.fixture
+    def plug(self, mock_plug):
+        mock_plug.rest_on_url = self.URL
+        mock_plug.rest_off_url = self.URL
+        return mock_plug
+
+    @staticmethod
+    def _client(side_effect=None):
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        if side_effect is None:
+            response = MagicMock()
+            response.raise_for_status = MagicMock()
+            client.request = AsyncMock(return_value=response)
+        else:
+            client.request = AsyncMock(side_effect=side_effect)
+        return client
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error",
+        [
+            None,
+            httpx.TimeoutException("timed out"),
+            httpx.HTTPStatusError(
+                f"Client error '404 Not Found' for url '{URL}'",
+                request=httpx.Request("GET", URL),
+                response=httpx.Response(404, request=httpx.Request("GET", URL)),
+            ),
+            httpx.ConnectError(f"cannot reach {URL}"),
+            RuntimeError(f"odd failure for {URL}"),
+        ],
+    )
+    async def test_switching_logs_only_the_host(self, service, plug, caplog, error):
+        caplog.set_level("DEBUG", logger="backend.app.services.rest_smart_plug")
+        with patch("httpx.AsyncClient", return_value=self._client(error)):
+            await service.turn_on(plug)
+            await service.turn_off(plug)
+
+        assert "plug.elsewhere.example:8080" in caplog.text
+        assert "-value" not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_refused_url_logs_only_the_host(self, service, caplog):
+        caplog.set_level("DEBUG", logger="backend.app.services.rest_smart_plug")
+
+        await service._send_request("http://admin:login-value@169.254.169.254/path-value?auth_key=query-value")
+
+        assert "169.254.169.254" in caplog.text
+        assert "-value" not in caplog.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("delimiter", ["?", "/", "#"])
+    async def test_a_login_the_parser_cannot_find_is_hidden_whole(self, service, mock_plug, caplog, delimiter):
+        """An unencoded ? / or # in the password ends the host early: the login
+        cannot be told apart, so none of the URL is logged."""
+        caplog.set_level("DEBUG", logger="backend.app.services.rest_smart_plug")
+        mock_plug.rest_on_url = f"http://admin:p{delimiter}w-value@plug.elsewhere.example/x"
+        with patch("httpx.AsyncClient", return_value=self._client(httpx.ConnectError("refused"))):
+            await service.turn_on(mock_plug)
+
+        assert "admin" not in caplog.text
+        assert "-value" not in caplog.text
+        assert "http://<hidden>" in caplog.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://admin:pa@ssw0rd-value?more@plug.elsewhere.example/x",
+            "http://a:Sec@ret-value/Tail@plug.elsewhere.example",
+            "http://u:a@b-value#c@plug.elsewhere.example",
+        ],
+    )
+    async def test_an_at_after_the_host_hides_the_url_whole(self, service, mock_plug, caplog, url):
+        caplog.set_level("DEBUG", logger="backend.app.services.rest_smart_plug")
+        mock_plug.rest_on_url = url
+        with patch("httpx.AsyncClient", return_value=self._client(httpx.ConnectError("refused"))):
+            await service.turn_on(mock_plug)
+
+        assert "-value" not in caplog.text
+        assert "http://<hidden>" in caplog.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error",
+        [httpx.LocalProtocolError("Illegal header value b'Bearer header-value '"), RuntimeError("odd header-value")],
+    )
+    async def test_an_error_that_may_quote_a_header_is_logged_by_its_type(self, service, mock_plug, caplog, error):
+        caplog.set_level("DEBUG", logger="backend.app.services.rest_smart_plug")
+        with patch("httpx.AsyncClient", return_value=self._client(error)):
+            await service.turn_on(mock_plug)
+
+        assert "-value" not in caplog.text
+        assert type(error).__name__ in caplog.text

@@ -6,21 +6,8 @@ import type { InventorySpool } from '../../api/client';
 import { spoolbuddyApi, api } from '../../api/client';
 import { SpoolIcon } from './SpoolIcon';
 import { resolveSpoolColorName, spoolColorString } from '../../utils/colors';
-
-const DEFAULT_CORE_WEIGHT_KEY = 'spoolbuddy-default-core-weight';
-
-function getDefaultCoreWeight(): number {
-  try {
-    const stored = localStorage.getItem(DEFAULT_CORE_WEIGHT_KEY);
-    if (stored) {
-      const weight = parseInt(stored, 10);
-      if (weight >= 0 && weight <= 500) return weight;
-    }
-  } catch {
-    // Ignore errors
-  }
-  return 250;
-}
+import { shownCostPerKg } from '../../utils/spoolCost';
+import { DEFAULT_CORE_WEIGHT_G } from '../../utils/weight';
 
 interface InventorySpoolInfoCardProps {
   spool: InventorySpool;
@@ -70,7 +57,7 @@ export function InventorySpoolInfoCard({
 
   const coreWeight = (spool.core_weight && spool.core_weight > 0)
     ? spool.core_weight
-    : getDefaultCoreWeight();
+    : DEFAULT_CORE_WEIGHT_G;
 
   const grossWeightFromScale = liveScaleWeight !== null
     ? Math.round(Math.max(0, liveScaleWeight))
@@ -112,6 +99,8 @@ export function InventorySpoolInfoCard({
   // Inventory fallback so gross is always populated across spools.
   const inventoryDerivedGrossWeight = Math.round(calculatedWeight);
   const resolvedGrossWeight = displayedGrossWeight ?? inventoryDerivedGrossWeight;
+  // The rate prints off this spool are charged (SM-C8).
+  const costPerKg = shownCostPerKg(spool);
   const nozzleTempRange = (spool.nozzle_temp_min != null && spool.nozzle_temp_max != null)
     ? `${spool.nozzle_temp_min}-${spool.nozzle_temp_max}\u00B0C`
     : null;
@@ -233,10 +222,10 @@ export function InventorySpoolInfoCard({
             <span className="font-mono text-zinc-300">{nozzleTempRange}</span>
           </div>
         )}
-        {spool.cost_per_kg != null && spool.cost_per_kg > 0 && (
+        {costPerKg.rate != null && costPerKg.rate > 0 && (
           <div className="flex justify-between items-center">
             <span className="text-zinc-500">{t('spoolbuddy.inventory.costPerKg', 'Cost/kg')}</span>
-            <span className="font-mono text-zinc-300">{spool.cost_per_kg.toFixed(2)}/kg</span>
+            <span className="font-mono text-zinc-300">{costPerKg.rate.toFixed(2)}/kg</span>
           </div>
         )}
         {kFactorSummary && (

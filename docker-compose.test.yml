@@ -6,8 +6,14 @@ services:
       dockerfile: Dockerfile.test
       target: backend-test
     container_name: bambuddy-backend-test
+    # Reaps orphaned processes: pytest would otherwise be PID 1 and leave the
+    # children some tests kill as zombies that still answer kill(pid, 0).
+    init: true
+    # Some backend tests also read the frontend sources and scripts/.
     volumes:
       - ./backend:/app/backend:ro
+      - ./frontend/src:/app/frontend/src:ro
+      - ./scripts:/app/scripts:ro
     environment:
       - TESTING=1
       - PYTHONUNBUFFERED=1
@@ -56,11 +62,14 @@ services:
     environment:
       - BAMBUDDY_TEST_URL=http://integration:8000
       - TESTING=1
-    # -v dropped + -n auto so integration tests inherit the same noise /
+    # -v dropped + -n 30 so integration tests inherit the same noise /
     # parallelism profile as the backend-test image (see Dockerfile.test CMD).
-    command: ["pytest", "backend/tests/integration/", "--tb=short", "-p", "no:cacheprovider", "-n", "auto"]
+    command: ["pytest", "backend/tests/integration/", "--tb=short", "-p", "no:cacheprovider", "-n", "30"]
+    init: true
     volumes:
       - ./backend:/app/backend:ro
+      - ./frontend/src:/app/frontend/src:ro
+      - ./scripts:/app/scripts:ro
 
 volumes:
   integration_test_data:

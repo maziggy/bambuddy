@@ -1160,14 +1160,12 @@ class TestPrinterDataIntegrity:
         printer = await printer_factory(name="Test Printer")
 
         with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
-            mock_pm.get_current_print_user.return_value = {"user_id": 42, "username": "testuser"}
+            mock_pm.get_current_print_user.return_value = {"user_id": 42, "username": "testuser", "queue_item_id": 5}
 
             response = await async_client.get(f"/api/v1/printers/{printer.id}/current-print-user")
 
             assert response.status_code == 200
-            result = response.json()
-            assert result["user_id"] == 42
-            assert result["username"] == "testuser"
+            assert response.json() == {"user_id": 42, "username": "testuser"}
 
 
 class TestPrintControlAPI:
@@ -1204,17 +1202,23 @@ class TestPrintControlAPI:
         """Verify successful stop print request."""
         printer = await printer_factory(name="Printing Printer")
 
-        mock_client = MagicMock()
-        mock_client.stop_print.return_value = True
+        from backend.app.main import _user_stopped_printers
 
-        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
-            mock_pm.get_client.return_value = mock_client
+        _user_stopped_printers.discard(printer.id)
+        with (
+            patch("backend.app.api.routes.printers.printer_manager") as mock_pm,
+            patch("backend.app.services.print_control.printer_manager.stop_print", return_value=True) as send,
+        ):
+            mock_pm.get_client.return_value = MagicMock()
 
             response = await async_client.post(f"/api/v1/printers/{printer.id}/print/stop")
 
             assert response.status_code == 200
             assert response.json()["success"] is True
-            mock_client.stop_print.assert_called_once()
+            send.assert_called_once_with(printer.id)
+        # Stopped by the user, so the printer's "failed" ends the print as cancelled.
+        assert printer.id in _user_stopped_printers
+        _user_stopped_printers.discard(printer.id)
 
     # ========================================================================
     # Pause print endpoint
@@ -1376,6 +1380,38 @@ class TestAMSLoadUnloadAPI:
         printer = await printer_factory(name="P")
         response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id=99")
         assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("tray_id", [128, 135])
+    async def test_load_an_ams_ht_slot(self, async_client: AsyncClient, printer_factory, tray_id):
+        """An AMS-HT tray is its unit id; refusing it made Load impossible there."""
+        printer = await printer_factory(name="H2C")
+        client = MagicMock()
+        client.ams_load_filament.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id={tray_id}")
+
+        assert response.status_code == 200, response.text
+        client.ams_load_filament.assert_called_once_with(tray_id, extruder_id=None)
+        assert response.json()["message"] == f"Loading filament from AMS HT-{'A' if tray_id == 128 else 'H'}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("tray_id", [127, 136, 512])
+    async def test_load_refuses_ids_next_to_the_ams_ht_range(self, async_client: AsyncClient, printer_factory, tray_id):
+        printer = await printer_factory(name="H2C")
+        client = MagicMock()
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/ams/load?tray_id={tray_id}")
+
+        assert response.status_code == 400
+        assert "128..135 (AMS-HT)" in response.json()["detail"]
+        client.ams_load_filament.assert_not_called()
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1870,6 +1906,38 @@ class TestConfigureAMSSlotAPI:
             # Slot's own storable preset wins over both the PFUS and a generic.
             assert call_kwargs.kwargs["tray_info_idx"] == "P4d64437"
             assert call_kwargs.kwargs["setting_id"] == "PFUS9ac902733670a9"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_configure_a_silk_preset_does_not_take_a_matte_slot(self, async_client: AsyncClient, printer_factory):
+        """Same material, another finish: the slot's Matte id is not reused, and
+        the generic is the one for the preset's finish."""
+        printer = await printer_factory(name="H2D")
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+        mock_client.request_status_update.return_value = True
+        mock_status = MagicMock()
+        tray = {"id": 3, "tray_info_idx": "GFA01", "tray_type": "PLA", "tray_sub_brands": "PLA Matte"}
+        mock_status.raw_data = {"ams": {"ams": [{"id": 2, "tray": [tray]}]}}
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = mock_status
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/slots/2/3/configure",
+                params={
+                    "tray_info_idx": "PFUS9ac902733670a9",
+                    "tray_type": "PLA",
+                    "tray_sub_brands": "My PLA Silk",
+                    "tray_color": "FF0000FF",
+                    "nozzle_temp_min": 190,
+                    "nozzle_temp_max": 230,
+                },
+            )
+
+        assert response.status_code == 200
+        assert mock_client.ams_set_filament_setting.call_args.kwargs["tray_info_idx"] == "GFL96"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -3469,6 +3537,46 @@ class TestConfigureAmsSlotPersistsKProfile:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_a_manual_k_value_that_could_not_be_sent_is_reported(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        """FW-C5: with no profile picked, the K value goes out on its own
+        command; when that send failed the route still said "Configured"."""
+        printer = await printer_factory(model="X1C")
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+        mock_client.extrusion_cali_set.return_value = False
+        mock_client.request_status_update.return_value = True
+        mock_state = MagicMock()
+        mock_state.ams_extruder_map = {"0": 0}
+        mock_state.raw_data = {"ams": {"ams": []}}
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = mock_state
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/slots/0/1/configure",
+                params={
+                    "tray_info_idx": "GFL05",
+                    "tray_type": "PLA",
+                    "tray_sub_brands": "Bambu PLA Basic",
+                    "tray_color": "FF8800FF",
+                    "nozzle_temp_min": 190,
+                    "nozzle_temp_max": 230,
+                    "cali_idx": -1,
+                    "nozzle_diameter": "0.4",
+                    "k_value": 0.025,
+                },
+            )
+
+        mock_client.extrusion_cali_set.assert_called_once()
+        # The filament itself was set, so the dialog still saves the slot preset.
+        assert response.status_code == 200
+        assert response.json()["k_value_unsent"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_writes_spool_kprofile_when_local_assigned(
         self,
         async_client: AsyncClient,
@@ -4333,7 +4441,7 @@ class TestSetChamberTemperatureAPI:
     """Integration tests for POST /printers/{id}/temperature/chamber.
 
     Gated on supports_chamber_heater(model). Sensor-only models that report
-    chamber temp but have no heater (X1C, X1E, P2S) get a 400 at the route
+    chamber temp but have no heater (X1C, P2S) get a 400 at the route
     level rather than a silent no-op at the firmware level.
     """
 
@@ -4345,7 +4453,7 @@ class TestSetChamberTemperatureAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    @pytest.mark.parametrize("sensor_only_model", ["X1C", "X1E", "P2S"])
+    @pytest.mark.parametrize("sensor_only_model", ["X1C", "P2S"])
     async def test_sensor_only_model_rejected(self, async_client: AsyncClient, printer_factory, sensor_only_model):
         """Models with sensor but no heater must 400 before any client call."""
         printer = await printer_factory(name="P", model=sensor_only_model)
@@ -4369,9 +4477,10 @@ class TestSetChamberTemperatureAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    @pytest.mark.parametrize("heater_model", ["H2C", "H2D", "H2DPRO", "H2S", "X2D"])
+    @pytest.mark.parametrize("heater_model", ["H2C", "H2D", "H2DPRO", "H2D Pro", "H2S", "X1E", "X2D"])
     async def test_success_per_heater_model(self, async_client: AsyncClient, printer_factory, heater_model):
-        """All five heater-equipped models accept the command."""
+        """Every heater-equipped model accepts the command, under the name it is
+        stored with: an H2D Pro is "H2D Pro" (#3335)."""
         printer = await printer_factory(name="P", model=heater_model)
         mock_client = MagicMock()
         mock_client.set_chamber_temperature.return_value = True
@@ -4494,8 +4603,35 @@ class TestSetFanSpeedAPI:
             mock_pm.get_client.return_value = mock_client
             response = await async_client.post(f"/api/v1/printers/{printer.id}/fan-speed?fan=aux2&speed=50")
         assert response.status_code == 400
-        assert "left auxiliary fan" in response.json()["detail"]
+        assert "second auxiliary fan" in response.json()["detail"]
         mock_client.set_fan_speed.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "model,fan_name,expected",
+        [
+            # P2S: part 2 is the right fan, part 10 the left (an accessory kit).
+            ("P2S", "aux", "Auxiliary fan set to 50%"),
+            ("P2S", "aux2", "Left auxiliary fan set to 50%"),
+            # X2D the other way round (#3373), also under its internal code.
+            ("X2D", "aux", "Left auxiliary fan set to 50%"),
+            ("X2D", "aux2", "Right auxiliary fan set to 50%"),
+            ("N6", "aux2", "Right auxiliary fan set to 50%"),
+        ],
+    )
+    async def test_aux_fans_named_by_their_side_per_model(
+        self, async_client: AsyncClient, printer_factory, model, fan_name, expected
+    ):
+        printer = await printer_factory(name="P", model=model)
+        mock_client = MagicMock()
+        mock_client.set_fan_speed.return_value = True
+        mock_client.state.left_aux_fan_speed = 0
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/fan-speed?fan={fan_name}&speed=50")
+        assert response.status_code == 200
+        assert response.json()["message"] == expected
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -5214,3 +5350,57 @@ class TestCoverUsesTheRunningPrintsArchive:
             await async_client.get(f"/api/v1/printers/{printer.id}/cover")
 
         assert threemf.is_file(), "the cover flow deleted the running print's archived 3MF"
+
+
+class TestHMSStopCountsAsUserStop:
+    """ "Stop Printing" in the HMS error dialog is a user stop like the Stop button.
+
+    It sends its own stop payload, but used to skip the stopped-by-user mark,
+    so the print ended as failed ("print failed" notification, and the cancel
+    sequence's own error read as a fault).
+    """
+
+    @staticmethod
+    async def _act(async_client, printer_id: int, action: str):
+        mock_client = MagicMock()
+        mock_client._last_message_time = 100.0
+
+        def _send(*_a, **_kw):
+            mock_client._last_message_time = 100.5
+            return True
+
+        mock_client.execute_hms_action.side_effect = _send
+        with (
+            patch("backend.app.api.routes.printers.printer_manager") as mock_pm,
+            patch("backend.app.api.routes.printers.HMS_ACTION_ACK_WAIT_SECONDS", 0.01),
+        ):
+            mock_pm.get_client.return_value = mock_client
+            return await async_client.post(
+                f"/api/v1/printers/{printer_id}/hms/execute-action",
+                json={"print_error": "0300800A", "action": action, "job_id": None},
+            )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_stop_printing_marks_the_printer(self, async_client: AsyncClient, printer_factory):
+        from backend.app.main import _user_stopped_printers
+
+        printer = await printer_factory(name="HMS Printer")
+        _user_stopped_printers.discard(printer.id)
+        try:
+            response = await self._act(async_client, printer.id, "STOP_PRINTING")
+            assert response.status_code == 200, response.text
+            assert printer.id in _user_stopped_printers
+        finally:
+            _user_stopped_printers.discard(printer.id)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_other_hms_actions_do_not_mark(self, async_client: AsyncClient, printer_factory):
+        from backend.app.main import _user_stopped_printers
+
+        printer = await printer_factory(name="HMS Printer 2")
+        _user_stopped_printers.discard(printer.id)
+        response = await self._act(async_client, printer.id, "RESUME_PRINTING")
+        assert response.status_code == 200, response.text
+        assert printer.id not in _user_stopped_printers

@@ -301,6 +301,21 @@ def uses_exhaust_fan_label(model: str | None) -> bool:
     return normalized in EXHAUST_FAN_LABEL_MODELS
 
 
+# Models whose airduct part 10 is the RIGHT auxiliary fan and part 2 the left
+# one (#3373). Bambu Studio names the fans per model (resources/printers/*.json):
+# on the X2D (N6) "2" is Left(Aux) and "10" Right(Aux); on the P2S (N7) it is
+# the other way round.
+AUX_FANS_LEFT_FIRST_MODELS = frozenset(["X2D", "N6"])
+
+
+def aux_fan_sides(model: str | None) -> tuple[str, str]:
+    """Which side the ``aux`` (part 2) and ``aux2`` (part 10) fans are on: ("left"|"right", ...)."""
+    normalized = (model or "").strip().upper().replace(" ", "").replace("-", "")
+    if normalized in AUX_FANS_LEFT_FIRST_MODELS:
+        return "left", "right"
+    return "right", "left"
+
+
 # Ceiling for every chamber-temperature target the UI and API accept (manual
 # M141, the preheat filament map, the per-item preheat override, the chamber
 # quick-select presets). The H2 series (H2C / H2D / H2D Pro / H2S) and X2D

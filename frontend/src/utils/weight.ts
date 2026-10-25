@@ -1,3 +1,7 @@
+// Empty-spool weight assumed when a spool has no core weight of its own
+// (typical Bambu spool core).
+export const DEFAULT_CORE_WEIGHT_G = 250;
+
 export function formatWeight(grams: number): string {
   if (grams >= 1_000_000) {
     const tonnes = grams / 1_000_000;

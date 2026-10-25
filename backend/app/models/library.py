@@ -218,7 +218,7 @@ class LibraryFile(Base):
     )
 
     @classmethod
-    def active(cls) -> "Select[tuple[LibraryFile]]":
+    def active(cls) -> "Select[LibraryFile]":
         """Select statement that excludes trashed (soft-deleted) files.
 
         Use this in place of ``select(LibraryFile)`` for any user-facing listing

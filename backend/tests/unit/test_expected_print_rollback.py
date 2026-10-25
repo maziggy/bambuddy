@@ -29,6 +29,8 @@ def expected_print_tables():
         "_expected_print_registered_at",
         "_print_ams_mappings",
         "_print_plate_ids",
+        "_print_cost_center_ids",
+        "_active_prints",
     )
     saved = {n: dict(getattr(main, n)) for n in names}
     for n in names:
@@ -48,7 +50,9 @@ def test_unregister_leaves_every_registry_as_it_found_them(expected_print_tables
     """The strongest form: register then unregister is a round trip to empty."""
     main = expected_print_tables
 
-    main.register_expected_print(1, "widget.3mf", 298, ams_mapping=[3, 6], created_by_id=7, plate_id=1)
+    main.register_expected_print(
+        1, "widget.3mf", 298, ams_mapping=[3, 6], created_by_id=7, plate_id=1, cost_center_id=5
+    )
     assert main._expected_prints, "nothing registered — the test proves nothing"
 
     main.unregister_expected_print(1, "widget.3mf", 298)
@@ -58,6 +62,7 @@ def test_unregister_leaves_every_registry_as_it_found_them(expected_print_tables
     assert main._expected_print_registered_at == {}
     assert main._print_ams_mappings == {}
     assert main._print_plate_ids == {}
+    assert main._print_cost_center_ids == {}
 
 
 def test_unregister_clears_the_filename_variants_too(expected_print_tables):
@@ -261,3 +266,51 @@ def test_rollback_entries_are_per_item(expected_print_tables):
 
     assert (1, "a.3mf") not in main._expected_prints
     assert main._expected_prints[(2, "b.3mf")] == 2
+
+
+# ---------------------------------------------------------------------------
+# The archive-keyed tables follow the newest dispatch of the archive
+# ---------------------------------------------------------------------------
+
+
+def test_a_fresh_dispatch_without_a_plate_drops_the_previous_plate(expected_print_tables):
+    """EP-6: plate 2 was sent but never started; the whole file is queued next.
+    Its start and completion must not read plate 2 for usage and cost."""
+    main = expected_print_tables
+
+    main.register_expected_print(1, "widget.3mf", 298, ams_mapping=[3], plate_id=2, cost_center_id=5)
+    main.register_expected_print(1, "widget.3mf", 298)
+
+    assert 298 not in main._print_plate_ids
+    assert 298 not in main._print_ams_mappings
+    assert 298 not in main._print_cost_center_ids
+
+
+def test_but_not_while_a_plate_of_the_archive_is_printing(expected_print_tables):
+    """Plate 1 runs; dropping its entries would leave its completion without them."""
+    main = expected_print_tables
+
+    main.register_expected_print(1, "widget.3mf", 298, ams_mapping=[3], plate_id=1)
+    main._active_prints[(1, "widget.3mf")] = 298
+    main.register_expected_print(2, "widget.3mf", 298)
+
+    assert main._print_plate_ids.get(298) == 1
+    assert main._print_ams_mappings.get(298) == [3]
+
+
+def test_a_failed_send_leaves_a_running_plate_s_entries(expected_print_tables):
+    """EP-4: plate 1 runs on printer 1, plate 2's send to printer 2 fails."""
+    main = expected_print_tables
+
+    main.register_expected_print(1, "plate1.3mf", 298, ams_mapping=[3], plate_id=1, cost_center_id=5)
+    # Plate 1 started: its expectation became an active print
+    for key in [k for k in main._expected_prints if k[0] == 1]:
+        del main._expected_prints[key]
+    main._active_prints[(1, "plate1.3mf")] = 298
+    main.register_expected_print(2, "plate2.3mf", 298, ams_mapping=[3], plate_id=1, cost_center_id=5)
+
+    main.unregister_expected_print(2, "plate2.3mf", 298)
+
+    assert main._print_ams_mappings.get(298) == [3]
+    assert main._print_plate_ids.get(298) == 1
+    assert main._print_cost_center_ids.get(298) == 5

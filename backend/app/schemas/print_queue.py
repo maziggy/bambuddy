@@ -1,8 +1,10 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, BeforeValidator, Field, PlainSerializer, model_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, PlainSerializer, model_validator
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
+from backend.app.utils.local_time import to_naive_utc
 from backend.app.utils.printer_models import MAX_CHAMBER_TEMP_C
 
 
@@ -15,6 +17,19 @@ def serialize_utc_datetime(dt: datetime | None) -> str | None:
 
 
 UTCDatetime = Annotated[datetime | None, PlainSerializer(serialize_utc_datetime)]
+
+
+def _naive_utc(value: datetime | None) -> datetime | None:
+    try:
+        return to_naive_utc(value)
+    except OverflowError:
+        # At the edge of the date range: a 422, not a 500.
+        raise ValueError("date is out of range") from None
+
+
+# Coerces any client-sent UTC offset to the naive UTC the DB stores. Without
+# it the offset was dropped, not converted: 10:00+02:00 was stored as 10:00 UTC.
+NaiveUTCDatetime = Annotated[datetime | None, AfterValidator(_naive_utc)]
 
 
 def _coerce_tristate(v: object) -> object:
@@ -76,7 +91,7 @@ class PrintQueueItemCreate(BaseModel):
     # Either archive_id OR library_file_id must be provided
     archive_id: int | None = None
     library_file_id: int | None = None
-    scheduled_time: datetime | None = None  # None = ASAP (next when idle)
+    scheduled_time: NaiveUTCDatetime = None  # None = ASAP (next when idle)
     require_previous_success: bool = False
     auto_off_after: bool = False  # Power off printer after print completes
     manual_start: bool = False  # Requires manual trigger to start (staged)
@@ -137,13 +152,14 @@ class PrintQueueItemCreate(BaseModel):
     variants: list[QueueVariantCreate] | None = None
 
 
-class PrintQueueItemUpdate(BaseModel):
+class PrintQueueItemUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "print_queue"
     printer_id: int | None = None
     target_model: str | None = None  # Target printer model (mutually exclusive with printer_id)
     target_location: str | None = None  # Target location filter (only used with target_model)
     filament_overrides: list[dict] | None = None  # Filament overrides for model-based assignment
     position: int | None = None
-    scheduled_time: datetime | None = None
+    scheduled_time: NaiveUTCDatetime = None
     require_previous_success: bool | None = None
     auto_off_after: bool | None = None
     manual_start: bool | None = None
@@ -184,6 +200,16 @@ class QueueVariantSummary(BaseModel):
     filename: str
     target_model: str
     position: int
+
+
+class ColorSubstitution(BaseModel):
+    """A slot sent with a spool of another colour than the file asked for (#3279)."""
+
+    slot_id: int
+    type: str
+    wanted: str
+    got: str
+    tray: int
 
 
 class PrintQueueItemResponse(BaseModel):
@@ -291,8 +317,31 @@ class PrintQueueItemResponse(BaseModel):
     # live rack at dispatch; null means "assign them for me".
     nozzle_rack_choice: dict[int, int] | None = None
 
+    # Slots that printed in another colour than the file asked for (#3279).
+    color_substitutions: list[ColorSubstitution] | None = None
+
     class Config:
         from_attributes = True
+
+
+class PrintQueueHistoryResponse(BaseModel):
+    """One page of the queue history, plus what the page needs around it.
+
+    ``items`` holds the page in display order, followed by any other history
+    runs of the batches on that page, so a batch row can count all of its runs.
+    """
+
+    items: list[PrintQueueItemResponse]
+    # Matching history items in all, not just this page.
+    total: int
+    # Every target_location in the caller's history, for the location filter.
+    locations: list[str]
+
+
+class PrintQueueHistoryClearResponse(BaseModel):
+    cleared: int
+    # Runs a batch order still needs, cancelled rather than deleted (#2960).
+    kept: int
 
 
 class PrintQueueReorderItem(BaseModel):
@@ -328,13 +377,15 @@ class PrintQueueReorder(BaseModel):
         return self
 
 
-class PrintQueueBulkUpdate(BaseModel):
+class PrintQueueBulkUpdate(IgnoresNullForRequiredColumns):
     """Bulk update multiple queue items with the same values."""
+
+    __orm_table__ = "print_queue"
 
     item_ids: list[int]
     # Fields to update (all optional - only set fields are applied)
     printer_id: int | None = None
-    scheduled_time: datetime | None = None
+    scheduled_time: NaiveUTCDatetime = None
     require_previous_success: bool | None = None
     auto_off_after: bool | None = None
     manual_start: bool | None = None
@@ -412,12 +463,14 @@ class PrintBatchCreate(BaseModel):
         return self
 
 
-class PrintBatchUpdate(BaseModel):
+class PrintBatchUpdate(IgnoresNullForRequiredColumns):
     """Edit an order's header or its per-plate targets while it runs.
 
     Every field is optional; ``plates`` replaces the full target set when
     given, so a plate omitted from the list has its target row removed.
     """
+
+    __orm_table__ = "print_batches"
 
     name: str | None = None
     status: Literal["active", "cancelled"] | None = None

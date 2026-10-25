@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { WifiOff } from 'lucide-react';
 import { api, type Printer } from '../../api/client';
 import { formatTimeOnly } from '../../utils/date';
+import { useUiSettings } from '../../hooks/useUiSettings';
 
 interface SpoolBuddyTopBarProps {
   selectedPrinterId: number | null;
@@ -41,10 +42,7 @@ export function SpoolBuddyTopBar({ selectedPrinterId, onPrinterChange, deviceOnl
     }
   }, [onlinePrinters, selectedPrinterId, onPrinterChange]);
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
 
   // Clock - update every second for kiosk display
   useEffect(() => {

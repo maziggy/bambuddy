@@ -10,6 +10,7 @@ Covers:
 
 import re
 import time
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -577,7 +578,7 @@ class TestMinimumDryingTime:
         # Queue item with schedule
         item = MagicMock()
         item.printer_id = 1
-        item.scheduled_time = MagicMock()  # Has a schedule
+        item.scheduled_time = datetime.now(timezone.utc) + timedelta(hours=2)  # Has a schedule
         item.manual_start = False
 
         await scheduler._check_auto_drying(db, [item], set())
@@ -630,7 +631,7 @@ class TestMinimumDryingTime:
 
         item = MagicMock()
         item.printer_id = 1
-        item.scheduled_time = MagicMock()
+        item.scheduled_time = datetime.now(timezone.utc) + timedelta(hours=2)
         item.manual_start = False
 
         await scheduler._check_auto_drying(db, [item], set())
@@ -1124,10 +1125,10 @@ class TestBlockForDryingBugFix(_DryingTestBase):
         }
         db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
 
-        # Queue item exists for this printer (triggers block mode gate)
+        # Queue item due on this printer (triggers block mode gate)
         item = MagicMock()
         item.printer_id = 1
-        item.scheduled_time = MagicMock()
+        item.scheduled_time = datetime.now(timezone.utc) - timedelta(minutes=1)
         item.manual_start = False
 
         await scheduler._check_auto_drying(db, [item], set())
@@ -1175,7 +1176,8 @@ class TestBlockForDryingBugFix(_DryingTestBase):
 
         item = MagicMock()
         item.printer_id = 1
-        item.scheduled_time = MagicMock()
+        # Due now: a job that could start keeps a new cycle off in block mode.
+        item.scheduled_time = datetime.now(timezone.utc) - timedelta(minutes=1)
         item.manual_start = False
 
         await scheduler._check_auto_drying(db, [item], set())
@@ -2080,7 +2082,7 @@ class TestAmbientDryingSustainedDelay(_DryingTestBase):
 
         item = MagicMock()
         item.printer_id = 1
-        item.scheduled_time = MagicMock()
+        item.scheduled_time = datetime.now(timezone.utc) + timedelta(hours=2)
         item.manual_start = False
 
         await scheduler._check_auto_drying(db, [item], set())
@@ -2277,7 +2279,7 @@ class TestAmbientDryingSustainedDelay(_DryingTestBase):
 
         item = MagicMock()
         item.printer_id = 1
-        item.scheduled_time = MagicMock()
+        item.scheduled_time = datetime.now(timezone.utc) + timedelta(hours=2)
         item.manual_start = False
 
         await scheduler._check_auto_drying(db, [item], {1})

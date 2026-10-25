@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
+
 
 class LocalPresetResponse(BaseModel):
     """Local preset summary (without full setting blob)."""
@@ -43,8 +45,10 @@ class LocalPresetCreate(BaseModel):
     setting: dict
 
 
-class LocalPresetUpdate(BaseModel):
+class LocalPresetUpdate(IgnoresNullForRequiredColumns):
     """Schema for updating a local preset."""
+
+    __orm_table__ = "local_presets"
 
     name: str | None = None
     setting: dict | None = None

@@ -23,6 +23,7 @@ owner or the shared flag from the upgrade backfill in ``core/database.py``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -32,22 +33,25 @@ from backend.app.core.permissions import Permission
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.user import User
 
+if TYPE_CHECKING:
+    from backend.app.core.auth import ApiKeyActor
 
-def sees_all_folders(user: User | None) -> bool:
+
+def sees_all_folders(user: User | ApiKeyActor | None) -> bool:
     """True for ``library:read_all``, and for ``None`` (auth off)."""
     return user is None or user.has_permission(Permission.LIBRARY_READ_ALL.value)
 
 
-def owns(folder: LibraryFolder, user: User | None) -> bool:
+def owns(folder: LibraryFolder, user: User | ApiKeyActor | None) -> bool:
     return user is not None and folder.created_by_id is not None and folder.created_by_id == user.id
 
 
-def can_write_folder(folder: LibraryFolder, user: User | None) -> bool:
+def can_write_folder(folder: LibraryFolder, user: User | ApiKeyActor | None) -> bool:
     """May ``user`` put files or subfolders into ``folder``."""
     return sees_all_folders(user) or owns(folder, user) or bool(folder.shared)
 
 
-def can_rename_folder(folder: LibraryFolder, user: User | None) -> bool:
+def can_rename_folder(folder: LibraryFolder, user: User | ApiKeyActor | None) -> bool:
     if user is None or user.has_permission(Permission.LIBRARY_UPDATE_ALL.value):
         return True
     return user.has_permission(Permission.LIBRARY_UPDATE_OWN.value) and owns(folder, user)
@@ -105,7 +109,7 @@ async def load_folder_index(db: AsyncSession, *, with_files: bool = True) -> Fol
     return index
 
 
-def visible_folder_ids(index: FolderIndex, user: User | None) -> set[int] | None:
+def visible_folder_ids(index: FolderIndex, user: User | ApiKeyActor | None) -> set[int] | None:
     """The folders ``user`` may see, or ``None`` for all of them."""
     if sees_all_folders(user):
         return None
@@ -124,7 +128,7 @@ def visible_folder_ids(index: FolderIndex, user: User | None) -> set[int] | None
     return visible
 
 
-def folder_delete_blocker(index: FolderIndex, folder: LibraryFolder, user: User | None) -> str | None:
+def folder_delete_blocker(index: FolderIndex, folder: LibraryFolder, user: User | ApiKeyActor | None) -> str | None:
     """Why ``user`` may NOT delete ``folder``, or None if they may.
 
     ``library:delete_all`` deletes anything. With ``library:delete_own`` a user
@@ -164,7 +168,7 @@ def folder_delete_blocker(index: FolderIndex, folder: LibraryFolder, user: User 
     return None
 
 
-async def get_visible_folder(db: AsyncSession, folder_id: int, user: User | None) -> LibraryFolder:
+async def get_visible_folder(db: AsyncSession, folder_id: int, user: User | ApiKeyActor | None) -> LibraryFolder:
     """The folder, or 404 when it doesn't exist or ``user`` can't see it."""
     folder = (await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))).scalar_one_or_none()
     if folder is None:
@@ -176,7 +180,7 @@ async def get_visible_folder(db: AsyncSession, folder_id: int, user: User | None
     return folder
 
 
-async def get_writable_folder(db: AsyncSession, folder_id: int, user: User | None) -> LibraryFolder:
+async def get_writable_folder(db: AsyncSession, folder_id: int, user: User | ApiKeyActor | None) -> LibraryFolder:
     """The folder ``user`` puts something into: 404 when unseen, 403 when only seen."""
     folder = await get_visible_folder(db, folder_id, user)
     if not can_write_folder(folder, user):

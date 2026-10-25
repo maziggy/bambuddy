@@ -1624,8 +1624,12 @@ async def test_auto_assign_kprofile_takes_priority_over_live_cali_idx(db_session
 
     # Use a fully-mocked spool so SA relationship instrumentation is bypassed.
     # auto_assign_spool only reads attributes — it never persists via the spool.
+    # The assignment it writes still points at a real spool row.
+    row = Spool(material="PLA")
+    db_session.add(row)
+    await db_session.flush()
     spool = MagicMock(spec=Spool)
-    spool.id = 999
+    spool.id = row.id
     spool.material = "PLA"
     spool.slicer_filament = None
     spool.k_profiles = [kp_mock]

@@ -31,13 +31,11 @@ from backend.app.main import app
 # Substring patterns identifying auth-bearing callable qualnames in the
 # resolved Depends() tree. Inner functions returned by factories carry
 # the outer factory's name in their qualname (e.g.
-# ``require_permission.<locals>.permission_checker``), so a substring
+# ``require_permission_if_auth_enabled.<locals>.permission_checker``), so a substring
 # check is enough; we don't have to enumerate the inner names.
 _AUTH_QUALNAME_PATTERNS: tuple[str, ...] = (
-    "require_",  # require_permission, require_permission_if_auth_enabled, require_role, require_admin_*, require_auth_*, require_any_*, require_ownership_*, require_camera_stream_token_*, require_energy_cost_update
+    "require_",  # require_permission_if_auth_enabled, require_admin_*, require_auth_*, require_any_*, require_ownership_*, require_camera_stream_token_*, require_energy_cost_update
     "cloud_caller",  # cloud.py route-level dep
-    "_cloud_api_key_gate",  # cloud.py router-level dep
-    "resolve_api_key_cloud_owner",  # used by slicer routes that need the API key's owner
     "get_current_user",  # JWT identity resolution
     "get_current_active_user",  # JWT identity resolution
     "get_api_key",  # webhook routes use this directly
@@ -80,6 +78,14 @@ _PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         # Forgot-password (anonymous request) + confirm (signed token in the URL).
         ("POST", "/api/v1/auth/forgot-password"),
         ("POST", "/api/v1/auth/forgot-password/confirm"),
+        # Own password change — resolves the caller with get_current_user_optional
+        # and answers 401 inline when there is none; the current password in the
+        # body is checked too.
+        ("POST", "/api/v1/users/me/change-password"),
+        # Who am I — checks the JWT or API key inline (revocation, freshness,
+        # active user) and answers 401 without one; the auth middleware also
+        # guards it.
+        ("GET", "/api/v1/auth/me"),
         # ---- HTTP API: signed-URL routes (token in path is the auth) ----
         # Signed download URLs — token in path validated by the handler.
         ("GET", "/api/v1/archives/{archive_id}/dl/{token}/{filename}"),
@@ -158,9 +164,33 @@ def _walk_dependant_qualnames(dependant) -> list[str]:
     return names
 
 
+def _is_auth_qualname(qualname: str) -> bool:
+    """An auth-bearing callable. An ``*_optional`` resolver is not one: it
+    lets an anonymous caller through (``get_current_user_optional`` answers
+    None), so a route that relies on it checks inline and is listed."""
+    if "_optional" in qualname:
+        return False
+    return any(p in qualname for p in _AUTH_QUALNAME_PATTERNS)
+
+
 def _has_auth_dep(dependant) -> bool:
-    """True if any callable in the dependant tree matches an auth pattern."""
-    return any(any(p in qn for p in _AUTH_QUALNAME_PATTERNS) for qn in _walk_dependant_qualnames(dependant))
+    """True if any dependency in the tree matches an auth pattern. The route's
+    own handler is not one, whatever it is called."""
+    return any(_is_auth_qualname(qn) for sub in dependant.dependencies for qn in _walk_dependant_qualnames(sub))
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("qualname", "is_auth"),
+    [
+        ("require_permission_if_auth_enabled.<locals>.permission_checker", True),
+        ("get_current_user", True),
+        ("get_current_user_optional", False),
+        ("some_helper", False),
+    ],
+)
+def test_the_matcher_does_not_count_an_optional_resolver(qualname, is_auth) -> None:
+    assert _is_auth_qualname(qualname) is is_auth
 
 
 def _ws_endpoint_does_inline_token_check(route: APIWebSocketRoute) -> bool:

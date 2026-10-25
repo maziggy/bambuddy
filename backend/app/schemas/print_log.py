@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
+
 
 class PrintLogEntrySchema(BaseModel):
     # from_attributes lets the routes build this straight off the ORM row.
@@ -41,7 +43,7 @@ class PrintLogResponse(BaseModel):
     total: int
 
 
-class PrintLogEntryUpdate(BaseModel):
+class PrintLogEntryUpdate(IgnoresNullForRequiredColumns):
     """Per-row classification edits (#1687 part 4 — IndividualGhost1905).
 
     Lets the user set ``failure_reason`` (and re-classify ``status``) directly
@@ -49,6 +51,8 @@ class PrintLogEntryUpdate(BaseModel):
     edit through. The Failure Analysis widget already groups by
     ``PrintLogEntry.failure_reason``, so this just plugs the editor gap.
     """
+
+    __orm_table__ = "print_log_entries"
 
     failure_reason: str | None = None
     status: str | None = None

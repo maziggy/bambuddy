@@ -566,6 +566,24 @@ describe('ArchivesPage', () => {
     });
   });
 
+  describe('outcome badges', () => {
+    it('labels an aborted print as aborted and a cancelled one as cancelled', async () => {
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([
+            { ...mockArchives[0], id: 201, print_name: 'StoppedOnPrinter', status: 'aborted' },
+            { ...mockArchives[0], id: 202, print_name: 'StoppedInBambuddy', status: 'cancelled' },
+          ]),
+        ),
+      );
+      render(<ArchivesPage />);
+
+      await screen.findByText('StoppedOnPrinter');
+      expect(screen.getByText('aborted')).toBeInTheDocument();
+      expect(screen.getByText('cancelled')).toBeInTheDocument();
+    });
+  });
+
   describe('Not Printed / Printed collections', () => {
     const mixedStatusArchives = [
       { ...mockArchives[0], id: 100, print_name: 'NeverPrinted', status: 'archived', started_at: null, completed_at: null },

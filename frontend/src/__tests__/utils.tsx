@@ -10,6 +10,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { ThemeProvider } from '../contexts/ThemeContext';
 import { ToastProvider } from '../contexts/ToastContext';
 import { AuthProvider } from '../contexts/AuthContext';
+import { EmbeddedCameraProvider } from '../contexts/EmbeddedCameraContext';
 
 // Create a new QueryClient for each test
 function createTestQueryClient() {
@@ -43,7 +44,9 @@ function AllProviders({ children }: AllProvidersProps) {
             AuthProvider". */}
         <AuthProvider>
           <ThemeProvider>
-            <ToastProvider>{children}</ToastProvider>
+            <ToastProvider>
+              <EmbeddedCameraProvider>{children}</EmbeddedCameraProvider>
+            </ToastProvider>
           </ThemeProvider>
         </AuthProvider>
       </BrowserRouter>

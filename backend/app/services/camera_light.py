@@ -167,18 +167,29 @@ def hand_back(printer_id: int) -> None:
 
 
 @asynccontextmanager
-async def camera_light(printer, *, wait: bool = True) -> AsyncIterator[None]:
+async def camera_light(
+    printer, *, wait: bool = True, any_mode: bool = False, settle: float | None = None
+) -> AsyncIterator[None]:
     """Keep the printer's chamber light on while the camera is in use.
 
     ``wait`` makes a snapshot wait the ``camera_light_delay`` setting after
     the light came on, so the light (and any light synced to it) has time to
     reach the picture. A live view doesn't wait.
+
+    ``any_mode`` holds the light whatever the light mode says, and ``settle``
+    replaces the delay setting: the plate check needs a lit plate on every
+    printer, and holding the light here rather than switching it itself keeps
+    it from switching the light off under a viewer who came meanwhile (SP-C11).
     """
     if printer is None:
         yield
         return
     mode, delay = await _light_settings()
-    if mode == "off" or (mode == "selected" and getattr(printer, "camera_light_auto", False) is not True):
+    if settle is not None:
+        delay = settle
+    if not any_mode and (
+        mode == "off" or (mode == "selected" and getattr(printer, "camera_light_auto", False) is not True)
+    ):
         yield
         return
 

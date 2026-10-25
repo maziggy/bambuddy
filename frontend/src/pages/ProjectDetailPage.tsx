@@ -49,6 +49,7 @@ import { ProjectModal } from './ProjectsPage';
 import { getCurrencySymbol } from '../utils/currency';
 import { isSlicedLibraryFile } from '../utils/libraryFiles';
 import { NumberInput } from '../components/NumberInput';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 function formatFilament(grams: number): string {
   if (grams >= 1000) {
@@ -128,7 +129,7 @@ function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
       {archives.map((archive) => (
         <Link
           key={archive.id}
-          to={`/archives?search=${encodeURIComponent(archive.print_name || '')}`}
+          to={`/archives?highlight=${archive.id}`}
           className="group relative aspect-square rounded-lg bg-bambu-dark border border-bambu-dark-tertiary overflow-hidden hover:border-bambu-green transition-colors"
         >
           {archive.thumbnail_path ? (
@@ -233,10 +234,7 @@ export function ProjectDetailPage() {
     enabled: projectId > 0,
   });
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
 
   const { data: linkedFolders } = useQuery({
     queryKey: ['project-folders', projectId],

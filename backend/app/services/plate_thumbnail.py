@@ -437,12 +437,12 @@ def _render_at_size(poly3d, size: int, Poly3DCollection, shade_kw: dict) -> byte
     """Render the prepared poly3d collection to an in-memory PNG.
 
     Matplotlib's object API, not pyplot. This runs in a worker thread (#3135)
-    while stl_thumbnail renders through pyplot on the event loop, and pyplot's
-    figure registry and "current figure" are process-global: its
-    ``subplots_adjust`` would lay out whichever figure the other thread made
-    last, and neither lock placement is acceptable — held on the loop it stalls
-    the server for the whole plate render. A ``Figure`` with its own Agg canvas
-    shares nothing, so the two can run at once.
+    while stl_thumbnail renders through pyplot in another, and pyplot's figure
+    registry and "current figure" are process-global: its ``subplots_adjust``
+    would lay out whichever figure the other thread made last. stl_thumbnail
+    serialises its own renders with _RENDER_LOCK; a ``Figure`` with its own Agg
+    canvas shares nothing, so this needs no part in that lock and the two can
+    run at once.
     """
     # Local, like every other import in this module, so importing plate_thumbnail
     # in an environment without matplotlib still works. stl_thumbnail's own

@@ -14,6 +14,7 @@ import {
 import { api, type HeaterSensorKind, type PrinterSensorHistoryResponse } from '../api/client';
 import { parseUTCDate, applyTimeFormat, type TimeFormat } from '../utils/date';
 import { useTranslation } from 'react-i18next';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 interface HeaterHistoryModalProps {
   isOpen: boolean;
@@ -63,10 +64,7 @@ export function HeaterHistoryModal({
     setKind(initialKind);
   }, [initialKind]);
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
 
   const timeFormat: TimeFormat = settings?.time_format || 'system';
 

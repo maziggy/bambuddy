@@ -368,6 +368,80 @@ class TestAssignSpoolTrayInfoIdx:
             assert call_kwargs.kwargs["tray_info_idx"] == slot_generic
 
 
+class TestSlotReuseRespectsTheSubtype:
+    """A preset-less spool reuses the slot's Bambu filament id when the bare
+    type matches, to keep a calibrated preset. A Silk spool must not inherit a
+    slot that the printer describes as Matte, though."""
+
+    async def _sent_id(self, async_client, printer_factory, spool_factory, subtype, slot_sub_brands):
+        printer = await printer_factory(name="X1C")
+        spool = await spool_factory(slicer_filament=None, material="PLA", subtype=subtype)
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+        tray = {"id": 0, "tray_info_idx": "GFA01", "tray_type": "PLA", "tray_sub_brands": slot_sub_brands}
+        status = _make_mock_status(ams_data=[{"id": 0, "tray": [tray]}])
+
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = status
+            response = await async_client.post(
+                "/api/v1/inventory/assignments",
+                json={"spool_id": spool.id, "printer_id": printer.id, "ams_id": 0, "tray_id": 0},
+            )
+
+        assert response.status_code == 200
+        return mock_client.ams_set_filament_setting.call_args.kwargs["tray_info_idx"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_silk_spool_does_not_take_a_matte_slot(self, async_client, printer_factory, spool_factory):
+        sent = await self._sent_id(async_client, printer_factory, spool_factory, "Silk", "PLA Matte")
+
+        assert sent == "GFL96"  # Generic PLA Silk, the spool's own subtype
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_silk_plus_spool_gets_generic_pla_silk(self, async_client, printer_factory, spool_factory):
+        assert await self._sent_id(async_client, printer_factory, spool_factory, "Silk+", "PLA Matte") == "GFL96"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_finish_in_the_material_column_counts(self, async_client, printer_factory, spool_factory):
+        printer = await printer_factory(name="X1C")
+        spool = await spool_factory(slicer_filament=None, material="PLA Silk", subtype=None)
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+        tray = {"id": 0, "tray_info_idx": "GFA01", "tray_type": "PLA", "tray_sub_brands": "PLA Matte"}
+        status = _make_mock_status(ams_data=[{"id": 0, "tray": [tray]}])
+
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = status
+            await async_client.post(
+                "/api/v1/inventory/assignments",
+                json={"spool_id": spool.id, "printer_id": printer.id, "ams_id": 0, "tray_id": 0},
+            )
+
+        assert mock_client.ams_set_filament_setting.call_args.kwargs["tray_info_idx"] == "GFL96"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_same_subtype_still_reuses_the_slot(self, async_client, printer_factory, spool_factory):
+        assert await self._sent_id(async_client, printer_factory, spool_factory, "Matte", "PLA Matte") == "GFA01"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(("subtype", "slot_sub_brands"), [(None, "PLA Matte"), ("Silk", ""), ("Silk", "Sunlu PLA")])
+    async def test_without_two_known_subtypes_it_still_reuses(
+        self, async_client, printer_factory, spool_factory, subtype, slot_sub_brands
+    ):
+        sent = await self._sent_id(async_client, printer_factory, spool_factory, subtype, slot_sub_brands)
+
+        assert sent == "GFA01"
+
+
 class TestAssignSpoolPresetMapping:
     """Tests that assign_spool saves the slot preset mapping for correct UI display."""
 
@@ -798,6 +872,62 @@ class TestAssignSpoolEmptySlotPreConfig:
         await db_session.refresh(pre_assignment)
         assert pre_assignment.fingerprint_type == "PLA"
         assert pre_assignment.fingerprint_color == "FF0000FF"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_replay_passes_the_slots_finish(
+        self, async_client: AsyncClient, printer_factory, spool_factory, db_session: AsyncSession
+    ):
+        """A preset-less Silk spool loaded into a slot reporting Bambu Matte."""
+        from unittest.mock import AsyncMock
+
+        from backend.app.main import on_ams_change
+        from backend.app.models.spool_assignment import SpoolAssignment
+
+        printer = await printer_factory(name="H2D")
+        spool = await spool_factory(slicer_filament=None, material="PLA", subtype="Silk")
+        db_session.add(
+            SpoolAssignment(
+                spool_id=spool.id,
+                printer_id=printer.id,
+                ams_id=2,
+                tray_id=3,
+                fingerprint_color=None,
+                fingerprint_type=None,
+            )
+        )
+        await db_session.commit()
+        tray = {
+            "id": 3,
+            "tray_type": "PLA",
+            "tray_color": "FF0000FF",
+            "state": 11,
+            "tray_info_idx": "GFA01",
+            "tray_sub_brands": "PLA Matte",
+        }
+        ams_data = [{"id": 2, "tray": [tray]}]
+        mock_client = MagicMock()
+        status = _make_mock_status(ams_data=ams_data)
+
+        with (
+            patch("backend.app.main.printer_manager") as mock_pm_main,
+            patch("backend.app.services.printer_manager.printer_manager") as mock_pm_inv,
+            patch("backend.app.main.mqtt_relay") as mock_relay,
+            patch("backend.app.main.ws_manager") as mock_ws,
+        ):
+            mock_pm_main.get_printer.return_value = MagicMock(name="H2D", serial_number="0948BB540200427")
+            mock_pm_main.get_status.return_value = status
+            mock_pm_main.get_client.return_value = mock_client
+            mock_pm_main.get_model.return_value = "H2D"
+            mock_pm_inv.get_client.return_value = mock_client
+            mock_pm_inv.get_status.return_value = status
+            mock_relay.on_ams_change = AsyncMock()
+            mock_ws.send_printer_status = AsyncMock()
+            mock_ws.broadcast = AsyncMock()
+
+            await on_ams_change(printer.id, ams_data)
+
+        assert mock_client.ams_set_filament_setting.call_args.kwargs["tray_info_idx"] == "GFL96"
 
     @pytest.mark.asyncio
     @pytest.mark.integration

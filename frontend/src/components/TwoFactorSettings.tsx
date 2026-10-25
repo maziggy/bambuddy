@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
+import { ConfirmModal } from './ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -182,6 +183,7 @@ export function TwoFactorSettings() {
   const [disableCode, setDisableCode] = useState('');
   const [regenCode, setRegenCode] = useState('');
   const [newBackupCodes, setNewBackupCodes] = useState<string[] | null>(null);
+  const [unlinkTarget, setUnlinkTarget] = useState<{ providerId: number; providerName: string } | null>(null);
 
   // Email OTP enable: two-step proof-of-possession flow
   const [emailSetupToken, setEmailSetupToken] = useState<string | null>(null);
@@ -531,7 +533,7 @@ export function TwoFactorSettings() {
                   <Button
                     variant="danger"
                     size="sm"
-                    onClick={() => unlinkOIDCMutation.mutate(link.provider_id)}
+                    onClick={() => setUnlinkTarget({ providerId: link.provider_id, providerName: link.provider_name })}
                     disabled={unlinkOIDCMutation.isPending}
                   >
                     <Trash2 className="w-4 h-4" />
@@ -541,6 +543,20 @@ export function TwoFactorSettings() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {unlinkTarget && (
+        <ConfirmModal
+          title={t('settings.twoFa.oidcUnlinkConfirmTitle')}
+          message={t('settings.twoFa.oidcUnlinkConfirmMessage', { provider: unlinkTarget.providerName })}
+          confirmText={t('settings.twoFa.oidcUnlinkConfirmAction')}
+          variant="danger"
+          onConfirm={() => {
+            unlinkOIDCMutation.mutate(unlinkTarget.providerId);
+            setUnlinkTarget(null);
+          }}
+          onCancel={() => setUnlinkTarget(null)}
+        />
       )}
     </div>
   );

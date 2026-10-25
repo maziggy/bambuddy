@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
+
 
 class FilamentBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
@@ -23,7 +25,8 @@ class FilamentCreate(FilamentBase):
     pass
 
 
-class FilamentUpdate(BaseModel):
+class FilamentUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "filaments"
     name: str | None = None
     type: str | None = None
     brand: str | None = None

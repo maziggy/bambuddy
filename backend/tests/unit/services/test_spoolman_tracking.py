@@ -80,9 +80,9 @@ class TestResolveGlobalTrayId:
         assert _resolve_global_tray_id(4, mapping) == 0
 
     def test_unmapped_slot(self):
-        """Slot with -1 in mapping uses default."""
+        """Slot with -1 in mapping feeds nothing: no tray, never the default."""
         mapping = [5, -1, 2, 0]
-        assert _resolve_global_tray_id(2, mapping) == 1  # default: slot 2 -> tray 1
+        assert _resolve_global_tray_id(2, mapping, ams_trays={0: {}, 1: {}, 2: {}, 5: {}}) == -1
 
     def test_slot_beyond_mapping(self):
         """Slot beyond mapping length uses default."""
@@ -93,34 +93,22 @@ class TestResolveGlobalTrayId:
         mapping = []
         assert _resolve_global_tray_id(1, mapping) == 0
 
-    def test_minus_one_resolves_to_external_spool_when_present(self):
-        """#1276 (regression of #853): -1 in slot_to_tray is BambuStudio's
-        encoding for "external spool used" — look up the external spool in
-        ams_trays rather than falling through to the position-based default
-        (which would credit an unrelated AMS tray). Reporter ojimpo's H2S
-        had AMS slot 0 occupied with PLA and ran a TPU external-spool print;
-        the bug credited the TPU usage to the PLA spool.
-        """
-        # Single external spool (most common: H2S/X1C/P1S + external)
-        assert _resolve_global_tray_id(1, [-1], ams_trays={254: {}}) == 254
-        # AMS occupied with material AND external in use — fix prevents
-        # crediting AMS slot 0 (the actual bug from #1276)
-        assert _resolve_global_tray_id(1, [-1], ams_trays={0: {}, 1: {}, 2: {}, 3: {}, 254: {}}) == 254
-        # H2D-style deputy nozzle at 255
-        assert _resolve_global_tray_id(1, [-1], ams_trays={0: {}, 255: {}}) == 255
-        # Both external slots present (multi-nozzle) — prefer 254 (main on
-        # single-nozzle, deputy on H2D — matches tray_now reporting)
-        assert _resolve_global_tray_id(1, [-1], ams_trays={254: {}, 255: {}}) == 254
+    def test_the_external_spool_comes_resolved_in_the_captured_mapping(self):
+        """#1276 (regression of #853): an external-spool print must not be
+        credited to an AMS tray. The wire writes the external spool as -1, but
+        the captured mapping puts its 254/255 back from ams_mapping2 (#3166),
+        so it arrives as a tray id like any other."""
+        assert _resolve_global_tray_id(1, [254], ams_trays={0: {}, 1: {}, 2: {}, 3: {}, 254: {}}) == 254
+        assert _resolve_global_tray_id(1, [255], ams_trays={0: {}, 255: {}}) == 255
 
-    def test_minus_one_falls_through_when_no_external_in_ams_trays(self):
-        """If -1 is seen but ams_trays has no external spool (254/255),
-        fall through to position-based default (legacy behavior preserved
-        for callers that don't pass ams_trays or pre-fix call sites).
-        """
-        # ams_trays without external — fall through to legacy behavior
-        assert _resolve_global_tray_id(1, [-1], ams_trays={0: {}, 1: {}}) == 0
-        # No ams_trays passed at all — legacy fallback
-        assert _resolve_global_tray_id(1, [-1]) == 0
+    def test_minus_one_is_no_tray_even_with_an_external_spool_loaded(self):
+        """A -1 left in the captured mapping is a slot the print does not feed
+        (ams_mapping2 named no external spool for it). The built-in tracker
+        charges nothing for it; neither the external spool nor the slot's
+        position is guessed."""
+        assert _resolve_global_tray_id(1, [-1], ams_trays={0: {}, 1: {}, 254: {}}) == -1
+        assert _resolve_global_tray_id(1, [-1], ams_trays={0: {}, 1: {}}) == -1
+        assert _resolve_global_tray_id(1, [-1]) == -1
 
 
 class TestFallbackTagHelpers:
@@ -219,7 +207,7 @@ class TestStorePrintData:
         # row before inserting the new one. Two execute calls in that order.
         queue_item = SimpleNamespace(ams_mapping=json.dumps([2, -1, -1, -1]), plate_id=None)
         queue_result = MagicMock()
-        queue_result.scalar_one_or_none.return_value = queue_item
+        queue_result.scalars.return_value.first.return_value = queue_item
         delete_result = MagicMock()
         db.execute = AsyncMock(side_effect=[queue_result, delete_result])
         db.add = MagicMock()

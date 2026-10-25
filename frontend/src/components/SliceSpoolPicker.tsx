@@ -135,7 +135,7 @@ function PrinterSection({
       <div className="space-y-3">
         {regular.map((unit) => (
           <div key={unit.id}>
-            <div className="text-xs text-bambu-gray mb-1">{getAmsLabel(unit.id, unit.trays.length)}</div>
+            <div className="text-xs text-bambu-gray mb-1">{getAmsLabel(unit.id)}</div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {unit.trays.map((tray) => tile(tray, formatSlotLabel(unit.id, tray.tray_id, false, false)))}
             </div>

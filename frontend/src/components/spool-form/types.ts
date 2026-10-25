@@ -233,7 +233,8 @@ export interface AdditionalSectionProps extends SectionProps {
 }
 
 // PA Profile section props
-export interface PAProfileSectionProps extends SectionProps {
+export interface PAProfileSectionProps {
+  formData: SpoolFormData;
   printersWithCalibrations: PrinterWithCalibrations[];
   selectedProfiles: Set<string>;
   setSelectedProfiles: React.Dispatch<React.SetStateAction<Set<string>>>;

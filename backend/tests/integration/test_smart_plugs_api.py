@@ -286,6 +286,25 @@ class TestSmartPlugsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_a_toggle_tells_the_mqtt_relay_the_resulting_state(
+        self, async_client: AsyncClient, smart_plug_factory, mock_tasmota_service, db_session
+    ):
+        """The SpoolBuddy quick menu and the printer card switch plugs with
+        toggle, so the state it ends in is read back and published."""
+        from unittest.mock import AsyncMock, patch
+
+        plug = await smart_plug_factory()
+        mock_tasmota_service.get_status.return_value = {"state": "OFF", "reachable": True}
+
+        with patch("backend.app.api.routes.smart_plugs.publish_plug_state", new_callable=AsyncMock) as publish:
+            response = await async_client.post(f"/api/v1/smart-plugs/{plug.id}/control", json={"action": "toggle"})
+
+        assert response.status_code == 200
+        publish.assert_awaited_once()
+        assert publish.await_args.kwargs["on"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_control_invalid_action(self, async_client: AsyncClient, smart_plug_factory, db_session):
         """Verify invalid action returns error."""
         plug = await smart_plug_factory()
@@ -916,7 +935,7 @@ class TestSmartPlugsAPI:
 
         assert response.status_code == 200
         result = response.json()
-        assert result["rest_headers"] == '{"Authorization": "Bearer test-token"}'
+        assert result["rest_headers"] == "********"  # write-only
         assert result["rest_status_url"] == "http://ha:8080/api/plug/status"
         assert result["rest_status_path"] == "state"
         assert result["rest_status_on_value"] == "ON"

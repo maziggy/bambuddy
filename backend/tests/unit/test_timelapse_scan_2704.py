@@ -382,7 +382,7 @@ class TestManualScanUsesTheBaseline:
         a.created_at = a.completed_at
         return a
 
-    async def _scan(self, archive, listing, download=None, delete=None):
+    async def _scan(self, archive, listing, download=None, delete=None, claimed=()):
         from backend.app.api.routes import archives as archives_mod
 
         service = MagicMock()
@@ -395,7 +395,8 @@ class TestManualScanUsesTheBaseline:
         session.execute = AsyncMock(
             return_value=MagicMock(
                 scalar_one_or_none=MagicMock(return_value=_printer()),
-                scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[]))),
+                # Videos other archives of this printer hold
+                scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=list(claimed)))),
             )
         )
 
@@ -767,3 +768,35 @@ class TestFileMustHaveStoppedGrowing:
         assert result is True
         # Checked against what we actually received, not against the listing.
         assert settled.await_args.args[3] == 1000
+
+
+class TestAScanWithoutABaselineSkipsClaimedVideos:
+    """An archive from before the baseline was stored is matched on name and
+    clock, which must not hand it a video another archive already holds
+    (SN-C7)."""
+
+    _archive = TestManualScanUsesTheBaseline._archive
+    _scan = TestManualScanUsesTheBaseline._scan
+
+    @pytest.mark.asyncio
+    async def test_a_short_name_does_not_take_another_archive_s_video(self):
+        archive = self._archive(None)
+        archive.filename = "1.3mf"  # "1" is in every video's timestamp
+        listing = [_video("video_2026-07-28_21-19-10.avi"), _video("video_2026-07-28_21-19-40.avi")]
+
+        result = await self._scan(archive, listing, claimed=["archive/1/other/video_2026-07-28_21-19-10.mp4"])
+
+        assert result.get("filename") != "video_2026-07-28_21-19-10.avi"
+
+    @pytest.mark.asyncio
+    async def test_a_claimed_video_is_still_offered_for_picking_by_hand(self):
+        """Picking by hand is how a wrong match is put right."""
+        archive = self._archive(None)
+        archive.filename = "mops.3mf"
+        archive.started_at = archive.completed_at = archive.created_at = None
+        listing = [_video("video_a.avi"), _video("video_b.avi")]
+
+        result = await self._scan(archive, listing, claimed=["archive/1/other/video_a.mp4"])
+
+        assert result["status"] == "not_found"
+        assert {f["name"] for f in result["available_files"]} == {"video_a.avi", "video_b.avi"}

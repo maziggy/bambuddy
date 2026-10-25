@@ -407,12 +407,18 @@ class TestHoldOnTheModelBasedPath:
         scheduler = _scheduler(P2S_5_TRAYS)
         scheduler._get_job_name = AsyncMock(return_value="body1")
         scheduler._get_printer = AsyncMock(return_value=MagicMock(model="P2S"))
-        item = _item(ams_mapping=json.dumps([0, -1, -1]))
+        item = _item(
+            ams_mapping=json.dumps([0, -1, -1]),
+            nozzle_mapping=json.dumps([16, -1]),
+            nozzle_rack_choice=json.dumps({"0": 16}),
+        )
 
         blocked = await scheduler._block_on_unmatched_filament(AsyncMock(), item, release_assignment=True)
 
         assert blocked is True
         assert item.printer_id is None
+        # So do the nozzle positions, which name that printer's rack.
+        assert item.nozzle_mapping is None and item.nozzle_rack_choice is None
         # The mapping goes with the assignment: its tray IDs were resolved
         # against the printer just released, so leaving it would hold the job
         # again on the next printer even when that one has the filament.

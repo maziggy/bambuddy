@@ -62,6 +62,51 @@ UNIVERSALLY_BLOCKED = [
     "http://metadata.google.internal/",
     "http://METADATA.GOOGLE.INTERNAL/computeMetadata/v1/",
     "http://metadata.goog/",
+    # Classic inet_aton notations other than a single number: libc and HTTP
+    # clients resolve them to the same addresses.
+    "http://0xa9.0xfe.0xa9.0xfe/",
+    "http://0xA9.254.169.254/",
+    "http://169.254.43518/",
+    "http://169.16689662/",
+    "http://0251.0376.0251.0376/",
+    "http://0169.254.169.254/",
+    "http://0x7f.1/",
+    # A trailing dot is the same host.
+    "http://169.254.169.254./",
+    "http://metadata.google.internal./",
+    "http://0x7f000001./",
+    # Other dot characters, fullwidth digits and enclosed letters: HTTP clients
+    # map them to the plain forms before connecting.
+    "http://169\u3002254\u3002169\u3002254/",
+    "http://169\uff0e254\uff0e169\uff0e254/",
+    "http://169\uff61254\uff61169\uff61254/",
+    "http://\uff11\uff16\uff19.\uff12\uff15\uff14.\uff11\uff16\uff19.\uff12\uff15\uff14/",
+    "http://\u24dcetadata.google.internal/",
+    "http://metadata\u3002google\u3002internal/",
+    "http://0xa9\u30020xfe\u30020xa9\u30020xfe/",
+    # Names that reach the metadata endpoint without a lookup of ours: a short
+    # name the cloud's resolver completes, and the providers' own aliases.
+    "http://metadata/computeMetadata/v1/",
+    "http://metadata.google/",
+    "http://instance-data/latest/meta-data/",
+    "http://instance-data.ec2.internal/latest/meta-data/",
+    "http://INSTANCE-DATA./",
+    "http://metadata.tencentyun.com/latest/meta-data/",
+    # Other providers' metadata addresses.
+    "http://169.254.0.23/",
+    "http://169.254.42.42/conf",
+    "http://[fd00:42::42]/",
+    "http://[fd00:c1::a9fe:a9fe]/",
+    "http://[fd20:ce::254]/computeMetadata/v1/",
+    "http://[fd00:a9fe:a9fe::1]/",
+    "http://[fd00:ec2::23]/v1/credentials",
+    "http://[fe80::a9fe:a9fe]/openstack/",
+    "http://[fe80::a9fe:a9fe%25eth0]/",
+    "http://api.metadata.cloud.ibm.com/metadata/v1/instance",
+    # A zone id on an address that is not link-local is ignored on connect.
+    "http://[fd00:ec2::254%251]/",
+    "http://[fd00:ec2::254%25eth0]/",
+    "http://[fd00:ec2::254%1]/",
 ]
 
 # The normal self-hosted topology — the LAN tier must permit all of these.
@@ -73,6 +118,12 @@ LAN_ALLOWED = [
     "http://172.16.4.9:8080",
     "https://ntfy.example.com/",
     "http://spoolman.lan:7912",
+    "http://3dprinter.lan:8080",
+    "http://node-01:8080",
+    "http://192.168.1.50.:8123",
+    "http://[fd12:3456::1]:8123",
+    "http://xn--drucker-kche-dlb.lan:8080",
+    "http://[fe80::1%25eth0]:8123",
 ]
 
 
@@ -452,6 +503,7 @@ def test_ha_guard_keeps_ipv6_literals_bracketed():
         "169.254.169.254",
         "100.100.100.200",
         "fd00:ec2::254",
+        "fd00:ec2::254%1",
         "0.0.0.0",  # nosec B104 — rejection fixture, not a bind address: the assertion below is that the guard refuses it
         "239.255.255.250",
     ],
@@ -593,6 +645,7 @@ GUARDED_BODY_URLS = {
     # github_backup._enforce_private_repo, which both POST and PATCH funnel through.
     ("GitHubBackupConfigCreate", "repository_url"),
     ("GitHubBackupConfigUpdate", "repository_url"),
+    ("GitHubTestConnectionRequest", "repo_url"),  # same guard, in the test route
     # SmartPlug{Create,Update} persist these; every read goes back out through
     # RESTSmartPlugService._send_request, which applies the same guard.
     ("SmartPlugCreate", "rest_on_url"),
@@ -622,6 +675,7 @@ NOT_A_FETCH_TARGET = {
     ("SystemConfigRequest", "backend_url"),
     ("ExternalLinkCreate", "url"),  # sidebar link, rendered in the UI, never requested
     ("ExternalLinkUpdate", "url"),
+    ("ExternalLinkBadgeSet", "url"),  # compared with the sidebar links' addresses, never requested
     ("AppMessage", "url"),  # an app's link, appended to the notification text; never requested
     ("FileUpdate", "external_url"),  # library file link (#3077), rendered in the UI, never fetched
     ("MaintenanceTypeCreate", "wiki_url"),  # documentation link surfaced in the UI/notifications
@@ -674,3 +728,37 @@ def test_classification_lists_do_not_drift_from_the_routes():
     actual = _request_body_url_fields()
     stale = (GUARDED_BODY_URLS | NOT_A_FETCH_TARGET | KNOWN_UNGUARDED_NEEDS_SCHEME_AWARE_GUARD) - actual
     assert not stale, f"Classification entries no longer match any route: {sorted(stale)}"
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "0xa9.0xfe.0xa9.0xfe",
+        "169.254.43518",
+        "0251.0376.0251.0376",
+        "0169.254.169.254",
+        "0x7f.1",
+        "169.254.169.254.",
+        "metadata.google.internal.",
+        "127\u30020\u30020\u30021",
+        "metadata",
+        "instance-data.ec2.internal",
+        "169\uff0e254\uff0e169\uff0e254",
+        "api.metadata.cloud.ibm.com",
+    ],
+)
+def test_public_tier_rejects_other_ipv4_notations_over_https(host: str):
+    """Over https, so the scheme check cannot be what refuses them."""
+    with pytest.raises(ValueError):
+        assert_safe_public_https_url(f"https://{host}/icon.png")
+
+
+@pytest.mark.parametrize("host", ["169.254.1.1", "169.254.99.7", "169.254.255.254", "[::ffff:169.254.10.10]"])
+def test_lan_tier_refuses_the_whole_ipv4_link_local_range(host: str):
+    """Where cloud providers put their metadata endpoints, listed or not."""
+    with pytest.raises(ValueError):
+        assert_safe_lan_service_url(f"http://{host}/", label="URL")
+
+
+def test_lan_tier_still_permits_ipv6_link_local():
+    assert_safe_lan_service_url("http://[fe80::1]:8123/", label="URL")

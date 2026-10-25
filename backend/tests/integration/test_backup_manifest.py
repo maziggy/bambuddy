@@ -89,6 +89,7 @@ async def test_an_unimportable_backup_is_refused_with_both_versions(async_client
     assert "Nothing has been changed" in detail
 
 
+@pytest.mark.sqlite_only  # switches the app to its own SQLite database file
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_overlay_logo_survives_backup_and_restore(async_client, monkeypatch, tmp_path):
@@ -117,6 +118,7 @@ async def test_overlay_logo_survives_backup_and_restore(async_client, monkeypatc
         patch("backend.app.core.database.close_all_connections", new_callable=AsyncMock),
         patch("backend.app.core.database.reinitialize_database", new_callable=AsyncMock),
         patch("backend.app.core.database.init_db", new_callable=AsyncMock),
+        patch("backend.app.core.database.invalidate_all_sessions", new_callable=AsyncMock),
         patch("backend.app.services.print_scheduler.scheduler.stop"),
         patch("backend.app.services.smart_plug_manager.smart_plug_manager.stop_scheduler"),
         patch("backend.app.services.notification_service.notification_service.stop_digest_scheduler"),
@@ -129,3 +131,44 @@ async def test_overlay_logo_survives_backup_and_restore(async_client, monkeypatc
     assert response.status_code == 200, response.text
     assert logo.read_bytes() == original
     assert not (logo_dir / "stale.png").exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.sqlite_only  # backs up and restores the app's own SQLite database file
+async def test_a_restore_stops_the_virtual_printers(async_client, monkeypatch, tmp_path):
+    """vp-2: the "stop virtual printer" step called the legacy configure(),
+    which ignores its arguments and re-syncs from the database not yet
+    replaced, so their FTP, MQTT and SSDP services ran on through the file
+    swap. A successful restore asks for a restart, as for the other services."""
+    from backend.app.api.routes.settings import create_backup_zip
+    from backend.app.services.virtual_printer import virtual_printer_manager
+
+    db_path = tmp_path / "bambuddy.db"
+    with sqlite3.connect(db_path) as db:
+        db.execute("CREATE TABLE backup_marker (id INTEGER PRIMARY KEY)")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+    monkeypatch.setattr(app_settings, "database_url", f"sqlite+aiosqlite:///{db_path}")
+    zip_path, _ = await create_backup_zip(output_path=tmp_path)
+    monkeypatch.setitem(virtual_printer_manager._instances, 4242, object())
+
+    with (
+        patch("backend.app.core.database.close_all_connections", new_callable=AsyncMock),
+        patch("backend.app.core.database.reinitialize_database", new_callable=AsyncMock),
+        patch("backend.app.core.database.init_db", new_callable=AsyncMock),
+        patch("backend.app.core.database.invalidate_all_sessions", new_callable=AsyncMock),
+        patch("backend.app.services.print_scheduler.scheduler.stop"),
+        patch("backend.app.services.smart_plug_manager.smart_plug_manager.stop_scheduler"),
+        patch("backend.app.services.notification_service.notification_service.stop_digest_scheduler"),
+        patch.object(virtual_printer_manager, "stop_all", new_callable=AsyncMock) as stop_all,
+        patch.object(virtual_printer_manager, "configure", new_callable=AsyncMock) as configure,
+    ):
+        response = await async_client.post(
+            "/api/v1/settings/restore",
+            files={"file": ("backup.zip", zip_path.read_bytes(), "application/zip")},
+        )
+
+    assert response.status_code == 200, response.text
+    stop_all.assert_awaited_once()
+    configure.assert_not_awaited()

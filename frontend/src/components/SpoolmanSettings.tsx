@@ -153,6 +153,7 @@ export function SpoolmanSettings() {
       queryClient.invalidateQueries({ queryKey: ['spools'] });
       queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
       showToast(t('settings.amsSyncSuccess', { synced: data.synced, skipped: data.skipped }), 'success');
+      if (data.printing) showToast(t('settings.amsSyncSkippedPrinting', { count: data.printing }), 'info');
       setShowAmsSyncConfirm(false);
     },
     onError: () => {
@@ -167,6 +168,7 @@ export function SpoolmanSettings() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
       showToast(t('settings.spoolmanAmsSyncSuccess', { synced: data.synced, skipped: data.skipped }), 'success');
+      if (data.printing) showToast(t('settings.amsSyncSkippedPrinting', { count: data.printing }), 'info');
       setShowSpoolmanAmsSyncConfirm(false);
     },
     onError: (error: Error) => {

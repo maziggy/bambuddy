@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from backend.app.core.compat import StrEnum
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 
 
 class EventType(StrEnum):
@@ -31,6 +32,19 @@ class EventType(StrEnum):
 
 # Available variables for each event type
 EVENT_VARIABLES: dict[str, list[str]] = {
+    # Post-print outcome request (#1898): good/reject are the one-tap links,
+    # confirm_url opens the archive's confirmation dialog.
+    "print_confirm_request": [
+        "printer",
+        "filename",
+        "confirm_url",
+        "good_url",
+        "reject_url",
+        "archive_id",
+        "finish_photo_url",
+        "timestamp",
+        "app_name",
+    ],
     "print_start": ["printer", "filename", "estimated_time", "eta", "timestamp", "app_name"],
     "print_complete": [
         "printer",
@@ -96,6 +110,16 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     "ha_sensor_alert": ["printer", "sensor", "state", "timestamp", "app_name"],
     "location_ha_sensor_alert": ["location", "sensor", "state", "timestamp", "app_name"],
     "first_layer_complete": ["printer", "filename", "total_layers", "timestamp", "app_name"],
+    "print_pause_upcoming": [
+        "printer",
+        "filename",
+        "time_to_pause",
+        "eta",
+        "layer",
+        "total_layers",
+        "timestamp",
+        "app_name",
+    ],
     "test": ["app_name", "timestamp"],
     # Queue notifications
     "queue_job_added": ["job_name", "target", "timestamp", "app_name"],
@@ -129,8 +153,8 @@ EVENT_VARIABLES: dict[str, list[str]] = {
         "app_name",
     ],
     # User management notifications
-    "user_created": ["username", "password", "login_url", "app_name", "timestamp"],
-    "password_reset": ["username", "password", "login_url", "app_name", "timestamp"],
+    "user_created": ["username", "login_url", "app_name", "timestamp"],
+    "password_reset": ["username", "app_name", "timestamp"],
     # User email print notifications
     "user_print_start": ["username", "printer", "filename", "timestamp", "app_name"],
     "user_print_complete": ["username", "printer", "filename", "finish_photo_url", "timestamp", "app_name"],
@@ -141,6 +165,7 @@ EVENT_VARIABLES: dict[str, list[str]] = {
 # Events whose real notification can carry a camera snapshot — mirrors which
 # NotificationService.on_* methods accept image_data.
 PHOTO_CAPABLE_EVENTS: set[str] = {
+    "print_confirm_request",
     "print_start",
     "print_complete",
     "print_failed",
@@ -243,6 +268,17 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "timestamp": "2024-01-15 15:10",
         "app_name": "Bambuddy",
     },
+    "print_confirm_request": {
+        "printer": "Bambu X1C",
+        "filename": "Benchy",
+        "confirm_url": "http://bambuddy.local:8000/archives?confirm=42",
+        "good_url": "http://bambuddy.local:8000/api/v1/archives/confirm/sample-token/good",
+        "reject_url": "http://bambuddy.local:8000/api/v1/archives/confirm/sample-token/reject",
+        "archive_id": "42",
+        "finish_photo_url": "/api/v1/archives/42/photos/finish_20240115_143500_abc12345.jpg",
+        "timestamp": "2024-01-15 14:35",
+        "app_name": "Bambuddy",
+    },
     "plate_not_empty": {
         "printer": "Bambu X1C",
         "difference_percent": "12.4",
@@ -320,6 +356,16 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "filename": "Benchy.3mf",
         "total_layers": "184",
         "timestamp": "2024-01-15 14:35",
+        "app_name": "Bambuddy",
+    },
+    "print_pause_upcoming": {
+        "printer": "Bambu X1C",
+        "filename": "Wifi_QR_NFC.3mf",
+        "time_to_pause": "5m",
+        "eta": "16:05",
+        "layer": "42",
+        "total_layers": "120",
+        "timestamp": "2024-01-15 16:00",
         "app_name": "Bambuddy",
     },
     "test": {
@@ -400,15 +446,12 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     # User management notifications
     "user_created": {
         "username": "john_doe",
-        "password": "<generated-password>",
         "login_url": "https://bambuddy.example.com/login",
         "app_name": "Bambuddy",
         "timestamp": "2024-01-15 14:30",
     },
     "password_reset": {
         "username": "john_doe",
-        "password": "<new-password>",
-        "login_url": "https://bambuddy.example.com/login",
         "app_name": "Bambuddy",
         "timestamp": "2024-01-15 14:30",
     },
@@ -454,8 +497,10 @@ class NotificationTemplateBase(BaseModel):
     body_template: str = Field(..., min_length=1, max_length=2000)
 
 
-class NotificationTemplateUpdate(BaseModel):
+class NotificationTemplateUpdate(IgnoresNullForRequiredColumns):
     """Schema for updating a notification template."""
+
+    __orm_table__ = "notification_templates"
 
     title_template: str | None = Field(default=None, min_length=1, max_length=200)
     body_template: str | None = Field(default=None, min_length=1, max_length=2000)
@@ -473,13 +518,6 @@ class NotificationTemplateResponse(NotificationTemplateBase):
 
     class Config:
         from_attributes = True
-
-
-class TemplateVariableInfo(BaseModel):
-    """Information about a template variable."""
-
-    name: str
-    description: str
 
 
 class EventVariablesResponse(BaseModel):

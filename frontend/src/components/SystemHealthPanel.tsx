@@ -51,9 +51,11 @@ function FindingCard({ finding }: { finding: LogFinding }) {
         </div>
       )}
 
-      <div className="text-xs font-mono text-bambu-gray/70 bg-bambu-dark-secondary rounded px-3 py-2 break-all">
-        {finding.sample}
-      </div>
+      {finding.sample && (
+        <div className="text-xs font-mono text-bambu-gray/70 bg-bambu-dark-secondary rounded px-3 py-2 break-all">
+          {finding.sample}
+        </div>
+      )}
 
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <span className="text-xs text-bambu-gray">

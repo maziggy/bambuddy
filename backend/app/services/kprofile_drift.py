@@ -76,14 +76,19 @@ def note_slot_configured(printer_id: int, ams_id: int, tray_id: int, cali_idx: i
         _default_chosen.discard(key)
 
 
-def forget_printer(printer_id: int) -> None:
+def forget_printer(printer_id: int, *, deleted: bool = False) -> None:
     """Drop the retry bookkeeping for a printer, e.g. when it disconnects.
 
     A reconnect is a fresh start: a profile given up on before may stick now.
-    A deliberate default pick is kept -- it still describes the slot.
+    A deliberate default pick is kept -- it still describes the slot -- unless
+    the printer was deleted: then it describes nothing, and SQLite gives the id
+    to the next printer created.
     """
     for key in [k for k in _watches if k[0] == printer_id]:
         del _watches[key]
+    if deleted:
+        for key in [k for k in _default_chosen if k[0] == printer_id]:
+            _default_chosen.discard(key)
 
 
 def _selection_lost(tray: dict) -> bool:

@@ -15,22 +15,19 @@ import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 
-const permissions = { granted: ['camera:view', 'settings:update'] as string[] };
+const permissions = { granted: ['printers:read', 'camera:view', 'settings:update'] as string[] };
 
 const mockUseAuth = {
   user: { id: 1, username: 'operator', permissions: [] as string[] },
   authEnabled: true,
-  requiresSetup: false,
   loading: false,
   isAdmin: false,
   login: vi.fn(),
   loginWithToken: vi.fn(),
   logout: vi.fn(),
-  refreshUser: vi.fn(),
   refreshAuth: vi.fn(),
   hasPermission: vi.fn((permission: string) => permissions.granted.includes(permission)),
   hasAnyPermission: vi.fn(() => true),
-  hasAllPermissions: vi.fn(() => true),
   canModify: vi.fn(() => true),
 };
 
@@ -96,6 +93,9 @@ function renderPage(storedMode: 'window' | 'embedded' = 'window') {
 /** The camera icon, whichever of the two modes it currently promises. */
 async function cameraIcon(): Promise<HTMLElement> {
   await waitFor(() => expect(document.getElementById('printer-card-1')).not.toBeNull());
+  // The camera controls stay disabled until the printer's status says it is
+  // connected; status arrives a moment after the card.
+  await waitFor(() => expect(screen.getByLabelText('Camera View Mode')).not.toBeDisabled());
   const el =
     screen.queryByTitle('Open camera in new window') ?? screen.queryByTitle('Open camera overlay');
   expect(el).not.toBeNull();
@@ -119,7 +119,7 @@ const storage = new Map<string, string>();
 describe('PrintersPage — camera split button', () => {
   beforeEach(() => {
     settingsWrites.length = 0;
-    permissions.granted = ['camera:view', 'settings:update'];
+    permissions.granted = ['printers:read', 'camera:view', 'settings:update'];
     storage.clear();
     vi.mocked(localStorage.getItem).mockImplementation((key: string) => storage.get(key) ?? null);
     vi.mocked(localStorage.setItem).mockImplementation((key: string, value: string) => {
@@ -212,7 +212,7 @@ describe('PrintersPage — camera split button', () => {
   it('still applies the pick for a user who cannot write settings', async () => {
     // A viewer has camera:view but not settings:update. Their choice has to
     // stick locally, or the menu would appear to do nothing on the next click.
-    permissions.granted = ['camera:view'];
+    permissions.granted = ['printers:read', 'camera:view'];
     renderPage('window');
     await openModeMenu();
     fireEvent.click(await screen.findByText(/Embedded Overlay/));

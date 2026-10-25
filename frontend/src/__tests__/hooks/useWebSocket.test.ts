@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor, act, screen } from '@testing-library/react';
+import { renderHook, act, screen } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '../../contexts/ToastContext';
@@ -250,27 +250,6 @@ describe('useWebSocket hook', () => {
       // GHSA-r2qv: the ws-token mint result is appended as ?token=...
       expect(ws.url).toContain('token=test-ws-token');
     });
-
-    it('reports connected state when WebSocket opens', async () => {
-      const { useWebSocket } = await import('../../hooks/useWebSocket');
-
-      const { result } = renderHook(() => useWebSocket(), {
-        wrapper: createWrapper(queryClient),
-      });
-
-      // Initially not connected
-      expect(result.current.isConnected).toBe(false);
-
-      // Simulate connection opening
-      const ws = await waitForWs();
-      act(() => {
-        ws.open();
-      });
-
-      await waitFor(() => {
-        expect(result.current.isConnected).toBe(true);
-      });
-    });
   });
 
   describe('message handling', () => {
@@ -468,6 +447,30 @@ describe('useWebSocket hook', () => {
       vi.unstubAllGlobals();
     });
 
+    it('relays a plate check that could not run to the layout', async () => {
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      const received: unknown[] = [];
+      const listener = (event: Event) => received.push((event as CustomEvent).detail);
+      window.addEventListener('plate-check-failed', listener);
+
+      renderHook(() => useWebSocket(), { wrapper: createWrapper(queryClient) });
+      const ws = await waitForWs();
+      act(() => {
+        ws.open();
+      });
+      act(() => {
+        ws.simulateMessage({
+          type: 'plate_check_failed',
+          printer_id: 3,
+          printer_name: 'X1C',
+          reason: 'no_camera_frame',
+        });
+      });
+      window.removeEventListener('plate-check-failed', listener);
+
+      expect(received).toEqual([{ printer_id: 3, printer_name: 'X1C', reason: 'no_camera_frame' }]);
+    });
+
     it('invalidates inventory queries on inventory_changed message', async () => {
       vi.useFakeTimers();
       const { useWebSocket } = await import('../../hooks/useWebSocket');
@@ -488,8 +491,9 @@ describe('useWebSocket hook', () => {
         ws.simulateMessage({ type: 'inventory_changed' });
       });
 
+      // 3 s debounce, then one key every 500 ms.
       await act(async () => {
-        vi.advanceTimersByTime(5000);
+        vi.advanceTimersByTime(6000);
       });
 
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inventory-spools'] });
@@ -500,6 +504,34 @@ describe('useWebSocket hook', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inventory-suppliers'] });
       // The per-material-number aggregate is derived from the same rows (#2870).
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['material-number-stats'] });
+      // A weight synced or weighed elsewhere reaches printer cards through the slot rows (WU-9).
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['spool-assignments'] });
+
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
+    it("refreshes the slot rows when a print's usage is logged", async () => {
+      // The printer card reads a spool's remaining weight from the slot rows;
+      // a finished print is the most common weight change.
+      vi.useFakeTimers();
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+      renderHook(() => useWebSocket(), { wrapper: createWrapper(queryClient) });
+      const ws = await waitForWs();
+      act(() => {
+        ws.open();
+      });
+
+      act(() => {
+        ws.simulateMessage({ type: 'spool_usage_logged', data: {} });
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(6000);
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inventory-spools'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['spool-assignments'] });
 
       vi.useRealTimers();
       vi.unstubAllGlobals();
@@ -597,6 +629,9 @@ describe('useWebSocket hook', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['slotPresets'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['spool-assignments'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['spoolman-slot-assignments'] });
+      // The print dialog prices each slot and shows its grams from this one,
+      // in both modes; an open dialog kept the previous spool's figures.
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['printer-inventory-remain'] });
 
       vi.useRealTimers();
       vi.unstubAllGlobals();
@@ -713,7 +748,6 @@ describe('useWebSocket hook', () => {
             printer_name: 'Printer A',
             slot: 'A1',
             verified: false,
-            saw_tray: true,
           });
         });
       }).not.toThrow();
@@ -990,49 +1024,6 @@ describe('useWebSocket hook', () => {
     });
   });
 
-  describe('sendMessage', () => {
-    it('sends JSON message when connected', async () => {
-      const { useWebSocket } = await import('../../hooks/useWebSocket');
-
-      const { result } = renderHook(() => useWebSocket(), {
-        wrapper: createWrapper(queryClient),
-      });
-
-      const ws = await waitForWs();
-
-      // Open connection
-      act(() => {
-        ws.open();
-      });
-
-      act(() => {
-        result.current.sendMessage({ type: 'test', data: 'hello' });
-      });
-
-      expect(ws.send).toHaveBeenCalledWith(
-        JSON.stringify({ type: 'test', data: 'hello' })
-      );
-    });
-
-    it('does not send when disconnected', async () => {
-      const { useWebSocket } = await import('../../hooks/useWebSocket');
-
-      const { result } = renderHook(() => useWebSocket(), {
-        wrapper: createWrapper(queryClient),
-      });
-
-      const ws = await waitForWs();
-
-      // Don't open connection - still in CONNECTING state
-
-      act(() => {
-        result.current.sendMessage({ type: 'test' });
-      });
-
-      expect(ws.send).not.toHaveBeenCalled();
-    });
-  });
-
   describe('reconnection', () => {
     it('reconnects after connection closes', async () => {
       vi.useFakeTimers();
@@ -1072,11 +1063,39 @@ describe('useWebSocket hook', () => {
       vi.useRealTimers();
     });
 
-    it('does NOT reconnect after an auth-rejection close (4401)', async () => {
-      // Regression: a 4401 (ws-token invalid/expired or caller lacks
-      // WEBSOCKET_CONNECT) used to reschedule connect() every 3s, spamming
-      // /auth/ws-token forever. It must be terminal now.
+    it.each([
+      ['spoolbuddy_tag_link_failed', 'spoolbuddy-tag-link-failed'],
+      ['spoolman_unavailable', 'spoolman-unavailable'],
+      ['spoolbuddy_lookup_error', 'spoolbuddy-lookup-error'],
+    ])('passes %s on to the page as %s', async (type, eventName) => {
       vi.useFakeTimers();
+      const listener = vi.fn();
+      window.addEventListener(eventName, listener);
+
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      renderHook(() => useWebSocket(), { wrapper: createWrapper(queryClient) });
+      await vi.advanceTimersByTimeAsync(0);
+      const ws = wsInstances[wsInstances.length - 1]!;
+      act(() => {
+        ws.open();
+        ws.simulateMessage({ type, device_id: 'sb-1', spool_id: 7, reason: 'spool_not_found' });
+      });
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect((listener.mock.calls[0][0] as CustomEvent).detail).toMatchObject({ type, device_id: 'sb-1' });
+
+      window.removeEventListener(eventName, listener);
+      vi.useRealTimers();
+    });
+
+    it('after a 4401 asks for an auth re-check and reconnects with a fresh token', async () => {
+      // The server closes 4401 when the session ended (password change, reset,
+      // deactivation), auth was turned on, or a scope refresh failed. A session
+      // that is still valid reconnects; one that ended fails the token mint,
+      // and the re-check sends the tab to the login page.
+      vi.useFakeTimers();
+      const recheck = vi.fn();
+      window.addEventListener('auth:recheck', recheck);
 
       const { useWebSocket } = await import('../../hooks/useWebSocket');
       renderHook(() => useWebSocket(), { wrapper: createWrapper(queryClient) });
@@ -1086,27 +1105,142 @@ describe('useWebSocket hook', () => {
       act(() => {
         firstWs.open();
       });
-
       const instanceCountBefore = wsInstances.length;
 
-      // Server rejects auth.
       act(() => {
         firstWs.simulateClose(4401);
       });
+      expect(recheck).toHaveBeenCalledTimes(1);
 
-      // No reconnect even after the 3s window elapses.
       await vi.advanceTimersByTimeAsync(3000);
-      expect(wsInstances.length).toBe(instanceCountBefore);
+      expect(wsInstances.length).toBe(instanceCountBefore + 1);
+
+      window.removeEventListener('auth:recheck', recheck);
+      vi.useRealTimers();
+    });
+
+    it('backs off when the reconnect is refused with 4401 again, instead of looping', async () => {
+      // Regression: a 4401 used to reschedule connect() every 3s, spamming
+      // /auth/ws-token forever. A socket closed with 4401 again before its
+      // first message (the server's check after accepting it) doubles the wait
+      // (capped), so a failure that clears (a database hiccup) still recovers.
+      vi.useFakeTimers();
+
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      renderHook(() => useWebSocket(), { wrapper: createWrapper(queryClient) });
+
+      await vi.advanceTimersByTimeAsync(0);
+      const firstWs = wsInstances[wsInstances.length - 1]!;
+      act(() => {
+        firstWs.open();
+        firstWs.simulateClose(4401);
+      });
+      await vi.advanceTimersByTimeAsync(3000);
+      const retry = wsInstances[wsInstances.length - 1]!;
+      expect(retry).not.toBe(firstWs);
+      const instanceCountBefore = wsInstances.length;
+
+      act(() => {
+        retry.open();
+        retry.simulateClose(4401); // refused again before any message
+      });
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(wsInstances.length).toBe(instanceCountBefore); // not after 3 s
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(wsInstances.length).toBe(instanceCountBefore + 1); // after 6 s
 
       vi.useRealTimers();
     });
 
-    it('does NOT open a socket or reconnect when ws-token mint returns 403', async () => {
+    it('backs off when the handshake keeps failing (a refusal shows as 1006)', async () => {
+      // The server refuses a socket before accepting it, which the browser
+      // reports as 1006 with no open, like a server that is down. Retrying
+      // every 3 s would mint a ws-token per tab every 3 s while it lasts.
+      vi.useFakeTimers();
+
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      renderHook(() => useWebSocket(), { wrapper: createWrapper(queryClient) });
+
+      await vi.advanceTimersByTimeAsync(0);
+      act(() => {
+        wsInstances[wsInstances.length - 1]!.simulateClose(1006); // never opened
+      });
+      await vi.advanceTimersByTimeAsync(3000);
+      const second = wsInstances[wsInstances.length - 1]!;
+      const count = wsInstances.length;
+      act(() => {
+        second.simulateClose(1006); // refused again
+      });
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(wsInstances.length).toBe(count); // not after 3 s
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(wsInstances.length).toBe(count + 1); // after 6 s
+
+      vi.useRealTimers();
+    });
+
+    it('allows a retry again once a reconnected socket was admitted', async () => {
+      vi.useFakeTimers();
+
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      renderHook(() => useWebSocket(), { wrapper: createWrapper(queryClient) });
+
+      await vi.advanceTimersByTimeAsync(0);
+      const firstWs = wsInstances[wsInstances.length - 1]!;
+      act(() => {
+        firstWs.open();
+        firstWs.simulateClose(4401);
+      });
+      await vi.advanceTimersByTimeAsync(3000);
+      const second = wsInstances[wsInstances.length - 1]!;
+      act(() => {
+        second.open();
+        second.simulateMessage({ type: 'pong' }); // admitted
+        second.simulateClose(4401); // a later, separate rejection
+      });
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(wsInstances[wsInstances.length - 1]).not.toBe(second);
+
+      vi.useRealTimers();
+    });
+
+    it('asks for an auth re-check when the ws-token mint returns 401', async () => {
+      // A tab opened while auth was off, whose socket was down when auth was
+      // turned on: the mint answers 401 "Authentication required", which does
+      // not count as a sign-out in request(). Without a re-check the tab froze.
+      vi.useFakeTimers();
+      const recheck = vi.fn();
+      window.addEventListener('auth:recheck', recheck);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => ({
+          ok: false,
+          status: 401,
+          statusText: 'Unauthorized',
+          headers: { get: () => null },
+          json: async () => ({ detail: 'Authentication required' }),
+        })),
+      );
+
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+      renderHook(() => useWebSocket(), { wrapper: createWrapper(queryClient) });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(recheck).toHaveBeenCalledTimes(1);
+      expect(wsInstances.length).toBe(0);
+
+      window.removeEventListener('auth:recheck', recheck);
+      vi.useRealTimers();
+    });
+
+    it('does NOT open a socket or reconnect when ws-token mint returns 403, but re-checks auth', async () => {
       // Mike/Forge's case: an authenticated user whose group lacks
       // WEBSOCKET_CONNECT. POST /auth/ws-token returns 403; the hook must NOT
       // fall through to a tokenless socket (server closes it 4401) and must NOT
       // enter the reconnect loop — it degrades to REST polling instead.
       vi.useFakeTimers();
+      const recheck = vi.fn();
+      window.addEventListener('auth:recheck', recheck);
 
       vi.stubGlobal(
         'fetch',
@@ -1123,10 +1257,15 @@ describe('useWebSocket hook', () => {
       renderHook(() => useWebSocket(), { wrapper: createWrapper(queryClient) });
 
       // Flush the token-mint rejection, then let the (would-be) reconnect
-      // window pass. No socket should ever be constructed.
+      // window pass. No socket should ever be constructed. Auth is re-checked:
+      // a 403 also means an API key (a kiosk) whose owner was deactivated while
+      // its socket was down, which then goes to the login; a user who only
+      // lacks the permission gets their user back and nothing changes.
       await vi.advanceTimersByTimeAsync(0);
       await vi.advanceTimersByTimeAsync(3000);
       expect(wsInstances.length).toBe(0);
+      expect(recheck).toHaveBeenCalledTimes(1);
+      window.removeEventListener('auth:recheck', recheck);
 
       vi.useRealTimers();
     });

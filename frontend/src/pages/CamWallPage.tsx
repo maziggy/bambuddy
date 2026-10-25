@@ -28,6 +28,7 @@ import { CAM_WALL_TILE_SIZES, DEFAULT_CAM_WALL_TILE_SIZE } from '../components/c
 import { type CameraTileStatusMode } from '../components/CameraTile';
 import { api, setStreamToken } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import { AuthRetrying } from '../components/AuthRetrying';
 
 // Kiosk polling cadence. Matches the staleTime the in-page wall runs at, so a
 // tile's chip is never more stale than it would be on the Printers page.
@@ -71,7 +72,7 @@ function tileSizeFrom(params: URLSearchParams): number {
 export function CamWallPage() {
   const { t } = useTranslation();
   const location = useLocation();
-  const { authEnabled, loading: authLoading, user } = useAuth();
+  const { authEnabled, loading: authLoading, user, authUnconfirmed } = useAuth();
   const [searchParams] = useSearchParams();
 
   const token = searchParams.get('token');
@@ -154,6 +155,10 @@ export function CamWallPage() {
         {t('common.loading')}
       </div>
     );
+  }
+
+  if (!kiosk && authUnconfirmed) {
+    return <AuthRetrying />;
   }
 
   // No token and no session: this is just a normal page of the app.

@@ -268,10 +268,9 @@ async def _local_label_data(spool_ids: list[int], request: Request, db: AsyncSes
 
 
 async def _spoolman_label_data(spool_ids: list[int], request: Request, db: AsyncSession) -> list[LabelData]:
-    """The Spoolman client doesn't expose a per-id endpoint, so this fetches the
-    full spool list and filters in-memory. For typical libraries (~50 spools)
-    that's negligible; for very large libraries this is the trade-off until
-    Spoolman gains a bulk filter.
+    """Fetches the full spool list once and filters in-memory, rather than one
+    request per id. Archived spools included: Spoolman leaves them out of its
+    plain list, and the Inventory page can show and select them (SM-C12).
     """
     spoolman_on = (await get_setting(db, "spoolman_enabled") or "").lower() == "true"
     if not spoolman_on:
@@ -282,7 +281,7 @@ async def _spoolman_label_data(spool_ids: list[int], request: Request, db: Async
         raise HTTPException(503, "Spoolman not reachable")
 
     try:
-        all_spools = await client.get_spools()
+        all_spools = await client.get_all_spools(allow_archived=True)
     except Exception as exc:
         logger.warning("Spoolman fetch failed during label render: %s", exc)
         raise HTTPException(502, "Failed to fetch spools from Spoolman") from exc
@@ -300,7 +299,7 @@ async def _spoolman_label_data(spool_ids: list[int], request: Request, db: Async
 async def render_local_inventory_labels(
     body: LabelRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> Response:
     """Render labels for spools in the local inventory."""
@@ -312,7 +311,7 @@ async def render_local_inventory_labels(
 async def preview_local_inventory_label(
     body: LabelPreviewRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> Response:
     """One label for a local spool, as a PNG, for the picker's preview."""
@@ -324,7 +323,7 @@ async def preview_local_inventory_label(
 async def render_spoolman_labels(
     body: LabelRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> Response:
     """Render labels for spools tracked in Spoolman."""
@@ -336,7 +335,7 @@ async def render_spoolman_labels(
 async def preview_spoolman_label(
     body: LabelPreviewRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> Response:
     """One label for a Spoolman spool, as a PNG, for the picker's preview."""

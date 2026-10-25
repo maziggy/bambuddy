@@ -34,16 +34,21 @@ Design notes worth knowing before editing:
 import asyncio
 import json
 import logging
+import math
 import os
 import re
+from contextvars import ContextVar
 from dataclasses import dataclass, field as dataclasses_field
 from datetime import datetime, timezone
 
 import httpx
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes._spoolman_helpers import assert_safe_spoolman_url
 from backend.app.core.database import async_session
+from backend.app.core.printer_scope import drop_printers_from_obico
 from backend.app.models.archive import PrintArchive
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
 from backend.app.models.printer import Printer
@@ -52,9 +57,13 @@ from backend.app.models.settings import Settings
 from backend.app.models.spool import Spool
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
+from backend.app.schemas.auth import SMTPSettings
 from backend.app.schemas.github_backup import RestoreCategory
+from backend.app.schemas.settings import ADMIN_ONLY_SETTING_KEYS, AppSettings, AppSettingsUpdate
 from backend.app.services.git_providers.factory import get_provider_backend
+from backend.app.services.model_providers.manyfold.config import normalize_url
 from backend.app.services.printer_manager import printer_manager
+from backend.app.services.secret_fields import SETTINGS_SECRETS, SMTP_DESTINATIONS, is_secret_setting_key
 
 logger = logging.getLogger(__name__)
 
@@ -67,19 +76,13 @@ ARCHIVES_PATH = "archives/print_history.json"
 # kprofiles/{printer_serial}/{nozzle_diameter}.json
 _KPROFILE_PATH_RE = re.compile(r"^kprofiles/([^/]+)/([^/]+)\.json$")
 
-# Settings keys the backup collector already refuses to write. Applied again on
-# the read side because a backup taken before that denylist existed can still
-# contain them, and a restore must not resurrect a stale credential.
-_SENSITIVE_SETTING_KEYS = {"bambu_cloud_token", "auth_secret_key"}
-
-# The primary refusal, not a backstop for the set above. The collector filters
-# exactly bambu_cloud_token and auth_secret_key, so every other credential —
-# mqtt_password, ldap_bind_password, ha_token, prometheus_token — is present in
-# a current backup and is skipped only because its key matches a hint here.
-# _COMPANION_CREDENTIALS sits downstream of that: it withholds a toggle when the
-# credential it needs was refused, so shortening this tuple would both write a
-# stale credential and quietly make that rule inert.
-_SECRET_KEY_HINTS = ("token", "secret", "password", "access_code", "api_key", "passphrase")
+# Settings keys holding a credential are refused by name (is_secret_setting_key,
+# shared with the backup collector). A current backup carries them only as the
+# placeholder; one taken before that can still hold the values, and a restore
+# must not resurrect a stale credential. _COMPANION_CREDENTIALS sits downstream
+# of that: it withholds a toggle when the credential it needs was refused, so
+# narrowing the predicate would both write a stale credential and quietly make
+# that rule inert.
 
 # Settings the MQTT relay reads only when it is (re)configured, so restoring the
 # rows is not enough on its own. Mirrors the set the settings PUT handler
@@ -141,6 +144,18 @@ _PROTECTED_SETTING_KEYS = {
 # the directory being pointed at, so they need no bind credential from us.
 _PROTECTED_SETTING_PREFIXES = ("ldap_",)
 
+# Restoring as a non-admin: the settings only an admin may change through the
+# settings page (ADMIN_ONLY_SETTING_KEYS) and the mail server's, which only an
+# admin may set (routes/auth.update_smtp_settings), are kept as they are here.
+# A restore is otherwise a way around those checks. Set by preview() and
+# run_restore() for the call; an admin's restore is unchanged.
+_restoring_as_admin: ContextVar[bool] = ContextVar("restoring_as_admin", default=True)
+
+
+def _admin_only_for_restore(key: str) -> bool:
+    return key in ADMIN_ONLY_SETTING_KEYS or key in _EXTRA_RESTORABLE_KEYS
+
+
 # Nozzle diameters the backup collector iterates. A path outside this set means
 # the backup was written by a newer version, so accept it rather than dropping
 # data, but keep the list for validation messages.
@@ -190,8 +205,7 @@ def _created_at_matches(row, created_at: datetime | None) -> bool:
 
 
 def _is_blocked_setting_key(key: str) -> bool:
-    lowered = key.lower()
-    return key in _SENSITIVE_SETTING_KEYS or any(hint in lowered for hint in _SECRET_KEY_HINTS)
+    return is_secret_setting_key(key)
 
 
 def _is_protected_setting_key(key: str) -> bool:
@@ -200,6 +214,117 @@ def _is_protected_setting_key(key: str) -> bool:
     # its casing is whatever the file says. An exact-match name stays exact —
     # those four are ours and are only ever written lowercase.
     return key in _PROTECTED_SETTING_KEYS or key.lower().startswith(_PROTECTED_SETTING_PREFIXES)
+
+
+# A user's email code sign-in switch. Per user, and it decides how that user
+# signs in: never taken from a backup, whatever its value.
+_TWO_FACTOR_KEY = re.compile(r"^user_\d+_email_2fa_enabled$")
+
+# Settings kept outside AppSettings that a restore writes, each checked as the
+# editor that owns it checks it: (model, field) for a field of that editor's
+# request model. Anything else outside AppSettings is runtime state, a login's
+# account state, automation that needs its own permission (the purge
+# schedules), a migration flag or unknown, and is not restored.
+_EXTRA_RESTORABLE_KEYS: dict[str, tuple[type[BaseModel], str]] = {
+    key: (SMTPSettings, key)
+    for key in (
+        "smtp_host",
+        "smtp_port",
+        "smtp_security",
+        "smtp_auth_enabled",
+        "smtp_from_email",
+        "smtp_from_name",
+        "smtp_username",
+        "smtp_use_tls",
+    )
+}
+
+# Settings that decide where Bambuddy sends something: the links in its emails
+# (password reset and welcome links carry a sign-in token), the mail server
+# itself, the full database backups, printer status, camera snapshots, model
+# files, inventory. A backup naming another address would send it there, so a
+# value that differs from this instance's is kept as it is here.
+_ADDRESS_KEYS = (
+    "external_url",
+    "smtp_host",
+    "smtp_port",
+    "smtp_security",
+    "smtp_use_tls",
+    "local_backup_path",
+    "mqtt_broker",
+    "mqtt_port",
+    "mqtt_use_tls",
+    "ha_url",
+    "obico_ml_url",
+    "bambuddy_internal_url",
+    "orcaslicer_api_url",
+    "bambu_studio_api_url",
+    "spoolman_url",
+    "manyfold_url",
+)
+
+# Restored without a model check: the Manyfold editor checks the URL with
+# normalize_url and takes the client id as text.
+_MANYFOLD_URL_KEY = "manyfold_url"
+_MANYFOLD_CLIENT_ID_KEY = "manyfold_client_id"
+
+# The settings whose saved null (the text "None") the settings reader reads as
+# null. Anywhere else it is refused, as the editor refuses a null.
+_READS_A_SAVED_NULL = frozenset({"ams_temp_alarm", "default_printer_id", "open_in_slicer"})
+
+# Settings that no longer exist. Older backups still hold them; a restore drops
+# them without listing them as skipped.
+_RETIRED_SETTING_KEYS = frozenset({"library_archive_mode"})
+
+
+def is_restorable_setting_key(key: str) -> bool:
+    """Whether a restore writes this settings key at all (with a value its
+    editor accepts). The Git backup holds only these, so nothing a restore
+    would refuse as unknown leaves the instance."""
+    return (
+        key in AppSettingsUpdate.model_fields
+        or key in _EXTRA_RESTORABLE_KEYS
+        or key in (_MANYFOLD_URL_KEY, _MANYFOLD_CLIENT_ID_KEY)
+    )
+
+
+def _stored_form(value: object) -> str:
+    """A checked value as its editor stores it."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "None"
+    return str(value)
+
+
+def _checked_setting(key: str, value: object) -> tuple[bool | None, str]:
+    """A restored value checked as its editor checks it.
+
+    ``(True, stored form)`` if the editor would accept it, ``(False, "")`` if
+    not, ``(None, "")`` if no editor writes the key, so it is not restored.
+    The stored form is what the editor would write: a value the check only
+    coerced ("587.0", "yes") is written as the editor writes it.
+    """
+    candidate = None if value == "None" and key in _READS_A_SAVED_NULL else value
+    try:
+        if key in AppSettingsUpdate.model_fields:
+            checked = getattr(AppSettingsUpdate.model_validate({key: candidate}), key)
+            # Checked where it is used rather than where it is saved: checked
+            # here as well, before it is written.
+            if key == "spoolman_url" and checked:
+                assert_safe_spoolman_url(str(checked))
+            return True, _stored_form(checked)
+        if key in _EXTRA_RESTORABLE_KEYS:
+            model, field = _EXTRA_RESTORABLE_KEYS[key]
+            instance = model.__pydantic_validator__.validate_assignment(model.model_construct(), field, candidate)
+            return True, _stored_form(getattr(instance, field))
+        if key == _MANYFOLD_URL_KEY:
+            return True, normalize_url(str(candidate)) if candidate else ""
+    except ValueError:
+        return False, ""
+    if key == _MANYFOLD_CLIENT_ID_KEY:
+        return True, str(value)
+    return None, ""
 
 
 # There used to be an ``_is_skipped_setting_key`` here, the union of the two
@@ -223,10 +348,6 @@ def _is_protected_setting_key(key: str) -> bool:
 #   * the other four switch an integration on with no way to authenticate to it,
 #     which breaks the login path (LDAP) or the connection (MQTT, HA).
 #
-# virtual_printer_enabled is largely vestigial post-migration — core/database.py
-# copies the rows into the virtual_printers table — but it is the same shape, and
-# refusing a vestigial toggle is a harmless no-op.
-#
 # ldap_enabled is deliberately NOT here. It was, paired with
 # ldap_bind_password — but this rule judges availability ("will the integration
 # work?"), and that is the wrong question for an authentication source. An
@@ -238,7 +359,6 @@ _COMPANION_CREDENTIALS = {
     "prometheus_enabled": "prometheus_token",
     "mqtt_enabled": "mqtt_password",
     "ha_enabled": "ha_token",
-    "virtual_printer_enabled": "virtual_printer_access_code",
 }
 
 # Companion credentials a reader takes from the environment rather than from a
@@ -266,6 +386,17 @@ _COMPANION_CREDENTIAL_ENV = {"ha_token": "HA_TOKEN"}
 # skips this condition and is judged on local state alone.
 _COMPANION_EXPOSURE_TOGGLES = frozenset({"prometheus_enabled"})
 
+# Setting -> the credentials it decides the destination of. smtp_use_tls
+# decides the SMTP security mode when smtp_security is not set.
+_DESTINATION_SECRETS: dict[str, tuple[str, ...]] = {}
+for _secret, _fields in {
+    **SETTINGS_SECRETS,
+    "smtp_password": (*SMTP_DESTINATIONS, "smtp_use_tls"),
+    "manyfold_client_secret": ("manyfold_url",),
+}.items():
+    for _field in _fields:
+        _DESTINATION_SECRETS[_field] = (*_DESTINATION_SECRETS.get(_field, ()), _secret)
+
 
 def _setting_value_is_true(value: object) -> bool:
     """True if a settings *payload* value would be stored as "on".
@@ -280,6 +411,15 @@ def _setting_value_is_true(value: object) -> bool:
     if value is None:
         return False
     return str(value).strip().lower() == "true"
+
+
+def _as_setting_text(value: object) -> str:
+    """A setting as its row stores it, so a backup value compares with a local one."""
+    if value is None:
+        return ""
+    if isinstance(value, bool) or str(value).lower() in ("true", "false"):
+        return str(value).lower()
+    return str(value)
 
 
 def _is_usable_credential(value: object) -> bool:
@@ -301,20 +441,45 @@ class _SettingsPlan:
     change. The companion bucket is why this needs a session at all: unlike the
     two name-based buckets it depends on local database state.
 
-    The three buckets are disjoint — a key is classified once, in order.
+    The buckets are disjoint — a key is classified once, in order. The
+    destination bucket depends on local state as well.
     """
 
     blocked: tuple[str, ...] = ()
     protected: tuple[str, ...] = ()
     companion: tuple[str, ...] = ()
+    destination: tuple[str, ...] = ()
+    two_factor: tuple[str, ...] = ()
+    invalid: tuple[str, ...] = ()
+    unknown: tuple[str, ...] = ()
+    # Bambuddy's own one-shot flags (a leading underscore): refused without a
+    # word, as every backup carries them.
+    internal: tuple[str, ...] = ()
+    address: tuple[str, ...] = ()
+    # Each key to write, in the form its editor stores.
+    stored: dict[str, str] = dataclasses_field(default_factory=dict)
+
+    @property
+    def _buckets(self) -> tuple[tuple[str, ...], ...]:
+        return (
+            self.blocked,
+            self.protected,
+            self.companion,
+            self.destination,
+            self.two_factor,
+            self.invalid,
+            self.unknown,
+            self.internal,
+            self.address,
+        )
 
     @property
     def refused(self) -> frozenset[str]:
-        return frozenset(self.blocked) | frozenset(self.protected) | frozenset(self.companion)
+        return frozenset(key for bucket in self._buckets for key in bucket)
 
     @property
     def refused_count(self) -> int:
-        return len(self.blocked) + len(self.protected) + len(self.companion)
+        return sum(len(bucket) for bucket in self._buckets)
 
 
 @dataclass(frozen=True)
@@ -328,6 +493,31 @@ class _Detail:
     code: str
     message: str
     params: dict[str, str | int] = dataclasses_field(default_factory=dict)
+
+
+# The archive editor's own bound on grams (ArchiveUpdate).
+_MAX_RESTORED_GRAMS = 100_000
+# What a 32-bit integer column takes (PostgreSQL rejects more).
+_MAX_RESTORED_INT = 2**31 - 1
+
+
+def _restored_number(value, *, maximum: float | None = None, integer: bool = False):
+    """A number from a backup as the database should hold it, or None.
+
+    Only a finite real number of at least 0 (and at most ``maximum``) passes:
+    a damaged or hand-edited backup must not put text, negative or absurd
+    values into the filament and cost totals.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if integer and maximum is None:
+        maximum = _MAX_RESTORED_INT
+    try:
+        if not math.isfinite(value) or value < 0 or (maximum is not None and value > maximum):
+            return None
+        return int(value) if integer else float(value)
+    except OverflowError:  # an integer too large for a float
+        return None
 
 
 class _CategoryTally:
@@ -484,6 +674,11 @@ class GitHubRestoreService:
         """
         blocked: list[str] = []
         protected: list[str] = []
+        two_factor: list[str] = []
+        invalid: list[str] = []
+        unknown: list[str] = []
+        internal: list[str] = []
+        stored: dict[str, str] = {}
         # Toggle -> credential for the pairs that survived the payload-only
         # conditions and still need local state to judge.
         candidates: dict[str, str] = {}
@@ -494,18 +689,37 @@ class GitHubRestoreService:
             if _is_blocked_setting_key(key):
                 blocked.append(key)
                 continue
-            if _is_protected_setting_key(key):
+            if _is_protected_setting_key(key) or (not _restoring_as_admin.get() and _admin_only_for_restore(key)):
                 protected.append(key)
                 continue
+            if _TWO_FACTOR_KEY.match(key):
+                two_factor.append(key)
+                continue
+            if key.startswith("_"):
+                internal.append(key)
+                continue
+            if key in _RETIRED_SETTING_KEYS:
+                continue
+            # A null is skipped by the restore itself, not refused.
+            if value is not None:
+                valid, form = _checked_setting(key, value)
+                if valid is None:
+                    unknown.append(key)
+                    continue
+                if not valid:
+                    invalid.append(key)
+                    continue
+                stored[key] = form
 
             credential = _COMPANION_CREDENTIALS.get(key)
             if credential is None:
                 continue
             # Turning something *off* is always safe to write.
-            if not _setting_value_is_true(value):
+            # Judged as written: a spelling the check reads as on is stored as on.
+            if not _setting_value_is_true(stored.get(key, value)):
                 continue
             # Expressed as the predicate rather than assumed, so the map cannot
-            # go quietly inert if _SECRET_KEY_HINTS is ever edited: a credential
+            # go quietly inert if the secret hints are ever edited: a credential
             # the restore is willing to write travels with its toggle.
             if not _is_blocked_setting_key(credential):
                 continue
@@ -520,11 +734,36 @@ class GitHubRestoreService:
                 continue
             candidates[key] = credential
 
-        if not candidates:
-            return _SettingsPlan(blocked=tuple(blocked), protected=tuple(protected))
+        # Settings that decide where a credential is sent, which the payload
+        # sets. Judged against local state below.
+        destinations = {
+            key: secrets
+            for key, value in values.items()
+            if value is not None
+            and (secrets := _DESTINATION_SECRETS.get(key))
+            and key not in protected
+            and key not in invalid
+            and key not in unknown
+            and key not in internal
+        }
+
+        addresses = [key for key in _ADDRESS_KEYS if key in stored]
+
+        if not candidates and not destinations and not addresses:
+            return _SettingsPlan(
+                blocked=tuple(blocked),
+                protected=tuple(protected),
+                two_factor=tuple(two_factor),
+                invalid=tuple(invalid),
+                unknown=tuple(unknown),
+                internal=tuple(internal),
+                stored=stored,
+            )
 
         # One SELECT covering both halves of every candidate pair.
-        wanted = set(candidates) | set(candidates.values())
+        wanted = set(candidates) | set(candidates.values()) | set(destinations)
+        wanted |= {secret for secrets in destinations.values() for secret in secrets}
+        wanted |= set(addresses)
         rows = await db.execute(select(Settings).where(Settings.key.in_(wanted)))
         local = {row.key: row.value for row in rows.scalars().all()}
 
@@ -542,18 +781,82 @@ class GitHubRestoreService:
                 continue
             companion.append(toggle)
 
+        # A credential kept here does not follow a destination the backup
+        # changes, as the settings editor refuses the same change without the
+        # credential entered again. A token from the environment is the
+        # deployment's own and may follow, as it may there.
+        destination: list[str] = []
+        for key, secrets in destinations.items():
+            kept = [
+                secret
+                for secret in secrets
+                if _is_usable_credential(local.get(secret))
+                and not (
+                    (env_name := _COMPANION_CREDENTIAL_ENV.get(secret))
+                    and _is_usable_credential(os.environ.get(env_name))
+                )
+            ]
+            if not kept:
+                continue
+            if key in local:
+                current = local[key]
+            elif key in AppSettings.model_fields:
+                current = AppSettings.model_fields[key].get_default(call_default_factory=True)
+            else:
+                # No row and no schema default: nothing to compare with, so
+                # counted as a change.
+                destination.append(key)
+                continue
+            if _as_setting_text(stored.get(key, values[key])) != _as_setting_text(current):
+                destination.append(key)
+
+        # Compared as written with this instance's value: its row, else the
+        # schema default, else nothing.
+        address = [
+            key
+            for key in addresses
+            if key not in destination
+            and _as_setting_text(stored[key])
+            != _as_setting_text(
+                local[key]
+                if key in local
+                else AppSettings.model_fields[key].get_default(call_default_factory=True)
+                if key in AppSettings.model_fields
+                else None
+            )
+        ]
+        for key in address:
+            del stored[key]
+
         return _SettingsPlan(
             blocked=tuple(blocked),
             protected=tuple(protected),
             companion=tuple(companion),
+            address=tuple(address),
+            destination=tuple(destination),
+            two_factor=tuple(two_factor),
+            invalid=tuple(invalid),
+            unknown=tuple(unknown),
+            internal=tuple(internal),
+            stored=stored,
         )
 
-    async def preview(self, db: AsyncSession, config: GitHubBackupConfig, ref: str = "HEAD") -> dict:
+    async def preview(
+        self, db: AsyncSession, config: GitHubBackupConfig, ref: str = "HEAD", *, as_admin: bool = True
+    ) -> dict:
         """Report which categories a commit contains, and how much is in each.
 
         Takes a session because the settings count depends on local state — see
         ``_plan_settings``. ``ref`` stays keyword-friendly for callers.
+        ``as_admin`` False counts as a non-admin's restore would write.
         """
+        token = _restoring_as_admin.set(as_admin)
+        try:
+            return await self._preview(db, config, ref)
+        finally:
+            _restoring_as_admin.reset(token)
+
+    async def _preview(self, db: AsyncSession, config: GitHubBackupConfig, ref: str) -> dict:
         resolved, error, commit_info = await self._resolve_ref(config, ref)
         if resolved is None:
             return {"success": False, "message": error, "ref": ref, "categories": []}
@@ -657,7 +960,22 @@ class GitHubRestoreService:
             # policy keys stay unmentioned on purpose.
             plan = await self._plan_settings(db, values)
             detail = None
-            if plan.companion and not plan.blocked:
+            not_restorable = len(plan.two_factor) + len(plan.invalid) + len(plan.unknown) + len(plan.address)
+            if plan.destination:
+                detail = _Detail(
+                    "settingsDestinationWillKeep",
+                    f"{len(plan.destination)} setting(s) will be left as they are - they would send a credential "
+                    "stored here somewhere else; credentials are never restored",
+                    {"destination": len(plan.destination)},
+                )
+            elif not_restorable:
+                detail = _Detail(
+                    "settingsNotRestorableWillSkip",
+                    f"{not_restorable} setting(s) will be skipped - values Settings would not accept, or keys a "
+                    "backup does not restore",
+                    {"count": not_restorable},
+                )
+            elif plan.companion and not plan.blocked:
                 # An exposure toggle becomes a candidate whether or not the
                 # backup carried its credential, so this commit can refuse a
                 # switch without having a single credential-like key to skip —
@@ -734,8 +1052,27 @@ class GitHubRestoreService:
         ref: str,
         categories: list[RestoreCategory],
         overwrite_existing: bool = False,
+        *,
+        as_admin: bool = True,
     ) -> dict:
-        """Apply selected categories from one backup commit."""
+        """Apply selected categories from one backup commit.
+
+        ``as_admin`` False keeps the admin-only settings as they are here
+        (see ``_restoring_as_admin``).
+        """
+        token = _restoring_as_admin.set(as_admin)
+        try:
+            return await self._run_restore(config_id, ref, categories, overwrite_existing)
+        finally:
+            _restoring_as_admin.reset(token)
+
+    async def _run_restore(
+        self,
+        config_id: int,
+        ref: str,
+        categories: list[RestoreCategory],
+        overwrite_existing: bool,
+    ) -> dict:
         # Import locally to avoid a module-level cycle: the backup service takes
         # the mirror-image lock against us.
         from backend.app.services.github_backup import github_backup_service
@@ -1053,10 +1390,37 @@ class GitHubRestoreService:
             started_at = _parse_dt(entry.get("started_at"))
             existing = await self._find_archive(db, entry, started_at)
 
+            numbers = {
+                "print_time_seconds": _restored_number(entry.get("print_time_seconds"), integer=True),
+                "filament_used_grams": _restored_number(entry.get("filament_used_grams"), maximum=_MAX_RESTORED_GRAMS),
+                "cost": _restored_number(entry.get("cost")),
+                "energy_kwh": _restored_number(entry.get("energy_kwh")),
+                "energy_cost": _restored_number(entry.get("energy_cost")),
+                "wear_cost": _restored_number(entry.get("wear_cost")),
+            }
+            if any(entry.get(key) is not None and value is None for key, value in numbers.items()):
+                tally.note(
+                    "archivesNumbersDropped",
+                    "Some archives had grams, costs, energy or print times that are not valid numbers - left empty",
+                )
+            # 0 is a real quantity (a ruined plate, #3051); the archive editor
+            # takes 0..10000. Anything else is the one print it stood for.
+            quantity = _restored_number(entry.get("quantity"), maximum=10_000, integer=True)
+            if quantity is None:
+                quantity = 1
+            # A print running when the backup was made is long over: closed
+            # here the way the stale-archive cleanup closes one. Restored as
+            # running, the next reconnect closed it as a print that had just
+            # failed, with a failure notification and a Print Log row (ST/I7).
+            status = entry.get("status") or "completed"
+            failure_reason = entry.get("failure_reason")
+            backed_up_in_flight = status in ("printing", "paused")
+            if backed_up_in_flight:
+                status, failure_reason = "cancelled", "noStatusUpdate"
             fields = {
                 "print_name": entry.get("print_name"),
-                "print_time_seconds": entry.get("print_time_seconds"),
-                "filament_used_grams": entry.get("filament_used_grams"),
+                "print_time_seconds": numbers["print_time_seconds"],
+                "filament_used_grams": numbers["filament_used_grams"],
                 "filament_type": entry.get("filament_type"),
                 "filament_color": entry.get("filament_color"),
                 "layer_height": entry.get("layer_height"),
@@ -1065,7 +1429,7 @@ class GitHubRestoreService:
                 "bed_temperature": entry.get("bed_temperature"),
                 "nozzle_temperature": entry.get("nozzle_temperature"),
                 "sliced_for_model": entry.get("sliced_for_model"),
-                "status": entry.get("status") or "completed",
+                "status": status,
                 "started_at": started_at,
                 "completed_at": _parse_dt(entry.get("completed_at")),
                 "makerworld_url": entry.get("makerworld_url"),
@@ -1074,12 +1438,12 @@ class GitHubRestoreService:
                 "is_favorite": bool(entry.get("is_favorite")),
                 "tags": entry.get("tags"),
                 "notes": entry.get("notes"),
-                "cost": entry.get("cost"),
-                "failure_reason": entry.get("failure_reason"),
-                "quantity": entry.get("quantity") or 1,
-                "energy_kwh": entry.get("energy_kwh"),
-                "energy_cost": entry.get("energy_cost"),
-                "wear_cost": entry.get("wear_cost"),
+                "cost": numbers["cost"],
+                "failure_reason": failure_reason,
+                "quantity": quantity,
+                "energy_kwh": numbers["energy_kwh"],
+                "energy_cost": numbers["energy_cost"],
+                "wear_cost": numbers["wear_cost"],
             }
 
             printer_id = entry.get("printer_id")
@@ -1181,6 +1545,13 @@ class GitHubRestoreService:
                         "archivesUndeleted",
                         "Archive(s) deleted since the backup are visible again — overwrite was on",
                     )
+                if backed_up_in_flight:
+                    # The local row is that same print, still running or since
+                    # ended: it knows more about its outcome than the backup's
+                    # snapshot of it mid-way. Closing it here would end a live
+                    # print's archive, or overwrite a real result.
+                    for key in ("status", "failure_reason", "completed_at"):
+                        fields.pop(key, None)
                 for key, value in fields.items():
                     setattr(existing, key, value)
                 tally.restored += 1
@@ -1324,6 +1695,14 @@ class GitHubRestoreService:
             for late_field in ("material_number", "category", "low_stock_threshold_pct", "storage_location"):
                 if late_field in entry:
                     fields[late_field] = entry[late_field]
+            # The "Reset Total Consumed" point (WU-7), same late-field rule; a
+            # value that is no amount of filament keeps what the row holds.
+            baseline = _restored_number(entry.get("weight_used_baseline"))
+            if baseline is not None:
+                fields["weight_used_baseline"] = baseline
+            # When it was last used (LU-4), same late-field rule.
+            if "last_used" in entry:
+                fields["last_used"] = _parse_dt(entry.get("last_used"))
             # Last drying (#2863), same late-field rule.
             if "last_dried_at" in entry:
                 fields["last_dried_at"] = _parse_dt(entry.get("last_dried_at"))
@@ -1481,7 +1860,9 @@ class GitHubRestoreService:
 
             old_spool_id = entry.get("spool_id")
             spool_id = spool_id_map.get(old_spool_id) if isinstance(old_spool_id, int) else None
-            if spool_id is None:
+            # Usage of a spool deleted before the backup has no spool, and is
+            # restored without one; only a spool id that resolves to nothing is skipped.
+            if spool_id is None and old_spool_id is not None:
                 # The parent spool never made it into the map: the backup's spool
                 # list didn't include it, or its entry carried no integer id. A
                 # spool that was merely *skipped* (matched locally, overwrite off)
@@ -1527,15 +1908,26 @@ class GitHubRestoreService:
                 # they can still redo the run with both categories ticked.
                 unlinked_archives += 1
 
+            weight_used = _restored_number(entry.get("weight_used"))
+            percent_used = _restored_number(entry.get("percent_used"), integer=True)
+            cost = _restored_number(entry.get("cost"))
+            if any(
+                entry.get(key) is not None and value is None
+                for key, value in (("weight_used", weight_used), ("percent_used", percent_used), ("cost", cost))
+            ):
+                tally.note(
+                    "usageNumbersDropped",
+                    "Some usage entries had weights or costs that are not valid numbers - left empty",
+                )
             row = SpoolUsageHistory(
                 spool_id=spool_id,
                 printer_id=printer_id,
                 print_name=entry.get("print_name"),
                 archive_id=archive_id,
-                weight_used=entry.get("weight_used") or 0,
-                percent_used=entry.get("percent_used") or 0,
+                weight_used=weight_used or 0,
+                percent_used=percent_used or 0,
                 status=entry.get("status") or "completed",
-                cost=entry.get("cost"),
+                cost=cost,
             )
             if created_at is not None:
                 row.created_at = created_at
@@ -1598,16 +1990,20 @@ class GitHubRestoreService:
                 if not overwrite:
                     tally.skipped += 1
                     continue
-                existing.value = str(value)
+                existing.value = plan.stored[key]
                 tally.restored += 1
                 if keys_written is not None:
                     keys_written.add(key)
                 continue
 
-            db.add(Settings(key=key, value=str(value)))
+            db.add(Settings(key=key, value=plan.stored[key]))
             tally.restored += 1
             if keys_written is not None:
                 keys_written.add(key)
+
+        # A backup taken before a printer delete still lists it, and SQLite gives
+        # its id to the next printer created.
+        await drop_printers_from_obico(db)
 
         if plan.blocked:
             tally.note(
@@ -1631,6 +2027,47 @@ class GitHubRestoreService:
                 "integration unauthenticated",
                 keys=keys,
                 count=len(plan.companion),
+            )
+        if plan.two_factor:
+            tally.note(
+                "settingsTwoFactorSkipped",
+                f"{len(plan.two_factor)} email sign-in code setting(s) skipped - each user switches email codes "
+                "on or off in their own account",
+                count=len(plan.two_factor),
+            )
+        if plan.address:
+            keys = ", ".join(sorted(plan.address))
+            tally.note(
+                "settingsAddressKept",
+                f"{keys} left as they are - they decide where Bambuddy sends data, emails or backups; change them "
+                "in Settings",
+                keys=keys,
+                count=len(plan.address),
+            )
+        if plan.invalid:
+            keys = ", ".join(sorted(plan.invalid))
+            tally.note(
+                "settingsInvalidSkipped",
+                f"{keys} skipped - the value in the backup is not one Settings would accept",
+                keys=keys,
+                count=len(plan.invalid),
+            )
+        if plan.unknown:
+            keys = ", ".join(sorted(plan.unknown))
+            tally.note(
+                "settingsUnknownSkipped",
+                f"{keys} skipped - not settings a backup restores (runtime state, account sessions or unknown keys)",
+                keys=keys,
+                count=len(plan.unknown),
+            )
+        if plan.destination:
+            keys = ", ".join(sorted(plan.destination))
+            tally.note(
+                "settingsDestinationKept",
+                f"{keys} left as they are - this instance has a stored credential that would otherwise be sent "
+                "to the address in the backup. Change them in Settings and enter the credential again.",
+                keys=keys,
+                count=len(plan.destination),
             )
 
     async def _reconfigure_mqtt_relay(self, db: AsyncSession, keys_written: set[str], tally: _CategoryTally) -> None:

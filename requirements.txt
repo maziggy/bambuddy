@@ -116,6 +116,10 @@ pyotp>=2.9.0
 # so we don't regress when a downstream loosens its constraint.
 idna>=3.15
 
+# Transitive dep pin (aiohttp, yarl): the floor clears a pip-audit finding
+# (PYSEC-2026-4244) in older releases.
+multidict>=6.9.1
+
 # HTTP client (used for OIDC token exchange)
 httpx>=0.26.0
 
@@ -124,7 +128,7 @@ httpx>=0.26.0
 # same trust store httpx uses — the Windows OS store lacks the Amazon root
 # until CryptoAPI lazily caches it (#2562). Declared explicitly so a future
 # httpx release that drops certifi can't silently break that import.
-certifi>=2024.2.2
+certifi>=2026.10.19
 
 # HTTP client with browser TLS-fingerprint impersonation. Used only for
 # the bambulab.com firmware-download page in services/firmware_check.py:
@@ -168,4 +172,4 @@ httpx>=0.26.0
 # importable for anyone who installs the runtime file alone.
 ruff>=0.8.0
 
-pillow>=12.2.0
+pillow>=13.0.0

@@ -409,7 +409,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - Debug logging toggle with live indicator
 - Live application log viewer with filtering
 - Support bundle generator with comprehensive diagnostics (privacy-filtered)
-- **In-app bug reporting** — Submit bug reports directly from the UI with optional screenshot (upload, paste, or drag & drop), interactive debug log capture (start logging, reproduce at your own pace, stop & submit), and system info. Reports create GitHub issues via a secure relay. Privacy-first: all logs are sanitized and sensitive data (IPs, serials, credentials) is never included.
+- **In-app bug reporting** — Submit bug reports directly from the UI with optional screenshot (upload, paste, or drag & drop), interactive debug log capture (start logging, reproduce at your own pace, stop, then review and submit or discard), and system info. Reports create GitHub issues via a secure relay. Privacy-first: all logs are sanitized and sensitive data (IPs, serials, credentials) is never included.
 
 ### 🔒 Optional Authentication
 - Enable/disable authentication any time
@@ -599,7 +599,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 ## 🚀 Quick Start
 
 ### Requirements
-- Python 3.10+ (3.11/3.12 recommended)
+- Python 3.11+ (3.12 or 3.13 recommended)
 - Bambu Lab printer with **Developer Mode** enabled (see below)
 - **"Store sent files on external storage"** enabled in Bambu Studio/OrcaSlicer
 - Same local network as printer
@@ -757,7 +757,7 @@ git clone https://github.com/maziggy/bambuddy.git
 cd bambuddy
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.lock
 
 # Run (--loop asyncio avoids a uvloop TLS bug that can truncate VP FTP uploads)
 uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --loop asyncio

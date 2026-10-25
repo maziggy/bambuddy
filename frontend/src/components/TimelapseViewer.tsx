@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Download, Film, Play, Pause, SkipBack, SkipForward, Pencil } from 'lucide-react';
 import { Button } from './Button';
 import { TimelapseEditorModal } from './TimelapseEditorModal';
@@ -23,6 +24,7 @@ export function TimelapseViewer({
   onClose,
   onEdit,
 }: TimelapseViewerProps) {
+  const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [playbackRate, setPlaybackRate] = useState(1); // Default to 1x
@@ -107,7 +109,13 @@ export function TimelapseViewer({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
-      <div className="relative bg-bambu-dark-secondary rounded-xl max-w-4xl w-full mx-4 overflow-hidden">
+      {/* Never taller than the screen, so the controls stay reachable whatever
+          the video's shape -- a portrait timelapse from a rotated camera
+          pushed them off the bottom (#3281). */}
+      <div
+        data-testid="timelapse-viewer"
+        className="relative bg-bambu-dark-secondary rounded-xl max-w-4xl w-full mx-4 max-h-[calc(100dvh-2rem)] overflow-y-auto"
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
           <h3 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -118,12 +126,12 @@ export function TimelapseViewer({
             {archiveId && (
               <Button variant="secondary" size="sm" onClick={() => setShowEditor(true)}>
                 <Pencil className="w-4 h-4" />
-                Edit
+                {t('common.edit')}
               </Button>
             )}
             <Button variant="secondary" size="sm" onClick={handleDownload}>
               <Download className="w-4 h-4" />
-              Download
+              {t('common.download')}
             </Button>
             <button
               onClick={onClose}
@@ -140,7 +148,9 @@ export function TimelapseViewer({
             ref={videoRef}
             src={src}
             autoPlay
-            className="w-full rounded-lg"
+            // Leaves room for the header and the controls below it (about
+            // 12rem together); object-contain letterboxes what is left over.
+            className="w-full max-h-[calc(100dvh-14rem)] object-contain bg-black rounded-lg"
             onClick={togglePlay}
           />
 
@@ -174,7 +184,7 @@ export function TimelapseViewer({
                 <button
                   onClick={skipBackward}
                   className="p-2 hover:bg-bambu-dark-tertiary rounded-lg transition-colors"
-                  title="Skip back 5s"
+                  title={t('timelapseViewer.skipBack5s')}
                 >
                   <SkipBack className="w-5 h-5 text-bambu-gray" />
                 </button>
@@ -191,7 +201,7 @@ export function TimelapseViewer({
                 <button
                   onClick={skipForward}
                   className="p-2 hover:bg-bambu-dark-tertiary rounded-lg transition-colors"
-                  title="Skip forward 5s"
+                  title={t('timelapseViewer.skipForward5s')}
                 >
                   <SkipForward className="w-5 h-5 text-bambu-gray" />
                 </button>
@@ -199,7 +209,7 @@ export function TimelapseViewer({
 
               {/* Right: Speed control */}
               <div className="flex items-center gap-2">
-                <span className="text-sm text-bambu-gray">Speed:</span>
+                <span className="text-sm text-bambu-gray whitespace-nowrap">{t('timelapseViewer.speed')}</span>
                 <div className="flex gap-1">
                   {SPEED_OPTIONS.map((speed) => (
                     <button

@@ -19,7 +19,7 @@ class BillingRunIdCollisionError(RuntimeError):
 
 async def _get_balance_after_for_transaction(
     db: AsyncSession,
-    user_id: int,
+    user_id: int | None,
     cost_center_id: int | None,
     amount: float,
 ) -> float:
@@ -161,13 +161,45 @@ async def apply_print_charge_for_archive(
             logger.info(f"Archive ID {archive_id} has status {archive.status}, which is not chargeable.")
             return False
 
-        actual_user_id = charged_user_id if charged_user_id is not None else archive.created_by_id
-        if actual_user_id is None:
-            logger.warning(f"Archive ID {archive_id} has no creator ID.")
+        # A queue print's user is the one who queued it, also when deleted
+        # since: a reprint reuses the source archive, whose creator did not
+        # print it. The archive's creator only for a print without a queue row.
+        if charged_user_id is not None:
+            # Read by the caller seconds before (the completion does usage and
+            # archive work first): a user deleted since is no user. Charged by
+            # id, PostgreSQL refused the wallet (FK) and the reservation stayed
+            # active; SQLite wrote a wallet and a charge for a missing user.
+            from backend.app.models.user import User
+
+            actual_user_id = await db.scalar(select(User.id).where(User.id == charged_user_id))
+        elif print_queue_id is not None:
+            actual_user_id = None
+        else:
+            actual_user_id = archive.created_by_id
+        actual_cost_center_id = cost_center_id if cost_center_id is not None else archive.cost_center_id
+        # No user: deleted while the print ran, or never had one (login turned
+        # off). A cost centre's print is still its cost: charged to the cost
+        # centre without a user (shown as "No user"), which also consumes its
+        # reservation. That includes
+        # the user's own private cost centre, which their personal prints go
+        # through with billing on and which outlives them. Only a print with no
+        # cost centre at all (started while billing was off) has nobody left to
+        # charge, and holds no reservation (budgets exist per cost centre).
+        if actual_user_id is None and actual_cost_center_id is None:
+            logger.info("Archive ID %s has no user to charge (deleted) and no cost centre.", archive_id)
             return False
 
         base_cost = float(base_cost_override if base_cost_override is not None else (archive.cost or 0.0))
         if base_cost <= 0:
+            # Nothing to charge, but the print is over: settle what it held
+            # (reserved from an estimate, e.g. an older archive with grams but
+            # no stored cost), as the zero-charge case below does.
+            if print_queue_id is not None:
+                await release_budget_reservation(
+                    db, source_type="print_queue", source_id=print_queue_id, status="released"
+                )
+            else:
+                await release_budget_reservation(db, print_archive_id=archive.id, status="released")
             logger.info(f"Base cost for archive ID {archive_id} is zero or negative.")
             return False
 
@@ -216,14 +248,16 @@ async def apply_print_charge_for_archive(
             logger.info(f"Calculated charge for archive ID {archive_id} is zero or negative.")
             return False
 
-        actual_cost_center_id = cost_center_id if cost_center_id is not None else archive.cost_center_id
-
-        wallet = (await db.execute(select(UserWallet).where(UserWallet.user_id == actual_user_id))).scalar_one_or_none()
-        if wallet is None:
-            wallet = UserWallet(user_id=actual_user_id, balance=0.0)
-            db.add(wallet)
-            await db.flush()
-            logger.info("Created new wallet for user ID %s.", actual_user_id)
+        wallet = None
+        if actual_user_id is not None:
+            wallet = (
+                await db.execute(select(UserWallet).where(UserWallet.user_id == actual_user_id))
+            ).scalar_one_or_none()
+            if wallet is None:
+                wallet = UserWallet(user_id=actual_user_id, balance=0.0)
+                db.add(wallet)
+                await db.flush()
+                logger.info("Created new wallet for user ID %s.", actual_user_id)
 
         label = archive.print_name or archive.filename or f"Archive {archive.id}"
         description = f"Print charge: {label}{' ' + reason_suffix if reason_suffix else ''}"
@@ -276,7 +310,7 @@ async def apply_print_charge_for_archive(
 
         # Rebuild from the canonical personal-ledger definition. A shared cost
         # center charge must not debit the user's personal wallet.
-        new_wallet_balance = await sync_personal_wallet_balance(db, wallet)
+        new_wallet_balance = await sync_personal_wallet_balance(db, wallet) if wallet is not None else None
 
         # Consume matching budget reservations after the transaction is persisted
         if print_queue_id is not None:

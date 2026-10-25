@@ -7,15 +7,17 @@ import type { KProfile } from '../api/client';
 import { matchesPrinterModelSuffix, presetCompatibility, buildCompatibilityIndex, extractPresetModel } from '../utils/slicerPrinterMatch';
 import { toFilamentId } from './spool-form/utils';
 import { Button } from './Button';
+import { ConfirmModal } from './ConfirmModal';
 import { getAmsLabel } from '../utils/amsHelpers';
 import { getSwatchStyle } from '../utils/colors';
 import { useCancellableTimeout } from '../hooks/useCancellableTimeout';
+import { flowApplies, flowLabel, normaliseFlow } from '../utils/nozzleFlow';
 import { useToast } from '../contexts/ToastContext';
+import { ACTIVE_PRINT_STATES } from '../utils/printer';
 
 interface SlotInfo {
   amsId: number;
   trayId: number;
-  trayCount: number;
   trayType?: string;
   trayColor?: string;
   traySubBrands?: string;
@@ -55,6 +57,8 @@ interface ConfigureAmsSlotModalProps {
   printerModel?: string;
   onSuccess?: () => void;
   fullScreen?: boolean;
+  // The printer's gcode state; a reset is refused while a print is loaded.
+  printerState?: string | null;
 }
 
 // Known filament material types
@@ -111,6 +115,13 @@ function parsePresetName(name: string): { material: string; brand: string; varia
 // are both offered, because such a slot can reach either nozzle. Keying on
 // name+K alone made the two indistinguishable and, when their K happened to
 // match, silently collapsed them into whichever came first.
+// "[HF] " / "[S] " for a profile measured on a high-flow or standard nozzle;
+// nothing where the printer declares no flow (an X1C declares none).
+function kProfileFlowPrefix(profile: KProfile): string {
+  const label = flowLabel(normaliseFlow(profile.nozzle_id));
+  return label ? `[${label}] ` : '';
+}
+
 function kProfileOptionValue(profile: KProfile): string {
   return `${profile.extruder_id ?? 0}|${profile.name}|${profile.k_value}`;
 }
@@ -273,9 +284,13 @@ export function ConfigureAmsSlotModal({
   printerModel,
   onSuccess,
   fullScreen,
+  printerState,
 }: ConfigureAmsSlotModalProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  // A running print may be feeding from this tray.
+  const printing = ACTIVE_PRINT_STATES.includes(printerState ?? '');
   const [selectedPresetId, setSelectedPresetId] = useState<string>('');
   // The preset the dialog preselected on open, i.e. what the slot is already
   // on. Lets the K-profile list tell "reopened the slot" from "picked another
@@ -620,6 +635,10 @@ export function ConfigureAmsSlotModal({
         orca_profile_id: isOrca ? orcaSettingId : undefined,
       });
 
+      if (result.k_value_unsent) {
+        showToast(t('configureAmsSlot.kValueUnsent'), 'warning');
+      }
+
       if (isOrca && result.orca_fallback_reason) {
         showToast(
           t(`configureAmsSlot.orcaFallback.${result.orca_fallback_reason}`, { material: trayType }),
@@ -907,6 +926,19 @@ export function ConfigureAmsSlotModal({
     [kprofilesData?.profiles]
   );
 
+  // The flow of the nozzle on the slot's hotend, from the printer status the
+  // printer card already keeps (H2-series report HH01 / HS01; others nothing).
+  const { data: printerStatus } = useQuery({
+    queryKey: ['printerStatus', printerId],
+    queryFn: () => api.getPrinterStatus(printerId),
+    enabled: isOpen,
+  });
+  const fittedFlow = useMemo(() => {
+    const nozzles = printerStatus?.nozzles ?? [];
+    const extruder = slotInfo.extruderId ?? 0;
+    return normaliseFlow(nozzles[extruder]?.nozzle_type) ?? normaliseFlow(nozzles[0]?.nozzle_type);
+  }, [printerStatus?.nozzles, slotInfo.extruderId]);
+
   const matchingKProfiles = useMemo(() => {
     if (!kprofilesData?.profiles) return [];
     if (!selectedPresetInfo) {
@@ -1010,9 +1042,14 @@ export function ConfigureAmsSlotModal({
     // the list instead — the X2D case in #3044, where the second AMS's slots
     // point at the first's entries — so the tagging is ignored rather than
     // enforced.
-    const onThisNozzle = tableNamesThisHotend(kprofilesData.profiles, slotInfo.extruderId)
+    const onThisHotend = tableNamesThisHotend(kprofilesData.profiles, slotInfo.extruderId)
       ? filtered.filter(p => (p.extruder_id ?? 0) === slotInfo.extruderId)
       : filtered;
+    // And to the flow of the nozzle fitted there: a K measured on a high-flow
+    // nozzle is not a fact about a standard one, and the backend does not apply
+    // it at assign time. Unknown flow on either side matches (an X1C reports
+    // none). The others stay reachable under "Other", labelled [HF] / [S].
+    const onThisNozzle = onThisHotend.filter(p => flowApplies(p.nozzle_id, fittedFlow));
 
     // Deduplicate genuine duplicates — same nozzle, same name, same K.
     const seen = new Map<string, KProfile>();
@@ -1045,7 +1082,7 @@ export function ConfigureAmsSlotModal({
     }
 
     return result;
-  }, [kprofilesData?.profiles, selectedPresetInfo, slotInfo.extruderId, slotInfo.caliIdx, slotInfo.trayInfoIdx, selectedPresetId, openedPresetId]);
+  }, [kprofilesData?.profiles, selectedPresetInfo, slotInfo.extruderId, slotInfo.caliIdx, slotInfo.trayInfoIdx, selectedPresetId, openedPresetId, fittedFlow]);
 
   // Every remaining K-profile the printer holds, offered under a separate group
   // after the matching ones (#2710). The matcher works off preset names and
@@ -1190,10 +1227,11 @@ export function ConfigureAmsSlotModal({
 
   // Escape key handler
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
+    // Escape in the reset confirm closes only the confirm.
+    if (e.key === 'Escape' && !showResetConfirm) {
       onClose();
     }
-  }, [onClose]);
+  }, [onClose, showResetConfirm]);
 
   useEffect(() => {
     if (isOpen) {
@@ -1261,7 +1299,7 @@ export function ConfigureAmsSlotModal({
                   />
                 )}
                 <span className="text-white/70">
-                  {t('configureAmsSlot.slotLabel', { ams: getAmsLabel(slotInfo.amsId, slotInfo.trayCount), slot: slotInfo.trayId + 1 })}
+                  {t('configureAmsSlot.slotLabel', { ams: getAmsLabel(slotInfo.amsId), slot: slotInfo.trayId + 1 })}
                 </span>
                 {slotInfo.traySubBrands && (
                   <span>({slotInfo.traySubBrands})</span>
@@ -1302,7 +1340,7 @@ export function ConfigureAmsSlotModal({
                   />
                 )}
                 <span className="text-white font-medium">
-                  {t('configureAmsSlot.slotLabel', { ams: getAmsLabel(slotInfo.amsId, slotInfo.trayCount), slot: slotInfo.trayId + 1 })}
+                  {t('configureAmsSlot.slotLabel', { ams: getAmsLabel(slotInfo.amsId), slot: slotInfo.trayId + 1 })}
                 </span>
                 {slotInfo.traySubBrands && (
                   <span className="text-bambu-gray">({slotInfo.traySubBrands})</span>
@@ -1402,14 +1440,14 @@ export function ConfigureAmsSlotModal({
                         <option value="">{t('configureAmsSlot.noKProfile')}</option>
                         {matchingKProfiles.map((profile) => (
                           <option key={kProfileOptionValue(profile)} value={kProfileOptionValue(profile)}>
-                            {profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
+                            {kProfileFlowPrefix(profile)}{profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
                           </option>
                         ))}
                         {otherKProfiles.length > 0 && (
                           <optgroup label={t('configureAmsSlot.otherKProfiles')}>
                             {otherKProfiles.map((profile) => (
                               <option key={kProfileOptionValue(profile)} value={kProfileOptionValue(profile)}>
-                                {profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
+                                {kProfileFlowPrefix(profile)}{profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
                               </option>
                             ))}
                           </optgroup>
@@ -1647,14 +1685,14 @@ export function ConfigureAmsSlotModal({
                       <option value="">{t('configureAmsSlot.noKProfile')}</option>
                       {matchingKProfiles.map((profile) => (
                         <option key={kProfileOptionValue(profile)} value={kProfileOptionValue(profile)}>
-                          {profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
+                          {kProfileFlowPrefix(profile)}{profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
                         </option>
                       ))}
                       {otherKProfiles.length > 0 && (
                         <optgroup label={t('configureAmsSlot.otherKProfiles')}>
                           {otherKProfiles.map((profile) => (
                             <option key={kProfileOptionValue(profile)} value={kProfileOptionValue(profile)}>
-                              {profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
+                              {kProfileFlowPrefix(profile)}{profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
                             </option>
                           ))}
                         </optgroup>
@@ -1821,8 +1859,9 @@ export function ConfigureAmsSlotModal({
           {/* Reset button on the left */}
           <Button
             variant="secondary"
-            onClick={() => resetMutation.mutate()}
-            disabled={resetMutation.isPending || configureMutation.isPending}
+            onClick={() => setShowResetConfirm(true)}
+            disabled={printing || resetMutation.isPending || configureMutation.isPending}
+            title={printing ? t('configureAmsSlot.resetBlockedPrinting') : undefined}
             className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10"
           >
             {resetMutation.isPending ? (
@@ -1868,6 +1907,21 @@ export function ConfigureAmsSlotModal({
           </div>
         )}
       </div>
+
+      {showResetConfirm && (
+        <ConfirmModal
+          title={t('configureAmsSlot.resetConfirmTitle')}
+          message={t('configureAmsSlot.resetConfirmMessage')}
+          confirmText={t('configureAmsSlot.resetSlot')}
+          variant="danger"
+          overlayZIndex="z-[60]"
+          onConfirm={() => {
+            setShowResetConfirm(false);
+            resetMutation.mutate();
+          }}
+          onCancel={() => setShowResetConfirm(false)}
+        />
+      )}
     </div>
   );
 }

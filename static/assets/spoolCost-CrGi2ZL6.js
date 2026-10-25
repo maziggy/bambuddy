@@ -1,0 +1,1 @@
+function e(e){let t=e.cost_per_kg;if(t!=null&&t>0)return{rate:t,fromFilament:!1};let n=e.effective_cost_per_kg;return n==null?{rate:t??null,fromFilament:!1}:{rate:n,fromFilament:!0}}export{e as t};

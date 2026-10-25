@@ -22,7 +22,9 @@ Bambu Lab, and not intended to circumvent any access control.
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
+import zipfile
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from typing import Any
@@ -88,6 +90,16 @@ def set_shared_http_client(client: httpx.AsyncClient | None) -> None:
 _SIGN_IN_EXPIRED_MESSAGE = (
     "Your Bambu Cloud sign-in has expired. Open the Profiles page and sign in to Bambu Cloud again."
 )
+
+
+def _is_readable_zip(data: bytes) -> bool:
+    """Whether ``data`` is a zip whose directory can be read."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            archive.namelist()
+        return True
+    except (zipfile.BadZipFile, ValueError, OSError, EOFError):
+        return False
 
 
 class MakerWorldService(ProviderService):
@@ -273,6 +285,10 @@ class MakerWorldService(ProviderService):
     async def download(self, info: ProviderDownloadInfo) -> ProviderDownload:
         """Fetch the 3MF bytes for a signed URL, returning ``(bytes, filename)``."""
         file_bytes, download_filename = await self.download_3mf(info.url)
+        # A 3MF is a zip. A truncated body or an error page served with 200
+        # would otherwise be stored, and kept, as the model's file.
+        if not _is_readable_zip(file_bytes):
+            raise MakerWorldUnavailableError("MakerWorld sent a file that is not a valid 3MF")
         return ProviderDownload(file_bytes=file_bytes, filename=download_filename)
 
     # ---------------------------------------------------------------- endpoints

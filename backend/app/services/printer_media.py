@@ -20,6 +20,7 @@ from backend.app.core.config import settings
 from backend.app.core.tasks import spawn_background_task
 from backend.app.services.bambu_ftp import (
     DownloadCancelled,
+    DownloadDeadlineExceeded,
     DownloadInsufficientSpace,
     DownloadLimitExceeded,
     download_file_async,
@@ -38,6 +39,14 @@ _JOB_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{20,200}$")
 _LOCAL_JOB_TASKS: dict[str, asyncio.Task] = {}
 _cleanup_task: asyncio.Task | None = None
 _CLEANUP_INTERVAL_SECONDS = 15 * 60
+
+
+class PrinterFileDownloadError(Exception):
+    """The file is on the printer but could not be downloaded from it.
+
+    Not FileNotFoundError: the routes answered that with 404 "File not found"
+    for a file the browser had just listed.
+    """
 
 
 class PrinterFilesZipTooLargeError(ValueError):
@@ -378,6 +387,10 @@ async def build_printer_files_zip(
                         staged_path,
                         timeout=600,
                         socket_timeout=60,
+                        # The job's budget, not print start's 300 s: a 250 MB
+                        # /ipcam chunk at a few hundred KB/s needs ~15 minutes,
+                        # and a dead link still ends at the socket timeout.
+                        max_total_timeout=MAX_PRINTER_ZIP_PREPARE_SECONDS,
                         printer_model=printer.model,
                         expected_size=expected_size,
                         max_bytes=MAX_PRINTER_ZIP_BYTES - total_bytes,
@@ -510,6 +523,7 @@ async def build_printer_file(
             local_path,
             timeout=600,
             socket_timeout=60,
+            max_total_timeout=MAX_PRINTER_ZIP_PREPARE_SECONDS,
             printer_model=printer.model,
             expected_size=expected_size,
             max_bytes=MAX_PRINTER_ZIP_BYTES,
@@ -520,7 +534,7 @@ async def build_printer_file(
             serialize=False,
         )
         if not downloaded:
-            raise FileNotFoundError("The selected printer file could not be downloaded")
+            raise PrinterFileDownloadError("The selected printer file could not be downloaded")
         file_size = (await asyncio.to_thread(local_path.stat)).st_size
         return PrinterFilesZipResult(
             path=local_path,
@@ -529,6 +543,12 @@ async def build_printer_file(
             failed_paths=(),
             total_bytes=file_size,
         )
+    except DownloadDeadlineExceeded as exc:
+        await asyncio.shield(asyncio.to_thread(shutil.rmtree, bundle_dir, ignore_errors=True))
+        raise TimeoutError(f"Downloading {remote_path} from the printer took longer than its size allows") from exc
+    except PrinterFileDownloadError:
+        await asyncio.shield(asyncio.to_thread(shutil.rmtree, bundle_dir, ignore_errors=True))
+        raise
     except DownloadLimitExceeded as exc:
         await asyncio.shield(asyncio.to_thread(shutil.rmtree, bundle_dir, ignore_errors=True))
         raise PrinterFilesZipTooLargeError(f"Downloaded file exceeds the {MAX_PRINTER_ZIP_BYTES}-byte limit") from exc
@@ -630,7 +650,7 @@ async def _run_printer_files_job(
             _write_job_status,
             PrinterFilesJobStatus(job_id, printer.id, "failed", len(paths), filename=filename, message=str(exc)),
         )
-    except TimeoutError:
+    except TimeoutError as exc:
         await asyncio.to_thread(
             _write_job_status,
             PrinterFilesJobStatus(
@@ -639,8 +659,13 @@ async def _run_printer_files_job(
                 "failed",
                 len(paths),
                 filename=filename,
-                message="Printer download preparation exceeded the 30-minute limit",
+                message=str(exc) or "Printer download preparation exceeded the 30-minute limit",
             ),
+        )
+    except PrinterFileDownloadError as exc:
+        await asyncio.to_thread(
+            _write_job_status,
+            PrinterFilesJobStatus(job_id, printer.id, "failed", len(paths), filename=filename, message=str(exc)),
         )
     except FileNotFoundError as exc:
         await asyncio.to_thread(

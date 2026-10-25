@@ -20,7 +20,7 @@ describe('UploadModal', () => {
         return HttpResponse.json({
           uploaded: 1,
           failed: 0,
-          results: [{ id: 1, filename: 'test.3mf' }],
+          results: [{ index: 0, id: 1, filename: 'test.3mf', status: 'success' }],
           errors: [],
         });
       })
@@ -153,6 +153,57 @@ describe('UploadModal', () => {
         const hasSpinner = document.querySelector('.animate-spin') !== null;
         expect(hasUploadingText || hasSpinner).toBe(true);
       });
+    });
+
+    // SN-C10: rows took their outcome by file name, so two files of the same
+    // name both showed the first one's success and the failure was lost.
+    it('shows each file its own outcome when two share a name', async () => {
+      server.use(
+        http.post('/api/v1/archives/upload-bulk', () =>
+          HttpResponse.json({
+            uploaded: 1,
+            failed: 1,
+            results: [{ index: 0, id: 1, filename: 'Benchy.3mf', status: 'success' }],
+            errors: [{ index: 1, filename: 'Benchy.3mf', error: 'Not a valid 3MF' }],
+          }),
+        ),
+      );
+      const initialFiles = [
+        new File(['one'], 'Benchy.3mf', { type: 'application/3mf' }),
+        new File(['two'], 'Benchy.3mf', { type: 'application/3mf' }),
+      ];
+      render(<UploadModal onClose={mockOnClose} initialFiles={initialFiles} />);
+
+      fireEvent.click(screen.getByRole('button', { name: /Upload/i }));
+
+      expect(await screen.findByText('Not a valid 3MF')).toBeInTheDocument();
+      expect(document.querySelectorAll('.text-bambu-green.w-4')).toHaveLength(1);
+    });
+
+    it('shows each failed file its own error when two share a name', async () => {
+      server.use(
+        http.post('/api/v1/archives/upload-bulk', () =>
+          HttpResponse.json({
+            uploaded: 0,
+            failed: 2,
+            results: [],
+            errors: [
+              { index: 0, filename: 'Benchy.3mf', error: 'First failed' },
+              { index: 1, filename: 'Benchy.3mf', error: 'Second failed' },
+            ],
+          }),
+        ),
+      );
+      const initialFiles = [
+        new File(['one'], 'Benchy.3mf', { type: 'application/3mf' }),
+        new File(['two'], 'Benchy.3mf', { type: 'application/3mf' }),
+      ];
+      render(<UploadModal onClose={mockOnClose} initialFiles={initialFiles} />);
+
+      fireEvent.click(screen.getByRole('button', { name: /Upload/i }));
+
+      expect(await screen.findByText('First failed')).toBeInTheDocument();
+      expect(screen.getByText('Second failed')).toBeInTheDocument();
     });
 
     it('Upload button is disabled when no files are pending', async () => {

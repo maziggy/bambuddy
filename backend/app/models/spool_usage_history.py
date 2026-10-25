@@ -12,10 +12,14 @@ class SpoolUsageHistory(Base):
     __tablename__ = "spool_usage_history"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    spool_id: Mapped[int] = mapped_column(ForeignKey("spool.id", ondelete="CASCADE"))
+    # Kept when the spool is deleted, like the archive link below: the usage is
+    # what the prints cost, and what recalculating their cost reads.
+    spool_id: Mapped[int | None] = mapped_column(ForeignKey("spool.id", ondelete="SET NULL"), nullable=True)
     printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id", ondelete="SET NULL"))
     print_name: Mapped[str | None] = mapped_column(String(500))
-    archive_id: Mapped[int | None] = mapped_column(ForeignKey("print_archives.id"), nullable=True)
+    # The spool's consumption outlives the archive: deleting the archive only
+    # drops the link.
+    archive_id: Mapped[int | None] = mapped_column(ForeignKey("print_archives.id", ondelete="SET NULL"), nullable=True)
     weight_used: Mapped[float] = mapped_column(Float, default=0)
     percent_used: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(20), default="completed")  # completed/failed/aborted

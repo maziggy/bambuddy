@@ -5,6 +5,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
 
+# The priorities and statuses the project editor accepts.
+PROJECT_PRIORITIES = ("low", "normal", "high", "urgent")
+PROJECT_STATUSES = ("active", "completed", "archived")
+
 
 class Project(Base):
     """Project to group related prints (e.g., 'Voron Build' with multiple parts)."""

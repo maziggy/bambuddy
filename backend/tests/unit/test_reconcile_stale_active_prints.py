@@ -19,15 +19,26 @@ These tests cover:
     each stale archive.
 """
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.app.main import _is_active_archive_stale
+from backend.app.main import _is_active_archive_stale, _reconciled_end_time, _reconciled_outcome
+from backend.app.services.bambu_mqtt import HMSError
 
 
-def _state(state: str, *, subtask_id: str = "", subtask_name: str = "", connected: bool = True) -> SimpleNamespace:
+def _state(
+    state: str,
+    *,
+    subtask_id: str = "",
+    subtask_name: str = "",
+    connected: bool = True,
+    progress: float = 0.0,
+    layer_num: int = 0,
+    hms_errors: list | None = None,
+) -> SimpleNamespace:
     """Minimal PrinterState stub for the pure decision function."""
     return SimpleNamespace(
         state=state,
@@ -35,11 +46,19 @@ def _state(state: str, *, subtask_id: str = "", subtask_name: str = "", connecte
         subtask_name=subtask_name,
         connected=connected,
         raw_data={},
+        progress=progress,
+        layer_num=layer_num,
+        hms_errors=hms_errors or [],
     )
 
 
 def _archive(
-    subtask_id: str | None = "ABC123", filename: str = "ghost.3mf", print_name: str = "ghost"
+    subtask_id: str | None = "ABC123",
+    filename: str = "ghost.3mf",
+    print_name: str = "ghost",
+    *,
+    started_at: datetime | None = None,
+    print_time_seconds: int | None = None,
 ) -> SimpleNamespace:
     """Minimal PrintArchive stub — only the fields the decision function reads."""
     return SimpleNamespace(
@@ -47,6 +66,10 @@ def _archive(
         subtask_id=subtask_id,
         filename=filename,
         print_name=print_name,
+        started_at=started_at,
+        print_time_seconds=print_time_seconds,
+        plate_id=None,
+        file_path=None,
     )
 
 
@@ -264,3 +287,159 @@ class TestReconcileStaleActivePrints:
         # Only the second archive is recorded as reconciled (first raised).
         assert count == 1
         assert mock_complete.await_count == 2
+
+
+class TestReconciledOutcome:
+    """#3310: only the printer's FINISH or FAILED for the archive's own job
+    says how the print ended; anything else stays aborted."""
+
+    @pytest.mark.parametrize(
+        ("printer_state", "archive_id", "printer_id", "outcome"),
+        [
+            ("FINISH", "ABC123", "ABC123", "completed"),
+            ("finish", "ABC123", "ABC123", "completed"),
+            ("FAILED", "ABC123", "ABC123", "failed"),
+            # Reported as a number by some firmware.
+            ("FINISH", "123", 123, "completed"),
+            ("IDLE", "ABC123", "ABC123", "aborted"),
+            # A print started from the screen while Bambuddy was down.
+            ("FINISH", "ABC123", "XYZ789", "aborted"),
+            ("FAILED", "ABC123", "XYZ789", "aborted"),
+            ("FINISH", "ABC123", "", "aborted"),
+            ("FINISH", None, "", "aborted"),
+            # "0" is every print started outside the cloud, not one job.
+            ("FINISH", "0", "0", "aborted"),
+        ],
+    )
+    def test_outcome(self, printer_state, archive_id, printer_id, outcome):
+        archive = _archive(subtask_id=archive_id)
+        state = _state(printer_state, subtask_id=printer_id, subtask_name="ghost")
+        assert _reconciled_outcome(archive, state) == outcome
+
+
+class TestReconciledEndTime:
+    NOW = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
+
+    def test_start_plus_estimate(self):
+        archive = _archive(started_at=datetime(2026, 10, 20, 6, 0), print_time_seconds=3 * 3600)
+        assert _reconciled_end_time(archive, self.NOW) == datetime(2026, 10, 20, 9, 0, tzinfo=timezone.utc)
+
+    def test_never_later_than_now(self):
+        archive = _archive(started_at=datetime(2026, 10, 20, 11, 0), print_time_seconds=5 * 3600)
+        assert _reconciled_end_time(archive, self.NOW) == self.NOW
+
+    @pytest.mark.parametrize(
+        ("started_at", "estimate"),
+        [(None, 3600), (datetime(2026, 10, 20, 6, 0), None), (datetime(2026, 10, 20, 6, 0), 0)],
+    )
+    def test_unknown_without_start_or_estimate(self, started_at, estimate):
+        archive = _archive(started_at=started_at, print_time_seconds=estimate)
+        assert _reconciled_end_time(archive, self.NOW) is None
+
+    READ = "backend.app.utils.threemf_tools.extract_print_time_from_3mf"
+
+    def _multi_plate(self, plate_id=None):
+        archive = _archive(started_at=datetime(2026, 10, 20, 6, 0), print_time_seconds=5 * 3600)
+        archive.plate_id, archive.file_path = plate_id, "archives/x/part.3mf"
+        return archive
+
+    def test_the_plate_s_own_estimate(self):
+        """A multi-plate archive carries the whole file's estimate (#1593)."""
+        with patch(self.READ, return_value=1800) as read:
+            ended = _reconciled_end_time(self._multi_plate(plate_id=2), self.NOW)
+        assert ended == datetime(2026, 10, 20, 6, 30, tzinfo=timezone.utc)
+        assert read.call_args.args[1] == 2
+
+    def test_the_run_s_plate_over_the_archive_s(self):
+        """A reprint of plate 3 reuses an archive that still says plate 1."""
+        with patch(self.READ, return_value=1800) as read:
+            _reconciled_end_time(self._multi_plate(plate_id=1), self.NOW, plate_id=3)
+        assert read.call_args.args[1] == 3
+
+    def test_no_plate_on_a_single_plate_file(self):
+        with patch(self.READ, return_value=5 * 3600):
+            ended = _reconciled_end_time(self._multi_plate(), self.NOW)
+        assert ended == datetime(2026, 10, 20, 11, 0, tzinfo=timezone.utc)
+
+    def test_no_plate_on_a_multi_plate_file_is_unknown(self):
+        """The first plate's estimate differs from the sum: which plate printed?"""
+        with patch(self.READ, return_value=1800):
+            assert _reconciled_end_time(self._multi_plate(), self.NOW) is None
+
+    def test_an_unreadable_file_is_unknown(self):
+        with patch(self.READ, side_effect=OSError("gone")):
+            assert _reconciled_end_time(self._multi_plate(plate_id=2), self.NOW) is None
+
+
+class TestReconcilePayload:
+    async def _payload(self, archive, state):
+        from backend.app.main import reconcile_stale_active_prints
+
+        with patch("backend.app.main.printer_manager") as mock_pm:
+            mock_pm.get_status.return_value = state
+            with patch("backend.app.main.async_session") as mock_session:
+                session_ctx = AsyncMock()
+                session_ctx.execute = AsyncMock(
+                    return_value=MagicMock(scalars=lambda: MagicMock(all=lambda: [archive]))
+                )
+                mock_session.return_value.__aenter__.return_value = session_ctx
+                with patch("backend.app.main.on_print_complete", new=AsyncMock()) as mock_complete:
+                    assert await reconcile_stale_active_prints(printer_id=1) == 1
+        return mock_complete.call_args.args[1]
+
+    @pytest.mark.asyncio
+    async def test_finished_while_bambuddy_restarted(self):
+        started = datetime.now(timezone.utc) - timedelta(hours=10)
+        archive = _archive(subtask_id="ABC123", started_at=started, print_time_seconds=2 * 3600)
+        payload = await self._payload(
+            archive, _state("FINISH", subtask_id="ABC123", subtask_name="ghost", progress=100, layer_num=250)
+        )
+        assert payload["status"] == "completed"
+        assert payload["_reconciled"] is True
+        assert payload["_reconciled_completed_at"] == started + timedelta(hours=2)
+        assert (payload["last_progress"], payload["last_layer_num"]) == (100, 250)
+        assert "hms_errors" not in payload
+
+    @pytest.mark.asyncio
+    async def test_failed_while_bambuddy_restarted(self):
+        error = HMSError(code="0x4057", attr=0x0300_0000, module=0x03, severity=1, full_code="0300000000004057")
+        payload = await self._payload(
+            _archive(subtask_id="ABC123"),
+            _state("FAILED", subtask_id="ABC123", subtask_name="ghost", progress=40, layer_num=80, hms_errors=[error]),
+        )
+        assert payload["status"] == "failed"
+        assert (payload["last_progress"], payload["last_layer_num"]) == (40, 80)
+        assert payload["hms_errors"] == [error.completion_payload()]
+        assert "_reconciled_completed_at" not in payload
+
+    @pytest.mark.asyncio
+    async def test_another_job_s_progress_is_not_this_archive_s(self):
+        archive = _archive(subtask_id="ABC123", started_at=datetime.now(timezone.utc), print_time_seconds=3600)
+        payload = await self._payload(
+            archive, _state("FINISH", subtask_id="XYZ789", subtask_name="other", progress=100, layer_num=250)
+        )
+        assert payload["status"] == "aborted"
+        for key in ("last_progress", "last_layer_num", "hms_errors", "_reconciled_completed_at"):
+            assert key not in payload
+
+
+@pytest.mark.asyncio
+async def test_the_queue_job_s_plate_reaches_the_estimate():
+    from backend.app.main import reconcile_stale_active_prints
+
+    archive = _archive(subtask_id="ABC123", started_at=datetime.now(timezone.utc), print_time_seconds=3600)
+    archive.plate_id = 1
+    archives = MagicMock(scalars=lambda: MagicMock(all=lambda: [archive]))
+    plates = MagicMock(all=lambda: [(archive.id, 3)])
+    with patch("backend.app.main.printer_manager") as mock_pm:
+        mock_pm.get_status.return_value = _state("FINISH", subtask_id="ABC123", subtask_name="ghost")
+        with patch("backend.app.main.async_session") as mock_session:
+            session_ctx = AsyncMock()
+            session_ctx.execute = AsyncMock(side_effect=[archives, plates])
+            mock_session.return_value.__aenter__.return_value = session_ctx
+            with (
+                patch("backend.app.main._reconciled_end_time", return_value=None) as end_time,
+                patch("backend.app.main.on_print_complete", new=AsyncMock()),
+            ):
+                await reconcile_stale_active_prints(printer_id=1)
+    assert end_time.call_args.args[2] == 3

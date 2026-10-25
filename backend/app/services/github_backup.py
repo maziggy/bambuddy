@@ -8,10 +8,11 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import desc, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import async_session
+from backend.app.core.logging_filters import URL_CREDENTIALS_PATTERN, redact_refused_headers
 from backend.app.models.archive import PrintArchive
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
 from backend.app.models.printer import Printer
@@ -20,7 +21,9 @@ from backend.app.models.spool import Spool
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
 from backend.app.services.git_providers.factory import get_provider_backend
+from backend.app.services.github_restore import is_restorable_setting_key
 from backend.app.services.printer_manager import printer_manager
+from backend.app.services.secret_fields import SECRET_PLACEHOLDER, is_secret_setting_key, mask_preset
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +46,8 @@ def _bambu_preset_record(setting_id, our_type: str, entry: dict, detail: dict) -
 
     ``user_id`` from the listing is deliberately dropped. It identifies the
     account and adds nothing to a rebuild, and backup repositories can be
-    public.
+    public. A printer connection's credentials in ``setting`` are shown as
+    the placeholder.
     """
     return {
         "setting_id": str(setting_id),
@@ -53,7 +57,7 @@ def _bambu_preset_record(setting_id, our_type: str, entry: dict, detail: dict) -
         "updated_time": entry.get("updated_time"),
         "base_id": detail.get("base_id"),
         "filament_id": detail.get("filament_id"),
-        "setting": detail.get("setting") or {},
+        "setting": mask_preset(detail.get("setting") or {}),
     }
 
 
@@ -62,14 +66,15 @@ def _orca_profile_record(entry: dict) -> dict:
 
     ``content`` is kept whole rather than picked apart: it is the profile, the
     sync API hands it over inline, and Orca owns its shape. Narrowing it here
-    would mean guessing which keys a future restore needs.
+    would mean guessing which keys a future restore needs. A printer
+    connection's credentials are the exception: shown as the placeholder.
     """
     return {
         "id": str(entry.get("id")) if entry.get("id") is not None else None,
         "name": entry.get("name"),
         "updated_time": entry.get("updated_time"),
         "created_time": entry.get("created_time"),
-        "content": entry.get("content"),
+        "content": mask_preset(entry.get("content")),
     }
 
 
@@ -86,6 +91,12 @@ _PROVIDER_DISPLAY_NAMES = {
     "gitea": "Gitea",
     "forgejo": "Forgejo",
 }
+
+
+def _without_refused_headers(result: dict) -> dict:
+    """*result* with its texts masked where an HTTP client refusing a header
+    quoted the value: the stored token, which the API never returns."""
+    return {key: redact_refused_headers(value) if isinstance(value, str) else value for key, value in result.items()}
 
 
 class GitHubBackupService:
@@ -161,7 +172,7 @@ class GitHubBackupService:
         """Test connection and permissions for the given provider."""
         backend = get_provider_backend(provider)
         client = await self._get_client()
-        return await backend.test_connection(repo_url, token, client)
+        return _without_refused_headers(await backend.test_connection(repo_url, token, client))
 
     async def run_backup(self, config_id: int, trigger: str = "manual") -> dict:
         """Run a backup operation.
@@ -292,7 +303,7 @@ class GitHubBackupService:
 
                     provider_name = _PROVIDER_DISPLAY_NAMES.get(config.provider, config.provider)
                     self._backup_progress = f"Pushing to {provider_name}..."
-                    push_result = await self._push_to_provider(config, backup_data)
+                    push_result = _without_refused_headers(await self._push_to_provider(config, backup_data))
 
                     # Update log and config
                     log.status = push_result["status"]
@@ -321,13 +332,14 @@ class GitHubBackupService:
 
                 except Exception as e:
                     logger.exception("Backup failed")
+                    error = redact_refused_headers(str(e)) or ""
                     log.status = "failed"
                     log.completed_at = datetime.now(timezone.utc)
-                    log.error_message = str(e)
+                    log.error_message = error
 
                     config.last_backup_at = datetime.now(timezone.utc)
                     config.last_backup_status = "failed"
-                    config.last_backup_message = str(e)
+                    config.last_backup_message = error
 
                     if config.schedule_enabled:
                         config.next_scheduled_run = self.calculate_next_run(config.schedule_type)
@@ -335,7 +347,7 @@ class GitHubBackupService:
                     await db.commit()
                     return {
                         "success": False,
-                        "message": str(e),
+                        "message": error,
                         "log_id": log_id,
                         "commit_sha": None,
                         "files_changed": 0,
@@ -742,9 +754,19 @@ class GitHubBackupService:
         result = await db.execute(select(Settings))
         settings = result.scalars().all()
 
-        # Filter out sensitive settings
-        sensitive_keys = {"bambu_cloud_token", "auth_secret_key", "manyfold_client_secret"}
-        settings_data = {s.key: s.value for s in settings if s.key not in sensitive_keys}
+        # A credential is written as the placeholder when set (blank counts as
+        # unset, as it does for the restore), so the restore can still tell
+        # whether a switch had one. A URL with a login in it is
+        # left out: masked, it would be restored over a working one.
+        # Anything else a restore would not write is left out: keys earlier
+        # versions left behind (some hold a credential under a name no rule
+        # recognises), runtime state and Bambuddy's own flags.
+        settings_data = {}
+        for s in settings:
+            if is_secret_setting_key(s.key):
+                settings_data[s.key] = SECRET_PLACEHOLDER if (s.value or "").strip() else s.value
+            elif is_restorable_setting_key(s.key) and not URL_CREDENTIALS_PATTERN.search(s.value or ""):
+                settings_data[s.key] = s.value
 
         files["settings/app_settings.json"] = {
             "version": "1.0",
@@ -771,6 +793,8 @@ class GitHubBackupService:
                 "label_weight": s.label_weight,
                 "core_weight": s.core_weight,
                 "weight_used": s.weight_used,
+                # The "Reset Total Consumed" point (WU-7).
+                "weight_used_baseline": s.weight_used_baseline,
                 "weight_locked": s.weight_locked,
                 "slicer_filament": s.slicer_filament,
                 "slicer_filament_name": s.slicer_filament_name,
@@ -788,6 +812,9 @@ class GitHubBackupService:
                 "category": s.category,
                 "low_stock_threshold_pct": s.low_stock_threshold_pct,
                 "storage_location": s.storage_location,
+                # When it was last printed with (LU-4): without it, every spool
+                # read as never used after a restore.
+                "last_used": str(s.last_used) if s.last_used else None,
                 # Last drying (#2863).
                 "last_dried_at": str(s.last_dried_at) if s.last_dried_at else None,
                 "last_dried_temp": s.last_dried_temp,
@@ -936,18 +963,6 @@ class GitHubBackupService:
     def progress(self) -> str | None:
         """Get current backup progress message."""
         return self._backup_progress
-
-    async def get_logs(self, config_id: int, limit: int = 50, offset: int = 0) -> list[GitHubBackupLog]:
-        """Get backup logs for a configuration."""
-        async with async_session() as db:
-            result = await db.execute(
-                select(GitHubBackupLog)
-                .where(GitHubBackupLog.config_id == config_id)
-                .order_by(desc(GitHubBackupLog.started_at))
-                .offset(offset)
-                .limit(limit)
-            )
-            return list(result.scalars().all())
 
 
 # Singleton instance

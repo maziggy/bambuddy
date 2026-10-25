@@ -17,6 +17,7 @@ import pytest
 from backend.app.main import _completion_belongs_to_queue_item, _subtask_name_from_filename
 from backend.app.models.archive import PrintArchive
 from backend.app.models.print_queue import PrintQueueItem
+from backend.app.models.printer import Printer
 
 
 class TestSubtaskNameFromFilename:
@@ -47,10 +48,13 @@ class TestSubtaskNameFromFilename:
 
 async def _seed(db, *, archive_filename: str | None) -> PrintQueueItem:
     """A printing queue item, optionally linked to an archive."""
+    printer = Printer(name="P", serial_number="00M09A000000001", ip_address="192.168.1.100", access_code="12345678")
+    db.add(printer)
+    await db.flush()
     archive_id = None
     if archive_filename is not None:
         archive = PrintArchive(
-            printer_id=1,
+            printer_id=printer.id,
             filename=archive_filename,
             file_path=f"archive/1/{archive_filename}",
             file_size=1,
@@ -60,7 +64,7 @@ async def _seed(db, *, archive_filename: str | None) -> PrintQueueItem:
         await db.flush()
         archive_id = archive.id
 
-    item = PrintQueueItem(printer_id=1, status="printing", archive_id=archive_id)
+    item = PrintQueueItem(printer_id=printer.id, status="printing", archive_id=archive_id)
     db.add(item)
     await db.flush()
     return item
@@ -107,6 +111,7 @@ class TestCompletionBelongsToQueueItem:
 
         assert await _completion_belongs_to_queue_item(db_session, item, {"subtask_name": "Anything"}) is True
 
+    @pytest.mark.sqlite_only  # a dangling reference needs foreign keys off
     async def test_lets_a_dangling_archive_reference_through(self, db_session):
         item = await _seed(db_session, archive_filename=None)
         item.archive_id = 999999
@@ -114,6 +119,7 @@ class TestCompletionBelongsToQueueItem:
         assert await _completion_belongs_to_queue_item(db_session, item, {"subtask_name": "Anything"}) is True
 
 
+@pytest.mark.sqlite_only  # on PostgreSQL the guard checks the throwaway server's databases instead
 class TestDisposableDatabaseGuard:
     """The suite must never be able to open a session against a real database.
 

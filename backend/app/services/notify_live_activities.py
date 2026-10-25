@@ -246,6 +246,13 @@ class NotifyLiveActivityService(NotifyWorkerLifecycle):
         self._init_worker()
         self._status_grace_until: datetime | None = None
 
+    def forget_printer(self, printer_id: int) -> None:
+        """Drop a deleted printer's print, and end its tiles now: the next tick
+        ends them (the printer is gone), before a new printer is given the id."""
+        for state in (self._snapshots, self._new_fallbacks, self._started_at, self._progress_resets):
+            state.pop(printer_id, None)
+        self._wake.set()
+
     def _on_activated(self):
         # No MQTT observations are accepted while dormant. Anything retained
         # from before opt-out is stale until a real status arrives after opt-in.

@@ -59,6 +59,10 @@ class MappedSpoolFields(TypedDict):
     created_at: str | None  # None when Spoolman spool has no registered timestamp
     updated_at: str | None
     cost_per_kg: float | None
+    # What prints are charged per kg: the spool's own price, else its
+    # filament's catalogue price (SM-C8). Display only; the form edits
+    # cost_per_kg, so the catalogue price is never written onto the spool.
+    effective_cost_per_kg: float | None
     # Spoolman's native filament.article_number, surfaced as the internal
     # material number (#2870). Read-only in Spoolman mode — the number is
     # filament-level there and maintained in Spoolman itself.
@@ -238,6 +242,15 @@ def spoolman_price_weight(spool: dict) -> float:
 def spoolman_cost_per_kg(spool: dict) -> float | None:
     """The spool form's cost per kg for a Spoolman spool (#3194)."""
     return spoolman_price_to_cost_per_kg(spool.get("price"), spoolman_price_weight(spool))
+
+
+def _charged_cost_per_kg(spool: dict) -> float | None:
+    """The per-kg rate a print off this spool is charged at, from the same
+    function the charge uses, so the Inventory shows what prints cost."""
+    from backend.app.services.spoolman_tracking import _spool_cost_per_gram
+
+    per_gram = _spool_cost_per_gram(spool)
+    return round(per_gram * 1000.0, 4) if per_gram is not None else None
 
 
 def _extract_extra_str(extra: dict, key: str) -> str:
@@ -539,6 +552,7 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         "updated_at": created_at,
         # Spoolman's spool price is what the whole spool cost (#3194).
         "cost_per_kg": spoolman_cost_per_kg(spool),
+        "effective_cost_per_kg": _charged_cost_per_kg(spool),
         # Spoolman's filament.article_number maps 1:1 onto the internal
         # material number (#2870): both identify the purchasable product.
         # Trimmed for the same reason the schema validator trims the internal

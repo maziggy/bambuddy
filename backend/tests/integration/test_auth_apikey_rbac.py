@@ -141,6 +141,10 @@ class TestApiKeyDenylistIntegrity:
             Permission.GITHUB_BACKUP,
             Permission.GITHUB_RESTORE,
             Permission.FIRMWARE_UPDATE,
+            # Destructive: drop prints from the stats, or scan the network
+            Permission.LIBRARY_PURGE,
+            Permission.ARCHIVES_PURGE,
+            Permission.DISCOVERY_SCAN,
         }
         missing = expected_denied - _APIKEY_DENIED_PERMISSIONS
         assert not missing, (
@@ -452,13 +456,18 @@ class TestCheckApiKeyPermissionsMatrix:
 
         from backend.app.core.auth import _check_apikey_permissions
         from backend.app.core.permissions import Permission
+        from backend.app.models.api_key import APIKey
 
         perm = Permission[perm_name].value
-        all_flags = _FakeApiKey(can_read_status=True, can_queue=True, can_control_printer=True, can_manage_library=True)
+        # Every scope flag the model has, so no flag can be what refuses it
+        all_flags = _FakeApiKey()
+        for column in APIKey.__table__.columns:
+            if column.name.startswith("can_"):
+                setattr(all_flags, column.name, True)
         with pytest.raises(HTTPException) as exc:
             _check_apikey_permissions(all_flags, [perm])
         assert exc.value.status_code == 403
-        assert "administrative" in exc.value.detail.lower() or "does not have" in exc.value.detail.lower()
+        assert "administrative" in exc.value.detail.lower()
 
     def test_unknown_permission_string_is_admin_denied(self):
         """An unrecognised permission string must fail closed, not silently pass."""

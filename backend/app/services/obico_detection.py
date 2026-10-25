@@ -110,6 +110,11 @@ class ObicoDetectionService:
         self._history: deque = deque(maxlen=HISTORY_MAX)
         self._last_error: str | None = None
 
+    def forget_printer(self, printer_id: int) -> None:
+        """A deleted printer's verdict and score, not the next printer's given its id."""
+        for state in (self._states, self._state_keys, self._last_class, self._errors, self._action_fired):
+            state.pop(printer_id, None)
+
     # ---- lifecycle ----
 
     async def start(self):
@@ -281,6 +286,8 @@ class ObicoDetectionService:
         "not checking" instead of inheriting the previous verdict — or, worse,
         the default "safe" a printer used to get before its first inference.
         """
+        if printer_id not in self._states:
+            return  # deleted while the check waited (forget_printer)
         self._errors[printer_id] = reason
         self._last_error = reason
         logger.warning(reason)
@@ -348,7 +355,9 @@ class ObicoDetectionService:
 
         detections = payload.get("detections", []) if isinstance(payload, dict) else []
         current_p = score_from_detections(detections)
-        state = self._states[printer_id]
+        state = self._states.get(printer_id)
+        if state is None:
+            return  # deleted while the check waited (forget_printer)
         score = state.update(current_p)
         verdict = classify(score, settings["sensitivity"])
         self._last_class[printer_id] = verdict

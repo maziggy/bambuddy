@@ -14,60 +14,40 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.app.api.routes.virtual_printers import delete_virtual_printer
+from backend.app.core.printer_scope import ALL_PRINTERS
 
 
 @pytest.mark.asyncio
-async def test_delete_vp_marks_orphan_pending_uploads_discarded(tmp_path):
+async def test_delete_vp_marks_orphan_pending_uploads_discarded(tmp_path, db_session):
     """A VP with PendingUpload rows pointing at its upload_dir: after
     DELETE, those rows must be flipped to ``discarded`` and the on-disk
     directory must be gone."""
-    vp_id = 77
+    from sqlalchemy import select
+
+    from backend.app.models.pending_upload import PendingUpload
+    from backend.app.models.virtual_printer import VirtualPrinter
+
+    vp = VirtualPrinter(name="DeleteMe", serial_suffix="391800077")
+    db_session.add(vp)
+    await db_session.commit()
+    vp_id = vp.id
     upload_dir = tmp_path / "uploads" / str(vp_id)
     upload_dir.mkdir(parents=True)
     (upload_dir / "stale.3mf").write_bytes(b"orphaned content")
 
-    # Build PendingUpload-like mocks. The route mutates `.status`.
-    pending_a = MagicMock()
-    pending_a.file_path = str(upload_dir / "stale.3mf")
-    pending_a.status = "pending"
-    pending_b = MagicMock()
-    pending_b.file_path = str(upload_dir / "another.3mf")
-    pending_b.status = "pending"
+    def pending(name, path):
+        return PendingUpload(filename=name, file_path=str(path), file_size=1, status="pending")
 
-    # Unrelated PendingUpload that does NOT belong to this VP — must
-    # be left alone.
-    other_pending = MagicMock()
-    other_pending.file_path = str(tmp_path / "uploads" / "99" / "not-mine.3mf")
-    other_pending.status = "pending"
+    db_session.add_all(
+        [
+            pending("a", upload_dir / "stale.3mf"),
+            pending("b", upload_dir / "another.3mf"),
+            # Unrelated PendingUpload that does NOT belong to this VP — must be left alone.
+            pending("other", tmp_path / "uploads" / "99" / "not-mine.3mf"),
+        ]
+    )
+    await db_session.commit()
 
-    # Mock VP row.
-    vp_row = MagicMock()
-    vp_row.id = vp_id
-    vp_row.name = "DeleteMe"
-
-    # Mock DB session with the route's two .execute() calls + flush + commit.
-    select_calls = {"i": 0}
-
-    async def fake_execute(query):  # noqa: ARG001
-        """Return the VP row on the first call (vp lookup) and the
-        in-range PendingUpload rows on the second call (orphan query).
-        Third call is the DELETE which doesn't need a result."""
-        select_calls["i"] += 1
-        result = MagicMock()
-        if select_calls["i"] == 1:
-            result.scalar_one_or_none = MagicMock(return_value=vp_row)
-        elif select_calls["i"] == 2:
-            scalars = MagicMock()
-            scalars.all = MagicMock(return_value=[pending_a, pending_b])
-            result.scalars = MagicMock(return_value=scalars)
-        return result
-
-    db = AsyncMock()
-    db.execute = fake_execute
-    db.flush = AsyncMock()
-    db.commit = AsyncMock()
-
-    # Mock the manager: remove_instance, _base_dir, sync_from_db.
     fake_manager = MagicMock()
     fake_manager.remove_instance = AsyncMock()
     fake_manager.sync_from_db = AsyncMock()
@@ -77,13 +57,17 @@ async def test_delete_vp_marks_orphan_pending_uploads_discarded(tmp_path):
         "backend.app.services.virtual_printer.virtual_printer_manager",
         fake_manager,
     ):
-        await delete_virtual_printer(vp_id=vp_id, db=db, _=None)
+        await delete_virtual_printer(vp_id=vp_id, db=db_session, _=None, printer_scope=ALL_PRINTERS)
 
-    # Both in-range PendingUpload rows must be flipped to "discarded".
-    assert pending_a.status == "discarded"
-    assert pending_b.status == "discarded"
-    # The unrelated row was never returned from the query — left alone.
-    assert other_pending.status == "pending"
+    statuses = dict(
+        (
+            await db_session.execute(
+                select(PendingUpload.filename, PendingUpload.status).execution_options(populate_existing=True)
+            )
+        ).all()
+    )
+    assert statuses == {"a": "discarded", "b": "discarded", "other": "pending"}
+    assert await db_session.get(VirtualPrinter, vp_id) is None
 
     # The on-disk upload_dir is gone.
     assert not upload_dir.exists()
@@ -130,8 +114,34 @@ async def test_delete_vp_with_no_orphan_uploads_still_succeeds(tmp_path):
         "backend.app.services.virtual_printer.virtual_printer_manager",
         fake_manager,
     ):
-        await delete_virtual_printer(vp_id=vp_id, db=db, _=None)
+        await delete_virtual_printer(vp_id=vp_id, db=db, _=None, printer_scope=ALL_PRINTERS)
 
     fake_manager.remove_instance.assert_awaited_once_with(vp_id)
     # No directory to remove — and we didn't crash trying to.
     assert not (tmp_path / "uploads" / str(vp_id)).exists()
+
+
+@pytest.mark.asyncio
+async def test_deleting_vp_1_leaves_the_uploads_of_vp_12_alone(tmp_path, db_session):
+    """uploads/1 is a prefix of uploads/12/... as a string, not as a folder."""
+    from sqlalchemy import select
+
+    from backend.app.api.routes.virtual_printers import drop_virtual_printer
+    from backend.app.models.pending_upload import PendingUpload
+
+    fake_manager = MagicMock()
+    fake_manager._base_dir = tmp_path
+    db_session.add_all(
+        [
+            PendingUpload(filename="mine", file_path=str(tmp_path / "uploads" / "1" / "a.3mf"), file_size=1),
+            PendingUpload(filename="vp 12", file_path=str(tmp_path / "uploads" / "12" / "b.3mf"), file_size=1),
+        ]
+    )
+    await db_session.commit()
+
+    with patch("backend.app.services.virtual_printer.virtual_printer_manager", fake_manager):
+        await drop_virtual_printer(db_session, 1)
+    await db_session.commit()
+
+    statement = select(PendingUpload.filename, PendingUpload.status).execution_options(populate_existing=True)
+    assert dict((await db_session.execute(statement)).all()) == {"mine": "discarded", "vp 12": "pending"}

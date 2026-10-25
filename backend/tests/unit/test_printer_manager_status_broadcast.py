@@ -95,6 +95,7 @@ def _fake_state(**overrides):
         "layer_num": None,
         "remaining_time": None,
         "speed_level": None,
+        "airduct_mode": None,
         "stg_cur": 0,  # get_derived_status_name does ``0 <= state.stg_cur < 255``
         "subtask_name": None,
         "total_layers": None,
@@ -102,6 +103,10 @@ def _fake_state(**overrides):
         "wifi_signal": None,
         "wired_network": None,
         "ams_filament_backup": None,
+        "developer_mode": None,
+        "nozzles": [],
+        "ams_extruder_map": {},
+        "print_ams_mapping": None,
         # Filament Track Switch. None means "no accessory", which is what
         # printer_state_to_dict gates both of these on.
         "fila_switch": None,

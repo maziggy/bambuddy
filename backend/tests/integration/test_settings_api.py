@@ -8,6 +8,8 @@ import os
 import pytest
 from httpx import AsyncClient
 
+from backend.app.api.routes.settings import get_homeassistant_settings, get_setting
+
 
 class TestSettingsAPI:
     """Integration tests for /api/v1/settings/ endpoints."""
@@ -396,7 +398,7 @@ class TestSettingsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_update_mqtt_settings(self, async_client: AsyncClient):
+    async def test_update_mqtt_settings(self, async_client: AsyncClient, db_session):
         """Verify MQTT settings can be updated."""
         response = await async_client.put(
             "/api/v1/settings/",
@@ -417,7 +419,8 @@ class TestSettingsAPI:
         assert result["mqtt_broker"] == "mqtt.example.com"
         assert result["mqtt_port"] == 8883
         assert result["mqtt_username"] == "testuser"
-        assert result["mqtt_password"] == "testpass"
+        assert result["mqtt_password"] == "********"  # write-only
+        assert await get_setting(db_session, "mqtt_password") == "testpass"
         assert result["mqtt_topic_prefix"] == "myprefix"
         assert result["mqtt_use_tls"] is True
 
@@ -733,7 +736,7 @@ class TestSettingsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_ha_settings_with_both_env_vars(self, async_client: AsyncClient):
+    async def test_ha_settings_with_both_env_vars(self, async_client: AsyncClient, db_session):
         """Verify HA settings are overridden when both env vars are set."""
         # Set environment variables
         os.environ["HA_URL"] = "http://supervisor/core"
@@ -747,7 +750,8 @@ class TestSettingsAPI:
 
             # Verify env var values are used
             assert result["ha_url"] == "http://supervisor/core"
-            assert result["ha_token"] == "test-token-12345"
+            assert result["ha_token"] == "********"  # write-only
+            assert (await get_homeassistant_settings(db_session))["ha_token"] == "test-token-12345"
 
             # Verify metadata fields
             assert result["ha_url_from_env"] is True
@@ -790,7 +794,7 @@ class TestSettingsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_ha_settings_with_only_token_env_var(self, async_client: AsyncClient):
+    async def test_ha_settings_with_only_token_env_var(self, async_client: AsyncClient, db_session):
         """Verify partial configuration when only HA_TOKEN is set."""
         # Set only token env var
         os.environ.pop("HA_URL", None)
@@ -803,7 +807,8 @@ class TestSettingsAPI:
             assert response.status_code == 200
 
             # Verify token is from env, URL is from database
-            assert result["ha_token"] == "test-token-12345"
+            assert result["ha_token"] == "********"  # write-only
+            assert (await get_homeassistant_settings(db_session))["ha_token"] == "test-token-12345"
             assert result["ha_url_from_env"] is False
             assert result["ha_token_from_env"] is True
             assert result["ha_env_managed"] is False
@@ -816,7 +821,7 @@ class TestSettingsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_ha_settings_env_vars_override_database(self, async_client: AsyncClient):
+    async def test_ha_settings_env_vars_override_database(self, async_client: AsyncClient, db_session):
         """Verify environment variables take precedence over database values."""
         # First, set database values
         await async_client.put(
@@ -832,7 +837,8 @@ class TestSettingsAPI:
         response = await async_client.get("/api/v1/settings/")
         result = response.json()
         assert result["ha_url"] == "http://database-url:8123"
-        assert result["ha_token"] == "database-token"
+        assert result["ha_token"] == "********"  # write-only
+        assert (await get_homeassistant_settings(db_session))["ha_token"] == "database-token"
 
         # Now set environment variables
         os.environ["HA_URL"] = "http://env-url/core"
@@ -844,7 +850,8 @@ class TestSettingsAPI:
 
             # Verify env vars override database
             assert result["ha_url"] == "http://env-url/core"
-            assert result["ha_token"] == "env-token-xyz"
+            assert result["ha_token"] == "********"  # write-only
+            assert (await get_homeassistant_settings(db_session))["ha_token"] == "env-token-xyz"
             assert result["ha_url_from_env"] is True
             assert result["ha_token_from_env"] is True
             assert result["ha_env_managed"] is True
@@ -858,13 +865,14 @@ class TestSettingsAPI:
         response = await async_client.get("/api/v1/settings/")
         result = response.json()
         assert result["ha_url"] == "http://database-url:8123"
-        assert result["ha_token"] == "database-token"
+        assert result["ha_token"] == "********"  # write-only
+        assert (await get_homeassistant_settings(db_session))["ha_token"] == "database-token"
         assert result["ha_url_from_env"] is False
         assert result["ha_token_from_env"] is False
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_ha_settings_database_updates_accepted_but_ignored(self, async_client: AsyncClient):
+    async def test_ha_settings_database_updates_accepted_but_ignored(self, async_client: AsyncClient, db_session):
         """Verify database updates are accepted but have no effect when env vars are set."""
         # Set environment variables
         os.environ["HA_URL"] = "http://supervisor/core"
@@ -886,7 +894,8 @@ class TestSettingsAPI:
             # But values should still be from env vars
             result = response.json()
             assert result["ha_url"] == "http://supervisor/core"
-            assert result["ha_token"] == "env-token"
+            assert result["ha_token"] == "********"  # write-only
+            assert (await get_homeassistant_settings(db_session))["ha_token"] == "env-token"
             assert result["ha_url_from_env"] is True
             assert result["ha_token_from_env"] is True
 
@@ -917,7 +926,7 @@ class TestSettingsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_ha_settings_can_be_updated_normally_without_env_vars(self, async_client: AsyncClient):
+    async def test_ha_settings_can_be_updated_normally_without_env_vars(self, async_client: AsyncClient, db_session):
         """Verify HA settings can be updated normally when env vars are not set."""
         # Ensure no env vars
         os.environ.pop("HA_URL", None)
@@ -937,7 +946,8 @@ class TestSettingsAPI:
         result = response.json()
         assert result["ha_enabled"] is True
         assert result["ha_url"] == "http://192.168.1.100:8123"
-        assert result["ha_token"] == "my-long-lived-token"
+        assert result["ha_token"] == "********"  # write-only
+        assert (await get_homeassistant_settings(db_session))["ha_token"] == "my-long-lived-token"
         assert result["ha_url_from_env"] is False
         assert result["ha_token_from_env"] is False
         assert result["ha_env_managed"] is False
@@ -947,7 +957,8 @@ class TestSettingsAPI:
         result = response.json()
         assert result["ha_enabled"] is True
         assert result["ha_url"] == "http://192.168.1.100:8123"
-        assert result["ha_token"] == "my-long-lived-token"
+        assert result["ha_token"] == "********"  # write-only
+        assert (await get_homeassistant_settings(db_session))["ha_token"] == "my-long-lived-token"
 
 
 class TestOpenInSlicerOverride:

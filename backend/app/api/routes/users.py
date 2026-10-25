@@ -4,7 +4,7 @@ from typing import Annotated
 import jwt as _jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -26,13 +26,14 @@ from backend.app.core.permissions import Permission
 from backend.app.core.websocket import ws_manager
 from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
-from backend.app.models.auth_ephemeral import AuthEphemeralToken, TokenType
+from backend.app.models.auth_ephemeral import AuthEphemeralToken
 from backend.app.models.connected_app import ConnectedApp, ConnectedAppGrant
 from backend.app.models.group import Group
 from backend.app.models.library import LibraryFile
 from backend.app.models.long_lived_token import LongLivedToken
 from backend.app.models.oidc_provider import UserOIDCLink
 from backend.app.models.print_batch import PrintBatch
+from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
@@ -53,7 +54,10 @@ from backend.app.services.email_service import (
     send_email,
 )
 from backend.app.services.finance_defaults import ensure_user_finance_defaults
+from backend.app.services.printer_manager import printer_manager
+from backend.app.services.slice_dispatch import slice_dispatch
 from backend.app.utils.library_paths import remove_library_photos_dir
+from backend.app.utils.local_time import utcnow_naive
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -78,7 +82,7 @@ def _user_to_response(user: User) -> UserResponse:
 @router.get("/", response_model=list[UserResponse])
 async def list_users(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all users.
 
@@ -92,13 +96,31 @@ async def list_users(
     return [_user_to_response(user) for user in users]
 
 
+async def drop_pending_tokens(db: AsyncSession, username: str) -> None:
+    """Delete the one-time tokens pending under a username that is going away.
+
+    Reset links, 2FA and OIDC steps, connect codes, camera, WebSocket and slicer
+    tokens are looked up by username, so they would work for whoever is given
+    the name next. The logout list (revoked_jti) stays: dropping an entry would
+    make the logged-out token valid again.
+    """
+    await db.execute(
+        delete(AuthEphemeralToken).where(
+            # Both sides in SQL: SQLite's lower() changes only ASCII letters, so
+            # it never equals Python's lower() of a name with an umlaut.
+            func.lower(AuthEphemeralToken.username) == func.lower(username),
+            AuthEphemeralToken.token_type != "revoked_jti",
+        )
+    )
+
+
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     user_data: UserCreate,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_CREATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Create a new user.
 
@@ -205,7 +227,7 @@ async def create_user(
 @router.get("/slim", response_model=list[UserSlim])
 async def list_users_slim(
     _: User | None = RequireAnyPermissionIfAuthEnabled(Permission.USERS_READ_SLIM, Permission.USERS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List users as ``{id, username}`` only (#1894).
 
@@ -231,7 +253,7 @@ async def list_users_slim(
 async def get_user(
     user_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get a user by ID. Read-only — gated on ``USERS_READ`` only."""
     result = await db.execute(select(User).where(User.id == user_id).options(selectinload(User.groups)))
@@ -251,9 +273,11 @@ async def update_user(
     user_data: UserUpdate,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Update a user."""
+    close_sockets = False
+    deactivated_keys: list[int] = []
     result = await db.execute(select(User).where(User.id == user_id).options(selectinload(User.groups)))
     user = result.scalar_one_or_none()
     if not user:
@@ -303,9 +327,40 @@ async def update_user(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Username already exists",
             )
+        if user_data.username != user.username:
+            # The name passes on: a deleted user's still-valid JWTs under the new
+            # name must not sign this user in, and what is pending under the old
+            # one must not reach whoever is given it next. This user's own
+            # sessions carry the old name and end anyway. A change of case counts
+            # too: SQLite compares only ASCII letters without case, so 'Ärger'
+            # and 'ärger' are two names there.
+            await drop_pending_tokens(db, user.username)
+            user.password_changed_at = utcnow_naive()
+            close_sockets = True
         user.username = user_data.username
 
-    if user_data.email is not None:
+    if user_data.email is not None and not user_data.email.strip():
+        # Empty removes the email; null leaves it as it is.
+        if user.email:
+            rows = await db.execute(
+                select(Settings.key, Settings.value).where(
+                    Settings.key.in_(["advanced_auth_enabled", f"user_{user.id}_email_2fa_enabled"])
+                )
+            )
+            flags = {key: (value or "").lower() == "true" for key, value in rows.all()}
+            if flags.get("advanced_auth_enabled"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email is required when advanced authentication is enabled",
+                )
+            # Their sign-in codes go to this address.
+            if flags.get(f"user_{user.id}_email_2fa_enabled"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email is required while the user has email two-factor authentication on",
+                )
+            user.email = None
+    elif user_data.email is not None:
         # Check if new email already exists (case-insensitive)
         existing_email = await db.execute(
             select(User).where(func.lower(User.email) == func.lower(user_data.email), User.id != user_id)
@@ -324,6 +379,11 @@ async def update_user(
                 detail="Cannot set password for LDAP users",
             )
         user.password_hash = get_password_hash(user_data.password)
+        # As a reset: sessions and pending tokens of the old password end (an
+        # admin setting a password is often taking an account back).
+        await drop_pending_tokens(db, user.username)
+        user.password_changed_at = utcnow_naive()
+        close_sockets = True
 
     if user_data.role is not None:
         if user_data.role not in ["admin", "user"]:
@@ -334,6 +394,20 @@ async def update_user(
         user.role = user_data.role
 
     if user_data.is_active is not None:
+        if user.is_active and not user_data.is_active:
+            # Deactivated: their printers go at the scope refresh below, but
+            # events of no printer (inventory, SpoolBuddy tags, announcements)
+            # would still reach their open dashboards, and their tokens would
+            # open new ones. The same for their API keys' (a kiosk), which
+            # REST already refuses for a deactivated owner.
+            from backend.app.api.routes.api_keys import drop_api_key_tokens
+
+            await drop_pending_tokens(db, user.username)
+            deactivated_keys = list(
+                (await db.execute(select(APIKey.id).where(APIKey.user_id == user_id))).scalars().all()
+            )
+            await drop_api_key_tokens(db, deactivated_keys)
+            close_sockets = True
         user.is_active = user_data.is_active
 
     # Handle group assignments
@@ -350,6 +424,14 @@ async def update_user(
     await ensure_user_finance_defaults(db, user)
 
     await db.commit()
+    if deactivated_keys:
+        await ws_manager.close_api_keys(deactivated_keys)
+    if close_sockets:
+        # Open dashboards are not signed in again. After a rename they keep the
+        # name they connected with and look their printers up by it on every
+        # scope refresh (the next user given it); after a password set they are
+        # whoever held the account before.
+        await ws_manager.close_user(user_id)
     if user_data.group_ids is not None or user_data.role is not None or user_data.is_active is not None:
         # Groups, admin role and deactivation all change which printers the
         # user's open dashboards may hear about (#1727)
@@ -364,7 +446,7 @@ async def update_user(
 async def get_user_items_count(
     user_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get count of items created by this user. Read-only — gated on
     ``USERS_READ`` only."""
@@ -408,7 +490,7 @@ async def delete_user(
     delete_items: bool = Query(False, description="Delete all items created by this user"),
     _admin: User | None = RequireAdminIfAuthEnabled(),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_DELETE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Delete a user.
 
@@ -460,7 +542,92 @@ async def delete_user(
         doomed_library_file_ids = list(
             (await db.execute(select(LibraryFile.id).where(LibraryFile.created_by_id == user_id))).scalars().all()
         )
-        # Delete all items created by this user
+        # Delete all items created by this user. The print log stays, without
+        # the archives it pointed at; archives of other users printed from
+        # these library files lose that link (both SET NULL on PostgreSQL).
+        from backend.app.services.library_trash import delete_dependent_variants, release_queue_references
+
+        await delete_dependent_variants(db, doomed_library_file_ids)
+        await release_queue_references(db, doomed_library_file_ids)
+        # A print still running keeps what it needs to be billed when it
+        # ends: its queue row and the user's archive it prints are detached
+        # (no user), as without delete_items, rather than deleted. Deleted, the
+        # completion found no queue row and charged the archive's creator
+        # instead (for a reprint someone else, who never printed it), or found
+        # no archive and billed nothing, its reservation held for good.
+        from sqlalchemy import and_, or_
+
+        from backend.app.models.finance import BudgetReservation
+
+        running_rows = (
+            await db.execute(
+                select(PrintQueueItem.id, PrintQueueItem.archive_id).where(
+                    PrintQueueItem.created_by_id == user_id, PrintQueueItem.status == "printing"
+                )
+            )
+        ).all()
+        running_items = [row.id for row in running_rows]
+        running_archives = [row.archive_id for row in running_rows if row.archive_id is not None]
+        running_archives += (
+            (
+                await db.execute(
+                    select(PrintArchive.id).where(
+                        PrintArchive.created_by_id == user_id, PrintArchive.status == "printing"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # Also one another user is printing (a reprint of this user's archive,
+        # dispatched before the printer's start marks the archive printing):
+        # deleted, it took their queue row with it and their print went unbilled.
+        own_archives = select(PrintArchive.id).where(PrintArchive.created_by_id == user_id)
+        running_archives += (
+            (
+                await db.execute(
+                    select(PrintQueueItem.archive_id).where(
+                        PrintQueueItem.status == "printing", PrintQueueItem.archive_id.in_(own_archives)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if running_items:
+            await db.execute(
+                sql_update(PrintQueueItem).where(PrintQueueItem.id.in_(running_items)).values(created_by_id=None)
+            )
+        if running_archives:
+            await db.execute(
+                sql_update(PrintArchive)
+                .where(PrintArchive.id.in_(running_archives), PrintArchive.created_by_id == user_id)
+                .values(created_by_id=None)
+            )
+
+        # Budget held for the queue items and archives deleted here: no print
+        # completion can settle it any more (it finds no archive), and an
+        # active reservation held the cost centre's budget, and kept the cost
+        # centre from being deleted, for good. Nothing is charged for those:
+        # they go, as the admin chose. (A running print's was detached above.)
+        await db.execute(
+            sql_update(BudgetReservation)
+            .where(
+                BudgetReservation.status == "active",
+                or_(
+                    and_(
+                        BudgetReservation.source_type == "print_queue",
+                        BudgetReservation.source_id.in_(
+                            select(PrintQueueItem.id).where(PrintQueueItem.created_by_id == user_id)
+                        ),
+                    ),
+                    BudgetReservation.print_archive_id.in_(
+                        select(PrintArchive.id).where(PrintArchive.created_by_id == user_id)
+                    ),
+                ),
+            )
+            .values(status="released", released_at=datetime.now(timezone.utc))
+        )
         await db.execute(delete(PrintArchive).where(PrintArchive.created_by_id == user_id))
         await db.execute(delete(PrintQueueItem).where(PrintQueueItem.created_by_id == user_id))
         await db.execute(delete(LibraryFile).where(LibraryFile.created_by_id == user_id))
@@ -495,6 +662,10 @@ async def delete_user(
         await db.execute(update(LibraryFile).where(LibraryFile.created_by_id == user_id).values(created_by_id=None))
         await db.execute(update(PrintBatch).where(PrintBatch.created_by_id == user_id).values(created_by_id=None))
 
+    # The print log keeps who started each run as long as the user exists, and
+    # outlives them either way (ON DELETE SET NULL, which SQLite doesn't apply).
+    await db.execute(sql_update(PrintLogEntry).where(PrintLogEntry.created_by_id == user_id).values(created_by_id=None))
+
     # Drop API keys owned by this user. The model declares ON DELETE CASCADE
     # so Postgres handles this automatically, but SQLite ships with FK
     # enforcement off (the project's existing pattern — same reason the
@@ -504,6 +675,10 @@ async def delete_user(
     # silently degrading the keys to anonymous (and locking them out of
     # /cloud/* — but the rest of the API would still accept them, which is
     # exactly the orphan-key state the CASCADE was meant to prevent).
+    from backend.app.api.routes.api_keys import drop_api_key_tokens
+
+    key_ids = (await db.execute(select(APIKey.id).where(APIKey.user_id == user_id))).scalars().all()
+    await drop_api_key_tokens(db, key_ids)
     await db.execute(delete(APIKey).where(APIKey.user_id == user_id))
 
     # Drop OIDC links, MFA state, and long-lived camera-stream tokens
@@ -523,21 +698,30 @@ async def delete_user(
     await db.execute(delete(LongLivedToken).where(LongLivedToken.user_id == user_id))
 
     # Connected apps, same SQLite/FK pattern. A leftover consent row would
-    # skip the consent screen for whoever is next given this user id, and a
-    # code issued in the last minute is keyed by username, not id.
+    # skip the consent screen for whoever is next given this user id.
     from sqlalchemy import update as _update
 
     await db.execute(delete(ConnectedAppGrant).where(ConnectedAppGrant.user_id == user_id))
-    await db.execute(
-        delete(AuthEphemeralToken).where(
-            AuthEphemeralToken.token_type == TokenType.CONNECT_CODE,
-            func.lower(AuthEphemeralToken.username) == user.username.lower(),
-        )
-    )
+    await drop_pending_tokens(db, user.username)
     await db.execute(_update(ConnectedApp).where(ConnectedApp.created_by_id == user_id).values(created_by_id=None))
+
+    # Email 2FA is a settings key named after the id, which no foreign key covers.
+    await db.execute(delete(Settings).where(Settings.key == f"user_{user_id}_email_2fa_enabled"))
 
     await db.delete(user)
     await db.commit()
+    # What still runs for them must not be credited to whoever gets the id next
+    # (SQLite reuses it): a print, a slice, an open dashboard.
+    printer_manager.forget_user(user_id)
+    from backend.app.main import forget_print_creator
+
+    forget_print_creator(user_id)
+    slice_dispatch.forget_owner(user_id)
+    await ws_manager.close_user(user_id)
+    await ws_manager.close_api_keys(key_ids)
+    from backend.app.api.routes.notifications import forget_app_senders
+
+    forget_app_senders(key_ids, [user_id])
     await ws_manager.refresh_printer_scopes()
 
     for file_id in doomed_library_file_ids:
@@ -549,7 +733,7 @@ async def change_own_password(
     password_data: ChangePasswordRequest,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
     current_user: User | None = Depends(get_current_user_optional),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Change the current user's password. Requires current password verification."""
     if not current_user:
@@ -596,7 +780,14 @@ async def change_own_password(
     # Update password
     user.password_hash = get_password_hash(password_data.new_password)
     user.password_changed_at = datetime.now(timezone.utc)  # M-R7-B: invalidate all prior JWTs
+    # The WebSocket and camera tokens too: reusable for an hour, they would
+    # reconnect a closed dashboard straight away.
+    await drop_pending_tokens(db, user.username)
     await db.commit()
+    # Open dashboards are never signed in again: one someone else had open on
+    # the account would keep receiving its printers. This tab signs in again
+    # (the route revokes its JWT anyway).
+    await ws_manager.close_user(user.id)
 
     # L-R6-A: Password verified successfully — reset the failure counter
     from backend.app.api.routes.mfa import clear_failed_attempts

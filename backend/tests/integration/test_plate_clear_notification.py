@@ -44,8 +44,12 @@ class TestPlateClearNotificationDispatch:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_skips_a_provider_scoped_to_a_different_printer(self, notification_provider_factory, db_session):
-        await notification_provider_factory(name="Other Printer", on_plate_clear_required=True, printer_id=99)
+    async def test_skips_a_provider_scoped_to_a_different_printer(
+        self, notification_provider_factory, printer_factory, db_session
+    ):
+        await printer_factory(name="Workshop")
+        other = await printer_factory(name="Other")
+        await notification_provider_factory(name="Other Printer", on_plate_clear_required=True, printer_id=other.id)
 
         send = AsyncMock()
         with patch.object(notification_service, "_send_to_providers", send):

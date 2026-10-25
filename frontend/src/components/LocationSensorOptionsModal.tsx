@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Battery, Droplets, RotateCcw, Save, Settings2, Thermometer, X } from 'lucide-react';
 import { api } from '../api/client';
@@ -25,6 +25,7 @@ import {
   type LocationSensorCategoryDefaults,
   type LocationSensorDefaults,
 } from '../utils/locationSensorDefaults';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 interface Props {
   onClose: () => void;
@@ -157,7 +158,7 @@ export function LocationSensorOptionsModal({ onClose }: Props) {
   const [optimalColor, setOptimalColor] = useState<LocationSensorAlertColor>(() => loadLocationSensorAlertOptimalColor());
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  const { data: appSettings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+  const { data: appSettings } = useUiSettings();
   const [pollInterval, setPollInterval] = useState(DEFAULT_POLL_INTERVAL);
 
   // Seed the server-backed fields once, and never over an edit in progress.
@@ -178,7 +179,8 @@ export function LocationSensorOptionsModal({ onClose }: Props) {
   useEffect(() => {
     if (!appSettings || seeded.current) return;
     seeded.current = true;
-    if (!touched.current.has('pollInterval')) setPollInterval(appSettings.location_sensor_poll_interval);
+    const pollFromServer = appSettings.location_sensor_poll_interval;
+    if (!touched.current.has('pollInterval') && pollFromServer != null) setPollInterval(pollFromServer);
     const fromServer = loadLocationSensorDefaults(appSettings.location_sensor_alert_defaults);
     setDefaults((prev) => {
       const next = { ...fromServer };

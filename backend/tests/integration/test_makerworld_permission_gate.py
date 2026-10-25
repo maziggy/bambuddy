@@ -178,3 +178,43 @@ class TestPermissionStillBites:
             )
         assert resp.status_code == 200, resp.text
         assert resp.json()["model_id"] == 1400373
+
+
+class TestAnotherUsersImport:
+    """A user who sees only their own files neither sees a colleague's import
+    nor gets it back for their own: they import a copy of their own."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_is_not_theirs(self, async_client: AsyncClient):
+        admin = await _setup_auth_with_admin(async_client)
+        perms = ["makerworld:view", "makerworld:import", "library:read_own", "library:upload"]
+        first = {"Authorization": f"Bearer {await _make_user(async_client, admin, username='mwa', permissions=perms)}"}
+        second = {"Authorization": f"Bearer {await _make_user(async_client, admin, username='mwb', permissions=perms)}"}
+
+        def resolver():
+            return _fake_service(
+                resolve=ProviderResolvedModel(
+                    ref=ProviderResourceRef(source_type="makerworld", external_id="1400373"),
+                    design={"id": 1400373},
+                    instances=[],
+                )
+            )
+
+        body = {"model_id": 1400373, "profile_id": 298919107}
+        with patch(
+            "backend.app.api.routes.makerworld._build_service", AsyncMock(side_effect=lambda *a: _import_service())
+        ):
+            theirs = (await async_client.post("/api/v1/makerworld/import", json=body, headers=first)).json()
+        with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(side_effect=lambda *a: resolver())):
+            seen = await async_client.post(
+                "/api/v1/makerworld/resolve", json={"url": "https://makerworld.com/en/models/1400373"}, headers=second
+            )
+        with patch(
+            "backend.app.api.routes.makerworld._build_service", AsyncMock(side_effect=lambda *a: _import_service())
+        ):
+            mine = (await async_client.post("/api/v1/makerworld/import", json=body, headers=second)).json()
+
+        assert seen.json()["already_imported_library_ids"] == []
+        assert mine["was_existing"] is False
+        assert mine["library_file_id"] != theirs["library_file_id"]

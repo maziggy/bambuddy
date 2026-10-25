@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type Ref, type SyntheticEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Clock, Layers, Printer, Timer } from 'lucide-react';
 import './UpdatedStreamOverlay.css';
 import { overlayProgressTextStyle } from '../utils/overlayBranding';
+import { useSidewaysBox } from '../hooks/useSidewaysBox';
 
 import type { OverlayLayout } from '../utils/overlayLayout';
 
@@ -12,7 +13,13 @@ interface UpdatedStreamOverlayProps {
   customLogo?: ReactNode;
   progressBackground?: string;
   size: 'small' | 'medium' | 'large';
-  camera: { url: string; rotation: number; onError: () => void } | null;
+  // url is undefined while the stream is closed for a renewal (useOverlayCameraRecovery).
+  camera: {
+    url: string | undefined;
+    rotation: number;
+    onError: (event: SyntheticEvent<HTMLImageElement>) => void;
+    imgRef?: Ref<HTMLImageElement>;
+  } | null;
   name: string | null;
   model: string | null;
   filename: string | null;
@@ -23,38 +30,6 @@ interface UpdatedStreamOverlayProps {
   remaining: string | null;
   eta: string | null;
   temperatures: { key: string; icon: ReactNode; label: string; current: number; target: number | null }[];
-}
-
-// The camera slot's size in px, measured only while the camera is turned
-// sideways. Measured rather than written as 100cqh/100cqw because container
-// units need Chromium 105+, which older OBS browser sources don't have, and
-// the viewport units they would fall back to are wrong for the portrait
-// layout, where the camera fills only the middle row.
-function useCameraBox(ref: RefObject<HTMLDivElement | null>, active: boolean) {
-  const [box, setBox] = useState<{ width: number; height: number } | null>(null);
-  // Layout effect: measured before paint, so a sideways camera never shows a
-  // frame at the unswapped size.
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!active || !el) return;
-    const measure = () => {
-      // Layout dimensions exclude the scale applied by OverlayFrame.
-      const width = el.clientWidth;
-      const height = el.clientHeight;
-      if (width > 0 && height > 0) {
-        setBox((prev) => (prev && prev.width === width && prev.height === height ? prev : { width, height }));
-      }
-    };
-    measure();
-    if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', measure);
-      return () => window.removeEventListener('resize', measure);
-    }
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [ref, active]);
-  return active ? box : null;
 }
 
 // Explicit sources keep their orientation; legacy URLs follow the viewport.
@@ -100,7 +75,7 @@ export function UpdatedStreamOverlay(props: UpdatedStreamOverlayProps) {
   const rotation = camera?.rotation ?? 0;
   const sideways = Math.abs(rotation % 180) === 90;
   const cameraRef = useRef<HTMLDivElement>(null);
-  const cameraBox = useCameraBox(cameraRef, sideways && camera != null);
+  const cameraBox = useSidewaysBox(cameraRef, sideways && camera != null);
   const stats = [
     { key: 'layers', icon: <Layers />, label: t('streamOverlay.layer'), value: layers },
     { key: 'remaining', icon: <Timer />, label: t('streamOverlay.remaining'), value: remaining },
@@ -133,7 +108,7 @@ export function UpdatedStreamOverlay(props: UpdatedStreamOverlayProps) {
       {camera && (
         <div className="updated-overlay__camera" ref={cameraRef}>
           <img
-            key={camera.url}
+            ref={camera.imgRef}
             src={camera.url}
             alt={t('streamOverlay.cameraStream')}
             style={{

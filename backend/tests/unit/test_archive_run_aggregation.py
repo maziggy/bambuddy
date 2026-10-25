@@ -496,3 +496,107 @@ async def test_archive_list_keeps_time_accuracy_for_single_run_archives(
     assert row["actual_time_seconds"] == 3600
     assert row["time_accuracy"] == 100.0
     assert row["run_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# #3310: a print that finished while Bambuddy restarted is logged with its
+# slicer estimate as its duration. That is no measurement, so neither the
+# card's badge nor the Statistics average may compare it with the estimate.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_an_estimated_run_shows_no_time_accuracy(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    printer = await printer_factory()
+    archive = await archive_factory(
+        printer.id,
+        status="completed",
+        print_time_seconds=3600,
+        started_at=datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc),
+        completed_at=datetime(2026, 5, 1, 11, 0, tzinfo=timezone.utc),
+        with_run=False,
+    )
+    db_session.add(
+        PrintLogEntry(
+            archive_id=archive.id,
+            printer_id=printer.id,
+            status="completed",
+            started_at=datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc),
+            completed_at=datetime(2026, 5, 1, 11, 0, tzinfo=timezone.utc),
+            duration_seconds=3600,
+            duration_unmeasured=True,
+        )
+    )
+    await db_session.commit()
+
+    row = next(r for r in (await async_client.get("/api/v1/archives/")).json() if r["id"] == archive.id)
+    assert (row["actual_time_seconds"], row["time_accuracy"]) == (None, None)
+    assert row["print_time_seconds"] == 3600
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_an_estimated_run_is_no_accuracy_sample_but_counts_its_time(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    printer = await printer_factory()
+    measured = await archive_factory(printer.id, print_time_seconds=3600, with_run=False)
+    estimated = await archive_factory(printer.id, print_time_seconds=7200, with_run=False)
+    db_session.add(
+        PrintLogEntry(archive_id=measured.id, printer_id=printer.id, status="completed", duration_seconds=4000)
+    )
+    db_session.add(
+        PrintLogEntry(
+            archive_id=estimated.id,
+            printer_id=printer.id,
+            status="completed",
+            duration_seconds=7200,
+            duration_unmeasured=True,
+        )
+    )
+    await db_session.commit()
+
+    body = (await async_client.get("/api/v1/archives/stats")).json()
+    assert body["average_time_accuracy"] == pytest.approx(90.0, abs=0.1)
+    assert body["time_accuracy_by_printer"][str(printer.id)] == pytest.approx(90.0, abs=0.1)
+    assert body["total_print_time_hours"] == pytest.approx(11200 / 3600, abs=0.06)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_run_without_an_estimate_shows_no_reconnect_gap(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    """#3310: with no estimate the archive ends at the reconnect, 9 h after a
+    6 h print started; that gap is neither its time nor an accuracy sample."""
+    printer = await printer_factory()
+    started = datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc)
+    reconnect = datetime(2026, 5, 1, 19, 0, tzinfo=timezone.utc)
+    archive = await archive_factory(
+        printer.id,
+        status="completed",
+        print_time_seconds=6 * 3600,
+        started_at=started,
+        completed_at=reconnect,
+        with_run=False,
+    )
+    db_session.add(
+        PrintLogEntry(
+            archive_id=archive.id,
+            printer_id=printer.id,
+            status="completed",
+            started_at=started,
+            completed_at=reconnect,
+            duration_seconds=0,
+            duration_unmeasured=True,
+        )
+    )
+    await db_session.commit()
+
+    row = next(r for r in (await async_client.get("/api/v1/archives/")).json() if r["id"] == archive.id)
+    assert (row["actual_time_seconds"], row["time_accuracy"]) == (None, None)
+    body = (await async_client.get("/api/v1/archives/stats")).json()
+    assert body["average_time_accuracy"] is None

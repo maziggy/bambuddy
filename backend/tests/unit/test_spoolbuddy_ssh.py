@@ -717,3 +717,62 @@ async def test_perform_ssh_update_passes_str_not_bytes_to_import_known_hosts(tmp
     assert captured_args, "import_known_hosts was never called"
     for arg in captured_args:
         assert isinstance(arg, str), f"asyncssh.import_known_hosts must receive str, got {type(arg).__name__}: {arg!r}"
+
+
+async def _update_with_pip_result(tmp_path, pip_result):
+    ssh_dir = tmp_path / "spoolbuddy" / "ssh"
+    ssh_dir.mkdir(parents=True)
+    (ssh_dir / "id_ed25519").write_text("PRIVATE")
+    (ssh_dir / "id_ed25519.pub").write_text("PUBLIC")
+    calls: list[tuple[str, float]] = []
+
+    async def mock_ssh(ip, cmd, key, *, known_hosts=None, timeout=60):
+        calls.append((cmd, timeout))
+        if "pip" in cmd:
+            return pip_result
+        return 0, "ok", "", "ssh-ed25519 AAAA fakehostkey"
+
+    _, mock_ctx, mock_ws = _make_update_mocks(tmp_path)
+    with (
+        patch("backend.app.services.spoolbuddy_ssh.settings") as mock_settings,
+        patch("backend.app.services.spoolbuddy_ssh._run_ssh_command", side_effect=mock_ssh),
+        patch("backend.app.services.spoolbuddy_ssh.detect_current_branch", return_value="dev"),
+        patch("backend.app.services.spoolbuddy_ssh.asyncssh.import_known_hosts", return_value=MagicMock()),
+        patch("backend.app.core.database.async_session", return_value=mock_ctx),
+        patch("backend.app.api.routes.spoolbuddy.ws_manager", mock_ws),
+    ):
+        mock_settings.base_dir = tmp_path
+        await perform_ssh_update("sb-test", "10.0.0.1")
+    last = mock_ws.broadcast.call_args_list[-1].args[0]
+    return calls, last
+
+
+@pytest.mark.asyncio
+async def test_a_pip_timeout_stops_before_the_daemon_is_restarted(tmp_path):
+    """TO-C12: pip may still be running on the Pi; restarting the daemon over a
+    half-installed venv, and reporting success, hid that."""
+    calls, last = await _update_with_pip_result(tmp_path, (-1, "", "SSH command timed out", None))
+
+    assert last["update_status"] == "error"
+    assert "timed out" in last["update_message"]
+    assert not any("spoolbuddy.service" in cmd for cmd, _ in calls)
+
+
+@pytest.mark.asyncio
+async def test_a_failed_pip_install_completes_but_says_so(tmp_path):
+    """A pip error still restarts (the daemon may not need the upgrade), but
+    the final status names it, with pip's own output in the log."""
+    calls, last = await _update_with_pip_result(
+        tmp_path, (1, "ERROR: No matching distribution found for gpiod", "", None)
+    )
+
+    assert last["update_status"] == "complete"
+    assert "dependencies" in last["update_message"]
+    assert any("spoolbuddy.service" in cmd for cmd, _ in calls)
+
+
+@pytest.mark.asyncio
+async def test_pip_gets_time_for_a_slow_pi(tmp_path):
+    calls, _ = await _update_with_pip_result(tmp_path, (0, "ok", "", None))
+
+    assert next(timeout for cmd, timeout in calls if "pip" in cmd) >= 300

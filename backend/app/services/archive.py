@@ -6,11 +6,14 @@ import os
 import re
 import shutil
 import zipfile
-from datetime import date, datetime, time, timezone
+from collections.abc import Sequence
+from datetime import date, datetime, timezone, tzinfo
 from pathlib import Path
+from typing import Any
 
 from defusedxml import ElementTree as ET
 from sqlalchemy import and_, or_, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
@@ -22,8 +25,9 @@ from backend.app.models.printer import Printer
 from backend.app.utils.archive_paths import archive_dir as resolve_archive_dir
 from backend.app.utils.ffmpeg_output import NO_FFMPEG_OUTPUT, summarize_ffmpeg_stderr
 from backend.app.utils.filename import clean_display_name
+from backend.app.utils.local_time import local_date_end, local_date_start
 from backend.app.utils.safe_path import PathTraversalError, assert_under, safe_join_under
-from backend.app.utils.threemf_tools import bed_temperature_from_config
+from backend.app.utils.threemf_tools import bed_temperature_from_config, used_filament_indexes
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +211,24 @@ def read_3dmodel_without_meshes(zf: zipfile.ZipFile, model_path: str = "3D/3dmod
 _GCODE_SCAN_BYTES = 64 * 1024
 
 
+async def estimate_filament_cost(db: AsyncSession, grams: float | None, filament_type: str | None) -> float | None:
+    """An archive's filament cost from its grams and type: the first type's
+    cost per kg on record, else the default filament cost (25 when unset).
+    ``None`` without grams or a type."""
+    if not grams or not filament_type:
+        return None
+    # For multi-material prints, the first filament type prices the whole print
+    primary_type = filament_type.split(",")[0].strip()
+    filament = (await db.execute(select(Filament).where(Filament.type == primary_type).limit(1))).scalar_one_or_none()
+    if filament:
+        return round((grams / 1000) * filament.cost_per_kg, 2)
+    from backend.app.api.routes.settings import get_setting
+
+    default_cost_setting = await get_setting(db, "default_filament_cost")
+    default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
+    return round((grams / 1000) * default_cost_per_kg, 2)
+
+
 class ThreeMFParser:
     """Parser for Bambu Lab 3MF files."""
 
@@ -343,6 +365,8 @@ class ThreeMFParser:
                                     pass  # Skip objects with non-numeric identify_id
                         if printable_objects:
                             self.metadata["printable_objects"] = printable_objects
+
+                self._plate_filament_indexes = used_filament_indexes(plates, self.plate_number)
 
                 if any_time_seen:
                     self.metadata["print_time_seconds"] = summed_time
@@ -567,12 +591,14 @@ class ThreeMFParser:
             if bed_temperature is not None:
                 self.metadata["bed_temperature"] = bed_temperature
 
-            # Nozzle temperature
+            # Nozzle temperature: one per filament, so the printed plate's own
+            # (nozzle diameter above is one per nozzle, not per filament).
             for key in ["nozzle_temperature_initial_layer", "nozzle_temperature"]:
                 if key in data:
                     val = data[key]
                     if isinstance(val, list) and val:
-                        self.metadata["nozzle_temperature"] = int(float(val[0]))
+                        index = (getattr(self, "_plate_filament_indexes", None) or [0])[0]
+                        self.metadata["nozzle_temperature"] = int(float(val[index if index < len(val) else 0]))
                     elif isinstance(val, (int, float, str)):
                         self.metadata["nozzle_temperature"] = int(float(val))
                     break
@@ -1109,8 +1135,12 @@ class ArchiveService:
                 sha256.update(chunk)
         return sha256.hexdigest()
 
-    async def get_duplicate_hashes_and_names(self) -> tuple[set[str], set[tuple[str, str]]]:
+    async def get_duplicate_hashes_and_names(
+        self, visible: Sequence[Any] = ()
+    ) -> tuple[set[str], set[tuple[str, str]]]:
         """Get all content hashes and (print name, hash) pairs that appear more than once.
+
+        ``visible`` limits the count to archives the caller may see.
 
         For hashes: returns all hashes with > 1 archive (true duplicates).
         For name/hash pairs: returns only pairs that have > 1 archive
@@ -1126,7 +1156,7 @@ class ArchiveService:
         # duplicate even though the user only sees one row.
         result = await self.db.execute(
             select(PrintArchive.content_hash)
-            .where(PrintArchive.content_hash.isnot(None), PrintArchive.deleted_at.is_(None))
+            .where(PrintArchive.content_hash.isnot(None), PrintArchive.deleted_at.is_(None), *visible)
             .group_by(PrintArchive.content_hash)
             .having(func.count(PrintArchive.id) > 1)
         )
@@ -1140,6 +1170,7 @@ class ArchiveService:
                 PrintArchive.print_name.isnot(None),
                 PrintArchive.content_hash.isnot(None),
                 PrintArchive.deleted_at.is_(None),
+                *visible,
             )
             .group_by(func.lower(PrintArchive.print_name), PrintArchive.content_hash)
             .having(func.count(PrintArchive.id) > 1)
@@ -1154,8 +1185,11 @@ class ArchiveService:
         content_hash: str | None = None,
         print_name: str | None = None,
         makerworld_model_id: str | None = None,
+        visible: Sequence[Any] = (),
     ) -> list[dict]:
         """Find duplicate archives based on hash or name matching.
+
+        ``visible`` holds WHERE clauses limiting matches to archives the caller may see.
 
         Returns list of dicts with id, print_name, created_at, match_type.
         """
@@ -1170,6 +1204,7 @@ class ArchiveService:
                         PrintArchive.content_hash == content_hash,
                         PrintArchive.id != archive_id,
                         PrintArchive.deleted_at.is_(None),
+                        *visible,
                     )
                 )
                 .order_by(PrintArchive.created_at.desc())
@@ -1189,7 +1224,7 @@ class ArchiveService:
         # Prefer strict name+hash matching when hash exists; fallback to name-only for legacy/manual
         # archives that may not have a content_hash.
         if print_name or makerworld_model_id:
-            conditions = [PrintArchive.id != archive_id, PrintArchive.deleted_at.is_(None)]
+            conditions = [PrintArchive.id != archive_id, PrintArchive.deleted_at.is_(None), *visible]
 
             name_conditions = []
             if print_name:
@@ -1238,6 +1273,14 @@ class ArchiveService:
 
         return duplicates
 
+    @staticmethod
+    def _has_sliced_plate(file_path: Path, plate_number: int) -> bool:
+        try:
+            with zipfile.ZipFile(file_path) as zf:
+                return f"Metadata/plate_{plate_number}.gcode" in zf.namelist()
+        except (OSError, zipfile.BadZipFile):
+            return False
+
     async def archive_print(
         self,
         printer_id: int | None,
@@ -1254,6 +1297,7 @@ class ArchiveService:
         slicer_ams_mapping: list[int] | None = None,
         slicer_ams_mapping_printer_id: int | None = None,
         update_archive_id: int | None = None,
+        started_at: datetime | None = None,
     ) -> PrintArchive | None:
         """Archive a 3MF file with metadata.
 
@@ -1302,6 +1346,8 @@ class ArchiveService:
                 already established from MQTT (``started_at``, ``subtask_id``,
                 ``created_by_id``, ``project_id``) are left alone; the 3MF has nothing
                 better to say about them.
+            started_at: When the print started, for a "printing" archive whose 3MF
+                was downloaded after the start (#3327). Defaults to now.
         """
         # Verify printer exists if specified
         if printer_id is not None:
@@ -1319,6 +1365,9 @@ class ArchiveService:
         archive_dir = (
             settings.archive_dir / printer_folder / archive_name
         )  # SEC-PATH-OK: printer_folder = str(int|None) → digits or "unassigned"; archive_name = f"{timestamp}_{display_stem}" where resolve_display_stem strips path components via Path(filename).name
+        # Removed again if the row is not written (below); only a folder this
+        # call created, never another archive's of the same name.
+        created_archive_dir = not archive_dir.exists()
         archive_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy 3MF file with an explicit fsync'd loop (avoids a sendfile
@@ -1372,6 +1421,17 @@ class ArchiveService:
             match = re.search(r"plate_(\d+)", filename)
             if match:
                 plate_number = int(match.group(1))
+        if plate_id is None:
+            # A print Bambuddy did not dispatch only names its plate in the
+            # gcode path. Kept as the archive's plate when the file really has
+            # it: some firmware reports the .3mf name there instead, and a user
+            # name like "x_plate_2" must not label a single-plate file.
+            if plate_number is not None and self._has_sliced_plate(dest_file, plate_number):
+                plate_id = plate_number
+        else:
+            # The dispatcher knows the plate; the path may name none, or not
+            # the plate sent (#1166). Without it the parser describes another.
+            plate_number = plate_id
 
         # Parse 3MF metadata
         parser = ThreeMFParser(dest_file, plate_number=plate_number)
@@ -1411,28 +1471,10 @@ class ArchiveService:
 
         # Determine status and timestamps
         status = print_data.get("status", "completed") if print_data else "archived"
-        started_at = datetime.now(timezone.utc) if status == "printing" else None
+        started_at = (started_at or datetime.now(timezone.utc)) if status == "printing" else None
         completed_at = datetime.now(timezone.utc) if status in ("completed", "failed", "archived") else None
 
-        # Calculate cost based on filament usage and type
-        cost = None
-        filament_grams = metadata.get("filament_used_grams")
-        filament_type = metadata.get("filament_type")
-        if filament_grams and filament_type:
-            # For multi-material prints, use the first filament type for cost calculation
-            primary_type = filament_type.split(",")[0].strip()
-            # Look up filament cost_per_kg from database
-            filament_result = await self.db.execute(select(Filament).where(Filament.type == primary_type).limit(1))
-            filament = filament_result.scalar_one_or_none()
-            if filament:
-                cost = round((filament_grams / 1000) * filament.cost_per_kg, 2)
-            else:
-                # Use default filament cost from settings
-                from backend.app.api.routes.settings import get_setting
-
-                default_cost_setting = await get_setting(self.db, "default_filament_cost")
-                default_cost_per_kg = float(default_cost_setting) if default_cost_setting else 25.0
-                cost = round((filament_grams / 1000) * default_cost_per_kg, 2)
+        cost = await estimate_filament_cost(self.db, metadata.get("filament_used_grams"), metadata.get("filament_type"))
 
         # Calculate quantity from printable objects count
         # printable_objects is a dict of {identify_id: name} for non-skipped objects
@@ -1554,7 +1596,16 @@ class ArchiveService:
         )
 
         self.db.add(archive)
-        await self.db.commit()
+        try:
+            await self.db.commit()
+        except IntegrityError:
+            # Refused, so the row was not written (a printer deleted meanwhile,
+            # by its foreign key): the folder its files went into would be
+            # orphaned. Not on other errors: a connection lost during COMMIT may
+            # still have written the row, whose files these are.
+            if created_archive_dir:
+                shutil.rmtree(archive_dir, ignore_errors=True)
+            raise
         await self.db.refresh(archive)
 
         return archive
@@ -1585,8 +1636,10 @@ class ArchiveService:
         archive.status = status
         if completed_at:
             archive.completed_at = completed_at
-        if failure_reason:
-            archive.failure_reason = failure_reason
+        # This run's reason, or none: a reprint that completes, or a print
+        # that finished after all once it was stopped offline, keeps no reason
+        # of an earlier outcome.
+        archive.failure_reason = failure_reason
 
         await self.db.commit()
         return True
@@ -1601,6 +1654,7 @@ class ArchiveService:
         offset: int = 0,
         visible_to_user_id: int | None = None,
         printer_scope: PrinterScope | None = None,
+        day_zone: tzinfo | None = None,
     ) -> list[PrintArchive]:
         """List archives with optional filtering.
 
@@ -1627,11 +1681,11 @@ class ArchiveService:
             query = query.where(PrintArchive.project_id == project_id)
 
         if date_from:
-            dt_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
+            dt_from = local_date_start(date_from, day_zone)
             query = query.where(PrintArchive.created_at >= dt_from)
 
         if date_to:
-            dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc)
+            dt_to = local_date_end(date_to, day_zone)
             query = query.where(PrintArchive.created_at <= dt_to)
 
         if visible_to_user_id is not None:
@@ -1902,6 +1956,7 @@ class ArchiveService:
         archive.timelapse_path = str(timelapse_file.relative_to(settings.base_dir))
         archive.timelapse_plate_id = plate_id
         await self.db.commit()
+        await _announce_timelapse(archive_id, attached=True)
 
         # For non-MP4 videos (e.g. AVI from P1S), kick off background conversion
         if not filename.lower().endswith(".mp4"):
@@ -1936,6 +1991,16 @@ def _free_timelapse_name(target: Path, current_relpath: str | None, base_dir: Pa
         if not any(p.exists() for p in outputs(candidate)):
             return candidate
         n += 1
+
+
+async def _announce_timelapse(archive_id: int, *, attached: bool) -> None:
+    """Tell open Archives pages that this archive's timelapse changed."""
+    from backend.app.core.websocket import ws_manager
+
+    try:
+        await ws_manager.send_archive_updated({"id": archive_id, "timelapse_attached": attached})
+    except Exception:  # noqa: BLE001 -- a refresh hint must not fail the change it reports
+        logger.debug("Could not announce the timelapse of archive %s", archive_id, exc_info=True)
 
 
 async def _convert_timelapse_to_mp4(archive_id: int, source_path: Path) -> None:
@@ -2017,9 +2082,18 @@ async def _convert_timelapse_to_mp4(archive_id: int, source_path: Path) -> None:
 
             result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
             archive = result.scalar_one_or_none()
-            if archive:
-                archive.timelapse_path = str(mp4_path.relative_to(settings.base_dir))
-                await db.commit()
+            source_rel = str(source_path.relative_to(settings.base_dir))
+            # Only if the archive still shows this video: one deleted while it
+            # converted, or replaced by a reprint's, must not come back.
+            if archive is None or archive.timelapse_path != source_rel:
+                logger.info(
+                    "Archive %s no longer shows %s; discarding its MP4 conversion", archive_id, source_path.name
+                )
+                mp4_path.unlink(missing_ok=True)
+                return
+            archive.timelapse_path = str(mp4_path.relative_to(settings.base_dir))
+            await db.commit()
+        await _announce_timelapse(archive_id, attached=True)
 
         # Remove original non-MP4 file
         if source_path.exists():

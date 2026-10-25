@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { render } from '../utils';
 import { Layout } from '../../components/Layout';
 import { getAuthToken, setAuthToken } from '../../api/client';
@@ -96,6 +96,43 @@ describe('Layout', () => {
         const links = document.querySelectorAll('a');
         expect(links.length).toBeGreaterThan(0);
       });
+    });
+  });
+
+  describe('external link count', () => {
+    // A connected app (Bambuddy Orders) reports its To do count for the link
+    // pointing at it; the sidebar shows it like the queue's badge.
+    const link = (id: number, name: string, badge_count: number | null, open_in_new_tab = false) => ({
+      id,
+      name,
+      url: `http://app${id}.local:8090`,
+      icon: 'Package',
+      open_in_new_tab,
+      custom_icon: null,
+      sort_order: id,
+      created_at: '2026-10-21T00:00:00Z',
+      updated_at: '2026-10-21T00:00:00Z',
+      badge_count,
+    });
+
+    it('shows the count an app reports, capped at 99+', async () => {
+      server.use(
+        http.get('/api/v1/external-links/', () =>
+          HttpResponse.json([
+            link(1, 'Orders', 7),
+            link(2, 'Shop', 150, true),
+            link(3, 'Wiki', 0),
+            link(4, 'Docs', null),
+          ]),
+        ),
+      );
+      render(<Layout />);
+
+      const orders = await screen.findByTestId('external-link-badge-1');
+      expect(orders).toHaveTextContent('7');
+      expect(screen.getByTestId('external-link-badge-2')).toHaveTextContent('99+');
+      expect(screen.queryByTestId('external-link-badge-3')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('external-link-badge-4')).not.toBeInTheDocument();
     });
   });
 
@@ -339,6 +376,102 @@ describe('Layout', () => {
     });
   });
 
+  describe('camera launcher (#2737)', () => {
+    const originalMatchMedia = window.matchMedia;
+    const originalWidth = window.innerWidth;
+    /** Below 1144px the sidebar is a drawer and the compact header shows. */
+    function compactViewport() {
+      Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 390 });
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: (query: string) => ({ ...originalMatchMedia(query), matches: /max-width/.test(query) }),
+      });
+    }
+
+    beforeEach(() => {
+      server.use(
+        http.post('/api/v1/printers/:id/camera/stop', () => HttpResponse.json({ success: true })),
+        http.get('/api/v1/printers/:id/camera/status', () => HttpResponse.json({ active: true, stalled: false })),
+      );
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window, 'matchMedia', { writable: true, configurable: true, value: originalMatchMedia });
+      Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: originalWidth });
+    });
+
+    it('is on the Printers row of the sidebar, not in its footer', async () => {
+      render(<Layout />);
+
+      await waitFor(() => expect(document.querySelector('header')).toBeNull());
+      const aside = document.querySelector('aside')!;
+      const button = within(aside).getByRole('button', { name: 'Cameras' });
+      expect(button.closest('li')?.querySelector('a[href="/"]')).not.toBeNull();
+      expect(within(aside).getAllByRole('button', { name: 'Cameras' })).toHaveLength(1);
+    });
+
+    it('opens the camera list with the C key', async () => {
+      render(<Layout />);
+      await waitFor(() => expect(document.querySelector('aside')).not.toBeNull());
+
+      fireEvent.keyDown(document, { key: 'c' });
+      expect(await screen.findByRole('button', { name: /X1 Carbon/ })).toBeInTheDocument();
+
+      fireEvent.keyDown(document, { key: 'c' });
+      await waitFor(() => expect(screen.queryByRole('region', { name: 'Cameras' })).toBeNull());
+    });
+
+    it('leaves the C key alone while typing', async () => {
+      render(
+        <>
+          <input aria-label="search" />
+          <Layout />
+        </>,
+      );
+      await waitFor(() => expect(document.querySelector('aside')).not.toBeNull());
+
+      fireEvent.keyDown(screen.getByRole('textbox', { name: 'search' }), { key: 'c' });
+
+      expect(screen.queryByRole('region', { name: 'Cameras' })).toBeNull();
+    });
+
+    it('opens the header\'s list with the C key in the compact layout', async () => {
+      compactViewport();
+      render(<Layout />);
+      await waitFor(() => expect(document.querySelector('header')).not.toBeNull());
+
+      fireEvent.keyDown(document, { key: 'c' });
+
+      expect(await screen.findByRole('region', { name: 'Cameras' })).toBeInTheDocument();
+      // One list, the header's, not also the one in the closed drawer.
+      expect(screen.getAllByRole('region', { name: 'Cameras' })).toHaveLength(1);
+      expect(within(document.querySelector('header')!).getByRole('button', { name: 'Cameras' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+    });
+
+    it('is in the compact header, beside the bug report', async () => {
+      compactViewport();
+      render(<Layout />);
+
+      await waitFor(() => expect(document.querySelector('header')).not.toBeNull());
+      expect(within(document.querySelector('header')!).getByRole('button', { name: 'Cameras' })).toBeInTheDocument();
+    });
+
+    it('opens a camera overlay on a page other than Printers', async () => {
+      compactViewport();
+      render(<Layout />);
+      await waitFor(() => expect(document.querySelector('header')).not.toBeNull());
+
+      fireEvent.click(within(document.querySelector('header')!).getByRole('button', { name: 'Cameras' }));
+      fireEvent.click(await screen.findByRole('button', { name: /X1 Carbon/ }));
+
+      expect(await screen.findByTitle('Refresh stream')).toBeInTheDocument();
+    });
+  });
+
   describe('theme toggle', () => {
     it('has theme toggle button', async () => {
       render(<Layout />);
@@ -411,6 +544,22 @@ describe('Layout', () => {
         // Modal should appear with "Print Paused!" text
         expect(document.body.textContent).toContain('Print Paused!');
         expect(document.body.textContent).toContain('Test Printer');
+      });
+    });
+
+    it('warns when a plate check could not run, naming why', async () => {
+      render(<Layout />);
+
+      window.dispatchEvent(
+        new CustomEvent('plate-check-failed', {
+          detail: { printer_id: 1, printer_name: 'Test Printer', reason: 'no_camera_frame' },
+        })
+      );
+
+      await waitFor(() => {
+        expect(document.body.textContent).toContain(
+          'Plate check could not run on Test Printer (no camera image). The print continues.'
+        );
       });
     });
 

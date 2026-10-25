@@ -53,18 +53,18 @@ from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.models.supplier import SpoolmanSpoolSupplier, Supplier
 from backend.app.models.user import User
 from backend.app.schemas.spool import SpoolFilamentPresetBase, SpoolKProfileBase, naive_utc
-from backend.app.schemas.spoolman import SpoolmanFilamentPatch, SpoolmanSlotAssignmentEnriched
+from backend.app.schemas.spoolman import SlotAmsId, SlotTrayId, SpoolmanFilamentPatch, SpoolmanSlotAssignmentEnriched
 from backend.app.schemas.supplier import SpoolSupplierLinkInput
-from backend.app.services import slot_unlink_grace
+from backend.app.services import filament_profile_default as profile_defaults, slot_unlink_grace, spool_swaps
 from backend.app.services.location_service import (
     enrich_spool_dicts_with_location_id,
     maybe_sync_spoolman_locations,
     resolve_spoolman_location_string,
 )
-from backend.app.services.printer_manager import printer_manager
+from backend.app.services.printer_manager import PrinterManager, printer_manager
 from backend.app.services.slicer_filament_resolver import resolve_slicer_filament
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
-from backend.app.services.spool_filament_preset import resolve_spoolman_preset
+from backend.app.services.spool_filament_preset import forget_spoolman_spool_own_preset, resolve_spoolman_preset
 from backend.app.services.spoolman import (
     SpoolmanClient,
     SpoolmanClientError,
@@ -76,6 +76,7 @@ from backend.app.services.spoolman import (
 from backend.app.services.spoolman_tracking import get_fallback_spool_tag_for_slot, is_slot_fallback_tag
 from backend.app.services.tag_conflict import tag_already_linked
 from backend.app.utils.color_utils import spoolman_color_hex
+from backend.app.utils.filament_finish import finish_generic_id
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
     filament_id_to_setting_id,
@@ -455,9 +456,8 @@ class SpoolTagLinkRequest(BaseModel):
 class SpoolSlotAssignmentRequest(BaseModel):
     spoolman_spool_id: int = Field(..., gt=0)
     printer_id: int = Field(..., gt=0)
-    # ams_id 0–7 for physical AMS units; 255 = external/virtual spool extruder slot
-    ams_id: int = Field(..., ge=0, le=255)
-    tray_id: int = Field(..., ge=0, le=3)
+    ams_id: SlotAmsId
+    tray_id: SlotTrayId
 
 
 # ---------------------------------------------------------------------------
@@ -468,7 +468,7 @@ class SpoolSlotAssignmentRequest(BaseModel):
 @router.get("/spools")
 async def list_spools(
     include_archived: bool = Query(False),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> list[dict]:
     """Return all Spoolman spools in the InventorySpool format."""
@@ -521,7 +521,7 @@ async def list_spools(
 @router.get("/spools/{spool_id}")
 async def get_spool(
     spool_id: int = Path(..., gt=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> dict:
     """Return a single Spoolman spool in the InventorySpool format."""
@@ -571,10 +571,84 @@ async def _resolve_filament_id(data: SpoolmanInventoryCreate, client: SpoolmanCl
         )
 
 
+async def _resolve_create_default(
+    db: AsyncSession, data: SpoolmanInventoryCreate, spool: dict
+) -> profile_defaults.ResolvedProfiles | None:
+    """The profile default for a spool this request created (#1326).
+
+    From the request's product fields; a request that only names a catalog
+    filament (``spoolman_filament_id``) carries none, so then from the spool
+    Spoolman made -- its colour name only when it is a real one, the mapper
+    fills a missing one with the subtype.
+    """
+    if data.material:
+        return await profile_defaults.resolve_profile_default(
+            db, brand=data.brand, material=data.material, subtype=data.subtype, color_name=data.color_name
+        )
+    mapped = _map_spoolman_spool(spool)
+    return await profile_defaults.resolve_profile_default(
+        db,
+        brand=mapped["brand"],
+        material=mapped["material"],
+        subtype=mapped["subtype"],
+        color_name=data.color_name or (None if mapped["color_name_is_synthesized"] else mapped["color_name"]),
+    )
+
+
+async def _finish_created_spool(
+    db: AsyncSession,
+    client: SpoolmanClient,
+    spool: dict,
+    data: SpoolmanInventoryCreate,
+    default: profile_defaults.ResolvedProfiles | None,
+) -> dict:
+    """What a create does after Spoolman made the spool: the fields Spoolman
+    has no place for, and the product's profile default (#1326).
+
+    The slicer preset and the colour name go under the spool's extra dict
+    (mirror update_spool) -- Spoolman has no ``color_name`` on a filament
+    (#1357). A preset the request did not bring comes from the default, and
+    its preset overrides and K profiles land in the Bambuddy tables keyed by
+    the new spool's id. The spool exists either way, so a failed write is
+    logged and the create still succeeds.
+    """
+    slicer_filament = data.slicer_filament
+    slicer_filament_name = data.slicer_filament_name
+    if not slicer_filament and default is not None and default.slicer_filament:
+        slicer_filament = default.slicer_filament
+        slicer_filament_name = default.slicer_filament_name
+
+    new_extra: dict = {}
+    if slicer_filament is not None:
+        new_extra["bambu_slicer_filament"] = json.dumps(slicer_filament)
+    if slicer_filament_name is not None:
+        new_extra["bambu_slicer_filament_name"] = json.dumps(slicer_filament_name)
+    if data.color_name is not None:
+        new_extra["bambu_color_name"] = json.dumps(data.color_name)
+    if new_extra:
+        try:
+            async with _translate_spoolman_errors():
+                # Registered before the write, or Spoolman refuses the keys.
+                for name in new_extra:
+                    await client.ensure_extra_field(name)
+                spool = await client.merge_spool_extra(spool["id"], new_extra)
+        except HTTPException:
+            logger.warning("Failed to persist slicer_filament/color_name for spool %s", spool.get("id"))
+
+    if default is not None:
+        try:
+            if await profile_defaults.fill_spoolman_rows(db, int(spool["id"]), default):
+                await db.commit()
+        except Exception as exc:  # noqa: BLE001 — the spool is created; its profiles can be set by hand
+            await db.rollback()
+            logger.warning("Profile default for Spoolman spool %s not applied: %s", spool.get("id"), exc)
+    return spool
+
+
 @router.post("/spools")
 async def create_spool(
     data: SpoolmanInventoryCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
     """Create a new spool in Spoolman, auto-creating vendor and filament as needed."""
@@ -617,34 +691,7 @@ async def create_spool(
 
     spool, price_warnings = await _apply_price_if_set(client, spool, data.cost_per_kg)
 
-    # Persist slicer_filament AND color_name under the spool's extra dict
-    # (mirror update_spool). Spoolman has no `color_name` field on filament
-    # (#1357) so we own the round-trip ourselves.
-    if data.slicer_filament is not None or data.slicer_filament_name is not None or data.color_name is not None:
-        # Ensure extra fields are registered before write.
-        if data.slicer_filament is not None:
-            await client.ensure_extra_field("bambu_slicer_filament")
-        if data.slicer_filament_name is not None:
-            await client.ensure_extra_field("bambu_slicer_filament_name")
-        if data.color_name is not None:
-            await client.ensure_extra_field("bambu_color_name")
-        new_extra: dict = {}
-        if data.slicer_filament is not None:
-            new_extra["bambu_slicer_filament"] = json.dumps(data.slicer_filament)
-        if data.slicer_filament_name is not None:
-            new_extra["bambu_slicer_filament_name"] = json.dumps(data.slicer_filament_name)
-        if data.color_name is not None:
-            new_extra["bambu_color_name"] = json.dumps(data.color_name)
-        if new_extra:
-            try:
-                async with _translate_spoolman_errors():
-                    spool = await client.merge_spool_extra(spool["id"], new_extra)
-            except HTTPException:
-                # Best-effort — the spool already exists, log and continue.
-                logger.warning(
-                    "Failed to persist slicer_filament/color_name for spool %s",
-                    spool.get("id"),
-                )
+    spool = await _finish_created_spool(db, client, spool, data, await _resolve_create_default(db, data, spool))
 
     result = _map_spoolman_spool(spool)
     await ws_manager.broadcast({"type": "inventory_changed"})
@@ -656,7 +703,7 @@ async def create_spool(
 @router.post("/spools/bulk")
 async def bulk_create_spools(
     payload: SpoolmanInventoryBulkCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> Response:
     """Create multiple identical spools in Spoolman."""
@@ -688,6 +735,9 @@ async def bulk_create_spools(
     remaining = max(0.0, data.label_weight - data.weight_used)
     created: list[dict] = []
     failures: list[str] = []
+    # Every copy is the same product: one lookup for the batch, on the first.
+    default: profile_defaults.ResolvedProfiles | None = None
+    resolved_default = False
     for _ in range(payload.quantity):
         try:
             spool = await client.create_spool(
@@ -717,6 +767,12 @@ async def bulk_create_spools(
             continue
         if price_warnings:
             logger.warning("Bulk spool %s created without price: %s", spool.get("id"), price_warnings)
+        # Each copy gets the preset and colour name the single create gives,
+        # and the product's profile default (#1326).
+        if not resolved_default:
+            default = await _resolve_create_default(db, data, spool)
+            resolved_default = True
+        spool = await _finish_created_spool(db, client, spool, data, default)
         created.append(_map_spoolman_spool(spool))
 
     if not created:
@@ -745,7 +801,7 @@ async def update_spool(
     *,
     spool_id: int = Path(..., gt=0),
     data: SpoolmanInventoryUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
     """Update an existing Spoolman spool, re-linking the filament if metadata changed."""
@@ -999,9 +1055,38 @@ async def update_spool(
             new_extra[BAMBU_LAST_DRIED_HOURS_KEY] = json.dumps("")
         async with _translate_spoolman_errors():
             updated = await client.merge_spool_extra(spool_id, new_extra)
+        if sf_set or sfn_set:
+            forget_spoolman_spool_own_preset(spool_id)
 
     await ws_manager.broadcast({"type": "inventory_changed"})
     return _map_spoolman_spool(updated)
+
+
+async def _release_spool_slots(db: AsyncSession, spool_id: int, *, keep_tracked: bool) -> list[tuple[int, int, int]]:
+    """Delete a spool's slot rows; returns the freed (printer, ams, tray) slots.
+
+    ``keep_tracked`` keeps the rows of a printer with a print being tracked:
+    its usage is charged at completion by the slot's spool, which only the row
+    knows for a spool without a tag. ``release_archived_slot_rows`` frees them
+    once that print is reported. The caller commits, then announces.
+    """
+    from backend.app.models.active_print_spoolman import ActivePrintSpoolman
+
+    query = select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == spool_id)
+    if keep_tracked:
+        query = query.where(SpoolmanSlotAssignment.printer_id.not_in(select(ActivePrintSpoolman.printer_id)))
+    rows = (await db.execute(query)).scalars().all()
+    freed = [(r.printer_id, r.ams_id, r.tray_id) for r in rows]
+    for row in rows:
+        await db.delete(row)
+    return freed
+
+
+async def _announce_freed_slots(freed: list[tuple[int, int, int]]) -> None:
+    for printer_id, ams_id, tray_id in freed:
+        await ws_manager.broadcast(
+            {"type": "spool_assignment_changed", "printer_id": printer_id, "ams_id": ams_id, "tray_id": tray_id}
+        )
 
 
 async def _purge_local_rows_for_spool(db: AsyncSession, spool_id: int) -> None:
@@ -1023,7 +1108,7 @@ async def _purge_local_rows_for_spool(db: AsyncSession, spool_id: int) -> None:
 @router.delete("/spools/{spool_id}")
 async def delete_spool(
     spool_id: int = Path(..., gt=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
     """Permanently delete a spool from Spoolman."""
@@ -1031,34 +1116,42 @@ async def delete_spool(
     async with _translate_spoolman_errors():
         await client.delete_spool(spool_id)
     await _purge_local_rows_for_spool(db, spool_id)
+    # Its slots go too: a row left behind points tracking and the scheduler
+    # at an id Spoolman no longer has.
+    freed = await _release_spool_slots(db, spool_id, keep_tracked=False)
     await db.commit()
     await ws_manager.broadcast({"type": "inventory_changed"})
+    await _announce_freed_slots(freed)
     return {"status": "deleted"}
 
 
 @router.post("/spools/{spool_id}/archive")
 async def archive_spool(
     spool_id: int = Path(..., gt=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
     """Archive a spool in Spoolman (soft-delete)."""
     client = await _get_client(db)
     async with _translate_spoolman_errors():
         spool = await client.set_spool_archived(spool_id, archived=True)
+    # An archived spool gives its slots up, as in the built-in inventory.
+    freed = await _release_spool_slots(db, spool_id, keep_tracked=True)
+    await db.commit()
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    await _announce_freed_slots(freed)
     try:
         mapped = _map_spoolman_spool(spool)
     except ValueError as exc:
         logger.warning("Malformed Spoolman spool (id=%r): %s", spool_id, exc)
         raise HTTPException(status_code=502, detail="Spoolman returned malformed spool data") from exc
-    await ws_manager.broadcast({"type": "inventory_changed"})
     return mapped
 
 
 @router.post("/spools/{spool_id}/restore")
 async def restore_spool(
     spool_id: int = Path(..., gt=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
     """Restore an archived spool in Spoolman."""
@@ -1077,7 +1170,7 @@ async def restore_spool(
 @router.post("/spools/{spool_id}/reset-consumed-counter")
 async def reset_spool_consumed_counter(
     spool_id: int = Path(..., gt=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
     """Zero the displayed "Total Consumed" counter for a Spoolman spool.
@@ -1118,7 +1211,7 @@ class SpoolmanBulkIdsRequest(BaseModel):
 @router.post("/spools/bulk-update")
 async def bulk_update_spools(
     payload: SpoolmanBulkUpdateRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
     """Apply the same partial update to every listed Spoolman spool.
@@ -1151,18 +1244,20 @@ async def bulk_update_spools(
 @router.post("/spools/bulk-delete")
 async def bulk_delete_spools(
     payload: SpoolmanBulkIdsRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
     """Hard-delete every listed Spoolman spool. Per-spool failures are collected."""
     client = await _get_client(db)
     deleted = 0
+    freed: list[tuple[int, int, int]] = []
     errors: list[dict] = []
     for sid in payload.ids:
         try:
             async with _translate_spoolman_errors():
                 await client.delete_spool(sid)
             await _purge_local_rows_for_spool(db, sid)
+            freed += await _release_spool_slots(db, sid, keep_tracked=False)
             deleted += 1
         except HTTPException as exc:
             errors.append({"id": sid, "status": exc.status_code, "detail": exc.detail})
@@ -1172,23 +1267,26 @@ async def bulk_delete_spools(
     if deleted:
         await db.commit()
         await ws_manager.broadcast({"type": "inventory_changed"})
+        await _announce_freed_slots(freed)
     return {"deleted": deleted, "errors": errors}
 
 
 @router.post("/spools/bulk-archive")
 async def bulk_archive_spools(
     payload: SpoolmanBulkIdsRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
     """Archive every listed Spoolman spool. Per-spool failures are collected."""
     client = await _get_client(db)
     archived = 0
+    freed: list[tuple[int, int, int]] = []
     errors: list[dict] = []
     for sid in payload.ids:
         try:
             async with _translate_spoolman_errors():
                 await client.set_spool_archived(sid, archived=True)
+            freed += await _release_spool_slots(db, sid, keep_tracked=True)
             archived += 1
         except HTTPException as exc:
             errors.append({"id": sid, "status": exc.status_code, "detail": exc.detail})
@@ -1196,14 +1294,16 @@ async def bulk_archive_spools(
             logger.exception("Spoolman bulk-archive failed for spool %s", sid)
             errors.append({"id": sid, "status": 500, "detail": str(exc)})
     if archived:
+        await db.commit()
         await ws_manager.broadcast({"type": "inventory_changed"})
+        await _announce_freed_slots(freed)
     return {"archived": archived, "errors": errors}
 
 
 @router.post("/spools/bulk-restore")
 async def bulk_restore_spools(
     payload: SpoolmanBulkIdsRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
     """Restore every listed archived Spoolman spool. Per-spool failures are collected."""
@@ -1228,15 +1328,17 @@ async def bulk_restore_spools(
 @router.post("/spools/reset-consumed-counter-bulk")
 async def bulk_reset_spool_consumed_counter(
     payload: dict = Body(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
     """Bulk reset the "Total Consumed" counter across the given Spoolman spool IDs.
 
     Caller passes an explicit list of IDs — no "reset all" shortcut, since
     a typo on a wildcard would wipe the entire inventory's tracking.
-    Returns the count of spools successfully reset; individual failures are
-    logged but do not abort the batch.
+    Returns the count of spools reset and, like the other bulk actions, the
+    ones Spoolman refused in ``errors``: an individual failure does not abort
+    the batch, and a batch where every reset failed is not reported as a
+    success (FO-C8).
     """
     spool_ids = payload.get("spool_ids")
     if not isinstance(spool_ids, list) or not spool_ids:
@@ -1246,6 +1348,7 @@ async def bulk_reset_spool_consumed_counter(
 
     client = await _get_client(db)
     reset_count = 0
+    errors: list[dict] = []
     for spool_id in spool_ids:
         try:
             async with _translate_spoolman_errors():
@@ -1253,9 +1356,10 @@ async def bulk_reset_spool_consumed_counter(
             reset_count += 1
         except HTTPException as exc:
             logger.warning("Spoolman reset-consumed-counter failed for spool %s: %s", spool_id, exc.detail)
+            errors.append({"id": spool_id, "status": exc.status_code, "detail": exc.detail})
     if reset_count:
         await ws_manager.broadcast({"type": "inventory_changed"})
-    return {"reset": reset_count}
+    return {"reset": reset_count, "errors": errors}
 
 
 @router.patch("/spools/{spool_id}/weight")
@@ -1263,7 +1367,7 @@ async def sync_spool_weight(
     *,
     spool_id: int = Path(..., gt=0),
     data: SpoolWeightUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
     """Update a spool's remaining weight from a measured gross weight.
@@ -1305,7 +1409,7 @@ async def link_tag_to_spoolman_spool(
     *,
     spool_id: int = Path(..., gt=0),
     data: SpoolTagLinkRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
     """Write an NFC tag UID or Bambu tray UUID into Spoolman's extra.tag for a spool.
@@ -1402,7 +1506,7 @@ _AMS_CHIP_UID_PADDING = "00000100"
 @router.post("/tags/migrate")
 async def migrate_tags_to_native(
     dry_run: bool = Query(True, description="Only count what would move, change nothing"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> dict:
     """Move tags from Spoolman's extra.tag into its native tags (Spoolman 0.27+).
@@ -1477,7 +1581,7 @@ async def migrate_tags_to_native(
 @router.get("/slot-assignments/all", response_model=list[SpoolmanSlotAssignmentEnriched])
 async def get_all_spoolman_slot_assignments(
     printer_id: int | None = Query(None, gt=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ) -> list[SpoolmanSlotAssignmentEnriched]:
@@ -1524,11 +1628,12 @@ async def get_all_spoolman_slot_assignments(
             except (ValueError, TypeError):
                 continue
 
-    # Add synthetic fallback key (f"p{pid}a{ams_id}") for slots without a serial.
+    # Add the synthetic position key (f"p{pid}a{ams_id}"): a label saved before
+    # the unit reported its serial (the AMS Lite before #3348) is still under
+    # one, and is shown until it is saved again, as on the printer card.
     all_serials: set[str] = set(serial_map.values())
     for s in slots:
-        if (s.printer_id, s.ams_id) not in serial_map:
-            all_serials.add(f"p{s.printer_id}a{s.ams_id}")
+        all_serials.add(f"p{s.printer_id}a{s.ams_id}")
 
     label_by_serial: dict[str, str] = {}
     if all_serials:
@@ -1540,9 +1645,7 @@ async def get_all_spoolman_slot_assignments(
         sn = serial_map.get((pid, ams_id))
         if sn and sn in label_by_serial:
             return label_by_serial[sn]
-        if not sn:
-            return label_by_serial.get(f"p{pid}a{ams_id}")
-        return None
+        return label_by_serial.get(f"p{pid}a{ams_id}")
 
     enriched: list[SpoolmanSlotAssignmentEnriched] = []
     for s in slots:
@@ -1571,7 +1674,7 @@ async def get_all_spoolman_slot_assignments(
 
 @router.post("/sync-ams-weights")
 async def sync_spoolman_ams_weights(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -1591,8 +1694,13 @@ async def sync_spoolman_ams_weights(
     # Only slots on printers the caller may see (#1727)
     assignments = [a for a in result.scalars().all() if printer_scope.allows(a.printer_id)]
 
+    from backend.app.services.usage_tracker import _active_sessions
+
     synced = 0
     skipped = 0
+    # A printing printer is left alone: its print's usage is charged when it
+    # completes, on top of whatever remaining weight the spool has by then.
+    printing = 0
 
     def _find_tray(ams_data: list, ams_id: int, tray_id: int) -> dict | None:
         if not ams_data:
@@ -1619,13 +1727,29 @@ async def sync_spoolman_ams_weights(
             continue
 
         state = printer_manager.get_status(assignment.printer_id)
-        if not state or not state.raw_data:
+        # A disconnected printer keeps its last report, which is not a reading.
+        if not state or not state.raw_data or getattr(state, "connected", True) is False:
             logger.info(
                 "Spoolman AMS sync: printer %d not connected, skipping spool %d",
                 assignment.printer_id,
                 assignment.spoolman_spool_id,
             )
             skipped += 1
+            continue
+
+        # Until completion has charged the print its session stays open, also
+        # after the printer has reported the print finished.
+        if (
+            str(getattr(state, "state", "") or "").upper() in PrinterManager.ACTIVE_PRINT_STATES
+            or assignment.printer_id in _active_sessions
+        ):
+            logger.info(
+                "Spoolman AMS sync: printer %d is printing, skipping spool %d",
+                assignment.printer_id,
+                assignment.spoolman_spool_id,
+            )
+            skipped += 1
+            printing += 1
             continue
 
         ams_raw = state.raw_data.get("ams", [])
@@ -1695,13 +1819,13 @@ async def sync_spoolman_ams_weights(
                 )
             skipped += 1
 
-    return {"synced": synced, "skipped": skipped}
+    return {"synced": synced, "skipped": skipped, "printing": printing}
 
 
 @router.post("/slot-assignments")
 async def assign_spoolman_slot(
     body: SpoolSlotAssignmentRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ) -> dict:
@@ -1722,6 +1846,10 @@ async def assign_spoolman_slot(
     # This prevents ghost rows pointing at non-existent spool IDs.
     async with _translate_spoolman_errors():
         spool = await client.get_spool(body.spoolman_spool_id)
+    # As the built-in inventory refuses it: an archived spool on a slot would
+    # be charged the next print's usage (SSA-8).
+    if spool.get("archived"):
+        raise HTTPException(status_code=400, detail="Cannot assign an archived spool")
 
     # Spool confirmed in Spoolman — upsert into local slot-assignment table
     # assigned_at is intentionally not refreshed on re-assign (original timestamp preserved)
@@ -1740,6 +1868,9 @@ async def assign_spoolman_slot(
                 "tray_id": body.tray_id,
                 "spool_id": body.spoolman_spool_id,
             },
+        )
+        await spool_swaps.record_assignment(
+            db, body.printer_id, body.ams_id, body.tray_id, body.spoolman_spool_id, spool_swaps.SPOOLMAN
         )
         await db.commit()
         slot_unlink_grace.forget_slot(body.printer_id, body.ams_id, body.tray_id)
@@ -1854,7 +1985,10 @@ async def assign_spoolman_slot(
             # preset (GFG96) rather than trading it for "PETG"'s GFG99.
             if not tray_info_idx:
                 tray_info_idx = (
-                    GENERIC_FILAMENT_IDS.get(material_upper)
+                    # The finish first, as in internal mode: a Silk spool
+                    # gets Generic PLA Silk.
+                    finish_generic_id(tray_type, f"{material} {subtype}")
+                    or GENERIC_FILAMENT_IDS.get(material_upper)
                     or GENERIC_FILAMENT_IDS.get(material_upper.split("-")[0].split(" ")[0])
                     or GENERIC_FILAMENT_IDS.get(tray_type.upper())
                     or ""
@@ -1997,6 +2131,31 @@ async def assign_spoolman_slot(
                     body.spoolman_spool_id,
                 )
 
+            # Read-back verification, as the built-in assign registers it (#2582):
+            # the AMS pushes that follow confirm the tray took what was sent.
+            # Not for a slot the firmware calls empty, which echoes nothing
+            # back until a spool goes in (the built-in check, inventory.py).
+            from backend.app.api.routes.inventory import _find_tray_in_ams_data  # noqa: PLC0415
+            from backend.app.services.ams_slot_presence import spool_present  # noqa: PLC0415
+
+            live_tray = None
+            if state and state.raw_data:
+                ams_raw = state.raw_data.get("ams", [])
+                if isinstance(ams_raw, dict):
+                    ams_raw = ams_raw.get("ams", [])
+                live_tray = _find_tray_in_ams_data(ams_raw, body.ams_id, body.tray_id)
+            tray_state = (live_tray or {}).get("state")
+            if not (spool_present(live_tray) is not True and tray_state in (9, 10)):
+                mqtt_client.register_assignment_verification(
+                    ams_id=body.ams_id,
+                    tray_id=body.tray_id,
+                    tray_info_idx=effective_tray_info_idx,
+                    tray_color=tray_color,
+                    cali_idx=matching_kp.cali_idx if matching_kp and matching_kp.cali_idx is not None else -1,
+                )
+                # Fresh telemetry for the check to compare against.
+                mqtt_client.request_status_update()
+
             logger.info(
                 "Auto-configured AMS slot ams=%d tray=%d for Spoolman spool %d on printer %d",
                 body.ams_id,
@@ -2019,7 +2178,7 @@ async def assign_spoolman_slot(
 @router.delete("/slot-assignments/{spoolman_spool_id}")
 async def unassign_spoolman_slot(
     spoolman_spool_id: int = Path(..., gt=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ) -> dict:
@@ -2059,7 +2218,7 @@ async def get_spoolman_slot_assignment(
     printer_id: int = Query(..., gt=0),
     ams_id: int = Query(..., ge=0, le=7),
     tray_id: int = Query(..., ge=0, le=3),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ) -> dict | None:
@@ -2144,7 +2303,7 @@ def _filament_preset_to_dict(p: SpoolmanFilamentPreset) -> dict:
 @router.get("/spools/{spool_id}/filament-presets")
 async def get_spoolman_filament_presets(
     spool_id: int = Path(..., gt=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> list[dict]:
     """Return all per-printer-model preset overrides for a Spoolman spool."""
@@ -2159,7 +2318,7 @@ async def get_spoolman_filament_presets(
 async def save_spoolman_filament_presets(
     spool_id: int = Path(..., gt=0),
     presets: list[SpoolFilamentPresetBase] = Body(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> list[dict]:
     """Replace all per-printer-model preset overrides for a Spoolman spool."""
@@ -2244,7 +2403,7 @@ def _normalize_filament(raw: dict) -> NormalizedFilament | None:
 
 @router.get("/filaments")
 async def list_spoolman_filaments(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> list[NormalizedFilament]:
     """Return all filaments from Spoolman, normalised for the frontend catalog picker."""
@@ -2262,7 +2421,7 @@ async def patch_spoolman_filament(
     *,
     filament_id: int = Path(..., gt=0),
     body: SpoolmanFilamentPatch = Body(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> NormalizedFilament:
     """Update a Spoolman filament's name and/or spool_weight.
@@ -2351,10 +2510,75 @@ async def patch_spoolman_filament(
     return normalized
 
 
+@router.post("/profile-defaults/{default_id}/apply")
+async def apply_profile_default_to_spoolman_spools(
+    default_id: int = Path(..., gt=0),
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> dict:
+    """Spoolman twin of ``POST /inventory/profile-defaults/{id}/apply`` (#1326).
+
+    Fills in what active Spoolman spools of the default's product do not have
+    yet: the spool's own preset (in its extra dict), and its preset overrides
+    and K profiles (Bambuddy tables keyed by the spool id). Never overwrites.
+    """
+    client = await _get_client(db)
+    row = await profile_defaults.load_default(db, default_id)
+    if row is None:
+        raise HTTPException(404, "Profile default not found")
+    async with _translate_spoolman_errors():
+        spools = await client.get_all_spools()
+
+    updated = 0
+    cache: dict[str, profile_defaults.ResolvedProfiles | None] = {}
+    slicer_field_ready = False
+    for raw in spools:
+        try:
+            mapped = _map_spoolman_spool(raw)
+        except ValueError:
+            continue
+        # The mapper fills a missing colour name with the subtype; that is no colour.
+        colour = None if mapped["color_name_is_synthesized"] else mapped["color_name"]
+        if mapped["archived_at"] or not profile_defaults.default_matches(
+            row, brand=mapped["brand"], material=mapped["material"], subtype=mapped["subtype"], color_name=colour
+        ):
+            continue
+        colour_key = (colour or "").strip().lower()
+        if colour_key not in cache:
+            cache[colour_key] = await profile_defaults.resolve_profile_default(
+                db, brand=row.brand, material=row.material, subtype=row.subtype, color_name=colour
+            )
+        resolved = cache[colour_key]
+        if resolved is None:
+            continue
+        changed = await profile_defaults.fill_spoolman_rows(db, mapped["id"], resolved)
+        if resolved.slicer_filament and not mapped["slicer_filament"]:
+            new_extra = {"bambu_slicer_filament": json.dumps(resolved.slicer_filament)}
+            if resolved.slicer_filament_name:
+                new_extra["bambu_slicer_filament_name"] = json.dumps(resolved.slicer_filament_name)
+            try:
+                async with _translate_spoolman_errors():
+                    if not slicer_field_ready:
+                        await client.ensure_extra_field("bambu_slicer_filament")
+                        await client.ensure_extra_field("bambu_slicer_filament_name")
+                        slicer_field_ready = True
+                    await client.merge_spool_extra(mapped["id"], new_extra)
+                forget_spoolman_spool_own_preset(mapped["id"])
+                changed = True
+            except HTTPException:
+                logger.warning("Profile default: preset not written to Spoolman spool %s", mapped["id"])
+        if changed:
+            updated += 1
+    await db.commit()
+    if updated:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"updated": updated}
+
+
 @router.get("/spools/{spool_id}/k-profiles")
 async def get_spoolman_k_profiles(
     spool_id: int = Path(..., gt=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> list[dict]:
     """Return all local K-value calibration profiles for a Spoolman spool."""
@@ -2368,18 +2592,28 @@ async def get_spoolman_k_profiles(
 async def save_spoolman_k_profiles(
     spool_id: int = Path(..., gt=0),
     profiles: list[SpoolKProfileBase] = Body(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ) -> list[dict]:
-    """Replace all K-value calibration profiles for a Spoolman spool."""
+    """Replace all K-value calibration profiles for a Spoolman spool.
+
+    As the internal route: a caller limited to some printers (#1727) replaces
+    only theirs, and the other printers' profiles stay.
+    """
     client = await _get_client(db)
     async with _translate_spoolman_errors():
         await client.get_spool(spool_id)
 
     saved: list[SpoolmanKProfile] = []
     try:
-        await db.execute(delete(SpoolmanKProfile).where(SpoolmanKProfile.spoolman_spool_id == spool_id))
+        stmt = delete(SpoolmanKProfile).where(SpoolmanKProfile.spoolman_spool_id == spool_id)
+        if (in_scope := printer_scope.where_strict(SpoolmanKProfile.printer_id)) is not None:
+            stmt = stmt.where(in_scope)
+        await db.execute(stmt)
         for profile in profiles:
+            if not printer_scope.allows(profile.printer_id):
+                continue
             obj = SpoolmanKProfile(
                 spoolman_spool_id=spool_id,
                 printer_id=profile.printer_id,
@@ -2424,7 +2658,7 @@ def _supplier_link_to_dict(link: SpoolmanSpoolSupplier) -> dict:
 @router.get("/spools/{spool_id}/suppliers")
 async def get_spoolman_spool_suppliers(
     spool_id: int = Path(..., gt=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> list[dict]:
     """Supplier assignments for a Spoolman spool (#2988, Bambuddy-side rows)."""
@@ -2441,7 +2675,7 @@ async def get_spoolman_spool_suppliers(
 async def save_spoolman_spool_suppliers(
     spool_id: int = Path(..., gt=0),
     links: list[SpoolSupplierLinkInput] = Body(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ) -> list[dict]:
     """Replace a Spoolman spool's supplier assignments (#2988).

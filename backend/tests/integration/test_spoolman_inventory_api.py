@@ -709,8 +709,38 @@ class TestSpoolmanInventoryCRUD:
         )
 
         assert response.status_code == 200
-        assert response.json() == {"reset": 3}
+        assert response.json() == {"reset": 3, "errors": []}
         assert mock_spoolman_client.reset_spool_consumed_counter.call_count == 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_reset_reports_the_spools_it_could_not_reset(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """FO-C8: every failure was swallowed into {"reset": 0}, which the page
+        showed as a green "Counter reset for 0 spool(s)"."""
+        from backend.app.services.spoolman import SpoolmanNotFoundError, SpoolmanUnavailableError
+
+        def reset(spool_id):
+            if spool_id == 2:
+                raise SpoolmanNotFoundError("gone")
+            if spool_id == 3:
+                raise SpoolmanUnavailableError("down")
+
+        mock_spoolman_client.reset_spool_consumed_counter = AsyncMock(side_effect=reset)
+
+        response = await async_client.post(
+            "/api/v1/spoolman/inventory/spools/reset-consumed-counter-bulk",
+            json={"spool_ids": [1, 2, 3]},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["reset"] == 1
+        assert [(e["id"], e["status"]) for e in body["errors"]] == [(2, 404), (3, 503)]
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -834,7 +864,11 @@ class TestSpoolmanInventorySlicerFilament:
         """
         import json as _json
 
+        from backend.app.services import spool_filament_preset
+
         mock_spoolman_client.ensure_extra_field = AsyncMock(return_value=True)
+        # A preset read earlier, still remembered: the edit must replace it at once.
+        spool_filament_preset._spoolman_own_presets[42] = (float("inf"), ("GFA00", "old"))
 
         response = await async_client.patch(
             "/api/v1/spoolman/inventory/spools/42",
@@ -856,6 +890,7 @@ class TestSpoolmanInventorySlicerFilament:
                 "bambu_slicer_filament_name": _json.dumps("Devil Design PLA Basic @Bambu Lab H2D 0.4 nozzle (Custom)"),
             },
         )
+        assert 42 not in spool_filament_preset._spoolman_own_presets
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1782,8 +1817,9 @@ class TestSpoolmanInventorySSRFSpoolBuddyPath:
         db_session,
         evil_url: str,
     ):
-        """SSRF: _get_spoolman_client_or_none silently disables Spoolman for unsafe URLs
-        on the SpoolBuddy NFC path (tag-scanned broadcasts unknown_tag, not 400)."""
+        """SSRF: _get_spoolman_client_or_none never builds a client for unsafe URLs on
+        the SpoolBuddy NFC path. Spoolman is still the mode, so the scan reports it
+        as unavailable rather than looking the tag up in the built-in inventory."""
         from backend.app.models.settings import Settings
 
         db_session.add(Settings(key="spoolman_enabled", value="true"))
@@ -1799,11 +1835,12 @@ class TestSpoolmanInventorySSRFSpoolBuddyPath:
                 json={"device_id": "sb-ssrf", "tag_uid": "AABBCCDD"},
             )
 
-        # Must not crash or proxy the SSRF URL — unknown_tag is the safe degraded response
+        # Must not crash or proxy the SSRF URL
         assert resp.status_code == 200
-        if mock_ws.broadcast.called:
-            msg = mock_ws.broadcast.call_args[0][0]
-            assert msg["type"] == "spoolbuddy_unknown_tag"
+        assert resp.json()["matched"] is False
+        sent = {call.args[0]["type"] for call in mock_ws.broadcast.call_args_list}
+        assert "spoolman_unavailable" in sent
+        assert sent <= {"spoolman_unavailable", "spoolman_ssrf_blocked"}
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1893,8 +1930,9 @@ class TestSpoolmanInventorySSRFSpoolBuddyPath:
                 json={"device_id": "sb-ssrf-scale", "spool_id": 1, "weight_grams": 500.0},
             )
 
-        # Must not crash or proxy to an SSRF host
-        assert resp.status_code in (200, 404, 422)
+        # Must not crash or proxy to an SSRF host; Spoolman is unavailable, and the
+        # built-in inventory is not written instead.
+        assert resp.status_code == 503
 
 
 class TestMergeSpoolExtraPreservesKeys:

@@ -516,11 +516,13 @@ async def test_restart_drops_rows_of_deleted_provider_before_id_is_reused(setup)
     service, api, factory, clock, states = setup
     await service.tick()
     assert len(await rows(factory)) == 1
-    # Production SQLite does not enforce the cascade, and the in-memory cleanup
-    # job is lost when Bambuddy restarts before it drains.
+    # A provider deleted before the ON DELETE rules were applied on SQLite
+    # (core/sqlite_fk), or by raw SQL that bypasses them, left its rows behind,
+    # and the in-memory cleanup job is lost when Bambuddy restarts before it
+    # drains.
     async with factory() as db:
         await db.execute(text("PRAGMA foreign_keys=OFF"))
-        await db.execute(delete(NotificationProvider).where(NotificationProvider.id == 1))
+        await db.execute(text("DELETE FROM notification_providers WHERE id = 1"))
         await db.commit()
         await db.execute(text("PRAGMA foreign_keys=ON"))
     assert len(await rows(factory)) == 1

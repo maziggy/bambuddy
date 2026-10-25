@@ -2,10 +2,12 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes.print_queue import _assert_can_queue_archive, saved_slicer_ams_mapping
 from backend.app.core.auth import (
+    ApiKeyActor,
     api_key_printer_scope,
     check_webhook_permission,
     ensure_api_key_printer_access,
@@ -15,14 +17,20 @@ from backend.app.core.auth import (
     resolve_apikey_owner,
 )
 from backend.app.core.database import get_db
+from backend.app.core.permissions import Permission
+from backend.app.core.row_visibility import may_reach_row
 from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.schemas.printer import HMSErrorResponse, hms_error_responses
 from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
+from backend.app.services.print_control import stop_print_by_user
+from backend.app.services.print_defaults import default_print_options
 from backend.app.services.printer_manager import printer_manager
+from backend.app.services.queue_announcements import announce_queue_jobs_added
 from backend.app.services.queue_position import next_queue_position
+from backend.app.utils.local_time import to_naive_utc
 
 logger = logging.getLogger(__name__)
 
@@ -98,11 +106,17 @@ def _job_id(subtask_id) -> str | None:
 # Webhook endpoints
 
 
+async def _key_actor(db: AsyncSession, api_key: APIKey) -> ApiKeyActor | None:
+    """The key acting for its owner; None with auth off, where there is no owner
+    to act for (as on POST /queue/) and the key's printers still apply."""
+    return ApiKeyActor(api_key, await resolve_apikey_owner(db, api_key)) if await is_auth_enabled(db) else None
+
+
 @router.post("/queue/add", response_model=QueueAddResponse)
 async def webhook_add_to_queue(
     data: QueueAddRequest,
     api_key: APIKey = Depends(get_api_key),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Add a print to the queue via webhook.
 
@@ -111,11 +125,14 @@ async def webhook_add_to_queue(
     await check_webhook_permission(db, api_key, "queue")
     await ensure_api_key_printer_access(db, api_key, data.printer_id)
 
-    # Verify archive exists
+    # Verify archive exists and passes the same source gate as POST /queue/,
+    # with the key acting for its owner within its printers.
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == data.archive_id))
     archive = result.scalar_one_or_none()
     if not archive:
         raise HTTPException(status_code=404, detail="Archive not found")
+    actor = await _key_actor(db, api_key)
+    _assert_can_queue_archive(archive, actor, await api_key_printer_scope(db, api_key))
 
     # Verify printer exists
     result = await db.execute(select(Printer).where(Printer.id == data.printer_id))
@@ -133,8 +150,9 @@ async def webhook_add_to_queue(
         from datetime import datetime
 
         try:
-            scheduled_time = datetime.fromisoformat(data.scheduled_time.replace("Z", "+00:00"))
-        except ValueError:
+            # Stored as naive UTC: an offset is converted, not dropped.
+            scheduled_time = to_naive_utc(datetime.fromisoformat(data.scheduled_time.replace("Z", "+00:00")))
+        except (ValueError, OverflowError):
             raise HTTPException(status_code=400, detail="Invalid scheduled_time format")
 
     # Create queue item
@@ -155,10 +173,15 @@ async def webhook_add_to_queue(
         created_by_id=api_key.user_id,
         # Waits for someone to start it unless the owner may print without review (#1620)
         manual_start=await is_auth_enabled(db) and queue_review_required_for(await resolve_apikey_owner(db, api_key)),
+        # No print options in the request: the install's defaults.
+        **await default_print_options(db),
+        # The slicer's slots, as a reprint from the UI reuses them
+        ams_mapping=saved_slicer_ams_mapping(archive, data.printer_id),
     )
     db.add(queue_item)
-    await db.flush()
+    await db.commit()
     await db.refresh(queue_item)
+    await announce_queue_jobs_added(db, [queue_item.id])
 
     return QueueAddResponse(
         id=queue_item.id,
@@ -174,7 +197,7 @@ async def webhook_add_to_queue(
 async def webhook_start_print(
     printer_id: int,
     api_key: APIKey = Depends(get_api_key),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Trigger the next manual-start queue item on a printer.
 
@@ -198,17 +221,31 @@ async def webhook_start_print(
     if not printer:
         raise HTTPException(status_code=404, detail="Printer not found")
 
-    # Get next pending queue item
-    result = await db.execute(
-        select(PrintQueueItem)
-        .where(
-            PrintQueueItem.printer_id == printer_id,
-            PrintQueueItem.status == "pending",
+    # The next pending queue item the key's owner could start from the queue:
+    # theirs, or one nobody owns yet (a virtual-printer upload, claimed by
+    # starting it, #1670), unless they may start everyone's.
+    actor = await _key_actor(db, api_key)
+    owner = actor.owner if actor is not None else None
+    startable: list | None = []
+    if owner is not None and not owner.has_permission(Permission.QUEUE_UPDATE_ALL.value):
+        startable = (
+            [or_(PrintQueueItem.created_by_id == owner.id, PrintQueueItem.created_by_id.is_(None))]
+            if owner.has_permission(Permission.QUEUE_UPDATE_OWN.value)
+            else None
         )
-        .order_by(PrintQueueItem.position)
-        .limit(1)
-    )
-    queue_item = result.scalar_one_or_none()
+    queue_item = None
+    if startable is not None:
+        result = await db.execute(
+            select(PrintQueueItem)
+            .where(
+                PrintQueueItem.printer_id == printer_id,
+                PrintQueueItem.status == "pending",
+                *startable,
+            )
+            .order_by(PrintQueueItem.position)
+            .limit(1)
+        )
+        queue_item = result.scalar_one_or_none()
     if not queue_item:
         raise HTTPException(status_code=404, detail="No pending prints in queue")
 
@@ -228,6 +265,8 @@ async def webhook_start_print(
     # already auto-dispatchable this is a no-op; the scheduler will still
     # pick it up on its next tick.
     queue_item.manual_start = False
+    if owner is not None and queue_item.created_by_id is None:
+        queue_item.created_by_id = owner.id
     await db.commit()
     await db.refresh(queue_item)
 
@@ -235,11 +274,27 @@ async def webhook_start_print(
     return {"message": "Print started", "queue_item_id": queue_item.id}
 
 
+# States in which a print can be stopped, as with the Stop button on the
+# printer card: printing or paused.
+_STOPPABLE_STATES = ("RUNNING", "PAUSE")
+
+
+def _stop_current_print(printer_id: int) -> None:
+    """Stop the print on the user's behalf (cancel and stop are the same command)."""
+    try:
+        sent = stop_print_by_user(printer_id)
+    except Exception as e:
+        logger.error("Failed to stop print on printer %s: %s", printer_id, e)
+        raise HTTPException(status_code=500, detail=str(e))
+    if not sent:
+        raise HTTPException(status_code=503, detail="Printer not connected")
+
+
 @router.post("/printer/{printer_id}/stop")
 async def webhook_stop_print(
     printer_id: int,
     api_key: APIKey = Depends(get_api_key),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Stop the current print on a printer.
 
@@ -255,14 +310,10 @@ async def webhook_stop_print(
     if not status or not status.connected:
         raise HTTPException(status_code=503, detail="Printer not connected")
 
-    if status.state != "RUNNING":
+    if status.state not in _STOPPABLE_STATES:
         raise HTTPException(status_code=409, detail="No print in progress")
 
-    try:
-        await printer_manager.stop_print(printer_id)
-    except Exception as e:
-        logger.error("Failed to stop print: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+    _stop_current_print(printer_id)
 
     return {"message": "Print stopped"}
 
@@ -271,7 +322,7 @@ async def webhook_stop_print(
 async def webhook_cancel_print(
     printer_id: int,
     api_key: APIKey = Depends(get_api_key),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Cancel the current print on a printer.
 
@@ -285,14 +336,10 @@ async def webhook_cancel_print(
     if not status or not status.connected:
         raise HTTPException(status_code=503, detail="Printer not connected")
 
-    if status.state not in ["RUNNING", "PAUSE"]:
+    if status.state not in _STOPPABLE_STATES:
         raise HTTPException(status_code=409, detail="No print to cancel")
 
-    try:
-        await printer_manager.cancel_print(printer_id)
-    except Exception as e:
-        logger.error("Failed to cancel print: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+    _stop_current_print(printer_id)
 
     return {"message": "Print cancelled"}
 
@@ -301,7 +348,7 @@ async def webhook_cancel_print(
 async def webhook_get_printer_status(
     printer_id: int,
     api_key: APIKey = Depends(get_api_key),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get status of a printer.
 
@@ -354,13 +401,15 @@ async def webhook_get_printer_status(
 async def webhook_get_queue_status(
     printer_id: int | None = None,
     api_key: APIKey = Depends(get_api_key),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get queue status for all printers or a specific printer.
 
-    Requires 'can_read_status' permission.
+    Requires 'can_read_status' permission. The counts cover every job; the
+    items listed are those the key's owner sees in the queue.
     """
     await check_webhook_permission(db, api_key, "read_status")
+    actor = await _key_actor(db, api_key)
 
     # Get printers
     if printer_id:
@@ -404,6 +453,7 @@ async def webhook_get_queue_status(
                         "status": item.status,
                     }
                     for item in items
+                    if may_reach_row(item.created_by_id, actor, Permission.QUEUE_READ_ALL, Permission.QUEUE_READ_OWN)
                 ],
             )
         )

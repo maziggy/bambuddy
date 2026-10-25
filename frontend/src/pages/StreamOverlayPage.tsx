@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -13,6 +13,7 @@ import { api, ApiError, withStreamToken } from '../api/client';
 import { formatDuration, formatETA, type TimeFormat } from '../utils/date';
 import { mapModelCode } from '../utils/printerModel';
 import { useOverlayCameraRecovery } from '../hooks/useOverlayCameraRecovery';
+import { isSideways, useSidewaysBox } from '../hooks/useSidewaysBox';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
@@ -253,7 +254,7 @@ export function StreamOverlayPage() {
     config.showModel ? mapModelCode(printer?.model ?? null) : null,
   ].filter(Boolean).join(' · ');
   const status = kiosk ? overlay : statusData;
-  const { imageKey, handleStreamError } = useOverlayCameraRecovery(id > 0 && config.showCamera && status != null);
+  const { imageKey, closing, imgRef, handleStreamError } = useOverlayCameraRecovery(id > 0 && config.showCamera && status != null);
   const timeFormat: TimeFormat = (kiosk ? overlay?.time_format : settings?.time_format) || 'system';
 
   // WebSocket for real-time updates (JWT-authenticated; skipped in kiosk mode,
@@ -296,7 +297,11 @@ export function StreamOverlayPage() {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'printer_status' && data.printer_id === id) {
-          queryClient.setQueryData(['printerStatus', id], data.status);
+          // The update is the status itself, under `data`; merge it, as the
+          // app's own socket does, in case it carries only some fields.
+          queryClient.setQueryData(['printerStatus', id], (old: Record<string, unknown> | undefined) =>
+            old ? { ...old, ...data.data } : data.data,
+          );
         }
       } catch {
         // Ignore parse errors
@@ -321,6 +326,14 @@ export function StreamOverlayPage() {
       document.title = 'Bambuddy';
     };
   }, [printer, t]);
+
+  // The classic artwork without a fixed layout fills the window: a sideways
+  // camera is laid out at the window's sides swapped, or it is cut off (#3362).
+  const artworkRef = useRef<HTMLDivElement>(null);
+  const sideways = isSideways(printer?.camera_rotation);
+  // Measured once the artwork is on screen, which is after the status loads.
+  const fitsWindow = sideways && !config.layout && !config.updatedArtwork && config.showCamera && status != null;
+  const windowBox = useSidewaysBox(artworkRef, fitsWindow);
 
   if (!id) {
     return (
@@ -416,7 +429,7 @@ export function StreamOverlayPage() {
       customLogo={customLogo}
       progressBackground={progressBackground}
       size={config.size}
-      camera={config.showCamera ? { url: streamUrl, rotation: printer?.camera_rotation ?? 0, onError: handleStreamError } : null}
+      camera={config.showCamera ? { url: closing ? undefined : streamUrl, rotation: printer?.camera_rotation ?? 0, onError: handleStreamError, imgRef } : null}
       name={config.showPrinter ? printer?.name ?? null : null}
       model={config.showModel ? mapModelCode(printer?.model ?? null) || null : null}
       filename={config.showFilename && status.current_print ? formatPrintName(status.current_print.replace(/\.gcode\.3mf$|\.3mf$|\.gcode$/i, ''), status.gcode_file, t) : null}
@@ -433,20 +446,25 @@ export function StreamOverlayPage() {
 
   const dimensions = config.layout ? OVERLAY_DIMENSIONS[config.layout] : null;
   const rotation = printer?.camera_rotation ?? 0;
-  const sideways = Math.abs(rotation % 180) === 90;
   const artwork = (
-    <div className="classic-overlay min-h-screen bg-black relative overflow-hidden" data-layout={config.layout ?? undefined} data-size={config.size}>
+    <div ref={artworkRef} className="classic-overlay min-h-screen bg-black relative overflow-hidden" data-layout={config.layout ?? undefined} data-size={config.size}>
       {/* Camera feed - fullscreen background (optional) */}
       {config.showCamera && (
         <img
+          ref={imgRef}
           key={imageKey}
-          src={streamUrl}
+          src={closing ? undefined : streamUrl}
           alt={t('streamOverlay.cameraStream')}
           className="absolute inset-0 w-full h-full object-contain"
           style={dimensions ? {
             left: '50%', top: '50%', maxWidth: 'none',
             width: sideways ? dimensions.height : dimensions.width,
             height: sideways ? dimensions.width : dimensions.height,
+            transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+          } : windowBox ? {
+            left: '50%', top: '50%', maxWidth: 'none',
+            width: windowBox.height,
+            height: windowBox.width,
             transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
           } : rotation ? { transform: `rotate(${rotation}deg)` } : undefined}
           onError={handleStreamError}

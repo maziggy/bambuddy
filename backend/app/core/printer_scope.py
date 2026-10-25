@@ -60,10 +60,6 @@ class PrinterScope:
             return self
         return PrinterScope(self.printer_ids & other.printer_ids)
 
-    def filter_ids(self, printer_ids: Iterable[int]) -> list[int]:
-        """``printer_ids`` minus the ones out of scope, order kept."""
-        return [pid for pid in printer_ids if self.allows(pid)]
-
     def where(self, column):
         """A WHERE clause limiting ``column`` (a printer id column) to the scope.
 
@@ -86,14 +82,18 @@ ALL_PRINTERS = PrinterScope()
 
 
 def ensure_model_target_allowed(user, scope: PrinterScope) -> None:
-    """Refuse an "any printer of a model" job from a limited caller with no user.
+    """Refuse an "any printer of a model" job from a limited caller that is no user.
 
     The scheduler keeps such a job within its *creator's* scope, but a job
-    queued through an API key records no creator, so a key limited to certain
-    printers could otherwise reach the rest of the fleet through it. Users are
-    unaffected: their jobs carry their id.
+    queued through an API key records no creator, or its owner as creator, and
+    a key may be limited to fewer printers than its owner, so a limited key
+    could otherwise reach the rest of the fleet through it. A key comes as
+    ``None`` or as its ``ApiKeyActor``. Users are unaffected: their jobs carry
+    their id.
     """
-    if user is None and not scope.is_unrestricted:
+    from backend.app.core.auth import ApiKeyActor
+
+    if (user is None or isinstance(user, ApiKeyActor)) and not scope.is_unrestricted:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A caller limited to certain printers must queue to a specific printer, not to any printer of a model",
@@ -191,9 +191,88 @@ def api_key_own_scope(api_key) -> PrinterScope:
     return PrinterScope(frozenset(int(pid) for pid in api_key.printer_ids))
 
 
-async def group_restricts_printers(db: AsyncSession, group_ids: Iterable[int]) -> bool:
-    ids = list(group_ids)
-    if not ids:
-        return False
-    result = await db.execute(select(Group.id).where(Group.id.in_(ids), Group.restrict_printers.is_(True)).limit(1))
-    return result.first() is not None
+async def drop_printers_from_api_keys(db, deleted: Iterable[int] | None = None) -> None:
+    """Take deleted printers out of the API keys limited to them.
+
+    *deleted*: the printers being deleted, or None for every id that no longer
+    has a printer (the start-up repair). SQLite gives a freed id to the next
+    printer created, so a stale id would hand the key that printer. A key whose
+    last printer goes keeps an empty list, which reaches no printer; None would
+    reach all of them. *db* is a session or a connection.
+    """
+    from sqlalchemy import update
+
+    from backend.app.models.api_key import APIKey
+    from backend.app.models.printer import Printer
+
+    if deleted is None:
+        existing = set((await db.execute(select(Printer.id))).scalars().all())
+
+        def keeps(printer_id: int) -> bool:
+            return printer_id in existing
+    else:
+        gone = set(deleted)
+
+        def keeps(printer_id: int) -> bool:
+            return printer_id not in gone
+
+    for key_id, printer_ids in (await db.execute(select(APIKey.id, APIKey.printer_ids))).all():
+        if not isinstance(printer_ids, list):
+            continue  # all printers
+        kept = [printer_id for printer_id in printer_ids if keeps(printer_id)]
+        if kept != printer_ids:
+            await db.execute(update(APIKey).where(APIKey.id == key_id).values(printer_ids=kept))
+
+
+async def drop_printers_from_obico(db, deleted: Iterable[int] | None = None) -> None:
+    """Take deleted printers out of the printers Obico detection watches.
+
+    As drop_printers_from_api_keys: SQLite would enrol the next printer given a
+    stale id, sending its camera to the ML server and pausing its prints. An
+    empty or missing list means all printers and is left as it is; a list whose
+    last printer goes becomes "[]", which watches none.
+    """
+    import json
+
+    from sqlalchemy import update
+
+    from backend.app.models.printer import Printer
+    from backend.app.models.settings import Settings
+
+    key = "obico_enabled_printers"
+    raw = (await db.execute(select(Settings.value).where(Settings.key == key))).scalar()
+    if not raw:
+        return
+    try:
+        printer_ids = json.loads(raw)
+    except ValueError:
+        return
+    if not isinstance(printer_ids, list):
+        return
+    if deleted is None:
+        existing = set((await db.execute(select(Printer.id))).scalars().all())
+        kept = [printer_id for printer_id in printer_ids if printer_id in existing]
+    else:
+        gone = set(deleted)
+        kept = [printer_id for printer_id in printer_ids if printer_id not in gone]
+    if kept != printer_ids:
+        # Written as the settings page writes it ("[1,3]"); "[1, 3]" reads there
+        # as an unsaved change and saves itself again.
+        value = json.dumps(kept, separators=(",", ":"))
+        await db.execute(update(Settings).where(Settings.key == key).values(value=value))
+
+
+async def ensure_printers_exist(db: AsyncSession, printer_ids: Iterable[int | None] | None) -> None:
+    """400 for an id with no printer, before it is stored as a limit.
+
+    SQLite enforces no foreign keys and gives a freed id to the next printer
+    created, which a stored stale id would hand whatever it limits.
+    """
+    from backend.app.models.printer import Printer
+
+    wanted = {printer_id for printer_id in printer_ids or () if printer_id is not None}
+    if not wanted:
+        return
+    found = set((await db.execute(select(Printer.id).where(Printer.id.in_(wanted)))).scalars().all())
+    if missing := sorted(wanted - found):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown printer: {', '.join(map(str, missing))}")

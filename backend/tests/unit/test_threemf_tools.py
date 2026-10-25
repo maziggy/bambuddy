@@ -13,12 +13,12 @@ import pytest
 
 from backend.app.utils.threemf_tools import (
     expand_to_project_slots,
-    extract_bed_type_from_3mf,
     extract_embedded_presets_from_3mf,
     extract_filament_usage_from_3mf,
     extract_layer_filament_usage_from_3mf,
     extract_max_z_height_from_3mf,
     extract_plate_extruder_set_from_3mf,
+    extract_plate_metadata_from_3mf,
     extract_print_time_from_3mf,
     extract_project_filaments_from_3mf,
     extract_support_filament_slots_from_3mf,
@@ -86,16 +86,61 @@ G1 E2.0
         # Layer 2: filament 0 = 15mm (13+2)
         assert result[2] == {0: 15.0, 1: 5.0}
 
-    def test_retractions_ignored(self):
-        """Negative E values (retractions) should be ignored."""
+    def test_retractions_subtracted(self):
+        """#3317: a retract and its un-retract cancel out (relative E, M83).
+
+        Counting only the positive half added every pair to the total and put
+        a failed print's partial usage 1.7x above the slicer's weight.
+        """
         gcode = """
 M620 S0
 G1 E10.0
 G1 E-2.0
+G1 E2.0
 G1 E5.0
 """
         result = parse_gcode_layer_filament_usage(gcode)
         assert result == {0: {0: 15.0}}
+
+    def test_retraction_across_layer_change(self):
+        """A retract before the layer change is part of the layer it ends."""
+        gcode = """
+M620 S0
+G1 E10.0
+G1 E-0.8
+M73 L1
+G1 E0.8
+G1 E4.0
+"""
+        result = parse_gcode_layer_filament_usage(gcode)
+        assert result[0] == {0: pytest.approx(9.2)}
+        assert result[1] == {0: pytest.approx(14.0)}
+
+    def test_retractions_kept_per_filament(self):
+        """A filament's retract before a change stays on that filament."""
+        gcode = """
+M620 S0
+G1 E10.0
+G1 E-2.0
+M620 S1
+G1 E6.0
+G1 E-1.0
+G1 E1.0
+"""
+        result = parse_gcode_layer_filament_usage(gcode)
+        assert result == {0: {0: 8.0, 1: 6.0}}
+
+    def test_net_usage_never_negative(self):
+        """A filament retracted before it has extruded reads 0, not negative."""
+        gcode = """
+M620 S1
+G1 E-3.0
+M73 L1
+G1 E5.0
+"""
+        result = parse_gcode_layer_filament_usage(gcode)
+        assert result[0] == {1: 0.0}
+        assert result[1] == {1: 2.0}
 
     def test_m620_s255_unloads(self):
         """M620 S255 means unload - extrusion after should be ignored."""
@@ -654,65 +699,20 @@ class TestExtractPlateExtruderSetFrom3mf:
         with _make_3mf_with({"Metadata/model_settings.config": xml}) as zf:
             assert extract_plate_extruder_set_from_3mf(zf, plate_id=1) == set()
 
-    def test_painted_face_above_threshold_kept(self):
-        # 60/40 split: 60 triangles painted with extruder 1, 40 with ext 2.
-        # Threshold is 5%; both above. The dominant ones are real colours.
-        triangles = []
-        for _ in range(60):
-            triangles.append('<triangle v1="0" v2="1" v3="2" paint_color="1"/>')
-        for _ in range(40):
-            triangles.append('<triangle v1="0" v2="1" v3="2" paint_color="2"/>')
+    @staticmethod
+    def _painted(paints: list[str], object_extruder: int | None = None) -> zipfile.ZipFile:
+        """One object on plate 1 whose triangles carry *paints* (#3355)."""
+        triangles = "".join(f'<triangle v1="0" v2="1" v3="2" paint_color="{p}"/>' for p in paints)
         per_obj = (
             '<?xml version="1.0"?>'
             '<model><resources><object id="100" type="model"><mesh>'
-            "<triangles>" + "".join(triangles) + "</triangles>"
+            f"<triangles>{triangles}</triangles>"
             "</mesh></object></resources><build/></model>"
         )
+        extruder = f'<metadata key="extruder" value="{object_extruder}"/>' if object_extruder else ""
         ms = (
             '<?xml version="1.0"?><config>'
-            '<object id="10"><metadata key="name" value="o"/></object>'
-            '<plate><metadata key="plater_id" value="1"/>'
-            '<model_instance><metadata key="object_id" value="10"/></model_instance>'
-            "</plate></config>"
-        )
-        threed = (
-            '<?xml version="1.0"?>'
-            '<model xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"'
-            ' xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">'
-            "<resources>"
-            '<object id="10" type="model"><components>'
-            '<component p:path="/3D/Objects/o100.model" objectid="100"/>'
-            "</components></object>"
-            "</resources><build/></model>"
-        )
-        with _make_3mf_with(
-            {
-                "Metadata/model_settings.config": ms,
-                "3D/3dmodel.model": threed,
-                "3D/Objects/o100.model": per_obj,
-            }
-        ) as zf:
-            result = extract_plate_extruder_set_from_3mf(zf, plate_id=1)
-        # Both real colours kept (60/40 well above 5% threshold); the dropped
-        # threshold case is the regression that motivates this test.
-        assert result == {1, 2}
-
-    def test_painted_face_below_threshold_dropped_as_noise(self):
-        # 99 triangles at ext 1, 1 triangle at ext 9 (1% — below 5%
-        # threshold). The 1% leaf is a single-leaf accident.
-        triangles = []
-        for _ in range(99):
-            triangles.append('<triangle v1="0" v2="1" v3="2" paint_color="1"/>')
-        triangles.append('<triangle v1="0" v2="1" v3="2" paint_color="9"/>')
-        per_obj = (
-            '<?xml version="1.0"?>'
-            '<model><resources><object id="100" type="model"><mesh>'
-            "<triangles>" + "".join(triangles) + "</triangles>"
-            "</mesh></object></resources><build/></model>"
-        )
-        ms = (
-            '<?xml version="1.0"?><config>'
-            '<object id="10"><metadata key="name" value="o"/></object>'
+            f'<object id="10"><metadata key="name" value="o"/>{extruder}</object>'
             '<plate><metadata key="plater_id" value="1"/>'
             '<model_instance><metadata key="object_id" value="10"/></model_instance>'
             "</plate></config>"
@@ -725,17 +725,49 @@ class TestExtractPlateExtruderSetFrom3mf:
             '<component p:path="/3D/Objects/o100.model" objectid="100"/>'
             "</components></object></resources><build/></model>"
         )
-        with _make_3mf_with(
-            {
-                "Metadata/model_settings.config": ms,
-                "3D/3dmodel.model": threed,
-                "3D/Objects/o100.model": per_obj,
-            }
-        ) as zf:
-            result = extract_plate_extruder_set_from_3mf(zf, plate_id=1)
-        # Single-leaf accident at 1% filtered as noise; only the dominant
-        # extruder survives.
-        assert result == {1}
+        return _make_3mf_with(
+            {"Metadata/model_settings.config": ms, "3D/3dmodel.model": threed, "3D/Objects/o100.model": per_obj}
+        )
+
+    @pytest.mark.parametrize(
+        ("paint", "filament"),
+        [("4", 1), ("8", 2), ("0C", 3), ("1C", 4), ("CC", 15), ("0FC", 18), ("2FC", 20)],
+    )
+    def test_a_whole_painted_triangle_is_its_filament(self, paint, filament):
+        # How the slicer writes a leaf: state 1-2 in bits 2-3, state 3+ as
+        # 0b11 plus a nibble of state-3 (0xF plus state-18 from 18 on),
+        # last nibble first. Each digit is not a filament number.
+        with self._painted([paint]) as zf:
+            assert extract_plate_extruder_set_from_3mf(zf, plate_id=1) == {filament}
+
+    def test_a_split_triangle_counts_every_painted_part(self):
+        # Split in two (code 1), children painted 2 and 3, one part unpainted
+        # in a three-way split (code 2, special side 1 = 0b0110).
+        with self._painted(["0C81", "0C806"]) as zf:
+            assert extract_plate_extruder_set_from_3mf(zf, plate_id=1) == {2, 3}
+
+    def test_the_reporters_case(self):
+        # Object on filament 3, Black (1) and White (2) painted on: every slot
+        # is used, so none may be substituted.
+        with self._painted(["4"] * 30 + ["8"] * 30, object_extruder=3) as zf:
+            assert extract_plate_extruder_set_from_3mf(zf, plate_id=1) == {1, 2, 3}
+
+    def test_a_small_painted_spot_is_a_used_filament(self):
+        # The slicer prints it with that filament, however small. The old 5%
+        # "noise" cutoff dropped it.
+        with self._painted(["4"] * 99 + ["1C"]) as zf:
+            assert extract_plate_extruder_set_from_3mf(zf, plate_id=1) == {1, 4}
+
+    def test_a_real_bambu_studio_paint(self):
+        from backend.tests._fixtures.painted_cube_3355 import CUBE_PAINT_COLORS
+
+        with self._painted(CUBE_PAINT_COLORS, object_extruder=1) as zf:
+            assert extract_plate_extruder_set_from_3mf(zf, plate_id=1) == {1, 2, 3, 4}
+
+    def test_a_truncated_paint_keeps_what_was_read(self):
+        # Split in two but only one child present: the child still counts.
+        with self._painted(["81", "C"]) as zf:
+            assert extract_plate_extruder_set_from_3mf(zf, plate_id=1) == {2}
 
     def test_missing_per_object_model_file_silently_skipped(self):
         ms = (
@@ -816,7 +848,7 @@ class TestExtractEmbeddedPresetsFrom3mf:
 
 
 class TestExtractBedTypeFrom3mf:
-    """extract_bed_type_from_3mf reads per-plate `curr_bed_type` from
+    """extract_plate_metadata_from_3mf reads per-plate `curr_bed_type` from
     slice_info.config so the queue / print modal can show the right plate
     even on multi-plate 3MFs where different plates target different beds
     (#1281). archive.bed_type is one-value-per-archive (first plate's
@@ -835,7 +867,7 @@ class TestExtractBedTypeFrom3mf:
         file_path = tmp_path / "test.3mf"
         file_path.write_bytes(create_mock_3mf(xml_content).read())
 
-        assert extract_bed_type_from_3mf(file_path) == "Textured PEI Plate"
+        assert extract_plate_metadata_from_3mf(file_path).bed_type == "Textured PEI Plate"
 
     def test_multi_plate_returns_per_plate_value(self, tmp_path):
         # Reporter's case: a 3MF mixing PEI + Engineering across plates.
@@ -860,9 +892,9 @@ class TestExtractBedTypeFrom3mf:
         file_path = tmp_path / "test.3mf"
         file_path.write_bytes(create_mock_3mf(xml_content).read())
 
-        assert extract_bed_type_from_3mf(file_path, plate_id=1) == "Textured PEI Plate"
-        assert extract_bed_type_from_3mf(file_path, plate_id=2) == "Engineering Plate"
-        assert extract_bed_type_from_3mf(file_path, plate_id=3) == "Cool Plate"
+        assert extract_plate_metadata_from_3mf(file_path, plate_id=1).bed_type == "Textured PEI Plate"
+        assert extract_plate_metadata_from_3mf(file_path, plate_id=2).bed_type == "Engineering Plate"
+        assert extract_plate_metadata_from_3mf(file_path, plate_id=3).bed_type == "Cool Plate"
 
     def test_no_plate_id_returns_first_plate(self, tmp_path):
         # The plate_id=None branch must match the archive-level capture
@@ -883,7 +915,7 @@ class TestExtractBedTypeFrom3mf:
         file_path = tmp_path / "test.3mf"
         file_path.write_bytes(create_mock_3mf(xml_content).read())
 
-        assert extract_bed_type_from_3mf(file_path) == "Cool Plate SuperTack"
+        assert extract_plate_metadata_from_3mf(file_path).bed_type == "Cool Plate SuperTack"
 
     def test_unknown_plate_id_returns_none(self, tmp_path):
         xml_content = """<?xml version="1.0" encoding="UTF-8"?>
@@ -897,7 +929,7 @@ class TestExtractBedTypeFrom3mf:
         file_path = tmp_path / "test.3mf"
         file_path.write_bytes(create_mock_3mf(xml_content).read())
 
-        assert extract_bed_type_from_3mf(file_path, plate_id=99) is None
+        assert extract_plate_metadata_from_3mf(file_path, plate_id=99).bed_type is None
 
     def test_plate_without_bed_type_returns_none(self, tmp_path):
         # Older slicers may export a plate without curr_bed_type. The
@@ -917,8 +949,8 @@ class TestExtractBedTypeFrom3mf:
         file_path = tmp_path / "test.3mf"
         file_path.write_bytes(create_mock_3mf(xml_content).read())
 
-        assert extract_bed_type_from_3mf(file_path, plate_id=1) is None
-        assert extract_bed_type_from_3mf(file_path, plate_id=2) == "Engineering Plate"
+        assert extract_plate_metadata_from_3mf(file_path, plate_id=1).bed_type is None
+        assert extract_plate_metadata_from_3mf(file_path, plate_id=2).bed_type == "Engineering Plate"
 
     def test_missing_slice_info_returns_none(self, tmp_path):
         buffer = io.BytesIO()
@@ -929,13 +961,13 @@ class TestExtractBedTypeFrom3mf:
         file_path = tmp_path / "test.3mf"
         file_path.write_bytes(buffer.read())
 
-        assert extract_bed_type_from_3mf(file_path) is None
+        assert extract_plate_metadata_from_3mf(file_path).bed_type is None
 
     def test_invalid_file_returns_none(self, tmp_path):
         file_path = tmp_path / "invalid.3mf"
         file_path.write_text("not a zip file")
 
-        assert extract_bed_type_from_3mf(file_path) is None
+        assert extract_plate_metadata_from_3mf(file_path).bed_type is None
 
     def test_whitespace_trimmed(self, tmp_path):
         # 3MF values sometimes carry surrounding whitespace from manual
@@ -952,7 +984,7 @@ class TestExtractBedTypeFrom3mf:
         file_path = tmp_path / "test.3mf"
         file_path.write_bytes(create_mock_3mf(xml_content).read())
 
-        assert extract_bed_type_from_3mf(file_path) == "Textured PEI Plate"
+        assert extract_plate_metadata_from_3mf(file_path).bed_type == "Textured PEI Plate"
 
 
 class TestExtractPrintTimeFrom3mf:

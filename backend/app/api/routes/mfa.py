@@ -34,13 +34,14 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Requ
 from fastapi.responses import RedirectResponse
 from jwt import PyJWKClient
 from passlib.context import CryptContext
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, undefer
 
 from backend.app.api.routes._oidc_helpers import assert_safe_public_https_url
 from backend.app.api.routes.settings import get_setting, set_setting
 from backend.app.core.auth import (
+    RequireAdminIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
     create_access_token,
     get_current_active_user,
@@ -48,6 +49,8 @@ from backend.app.core.auth import (
     get_user_by_username,
     is_auth_enabled,
     resolve_session_max_minutes,
+    session_dated,
+    token_outlived_its_session,
     verify_password,
 )
 from backend.app.core.database import get_db
@@ -65,7 +68,6 @@ from backend.app.schemas.auth import (
     EmailOTPDisableRequest,
     EmailOTPEnableConfirmRequest,
     EmailOTPSendRequest,
-    GroupBrief,
     LoginResponse,
     OIDCAuthorizeResponse,
     OIDCExchangeRequest,
@@ -160,9 +162,9 @@ def _etag_matches(if_none_match: str | None, etag_raw: str | None) -> bool:
 def _as_utc(dt: datetime) -> datetime:
     """Return *dt* with UTC timezone attached.
 
-    SQLite/aiosqlite strips timezone info when reading DateTime(timezone=True)
-    columns back – the stored value is always UTC, so we just re-attach the
-    info when doing Python-level comparisons.
+    DateTime columns come back naive on both SQLite and PostgreSQL – the
+    stored value is always UTC, so we just re-attach the info when doing
+    Python-level comparisons.
     """
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
@@ -194,17 +196,12 @@ router = APIRouter(prefix="/auth", tags=["2fa", "oidc"])
 # Helper: user response
 # ---------------------------------------------------------------------------
 def _user_to_response(user: User) -> UserResponse:
-    return UserResponse(
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        role=user.role,
-        is_active=user.is_active,
-        is_admin=user.is_admin,
-        groups=[GroupBrief(id=g.id, name=g.name) for g in user.groups],
-        permissions=sorted(user.get_permissions()),
-        created_at=user.created_at.isoformat(),
-    )
+    # The auth routes' builder, not a copy: the copy here left out
+    # ``auth_source``, so a 2FA or OIDC login reported LDAP and OIDC users as
+    # local and the page offered them "Change Password" (PC-C9).
+    from backend.app.api.routes.auth import _user_to_response as build
+
+    return build(user)
 
 
 # ---------------------------------------------------------------------------
@@ -283,12 +280,15 @@ async def consume_pre_auth_token(db: AsyncSession, token: str, challenge_id: str
             AuthEphemeralToken.token_type == TokenType.PRE_AUTH,
             AuthEphemeralToken.expires_at > now,
         )
-        .returning(AuthEphemeralToken.username, AuthEphemeralToken.challenge_id)
+        .returning(AuthEphemeralToken.username, AuthEphemeralToken.challenge_id, AuthEphemeralToken.created_at)
     )
     row = result.one_or_none()
     if row is None:
         return None
-    username, stored_challenge_id = row
+    username, stored_challenge_id, minted_at = row
+    if await token_outlived_its_session(db, username, minted_at):
+        await db.commit()  # spent all the same
+        return None
     # Enforce client binding: if the token was issued with a challenge_id,
     # the caller must supply the matching value.
     if stored_challenge_id is not None and stored_challenge_id != challenge_id:
@@ -314,7 +314,7 @@ async def peek_pre_auth_token(db: AsyncSession, token: str, challenge_id: str | 
         )
     )
     eph = result.scalar_one_or_none()
-    if eph is None:
+    if eph is None or await token_outlived_its_session(db, eph.username, eph.created_at):
         return None
     # Enforce client binding: if the token was issued with a challenge_id the
     # cookie must match.  Treat a mismatch as if the token doesn't exist.
@@ -624,7 +624,7 @@ async def _set_email_2fa_enabled(db: AsyncSession, user_id: int, enabled: bool) 
 @router.get("/2fa/status", response_model=TwoFAStatusResponse)
 async def get_2fa_status(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> TwoFAStatusResponse:
     """Return the current 2FA configuration for the authenticated user."""
     result = await db.execute(select(UserTOTP).where(UserTOTP.user_id == current_user.id))
@@ -645,7 +645,7 @@ async def get_2fa_status(
 async def setup_totp(
     body: TOTPSetupRequest | None = Body(default=None),
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> TOTPSetupResponse:
     """Initiate TOTP setup: generates a new secret and QR code.
 
@@ -711,7 +711,7 @@ async def setup_totp(
 async def enable_totp(
     body: TOTPEnableRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> TOTPEnableResponse:
     """Confirm TOTP setup by verifying a code from the authenticator app.
 
@@ -754,7 +754,7 @@ async def enable_totp(
 async def disable_totp(
     body: TOTPDisableRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Disable TOTP by verifying a valid TOTP code or a backup code.
 
@@ -816,7 +816,7 @@ async def disable_totp(
 async def regenerate_backup_codes(
     body: TOTPDisableRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> BackupCodesResponse:
     """Generate 10 new backup codes. Requires a valid TOTP code OR a backup code.
 
@@ -882,7 +882,7 @@ async def regenerate_backup_codes(
 @router.post("/2fa/email/enable")
 async def enable_email_otp(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Step 1 of email OTP enable: send a verification code to the user's email.
 
@@ -924,6 +924,7 @@ async def enable_email_otp(
             # Reuse the nonce field to store the code hash
             nonce=code_hash,
             expires_at=now + timedelta(minutes=10),
+            **session_dated(current_user.username),
         )
     )
     await db.commit()
@@ -960,7 +961,7 @@ async def enable_email_otp(
 async def confirm_enable_email_otp(
     body: EmailOTPEnableConfirmRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Step 2 of email OTP enable: verify the code and activate email 2FA.
 
@@ -982,7 +983,7 @@ async def confirm_enable_email_otp(
         )
     )
     eph = peek_result.scalar_one_or_none()
-    if eph is None:
+    if eph is None or await token_outlived_its_session(db, eph.username, eph.created_at):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired setup token")
 
     code_hash = eph.nonce  # code hash stored in the nonce field
@@ -1017,7 +1018,7 @@ async def confirm_enable_email_otp(
 async def disable_email_otp(
     body: EmailOTPDisableRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Disable email-based OTP 2FA for the current user.
 
@@ -1040,7 +1041,7 @@ async def disable_email_otp(
 async def send_email_otp(
     request: Request,
     body: EmailOTPSendRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Send a 6-digit OTP code to the user's email address.
 
@@ -1129,7 +1130,7 @@ async def send_email_otp(
 async def verify_2fa(
     request: Request,
     body: TwoFAVerifyRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> TwoFAVerifyResponse:
     """Verify a 2FA code and exchange the pre_auth_token for a full JWT.
 
@@ -1273,10 +1274,13 @@ async def verify_2fa(
 async def admin_disable_2fa(
     user_id: int,
     body: AdminDisable2FARequest = Body(default_factory=AdminDisable2FARequest),
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Admin endpoint: disable all 2FA for a given user.
+
+    Admin-only, like every other change to a user account (users.update_user).
 
     Nit 3: Requires the admin's own password as a re-auth step (matching how
     disable_email_otp protects a user's own 2FA removal). OIDC/LDAP-only admins
@@ -1286,6 +1290,14 @@ async def admin_disable_2fa(
     if current_user and current_user.password_hash:
         if not body.admin_password or not verify_password(body.admin_password, current_user.password_hash):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin password required")
+
+    target_user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if target_user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Reported back so the Edit user dialog can say whether anything was removed.
+    totp = (await db.execute(select(UserTOTP).where(UserTOTP.user_id == user_id))).scalar_one_or_none()
+    had_2fa = bool(totp is not None and totp.is_enabled) or await _get_email_2fa_enabled(db, user_id)
 
     # Delete TOTP record
     await db.execute(delete(UserTOTP).where(UserTOTP.user_id == user_id))
@@ -1302,14 +1314,21 @@ async def admin_disable_2fa(
 
     # I2: Invalidate existing JWTs for the target user by bumping password_changed_at.
     # Without this, a stolen token remains valid after 2FA removal.
-    target_user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-    if target_user:
-        target_user.password_changed_at = datetime.now(timezone.utc)
+    target_user.password_changed_at = datetime.now(timezone.utc)
+    # The WebSocket and camera tokens too: reusable for an hour, they would
+    # reconnect a closed dashboard straight away.
+    from backend.app.api.routes.users import drop_pending_tokens
+
+    await drop_pending_tokens(db, target_user.username)
 
     await db.commit()
+    # And their open dashboards: they are never signed in again.
+    from backend.app.core.websocket import ws_manager
+
+    await ws_manager.close_user(user_id)
     actor = current_user.username if current_user else "anonymous"
     logger.info("Admin %s disabled all 2FA for user_id=%d", actor, user_id)
-    return {"message": "2FA disabled for user"}
+    return {"message": "2FA disabled for user", "had_2fa": had_2fa}
 
 
 # ===========================================================================
@@ -1319,7 +1338,7 @@ async def admin_disable_2fa(
 
 @router.get("/oidc/providers", response_model=list[OIDCProviderPublicResponse])
 async def list_oidc_providers(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> list[OIDCProviderPublicResponse]:
     """List all enabled OIDC providers (public).
 
@@ -1340,7 +1359,7 @@ async def list_oidc_providers(
 @router.get("/oidc/providers/all", response_model=list[OIDCProviderResponse])
 async def list_all_oidc_providers(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> list[OIDCProviderResponse]:
     """List ALL OIDC providers including disabled ones (admin only)."""
     result2 = await db.execute(select(OIDCProvider))
@@ -1351,8 +1370,9 @@ async def list_all_oidc_providers(
 @router.post("/oidc/providers", response_model=OIDCProviderResponse, status_code=status.HTTP_201_CREATED)
 async def create_oidc_provider(
     body: OIDCProviderCreate,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> OIDCProviderResponse:
     """Create a new OIDC provider (admin only).
 
@@ -1451,8 +1471,9 @@ async def _missing_group_names(db: AsyncSession, names: set[str]) -> set[str]:
 async def update_oidc_provider(
     provider_id: int,
     body: OIDCProviderUpdate,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> OIDCProviderResponse:
     """Update an existing OIDC provider (admin only).
 
@@ -1550,8 +1571,9 @@ async def update_oidc_provider(
 @router.delete("/oidc/providers/{provider_id}")
 async def delete_oidc_provider(
     provider_id: int,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Delete an OIDC provider and all its user links (admin only)."""
     result2 = await db.execute(select(OIDCProvider).where(OIDCProvider.id == provider_id))
@@ -1574,7 +1596,7 @@ async def delete_oidc_provider(
 async def get_oidc_provider_icon(
     provider_id: int,
     if_none_match: str | None = Header(default=None, alias="If-None-Match"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> Response:
     """Serve the cached icon for an enabled OIDC provider (public, no auth).
 
@@ -1612,8 +1634,9 @@ async def get_oidc_provider_icon(
 @router.delete("/oidc/providers/{provider_id}/icon", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_oidc_provider_icon(
     provider_id: int,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> Response:
     """Remove the icon entirely for a provider (admin only).
 
@@ -1641,8 +1664,9 @@ async def delete_oidc_provider_icon(
 @router.post("/oidc/providers/{provider_id}/icon/refresh", response_model=OIDCProviderResponse)
 async def refresh_oidc_provider_icon(
     provider_id: int,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> OIDCProviderResponse:
     """Refetch the icon from the stored `icon_url` (admin only).
 
@@ -1679,7 +1703,7 @@ async def refresh_oidc_provider_icon(
 @router.get("/oidc/authorize/{provider_id}", response_model=OIDCAuthorizeResponse)
 async def oidc_authorize(
     provider_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> OIDCAuthorizeResponse:
     """Return the OIDC authorization URL for the given provider."""
     result = await db.execute(
@@ -1764,7 +1788,7 @@ async def oidc_callback(
     code: str | None = Query(default=None, max_length=2048),
     state: str | None = Query(default=None, max_length=2048),
     error: str | None = Query(default=None, max_length=256),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> RedirectResponse:
     """Handle the OIDC authorization code callback from the identity provider."""
     external_url = await _get_base_external_url(db)
@@ -2177,7 +2201,7 @@ async def oidc_exchange(
     body: OIDCExchangeRequest,
     raw_request: Request,
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> LoginResponse:
     """Exchange an OIDC exchange token (from the callback redirect) for a full JWT.
 
@@ -2194,14 +2218,16 @@ async def oidc_exchange(
             AuthEphemeralToken.token_type == TokenType.OIDC_EXCHANGE,
             AuthEphemeralToken.expires_at > now,  # reject expired tokens atomically
         )
-        .returning(AuthEphemeralToken.username)
+        .returning(AuthEphemeralToken.username, AuthEphemeralToken.created_at)
     )
     row = consume_result.one_or_none()
     if row is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired OIDC exchange token")
 
-    (username,) = row
+    username, minted_at = row
     await db.commit()
+    if await token_outlived_its_session(db, username, minted_at):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired OIDC exchange token")
 
     user = await get_user_by_username(db, username)
     if not user or not user.is_active:
@@ -2261,7 +2287,7 @@ async def oidc_exchange(
 @router.get("/oidc/links", response_model=list[OIDCLinkResponse])
 async def list_oidc_links(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> list[OIDCLinkResponse]:
     """List all OIDC provider links for the current user."""
     result = await db.execute(
@@ -2289,7 +2315,7 @@ async def list_oidc_links(
 async def remove_oidc_link(
     provider_id: int,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> dict:
     """Remove the OIDC link between the current user and a provider."""
     result = await db.execute(
@@ -2300,6 +2326,15 @@ async def remove_oidc_link(
     link = result.scalar_one_or_none()
     if not link:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OIDC link not found")
+    # A user created from an SSO login has no password: their last link is
+    # their only way to sign in.
+    if current_user.auth_source == "oidc" and not current_user.password_hash:
+        links = await db.execute(select(func.count()).where(UserOIDCLink.user_id == current_user.id))
+        if links.scalar_one() <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This is the only way this account can sign in; it can't be unlinked",
+            )
 
     await db.delete(link)
     await db.commit()

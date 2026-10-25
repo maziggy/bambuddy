@@ -371,6 +371,143 @@ class TestPlateIdRecovery:
 
         assert seen_plate_ids == [2]
 
+    @pytest.mark.asyncio
+    async def test_queue_item_plate_wins_over_the_archive_plate(self):
+        """The archive keeps the plate of its first print; a reprint of plate 3
+        is recorded only on its queue item."""
+        archive = _make_archive(archive_id=312, plate_id=1)
+        queue_item = _make_queue_item(plate_id=3)
+        spool = _make_spool(spool_id=68)
+        assignment = _make_assignment(spool_id=68, ams_id=0, tray_id=3)
+        db = _mock_db_sequential([archive, queue_item, assignment, spool])
+        seen_plate_ids: list = []
+
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={"mapping": [3]},
+            progress=100,
+            layer_num=361,
+            tray_now=255,
+            tray_change_log=[],
+            total_layers=361,
+        )
+
+        with (
+            _settings_patch() as mock_settings,
+            _patched_3mf([{"slot_id": 1, "used_g": 318.82, "type": "ABS", "color": "#808080"}], seen_plate_ids),
+        ):
+            mock_settings.base_dir = MagicMock()
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_settings.base_dir.__truediv__ = MagicMock(return_value=mock_path)
+
+            await _track_from_3mf(
+                printer_id=1,
+                archive_id=312,
+                status="completed",
+                print_name="AMS_Rack",
+                handled_trays=set(),
+                printer_manager=printer_manager,
+                db=db,
+                plate_id=None,
+            )
+
+        assert seen_plate_ids == [3]
+
+    @staticmethod
+    async def _archive_on_new_printer(db_session, serial="TESTSERIAL"):
+        from backend.app.models.archive import PrintArchive
+
+        printer = Printer(name=serial, ip_address="192.168.0.10", access_code="1234", serial_number=serial)
+        db_session.add(printer)
+        await db_session.flush()
+        archive = PrintArchive(
+            printer_id=printer.id,
+            filename="multi_plate.3mf",
+            file_path="archives/1/multi_plate.3mf",
+            file_size=1,
+            content_hash="x",
+            plate_id=1,
+            status="completed",
+        )
+        db_session.add(archive)
+        await db_session.flush()
+        return printer.id, archive.id
+
+    @staticmethod
+    async def _plates_parsed(db_session, printer_id, archive_id) -> list:
+        seen_plate_ids: list = []
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={},
+            progress=100,
+            layer_num=10,
+            tray_now=255,
+            last_loaded_tray=255,
+            tray_change_log=[],
+            total_layers=10,
+        )
+        with (
+            _settings_patch() as mock_settings,
+            _patched_3mf([{"slot_id": 1, "used_g": 10.0, "type": "ABS", "color": "#808080"}], seen_plate_ids),
+        ):
+            mock_settings.base_dir = MagicMock()
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_settings.base_dir.__truediv__ = MagicMock(return_value=mock_path)
+
+            await _track_from_3mf(
+                printer_id=printer_id,
+                archive_id=archive_id,
+                status="completed",
+                print_name="multi_plate",
+                handled_trays=set(),
+                printer_manager=printer_manager,
+                db=db_session,
+                plate_id=None,
+            )
+        return seen_plate_ids
+
+    @pytest.mark.asyncio
+    async def test_the_newest_queue_item_of_the_archive_is_read(self, db_session):
+        """An archive printed twice from the queue has two finished items; the
+        current run is the newer one."""
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer_id, archive_id = await self._archive_on_new_printer(db_session)
+        db_session.add(PrintQueueItem(printer_id=printer_id, archive_id=archive_id, plate_id=2, status="completed"))
+        db_session.add(PrintQueueItem(printer_id=printer_id, archive_id=archive_id, plate_id=3, status="printing"))
+        await db_session.commit()
+
+        assert await self._plates_parsed(db_session, printer_id, archive_id) == [3]
+
+    @pytest.mark.asyncio
+    async def test_another_printers_queue_item_is_not_read(self, db_session):
+        """Plates of one archive can run on several printers at once."""
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer_id, archive_id = await self._archive_on_new_printer(db_session)
+        other = Printer(name="other", ip_address="192.168.0.12", access_code="1234", serial_number="OTHER")
+        db_session.add(other)
+        await db_session.flush()
+        db_session.add(PrintQueueItem(printer_id=printer_id, archive_id=archive_id, plate_id=2, status="completed"))
+        db_session.add(PrintQueueItem(printer_id=other.id, archive_id=archive_id, plate_id=3, status="printing"))
+        await db_session.commit()
+
+        assert await self._plates_parsed(db_session, printer_id, archive_id) == [2]
+
+    @pytest.mark.asyncio
+    async def test_a_cancelled_run_reads_its_own_queue_item(self, db_session):
+        """Completion marks the item cancelled before usage is tracked."""
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer_id, archive_id = await self._archive_on_new_printer(db_session)
+        db_session.add(PrintQueueItem(printer_id=printer_id, archive_id=archive_id, plate_id=2, status="completed"))
+        db_session.add(PrintQueueItem(printer_id=printer_id, archive_id=archive_id, plate_id=3, status="cancelled"))
+        await db_session.commit()
+
+        assert await self._plates_parsed(db_session, printer_id, archive_id) == [3]
+
 
 class TestMappingPriority:
     """AMS filament backup rewrites the printer's live ``mapping`` field to the
@@ -487,6 +624,7 @@ class TestRestoreOnRestartRecovery:
             tray_now=3,
             layer_num=700,
             last_loaded_tray=-1,
+            print_ams_mapping=None,
         )
         for key, value in overrides.items():
             setattr(state, key, value)
@@ -517,6 +655,36 @@ class TestRestoreOnRestartRecovery:
         assert _active_sessions[printer.id].plate_id == 1
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("spoolman", [False, True])
+    async def test_the_print_s_slot_mapping_comes_back_onto_the_printer_state(self, db_session, printer, spoolman):
+        """The slot pills (#1762) read the mapping captured from the print
+        command, which dies with the process; with Spoolman too, which gets no
+        in-memory session."""
+        from backend.app.main import _restore_usage_tracking_session
+        from backend.app.models.settings import Settings
+
+        if spoolman:
+            db_session.add(Settings(key="spoolman_enabled", value="true"))
+            await db_session.commit()
+        await persist_session(db_session, self._session(printer.id), [(2, 0)])
+        state = self._state()
+
+        await _restore_usage_tracking_session(printer.id, state, db_session, MagicMock())
+
+        assert state.print_ams_mapping == [2]
+
+    @pytest.mark.asyncio
+    async def test_a_mapping_this_process_captured_is_kept(self, db_session, printer):
+        from backend.app.main import _restore_usage_tracking_session
+
+        await persist_session(db_session, self._session(printer.id), [(2, 0)])
+        state = self._state(print_ams_mapping=[5, 10])
+
+        await _restore_usage_tracking_session(printer.id, state, db_session, MagicMock())
+
+        assert state.print_ams_mapping == [5, 10]
+
+    @pytest.mark.asyncio
     async def test_entries_seen_by_this_process_are_kept_after_the_persisted_ones(self, db_session, printer):
         from backend.app.main import _restore_usage_tracking_session
 
@@ -539,6 +707,8 @@ class TestRestoreOnRestartRecovery:
 
         assert state.tray_change_log == [(3, 700)]
         assert state.last_loaded_tray == 3
+        # And no slot pills: nothing says how the print's filaments were mapped.
+        assert state.print_ams_mapping is None
 
     @pytest.mark.asyncio
     async def test_unloaded_tray_seeds_nothing(self, db_session, printer):
@@ -566,6 +736,8 @@ class TestRestoreOnRestartRecovery:
         assert await restore_session(db_session, printer.id) is None
         # Still seeded, so the rest of the running print stays attributable.
         assert state.tray_change_log == [(3, 700)]
+        # Nor do its slot pills show on the running print.
+        assert state.print_ams_mapping is None
 
     @pytest.mark.asyncio
     async def test_an_unloaded_tray_does_not_clobber_last_loaded_tray(self, db_session, printer):

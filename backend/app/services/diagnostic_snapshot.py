@@ -72,7 +72,7 @@ async def _run_connection_for(printer) -> dict:
             timeout=_PER_DIAGNOSTIC_TIMEOUT_SECONDS,
         )
         return {**base, "result": _serialize(result)}
-    except asyncio.TimeoutError:
+    except TimeoutError:
         # Name the step that hung and keep the checks that finished before it.
         # Without them a bundle from a farm whose every printer overran said
         # only "timed_out" fourteen times, and nothing about why (#3164).
@@ -102,7 +102,7 @@ async def _run_vp_for(vp) -> dict:
             timeout=_PER_DIAGNOSTIC_TIMEOUT_SECONDS,
         )
         return {**base, "result": _serialize(result)}
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return {**base, "error": "timed_out"}
     except Exception as e:
         logger.warning("VP diagnostic failed for VP %s: %s", vp.id, e, exc_info=True)
@@ -119,7 +119,7 @@ async def _run_log_health() -> Any:
             timeout=_PER_DIAGNOSTIC_TIMEOUT_SECONDS,
         )
         return _serialize(result)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return {"error": "timed_out"}
     except Exception as e:
         logger.warning("Log-health scan failed: %s", e, exc_info=True)

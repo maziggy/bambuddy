@@ -50,26 +50,6 @@ describe('useSpoolBuddyState', () => {
     expect(result.current.deviceId).toBe('dev-1');
   });
 
-  it('WEIGHT_UPDATE handles nested data format', () => {
-    const { result } = renderHook(() => useSpoolBuddyState());
-
-    act(() => {
-      dispatchCustomEvent('spoolbuddy-weight', {
-        data: {
-          weight_grams: 100,
-          stable: false,
-          raw_adc: 9999,
-          device_id: 'dev-2',
-        },
-      });
-    });
-
-    expect(result.current.weight).toBe(100);
-    expect(result.current.weightStable).toBe(false);
-    expect(result.current.rawAdc).toBe(9999);
-    expect(result.current.deviceId).toBe('dev-2');
-  });
-
   it('TAG_MATCHED sets matchedSpool and clears unknownTagUid', () => {
     const { result } = renderHook(() => useSpoolBuddyState());
 

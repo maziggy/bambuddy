@@ -553,8 +553,13 @@ class MQTTRelayService:
         maintenance_type: str,
         current_value: float,
         threshold: float,
+        unit: str,
     ):
-        """Publish maintenance alert triggered event."""
+        """Publish that a maintenance item is due or nearly due.
+
+        current_value is the hours (or days) since it was last done, threshold
+        its interval, and unit says which: "hours" or "days".
+        """
         if not self.enabled or not self.connected:
             return
 
@@ -566,26 +571,7 @@ class MQTTRelayService:
                 "maintenance_type": maintenance_type,
                 "current_value": current_value,
                 "threshold": threshold,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-
-    async def on_maintenance_acknowledged(
-        self,
-        printer_id: int,
-        printer_name: str,
-        maintenance_type: str,
-    ):
-        """Publish maintenance alert acknowledged event."""
-        if not self.enabled or not self.connected:
-            return
-
-        self._publish(
-            f"{self.topic_prefix}/maintenance/acknowledged",
-            {
-                "printer_id": printer_id,
-                "printer_name": printer_name,
-                "maintenance_type": maintenance_type,
+                "unit": unit,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         )
@@ -662,22 +648,32 @@ class MQTTRelayService:
 
     async def on_filament_low(
         self,
+        printer_id: int,
+        printer_name: str,
+        printer_serial: str,
+        slot: str,
+        remaining_percent: int,
+        color: str | None,
         spool_id: int,
-        spool_name: str,
-        remaining_weight: float,
-        remaining_percent: float,
     ):
-        """Publish filament inventory low event."""
+        """Publish that the spool in an AMS slot crossed its low-stock threshold.
+
+        Sent once per crossing, at the same point as the Low Filament
+        notification (print_scheduler._emit_filament_low).
+        """
         if not self.enabled or not self.connected:
             return
 
         self._publish(
-            f"{self.topic_prefix}/filament/low",
+            f"{self.topic_prefix}/printers/{printer_serial}/filament/low",
             {
-                "spool_id": spool_id,
-                "spool_name": spool_name,
-                "remaining_weight": remaining_weight,
+                "printer_id": printer_id,
+                "printer_name": printer_name,
+                "printer_serial": printer_serial,
+                "slot": slot,
                 "remaining_percent": remaining_percent,
+                "color": color,
+                "spool_id": spool_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         )
@@ -716,11 +712,11 @@ class MQTTRelayService:
         self,
         plug_id: int,
         plug_name: str,
-        power: float,
-        energy_today: float,
-        energy_total: float,
+        power: float | None,
+        energy_today: float | None,
+        energy_total: float | None,
     ):
-        """Publish smart plug energy update event."""
+        """Publish a plug's power and energy; a value the plug doesn't report is null."""
         if not self.enabled or not self.connected:
             return
 

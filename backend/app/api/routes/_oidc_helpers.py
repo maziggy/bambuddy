@@ -16,8 +16,9 @@ from urllib.parse import urlparse
 from backend.app.api.routes._url_safety import (
     CLOUD_METADATA_HOSTNAMES,
     CLOUD_METADATA_IPS,
-    NUMERIC_IP_RE,
+    is_numeric_encoded_ip,
     unwrap_ipv4_mapped,
+    url_hostname,
 )
 
 
@@ -54,17 +55,22 @@ def assert_safe_public_https_url(url: str) -> None:
     if parsed.scheme.lower() != "https":
         raise ValueError("icon URL must use https://")
 
-    hostname = (parsed.hostname or "").lower()
+    hostname = url_hostname(parsed)
 
     # "https:///path" parses to an empty hostname; without this it reaches the
     # ip_address() ValueError branch and is accepted as a symbolic hostname.
     if not hostname:
         raise ValueError("icon URL must include a hostname")
 
+    # HTTP clients map other dot characters and fullwidth forms to ASCII
+    # before they connect: a host the checks below cannot read is refused.
+    if not hostname.isascii():
+        raise ValueError("icon URL must use an ASCII host name (punycode, xn--..., for international names)")
+
     if hostname in CLOUD_METADATA_HOSTNAMES:
         raise ValueError("icon URL must not point to a cloud metadata endpoint")
 
-    if NUMERIC_IP_RE.match(hostname):
+    if is_numeric_encoded_ip(hostname):
         raise ValueError("icon URL must not use numeric-encoded IP addresses")
 
     try:

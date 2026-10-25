@@ -14,7 +14,7 @@ only the rows that came back `valid`.
 
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
@@ -179,6 +179,10 @@ def _parse_datetime(value: str) -> datetime | None:
 
     Accepts what `datetime.isoformat()` produces (what export writes) plus a
     trailing 'Z' for UTC, which `fromisoformat` rejects before Python 3.11.
+
+    Returned as naive UTC, as the column holds it: SQLite would keep the wall
+    time of a value with an offset and drop the offset. A value without one is
+    taken as UTC, which is how export writes it.
     """
     raw = value.strip()
     if not raw:
@@ -186,9 +190,12 @@ def _parse_datetime(value: str) -> datetime | None:
     if raw.endswith("Z"):
         raw = raw[:-1] + "+00:00"
     try:
-        return datetime.fromisoformat(raw)
+        parsed = datetime.fromisoformat(raw)
     except ValueError:
         return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
 
 
 async def _load_color_catalog(db: AsyncSession) -> list[ColorCatalogEntry]:

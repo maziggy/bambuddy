@@ -132,6 +132,7 @@ class TestSqliteFallback:
         assert _is_already_applied(exc, sql) is expected
 
 
+@pytest.mark.sqlite_only  # runs migrations against a real SQLite database
 @pytest.mark.asyncio
 class TestSafeExecuteAgainstRealSqlite:
     async def test_a_duplicate_add_column_is_swallowed(self, db_session):

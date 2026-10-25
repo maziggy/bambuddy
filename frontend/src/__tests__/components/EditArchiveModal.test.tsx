@@ -2,13 +2,14 @@
  * Tests for the EditArchiveModal component.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { EditArchiveModal } from '../../components/EditArchiveModal';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { setAuthToken } from '../../api/client';
 
 const mockArchive = {
   id: 1,
@@ -310,8 +311,91 @@ describe('EditArchiveModal', () => {
     });
   });
 
+  describe('status', () => {
+    function patchSpy() {
+      const seen: { body?: Record<string, unknown> } = {};
+      server.use(
+        http.patch('/api/v1/archives/:id', async ({ request }) => {
+          seen.body = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...mockArchive, ...seen.body });
+        }),
+      );
+      return seen;
+    }
+    const statusSelect = () =>
+      (screen.getAllByRole('combobox') as HTMLSelectElement[]).find((select) =>
+        Array.from(select.options).some((option) => option.value === 'cancelled'),
+      )!;
+
+    it('offers the finished outcomes, cancelled and aborted apart', () => {
+      render(<EditArchiveModal archive={{ ...mockArchive, status: 'completed' }} onClose={mockOnClose} onSave={mockOnSave} />);
+
+      const options = Array.from(statusSelect().options).map((o) => [o.value, o.textContent]);
+      expect(options).toEqual([
+        ['completed', 'Completed'],
+        ['failed', 'Failed'],
+        ['aborted', 'Aborted'],
+        ['cancelled', 'Cancelled'],
+      ]);
+    });
+
+    it('opens a cancelled archive as cancelled', () => {
+      render(<EditArchiveModal archive={{ ...mockArchive, status: 'cancelled' }} onClose={mockOnClose} onSave={mockOnSave} />);
+
+      expect(statusSelect().value).toBe('cancelled');
+    });
+
+    it('shows a printing archive as it is and leaves it out of an untouched save', async () => {
+      const user = userEvent.setup();
+      const seen = patchSpy();
+      render(<EditArchiveModal archive={{ ...mockArchive, status: 'printing' }} onClose={mockOnClose} onSave={mockOnSave} />);
+
+      const current = Array.from(statusSelect().options).find((o) => o.value === 'printing');
+      expect(current?.disabled).toBe(true);
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => expect(seen.body).toBeDefined());
+      expect(seen.body).not.toHaveProperty('status');
+    });
+
+    it('keeps the recorded reason when an aborted print is moved to cancelled', async () => {
+      const user = userEvent.setup();
+      const seen = patchSpy();
+      render(<EditArchiveModal archive={{ ...mockArchive, status: 'aborted', failure_reason: 'userCancelled' }} onClose={mockOnClose} onSave={mockOnSave} />);
+
+      await user.selectOptions(statusSelect(), 'cancelled');
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => expect(seen.body?.status).toBe('cancelled'));
+      expect(seen.body).not.toHaveProperty('failure_reason');
+    });
+
+    it('clears the reason of a cancelled print marked completed', async () => {
+      const user = userEvent.setup();
+      const seen = patchSpy();
+      render(<EditArchiveModal archive={{ ...mockArchive, status: 'cancelled', failure_reason: 'noStatusUpdate' }} onClose={mockOnClose} onSave={mockOnSave} />);
+
+      await user.selectOptions(statusSelect(), 'completed');
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => expect(seen.body?.status).toBe('completed'));
+      expect(seen.body?.failure_reason).toBeNull();
+    });
+
+    it('sends cancelled when cancelled is chosen', async () => {
+      const user = userEvent.setup();
+      const seen = patchSpy();
+      render(<EditArchiveModal archive={{ ...mockArchive, status: 'failed' }} onClose={mockOnClose} onSave={mockOnSave} />);
+
+      await user.selectOptions(statusSelect(), 'cancelled');
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => expect(seen.body?.status).toBe('cancelled'));
+    });
+  });
+
   describe('filament grams (#1820)', () => {
-    // A print archived without its 3MF carries no weight at all, and no rescan
+    // A print archived without its 3MF carries no weight at all, and nothing
     // can supply one — there is no file to read. Typing it here is the only
     // route, so the field has to reach the API, and an untouched save must not
     // overwrite a figure that came from a real slice.
@@ -326,6 +410,67 @@ describe('EditArchiveModal', () => {
       );
       return seen;
     }
+
+    describe('without the right to edit every archive', () => {
+      let meServed = false;
+
+      const signInWith = (me: Record<string, unknown>) => {
+        meServed = false;
+        setAuthToken('own-archives-token', 'session');
+        server.use(
+          http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+          http.get('/api/v1/auth/me', () => {
+            meServed = true;
+            return HttpResponse.json({
+              id: 7,
+              username: 'owner',
+              is_active: true,
+              groups: [],
+              created_at: '2026-10-16T00:00:00Z',
+              ...me,
+            });
+          }),
+        );
+      };
+      const owner = { is_admin: false, permissions: ['archives:read_own', 'archives:update_own'] };
+
+      afterEach(() => {
+        setAuthToken(null);
+      });
+
+      it('cannot change a weight the archive already has', async () => {
+        signInWith(owner);
+        render(<EditArchiveModal archive={{ ...mockArchive, filament_used_grams: 50 }} onClose={mockOnClose} onSave={mockOnSave} />);
+
+        await waitFor(() => expect(screen.getByLabelText(/filament used/i)).toBeDisabled());
+        expect(screen.getByText(/only users who can edit all archives can change this figure/i)).toBeInTheDocument();
+      });
+
+      it('cannot fill in the weight of an archive that has its 3MF', async () => {
+        signInWith(owner);
+        render(<EditArchiveModal archive={{ ...mockArchive, file_path: 'archive/1/benchy.gcode.3mf' }} onClose={mockOnClose} onSave={mockOnSave} />);
+
+        await waitFor(() => expect(screen.getByLabelText(/filament used/i)).toBeDisabled());
+      });
+
+      it('can fill in the weight of an archive without its 3MF', async () => {
+        signInWith(owner);
+        render(<EditArchiveModal archive={{ ...mockArchive, file_path: '' }} onClose={mockOnClose} onSave={mockOnSave} />);
+
+        await waitFor(() => expect(meServed).toBe(true));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(screen.getByLabelText(/filament used/i)).toBeEnabled();
+      });
+
+      it('stays editable for an admin', async () => {
+        signInWith({ is_admin: true, permissions: [] });
+        render(<EditArchiveModal archive={{ ...mockArchive, filament_used_grams: 50 }} onClose={mockOnClose} onSave={mockOnSave} />);
+
+        await waitFor(() => expect(meServed).toBe(true));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(screen.getByLabelText(/filament used/i)).toBeEnabled();
+      });
+    });
 
     it('sends a figure typed for an archive that has none', async () => {
       const user = userEvent.setup();

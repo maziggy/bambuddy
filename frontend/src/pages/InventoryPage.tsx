@@ -29,6 +29,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { colorSortKey, resolveSpoolColorName } from '../utils/colors';
 import { useColorCatalogVersion } from '../hooks/useColorCatalogVersion';
 import { getCurrencySymbol } from '../utils/currency';
+import { shownCostPerKg } from '../utils/spoolCost';
 import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
 import { formatSlotLabel } from '../utils/amsHelpers';
 import { filterSpoolsByQuery } from '../utils/inventorySearch';
@@ -43,6 +44,7 @@ import {
   useLocationSensorColorPrefs,
   type LocationSensorAlertColor,
 } from '../utils/locationSensorDefaults';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 type ArchiveFilter = 'active' | 'archived';
 type UsageFilter = 'all' | 'used' | 'new' | 'lowstock';
@@ -111,7 +113,6 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'label_weight', label: 'Label', visible: true },
   { id: 'net', label: 'Net', visible: true },
   { id: 'gross', label: 'Gross', visible: false },
-  { id: 'added_full', label: 'Full', visible: false },
   { id: 'used', label: 'Used', visible: false },
   { id: 'printed_total', label: 'Printed Total', visible: false },
   { id: 'printed_since_weight', label: 'Printed Since Weight', visible: false },
@@ -252,7 +253,6 @@ const columnHeaders: Record<string, (t: TFn) => string> = {
   label_weight: (t) => t('inventory.labelWeight'),
   net: (t) => t('inventory.net'),
   gross: () => 'Gross',
-  added_full: () => 'Full',
   used: (t) => t('inventory.weightUsed'),
   printed_total: () => 'Printed Total',
   printed_since_weight: () => 'Printed Since Weight',
@@ -394,9 +394,6 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
   gross: ({ spool, remaining }) => (
     <span className="text-sm text-bambu-gray">{formatWeight(remaining + spool.core_weight)}</span>
   ),
-  added_full: ({ spool }) => (
-    <span className="text-sm text-bambu-gray">{spool.added_full == null ? '-' : spool.added_full ? 'Yes' : 'No'}</span>
-  ),
   used: ({ spool }) => (
     <span className="text-sm text-bambu-gray">{spool.weight_used > 0 ? formatWeight(spool.weight_used) : '-'}</span>
   ),
@@ -486,11 +483,17 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
     const entry = spool.core_weight_catalog_id != null ? catalogMap[spool.core_weight_catalog_id] : undefined;
     return <span className="text-sm text-bambu-gray">{entry?.name || '-'}</span>;
   },
-  cost_per_kg: ({ spool, currencySymbol }) => (
-    <span className="text-sm text-bambu-gray">
-      {spool.cost_per_kg != null ? `${currencySymbol}${spool.cost_per_kg.toFixed(2)}` : '-'}
-    </span>
-  ),
+  cost_per_kg: ({ spool, currencySymbol, t }) => {
+    // A Spoolman spool without a price of its own is charged its filament's,
+    // shown here and marked as such (SM-C8).
+    const { rate, fromFilament } = shownCostPerKg(spool);
+    return (
+      <span className="text-sm text-bambu-gray">
+        {rate != null ? `${currencySymbol}${rate.toFixed(2)}` : '-'}
+        {fromFilament && <span className="ml-1 text-xs opacity-70">{t('inventory.costFromFilament')}</span>}
+      </span>
+    );
+  },
   weight_check: ({ spool, onSyncWeight }) => {
     const scaleWeight = spool.last_scale_weight;
     if (scaleWeight == null) return <span className="text-sm text-bambu-gray/50" title="No scale measurement">-</span>;
@@ -596,7 +599,7 @@ const columnSortValues: Record<
   tag_type: (s) => (s.tag_type || '').toLowerCase(),
   stock: (s) => s.slicer_filament ? 1 : 0,
   spool_name: (s) => s.core_weight_catalog_id ?? 0,
-  cost_per_kg: (s) => s.cost_per_kg ?? 0,
+  cost_per_kg: (s) => shownCostPerKg(s).rate ?? 0,
   weight_check: (s) => {
     if (s.last_scale_weight == null) return -1;
     const expectedGross = Math.max(0, s.label_weight - s.weight_used) + s.core_weight;
@@ -735,10 +738,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     return 15;
   });
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
 
   const dateFormat: DateFormat = settings?.date_format || 'system';
   const locationSensorPollIntervalMs = (settings?.location_sensor_poll_interval || 120) * 1000;
@@ -874,7 +874,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     data: spoolmanSlotAssignments = [],
     isError: spoolmanSlotAssignmentsError,
   } = useQuery({
-    queryKey: ['spoolman-slot-assignments-all'],
+    queryKey: ['spoolman-slot-assignments', 'all'],
     queryFn: () => api.getSpoolmanSlotAssignments(),
     enabled: spoolmanMode,
     refetchInterval: 30000,
@@ -968,6 +968,13 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     },
   });
 
+  // Helper: count items that didn't succeed across the two response shapes
+  // (internal mode returns not_found, Spoolman returns errors[]). When the
+  // success count is 0 OR any failures occurred, surface that to the user
+  // instead of the silent green-toast-and-clear flow the first cut shipped.
+  const failedCount = (data: { not_found?: number[]; errors?: Array<{ id: number }> }): number =>
+    (data.not_found?.length ?? 0) + (data.errors?.length ?? 0);
+
   const bulkResetConsumedCounterMutation = useMutation({
     mutationFn: (ids: number[]) =>
       spoolmanMode
@@ -975,7 +982,18 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         : api.bulkResetSpoolConsumedCounter(ids),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
-      showToast(t('inventory.allConsumedCountersReset', { count: data.reset }), 'success');
+      // As the other bulk actions: a reset that failed for some or all spools
+      // is not a success (FO-C8).
+      const failed = failedCount(data);
+      if (data.reset === 0 && failed > 0) {
+        showToast(t('inventory.bulk.resetAllFailed', { count: failed }), 'error');
+        return; // keep the selection so the user can retry
+      }
+      if (failed > 0) {
+        showToast(t('inventory.bulk.resetPartial', { ok: data.reset, failed }), 'warning');
+      } else {
+        showToast(t('inventory.allConsumedCountersReset', { count: data.reset }), 'success');
+      }
       // Close any open bulk-confirm modal + clear selection so the toolbar
       // collapses after the action — matches the other three bulk mutations
       // and stops the confirm dialog from lingering after Reset.
@@ -989,13 +1007,6 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
 
   // Bulk action mutations (#1795). Each invalidates the same query keys as
   // the per-spool equivalents so the table refreshes with the new state.
-  // Helper: count items that didn't succeed across the two response shapes
-  // (internal mode returns not_found, Spoolman returns errors[]). When the
-  // success count is 0 OR any failures occurred, surface that to the user
-  // instead of the silent green-toast-and-clear flow the first cut shipped.
-  const failedCount = (data: { not_found?: number[]; errors?: Array<{ id: number }> }): number =>
-    (data.not_found?.length ?? 0) + (data.errors?.length ?? 0);
-
   const bulkUpdateMutation = useMutation({
     mutationFn: async ({ ids, update }: { ids: number[]; update: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>> }): Promise<{ updated: number; not_found?: number[]; errors?: Array<{ id: number; status: number; detail: string }> }> => {
       if (spoolmanMode) return api.bulkUpdateSpoolmanInventorySpools(ids, update);
@@ -2436,6 +2447,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
                           onEdit={(s) => setFormModal({ spool: s, mode: 'edit' })}
                           onCopy={(s) => setFormModal({ spool: s, mode: 'copy' })}
                           onArchive={(id) => setConfirmAction({ type: 'archive', spoolId: id })}
+                          onRestore={(id) => restoreMutation.mutate(id)}
                           onDelete={(id) => setConfirmAction({ type: 'delete', spoolId: id })}
                           onPrintLabel={(id) => setLabelPickerSpoolIds([id])}
                           onResetConsumedCounter={(id) => setConfirmAction({ type: 'reset-consumed-counter', spoolId: id })}
@@ -2963,7 +2975,7 @@ function SpoolLocationFooter({
 }) {
   const { t } = useTranslation();
 
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+  const { data: settings } = useUiSettings();
   const pollIntervalMs = (settings?.location_sensor_poll_interval || 120) * 1000;
 
   // Same query key as the list fetch in InventoryPage's body, so this is a
@@ -3136,7 +3148,7 @@ function SpoolTableRow({
 /* Grouped spool rows for table view */
 function SpoolTableGroup({
   spools, headerSpool, remaining, pct, isExpanded, onToggle,
-  onEdit, onCopy, onArchive, onDelete, onPrintLabel, onResetConsumedCounter,
+  onEdit, onCopy, onArchive, onRestore, onDelete, onPrintLabel, onResetConsumedCounter,
   visibleColumns, assignmentMap, catalogMap, locationReadingsMap, currencySymbol, dateFormat, t, onSyncWeight,
   colorizeLocationSensors, locationSensorAboveColor, locationSensorBelowColor, locationSensorOptimalColor,
   selectedIds, onToggleSelected, onToggleGroupSelected,
@@ -3152,6 +3164,7 @@ function SpoolTableGroup({
   onEdit: (spool: InventorySpool) => void;
   onCopy?: (spool: InventorySpool) => void;
   onArchive: (id: number) => void;
+  onRestore: (id: number) => void;
   onDelete: (id: number) => void;
   onPrintLabel?: (spoolId: number) => void;
   onResetConsumedCounter?: (id: number) => void;
@@ -3226,7 +3239,7 @@ function SpoolTableGroup({
             onToggleSelected={onToggleSelected ? () => onToggleSelected(spool.id) : undefined}
             onEdit={() => onEdit(spool)}
             onCopy={onCopy ? () => onCopy(spool) : undefined}
-            onRestore={() => {}}
+            onRestore={() => onRestore(spool.id)}
             onArchive={() => onArchive(spool.id)}
             onDelete={() => onDelete(spool.id)}
             onPrintLabel={onPrintLabel ? () => onPrintLabel(spool.id) : undefined}

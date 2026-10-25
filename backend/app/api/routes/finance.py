@@ -415,7 +415,7 @@ async def _create_wallet_adjustment(
 
 @router.get("/me/balance", response_model=WalletBalanceResponse)
 async def get_my_balance(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_READ_OWN),
 ):
     """Return the current user's wallet balance."""
@@ -427,7 +427,7 @@ async def get_my_balance(
 async def get_my_transactions(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_READ_OWN),
 ):
     """Return wallet ledger entries for the current user."""
@@ -468,7 +468,7 @@ async def get_all_transactions(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     user_id: int | None = Query(None, description="Optional filter by user id"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_READ_ALL),
 ):
     """Return wallet ledger entries across users for admin finance view."""
@@ -498,7 +498,7 @@ async def get_all_transactions(
     )
 
 
-async def _rebuild_wallet_ledger_for_user(db: AsyncSession, user_id: int) -> None:
+async def _rebuild_wallet_ledger_for_user(db: AsyncSession, user_id: int | None) -> None:
     """Rebuild through the same canonical ledger repair used at startup."""
     from backend.app.core.database import repair_wallet_ledger_internal
 
@@ -508,7 +508,7 @@ async def _rebuild_wallet_ledger_for_user(db: AsyncSession, user_id: int) -> Non
 @router.delete("/transactions/{transaction_id}")
 async def delete_transaction(
     transaction_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_MODIFY),
 ):
     """Delete a wallet transaction and rebuild the user's ledger to keep balances consistent."""
@@ -542,7 +542,7 @@ async def delete_transaction(
 async def edit_transaction(
     transaction_id: int,
     request: TransactionEditRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_MODIFY),
 ):
     """Edit a wallet transaction (user_id, cost_center_id, amount, description) and rebuild ledger."""
@@ -593,7 +593,7 @@ async def edit_transaction(
 @router.post("/transactions/manual", response_model=WalletTransactionResponse)
 async def create_manual_print(
     request: ManualPrintRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_MODIFY),
 ):
     """Create a manual print charge transaction (for admin purposes)."""
@@ -636,7 +636,7 @@ async def create_manual_print(
 
 @router.get("/cost-centers/mine", response_model=list[CostCenterSummaryResponse])
 async def get_my_cost_centers(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_auth_if_enabled),
     actor: User | ApiKeyActor | None = RequestActor,
 ):
@@ -695,7 +695,7 @@ async def get_my_cost_centers(
 @router.get("/users/{user_id}/balance", response_model=WalletBalanceResponse)
 async def get_user_balance(
     user_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_READ_ALL),
 ):
     """Return a specific user's wallet balance."""
@@ -709,7 +709,7 @@ async def get_user_transactions(
     user_id: int,
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_READ_ALL),
 ):
     """Return wallet ledger entries for a specific user."""
@@ -730,7 +730,7 @@ async def get_user_transactions(
 async def deposit_user_balance(
     user_id: int,
     body: WalletAdjustmentRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_MODIFY),
 ):
     """Add funds to a user's wallet."""
@@ -751,7 +751,7 @@ async def deposit_user_balance(
 async def withdraw_user_balance(
     user_id: int,
     body: WalletAdjustmentRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_MODIFY),
 ):
     """Withdraw funds from a user's wallet."""
@@ -770,7 +770,7 @@ async def withdraw_user_balance(
 
 @router.post("/rebuild-balance-ledger")
 async def rebuild_balance_ledger(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_MODIFY),
 ):
     """Recompute balance_after for all wallet transactions.
@@ -795,7 +795,7 @@ async def rebuild_balance_ledger(
 @router.get("/cost-centers", response_model=list[CostCenterSummaryResponse])
 async def list_cost_centers(
     include_inactive: bool = Query(False),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """List all cost centers.
@@ -830,7 +830,7 @@ async def list_cost_centers(
 @router.post("/cost-centers", response_model=CostCenterSummaryResponse)
 async def create_cost_center(
     body: CostCenterCreateRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_CREATE),
 ):
     """Create a shared cost center."""
@@ -861,7 +861,7 @@ async def create_cost_center(
 @router.get("/cost-centers/{cost_center_id}", response_model=CostCenterDetailResponse)
 async def get_cost_center(
     cost_center_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_auth_if_enabled),
 ):
     """Get one cost center with its memberships."""
@@ -888,7 +888,7 @@ async def get_cost_center(
 async def update_cost_center(
     cost_center_id: int,
     body: CostCenterUpdateRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_MODIFY),
 ):
     """Update name or active-state of a cost center."""
@@ -925,7 +925,7 @@ async def update_cost_center(
 async def update_cost_center_budgets(
     cost_center_id: int,
     body: CostCenterBudgetUpdateRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_MODIFY),
 ):
     """Update budget values of a cost center."""
@@ -960,7 +960,7 @@ async def update_cost_center_budgets(
 async def upsert_cost_center_member(
     cost_center_id: int,
     body: CostCenterMemberRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_MODIFY),
 ):
     """Assign or update a user's membership on a cost center."""
@@ -993,7 +993,7 @@ async def upsert_cost_center_member(
 @router.delete("/cost-centers/{cost_center_id}")
 async def delete_cost_center(
     cost_center_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_MODIFY),
 ):
     """Delete a shared cost center."""
@@ -1040,7 +1040,7 @@ async def delete_cost_center(
 async def remove_cost_center_member(
     cost_center_id: int,
     user_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.COST_CENTERS_MODIFY),
 ):
     """Remove a user from a shared cost center."""

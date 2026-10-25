@@ -307,3 +307,37 @@ class TestTheSettings:
         monkeypatch.setattr("backend.app.api.routes.settings.get_setting", _get_setting)
         monkeypatch.setattr("backend.app.core.database.async_session", _session)
         assert await _real_read_settings() == expected
+
+
+class TestThePlateCheck:
+    """SP-C11: the plate check lit the chamber itself, outside the count, and
+    switched it off when done -- under a live view opened meanwhile, which had
+    found the light on and so never took it."""
+
+    @pytest.mark.asyncio
+    async def test_it_lights_the_chamber_whatever_the_mode(self, client, settings):
+        settings.mode = "off"
+        async with camera_light(_printer(), any_mode=True, settle=0):
+            assert client.calls == [True]
+        await _past_grace()
+        assert client.calls == [True, False]
+
+    @pytest.mark.asyncio
+    async def test_a_viewer_who_came_meanwhile_keeps_the_light(self, client):
+        printer = _printer()
+        async with camera_light(printer, any_mode=True, settle=0):
+            viewer = camera_light(printer, wait=False)
+            await viewer.__aenter__()
+        await _past_grace()
+        assert client.calls == [True]
+        await viewer.__aexit__(None, None, None)
+        await _past_grace()
+        assert client.calls == [True, False]
+
+    @pytest.mark.asyncio
+    async def test_it_waits_its_own_settle_time(self, client, settings):
+        settings.delay = 0
+        start = time.monotonic()
+        async with camera_light(_printer(), any_mode=True, settle=0.2):
+            waited = time.monotonic() - start
+        assert waited >= 0.2

@@ -7,6 +7,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
 import { InstallAppButton } from './InstallAppButton';
 import { SwitchbarPopover } from './SwitchbarPopover';
+import { CameraLauncher } from './CameraLauncher';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { api, supportApi, pendingUploadsApi, type Permission } from '../api/client';
 import { getIconByName } from './IconPicker';
@@ -25,6 +26,7 @@ import { BugReportBubble } from './BugReportBubble';
 import { AnnouncementsPanel } from './AnnouncementsPanel';
 import { AnnouncementBanner } from './AnnouncementBanner';
 import { useAnnouncements } from '../hooks/useAnnouncements';
+import { plateCheckFailureText } from '../utils/plateCheck';
 import {
   getHiddenSidebarSystemItemIds,
   getSidebarOrder,
@@ -96,6 +98,9 @@ export function Layout() {
   // floating disc shows that itself; the compact header's button and the
   // debug-logging banner need telling.
   const [bugReportLogging, setBugReportLogging] = useState(false);
+  // The camera list (#2737), also opened with the C key: from the Printers row
+  // of the sidebar, or from the compact header when the sidebar is a drawer.
+  const [cameraListOpen, setCameraListOpen] = useState(false);
 
   // Theme toggle: mode → icon and tooltip
   const ThemeIcon = { dark: Sun, light: Monitor, system: Moon }[mode];
@@ -240,6 +245,8 @@ export function Layout() {
   const { data: externalLinks } = useQuery({
     queryKey: ['external-links'],
     queryFn: api.getExternalLinks,
+    // Like the queue badge: apps behind the links report counts.
+    refetchInterval: 30_000,
   });
 
   // Fetch smart plugs to check for switchbar items
@@ -488,6 +495,26 @@ export function Layout() {
     return () => window.removeEventListener('plate-not-empty', handlePlateNotEmpty);
   }, [hasPermission]);
 
+  // A plate check that could not run (no camera image, ...) does not hold the
+  // print, but it is not an empty plate either: say so to those who can act.
+  useEffect(() => {
+    const handlePlateCheckFailed = (event: Event) => {
+      if (!hasPermission('printers:control')) {
+        return;
+      }
+      const detail = (event as CustomEvent).detail ?? {};
+      showToast(
+        t('printers.plateDetection.couldNotRun', {
+          printer: detail.printer_name ?? '',
+          reason: plateCheckFailureText(t, detail.reason),
+        }),
+        'warning',
+      );
+    };
+    window.addEventListener('plate-check-failed', handlePlateCheckFailed);
+    return () => window.removeEventListener('plate-check-failed', handlePlateCheckFailed);
+  }, [hasPermission, showToast, t]);
+
   // A completed print asked for its outcome verdict (#1898). Same CustomEvent
   // relay as plate-not-empty, and gated the same way: the PATCH route decides
   // who may record a verdict, so a user who cannot should not be handed a
@@ -564,6 +591,11 @@ export function Layout() {
           e.preventDefault();
           setShowShortcuts(true);
           break;
+        case 'c':
+        case 'C':
+          e.preventDefault();
+          setCameraListOpen(open => !open);
+          break;
         case 'Escape':
           setShowShortcuts(false);
           break;
@@ -593,10 +625,14 @@ export function Layout() {
             alt="Bambuddy"
             className="h-8 ml-3"
           />
+          {/* A camera from any page (#2737), beside the bug report. */}
+          <div className="ml-auto">
+            <CameraLauncher placement="down" open={cameraListOpen} onOpenChange={setCameraListOpen} />
+          </div>
           {/* Bug report — the compact-layout home of the floating bubble. */}
           <button
             onClick={() => setBugReportOpen(true)}
-            className={`ml-auto p-2 -mr-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors ${
+            className={`p-2 -mr-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors ${
               bugReportLogging ? 'text-amber-500' : 'text-red-500'
             }`}
             title={bugReportLogging ? t('bugReport.resumeReport') : t('bugReport.title')}
@@ -644,6 +680,29 @@ export function Layout() {
                 if (!link) return null;
 
                 const LinkIcon = link.custom_icon ? null : getIconByName(link.icon);
+                // A count the app behind the link reports (Bambuddy Orders' To do).
+                const linkBadge = link.badge_count ?? 0;
+                const linkIcon = (
+                  <div className="relative">
+                    {link.custom_icon ? (
+                      <img
+                        src={api.getExternalLinkIconUrl(link.id)}
+                        alt=""
+                        className="w-5 h-5 flex-shrink-0"
+                      />
+                    ) : (
+                      LinkIcon && <LinkIcon className="w-5 h-5 flex-shrink-0" />
+                    )}
+                    {linkBadge > 0 && (
+                      <span
+                        data-testid={`external-link-badge-${link.id}`}
+                        className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-[10px] font-bold rounded-full bg-yellow-500 text-black"
+                      >
+                        {linkBadge > 99 ? '99+' : linkBadge}
+                      </span>
+                    )}
+                  </div>
+                );
                 return (
                   <li key={id}>
                     {link.open_in_new_tab ? (
@@ -654,15 +713,7 @@ export function Layout() {
                         className={`flex items-center ${isSidebarCompact || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white`}
                         title={!isSidebarCompact && !sidebarExpanded ? link.name : undefined}
                       >
-                        {link.custom_icon ? (
-                          <img
-                            src={api.getExternalLinkIconUrl(link.id)}
-                            alt=""
-                            className="w-5 h-5 flex-shrink-0"
-                          />
-                        ) : (
-                          LinkIcon && <LinkIcon className="w-5 h-5 flex-shrink-0" />
-                        )}
+                        {linkIcon}
                         {(isSidebarCompact || sidebarExpanded) && <span>{link.name}</span>}
                       </a>
                     ) : (
@@ -677,15 +728,7 @@ export function Layout() {
                         }
                         title={!isSidebarCompact && !sidebarExpanded ? link.name : undefined}
                       >
-                        {link.custom_icon ? (
-                          <img
-                            src={api.getExternalLinkIconUrl(link.id)}
-                            alt=""
-                            className="w-5 h-5 flex-shrink-0"
-                          />
-                        ) : (
-                          LinkIcon && <LinkIcon className="w-5 h-5 flex-shrink-0" />
-                        )}
+                        {linkIcon}
                         {(isSidebarCompact || sidebarExpanded) && <span>{link.name}</span>}
                       </NavLink>
                     )}
@@ -703,8 +746,31 @@ export function Layout() {
                 const showBadge = showQueueBadge || showArchiveBadge;
                 const showClearPlateDot = id === 'printers' && needsClearPlate;
 
+                const expanded = isSidebarCompact || sidebarExpanded;
+                // The camera list from any page (#2737), on the row of the page
+                // the cameras belong to. The drawer's copy is not the one the C
+                // key opens: in the compact layout that is the header's.
+                const cameraLauncher = id === 'printers' && (
+                  // Collapsed, the row is 48px wide and the nav clips anything
+                  // past it: a 16px corner button, shown on hover or focus.
+                  <div
+                    className={`absolute ${
+                      expanded
+                        ? 'right-2 top-1/2 -translate-y-1/2'
+                        : `right-0 top-0.5 ${cameraListOpen ? '' : 'opacity-0 group-hover/printers:opacity-100 focus-within:opacity-100'}`
+                    }`}
+                  >
+                    <CameraLauncher
+                      placement="side"
+                      size={expanded ? 'sm' : 'xs'}
+                      onAccent={location.pathname === '/'}
+                      {...(isSidebarCompact ? {} : { open: cameraListOpen, onOpenChange: setCameraListOpen })}
+                    />
+                  </div>
+                );
+
                 return (
-                  <li key={id}>
+                  <li key={id} className={id === 'printers' ? 'relative group/printers' : undefined}>
                     <NavLink
                       to={to}
                       className={({ isActive }) =>
@@ -731,6 +797,7 @@ export function Layout() {
                       </div>
                       {(isSidebarCompact || sidebarExpanded) && <span>{t(labelKey)}</span>}
                     </NavLink>
+                    {cameraLauncher}
                   </li>
                 );
               }
@@ -1003,7 +1070,7 @@ export function Layout() {
                 )}
               </span>
               {/* A run started from the bug-report panel ends at that panel's
-                  Stop & Submit button, so send the user back there rather than
+                  Stop Logging button, so send the user back there rather than
                   to the System page's raw toggle, which would drop the logs
                   and the description they already wrote (#2847). */}
               {bugReportLogging && (

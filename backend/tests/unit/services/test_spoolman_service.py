@@ -205,6 +205,22 @@ class TestSpoolmanClient:
             assert call_kwargs["remaining_weight"] == 500.0  # 50% of 1000g
 
     @pytest.mark.asyncio
+    async def test_a_new_spool_gets_its_product_profile_default(self, client, sample_tray, mock_filament):
+        """The spool the AMS sync adds is handed to the profile default (#1326)."""
+        created = {"id": 99}
+        fill = AsyncMock()
+        with (
+            patch.object(client, "find_spool_by_tag", AsyncMock(return_value=None)),
+            patch.object(client, "_find_or_create_filament", AsyncMock(return_value=mock_filament)),
+            patch.object(client, "create_spool", AsyncMock(return_value=created)),
+            patch("backend.app.services.filament_profile_default.fill_auto_added_spoolman_spool", fill),
+        ):
+            assert await client.sync_ams_tray(sample_tray, "TestPrinter", _NoCatalog()) is created
+
+        # The tray names its preset (GFA00): the default's is not wanted.
+        fill.assert_awaited_once_with(created, client, include_slicer=False)
+
+    @pytest.mark.asyncio
     async def test_a_new_spool_carries_the_catalogue_colour_name(self, client, sample_tray, mock_filament):
         """Where #1357 put the colour name on this side: Spoolman has no color_name
         on Filament, so it lives in spool.extra.bambu_color_name and
@@ -479,22 +495,6 @@ class TestSpoolmanClient:
             mock_get.assert_called_once()  # Should call get_spools
 
     @pytest.mark.asyncio
-    async def test_find_spools_by_location_prefix_with_cached_spools(self, client):
-        """Verify find_spools_by_location_prefix uses cached spools when provided."""
-        cached = [
-            {"id": 1, "location": "Printer1 - AMS A1"},
-            {"id": 2, "location": "Printer2 - AMS A1"},
-            {"id": 3, "location": "Printer1 - AMS A2"},
-        ]
-
-        with patch.object(client, "get_spools", AsyncMock()) as mock_get:
-            result = await client.find_spools_by_location_prefix("Printer1 - ", cached_spools=cached)
-            assert len(result) == 2
-            assert result[0]["id"] == 1
-            assert result[1]["id"] == 3
-            mock_get.assert_not_called()  # Should NOT call get_spools
-
-    @pytest.mark.asyncio
     async def test_sync_ams_tray_with_cached_spools(self, client, sample_tray, existing_spool):
         """Verify sync_ams_tray passes cached_spools to find_spool_by_tag."""
         cached = [existing_spool]
@@ -505,37 +505,6 @@ class TestSpoolmanClient:
         ):
             await client.sync_ams_tray(sample_tray, "TestPrinter", _NoCatalog(), cached_spools=cached)
             mock_get.assert_not_called()  # Should NOT call get_spools
-
-    @pytest.mark.asyncio
-    async def test_clear_location_for_removed_spools_with_cached_spools(self, client):
-        """Verify clear_location_for_removed_spools uses cached spools."""
-        cached = [
-            {"id": 1, "location": "Printer1 - AMS A1", "extra": {"tag": '"A1B2C3D4E5F60718293A4B5C6D7E8F90"'}},
-            {"id": 2, "location": "Printer1 - AMS A2", "extra": {"tag": '"B1C2D3E4F5061728394A5B6C7D8E9F01"'}},
-            {"id": 3, "location": "Printer1 - AMS A3", "extra": {"tag": '"C1D2E3F40516273849A5B6C7D8E9F012"'}},
-        ]
-        # Tag 3 was cleared, so only tags 1 and 2 are current
-        current_tags = {
-            "A1B2C3D4E5F60718293A4B5C6D7E8F90",
-            "B1C2D3E4F5061728394A5B6C7D8E9F01",
-        }
-
-        with (
-            patch.object(client, "get_spools", AsyncMock()) as mock_get,
-            patch.object(client, "update_spool", AsyncMock(return_value={"id": 3})) as mock_update,
-        ):
-            cleared = await client.clear_location_for_removed_spools("Printer1", current_tags, cached_spools=cached)
-            assert cleared == 1
-            mock_get.assert_not_called()  # Should NOT call get_spools
-            mock_update.assert_called_once()
-            # Verify it cleared TAG3 (not in current_tags)
-            call_kwargs = mock_update.call_args.kwargs
-            assert call_kwargs["spool_id"] == 3
-            assert call_kwargs.get("clear_location") is True
-
-    # ========================================================================
-    # Tests for retry logic in get_spools
-    # ========================================================================
 
     @pytest.mark.asyncio
     async def test_get_spools_succeeds_on_first_attempt(self, client):

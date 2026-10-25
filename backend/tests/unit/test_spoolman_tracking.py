@@ -80,9 +80,9 @@ class TestResolveGlobalTrayId:
         assert _resolve_global_tray_id(4, mapping) == 0
 
     def test_unmapped_slot(self):
-        """Slot with -1 in mapping uses default."""
+        """Slot with -1 in mapping feeds nothing: no tray, never the default."""
         mapping = [5, -1, 2, 0]
-        assert _resolve_global_tray_id(2, mapping) == 1  # default: slot 2 -> tray 1
+        assert _resolve_global_tray_id(2, mapping, ams_trays={0: {}, 1: {}, 2: {}, 5: {}}) == -1
 
     def test_slot_beyond_mapping(self):
         """Slot beyond mapping length uses default."""
@@ -190,7 +190,7 @@ class TestStorePrintData:
         # row before inserting the new one. Two execute calls in that order.
         queue_item = SimpleNamespace(ams_mapping=json.dumps([2, -1, -1, -1]), plate_id=None)
         queue_result = MagicMock()
-        queue_result.scalar_one_or_none.return_value = queue_item
+        queue_result.scalars.return_value.first.return_value = queue_item
         delete_result = MagicMock()
         db.execute = AsyncMock(side_effect=[queue_result, delete_result])
         db.add = MagicMock()
@@ -236,7 +236,7 @@ class TestStorePrintData:
         db = AsyncMock()
         queue_item = SimpleNamespace(ams_mapping=None, plate_id=2)
         queue_result = MagicMock()
-        queue_result.scalar_one_or_none.return_value = queue_item
+        queue_result.scalars.return_value.first.return_value = queue_item
         delete_result = MagicMock()
         db.execute = AsyncMock(side_effect=[queue_result, delete_result])
         db.add = MagicMock()

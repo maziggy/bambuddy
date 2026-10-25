@@ -29,6 +29,8 @@ vi.mock('../../api/client', () => ({
     searchColors: vi.fn(),
     getColorCatalog: vi.fn(),
     resetAmsSlot: vi.fn(),
+    // The fitted nozzle's flow; none reported unless a test sets one.
+    getPrinterStatus: vi.fn().mockResolvedValue({}),
   },
 }));
 
@@ -68,7 +70,6 @@ const defaultProps = {
   slotInfo: {
     amsId: 0,
     trayId: 0,
-    trayCount: 4,
     trayType: 'PLA',
     trayColor: 'FFFFFF',
     traySubBrands: 'PLA Basic',
@@ -80,6 +81,7 @@ const defaultProps = {
 describe('ConfigureAmsSlotModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    (api.getPrinterStatus as ReturnType<typeof vi.fn>).mockResolvedValue({});
     // Mock scrollIntoView which is not available in jsdom
     Element.prototype.scrollIntoView = vi.fn();
     (api.getCloudSettings as ReturnType<typeof vi.fn>).mockResolvedValue(mockCloudSettings);
@@ -316,6 +318,32 @@ describe('ConfigureAmsSlotModal', () => {
       await screen.findByText(
         'This Orca profile has no filament ID of its own, so OrcaSlicer will see this slot as Generic PLA.',
       ),
+    ).toBeInTheDocument();
+  });
+
+  it('warns when a manual K value could not be sent (FW-C5)', async () => {
+    // The route used to report the slot configured either way.
+    const ORCA_ID = '3f2a9c1e-4b7d-4a02-9f61-8c5e2d1a7b30';
+    (api.orcaCloudListProfiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+      filament: [{ setting_id: ORCA_ID, name: 'Homebrew PLA @Orca', type: 'filament', is_custom: true }],
+      printer: [],
+      process: [],
+    });
+    (api.configureAmsSlot as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true, tray_info_idx: 'P56e1be0', orca_fallback_reason: '', k_value_unsent: true,
+    });
+
+    const slotInfo = { ...defaultProps.slotInfo, savedPresetId: ORCA_ID };
+    render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={slotInfo} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Homebrew PLA @Orca')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Configure Slot/i }));
+
+    expect(
+      await screen.findByText('The filament was set, but the K value could not be sent to the printer.'),
     ).toBeInTheDocument();
   });
 
@@ -778,7 +806,7 @@ describe('ConfigureAmsSlotModal', () => {
       // own calibration table for GFL99.
       for (const profile of genericPlaProfiles) {
         expect(
-          screen.getByRole('option', { name: `${profile.name} (K=${profile.k_value})` }),
+          screen.getByRole('option', { name: `[HF] ${profile.name} (K=${profile.k_value})` }),
         ).toBeInTheDocument();
       }
     });
@@ -834,7 +862,7 @@ describe('ConfigureAmsSlotModal', () => {
       // Every GFL99 profile is demoted to the other group: the brand gate on
       // "Bambu" still applies, and none of these names carry it.
       for (const profile of genericPlaProfiles) {
-        const option = screen.getByRole('option', { name: `${profile.name} (K=${profile.k_value})` });
+        const option = screen.getByRole('option', { name: `[HF] ${profile.name} (K=${profile.k_value})` });
         expect(option.closest('optgroup')).toHaveAttribute(
           'label',
           'Other K profiles on this printer',
@@ -1017,6 +1045,32 @@ describe('ConfigureAmsSlotModal', () => {
       expect(other.parentElement?.tagName).toBe('OPTGROUP');
     });
 
+    it('offers the profiles of the fitted nozzle flow, the others under Other with their flow', async () => {
+      // H2D with a standard nozzle fitted: the high-flow copy of the same
+      // filament is not applied at assign time, so it must not be the match
+      // the picker selects (FD-16).
+      (api.getPrinterStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+        nozzles: [{ nozzle_type: 'HS01', nozzle_diameter: '0.4' }],
+      });
+      (api.getKProfiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+        profiles: [
+          { ...sharedProfiles[0], extruder_id: 0, nozzle_id: 'HH00-0.4', k_value: '0.030', slot_id: 1 },
+          { ...sharedProfiles[0], extruder_id: 0, nozzle_id: 'HS00-0.4', k_value: '0.020', slot_id: 2 },
+        ],
+      });
+      render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={{ ...rightHandSlot, extruderId: 0, caliIdx: null }} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: /\[S\] PLA \(K=0.020\)/ })).toBeInTheDocument();
+      });
+      const matches = Array.from(screen.getByRole('combobox').querySelectorAll(':scope > option'))
+        .map(o => (o as HTMLOptionElement).value)
+        .filter(Boolean);
+      expect(matches).toEqual(['0|PLA|0.020']);
+      const highFlow = screen.getByRole('option', { name: /\[HF\] PLA \(K=0.030\)/ });
+      expect(highFlow.parentElement?.tagName).toBe('OPTGROUP');
+    });
+
     it('names each hotend once, not two or three times', async () => {
       // The label rendered kProfileNozzleSuffix twice in the matching group and
       // three times under "Other", so every option on a dual-nozzle printer
@@ -1113,6 +1167,7 @@ describe('ConfigureAmsSlotModal — per-nozzle K-profiles', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    (api.getPrinterStatus as ReturnType<typeof vi.fn>).mockResolvedValue({});
     Element.prototype.scrollIntoView = vi.fn();
     (api.getCloudSettings as ReturnType<typeof vi.fn>).mockResolvedValue(mockCloudSettings);
     (api.getBuiltinFilaments as ReturnType<typeof vi.fn>).mockResolvedValue([

@@ -16,6 +16,8 @@ import type { InventorySpool, SpoolUsageRecord, FilamentSkuSettings, ShoppingLis
 import { getSwatchStyle } from '../utils/colors';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useUiSettings } from '../hooks/useUiSettings';
+import { ConfirmModal } from './ConfirmModal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -197,9 +199,10 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
   const [brandFilter, setBrandFilter] = useState('');
   const [cartModal, setCartModal] = useState<SkuForecast | null>(null);
   const [listOpen, setListOpen] = useState(false);
+  const [confirmClearList, setConfirmClearList] = useState(false);
   const [chartDays, setChartDays] = useState<ChartDays>(30);
 
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings, enabled: canRead });
+  const { data: settings } = useUiSettings({ enabled: canRead });
   const { data: skuSettingsList = [] } = useQuery({ queryKey: ['sku-settings'], queryFn: api.getSkuSettings, staleTime: 60_000, enabled: canRead });
   const { data: usageHistory = [] } = useQuery({ queryKey: ['all-usage-history-forecast'], queryFn: () => api.getAllUsageHistory(5000), staleTime: 60_000, enabled: canRead });
   const { data: shoppingList = [] } = useQuery({ queryKey: ['shopping-list'], queryFn: api.getShoppingList, staleTime: 30_000, enabled: canRead });
@@ -215,6 +218,8 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
   const usageBySpoolId = useMemo(() => {
     const m = new Map<number, SpoolUsageRecord[]>();
     for (const r of usageHistory) {
+      // Usage of a deleted spool belongs to no spool here.
+      if (r.spool_id === null) continue;
       const arr = m.get(r.spool_id) ?? [];
       arr.push(r);
       m.set(r.spool_id, arr);
@@ -475,11 +480,22 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
               .then(() => queryClient.invalidateQueries({ queryKey: ['shopping-list'] }))
               .catch(() => showToast(t('forecast.failedSaveSettings'), 'error'));
           }}
-          onClear={() => {
+          onClear={() => setConfirmClearList(true)}
+        />
+      )}
+      {confirmClearList && (
+        <ConfirmModal
+          title={t('forecast.clearAllConfirmTitle')}
+          message={t('forecast.clearAllConfirmMessage', { count: shoppingList.length })}
+          confirmText={t('forecast.clearAll')}
+          variant="danger"
+          onConfirm={() => {
+            setConfirmClearList(false);
             api.clearShoppingList()
               .then(() => queryClient.invalidateQueries({ queryKey: ['shopping-list'] }))
               .catch(() => showToast(t('forecast.failedSaveSettings'), 'error'));
           }}
+          onCancel={() => setConfirmClearList(false)}
         />
       )}
 
@@ -1901,10 +1917,4 @@ function AddToCartModal({
       </div>
     </div>
   );
-}
-
-// ── Column headers (re-exported for InventoryPage) ────────────────────────────
-
-export function ForecastColumnHeaders() {
-  return null;
 }

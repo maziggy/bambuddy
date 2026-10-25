@@ -254,7 +254,16 @@ class TestAssignment:
 class TestHeldJob:
     @pytest.mark.asyncio
     async def test_moves_to_another_printer_that_has_the_filament(self, queue_db):
-        item_id = await _add_item(queue_db, printer_id=1, manual_start=True, filament_short=True)
+        item_id = await _add_item(
+            queue_db,
+            printer_id=1,
+            manual_start=True,
+            filament_short=True,
+            # Worked out for printer 1; printer 2 works out its own.
+            ams_mapping="[0]",
+            nozzle_mapping="[16]",
+            nozzle_rack_choice='{"0": 16}',
+        )
         launched = MagicMock()
 
         await _run(queue_db, PrintScheduler(), short={1}, launched=launched)
@@ -265,6 +274,7 @@ class TestHeldJob:
         assert item.printer_id == 2
         assert item.manual_start is False
         assert item.filament_short is False
+        assert (item.ams_mapping, item.nozzle_mapping, item.nozzle_rack_choice) == (None, None, None)
 
     @pytest.mark.asyncio
     async def test_stays_held_while_every_other_printer_is_short(self, queue_db):

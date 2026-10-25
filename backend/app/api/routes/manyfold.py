@@ -21,9 +21,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.library import save_3mf_bytes_to_library, validate_print_file_upload
 from backend.app.api.routes.settings import set_setting
-from backend.app.core.auth import ApiKeyActor, RequestActor, RequirePermissionIfAuthEnabled
+from backend.app.core.auth import ApiKeyActor, RequestActor, RequirePermissionIfAuthEnabled, require_actor_still_exists
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.row_visibility import owned_row_clauses
 from backend.app.models.library import LibraryFile
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
@@ -122,7 +123,7 @@ def _config_response(config: ManyfoldConfig) -> ManyfoldConfigResponse:
 
 @router.get("/config", response_model=ManyfoldConfigResponse)
 async def get_config(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
 ):
     """The stored connection, without the secret."""
@@ -132,7 +133,7 @@ async def get_config(
 @router.put("/config", response_model=ManyfoldConfigResponse)
 async def update_config(
     body: ManyfoldConfigUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Store the connection. An empty secret keeps the stored one."""
@@ -154,7 +155,7 @@ async def update_config(
 
 @router.delete("/config", status_code=204)
 async def delete_config(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Disconnect Manyfold. Files imported earlier stay in the library."""
@@ -166,7 +167,7 @@ async def delete_config(
 @router.post("/config/test", response_model=ManyfoldTestResponse)
 async def test_config(
     body: ManyfoldTestRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Sign in with the entered values and count the models Bambuddy can see.
@@ -195,7 +196,7 @@ async def test_config(
 
 @router.get("/status", response_model=ManyfoldStatus)
 async def get_status(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MANYFOLD_VIEW),
 ):
     """Whether Manyfold is set up, and where it is."""
@@ -207,7 +208,7 @@ async def get_status(
 async def list_models(
     q: str = "",
     page: int = 1,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MANYFOLD_VIEW),
 ):
     """One page of Manyfold's models, optionally searched.
@@ -227,10 +228,12 @@ async def list_models(
 @router.get("/models/{model_id}", response_model=ManyfoldModel)
 async def get_model(
     model_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MANYFOLD_VIEW),
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
-    """A model's details and files, with the library file of each earlier import."""
+    """A model's details and files, with the library file of each earlier import
+    the caller may open."""
     model_id = _id(model_id)
     service = await _service(db)
     try:
@@ -241,12 +244,17 @@ async def get_model(
         await service.close()
 
     imported: dict[str, ManyfoldLibraryRef] = {}
-    rows = await db.execute(
-        LibraryFile.active()
-        .where(manyfold_provider.source_url_filter(LibraryFile.source_url, model_id))
-        .order_by(LibraryFile.id)
+    readable = owned_row_clauses(LibraryFile, actor, Permission.LIBRARY_READ_ALL, Permission.LIBRARY_READ_OWN)
+    rows = (
+        await db.execute(
+            LibraryFile.active()
+            .where(manyfold_provider.source_url_filter(LibraryFile.source_url, model_id), *readable)
+            .order_by(LibraryFile.id)
+        )
+        if readable is not None
+        else None
     )
-    for row in rows.scalars().all():
+    for row in rows.scalars().all() if rows is not None else []:
         file_id = (row.source_url or "").rsplit("/", 1)[-1]
         imported.setdefault(file_id, ManyfoldLibraryRef(id=row.id, filename=row.filename, folder_id=row.folder_id))
 
@@ -266,7 +274,7 @@ async def get_model(
 @router.get("/models/{model_id}/preview")
 async def get_preview(
     model_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MANYFOLD_VIEW),
 ):
     """The model's preview image, fetched from Manyfold.
@@ -306,7 +314,7 @@ async def _import_folder_id(db: AsyncSession, folder_id: int | None, user: User 
 @router.post("/import", response_model=ManyfoldImportResponse)
 async def import_file(
     body: ManyfoldImportRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.MANYFOLD_IMPORT),
     actor: User | ApiKeyActor | None = RequestActor,
 ):
@@ -319,9 +327,15 @@ async def import_file(
     source_url = manyfold_provider.canonical_url(
         ProviderResourceRef(source_type=manyfold_provider.source_type, external_id=model_id, sub_id=file_id)
     )
+    # A copy the caller cannot open is no copy for them: they get their own.
+    readable = owned_row_clauses(LibraryFile, actor, Permission.LIBRARY_READ_ALL, Permission.LIBRARY_READ_OWN)
     existing = (
-        await db.execute(LibraryFile.active().where(LibraryFile.source_url == source_url).limit(1))
-    ).scalar_one_or_none()
+        (
+            await db.execute(LibraryFile.active().where(LibraryFile.source_url == source_url, *readable).limit(1))
+        ).scalar_one_or_none()
+        if readable is not None
+        else None
+    )
     if existing is not None:
         return ManyfoldImportResponse(
             library_file_id=existing.id, filename=existing.filename, folder_id=existing.folder_id, was_existing=True
@@ -344,6 +358,8 @@ async def import_file(
 
     filename = _library_filename(file["filename"], file_id)
     validate_print_file_upload(filename, data)
+    # Not saved for a user deleted during the download (SQLite reuses the id).
+    await require_actor_still_exists(db, actor)
     folder_id = await _import_folder_id(db, body.folder_id, actor)
     library_file, was_existing = await save_3mf_bytes_to_library(
         db,
@@ -353,6 +369,7 @@ async def import_file(
         source_type=manyfold_provider.source_type,
         source_url=source_url,
         owner_id=actor.id if actor else None,
+        dedupe_within=readable,
     )
     logger.info(
         "[MANYFOLD] Imported %s (model %s, file %s) as library file %s", filename, model_id, file_id, library_file.id

@@ -25,6 +25,9 @@ from backend.app.services.usage_tracker import (
     _threemf_search_stem,
 )
 
+# Their rows refer to printer 1.
+pytestmark = pytest.mark.usefixtures("printer_1")
+
 
 class TestSearchStem:
     def test_a_real_filename_still_wins(self):

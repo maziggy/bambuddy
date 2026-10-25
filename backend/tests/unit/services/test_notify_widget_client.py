@@ -30,7 +30,6 @@ async def test_widgets_create_explicitly_then_use_the_exact_saved_handle():
         client = NotifyClient(http)
         assert await client.create_widget("ABC12345", "a+b&c", widget["content"]) == widget
         assert await client.update_widget("WG123456", "a+b&c", {"value": "Idle", "progress": None}) == widget
-        assert await client.get_widget("WG123456", "a+b&c") == widget
         assert await client.list_widgets("ABC12345", "a+b&c") == {"widgets": [widget]}
         assert (await client.delete_widget("WG123456", "a+b&c"))["deleted"] is True
 
@@ -38,12 +37,12 @@ async def test_widgets_create_explicitly_then_use_the_exact_saved_handle():
     assert requests[0].url.params["new"] == "1"
     assert requests[0].headers["content-type"] == "application/json"
     assert json.loads(requests[0].content) == widget["content"]
-    assert requests[1].url.path == requests[2].url.path == requests[4].url.path == "/widgets/WG123456"
+    assert requests[1].url.path == requests[3].url.path == "/widgets/WG123456"
     assert json.loads(requests[1].content) == {"value": "Idle", "progress": None}
     for request in requests[1:]:
         assert dict(request.url.params) == {"token": "a+b&c"}
-    assert [r.method for r in requests] == ["POST", "POST", "GET", "GET", "DELETE"]
-    assert not requests[2].content and not requests[3].content and not requests[4].content
+    assert [r.method for r in requests] == ["POST", "POST", "GET", "DELETE"]
+    assert not requests[2].content and not requests[3].content
 
 
 async def test_pasted_credentials_are_normalized_for_activity_and_widget_requests():
@@ -101,7 +100,7 @@ async def test_legacy_la_prefixed_device_can_start_after_identity_verification()
     assert requests[1].url.params["new"] == "1"
 
 
-@pytest.mark.parametrize("method", ["update_widget", "get_widget", "delete_widget"])
+@pytest.mark.parametrize("method", ["update_widget", "delete_widget"])
 @pytest.mark.parametrize("widget_id", ["ABC12345", "WGbad123", "WG12345", "WG1234567", "../WG123456", None])
 async def test_widget_operations_reject_device_dialect_and_invalid_handles(method, widget_id):
     http = AsyncMock(spec=httpx.AsyncClient)

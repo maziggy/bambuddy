@@ -220,4 +220,92 @@ describe('PrintersPage - AMS load/unload (#891)', () => {
       expect(captured).toBe('254');
     });
   });
+
+  it('an AMS-HT slot loads and unloads by its unit id (128), not unit*4+slot', async () => {
+    const user = userEvent.setup();
+    const captured: Record<string, string | null> = {};
+    const htStatus = {
+      ...mockIdleStatusWithAms,
+      ams: [
+        {
+          ...mockIdleStatusWithAms.ams[0],
+          id: 128,
+          is_ams_ht: true,
+          serial_number: 'HT00',
+          module_type: 'n3s',
+          tray: [{ id: 0, ...baseTray }],
+        },
+      ],
+    };
+
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json(htStatus)),
+      http.post('/api/v1/printers/:id/ams/load', ({ request }) => {
+        captured.load = new URL(request.url).searchParams.get('tray_id');
+        return HttpResponse.json({ success: true, message: 'Loading filament from AMS HT-A' });
+      }),
+      http.post('/api/v1/printers/:id/ams/unload', ({ request }) => {
+        captured.unload = new URL(request.url).searchParams.get('tray_id');
+        return HttpResponse.json({ success: true, message: 'Unloading filament' });
+      }),
+    );
+
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('filament-slot').length).toBeGreaterThan(0);
+    });
+
+    await hoverSlot(screen.getAllByTestId('filament-slot')[0]);
+    await user.click(screen.getByText('Load'));
+    await waitFor(() => expect(captured.load).toBe('128'));
+
+    await hoverSlot(screen.getAllByTestId('filament-slot')[0]);
+    await user.click(screen.getByText('Unload'));
+    await waitFor(() => expect(captured.unload).toBe('128'));
+  });
+
+  it('with a Filament Track Switch, an AMS-HT slot asks which nozzle and sends it', async () => {
+    const user = userEvent.setup();
+    let captured: { tray_id: string | null; extruder_id: string | null } | null = null;
+    const htStatus = {
+      ...mockIdleStatusWithAms,
+      fila_switch: { installed: true, ready: true, in_slots: [-1, -1], out_extruders: [1, 0], stat: 0, info: 0 },
+      extruder_slots: {},
+      ams: [
+        {
+          ...mockIdleStatusWithAms.ams[0],
+          id: 128,
+          is_ams_ht: true,
+          serial_number: 'HT00',
+          module_type: 'n3s',
+          tray: [{ id: 0, ...baseTray }],
+        },
+      ],
+    };
+
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json(htStatus)),
+      http.post('/api/v1/printers/:id/ams/load', ({ request }) => {
+        const url = new URL(request.url);
+        captured = { tray_id: url.searchParams.get('tray_id'), extruder_id: url.searchParams.get('extruder_id') };
+        return HttpResponse.json({ success: true, message: 'Loading filament from AMS HT-A' });
+      }),
+    );
+
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('filament-slot').length).toBeGreaterThan(0);
+    });
+
+    await hoverSlot(screen.getAllByTestId('filament-slot')[0]);
+    await user.click(screen.getByText('Load'));
+    await user.click(await screen.findByText('Left nozzle'));
+    await user.click(screen.getByText('Confirm'));
+
+    await waitFor(() => {
+      expect(captured).toEqual({ tray_id: '128', extruder_id: '1' });
+    });
+  });
 });

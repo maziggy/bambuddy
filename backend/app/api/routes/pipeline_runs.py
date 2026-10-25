@@ -40,11 +40,13 @@ from backend.app.core.auth import (
     RequestActor,
     RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
+    is_auth_enabled,
 )
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session, get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import ALL_PRINTERS, PrinterScope, ensure_model_target_allowed
+from backend.app.core.row_visibility import may_reach_row
 from backend.app.core.websocket import ws_manager
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
@@ -63,12 +65,14 @@ from backend.app.schemas.pipeline_run import (
     PipelineRunListResponse,
     PipelineRunResponse,
 )
-from backend.app.schemas.slicer import PresetRef, SliceRequest
+from backend.app.schemas.slicer import PresetRef, SliceRequest, checked_bed_type
 from backend.app.services.pipeline_eligibility import (
     EligibilityReport,
     check_pipeline_eligibility,
 )
 from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
+from backend.app.services.print_defaults import default_print_options
+from backend.app.services.queue_announcements import announce_queue_jobs_added
 
 logger = logging.getLogger(__name__)
 
@@ -171,11 +175,23 @@ def _slice_request_from_pipeline(pipeline: SlicerPipeline) -> SliceRequest:
         for r in raw_filaments
         if isinstance(r, dict) and "source" in r and "id" in r
     ]
+    # Rows saved before #3359 can hold a name no slicer knows; say so instead
+    # of failing the run with a validation dump.
+    try:
+        bed_type = checked_bed_type(pipeline.bed_type)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"The pipeline's build plate {pipeline.bed_type!r} is not one the slicers know. "
+                "Save the pipeline again from the Slice dialog with another plate."
+            ),
+        ) from None
     return SliceRequest(
         printer_preset=PresetRef(source=pipeline.printer_preset_source, id=pipeline.printer_preset_id),
         process_preset=PresetRef(source=pipeline.process_preset_source, id=pipeline.process_preset_id),
         filament_presets=filament_presets,
-        bed_type=pipeline.bed_type,
+        bed_type=bed_type,
         export_3mf=True,
     )
 
@@ -187,7 +203,10 @@ def _compute_job_status(
     if persisted in ("failed", "cancelled", "completed"):
         return persisted
     if queue_entry is None:
-        return persisted
+        # Dispatched, but its queue entry is gone without a final status stored
+        # (deleted before jobs stored it, or removed by the database itself):
+        # printed or not cannot be told, so neither failed nor cancelled.
+        return "unknown" if persisted in ("queued", "printing") else persisted
     qs = queue_entry.status
     if qs == "completed":
         return "completed"
@@ -220,26 +239,32 @@ def _roll_up_run_status(
         return persisted
 
     completed = sum(1 for s in job_statuses if s == "completed")
+    # A copy whose outcome is unknown ended without failing anything to retry.
+    unknown = sum(1 for s in job_statuses if s == "unknown")
     failed = sum(1 for s in job_statuses if s == "failed")
     cancelled = sum(1 for s in job_statuses if s == "cancelled")
     in_flight = sum(1 for s in job_statuses if s in ("printing", "queued", "awaiting_printer", "pending"))
     total = len(job_statuses)
 
-    if completed == total:
+    if completed + unknown == total:
         return "completed"
     if in_flight > 0:
         return "in_progress" if persisted not in ("queued", "slicing", "dispatching") else persisted
     # All copies are in terminal states.
     if failed == 0 and cancelled == total:
         return "cancelled"
-    if completed > 0 and (failed > 0 or cancelled > 0):
+    if completed + unknown > 0 and (failed > 0 or cancelled > 0):
         return "partial_failure"
     if failed > 0:
         return "failed"
     return persisted
 
 
-async def _materialise_run(db: AsyncSession, run: PipelineRun) -> PipelineRunResponse:
+async def _materialise_run(
+    db: AsyncSession, run: PipelineRun, actor: User | ApiKeyActor | None = None
+) -> PipelineRunResponse:
+    """The run as ``actor`` sees it: its source and queue jobs are named only
+    when ``actor`` may see them where they live. No actor names everything."""
     pipeline_name: str | None = None
     target_kind = None
     target_printer_id = None
@@ -257,16 +282,28 @@ async def _materialise_run(db: AsyncSession, run: PipelineRun) -> PipelineRunRes
             fanout_strategy = pipeline.fanout_strategy  # type: ignore[assignment]
 
     source_filename: str | None = None
+    source_library_file_id = run.source_library_file_id
+    source_archive_id = run.source_archive_id
     if run.source_library_file_id:
         src = (
             await db.execute(select(LibraryFile).where(LibraryFile.id == run.source_library_file_id))
         ).scalar_one_or_none()
-        source_filename = src.filename if src else None
+        if src is not None and may_reach_row(
+            src.created_by_id, actor, Permission.LIBRARY_READ_ALL, Permission.LIBRARY_READ_OWN
+        ):
+            source_filename = src.filename
+        elif src is not None:
+            source_library_file_id = None
     elif run.source_archive_id:
         arc = (
             await db.execute(select(PrintArchive).where(PrintArchive.id == run.source_archive_id))
         ).scalar_one_or_none()
-        source_filename = (arc.print_name or arc.filename) if arc else None
+        if arc is not None and may_reach_row(
+            arc.created_by_id, actor, Permission.ARCHIVES_READ_ALL, Permission.ARCHIVES_READ_OWN
+        ):
+            source_filename = arc.print_name or arc.filename
+        elif arc is not None:
+            source_archive_id = None
 
     job_rows = (
         (
@@ -293,16 +330,6 @@ async def _materialise_run(db: AsyncSession, run: PipelineRun) -> PipelineRunRes
             printer_name = p.name if p else None
 
         live_job_status = _compute_job_status(job.status, queue_entry)
-        # If the job WAS dispatched (had a queue_entry_id) but the entry has
-        # since been deleted from the queue page, the user's intent was
-        # cancellation. Otherwise the run would stay forever showing as
-        # ``queued`` because the persisted job.status hasn't been updated.
-        if (
-            job.queue_entry_id is not None
-            and queue_entry is None
-            and live_job_status not in ("completed", "failed", "cancelled")
-        ):
-            live_job_status = "cancelled"
         job_live_statuses.append(live_job_status)
         job_responses.append(
             PipelineJobResponse(
@@ -311,7 +338,10 @@ async def _materialise_run(db: AsyncSession, run: PipelineRun) -> PipelineRunRes
                 copy_index=job.copy_index,
                 assigned_printer_id=job.assigned_printer_id,
                 assigned_printer_name=printer_name,
-                queue_entry_id=job.queue_entry_id,
+                queue_entry_id=job.queue_entry_id
+                if queue_entry is None
+                or may_reach_row(queue_entry.created_by_id, actor, Permission.QUEUE_READ_ALL, Permission.QUEUE_READ_OWN)
+                else None,
                 status=live_job_status,  # type: ignore[arg-type]
                 error_message=job.error_message,
                 dispatched_at=job.dispatched_at,
@@ -325,8 +355,8 @@ async def _materialise_run(db: AsyncSession, run: PipelineRun) -> PipelineRunRes
         id=run.id,
         pipeline_id=run.pipeline_id,
         pipeline_name=pipeline_name,
-        source_library_file_id=run.source_library_file_id,
-        source_archive_id=run.source_archive_id,
+        source_library_file_id=source_library_file_id,
+        source_archive_id=source_archive_id,
         source_filename=source_filename,
         parent_run_id=run.parent_run_id,
         copies=run.copies,
@@ -356,8 +386,12 @@ async def _materialise_run(db: AsyncSession, run: PipelineRun) -> PipelineRunRes
 async def _publish_run_event(db: AsyncSession, run: PipelineRun) -> None:
     """Broadcast a ``pipeline_run_updated`` event with the full materialised
     run. Per-user routing via ``broadcast_to_user`` falls back to a global
-    broadcast when ``created_by`` is None (auth-disabled installs)."""
+    broadcast when ``created_by`` is None on auth-disabled installs."""
     try:
+        # Without a user, broadcast_to_user would send it to everyone. With auth
+        # on, a run whose user was deleted is nobody's to watch (the runs page polls).
+        if run.created_by is None and await is_auth_enabled(db):
+            return
         payload = await _materialise_run(db, run)
         await ws_manager.broadcast_to_user(
             run.created_by,
@@ -410,6 +444,11 @@ async def _resolve_source(
     arc = (await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))).scalar_one_or_none()
     can_read_all = user is None or user.has_permission(Permission.ARCHIVES_READ_ALL.value)
     arc = _ensure_archive_visible(arc, user, can_read_all, printer_scope)
+    # Running a pipeline on an archive prints it again: the same rules as
+    # queueing it, including the right to reprint it.
+    from backend.app.api.routes.print_queue import _assert_can_queue_archive
+
+    _assert_can_queue_archive(arc, user, printer_scope)
     rel = arc.source_3mf_path or arc.file_path
     if not rel:
         raise HTTPException(400, "Archive has no source file to slice")
@@ -443,7 +482,7 @@ async def _pick_assignments(
         (
             await db.execute(
                 select(Printer)
-                .where(Printer.model == pipeline.target_model_class)
+                .where(func.lower(Printer.model) == (pipeline.target_model_class or "").lower())
                 .where(Printer.is_active.is_(True))
                 .order_by(Printer.id)
             )
@@ -468,8 +507,9 @@ async def _pick_assignments(
         # ``matching[i % len(matching)]``. Each item gets a fixed printer_id.
         return [(matching[i % len(matching)].id, None) for i in range(copies)]
     # max_parallel — leave printer_id=None, set target_model so the scheduler
-    # picks any free X1C / P1S / … for each item independently.
-    return [(None, pipeline.target_model_class)] * copies
+    # picks any free X1C / P1S / … for each item independently. In the
+    # printers' own spelling: the class is matched without regard to case.
+    return [(None, matching[0].model)] * copies
 
 
 def _make_orchestration_callable(
@@ -515,7 +555,6 @@ def _make_orchestration_callable(
             await session.commit()
             await _publish_run_event(session, run)
 
-            slice_request = _slice_request_from_pipeline(pipeline)
             model_bytes = src_path.read_bytes()
 
             folder_id: int | None = None
@@ -525,6 +564,9 @@ def _make_orchestration_callable(
                     folder_id = lib.folder_id
 
             try:
+                # Inside the try: a row with a bed type no slicer knows fails
+                # the run instead of leaving it in "slicing" (#3359).
+                slice_request = _slice_request_from_pipeline(pipeline)
                 slice_response = await slice_and_persist(
                     session,
                     model_bytes=model_bytes,
@@ -538,6 +580,9 @@ def _make_orchestration_callable(
                     request=slice_request,
                     current_user_id=creator_user_id,
                     job_id=slice_job_id,
+                    # The run's owner, also when a key without the cloud scope
+                    # started it and no one resolves cloud presets.
+                    owner_id=run.created_by,
                 )
             except HTTPException as exc:
                 run.status = "failed"
@@ -587,17 +632,32 @@ def _make_orchestration_callable(
 
             # No per-job ask-for-outcome toggle on a pipeline run either (#1898).
             confirm_outcome = await confirm_outcome_for_new_queue_item(session)
+            # Nor print options: the install's defaults.
+            print_options = await default_print_options(session)
 
             for job, (printer_id, target_model) in zip(jobs, assignments, strict=False):
                 queue_item = PrintQueueItem(
                     printer_id=printer_id,
                     target_model=target_model,
                     library_file_id=slice_response.library_file_id,
-                    created_by_id=creator_user_id,
+                    # From the run as refreshed after the slice, not the id the
+                    # request started with: a user deleted meanwhile is gone
+                    # from it, and SQLite may have given the id to someone else.
+                    created_by_id=run.created_by,
                     status="pending",
                     confirm_outcome=confirm_outcome,
                     # The copies wait for review like any other job of theirs (#1620)
-                    manual_start=review_required,
+                    # A restricted user deleted while it sliced: as delete_user
+                    # stages their ownerless "any model" jobs, or these would run
+                    # on every printer of the model, not only on theirs (#1727).
+                    manual_start=review_required
+                    or (
+                        run.created_by is None
+                        and creator_user_id is not None
+                        and printer_id is None
+                        and not printer_scope.is_unrestricted
+                    ),
+                    **print_options,
                 )
                 session.add(queue_item)
                 await session.flush()
@@ -629,6 +689,7 @@ def _make_orchestration_callable(
                         ).scalar_one_or_none()
                         if qe is not None and qe.status in ("pending", "queued"):
                             qe.status = "cancelled"
+                            qe.completed_at = datetime.now(timezone.utc)
                     if job.status not in ("completed", "failed", "cancelled"):
                         job.status = "cancelled"
                         job.completed_at = datetime.now(timezone.utc)
@@ -640,6 +701,7 @@ def _make_orchestration_callable(
                 job.status = "queued"
             run.status = "dispatching"
             await session.commit()
+            await announce_queue_jobs_added(session, [job.queue_entry_id for job in jobs if job.queue_entry_id])
             await _publish_run_event(session, run)
 
             return slice_response.model_dump()
@@ -658,7 +720,7 @@ async def check_eligibility(
     body: CheckEligibilityRequest,
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     actor: User | ApiKeyActor | None = RequestActor,
 ):
     pipeline = await _load_pipeline(db, pipeline_id)
@@ -691,7 +753,7 @@ async def run_pipeline(
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
     printer_scope: PrinterScope = RequestPrinterScope,
     review_required: bool = QueueReviewRequired,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     actor: User | ApiKeyActor | None = RequestActor,
 ):
     from backend.app.api.routes.settings import get_setting
@@ -762,7 +824,10 @@ async def run_pipeline(
         copies=body.copies,
         status="queued",
         eligibility_overridden=(not report.ok and body.force),
-        created_by=creator.id if creator else None,
+        # The run, and the queue jobs it adds, are the key's owner's when a key
+        # starts it, as a job the webhook queues is (``creator`` is only who
+        # resolves cloud presets).
+        created_by=creator.id if creator else (actor.id if isinstance(actor, ApiKeyActor) else None),
     )
     db.add(run)
     await db.flush()
@@ -796,7 +861,7 @@ async def run_pipeline(
         kind="library_file" if src_kind == "library_file" else "archive",
         source_id=src_id,
         source_name=src_filename,
-        owner_id=creator.id if creator else None,
+        owner_id=run.created_by,
         run=orchestrate,
     )
 
@@ -804,7 +869,7 @@ async def run_pipeline(
     await db.commit()
     await db.refresh(run)
 
-    return await _materialise_run(db, run)
+    return await _materialise_run(db, run, actor)
 
 
 # ---------------------------------------------------------------------------
@@ -844,8 +909,9 @@ async def list_runs_for_pipeline(
     pipeline_id: int,
     limit: int = 10,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     limit = max(1, min(limit, 100))
     conditions = [PipelineRun.pipeline_id == pipeline_id]
@@ -858,7 +924,7 @@ async def list_runs_for_pipeline(
     )
     total = (await db.execute(select(func.count()).select_from(PipelineRun).where(*conditions))).scalar() or 0
     return PipelineRunListResponse(
-        runs=[await _materialise_run(db, r) for r in rows],
+        runs=[await _materialise_run(db, r, actor) for r in rows],
         total=total,
     )
 
@@ -872,8 +938,9 @@ async def list_all_runs(
     target_printer_id: int | None = None,
     target_model_class: str | None = None,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Dashboard list. Newest first; filters on pipeline_id + status +
     target_printer_id + target_model_class. The ``status`` filter matches
@@ -909,7 +976,7 @@ async def list_all_runs(
     total = (await db.execute(count_stmt)).scalar() or 0
 
     return PipelineRunListResponse(
-        runs=[await _materialise_run(db, r) for r in rows],
+        runs=[await _materialise_run(db, r, actor) for r in rows],
         total=total,
     )
 
@@ -920,10 +987,11 @@ _TERMINAL_RUN_STATUSES = ("completed", "failed", "cancelled", "partial_failure")
 @pipeline_run_router.post("/clear")
 async def clear_terminal_runs(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_WRITE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
-    """Delete every terminal pipeline run (completed / failed / cancelled /
+    """Delete every terminal pipeline run the caller could cancel (completed / failed / cancelled /
     partial_failure). In-flight runs (queued / slicing / dispatching /
     in_progress) are preserved — clearing those mid-flight would lose the
     operator's intent. Cascades to PipelineJob via the ondelete='CASCADE'
@@ -933,9 +1001,13 @@ async def clear_terminal_runs(
     # under the same session/transaction as the delete so the numbers can't
     # drift if another caller races in.
     # Runs on printers the caller can't see are left alone (#1727)
-    conditions = [PipelineRun.status.in_(_TERMINAL_RUN_STATUSES)]
+    conditions: list = [PipelineRun.status.in_(_TERMINAL_RUN_STATUSES)]
     if (clause := _run_scope_clause(printer_scope)) is not None:
         conditions.append(clause)
+    # Other users' runs only for someone who may change everyone's queue jobs
+    user = actor.owner if isinstance(actor, ApiKeyActor) else actor
+    if actor is not None and user is not None and not user.has_permission(Permission.QUEUE_UPDATE_ALL.value):
+        conditions.append(PipelineRun.created_by == user.id)
     count_stmt = select(func.count()).select_from(PipelineRun).where(*conditions)
     n = (await db.execute(count_stmt)).scalar() or 0
     if n > 0:
@@ -948,48 +1020,78 @@ async def clear_terminal_runs(
 async def get_run(
     run_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     run = await _load_run_in_scope(db, run_id, printer_scope)
-    return await _materialise_run(db, run)
+    return await _materialise_run(db, run, actor)
 
 
 @pipeline_run_router.post("/{run_id}/cancel", response_model=PipelineRunResponse)
 async def cancel_run(
     run_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_RUN),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Cancel a queued / in-flight run. Cascades to all non-terminal queue
-    entries; in-flight prints continue on the printer (operator must Stop)."""
+    entries; in-flight prints continue on the printer (operator must Stop).
+
+    The run's queue entries are its starter's: cancelling it takes the right to
+    change their queue jobs, as cancelling one of them on the queue does."""
     run = await _load_run_in_scope(db, run_id, printer_scope)
+    if not may_reach_row(run.created_by, actor, Permission.QUEUE_UPDATE_ALL, Permission.QUEUE_UPDATE_OWN):
+        raise HTTPException(403, "Only the user who started this run can cancel it")
 
     if run.status in ("completed", "failed", "cancelled", "partial_failure"):
-        return await _materialise_run(db, run)
+        return await _materialise_run(db, run, actor)
 
     run.status = "cancelled"
     run.completed_at = datetime.now(timezone.utc)
     if not run.error_message:
         run.error_message = "Cancelled by user"
 
+    from backend.app.services.finance_budget import release_budget_reservation
+
+    cancelled_entries: list[int] = []
     job_rows = (await db.execute(select(PipelineJob).where(PipelineJob.pipeline_run_id == run.id))).scalars().all()
     for job in job_rows:
+        queue_entry = None
         if job.queue_entry_id:
             queue_entry = (
                 await db.execute(select(PrintQueueItem).where(PrintQueueItem.id == job.queue_entry_id))
             ).scalar_one_or_none()
             if queue_entry is not None and queue_entry.status in ("pending", "queued"):
                 queue_entry.status = "cancelled"
+                queue_entry.completed_at = datetime.now(timezone.utc)
+                # As a cancel from the queue does: its budget hold is freed
+                await release_budget_reservation(
+                    db, source_type="print_queue", source_id=queue_entry.id, status="released"
+                )
+                cancelled_entries.append(queue_entry.id)
+        if job.status in ("queued", "printing") and queue_entry is None:
+            # Dispatched, its entry gone: whether it printed is unknown, and
+            # calling it cancelled would make retry print it again.
+            continue
         if job.status not in ("completed", "failed", "cancelled"):
             job.status = "cancelled"
             job.completed_at = datetime.now(timezone.utc)
 
     await db.commit()
+    if cancelled_entries:
+        from backend.app.services.print_batch import refresh_batches_after
+        from backend.app.services.print_scheduler import scheduler
+
+        await refresh_batches_after(cancelled_entries)
+        # A preheating entry's dispatch is parked in a sleep and cannot see the
+        # status written above (#2727): told, it stops heating the printer.
+        for entry_id in cancelled_entries:
+            scheduler.notify_dispatch_cancelled(entry_id)
     await db.refresh(run)
     await _publish_run_event(db, run)
-    return await _materialise_run(db, run)
+    return await _materialise_run(db, run, actor)
 
 
 @pipeline_run_router.post("/{run_id}/retry-failed", response_model=PipelineRunResponse, status_code=202)
@@ -999,7 +1101,7 @@ async def retry_failed(
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
     printer_scope: PrinterScope = RequestPrinterScope,
     review_required: bool = QueueReviewRequired,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Create a new run with copies = (failed + cancelled count) from the
@@ -1059,5 +1161,5 @@ async def retry_failed(
         new_row.parent_run_id = parent.id
         await db.commit()
         await db.refresh(new_row)
-        return await _materialise_run(db, new_row)
+        return await _materialise_run(db, new_row, actor)
     return new_run_response

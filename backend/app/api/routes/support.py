@@ -177,7 +177,7 @@ async def get_logs(
     limit: int = Query(200, ge=1, le=1000, description="Maximum number of entries to return"),
     level: str | None = Query(None, description="Filter by log level (DEBUG, INFO, WARNING, ERROR)"),
     search: str | None = Query(None, description="Search in message or logger name"),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Get recent application log entries with optional filtering."""
     entries, total_lines = read_log_entries(limit=limit, level_filter=level, search=search)
@@ -708,23 +708,6 @@ async def _collect_github_backup_info(db: AsyncSession) -> dict:
         "schedule_enabled_count": schedule_enabled_count,
         "last_failure_count": last_failure_count,
     }
-
-
-async def _check_url_reachable(url: str, timeout: float = 2.0) -> bool | None:
-    """Single HEAD/GET ping with a short timeout. Returns None if URL is empty."""
-    if not url or not url.strip():
-        return None
-    try:
-        import httpx
-
-        async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # nosec B501 — local sidecars often use self-signed; this is a reachability/health probe only, no secrets are sent
-            r = await client.get(url, follow_redirects=False)
-            # Anything that returned a status code counts as reachable, even 404
-            # (the API server is up, just the path was wrong) — separates network
-            # failure from configuration mistakes for the user.
-            return r.status_code is not None
-    except Exception:
-        return False
 
 
 async def _fetch_slicer_health(url: str, timeout: float = 2.0) -> dict | None:
@@ -1492,7 +1475,7 @@ async def _get_recent_sanitized_logs(max_lines: int = 200) -> str:
 
 @router.get("/bundle")
 async def generate_support_bundle(
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Generate a support bundle ZIP file for issue reporting."""
     # Check if debug logging is enabled and collect sensitive values for redaction

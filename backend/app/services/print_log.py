@@ -4,9 +4,9 @@ Log entries are written to a separate table and never touch archives or queue it
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.print_log import PrintLogEntry
@@ -50,6 +50,7 @@ async def write_log_entry(
     created_by_id: int | None = None,
     created_by_username: str | None = None,
     reconciled: bool = False,
+    duration_unmeasured: bool = False,
 ) -> PrintLogEntry:
     """Write a print log entry.
 
@@ -62,39 +63,132 @@ async def write_log_entry(
     entries we store an explicit ``0`` ("no measured runtime") rather than a
     fabricated duration; the stats total trusts a stored 0 instead of
     recomputing from the stale timestamps.
+
+    ``duration_unmeasured`` marks a run closed at reconnect, whose times were
+    not measured (#3310): ``completed_at`` is its start plus the slicer's
+    estimate, or the reconnect. The time accuracy leaves it out.
     """
     if reconciled:
         duration: int | None = 0
     elif started_at and completed_at:
-        duration = int((completed_at - started_at).total_seconds())
+        duration = int((_utc(completed_at) - _utc(started_at)).total_seconds())
     else:
         duration = None
 
-    entry = PrintLogEntry(
-        archive_id=archive_id,
-        queue_item_id=queue_item_id,
-        print_name=print_name,
-        printer_name=printer_name,
-        printer_id=printer_id,
-        status=status,
-        started_at=started_at,
-        completed_at=completed_at,
-        duration_seconds=duration,
-        filament_type=filament_type,
-        filament_color=filament_color,
-        filament_used_grams=filament_used_grams,
-        cost=cost,
-        energy_kwh=energy_kwh,
-        energy_cost=energy_cost,
-        wear_cost=wear_cost_for_run(duration, wear_cost_per_hour),
-        failure_reason=failure_reason,
-        thumbnail_path=thumbnail_path,
-        created_by_id=created_by_id,
-        created_by_username=created_by_username,
-    )
-    db.add(entry)
+    fields = {
+        "archive_id": archive_id,
+        "queue_item_id": queue_item_id,
+        "print_name": print_name,
+        "printer_name": printer_name,
+        "printer_id": printer_id,
+        "status": status,
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "duration_seconds": duration,
+        "filament_type": filament_type,
+        "filament_color": filament_color,
+        "filament_used_grams": filament_used_grams,
+        "cost": cost,
+        "energy_kwh": energy_kwh,
+        "energy_cost": energy_cost,
+        "wear_cost": wear_cost_for_run(duration, wear_cost_per_hour),
+        "duration_unmeasured": True if duration_unmeasured else None,
+        "failure_reason": failure_reason,
+        "thumbnail_path": thumbnail_path,
+        "created_by_id": created_by_id,
+        "created_by_username": created_by_username,
+    }
+    entry = await _entry_of_this_run(db, archive_id, printer_id, started_at)
+    if entry is None:
+        entry = PrintLogEntry(**fields)
+        db.add(entry)
+    elif entry.status != status:
+        # The run ended differently from how it was first logged: a print
+        # stopped while its printer was offline that finished after all. The
+        # real outcome replaces the stop rather than counting the run twice.
+        for name, value in fields.items():
+            if value is None and name in _KEPT_WHEN_NOT_REPORTED:
+                continue
+            setattr(entry, name, value)
+    # The same outcome reported again (a repeated completion after a reconnect)
+    # changes nothing: the repeat no longer has the run's tracked usage, and the
+    # entry may have been edited or given its energy since.
     await db.flush()
     return entry
+
+
+async def mirror_archive_cost(db: AsyncSession, archive, previous_cost: float | None) -> None:
+    """Give the archive's newest run the archive's new cost, if it had the old one.
+
+    Statistics, project totals and batch sums read a run's cost. A completed
+    run without its own spool price took the archive's (or none), so a new
+    archive cost belongs to it too. A run its spools priced keeps that price,
+    and a failed or cancelled run keeps its own: it printed only part of it.
+    """
+    entry = await db.scalar(
+        select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id).order_by(PrintLogEntry.id.desc()).limit(1)
+    )
+    if entry is not None and entry.status == "completed" and entry.cost in (None, previous_cost):
+        entry.cost = archive.cost
+
+
+async def other_runs_of(db: AsyncSession, archive) -> int:
+    """How many log entries *archive* has from runs other than its current one.
+
+    The archive card keeps its first run's figures; a run whose own entry is
+    already written (its stop, logged while the printer was offline) is still
+    the first run.
+    """
+    # Without a start time or printer on the archive, ``!= None`` reads as
+    # ``IS NOT NULL``: every entry is another run's.
+    query = select(func.count(PrintLogEntry.id)).where(
+        PrintLogEntry.archive_id == archive.id,
+        or_(
+            PrintLogEntry.started_at.is_(None),
+            PrintLogEntry.started_at != archive.started_at,
+            PrintLogEntry.printer_id.is_(None),
+            PrintLogEntry.printer_id != archive.printer_id,
+        ),
+    )
+    return await db.scalar(query) or 0
+
+
+# Who and what the run was, which a repeated report may no longer know: a
+# completion that finds the queue item already closed reports none. Its
+# outcome (status, reason, grams, cost) is replaced as reported.
+_KEPT_WHEN_NOT_REPORTED = frozenset(
+    {"queue_item_id", "print_name", "printer_name", "thumbnail_path", "created_by_id", "created_by_username"}
+)
+
+
+def _utc(moment: datetime) -> datetime:
+    """Naive UTC, as the columns store it; an aware time is converted first."""
+    return moment.astimezone(timezone.utc).replace(tzinfo=None) if moment.tzinfo else moment
+
+
+async def _entry_of_this_run(
+    db: AsyncSession,
+    archive_id: int | None,
+    printer_id: int | None,
+    started_at: datetime | None,
+) -> PrintLogEntry | None:
+    """The entry already written for this run, if any.
+
+    A run is its archive, printer and start time together: plates of one
+    archive printing on two printers share the archive row (and can share its
+    start time), and a reprint starts at a new time. The queue item is not
+    part of it: a repeated completion finds the item already closed and
+    reports none. Without an archive, printer or start time a run can't be
+    told apart, so nothing is matched.
+    """
+    if archive_id is None or printer_id is None or started_at is None:
+        return None
+    query = select(PrintLogEntry).where(
+        PrintLogEntry.archive_id == archive_id,
+        PrintLogEntry.printer_id == printer_id,
+        PrintLogEntry.started_at == started_at,
+    )
+    return (await db.scalars(query.order_by(PrintLogEntry.id.desc()).limit(1))).first()
 
 
 async def record_archive_wear(db: AsyncSession, archive, entry: PrintLogEntry) -> None:

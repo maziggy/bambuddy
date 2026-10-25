@@ -20,15 +20,10 @@ import type { RackGroupInfo, RackPositionOption } from '../components/PrintModal
 /** Physical nozzle IDs of the six rack positions. */
 export const RACK_POSITION_BASE = 15;
 export const RACK_SIZE = 6;
-export const RACK_POSITIONS = Array.from({ length: RACK_SIZE }, (_, i) => i + 1);
+const RACK_POSITIONS = Array.from({ length: RACK_SIZE }, (_, i) => i + 1);
 
 /** The two carriage entries the printer reports alongside the rack itself. */
 const RACK_CARRIAGE_NOZZLE_ID = 0;
-
-export function rackPositionToNozzleId(position: number): number | null {
-  if (!Number.isInteger(position) || position < 1 || position > RACK_SIZE) return null;
-  return RACK_POSITION_BASE + position;
-}
 
 /**
  * Live rack contents by 1-based position, including the mounted nozzle.

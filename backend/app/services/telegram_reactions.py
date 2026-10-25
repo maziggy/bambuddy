@@ -174,9 +174,6 @@ class TelegramReactionPoller:
                     ", ".join(str(i) for i in sorted(provider_ids)),
                 )
 
-    def is_polling(self, provider_id: int) -> bool:
-        return any(provider_id in ids for token, ids in self._providers.items() if token in self._tasks)
-
     # ------------------------------------------------------------------
     # Plumbing
     # ------------------------------------------------------------------

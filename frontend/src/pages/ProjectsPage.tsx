@@ -34,6 +34,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { getCurrencySymbol } from '../utils/currency';
 import { eligibleParents } from '../utils/projectTree';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 const PROJECT_COLORS = [
   '#ef4444', // red
@@ -952,10 +953,7 @@ export function ProjectsPage() {
     localStorage.setItem('projects-collapse-subprojects', String(next));
   };
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
 
   const currencySymbol = getCurrencySymbol(settings?.currency || 'USD');
 

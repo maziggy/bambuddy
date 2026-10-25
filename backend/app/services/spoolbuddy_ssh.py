@@ -26,6 +26,8 @@ from backend.app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+PIP_INSTALL_TIMEOUT = 300
+
 SSH_USER = "spoolbuddy"
 DEFAULT_INSTALL_PATH = "/opt/bambuddy"
 
@@ -310,15 +312,32 @@ async def perform_ssh_update(device_id: str, ip_address: str, install_path: str 
         # Step 4: Install dependencies
         await _update_progress("updating", "Installing dependencies...")
         venv_pip = shlex.quote(f"{install_path}/spoolbuddy/venv/bin/pip")
-        rc, _, stderr, _ = await _run_ssh_command(
+        rc, pip_output, stderr, _ = await _run_ssh_command(
             ip_address,
             f"{venv_pip} install --upgrade spidev gpiod smbus2 httpx 2>&1",
             private_key,
             known_hosts=known_hosts,
-            timeout=120,
+            # A slow Pi building wheels needs more than two minutes.
+            timeout=PIP_INSTALL_TIMEOUT,
         )
+        deps_note = ""
+        if rc == -1:
+            # Timed out here, not necessarily on the Pi: pip may still be
+            # installing, and restarting the daemon over a half-installed venv
+            # (then reporting success) is how a broken update looked fine (TO-C12).
+            await _update_progress(
+                "error",
+                "Installing dependencies timed out; the daemon was not restarted. "
+                "Run the update again once the device has finished.",
+            )
+            return
         if rc != 0:
-            logger.warning("SpoolBuddy %s: pip install returned non-zero (continuing): %s", device_id, stderr[:200])
+            # A pip error is not fatal -- the daemon may not need the upgrade --
+            # but it is said, with pip's own output (2>&1 sends it to stdout).
+            logger.warning(
+                "SpoolBuddy %s: pip install exited %s (continuing): %s", device_id, rc, (pip_output or stderr)[-500:]
+            )
+            deps_note = f" (installing dependencies failed, exit {rc}: see the Bambuddy log)"
 
         # Step 5: Restart daemon
         await _update_progress("updating", "Restarting daemon...")
@@ -350,7 +369,7 @@ async def perform_ssh_update(device_id: str, ip_address: str, install_path: str 
             logger.warning("SpoolBuddy %s: kiosk restart failed (non-fatal): %s", device_id, stderr[:200])
 
         logger.info("SpoolBuddy %s: SSH update complete (branch=%s)", device_id, branch)
-        await _update_progress("complete", f"Updated to {branch}")
+        await _update_progress("complete", f"Updated to {branch}{deps_note}")
 
     except Exception:
         logger.exception("SpoolBuddy %s: SSH update failed", device_id)

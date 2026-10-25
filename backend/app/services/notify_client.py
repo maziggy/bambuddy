@@ -291,9 +291,6 @@ class NotifyClient:
     async def update_widget(self, widget_id: str, token: str, content: dict) -> dict:
         return await self._request("POST", f"/widgets/{self._widget_id(widget_id)}", token, content=content)
 
-    async def get_widget(self, widget_id: str, token: str) -> dict:
-        return await self._request("GET", f"/widgets/{self._widget_id(widget_id)}", token)
-
     async def list_widgets(self, device_id: str, token: str) -> dict:
         result = await self._request("GET", f"/widgets/{self._id(device_id)}", token)
         widgets = result.get("widgets")

@@ -74,4 +74,49 @@ describe('useOverlayCameraRecovery', () => {
     unmount();
     expect(vi.getTimerCount()).toBe(0);
   });
+  // A detached img keeps its MJPEG connection open (measured in Chromium): the
+  // old stream is closed before the key changes, and a moment before the new
+  // one opens (a USB camera serves one reader).
+  function withImg(result: { current: ReturnType<typeof useOverlayCameraRecovery> }) {
+    const img = document.createElement('img');
+    img.setAttribute('src', '/api/v1/printers/1/camera/stream?t=1');
+    result.current.imgRef.current = img;
+    return img;
+  }
+
+  it('closes the old stream shortly before opening the renewed one', () => {
+    const { result } = renderHook(() => useOverlayCameraRecovery(true));
+    const initial = result.current.imageKey;
+    const img = withImg(result);
+
+    act(() => vi.advanceTimersByTime(59_800));
+    expect(img.getAttribute('src')).toBeNull();
+    expect(result.current.closing).toBe(true);
+    expect(result.current.imageKey).toBe(initial);
+
+    act(() => vi.advanceTimersByTime(200));
+    expect(result.current.closing).toBe(false);
+    expect(result.current.imageKey).toBe(initial + 1);
+  });
+
+  it('closes a failed stream until its retry', () => {
+    const { result } = renderHook(() => useOverlayCameraRecovery(true));
+    const img = withImg(result);
+
+    act(() => result.current.handleStreamError({ currentTarget: img } as never));
+
+    expect(img.getAttribute('src')).toBeNull();
+    expect(result.current.closing).toBe(true);
+  });
+
+  it('takes the error of a closed img for no failure', () => {
+    const { result } = renderHook(() => useOverlayCameraRecovery(true));
+    const initial = result.current.imageKey;
+    const closed = document.createElement('img');
+
+    act(() => result.current.handleStreamError({ currentTarget: closed } as never));
+    act(() => vi.advanceTimersByTime(3_000));
+
+    expect(result.current.imageKey).toBe(initial);
+  });
 });

@@ -1,7 +1,21 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
+from backend.app.services.secret_fields import SECRET_PLACEHOLDER
+
+# A REST plug's URLs and request bodies, shown only to those who may edit plugs.
+REST_EDITOR_FIELDS = (
+    "rest_on_url",
+    "rest_off_url",
+    "rest_status_url",
+    "rest_power_url",
+    "rest_energy_url",
+    "rest_on_body",
+    "rest_off_body",
+)
 
 
 class SmartPlugBase(BaseModel):
@@ -121,7 +135,8 @@ class SmartPlugCreate(SmartPlugBase):
     pass
 
 
-class SmartPlugUpdate(BaseModel):
+class SmartPlugUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "smart_plugs"
     name: str | None = None
     plug_type: Literal["tasmota", "homeassistant", "mqtt", "rest"] | None = None
     ip_address: str | None = None
@@ -203,6 +218,31 @@ class SmartPlugResponse(SmartPlugBase):
     class Config:
         from_attributes = True
 
+    @field_validator("password", "rest_headers", mode="after")
+    @classmethod
+    def _write_only(cls, value: str | None) -> str | None:
+        """Secrets are write-only: a set one is shown as the placeholder."""
+        return SECRET_PLACEHOLDER if value else value
+
+    @model_validator(mode="after")
+    def _rest_for_editors(self) -> "SmartPlugResponse":
+        """Readers get no REST URLs or bodies: they commonly carry the device's
+        credential, and a plug is switched and polled by its id. After the
+        base checks, which need them."""
+        for field in REST_EDITOR_FIELDS:
+            setattr(self, field, None)
+        return self
+
+
+class SmartPlugResponseWithSecret(SmartPlugResponse):
+    """SmartPlugResponse with the REST URLs and bodies. Returned only to callers
+    who may edit plugs (or with authentication off)."""
+
+    @model_validator(mode="after")
+    def _rest_for_editors(self) -> "SmartPlugResponseWithSecret":
+        """Editors keep them, to edit them."""
+        return self
+
 
 class SmartPlugControl(BaseModel):
     action: Literal["on", "off", "toggle"]
@@ -233,6 +273,8 @@ class SmartPlugTestConnection(BaseModel):
     ip_address: str = Field(..., pattern=r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
     username: str | None = None
     password: str | None = None
+    # The saved plug being edited: its stored password fills in the placeholder.
+    plug_id: int | None = None
 
 
 # Home Assistant schemas
@@ -275,6 +317,8 @@ class RESTTestConnectionRequest(BaseModel):
     url: str = Field(..., min_length=1)
     method: str = Field(default="GET")
     headers: str | None = None  # JSON string of custom headers
+    # The saved plug being edited: its stored headers fill in the placeholder.
+    plug_id: int | None = None
 
 
 class RESTTestConnectionResponse(BaseModel):

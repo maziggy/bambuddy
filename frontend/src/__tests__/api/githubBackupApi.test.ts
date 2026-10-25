@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
+import { api } from '../../api/client';
 import type {
   GitHubBackupConfig,
   GitHubBackupStatus,
@@ -285,10 +286,11 @@ describe('GitHub Backup API Endpoints', () => {
       })
     );
 
-    const response = await fetch(
-      `${API_BASE}/github-backup/test?repo_url=https://github.com/test/repo&token=ghp_test`,
-      { method: 'POST' }
-    );
+    const response = await fetch(`${API_BASE}/github-backup/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo_url: 'https://github.com/test/repo', token: 'ghp_test' }),
+    });
     const data = await response.json();
     expect(data.success).toBe(true);
     expect(data.repo_name).toBe('test/repo');
@@ -306,12 +308,33 @@ describe('GitHub Backup API Endpoints', () => {
       })
     );
 
-    const response = await fetch(
-      `${API_BASE}/github-backup/test?repo_url=https://github.com/test/repo&token=invalid`,
-      { method: 'POST' }
-    );
+    const response = await fetch(`${API_BASE}/github-backup/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo_url: 'https://github.com/test/repo', token: 'invalid' }),
+    });
     const data = await response.json();
     expect(data.success).toBe(false);
     expect(data.message).toBe('Authentication failed');
+  });
+
+  it('testGitHubConnection carries the credentials in the request body, not the URL', async () => {
+    let seen: { url: string; body: unknown } | null = null;
+    server.use(
+      http.post('*/api/v1/github-backup/test', async ({ request }) => {
+        seen = { url: request.url, body: await request.json() };
+        return HttpResponse.json({ success: true, message: 'ok', is_private: true });
+      })
+    );
+
+    await api.testGitHubConnection('https://github.com/test/backup-repo', 'ghp_typed_value', 'gitea');
+
+    expect(seen!.url).not.toContain('ghp_typed_value');
+    expect(new URL(seen!.url).search).toBe('');
+    expect(seen!.body).toEqual({
+      repo_url: 'https://github.com/test/backup-repo',
+      token: 'ghp_typed_value',
+      provider: 'gitea',
+    });
   });
 });

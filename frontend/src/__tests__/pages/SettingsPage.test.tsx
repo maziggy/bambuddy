@@ -2657,4 +2657,69 @@ describe('SettingsPage — settings changed outside the page (#2716)', () => {
     await waitFor(() => expect(puts).toHaveLength(1), { timeout: 3000 });
     expect(puts[0].external_url).toBe(window.location.origin);
   });
+
+  describe('as a non-admin with settings:update', () => {
+    // Only an administrator may change the sign-in settings; the server refuses
+    // a save that changes one, which would take the rest of the save with it.
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 2, username: 'manager', role: 'user', is_active: true, is_admin: false,
+            groups: [{ id: 5, name: 'Settings managers' }],
+            permissions: ['settings:read', 'settings:update', 'users:read'],
+            created_at: '2026-01-01T00:00:00Z',
+          }),
+        ),
+      );
+      setAuthToken('test-token');
+    });
+
+    it('does not fill in the external URL from the browser', async () => {
+      served = { ...mockSettings, external_url: '' };
+      renderPage();
+      await screen.findByText(restoreLabel);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      await changeOnServer({ spoolman_url: 'http://spoolman.example' });
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      expect(puts.filter((body) => body.external_url === window.location.origin)).toEqual([]);
+    });
+
+    it('shows the external URL read-only', async () => {
+      served = { ...mockSettings };
+      window.history.replaceState({}, '', '/?tab=network');
+      renderPage();
+
+      const input = await screen.findByPlaceholderText('http://192.168.1.100:8000');
+      await waitFor(() => expect(input).toBeDisabled());
+      expect(screen.getAllByText('Only an administrator can change this.').length).toBeGreaterThan(0);
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('does not offer the connected apps', async () => {
+      // An app's redirect address decides where an admin's sign-in is sent.
+      served = { ...mockSettings };
+      window.history.replaceState({}, '', '/?tab=apikeys');
+      renderPage();
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /^API Keys/ })).toBeInTheDocument());
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(screen.queryByText('Connected Apps')).toBeNull();
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('does not offer the mail server and LDAP sub-tabs', async () => {
+      served = { ...mockSettings };
+      window.history.replaceState({}, '', '/?tab=users');
+      renderPage();
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /^Two-Factor Auth/ })).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: /^LDAP/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Email Authentication/ })).toBeNull();
+      window.history.replaceState({}, '', '/');
+    });
+  });
 });

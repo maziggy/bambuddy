@@ -475,6 +475,72 @@ class TestSliceLibraryFile:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    @pytest.mark.parametrize(
+        ("slicer", "source", "as_designed", "reaches_the_slicer"),
+        [
+            ("bambu_studio", "stl", False, False),
+            # The flag does nothing for an STL, so the plate is still applied.
+            ("bambu_studio", "stl", True, False),
+            # "Slice as designed" on a 3MF never applies the picked plate.
+            ("bambu_studio", "3mf", True, True),
+            ("orcaslicer", "stl", False, True),
+        ],
+    )
+    async def test_an_orca_only_plate_is_refused_for_bambu_studio(
+        self, async_client: AsyncClient, db_session, slice_test_setup, slicer, source, as_designed, reaches_the_slicer
+    ):
+        """Bambu Studio slices a plate name it does not know as Cool Plate (#3359)."""
+        await db_session.execute(
+            SettingsModel.__table__.update().where(SettingsModel.key == "preferred_slicer").values(value=slicer)
+        )
+        await db_session.commit()
+        file_id = slice_test_setup["src_file_id"]
+        if source == "3mf":
+            path = slice_test_setup["tmp_path"] / "library" / "files" / "designed.3mf"
+            path.write_bytes(_make_3mf_with_settings({"wall_loops": "5"}))
+            threemf = LibraryFile(
+                filename="designed.3mf",
+                file_path=str(path.relative_to(slice_test_setup["tmp_path"])),
+                file_type="3mf",
+                file_size=path.stat().st_size,
+            )
+            db_session.add(threemf)
+            await db_session.commit()
+            file_id = threemf.id
+        sent: list = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sent.append(request)
+            return httpx.Response(
+                status_code=200,
+                content=_make_3mf_with_settings(),
+                headers={"x-print-time-seconds": "10", "x-filament-used-g": "0.1", "x-filament-used-mm": "1.0"},
+            )
+
+        _install_mock_sidecar(handler)
+        response = await async_client.post(
+            f"/api/v1/library/files/{file_id}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+                "bed_type": "Textured Cool Plate",
+                "use_embedded_settings": as_designed,
+            },
+        )
+        assert response.status_code == 202
+        final = await _wait_for_job(async_client, response.json()["job_id"])
+        if reaches_the_slicer:
+            assert final["status"] == "completed", final
+            assert any(_is_slice_post(r) for r in sent)
+        else:
+            assert final["status"] == "failed"
+            assert final["error_status"] == 400
+            assert "Bambu Studio has no Textured Cool Plate" in final["error_detail"]
+            assert not any(_is_slice_post(r) for r in sent)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_unknown_preferred_slicer_fails_with_400(
         self, async_client: AsyncClient, db_session, slice_test_setup
     ):

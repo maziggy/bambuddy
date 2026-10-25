@@ -64,7 +64,6 @@ import type {
   LibraryFolderCreate,
   LibraryFolderUpdate,
   ExternalFolderCreate,
-  AppSettings,
   Archive,
   Permission,
 } from '../api/client';
@@ -90,6 +89,7 @@ import { formatFileSize } from '../utils/file';
 import { assignableProjects } from '../utils/projectTree';
 import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import { isSlicedLibraryFile, isSliceableLibraryFile } from '../utils/libraryFiles';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
 type SortDirection = 'asc' | 'desc';
@@ -1033,9 +1033,15 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
 }
 
 // File Card
+// The mark on a file a ?highlight= link points at; the Archives page's colour.
+const HIGHLIGHT_CARD_STYLE = { outline: '4px solid #facc15', outlineOffset: '2px' } as const;
+const HIGHLIGHT_ROW_STYLE = { outline: '2px solid #facc15', outlineOffset: '-2px' } as const;
+
 interface FileCardProps {
   file: LibraryFileListItem;
   isSelected: boolean;
+  /** The file a ?highlight= link points at, marked for a few seconds. */
+  isHighlighted?: boolean;
   onSelect: (id: number) => void;
   onDelete: (id: number) => void;
   onDownload: (id: number) => void;
@@ -1062,7 +1068,7 @@ interface FileCardProps {
   t: TFunction;
 }
 
-function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, desktopSlicer, canSlice, onPreview, onRename, onDetails, onGenerateThumbnail, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
+function FileCard({ file, isSelected, isHighlighted, onSelect, onDelete, onDownload, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, desktopSlicer, canSlice, onPreview, onRename, onDetails, onGenerateThumbnail, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
   // Viewport coordinates rather than a flag, because the menu is rendered by
   // `ContextMenu` at `position: fixed` and anchored to the button (#2846). The
   // card it belongs to is only ~270px tall for a bare STL, which is shorter
@@ -1168,6 +1174,8 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
 
   return (
     <div
+      data-file-id={file.id}
+      style={isHighlighted ? HIGHLIGHT_CARD_STYLE : undefined}
       className={`group relative bg-bambu-dark-secondary rounded-lg border transition-all cursor-pointer ${
         isSelected
           ? 'border-bambu-green ring-1 ring-bambu-green'
@@ -1530,6 +1538,7 @@ function FileActionStrip({ file, onPrint, onSlice, onOpenInSlicer, onRunPipeline
 interface ColumnFileRowProps {
   file: LibraryFileListItem;
   isSelected: boolean;
+  isHighlighted?: boolean;
   isFocused: boolean;
   showModified: boolean;
   thumbnailVersion?: number;
@@ -1539,11 +1548,12 @@ interface ColumnFileRowProps {
   t: TFunction;
 }
 
-function ColumnFileRow({ file, isSelected, isFocused, showModified, thumbnailVersion, onSelect, onOpen, actionProps, t }: ColumnFileRowProps) {
+function ColumnFileRow({ file, isSelected, isHighlighted, isFocused, showModified, thumbnailVersion, onSelect, onOpen, actionProps, t }: ColumnFileRowProps) {
   const thumbnailUrl = api.getLibraryFileThumbnailUrl(file.id);
   return (
     <div
       data-file-id={file.id}
+      style={isHighlighted ? HIGHLIGHT_ROW_STYLE : undefined}
       onClick={() => onSelect(file)}
       onDoubleClick={() => onOpen(file)}
       className={`group flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${
@@ -1745,11 +1755,41 @@ export function FileManagerPage() {
     }
   }, [searchParams]);
 
+  // ?highlight=<file id> points at one file (the queue card's "View in File
+  // Manager"). The link carries only the id: the folder is looked up here, so
+  // a file moved since it was queued is still found. The folder's listing is
+  // refetched before the file is looked for in it, since a cached one may
+  // predate the move.
+  const highlightParam = searchParams.get('highlight');
+  const [pendingHighlight, setPendingHighlight] = useState<{ fileId: number; folderId: number | null; requestedAt: number } | null>(null);
+  const [highlightedFileId, setHighlightedFileId] = useState<number | null>(null);
+  const selectedFolderIdRef = useRef(selectedFolderId);
+  selectedFolderIdRef.current = selectedFolderId;
+  useEffect(() => {
+    const fileId = highlightParam ? parseInt(highlightParam, 10) : NaN;
+    if (!Number.isFinite(fileId)) return;
+    let cancelled = false;
+    const folderAtRequest = selectedFolderIdRef.current;
+    api.getLibraryFile(fileId).then(
+      (file) => {
+        // Someone who opened another folder meanwhile is not pulled back.
+        if (cancelled || selectedFolderIdRef.current !== folderAtRequest) return;
+        const requestedAt = Date.now();
+        queryClient.invalidateQueries({ queryKey: ['library-files'] });
+        setSelectedFolderId(file.folder_id);
+        setPendingHighlight({ fileId, folderId: file.folder_id, requestedAt });
+      },
+      () => {
+        if (!cancelled) showToast(t('fileManager.highlightedFileNotFound'), 'warning');
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [highlightParam, queryClient, showToast, t]);
+
   // Queries
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: () => api.getSettings() as Promise<AppSettings>,
-  });
+  const { data: settings } = useUiSettings();
 
   const preferredSlicer: SlicerType = resolveDesktopSlicer(settings?.open_in_slicer, settings?.preferred_slicer);
 
@@ -1897,7 +1937,7 @@ export function FileManagerPage() {
   // folder.
   const paneRootOnly = viewMode === 'columns' && selectedFolderId === null && !columnsFilterActive;
 
-  const { data: files, isLoading: filesLoading } = useQuery({
+  const { data: files, isLoading: filesLoading, dataUpdatedAt: filesUpdatedAt } = useQuery({
     queryKey: ['library-files', selectedFolderId, topLevelView, searchExpandsSubfolders, tagFilterKey, paneRootOnly],
     // When a specific folder is selected we list its contents directly; when
     // no folder is selected the topLevelView pseudo-node decides whether the
@@ -1946,6 +1986,31 @@ export function FileManagerPage() {
       }),
     [files, searchQuery, filterType, filterUsername, sortField, sortDirection],
   );
+
+  // Once the file's folder is listed afresh, mark the file; then scroll to it
+  // and drop the mark after a few seconds, as the Archives page does.
+  useEffect(() => {
+    if (!pendingHighlight || filesLoading || !files || selectedFolderId !== pendingHighlight.folderId) return;
+    if (filesUpdatedAt < pendingHighlight.requestedAt) return;
+    if (filteredAndSortedFiles.some((f) => f.id === pendingHighlight.fileId)) {
+      setHighlightedFileId(pendingHighlight.fileId);
+      if (viewMode === 'columns') setColumnsFocusedFileId(pendingHighlight.fileId);
+    } else {
+      showToast(t('fileManager.highlightedFileNotFound'), 'warning');
+    }
+    setPendingHighlight(null);
+  }, [pendingHighlight, filesLoading, files, filesUpdatedAt, selectedFolderId, filteredAndSortedFiles, viewMode, showToast, t]);
+  useEffect(() => {
+    if (highlightedFileId === null) return;
+    const scrollTimer = setTimeout(() => {
+      document.querySelector(`[data-file-id="${highlightedFileId}"]`)?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    }, 100);
+    const clearTimer = setTimeout(() => setHighlightedFileId(null), 5000);
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(clearTimer);
+    };
+  }, [highlightedFileId]);
 
   // Check if disk space is low
   const isDiskSpaceLow = useMemo(() => {
@@ -2730,7 +2795,10 @@ export function FileManagerPage() {
             {t('fileManager.subtitle')}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        {/* Wraps: up to nine controls, which pushed the page sideways on a
+            phone (#3295). Next to the title it takes only the room left over
+            (flex-1 from zero), so the title is not squeezed to fit it. */}
+        <div className="flex flex-wrap items-center sm:justify-end sm:flex-1 gap-2 min-w-0">
           {/* View mode toggle */}
           <div className="flex items-center bg-bambu-dark rounded-lg p-1">
             <button
@@ -3546,6 +3614,7 @@ export function FileManagerPage() {
                         key={file.id}
                         file={file}
                         isSelected={selectedFiles.includes(file.id)}
+                        isHighlighted={highlightedFileId === file.id}
                         isFocused={columnsFocusedFileId === file.id}
                         showModified={showModified}
                         thumbnailVersion={thumbnailVersions[file.id]}
@@ -3592,6 +3661,7 @@ export function FileManagerPage() {
                         key={file.id}
                         file={file}
                         isSelected={selectedFiles.includes(file.id)}
+                        isHighlighted={highlightedFileId === file.id}
                         isFocused={columnsFocusedFileId === file.id}
                         showModified={showModified}
                         thumbnailVersion={thumbnailVersions[file.id]}
@@ -3657,6 +3727,7 @@ export function FileManagerPage() {
                     key={file.id}
                     file={file}
                     isSelected={selectedFiles.includes(file.id)}
+                    isHighlighted={highlightedFileId === file.id}
                     t={t}
                     onSelect={handleFileSelect}
                     onDelete={(id) => setDeleteConfirm({ type: 'file', id })}
@@ -3714,6 +3785,8 @@ export function FileManagerPage() {
                   <div
                     key={file.id}
                     data-testid="file-list-grid-row"
+                    data-file-id={file.id}
+                    style={highlightedFileId === file.id ? HIGHLIGHT_ROW_STYLE : undefined}
                     className={`grid ${fileListGridColumns(authEnabled)} ${fileListGridMinWidth} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
                       selectedFiles.includes(file.id) ? 'bg-bambu-green/10' : ''
                     }`}

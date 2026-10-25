@@ -12,6 +12,7 @@ import { api, spoolbuddyApi, type Printer, type PrinterStatus } from '../../api/
 import { VirtualKeyboard } from '../VirtualKeyboard';
 import { PageLoading } from '../PageLoading';
 import { useToast } from '../../contexts/ToastContext';
+import { useUiSettings } from '../../hooks/useUiSettings';
 
 export function SpoolBuddyLayout() {
   // Cascade a re-render into all SpoolBuddy pages when the color catalog
@@ -21,7 +22,7 @@ export function SpoolBuddyLayout() {
   const [selectedPrinterId, setSelectedPrinterId] = useState<number | null>(null);
   const [alert, setAlert] = useState<{ type: 'warning' | 'error' | 'info'; message: string } | null>(null);
   const [displayBrightness, setDisplayBrightness] = useState(100);
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const sbState = useSpoolBuddyState();
@@ -35,10 +36,7 @@ export function SpoolBuddyLayout() {
   }, [setViewportSuppressed]);
 
   // Sync language from backend settings (kiosk has its own browser with empty localStorage)
-  const { data: appSettings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: appSettings } = useUiSettings();
   useEffect(() => {
     if (appSettings?.language && appSettings.language !== i18n.language) {
       i18n.changeLanguage(appSettings.language);
@@ -103,6 +101,30 @@ export function SpoolBuddyLayout() {
       layoutAlertRef.current = null;
     }
   }, [effectiveDeviceOnline, updateCheck?.update_available, updateCheck?.latest_version]);
+
+  // A scanned tag that could not be looked up at all, which otherwise looks
+  // like nothing happened. Its own slot above the page and layout alerts, so
+  // it neither replaces them nor is cleared by them, and it clears itself.
+  const [scanNotice, setScanNotice] = useState<{ type: 'error'; message: string } | null>(null);
+  const tRef = useRef(t);
+  tRef.current = t;
+  useEffect(() => {
+    let clearTimer: ReturnType<typeof setTimeout> | undefined;
+    const show = (key: string) => () => {
+      setScanNotice({ type: 'error', message: tRef.current(key) });
+      clearTimeout(clearTimer);
+      clearTimer = setTimeout(() => setScanNotice(null), 10000);
+    };
+    const onUnavailable = show('spoolbuddy.status.spoolmanUnavailable');
+    const onLookupError = show('spoolbuddy.status.lookupFailed');
+    window.addEventListener('spoolman-unavailable', onUnavailable);
+    window.addEventListener('spoolbuddy-lookup-error', onLookupError);
+    return () => {
+      clearTimeout(clearTimer);
+      window.removeEventListener('spoolman-unavailable', onUnavailable);
+      window.removeEventListener('spoolbuddy-lookup-error', onLookupError);
+    };
+  }, []);
 
   // Auto-navigate to dashboard when a NEW tag is detected (transition from no-tag to tag).
   // Blanking itself is handled by swayidle/wlopm at the OS level on the kiosk device —
@@ -232,7 +254,7 @@ export function SpoolBuddyLayout() {
           </Suspense>
         </main>
 
-        {!keyboardVisible && <SpoolBuddyStatusBar alert={alert} />}
+        {!keyboardVisible && <SpoolBuddyStatusBar alert={scanNotice ?? alert} />}
         {!keyboardVisible && <SpoolBuddyBottomNav />}
         <VirtualKeyboard onVisibilityChange={setKeyboardVisible} />
       </div>

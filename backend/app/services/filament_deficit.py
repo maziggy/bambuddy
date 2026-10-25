@@ -255,11 +255,6 @@ def _material_identity_spoolman(spool: dict | None) -> str:
     return f"unmatched:{spool_id}"
 
 
-def _ams_id_from_global(global_tray_id: int) -> int:
-    """Inverse of ``_global_to_ams_key`` returning ams_id only."""
-    return _global_to_ams_key(global_tray_id)[0]
-
-
 def _extruder_side_for_ams(
     ams_id: int,
     ams_extruder_map: dict[str, int],
@@ -445,6 +440,10 @@ class SlotMaterial:
     # Display-only; see SlotSpoolIdentity. None when the binding resolves to a
     # spool we cannot describe, which callers render from telemetry as before.
     spool: SlotSpoolIdentity | None = None
+    # Per-kg rate a print off this spool is charged at; None when unpriced,
+    # which the charge prices at the default rate. Display-only: the print
+    # dialog's estimate, which priced Spoolman slots from the built-in table.
+    cost_per_kg: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -455,6 +454,7 @@ class SlotMaterial:
             "remaining_g": self.remaining_grams,
             "extruder": self.extruder,
             "spool": self.spool.to_dict() if self.spool else None,
+            "cost_per_kg": self.cost_per_kg,
         }
 
 
@@ -482,6 +482,7 @@ async def build_slot_materials(db: AsyncSession, printer_id: int) -> list[SlotMa
         material_key: str,
         remaining: float,
         spool: SlotSpoolIdentity | None = None,
+        cost_per_kg: float | None = None,
     ) -> None:
         materials.append(
             SlotMaterial(
@@ -492,10 +493,13 @@ async def build_slot_materials(db: AsyncSession, printer_id: int) -> list[SlotMa
                 remaining_grams=remaining,
                 extruder=_extruder_side_for_ams(ams_id, ams_extruder_map, is_dual),
                 spool=spool,
+                cost_per_kg=cost_per_kg,
             )
         )
 
     if await _is_spoolman_mode(db):
+        from backend.app.services.spoolman_tracking import _spool_cost_per_gram
+
         sm_all = await db.execute(select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == printer_id))
         from backend.app.services.spoolman import (
             SpoolmanClientError,
@@ -530,12 +534,14 @@ async def build_slot_materials(db: AsyncSession, printer_id: int) -> list[SlotMa
                     remaining = max(0.0, float(total) - float(used))
             if remaining is None:
                 continue
+            per_gram = _spool_cost_per_gram(spool_dict)
             _append(
                 sa.ams_id,
                 sa.tray_id,
                 _material_identity_spoolman(spool_dict),
                 remaining,
                 _identity_from_spoolman(spool_dict),
+                per_gram * 1000.0 if per_gram is not None else None,
             )
         return materials
 
@@ -558,6 +564,7 @@ async def build_slot_materials(db: AsyncSession, printer_id: int) -> list[SlotMa
             _material_identity_internal(spool),
             max(0.0, label_weight - weight_used),
             _identity_from_internal(spool),
+            spool.cost_per_kg,
         )
     return materials
 

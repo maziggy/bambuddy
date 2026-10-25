@@ -162,11 +162,6 @@ def _color_from_hex(hex_str: str | None, fallback: Color = HexColor(0x808080)) -
         return fallback
 
 
-def _luminance(color: Color) -> float:
-    """Perceived luminance of a ReportLab Color (0–1, WCAG-style approximation)."""
-    return 0.299 * color.red + 0.587 * color.green + 0.114 * color.blue
-
-
 def _hex_code_label(rgba: str | None) -> str:
     """Format ``data.rgba`` as a printable ``#RRGGBB`` string for the label.
 

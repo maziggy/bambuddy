@@ -21,6 +21,7 @@ the same NULL-is-meaningful contract on the `/start` path.
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -69,7 +70,8 @@ async def sliced_library_file(db_session):
     route rejects rows whose file is missing from disk)."""
     from backend.app.models.library import LibraryFile
 
-    rel_path = "archive/library/files/attribution_probe.gcode.3mf"
+    # Unique: the checkout's library folder is shared by every xdist worker.
+    rel_path = f"archive/library/files/attribution_probe_{uuid4().hex}.gcode.3mf"
     abs_path = Path(app_settings.base_dir) / rel_path
     abs_path.parent.mkdir(parents=True, exist_ok=True)
     abs_path.write_bytes(b"probe")
@@ -164,6 +166,8 @@ class TestWebhookQueueAddAttribution:
                 key_prefix=key_prefix,
                 user_id=owner_id,
                 can_queue=True,
+                # Queueing an archive someone else made needs read access to it.
+                can_read_status=True,
             )
         )
         await db_session.commit()
@@ -174,11 +178,16 @@ class TestWebhookQueueAddAttribution:
     async def test_credits_the_key_owner(self, async_client: AsyncClient, db_session, test_engine, printer_and_archive):
         printer, archive = printer_and_archive
 
-        # The owner needs queue:create in their own right: a key is capped by
-        # its owner's permissions (#1894), so a bare account with no groups
-        # cannot queue through a key however its scope flags are set. This test
-        # is about who the row is credited to, not about the gate.
-        group = Group(name="queue-writers", description="t", permissions=["queue:create"], is_system=False)
+        # The owner needs the queue and archive permissions in their own right:
+        # a key is capped by its owner's permissions (#1894), so a bare account
+        # with no groups cannot queue through a key however its scope flags are
+        # set. This test is about who the row is credited to, not about the gate.
+        group = Group(
+            name="queue-writers",
+            description="t",
+            permissions=["queue:create", "archives:read_all", "archives:reprint_all"],
+            is_system=False,
+        )
         db_session.add(group)
         await db_session.flush()
         owner = User(username="keyowner", password_hash="x", is_active=True, groups=[group])

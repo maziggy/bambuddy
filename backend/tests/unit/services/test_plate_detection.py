@@ -178,21 +178,3 @@ class TestCalibrationStatus:
 
             pd_module.OPENCV_AVAILABLE = False
             assert pd_module.is_plate_detection_available() is False
-
-
-class TestDeleteCalibration:
-    """Tests for delete_calibration function."""
-
-    def test_delete_calibration_no_opencv(self):
-        """Verify delete_calibration returns False when OpenCV not available."""
-        with patch.dict("sys.modules", {"cv2": cv2_mock, "numpy": np_mock}):
-            import importlib
-
-            import backend.app.services.plate_detection as pd_module
-
-            importlib.reload(pd_module)
-
-            pd_module.OPENCV_AVAILABLE = False
-
-            result = pd_module.delete_calibration(1)
-            assert result is False

@@ -44,7 +44,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // and returns 401 — harmless (the catch swallows it) but noisy in the
   // network panel and wasteful. ThemeProvider is mounted inside
   // AuthProvider in App.tsx specifically so this hook is callable.
-  const { authEnabled, user, loading: authLoading } = useAuth();
+  const { authEnabled, user, loading: authLoading, hasPermission } = useAuth();
+  const readsAllSettings = hasPermission('settings:read');
 
   // Mode
   const [mode, setModeState] = useState<ThemeMode>(() => {
@@ -118,7 +119,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (authLoading) return;
     if (authEnabled && user === null) return;
-    api.getSettings().then((settings) => {
+    // The theme is part of what any signed-in user may read (useUiSettings).
+    (readsAllSettings ? api.getSettings() : api.getUiSettings()).then((settings) => {
       // Dark settings
       if (settings.dark_style) {
         setDarkStyleState(settings.dark_style as ThemeStyle);
@@ -149,7 +151,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // Re-fetch when auth state transitions (e.g. login completes); the
     // gate above short-circuits subsequent calls once we already have a
     // valid sync.
-  }, [authLoading, authEnabled, user]);
+  }, [authLoading, authEnabled, user, readsAllSettings]);
 
   // Apply theme classes based on current mode
   useEffect(() => {

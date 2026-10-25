@@ -15,6 +15,7 @@ from backend.app.services.camera import (
     _active_capture_pids,
     capture_camera_frame_bytes,
 )
+from backend.tests._fixtures.external_camera import INPUT_OPEN_LOG, stream_of
 
 
 @pytest.fixture(autouse=True)
@@ -36,6 +37,7 @@ class TestCapturePidRegistration:
         fake_process = MagicMock()
         fake_process.pid = 99999
         fake_process.returncode = 0
+        fake_process.stderr = stream_of(INPUT_OPEN_LOG)
 
         async def fake_communicate():
             # Snapshot what's in the set while "ffmpeg is running"
@@ -69,6 +71,7 @@ class TestCapturePidRegistration:
         fake_process = MagicMock()
         fake_process.pid = 88888
         fake_process.returncode = 1
+        fake_process.stderr = stream_of(b"some error\n")
 
         async def fake_communicate():
             return (b"", b"some error")
@@ -96,6 +99,7 @@ class TestCapturePidRegistration:
         fake_process = MagicMock()
         fake_process.pid = 77777
         fake_process.returncode = None
+        fake_process.stderr = asyncio.StreamReader()  # ffmpeg still connecting
         fake_process.kill = MagicMock()
 
         async def fake_communicate():

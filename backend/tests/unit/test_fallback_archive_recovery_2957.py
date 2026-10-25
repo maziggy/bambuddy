@@ -574,3 +574,82 @@ class TestPhotosSurviveRecovery:
         (stale / "snap.jpg").write_bytes(b"old")
 
         assert find_archive_photo(archive, "snap.jpg") == current / "snap.jpg"
+
+
+class TestARecoveredArchiveIsPricedAsAtStart:
+    """The precise cost estimate print start runs needs the 3MF, which a
+    fallback archive did not have then (COST-8)."""
+
+    async def _recover(self, test_engine, tmp_path, status: str, *, start_plates=None, gcode_path=None):
+        from unittest.mock import MagicMock
+
+        from backend.app import main as main_module
+
+        maker, printer_id, archive_id = await _seed(test_engine, tmp_path)
+        async with maker() as db:
+            archive = await db.get(PrintArchive, archive_id)
+            archive.status = status
+            if gcode_path:
+                archive.extra_data = {**archive.extra_data, "_print_data": {"filename": gcode_path}}
+            await db.commit()
+        source = _write_3mf(tmp_path / "temp" / DISPATCH_FILENAME)
+        with zipfile.ZipFile(source, "a") as zf:
+            zf.writestr("Metadata/plate_1.gcode", "; sliced plate 1")
+        estimate = MagicMock()
+
+        with (
+            patch.object(main_module, "async_session", maker),
+            patch.object(main_module, "_schedule_archive_cost_estimate", estimate),
+            patch.dict(main_module._active_prints, {(printer_id, DISPATCH_FILENAME): archive_id}, clear=True),
+            patch.dict(main_module._print_ams_mappings, {archive_id: [2]}, clear=True),
+            patch.dict(
+                main_module._print_plate_ids, {archive_id: 1} if start_plates is None else start_plates, clear=True
+            ),
+        ):
+            assert await main_module.try_recover_fallback_archive(printer_id, DISPATCH_FILENAME, source) is True
+        return estimate, printer_id, archive_id
+
+    async def test_while_it_prints(self, test_engine, tmp_path):
+        estimate, printer_id, archive_id = await self._recover(test_engine, tmp_path, "printing")
+
+        estimate.assert_called_once()
+        assert estimate.call_args.args[:2] == (printer_id, archive_id)
+        assert estimate.call_args.kwargs["ams_mapping"] == [2]
+        assert estimate.call_args.kwargs["plate_id"] == 1
+
+    async def test_not_once_the_print_has_ended(self, test_engine, tmp_path):
+        """Its end has priced it already; an estimate would undo that."""
+        estimate, _printer_id, _archive_id = await self._recover(test_engine, tmp_path, "failed")
+
+        estimate.assert_not_called()
+
+    async def test_a_print_bambuddy_did_not_dispatch_takes_the_plate_its_archive_read(self, test_engine, tmp_path):
+        """No start plate is known; the gcode path named plate 1."""
+        estimate, _printer_id, _archive_id = await self._recover(
+            test_engine, tmp_path, "printing", start_plates={}, gcode_path="/data/Metadata/plate_1.gcode"
+        )
+
+        assert estimate.call_args.kwargs["plate_id"] == 1
+
+    async def test_not_from_the_print_s_own_completion(self, test_engine, tmp_path):
+        """The archive still reads "printing" while its completion runs; the
+        completion prices it, and an estimate would race that."""
+        from unittest.mock import MagicMock
+
+        from backend.app import main as main_module
+
+        maker, printer_id, archive_id = await _seed(test_engine, tmp_path)
+        source = _write_3mf(tmp_path / "temp" / DISPATCH_FILENAME)
+        estimate = MagicMock()
+
+        with (
+            patch.object(main_module, "async_session", maker),
+            patch.object(main_module, "_schedule_archive_cost_estimate", estimate),
+            patch.object(main_module, "get_cached_3mf", lambda _printer_id, _name: source),
+            patch.dict(main_module._active_prints, {(printer_id, DISPATCH_FILENAME): archive_id}, clear=True),
+        ):
+            await main_module._recover_fallback_from_cache_before_eviction(printer_id, {"filename": DISPATCH_FILENAME})
+
+        async with maker() as db:
+            assert (await db.get(PrintArchive, archive_id)).file_path, "the archive was not recovered"
+        estimate.assert_not_called()

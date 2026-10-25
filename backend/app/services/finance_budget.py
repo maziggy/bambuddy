@@ -2,6 +2,7 @@
 
 import calendar
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException
@@ -12,6 +13,9 @@ from backend.app.models.finance import BudgetReservation, CostCenter, CostCenter
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
+
+if TYPE_CHECKING:
+    from backend.app.core.auth import ApiKeyActor
 
 
 async def is_billing_enabled(db: AsyncSession) -> bool:
@@ -154,7 +158,7 @@ async def validate_print_budget(
     *,
     cost_center_id: int | None,
     estimated_cost: float | None,
-    current_user: User | None,
+    current_user: "User | ApiKeyActor | None",
     quantity: int = 1,
     exclude_queue_item_id: int | None = None,
     exclude_reservation_source_type: str | None = None,

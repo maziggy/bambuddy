@@ -22,9 +22,21 @@ class ThumbnailResponse(BaseModel):
     timestamps: list[float] = Field(description="Timestamp for each thumbnail in seconds")
 
 
-class ProcessResponse(BaseModel):
-    """Processing result response."""
+class TimelapseJobResponse(BaseModel):
+    """A timelapse re-encode job."""
 
-    status: str = Field(description="Processing status: completed, error")
-    output_path: str | None = Field(default=None, description="Relative path to output file")
-    message: str = Field(description="Status message")
+    status: str = Field(description="running, completed, failed or cancelled")
+    progress: float | None = Field(default=None, description="Share done, 0.0 to 1.0; null before the first report")
+    output_path: str | None = Field(default=None, description="Relative path to the output file, once completed")
+    message: str | None = Field(default=None, description="Result message, once completed")
+    error: str | None = Field(default=None, description="Why it failed")
+
+    @classmethod
+    def from_job(cls, job) -> "TimelapseJobResponse":
+        return cls(
+            status=job.status,
+            progress=job.progress,
+            output_path=job.output_path,
+            message=job.message,
+            error=job.error,
+        )

@@ -1,28 +1,40 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Camera } from 'lucide-react';
+import { Loader2, Camera, RotateCcw } from 'lucide-react';
 import { createFrameDecoder, decodeImageBlob } from '../utils/qrDecode';
+
+/** Why the live view is off: the page isn't a secure origin, or no camera could be opened. */
+type CameraIssue = 'insecure' | 'unavailable';
+
+/**
+ * Live frames in a row a label must go unread before it counts as taken out of
+ * view: frames are at least 200 ms apart, so over a second. A label in front of
+ * the camera is not read in every frame, and a missed frame or two mustn't send
+ * it again.
+ */
+const OUT_OF_VIEW_FRAMES = 6;
 
 /**
  * Live in-page camera scanner (primary path). Continuously decodes the preview
- * frame with BarcodeDetector (→ jsQR fallback). Fast for QRs the user can frame
- * well; the photo-capture fallback covers small/hard ones this can't focus on.
- * Callbacks go through refs so the camera starts once and survives re-renders.
+ * frame with BarcodeDetector (→ jsQR fallback) and reports each frame it read:
+ * the QR payload, or null for none. Fast for QRs the user can frame well; the
+ * photo-capture fallback covers small/hard ones this can't focus on. Callbacks
+ * go through refs so the camera starts once and survives re-renders.
  */
 function LiveScanner({
-  onDecode,
+  onFrame,
   onError,
   paused,
 }: {
-  onDecode: (text: string) => void;
-  onError: () => void;
+  onFrame: (text: string | null) => void;
+  onError: (issue: CameraIssue) => void;
   paused: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const onDecodeRef = useRef(onDecode);
+  const onFrameRef = useRef(onFrame);
   const onErrorRef = useRef(onError);
   const pausedRef = useRef(paused);
-  onDecodeRef.current = onDecode;
+  onFrameRef.current = onFrame;
   onErrorRef.current = onError;
   pausedRef.current = paused;
 
@@ -47,7 +59,7 @@ function LiveScanner({
       busy = true;
       void decodeFrame(video, canvas)
         .then((value) => {
-          if (value && !cancelled) onDecodeRef.current(value);
+          if (!cancelled) onFrameRef.current(value || null);
         })
         // Whatever happened to this frame, the next one gets decoded.
         .catch(() => {})
@@ -58,7 +70,8 @@ function LiveScanner({
 
     const start = async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
-        onErrorRef.current();
+        // Browsers only offer the camera to a secure origin (HTTPS or localhost).
+        onErrorRef.current(window.isSecureContext ? 'unavailable' : 'insecure');
         return;
       }
       try {
@@ -81,9 +94,9 @@ function LiveScanner({
         await video.play().catch(() => {});
         raf = requestAnimationFrame(tick);
       } catch {
-        // Permission denied / no camera / insecure context — hide the live view;
-        // the photo-capture fallback covers all of these.
-        onErrorRef.current();
+        // Permission denied / no camera — the live view gives way to a hint;
+        // the photo-capture fallback covers both.
+        onErrorRef.current('unavailable');
       }
     };
 
@@ -101,7 +114,7 @@ function LiveScanner({
 interface QrSpoolScannerProps {
   /** A decoded QR payload, from the live view or a photo. The caller reads it and assigns. */
   onDecode: (text: string) => void;
-  /** The caller is acting on a scan: the live view pauses and both paths wait. */
+  /** The caller is acting on a scan, or isn't ready for one: the live view pauses and both paths wait. */
   busy: boolean;
   /** The caller's message about the last scan, e.g. a QR that is no spool label. */
   error: string | null;
@@ -117,10 +130,21 @@ interface QrSpoolScannerProps {
  */
 export function QrSpoolScanner({ onDecode, busy, error, targetLabel }: QrSpoolScannerProps) {
   const { t } = useTranslation();
-  const [cameraFailed, setCameraFailed] = useState(false);
+  const [cameraIssue, setCameraIssue] = useState<CameraIssue | null>(null);
   const [decoding, setDecoding] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // The payloads handed over, each with the live frame it was last read in.
+  // The live view goes on reading a label in front of it, and the caller has
+  // had its say on that one: a scan it refused, or a confirm the user
+  // cancelled, isn't sent again frame after frame -- nor each time another
+  // code in view (the maker's QR, the label next to it) is read in between.
+  // Taken out of view a moment and shown again, photographed, or Retry, it is
+  // sent again. Frames only count while the live view runs, so the time the
+  // caller spends on a scan doesn't take a label out of view.
+  const handedOverRef = useRef(new Map<string, number>());
+  const frameRef = useRef(0);
+  const [holdingPayload, setHoldingPayload] = useState(false);
   // A photo still decoding when the scanner closes (Back, Cancel) must not
   // reach a caller that has moved on.
   const mountedRef = useRef(true);
@@ -133,9 +157,29 @@ export function QrSpoolScanner({ onDecode, busy, error, targetLabel }: QrSpoolSc
 
   const isBusy = busy || decoding;
 
-  const handleDecode = (text: string) => {
+  const handOver = (text: string) => {
     setPhotoError(null);
     onDecode(text);
+    // Held only once the caller has it: had it thrown, the next frame offers
+    // the label again.
+    handedOverRef.current.set(text, frameRef.current);
+    setHoldingPayload(true);
+  };
+
+  const handleLiveFrame = (text: string | null) => {
+    const frame = ++frameRef.current;
+    if (!text) return;
+    const lastRead = handedOverRef.current.get(text);
+    if (lastRead !== undefined && frame - lastRead <= OUT_OF_VIEW_FRAMES) {
+      handedOverRef.current.set(text, frame); // still in front of the camera
+      return;
+    }
+    handOver(text);
+  };
+
+  const retry = () => {
+    handedOverRef.current.clear();
+    setHoldingPayload(false);
   };
 
   const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -148,7 +192,7 @@ export function QrSpoolScanner({ onDecode, busy, error, targetLabel }: QrSpoolSc
       const text = await decodeImageBlob(file);
       if (!mountedRef.current) return;
       if (!text) setPhotoError(t('inventory.qrAssign.noQrInPhoto'));
-      else handleDecode(text);
+      else handOver(text);
     } catch {
       if (mountedRef.current) setPhotoError(t('inventory.qrAssign.noQrInPhoto'));
     } finally {
@@ -162,13 +206,17 @@ export function QrSpoolScanner({ onDecode, busy, error, targetLabel }: QrSpoolSc
     <div className="space-y-3">
       {targetLabel && <p className="text-sm text-bambu-gray">{t('inventory.qrAssign.scanningTarget', { location: targetLabel })}</p>}
 
-      {/* Primary: live camera scan. Hidden once it fails (no camera /
-          permission denied) — the photo-capture fallback below covers it.
+      {/* Primary: live camera scan. When there is no camera to use, a hint
+          says why — the photo-capture fallback below covers every case.
           Phone width at most, so the photo button stays in view in a wide
           dialog too. */}
-      {!cameraFailed && (
+      {cameraIssue ? (
+        <p className="text-xs text-amber-400 text-center">
+          {t(cameraIssue === 'insecure' ? 'inventory.qrAssign.cameraNeedsHttps' : 'inventory.qrAssign.cameraUnavailable')}
+        </p>
+      ) : (
         <div className="relative mx-auto w-full max-w-sm">
-          <LiveScanner onDecode={handleDecode} onError={() => setCameraFailed(true)} paused={isBusy} />
+          <LiveScanner onFrame={handleLiveFrame} onError={setCameraIssue} paused={isBusy} />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="w-2/3 aspect-square border-2 border-bambu-green/70 rounded-xl" />
           </div>
@@ -197,6 +245,18 @@ export function QrSpoolScanner({ onDecode, busy, error, targetLabel }: QrSpoolSc
       </button>
 
       {message && <p className="text-xs text-red-400 text-center">{message}</p>}
+
+      {/* A label still in view was handed over already; scan it again on request. */}
+      {!cameraIssue && holdingPayload && !isBusy && (
+        <button
+          type="button"
+          onClick={retry}
+          className="mx-auto flex items-center gap-1.5 text-xs text-bambu-gray hover:text-white transition-colors"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          {t('common.retry')}
+        </button>
+      )}
     </div>
   );
 }

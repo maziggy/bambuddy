@@ -5321,6 +5321,8 @@ export default {
       invalidQr: 'Esse QR code não é uma etiqueta de carretel.',
       spoolmanLabel: 'É uma etiqueta do Spoolman, mas o inventário não usa o Spoolman.',
       takePhoto: 'Tirar foto',
+      cameraNeedsHttps: 'A câmera ao vivo precisa do Bambuddy aberto por HTTPS. Tire uma foto em vez disso.',
+      cameraUnavailable: 'Não foi possível abrir nenhuma câmera aqui. Tire uma foto em vez disso.',
       noQrInPhoto: 'Nenhum QR code encontrado na foto — tente novamente.',
       decoding: 'Lendo…',
       assignSuccess: 'Atribuído a {{location}}',

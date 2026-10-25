@@ -5120,6 +5120,8 @@ export default {
       invalidQr: '이 QR 코드는 스풀 라벨이 아닙니다.',
       spoolmanLabel: '이것은 Spoolman 라벨이지만, 현재 재고는 Spoolman을 사용하지 않습니다.',
       takePhoto: '사진 찍기',
+      cameraNeedsHttps: '실시간 카메라를 쓰려면 Bambuddy를 HTTPS로 열어야 합니다. 대신 사진을 찍으세요.',
+      cameraUnavailable: '카메라를 열 수 없습니다. 대신 사진을 찍으세요.',
       noQrInPhoto: '사진에서 QR 코드를 찾을 수 없음 — 다시 시도하세요.',
       decoding: '읽는 중…',
       assignSuccess: '{{location}}에 할당됨',

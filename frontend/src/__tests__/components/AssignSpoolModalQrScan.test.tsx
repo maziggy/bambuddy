@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { render } from '../utils';
+import { frames, render, stubLiveCamera } from '../utils';
 import { AssignSpoolModal } from '../../components/AssignSpoolModal';
 import { api } from '../../api/client';
 
@@ -88,6 +88,54 @@ describe('AssignSpoolModal QR scan', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('Spoolman: a refused scan is not sent again while its label stays in front of the camera (#1606 review)', async () => {
+    mocked.assignSpoolmanSlot.mockRejectedValue(new Error('Spoolman server is not reachable'));
+    stubLiveCamera('web+spoolman:s-12');
+    const onClose = vi.fn();
+    render(<AssignSpoolModal {...baseProps} onClose={onClose} spoolmanEnabled />);
+    await openScanner();
+
+    await waitFor(() => expect(mocked.assignSpoolmanSlot).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    await frames(4);
+
+    expect(mocked.assignSpoolmanSlot).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    // Why, in the scanner: a toast would sit under the dialog, and the kiosk shows none.
+    const why = screen.getByText('Failed to assign spool: Spoolman server is not reachable');
+    expect(screen.getByTestId('toast-viewport')).not.toContainElement(why);
+  });
+
+  it('a scan waits for the spool list rather than turning down a spool it has not loaded yet (#1606 review)', async () => {
+    let listed: (spools: unknown) => void = () => {};
+    mocked.getSpools.mockImplementation(() => new Promise((resolve) => { listed = resolve; }));
+    stubLiveCamera('https://bambuddy.local/inventory?spool=3');
+    render(<AssignSpoolModal {...baseProps} onClose={vi.fn()} />);
+    await openScanner();
+
+    await frames(2);
+    expect(screen.queryByText(/There is no spool #3/)).not.toBeInTheDocument();
+    listed([spool(3)]);
+
+    await waitFor(
+      () => expect(mocked.assignSpool).toHaveBeenCalledWith({ spool_id: 3, printer_id: 7, ams_id: 128, tray_id: 0, move: true }),
+      { timeout: 3000 },
+    );
+  });
+
+  it('Cancel on the material question sticks while the label stays in front of the camera (#1606 review)', async () => {
+    stubLiveCamera('https://bambuddy.local/inventory?spool=4'); // PETG, for a PLA slot
+    render(<AssignSpoolModal {...baseProps} onClose={vi.fn()} />);
+    await openScanner();
+
+    await screen.findByText('Material mismatch', {}, { timeout: 3000 });
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await frames(4);
+
+    expect(screen.queryByText('Material mismatch')).not.toBeInTheDocument();
+    expect(mocked.assignSpool).not.toHaveBeenCalled();
   });
 
   it('opens the scanner in the dialog, for the slot it was opened from', async () => {
@@ -208,6 +256,26 @@ describe('AssignSpoolModal QR scan', () => {
       }),
     );
     await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it.each([
+    ['empty', 'physical' as const],
+    ['holding a spool it cannot identify', 'reset' as const],
+  ])('a slot reporting no material (%s) has nothing to mismatch: picked or scanned, no question', async (_kind, emptyKind) => {
+    const user = userEvent.setup();
+    const slot = { ...baseProps, trayInfo: { type: '', color: '', location: 'AMS HT A', emptyKind } };
+    const { unmount } = render(<AssignSpoolModal {...slot} onClose={vi.fn()} />);
+
+    await user.click(await screen.findByRole('button', { name: /Polymaker PETG HF/ }));
+    await user.click(screen.getByRole('button', { name: /^assign spool$/i }));
+    await waitFor(() => expect(mocked.assignSpool).toHaveBeenCalledTimes(1));
+    unmount();
+
+    render(<AssignSpoolModal {...slot} onClose={vi.fn()} />);
+    await openScanner();
+    scan('https://bambuddy.local/inventory?spool=4'); // PETG
+    await waitFor(() => expect(mocked.assignSpool).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('Material mismatch')).not.toBeInTheDocument();
   });
 
   it('a spool picked from the list is assigned as before, without move', async () => {

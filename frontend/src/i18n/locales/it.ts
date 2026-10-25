@@ -5321,6 +5321,8 @@ export default {
       invalidQr: 'Questo codice QR non è un’etichetta di bobina.',
       spoolmanLabel: 'È un’etichetta di Spoolman, ma l’inventario non usa Spoolman.',
       takePhoto: 'Scatta foto',
+      cameraNeedsHttps: 'La fotocamera dal vivo richiede Bambuddy aperto via HTTPS. Scatta invece una foto.',
+      cameraUnavailable: 'Non è stato possibile aprire una fotocamera qui. Scatta invece una foto.',
       noQrInPhoto: 'Nessun codice QR trovato nella foto — riprova.',
       decoding: 'Lettura…',
       assignSuccess: 'Assegnata a {{location}}',

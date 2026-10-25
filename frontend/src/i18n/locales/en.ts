@@ -5379,6 +5379,8 @@ export default {
       invalidQr: 'That QR code is not a spool label.',
       spoolmanLabel: 'That is a Spoolman label, but the inventory is not using Spoolman.',
       takePhoto: 'Take photo',
+      cameraNeedsHttps: 'The live camera needs Bambuddy opened over HTTPS. Take a photo instead.',
+      cameraUnavailable: 'No camera could be opened here. Take a photo instead.',
       noQrInPhoto: 'No QR code found in the photo — try again.',
       decoding: 'Reading…',
       assignSuccess: 'Assigned to {{location}}',

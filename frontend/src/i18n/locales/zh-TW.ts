@@ -5327,6 +5327,8 @@ export default {
       invalidQr: '此 QR 碼不是耗材標籤。',
       spoolmanLabel: '這是 Spoolman 標籤，但耗材庫存未使用 Spoolman。',
       takePhoto: '拍照',
+      cameraNeedsHttps: '即時相機需要透過 HTTPS 開啟 Bambuddy。請改為拍照。',
+      cameraUnavailable: '無法開啟相機。請改為拍照。',
       noQrInPhoto: '照片中找不到 QR 碼 — 請重試。',
       decoding: '正在讀取…',
       assignSuccess: '已指派到 {{location}}',

@@ -5327,6 +5327,8 @@ export default {
       invalidQr: '该二维码不是耗材标签。',
       spoolmanLabel: '这是 Spoolman 标签，但耗材库存未使用 Spoolman。',
       takePhoto: '拍照',
+      cameraNeedsHttps: '实时相机需要通过 HTTPS 打开 Bambuddy。请改为拍照。',
+      cameraUnavailable: '无法打开相机。请改为拍照。',
       noQrInPhoto: '照片中未找到二维码 — 请重试。',
       decoding: '正在读取…',
       assignSuccess: '已分配到 {{location}}',

@@ -5322,6 +5322,8 @@ export default {
       invalidQr: 'Bu QR kodu bir makara etiketi değil.',
       spoolmanLabel: 'Bu bir Spoolman etiketi, ancak envanter Spoolman kullanmıyor.',
       takePhoto: 'Fotoğraf çek',
+      cameraNeedsHttps: 'Canlı kamera için Bambuddy\'nin HTTPS ile açılması gerekir. Bunun yerine fotoğraf çek.',
+      cameraUnavailable: 'Burada kamera açılamadı. Bunun yerine fotoğraf çek.',
       noQrInPhoto: 'Fotoğrafta QR kodu bulunamadı — tekrar deneyin.',
       decoding: 'Okunuyor…',
       assignSuccess: '{{location}} konumuna atandı',

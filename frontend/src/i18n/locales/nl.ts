@@ -5377,6 +5377,8 @@ export default {
       invalidQr: 'Deze QR-code is geen spoellabel.',
       spoolmanLabel: 'Dit is een Spoolman-label, maar de spoelvoorraad gebruikt Spoolman niet.',
       takePhoto: 'Foto maken',
+      cameraNeedsHttps: 'De live camera werkt alleen als Bambuddy via HTTPS is geopend. Maak in plaats daarvan een foto.',
+      cameraUnavailable: 'Er kon hier geen camera worden geopend. Maak in plaats daarvan een foto.',
       noQrInPhoto: 'Geen QR-code gevonden in de foto — probeer het opnieuw.',
       decoding: 'Bezig met lezen…',
       assignSuccess: 'Toegewezen aan {{location}}',

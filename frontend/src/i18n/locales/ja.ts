@@ -5335,6 +5335,8 @@ export default {
       invalidQr: 'このQRコードはスプールラベルではありません。',
       spoolmanLabel: 'これは Spoolman のラベルですが、在庫管理は Spoolman を使用していません。',
       takePhoto: '写真を撮る',
+      cameraNeedsHttps: 'ライブカメラを使うには Bambuddy を HTTPS で開く必要があります。代わりに写真を撮ってください。',
+      cameraUnavailable: 'カメラを開けませんでした。代わりに写真を撮ってください。',
       noQrInPhoto: '写真にQRコードが見つかりませんでした — もう一度お試しください。',
       decoding: '読み取り中…',
       assignSuccess: '{{location}} に割り当てました',

@@ -7,6 +7,8 @@
  * and assign that spool to the chosen target — no navigation, no edit modal.
  */
 
+import type { SlotFilament } from './assignMismatch';
+
 export type AssignTarget =
   | {
       kind: 'ams';
@@ -17,6 +19,8 @@ export type AssignTarget =
       isExternal: boolean;
       /** Human-readable slot label, e.g. "A2", "HT-A", "Ext". */
       label: string;
+      /** What the printer reported in the slot when it was picked, for the material check. */
+      filament: SlotFilament;
     }
   | {
       kind: 'storage';

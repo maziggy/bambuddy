@@ -2,14 +2,19 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, QrCode, Cpu, MapPin, ArrowLeft } from 'lucide-react';
-import { api, type AMSTray } from '../api/client';
+import { api, ApiError, type AMSTray } from '../api/client';
 import { Button } from './Button';
+import { MaterialMismatchConfirm } from './MaterialMismatchConfirm';
 import { QrSpoolScanner } from './QrSpoolScanner';
 import { useToast } from '../contexts/ToastContext';
+import { useUiSettings } from '../hooks/useUiSettings';
 import { formatSlotLabel, getEmptySlotKind } from '../utils/amsHelpers';
+import { findMaterialMismatch, type MaterialMismatch } from '../utils/assignMismatch';
 import { getSwatchStyle } from '../utils/colors';
 import { inventoryLocationsQueryKey, invalidateInventoryLocations } from '../utils/inventoryQueries';
 import { parseSpoolQr, scannedSpoolId, type AssignTarget } from '../utils/qrAssignTarget';
+
+type AmsTarget = Extract<AssignTarget, { kind: 'ams' }>;
 
 interface QrAssignTargetModalProps {
   isOpen: boolean;
@@ -87,8 +92,16 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
   const [creatingLocation, setCreatingLocation] = useState(false);
   const [target, setTarget] = useState<AssignTarget | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Looking the scanned spool up before an AMS assign, and a material mismatch
+  // waiting on the confirm — as in the Assign Spool dialog.
+  const [checking, setChecking] = useState(false);
+  const [mismatch, setMismatch] = useState<{ spoolId: number; tg: AmsTarget; details: MaterialMismatch } | null>(null);
   // Synchronous in-flight guard: mutation.isPending only updates next render.
   const inFlightRef = useRef(false);
+  // Counts the dialog's closings and openings: a spool lookup still running
+  // when the dialog closed (Cancel, X, the backdrop) must not go on to assign
+  // the spool.
+  const openingRef = useRef(0);
 
   useEffect(() => {
     if (isOpen) {
@@ -99,9 +112,16 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
       setCreatingLocation(false);
       setTarget(null);
       setError(null);
+      setChecking(false);
+      setMismatch(null);
       inFlightRef.current = false;
     }
+    return () => {
+      openingRef.current += 1;
+    };
   }, [isOpen]);
+
+  const { data: settings } = useUiSettings({ enabled: isOpen });
 
   const { data: printers, isLoading: printersLoading } = useQuery({
     queryKey: ['printers'],
@@ -152,29 +172,37 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
   }, [status, t]);
 
   const assignMutation = useMutation({
-    mutationFn: async ({ spoolId, tg }: { spoolId: number; tg: AssignTarget }) => {
+    mutationFn: async ({ spoolId, tg }: { spoolId: number; tg: AssignTarget }): Promise<{ pendingConfig: boolean }> => {
       if (tg.kind === 'ams') {
         // A spool lives in one slot at a time. `move` has the backend take it
         // out of its other slot(s) in the same transaction as the assign, so a
         // failure leaves it where it was rather than in no slot.
         if (spoolmanMode) {
           await api.assignSpoolmanSlot({ spoolman_spool_id: spoolId, printer_id: tg.printerId, ams_id: tg.amsId, tray_id: tg.trayId, move: true });
-        } else {
-          await api.assignSpool({ spool_id: spoolId, printer_id: tg.printerId, ams_id: tg.amsId, tray_id: tg.trayId, move: true });
+          return { pendingConfig: false };
         }
-      } else if (spoolmanMode) {
+        const assignment = await api.assignSpool({ spool_id: spoolId, printer_id: tg.printerId, ams_id: tg.amsId, tray_id: tg.trayId, move: true });
+        return { pendingConfig: !!assignment.pending_config };
+      }
+      if (spoolmanMode) {
         await api.updateSpoolmanInventorySpool(spoolId, { location_id: tg.locationId });
       } else {
         await api.updateSpool(spoolId, { location_id: tg.locationId });
       }
+      return { pendingConfig: false };
     },
-    onSuccess: (_data, { tg }) => {
+    onSuccess: ({ pendingConfig }, { tg }) => {
       // Intentionally do NOT clear inFlightRef here: the modal closes right
       // after, and leaving it set blocks any stale in-flight live-scan decode
       // from firing a second assignment in the brief window before unmount.
       // It's reset wholesale when the modal next opens (and in onError for retry).
+      //
+      // A slot that read empty at assign time is configured when the spool goes
+      // in (#1680); "Assigned" would read as if the slot were set up already.
       showToast(
-        t(tg.kind === 'ams' ? 'inventory.qrAssign.assignSuccess' : 'inventory.qrAssign.storageSuccess', { location: targetLocationLabel(tg) }),
+        pendingConfig
+          ? t('inventory.assignPendingInsert')
+          : t(tg.kind === 'ams' ? 'inventory.qrAssign.assignSuccess' : 'inventory.qrAssign.storageSuccess', { location: targetLocationLabel(tg) }),
         'success',
       );
       queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
@@ -186,6 +214,8 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
         // stale tray state until the next poll. Best-effort.
         api.refreshPrinterStatus(tg.printerId).catch(() => {});
         queryClient.invalidateQueries({ queryKey: ['printerStatus', tg.printerId] });
+        // A Spoolman move clears the fallback tag linking the spool to its old slot.
+        if (spoolmanMode) queryClient.invalidateQueries({ queryKey: ['linked-spools'] });
       } else {
         // The move changes per-location spool_count, which the Locations UI shows.
         invalidateInventoryLocations(queryClient);
@@ -194,7 +224,10 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
     },
     onError: (error: Error, { tg }) => {
       inFlightRef.current = false;
-      showToast(`${t('inventory.qrAssign.assignFailed', { location: targetLocationLabel(tg) })}: ${error.message}`, 'error');
+      // Said in the dialog, which stays open: a toast sits under its backdrop,
+      // the SpoolBuddy kiosk shows none, and the scanner doesn't send a label
+      // again while it stays in view.
+      setError(`${t('inventory.qrAssign.assignFailed', { location: targetLocationLabel(tg) })}: ${error.message}`);
     },
   });
 
@@ -202,7 +235,7 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
 
   const printerName = printers?.find((p) => p.id === effectivePrinterId)?.name ?? '';
   const canStart = tab === 'ams' ? selectedSlot !== null && effectivePrinterId !== null : pickedLocation !== null;
-  const isBusy = assignMutation.isPending;
+  const isBusy = assignMutation.isPending || checking || mismatch !== null;
 
   // A freshly created location may not be in the fetched list yet, so make sure
   // the current pick is always offered.
@@ -241,6 +274,10 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
         trayId: selectedSlot.trayId,
         isExternal: selectedSlot.isExternal,
         label: selectedSlot.label,
+        filament: {
+          type: selectedSlot.tray?.tray_type || '',
+          profile: selectedSlot.tray?.tray_sub_brands || undefined,
+        },
       };
     } else {
       if (!pickedLocation) return;
@@ -251,10 +288,46 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
     setStep('scan');
   };
 
+  // A built-in spool going into an AMS slot is looked up first, as the Assign
+  // Spool dialog has it at hand: a missing or archived spool says so, and one
+  // whose material doesn't fit the slot asks before it is assigned. Spoolman
+  // spools go straight to the backend, which checks them, as in that dialog.
+  const checkAndAssign = async (spoolId: number, tg: AmsTarget) => {
+    const opening = openingRef.current;
+    setChecking(true);
+    try {
+      const spool = await api.getSpool(spoolId);
+      if (openingRef.current !== opening) return; // the dialog was closed meanwhile
+      if (spool.archived_at) {
+        setError(t('inventory.spoolIdArchived', { id: spoolId }));
+        inFlightRef.current = false;
+        return;
+      }
+      const details = settings?.disable_filament_warnings ? null : findMaterialMismatch(spool, tg.filament);
+      if (details) {
+        setMismatch({ spoolId, tg, details }); // still in flight until confirmed or cancelled
+        return;
+      }
+      assignMutation.mutate({ spoolId, tg });
+    } catch (err) {
+      if (openingRef.current !== opening) return;
+      setError(
+        err instanceof ApiError && err.status === 404
+          ? t('inventory.spoolIdNotFound', { id: spoolId })
+          : err instanceof Error
+            ? err.message
+            : t('inventory.assignFailed'),
+      );
+      inFlightRef.current = false;
+    } finally {
+      setChecking(false);
+    }
+  };
+
   // Shared by the live scanner and the photo fallback: validate the decoded QR
   // and fire the assignment (guarded so one scan can't assign twice).
   const handleDecode = (text: string) => {
-    if (inFlightRef.current || assignMutation.isPending || !target) return;
+    if (inFlightRef.current || isBusy || !target) return;
     const scanned = parseSpoolQr(text);
     if (!scanned) {
       setError(t('inventory.qrAssign.invalidQr'));
@@ -267,10 +340,28 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
     }
     setError(null);
     inFlightRef.current = true;
+    if (target.kind === 'ams' && !spoolmanMode) {
+      void checkAndAssign(id, target);
+      return;
+    }
     assignMutation.mutate({ spoolId: id, tg: target });
   };
 
+  const confirmMismatch = () => {
+    if (!mismatch) return;
+    setMismatch(null);
+    assignMutation.mutate({ spoolId: mismatch.spoolId, tg: mismatch.tg });
+  };
+
+  // The scanner keeps this label from coming straight back; another label, a
+  // photo or Retry starts over.
+  const cancelMismatch = () => {
+    setMismatch(null);
+    inFlightRef.current = false;
+  };
+
   return (
+    <>
     <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
@@ -456,5 +547,15 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: Q
         </div>
       </div>
     </div>
+
+    {mismatch && (
+      <MaterialMismatchConfirm
+        mismatch={mismatch.details}
+        location={targetLocationLabel(mismatch.tg)}
+        onConfirm={confirmMismatch}
+        onCancel={cancelMismatch}
+      />
+    )}
+    </>
   );
 }

@@ -5111,6 +5111,8 @@ export default {
       invalidQr: "Этот QR-код не является этикеткой катушки.",
       spoolmanLabel: 'Это этикетка Spoolman, а учёт катушек не использует Spoolman.',
       takePhoto: "Сделать фото",
+      cameraNeedsHttps: 'Для камеры в реальном времени откройте Bambuddy по HTTPS. Или сделайте фото.',
+      cameraUnavailable: 'Не удалось открыть камеру. Сделайте фото вместо этого.',
       noQrInPhoto: "QR-код на фото не найден — попробуйте снова.",
       decoding: "Чтение…",
       assignSuccess: "Назначено в {{location}}",

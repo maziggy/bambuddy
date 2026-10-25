@@ -5375,6 +5375,8 @@ errors: {
       invalidQr: 'Den QR-koden är inte en rulletikett.',
       spoolmanLabel: 'Det är en Spoolman-etikett, men inventariet använder inte Spoolman.',
       takePhoto: 'Ta foto',
+      cameraNeedsHttps: 'Livekameran kräver att Bambuddy öppnas via HTTPS. Ta ett foto i stället.',
+      cameraUnavailable: 'Ingen kamera kunde öppnas här. Ta ett foto i stället.',
       noQrInPhoto: 'Ingen QR-kod hittades i fotot — försök igen.',
       decoding: 'Läser…',
       assignSuccess: 'Tilldelad till {{location}}',

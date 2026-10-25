@@ -5336,6 +5336,8 @@ export default {
       invalidQr: 'Dieser QR-Code ist kein Spulenetikett.',
       spoolmanLabel: 'Das ist ein Spoolman-Etikett, aber das Inventar nutzt Spoolman nicht.',
       takePhoto: 'Foto aufnehmen',
+      cameraNeedsHttps: 'Die Live-Kamera braucht Bambuddy über HTTPS. Mach stattdessen ein Foto.',
+      cameraUnavailable: 'Hier ließ sich keine Kamera öffnen. Mach stattdessen ein Foto.',
       noQrInPhoto: 'Kein QR-Code im Foto gefunden — versuche es erneut.',
       decoding: 'Wird gelesen…',
       assignSuccess: 'Zugewiesen zu {{location}}',

@@ -1,17 +1,44 @@
 /**
- * Tests for the scan-to-location target picker (#1574). The scan step uses a
- * native-camera photo capture (file input), so here we only assert the target
- * selection + transition to the photo step; decoding a captured image is a
- * platform path not exercisable in jsdom.
+ * Tests for the scan-to-location dialog (#1574): picking a target, and what a
+ * scan does. jsdom has no camera, so scans come either from the photo fallback
+ * or from a stubbed live camera, with the platform decoder stubbed to read a
+ * given payload.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen, fireEvent, render, waitFor } from '../utils';
+import { screen, fireEvent, frames, render, stubLiveCamera, waitFor } from '../utils';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { QrAssignTargetModal } from '../../components/QrAssignTargetModal';
 
 function noop() {}
+
+/** A1 holds PLA, so a spool of another material makes the dialog ask. */
+function slotA1HoldsPla() {
+  server.use(
+    http.get('/api/v1/printers/1/status', () =>
+      HttpResponse.json({
+        ams: [
+          {
+            id: 0,
+            is_ams_ht: false,
+            tray: [
+              { id: 0, tray_type: 'PLA', tray_sub_brands: 'PLA Basic', tray_color: 'FF0000FF', remain: 50, state: 11, exists: true },
+              { id: 1 },
+              { id: 2 },
+              { id: 3 },
+            ],
+          },
+        ],
+        vt_tray: [],
+      }),
+    ),
+  );
+}
+
+function inventorySpool(id: number, extra: Record<string, unknown> = {}) {
+  return { id, material: 'PLA', subtype: 'Basic', brand: 'Polymaker', archived_at: null, slicer_filament_name: null, ...extra };
+}
 
 /**
  * jsdom has no camera, so a scan goes through the photo fallback: the platform
@@ -171,11 +198,14 @@ describe('QrAssignTargetModal', () => {
           unassigned.push(request.url);
           return HttpResponse.json({ id: 0 });
         }),
+        // The built-in inventory looks a scanned spool up before an AMS assign.
+        http.get('/api/v1/inventory/spools/:id', ({ params }) => HttpResponse.json(inventorySpool(Number(params.id)))),
       );
     });
 
     afterEach(() => {
       vi.unstubAllGlobals();
+      vi.restoreAllMocks();
     });
 
     it('built-in: one request moves the spool, with no unassign before or after (#1574)', async () => {
@@ -258,9 +288,138 @@ describe('QrAssignTargetModal', () => {
     });
 
     it('a failed move keeps the scan step open', async () => {
+      let posts = 0;
       server.use(
+        http.post('/api/v1/inventory/assignments', () => {
+          posts += 1;
+          return HttpResponse.json({ detail: 'Printer not found' }, { status: 404 });
+        }),
+      );
+      stubPhotoDecoder('https://bambuddy.local/inventory?spool=42');
+      const onClose = vi.fn();
+      render(<QrAssignTargetModal isOpen onClose={onClose} spoolmanMode={false} />);
+
+      await openScanStepForSlotA1();
+      pickPhoto();
+
+      await waitFor(() => expect(posts).toBe(1));
+      // The take-photo button is disabled while the request runs, so it being
+      // enabled again means the failed request has settled.
+      await waitFor(() => expect(screen.getByRole('button', { name: /take photo/i })).toBeEnabled());
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByText('Scan a spool QR')).toBeInTheDocument();
+      // Why, in the dialog: a toast would sit under its backdrop, and the kiosk shows none.
+      const why = screen.getByText('Could not assign to X1C · A1: Printer not found');
+      expect(screen.getByTestId('toast-viewport')).not.toContainElement(why);
+    });
+
+    it('built-in: closing the dialog while the spool is looked up assigns nothing (#1606 review)', async () => {
+      let lookedUp = false;
+      let answer: () => void = () => {};
+      let posts = 0;
+      server.use(
+        http.get('/api/v1/inventory/spools/:id', async () => {
+          lookedUp = true;
+          await new Promise<void>((resolve) => { answer = resolve; });
+          return HttpResponse.json(inventorySpool(42));
+        }),
+        http.post('/api/v1/inventory/assignments', () => {
+          posts += 1;
+          return HttpResponse.json({ id: 1, spool_id: 42, printer_id: 1, ams_id: 0, tray_id: 0 });
+        }),
+      );
+      stubPhotoDecoder('https://bambuddy.local/inventory?spool=42');
+      // Both pages that open the dialog unmount it when it closes.
+      const { unmount } = render(<QrAssignTargetModal isOpen onClose={noop} spoolmanMode={false} />);
+
+      await openScanStepForSlotA1();
+      pickPhoto();
+      await waitFor(() => expect(lookedUp).toBe(true));
+      unmount();
+      answer();
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(posts).toBe(0);
+    });
+
+    it('a refused assign is not sent again while its label stays in front of the camera (#1606 review)', async () => {
+      let posts = 0;
+      server.use(
+        http.post('/api/v1/spoolman/inventory/slot-assignments', () => {
+          posts += 1;
+          return HttpResponse.json({ detail: 'Cannot assign an archived spool' }, { status: 400 });
+        }),
+      );
+      stubLiveCamera('https://bambuddy.local/inventory?spool=42');
+      render(<QrAssignTargetModal isOpen onClose={noop} spoolmanMode />);
+
+      await openScanStepForSlotA1();
+      await waitFor(() => expect(posts).toBe(1), { timeout: 3000 });
+      await frames(4);
+
+      expect(posts).toBe(1);
+      // Asked for, it goes again.
+      fireEvent.click(await screen.findByRole('button', { name: /retry/i }));
+      await waitFor(() => expect(posts).toBe(2), { timeout: 3000 });
+    });
+
+    it('built-in: a spool of another material asks first, and Assign Anyway moves it', async () => {
+      slotA1HoldsPla();
+      let body: unknown = null;
+      server.use(
+        http.get('/api/v1/inventory/spools/:id', () => HttpResponse.json(inventorySpool(42, { material: 'PETG', subtype: 'HF' }))),
+        http.post('/api/v1/inventory/assignments', async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json({ id: 1, spool_id: 42, printer_id: 1, ams_id: 0, tray_id: 0 });
+        }),
+      );
+      stubPhotoDecoder('https://bambuddy.local/inventory?spool=42');
+      const onClose = vi.fn();
+      render(<QrAssignTargetModal isOpen onClose={onClose} spoolmanMode={false} />);
+
+      await openScanStepForSlotA1();
+      pickPhoto();
+
+      expect(await screen.findByText('Material mismatch')).toBeInTheDocument();
+      expect(screen.getByText(/"PETG" does not match the tray material "PLA"/)).toBeInTheDocument();
+      expect(body).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Assign Anyway' }));
+
+      await waitFor(() => expect(onClose).toHaveBeenCalled());
+      expect(body).toEqual({ spool_id: 42, printer_id: 1, ams_id: 0, tray_id: 0, move: true });
+    });
+
+    it('built-in: Cancel on the material question sticks while the label stays in view (#1606 review)', async () => {
+      slotA1HoldsPla();
+      let posts = 0;
+      server.use(
+        http.get('/api/v1/inventory/spools/:id', () => HttpResponse.json(inventorySpool(42, { material: 'PETG' }))),
+        http.post('/api/v1/inventory/assignments', () => {
+          posts += 1;
+          return HttpResponse.json({});
+        }),
+      );
+      stubLiveCamera('https://bambuddy.local/inventory?spool=42');
+      render(<QrAssignTargetModal isOpen onClose={noop} spoolmanMode={false} />);
+
+      await openScanStepForSlotA1();
+      await screen.findByText('Material mismatch', {}, { timeout: 3000 });
+      // The question's own Cancel comes after the dialog's in the page.
+      const cancels = screen.getAllByRole('button', { name: 'Cancel' });
+      fireEvent.click(cancels[cancels.length - 1]);
+      await frames(4);
+
+      expect(screen.queryByText('Material mismatch')).not.toBeInTheDocument();
+      expect(posts).toBe(0);
+    });
+
+    it('built-in: with filament warnings off, a spool of another material is assigned without asking', async () => {
+      slotA1HoldsPla();
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json({ disable_filament_warnings: true })),
+        http.get('/api/v1/inventory/spools/:id', () => HttpResponse.json(inventorySpool(42, { material: 'PETG' }))),
         http.post('/api/v1/inventory/assignments', () =>
-          HttpResponse.json({ detail: 'Spool not found' }, { status: 404 }),
+          HttpResponse.json({ id: 1, spool_id: 42, printer_id: 1, ams_id: 0, tray_id: 0 }),
         ),
       );
       stubPhotoDecoder('https://bambuddy.local/inventory?spool=42');
@@ -270,11 +429,45 @@ describe('QrAssignTargetModal', () => {
       await openScanStepForSlotA1();
       pickPhoto();
 
-      // The take-photo button is disabled while the request runs, so it being
-      // enabled again means the failed request has settled.
-      await waitFor(() => expect(screen.getByRole('button', { name: /take photo/i })).toBeEnabled());
-      expect(onClose).not.toHaveBeenCalled();
-      expect(screen.getByText('Scan a spool QR')).toBeInTheDocument();
+      await waitFor(() => expect(onClose).toHaveBeenCalled());
+      expect(screen.queryByText('Material mismatch')).not.toBeInTheDocument();
+    });
+
+    it('built-in: a slot that will configure when the spool goes in says so (#1680)', async () => {
+      server.use(
+        http.post('/api/v1/inventory/assignments', () =>
+          HttpResponse.json({ id: 1, spool_id: 42, printer_id: 1, ams_id: 0, tray_id: 0, pending_config: true }),
+        ),
+      );
+      stubPhotoDecoder('https://bambuddy.local/inventory?spool=42');
+      render(<QrAssignTargetModal isOpen onClose={noop} spoolmanMode={false} />);
+
+      await openScanStepForSlotA1();
+      pickPhoto();
+
+      expect(await screen.findByText('Assigned. Slot will configure when you insert the spool.')).toBeInTheDocument();
+    });
+
+    it.each([
+      ['archived', () => HttpResponse.json(inventorySpool(42, { archived_at: '2026-01-01T00:00:00Z' })), /Spool #42 is archived/],
+      ['missing', () => HttpResponse.json({ detail: 'Spool not found' }, { status: 404 }), /There is no spool #42/],
+    ])('built-in: a %s spool says so, and nothing is assigned', async (_kind, reply, message) => {
+      let posts = 0;
+      server.use(
+        http.get('/api/v1/inventory/spools/:id', reply),
+        http.post('/api/v1/inventory/assignments', () => {
+          posts += 1;
+          return HttpResponse.json({});
+        }),
+      );
+      stubPhotoDecoder('https://bambuddy.local/inventory?spool=42');
+      render(<QrAssignTargetModal isOpen onClose={noop} spoolmanMode={false} />);
+
+      await openScanStepForSlotA1();
+      pickPhoto();
+
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(posts).toBe(0);
     });
   });
 });

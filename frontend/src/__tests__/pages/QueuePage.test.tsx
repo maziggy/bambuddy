@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { QueuePage } from '../../pages/QueuePage';
@@ -255,6 +255,63 @@ describe('QueuePage', () => {
       render(<QueuePage />);
       await screen.findByText('Test Print 1');
       expect(screen.queryByText(/printed in .*, the file asks for/)).not.toBeInTheDocument();
+    });
+
+    it('links a File Manager job to the File Manager, pointing at the file (#3336)', async () => {
+      server.use(
+        http.get('/api/v1/queue/', () =>
+          HttpResponse.json([
+            { ...mockQueueItems[0], id: 90, archive_id: null, archive_name: null, library_file_id: 13, library_file_name: 'From the library' },
+          ]),
+        ),
+      );
+
+      render(<QueuePage />);
+      await screen.findByText('From the library');
+
+      // /library is no route at all: the page came up empty.
+      expect(screen.getByTitle('View in File Manager')).toHaveAttribute('href', '/files?highlight=13');
+    });
+
+    it('links an archive job to its archive', async () => {
+      render(<QueuePage />);
+      await screen.findByText('Test Print 1');
+
+      expect(screen.getAllByTitle('View archive').map((a) => a.getAttribute('href'))).toContain('/archives?highlight=1');
+    });
+
+    describe('larger thumbnail on hover (#3313)', () => {
+      const realMatchMedia = window.matchMedia;
+      beforeEach(() => {
+        window.matchMedia = ((query: string) => ({ ...realMatchMedia(query), matches: true })) as typeof window.matchMedia;
+      });
+      afterEach(() => {
+        window.matchMedia = realMatchMedia;
+      });
+
+      function hoverThumbnail(archiveId: number) {
+        const thumb = document.querySelector(`img[src*="/archives/${archiveId}/thumbnail"]`) as HTMLElement;
+        fireEvent.mouseEnter(thumb.parentElement as HTMLElement);
+      }
+
+      it('shows on a queue card', async () => {
+        render(<QueuePage />);
+        await screen.findByText('Test Print 1');
+
+        hoverThumbnail(1);
+
+        expect(screen.getByTestId('thumbnail-hover-preview').getAttribute('src')).toContain('/archives/1/thumbnail');
+      });
+
+      it('shows on a history row', async () => {
+        render(<QueuePage />);
+        await userEvent.setup().click(await screen.findByRole('button', { name: /^History/ }));
+        await screen.findByText('Completed Print');
+
+        hoverThumbnail(3);
+
+        expect(screen.getByTestId('thumbnail-hover-preview').getAttribute('src')).toContain('/archives/3/thumbnail');
+      });
     });
 
     it('shows the queue override colour instead of the original 3MF colour (#3132)', async () => {

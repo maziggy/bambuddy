@@ -205,6 +205,22 @@ class TestSpoolmanClient:
             assert call_kwargs["remaining_weight"] == 500.0  # 50% of 1000g
 
     @pytest.mark.asyncio
+    async def test_a_new_spool_gets_its_product_profile_default(self, client, sample_tray, mock_filament):
+        """The spool the AMS sync adds is handed to the profile default (#1326)."""
+        created = {"id": 99}
+        fill = AsyncMock()
+        with (
+            patch.object(client, "find_spool_by_tag", AsyncMock(return_value=None)),
+            patch.object(client, "_find_or_create_filament", AsyncMock(return_value=mock_filament)),
+            patch.object(client, "create_spool", AsyncMock(return_value=created)),
+            patch("backend.app.services.filament_profile_default.fill_auto_added_spoolman_spool", fill),
+        ):
+            assert await client.sync_ams_tray(sample_tray, "TestPrinter", _NoCatalog()) is created
+
+        # The tray names its preset (GFA00): the default's is not wanted.
+        fill.assert_awaited_once_with(created, client, include_slicer=False)
+
+    @pytest.mark.asyncio
     async def test_a_new_spool_carries_the_catalogue_colour_name(self, client, sample_tray, mock_filament):
         """Where #1357 put the colour name on this side: Spoolman has no color_name
         on Filament, so it lives in spool.extra.bambu_color_name and

@@ -74,16 +74,19 @@ _UPLOAD_MIN_TIMEOUT = 600.0
 # #2572's cap exists to bound is not lengthened by any of this.
 _DOWNLOAD_FLOOR_BYTES_PER_SEC = 25 * 1024
 
-# ...but not without a ceiling, and for a reason that has nothing to do with FTP:
-# ``on_print_start`` runs its whole 3MF hunt inside one ``async_session``, so
-# every second a download is allowed is a second a pooled DB connection is held
-# (the same coupling behind #2572's cap). 300 s is ~7.5 MB at the floor rate and
-# covers the reporter's 15.15 MB / 105 s measurement three times over, because
-# the floor is pessimistic by design and a real link is not that slow.
+# ...but not without a ceiling. Print start no longer holds a pooled DB
+# connection while it downloads (it commits first, #2572); what it holds is the
+# archive itself, which only exists once this download ends, and the printer's
+# one FTPS slot, at the moment the printer serves files slowest -- an A1 in its
+# start-up routine managed ~87 KB/s (#3308). 300 s is ~7.5 MB at the floor rate
+# and covers a 15.15 MB / 105 s measurement three times over, because the floor
+# is pessimistic by design and a real link is not that slow. A file too big for
+# it gets a fallback archive at once and the archive recovery retry.
 _DOWNLOAD_MAX_TIMEOUT = 300.0
 
-# The archive recovery retry holds no database session while it downloads, so
-# a large 3MF may take longer there: ~22 MB at the floor rate.
+# The archive recovery retry runs after print start, with the archive already
+# on the page, so a large 3MF may take longer there: ~22 MB at the floor rate,
+# ~78 MB at the A1's measured start-up rate.
 RECOVERY_DOWNLOAD_MAX_TIMEOUT = 900.0
 
 

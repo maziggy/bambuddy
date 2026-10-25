@@ -623,6 +623,7 @@ async def init_db():
         connected_app,
         external_link,
         filament,
+        filament_profile_default,
         filament_sku_settings,
         finance,
         github_backup,
@@ -5717,6 +5718,12 @@ async def _run_migrations(conn):
     # whatever this database actually holds.
     await _migrate_repair_rfid_core_weight(conn)
 
+    # Migration: the Bambu PLA Silk+ colours were seeded under "PLA Silk", so
+    # an RFID roll reporting "PLA Silk+" never got its colour name. Relabel
+    # the seeded rows, then name the spools that came in without one.
+    await _migrate_relabel_bambu_silk_plus_colors(conn)
+    await _migrate_fill_rfid_color_names(conn)
+
     # Migration: drop the AMS slot markers an older Bambuddy wrote into
     # Spoolman and the location sync then imported as storage locations.
     await _migrate_drop_ams_slot_locations(conn)
@@ -5863,6 +5870,31 @@ async def _run_migrations(conn):
     # on SQLite and Postgres.
     await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN color_substitutions TEXT")
 
+    # Migration: spools assigned to a tray while a print runs, so a hand swap
+    # splits the print between them across a restart (#3325). Nullable JSON, no
+    # default -- identical DDL on SQLite and Postgres.
+    await _safe_execute(conn, "ALTER TABLE active_print_sessions ADD COLUMN spool_change_log JSON")
+
+    # Migration: a print log run whose times were not measured, a print that
+    # finished while Bambuddy restarted (#3310). Nullable, no
+    # default -- identical DDL on SQLite and Postgres.
+    await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN duration_unmeasured BOOLEAN")
+
+    # Migration: heads-up before a pause the slicer put into the print (#2984).
+    # Off by default, so no channel starts sending it on upgrade. The backfill
+    # covers a table create_all() already gave the column (the ALTER is then
+    # swallowed as a duplicate and existing rows keep NULL).
+    await _safe_execute(
+        conn, "ALTER TABLE notification_providers ADD COLUMN on_print_pause_upcoming BOOLEAN DEFAULT FALSE"
+    )
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                "UPDATE notification_providers SET on_print_pause_upcoming = :off WHERE on_print_pause_upcoming IS NULL"
+            ),
+            {"off": False},
+        )
+
     await _migrate_auth_datetimes_to_timestamp(conn)
     await _migrate_add_missing_set_null_fks(conn)
     await _migrate_wallet_transactions_keep_deleted_users(conn)
@@ -5915,6 +5947,7 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("notification_providers", "on_location_ha_sensor_alert"),
     ("notification_providers", "on_plate_clear_required"),
     ("notification_providers", "on_print_confirm_request"),
+    ("notification_providers", "on_print_pause_upcoming"),
     ("notification_providers", "on_stock_break_alert"),
     ("notification_providers", "on_stock_reorder_alert"),
     ("notification_providers", "telegram_verdict_mode"),
@@ -7180,6 +7213,111 @@ async def _migrate_repair_rfid_core_weight(conn) -> None:
             text('INSERT INTO settings ("key", value) VALUES (:k, :v)'),
             {"k": flag, "v": "true"},
         )
+
+
+async def _migrate_relabel_bambu_silk_plus_colors(conn) -> None:
+    """File the seeded Bambu PLA Silk+ colours under "PLA Silk+".
+
+    They were seeded as "PLA Silk", the line the AMS reports for the Dual/Tri
+    Color silk, while a single-colour Silk+ roll reports "PLA Silk+". The RFID
+    lookup compares that string with the catalogue's material, so every Silk+
+    roll arrived without a colour name. The catalogue is only seeded when it is
+    empty, so an existing install keeps the old rows until this relabels them.
+
+    Only rows that are still exactly a seeded entry (Bambu Lab, same name, same
+    hex, "PLA Silk") move; a row the user edited or added stays. One-shot, so a
+    row the user files back under "PLA Silk" afterwards stays there.
+    """
+    from sqlalchemy import text
+
+    from backend.app.core.catalog_defaults import DEFAULT_COLOR_CATALOG
+
+    flag = "_migrate_silk_plus_catalog_done"
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+        moved = 0
+        for manufacturer, color_name, hex_color, material in DEFAULT_COLOR_CATALOG:
+            if manufacturer != "Bambu Lab" or material != "PLA Silk+":
+                continue
+            result = await conn.execute(
+                text(
+                    "UPDATE color_catalog SET material = 'PLA Silk+' "
+                    "WHERE manufacturer = 'Bambu Lab' AND material = 'PLA Silk' "
+                    "AND color_name = :name AND UPPER(hex_color) = :hex"
+                ),
+                {"name": color_name, "hex": hex_color.upper()},
+            )
+            moved += result.rowcount or 0
+        if moved:
+            logger.info("Filed %d Bambu Lab catalogue colour(s) under PLA Silk+", moved)
+        await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": flag, "v": "true"})
+
+
+async def _migrate_fill_rfid_color_names(conn) -> None:
+    """Give RFID-added Bambu spools without a colour name the catalogue's name.
+
+    The spools the Silk+ mislabel (``_migrate_relabel_bambu_silk_plus_colors``)
+    left unnamed, and any other RFID roll whose colour the catalogue holds now.
+    The lookup is the RFID path's own: Bambu Lab, the hex, and the product line
+    the AMS reported, which the spool stores as material + subtype ("PLA" +
+    "Silk+"). A spool whose subtype the create path rewrote (Gradient, Dual or
+    Tri Color) does not rebuild its reported line and stays as it is, as does a
+    clear roll -- the create path names those "Clear" without the catalogue.
+
+    Only empty names are filled, never one the user set. One-shot.
+    """
+    from sqlalchemy import text
+
+    flag = "_backfill_rfid_color_names_done"
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+        spools = (
+            await conn.execute(
+                text(
+                    "SELECT id, material, subtype, rgba, extra_colors, effect_type FROM spool "
+                    "WHERE data_origin = 'rfid_auto' AND brand = 'Bambu Lab' "
+                    "AND (color_name IS NULL OR color_name = '') AND rgba IS NOT NULL"
+                )
+            )
+        ).fetchall()
+        named = 0
+        for spool in spools:
+            rgba = spool.rgba or ""
+            if len(rgba) < 6 or (len(rgba) == 8 and rgba[6:8] == "00"):
+                continue
+            line = f"{spool.material} {spool.subtype}" if spool.subtype else (spool.material or "")
+            entry = (
+                await conn.execute(
+                    text(
+                        "SELECT color_name, extra_colors, effect_type FROM color_catalog "
+                        "WHERE UPPER(manufacturer) = 'BAMBU LAB' AND UPPER(hex_color) = :hex "
+                        "AND UPPER(material) = :line ORDER BY id LIMIT 1"
+                    ),
+                    {"hex": f"#{rgba[:6].upper()}", "line": line.upper()},
+                )
+            ).fetchone()
+            if entry is None:
+                continue
+            await conn.execute(
+                text(
+                    "UPDATE spool SET color_name = :name, "
+                    "extra_colors = COALESCE(extra_colors, :extra), effect_type = COALESCE(effect_type, :effect) "
+                    "WHERE id = :id"
+                ),
+                {"name": entry.color_name, "extra": entry.extra_colors, "effect": entry.effect_type, "id": spool.id},
+            )
+            named += 1
+        if named:
+            logger.info("Named %d RFID-added spool(s) from the colour catalogue", named)
+        await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": flag, "v": "true"})
 
 
 async def _migrate_backfill_variant_groups(conn) -> None:

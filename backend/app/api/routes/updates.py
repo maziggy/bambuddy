@@ -495,7 +495,7 @@ async def get_version():
 
 @router.get("/check")
 async def check_for_updates(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SYSTEM_READ),
 ):
     """Check GitHub for available updates."""
@@ -1003,7 +1003,7 @@ async def _perform_update(target_ref: str):
 @router.post("/apply")
 async def apply_update(
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Apply available update (git pull + rebuild)."""

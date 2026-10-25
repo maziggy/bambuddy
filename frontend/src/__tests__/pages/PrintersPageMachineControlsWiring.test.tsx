@@ -236,6 +236,23 @@ describe('PrintersPage machine controls: light and airduct', () => {
     await user.click(await screen.findByRole('button', { name: label }));
     await waitFor(() => expect(sent).toEqual([{ path: 'airduct-mode', params: { mode } }]));
   });
+
+  it('an H2D Pro, stored as "H2D Pro", has the airduct menu too (#3335)', async () => {
+    const user = userEvent.setup();
+    const sent = setup('H2D Pro', { airduct_mode: 0 });
+
+    await user.click(await screen.findByTitle(/^Airduct Mode: /));
+    await user.click(await screen.findByRole('button', { name: 'Heating' }));
+    await waitFor(() => expect(sent).toEqual([{ path: 'airduct-mode', params: { mode: 'heating' } }]));
+  });
+
+  it('an X1E has no airduct menu', async () => {
+    setup('X1E', { airduct_mode: 0 });
+
+    await screen.findByText('Test X1E');
+    await waitFor(() => expect(screen.getByText('Bed')).toBeInTheDocument());
+    expect(screen.queryByTitle(/^Airduct Mode: /)).toBeNull();
+  });
 });
 
 describe('PrintersPage machine controls: movement', () => {

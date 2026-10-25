@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.websocket import ws_manager
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
-from backend.app.services import slot_unlink_grace
+from backend.app.services import slot_unlink_grace, spool_swaps
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,7 @@ async def write_slot_results(
         if cast(CursorResult, await db.execute(statement)).rowcount:
             changed.append(slot)
             assigned.append(slot)
+            await spool_swaps.record_assignment(db, printer_id, ams_id, tray_id, spool_id, spool_swaps.SPOOLMAN)
     for slot in emptied:
         # A slot the sync read without a spool matches no row below: there is
         # nothing of the sync's own to remove.
@@ -114,6 +115,7 @@ async def _write_unconditionally(
             ).bindparams(printer_id=printer_id, ams_id=ams_id, tray_id=tray_id, spool_id=spool_id)
         )
         assigned.append((printer_id, ams_id, tray_id))
+        await spool_swaps.record_assignment(db, printer_id, ams_id, tray_id, spool_id, spool_swaps.SPOOLMAN)
     removed: list[Slot] = []
     for printer_id, ams_id, tray_id in emptied:
         await db.execute(

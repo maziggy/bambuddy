@@ -40,7 +40,7 @@ async def get_ams_history(
     printer_id: int,
     ams_id: int,
     hours: int = Query(default=24, ge=1, le=168, description="Hours of history (1-168)"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.AMS_HISTORY_READ),
 ):
     """Get AMS sensor history for a specific printer and AMS unit."""

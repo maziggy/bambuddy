@@ -110,6 +110,16 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     "ha_sensor_alert": ["printer", "sensor", "state", "timestamp", "app_name"],
     "location_ha_sensor_alert": ["location", "sensor", "state", "timestamp", "app_name"],
     "first_layer_complete": ["printer", "filename", "total_layers", "timestamp", "app_name"],
+    "print_pause_upcoming": [
+        "printer",
+        "filename",
+        "time_to_pause",
+        "eta",
+        "layer",
+        "total_layers",
+        "timestamp",
+        "app_name",
+    ],
     "test": ["app_name", "timestamp"],
     # Queue notifications
     "queue_job_added": ["job_name", "target", "timestamp", "app_name"],
@@ -346,6 +356,16 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "filename": "Benchy.3mf",
         "total_layers": "184",
         "timestamp": "2024-01-15 14:35",
+        "app_name": "Bambuddy",
+    },
+    "print_pause_upcoming": {
+        "printer": "Bambu X1C",
+        "filename": "Wifi_QR_NFC.3mf",
+        "time_to_pause": "5m",
+        "eta": "16:05",
+        "layer": "42",
+        "total_layers": "120",
+        "timestamp": "2024-01-15 16:00",
         "app_name": "Bambuddy",
     },
     "test": {

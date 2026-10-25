@@ -582,6 +582,8 @@ class TestTheCompletionEmitsThePrompt:
         assert sent is True
         ws.send_print_confirm_request.assert_awaited_once()
         assert ws.send_print_confirm_request.await_args.args[1]["archive_id"] == archive_id
+        # Nobody owns an external print: everyone on the printer is asked
+        assert ws.send_print_confirm_request.await_args.kwargs["user_ids"] is None
 
         notif.on_print_confirm_request.assert_awaited_once()
         kwargs = notif.on_print_confirm_request.await_args.kwargs
@@ -659,3 +661,32 @@ class TestTheCompletionEmitsThePrompt:
 
         assert sent is False
         notif.on_print_confirm_request.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize("auth_on", [True, False])
+async def test_an_owned_print_asks_its_owner_and_who_may_answer_for_everyone(
+    test_engine, db_session, printer_factory, archive_factory, auth_on
+):
+    from backend.app.models.group import Group
+    from backend.app.models.user import User
+
+    printer = await printer_factory()
+    if auth_on:
+        await _set_setting(db_session, "auth_enabled", "true")
+    staff = Group(name="staff", permissions=["archives:update_all"])
+    others = Group(name="others", permissions=["archives:update_own"])
+    owner = User(username="prompted", password_hash="x", role="user", groups=[others])
+    manager = User(username="manager", password_hash="x", role="user", groups=[staff])
+    bystander = User(username="bystander", password_hash="x", role="user", groups=[others])
+    gone = User(username="gone", password_hash="x", role="user", groups=[staff], is_active=False)
+    db_session.add_all([staff, others, owner, manager, bystander, gone])
+    await db_session.commit()
+    archive = await archive_factory(printer.id, status="completed", created_by_id=owner.id, confirm_requested=True)
+
+    sent, ws, _ = await _dispatch(db_session, printer.id, archive.id)
+
+    assert sent is True
+    asked = ws.send_print_confirm_request.await_args.kwargs["user_ids"]
+    assert asked == ({owner.id, manager.id} if auth_on else None)

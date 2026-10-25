@@ -9,7 +9,7 @@ from backend.tests.integration.test_printer_scope_1727 import _admin_token, _aut
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
-PERMS = ["printers:read", "library:read_all", "library:upload", "library:update_all"]
+PERMS = ["printers:read", "archives:read_all", "library:read_all", "library:upload", "library:update_all"]
 
 
 async def _setup(client: AsyncClient, printer_factory, archive_factory):

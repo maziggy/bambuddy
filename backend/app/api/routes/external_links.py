@@ -63,7 +63,7 @@ def _same_place(url: str) -> tuple[str, str, int | None, str]:
 
 @router.get("/", response_model=list[ExternalLinkResponse])
 async def list_external_links(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.EXTERNAL_LINKS_READ),
 ):
     """List all external links ordered by sort_order."""
@@ -85,7 +85,7 @@ async def list_external_links(
 @router.put("/badge")
 async def set_badge(
     data: ExternalLinkBadgeSet,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: ScopedCaller = Depends(require_notification_send()),
 ):
     """Set the count on the sidebar links pointing at an app, e.g. Bambuddy
@@ -120,7 +120,7 @@ async def set_badge(
 @router.post("/", response_model=ExternalLinkResponse)
 async def create_external_link(
     link_data: ExternalLinkCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.EXTERNAL_LINKS_CREATE),
 ):
     """Create a new external link."""
@@ -148,7 +148,7 @@ async def create_external_link(
 @router.get("/{link_id}", response_model=ExternalLinkResponse)
 async def get_external_link(
     link_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.EXTERNAL_LINKS_READ),
 ):
     """Get a specific external link."""
@@ -165,7 +165,7 @@ async def get_external_link(
 async def update_external_link(
     link_id: int,
     update_data: ExternalLinkUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.EXTERNAL_LINKS_UPDATE),
 ):
     """Update an external link."""
@@ -191,7 +191,7 @@ async def update_external_link(
 @router.delete("/{link_id}")
 async def delete_external_link(
     link_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.EXTERNAL_LINKS_DELETE),
 ):
     """Delete an external link."""
@@ -213,7 +213,7 @@ async def delete_external_link(
 @router.put("/reorder", response_model=list[ExternalLinkResponse])
 async def reorder_external_links(
     reorder_data: ExternalLinkReorder,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.EXTERNAL_LINKS_UPDATE),
 ):
     """Update the sort order of external links."""
@@ -239,7 +239,7 @@ async def reorder_external_links(
 async def upload_icon(
     link_id: int,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.EXTERNAL_LINKS_UPDATE),
 ):
     """Upload a custom icon for an external link."""
@@ -288,7 +288,7 @@ async def upload_icon(
 @router.delete("/{link_id}/icon", response_model=ExternalLinkResponse)
 async def delete_icon(
     link_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.EXTERNAL_LINKS_UPDATE),
 ):
     """Delete the custom icon for an external link."""
@@ -313,7 +313,7 @@ async def delete_icon(
 @router.get("/{link_id}/icon")
 async def get_icon(
     link_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = Depends(require_media_token_permission(Permission.EXTERNAL_LINKS_READ)),
 ):
     """Get the custom icon for an external link.

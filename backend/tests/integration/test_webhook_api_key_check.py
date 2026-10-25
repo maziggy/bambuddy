@@ -5,7 +5,8 @@ fixes: a database error, a key too long to hash and an unreadable stored hash
 all came back as a 500, and a failed last-used write left the session dirty.
 ``get_api_key`` now reads the headers and leaves the check to
 ``_validate_api_key``, so these answer as they do everywhere: 503 when the key
-can't be checked, 401 when it is not a valid key.
+can't be checked, 401 when it is not a valid key. A failed last-used write
+after the key matched lets the key in (#3360).
 """
 
 import logging
@@ -73,12 +74,12 @@ async def test_a_failed_key_lookup_is_a_503(async_client: AsyncClient, key, test
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_a_failed_last_used_write_is_a_503(async_client: AsyncClient, key, test_engine):
+async def test_a_failed_last_used_write_lets_the_key_in(async_client: AsyncClient, key, test_engine):
     with _failing(test_engine, "UPDATE API_KEYS") as state:
         response = await async_client.get(ROUTE, headers={"X-API-Key": key})
 
     assert state["failed"]
-    assert response.status_code == 503, response.text
+    assert response.status_code == 404, response.text
 
 
 @pytest.mark.asyncio

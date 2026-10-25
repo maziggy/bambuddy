@@ -12,8 +12,10 @@ This runs the completion-time pricing once at print start, on the 3MF's
 per-slot estimates instead of charged grams: each slot is priced at the spool
 in the tray it is mapped to, grams no spool could price are covered at the
 default rate, and the result replaces the placeholder. The figure is still an
-estimate -- a failed or stopped print ends up cheaper -- and the archive card
-says so while the print runs.
+estimate, and the archive card says so while the print runs. A completed first
+run is re-priced from what was charged; a run that does not finish keeps this
+figure as one full print of the file (COST-3) and logs its own cost in the
+Print Log, which the card points to (#3318).
 
 Only mappings that are trustworthy at print start are used: the print
 command's own ``ams_mapping``, the queue item's stored mapping, and a colour

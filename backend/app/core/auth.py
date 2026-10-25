@@ -32,6 +32,7 @@ from backend.app.models.api_key import APIKey
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, TokenType
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
+from backend.app.services.last_used import LastUsedThrottle
 from backend.app.utils.local_time import utcnow_naive
 
 logger = logging.getLogger(__name__)
@@ -1663,6 +1664,19 @@ _validated_api_key: ContextVar[tuple[str, APIKey] | None] = ContextVar("_validat
 _authenticated_user: ContextVar[tuple[str, User] | None] = ContextVar("_authenticated_user", default=None)
 
 
+# A key's last-used time is written at most once a minute (#3360).
+_api_key_last_used = LastUsedThrottle(timedelta(minutes=1))
+
+
+def _api_key_expired(api_key: APIKey) -> bool:
+    if not api_key.expires_at:
+        return False
+    expires = api_key.expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    return expires < datetime.now(timezone.utc)
+
+
 def _api_key_check_unavailable(error: Exception) -> HTTPException:
     """The 503 for a key that couldn't be checked (database, pool), logged.
 
@@ -1681,7 +1695,9 @@ async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | No
     """Validate an API key and return the APIKey object if valid, None otherwise.
 
     Raises a 503 HTTPException when the key can't be checked at all (database
-    or pool error): that is not an invalid key, and must not read as one.
+    or pool error): that is not an invalid key, and must not read as one. A
+    failed ``last_used`` write is not such a case: the key has been checked by
+    then, so it is logged and the key is accepted (#3360).
 
     L-1: Pre-filter by key_prefix (first 8 chars) before running pbkdf2 so only
     O(1) candidate rows are hashed instead of the full key table.  The prefix is
@@ -1717,20 +1733,27 @@ async def _validate_api_key(db: AsyncSession, api_key_value: str) -> APIKey | No
             continue
         if not matches:
             continue
-        # Check expiration
-        if api_key.expires_at:
-            expires = api_key.expires_at
-            if expires.tzinfo is None:
-                expires = expires.replace(tzinfo=timezone.utc)
-            if expires < datetime.now(timezone.utc):
-                return None  # Expired
-        # Update last_used timestamp
-        api_key.last_used = datetime.now(timezone.utc)
-        try:
-            await db.commit()
-        except Exception as e:  # SEC-AUTH-EXC: last_used write failed -> rollback + raise 503, key not returned
-            await db.rollback()
-            raise _api_key_check_unavailable(e) from e
+        if _api_key_expired(api_key):
+            return None
+        now = datetime.now(timezone.utc)
+        if _api_key_last_used.due(api_key.key_hash, api_key.last_used, now):
+            key_id = api_key.id
+            api_key.last_used = now
+            try:
+                await db.commit()
+            except Exception as e:  # SEC-AUTH-EXC: last_used write failed, key already matched -> re-read below
+                # A read-only replica after a failover, a locked database: the
+                # key matched, only the bookkeeping failed.
+                await db.rollback()
+                logger.warning("Could not record API key %s as used: %s", key_id, e)
+                try:
+                    await db.refresh(api_key)
+                except Exception as e:  # SEC-AUTH-EXC: re-reading the key failed -> raise 503, key not returned
+                    raise _api_key_check_unavailable(e) from e
+                # Re-read, so it is checked again: it may have been turned off
+                # or set to expire in the meantime.
+                if not api_key.enabled or _api_key_expired(api_key):
+                    return None
         _validated_api_key.set((api_key_value, api_key))
         return api_key
     return None
@@ -2036,7 +2059,7 @@ def generate_api_key() -> tuple[str, str, str]:
 async def get_api_key(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> APIKey:
     """Get and validate API key from request headers (the webhook routes).
 

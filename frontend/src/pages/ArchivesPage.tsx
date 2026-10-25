@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -280,6 +280,10 @@ async function openInSlicerWithToken(
   }
 }
 
+// Ended without finishing: the archive's grams and cost stay one full print of
+// the file (COST-3), not what this run used.
+const UNFINISHED_STATUSES = new Set(['failed', 'aborted', 'cancelled', 'stopped']);
+
 function ArchiveCard({
   archive,
   printerName,
@@ -314,11 +318,6 @@ function ArchiveCard({
    *  the badge names the one the mapping is actually good for. */
   printerMap: Map<number, string>;
 }) {
-  // Debug: log when card is highlighted
-  if (isHighlighted) {
-    console.log('ArchiveCard isHighlighted=true for archive:', archive.id);
-  }
-
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission, canModify } = useAuth();
@@ -1291,7 +1290,11 @@ function ArchiveCard({
             </div>
           )}
           {archive.filament_used_grams && (
-            <div className="flex items-center gap-1.5 text-bambu-gray">
+            <div
+              className="flex items-center gap-1.5 text-bambu-gray"
+              title={UNFINISHED_STATUSES.has(archive.status) ? t('archives.card.fullPrintFigure') : undefined}
+              data-testid="archive-grams"
+            >
               <Package className="w-3 h-3" />
               {archive.filament_used_grams.toFixed(1)}g
             </div>
@@ -1299,10 +1302,18 @@ function ArchiveCard({
           {(archive.cost != null || archive.energy_cost != null || archive.wear_cost != null) && (
             <div className="flex items-center gap-3 text-bambu-gray">
               {archive.cost != null && (
-                // A running print's cost is an estimate until completion re-prices it (#3261)
+                // A running print's cost is an estimate until completion re-prices it (#3261).
+                // A run that did not finish leaves one full print's figure; its
+                // own cost is in the Print Log (#3318).
                 <div
                   className="flex items-center gap-1.5"
-                  title={archive.status === 'printing' ? t('archives.card.costEstimate') : undefined}
+                  title={
+                    archive.status === 'printing'
+                      ? t('archives.card.costEstimate')
+                      : UNFINISHED_STATUSES.has(archive.status)
+                        ? t('archives.card.fullPrintFigure')
+                        : undefined
+                  }
                   data-testid="archive-cost"
                 >
                   <Coins className="w-3 h-3" />
@@ -3118,7 +3129,9 @@ export function ArchivesPage() {
   const [showTagManagement, setShowTagManagement] = useState(false);
   const [showPurgeModal, setShowPurgeModal] = useState(false);
   const [highlightedArchiveId, setHighlightedArchiveId] = useState<number | null>(null);
-  const [pendingNavigationArchiveId, setPendingNavigationArchiveId] = useState<number | null>(null);
+  // An archive navigated to from elsewhere, and the warning shown when the
+  // current filters hide it.
+  const [pendingNavigation, setPendingNavigation] = useState<{ archiveId: number; notVisibleKey: string } | null>(null);
 
   // Log view state
   const [logFilterUser, setLogFilterUser] = useState<string | null>(() =>
@@ -3160,23 +3173,24 @@ export function ArchivesPage() {
   );
 
   const handleNavigateToArchive = useCallback((archiveId: number) => {
-    setPendingNavigationArchiveId(archiveId);
+    setPendingNavigation({ archiveId, notVisibleKey: 'archives.originalPrintNotVisible' });
     setHighlightedArchiveId(archiveId);
   }, []);
 
   // Clear highlight after 5 seconds and scroll to highlighted element
   useEffect(() => {
     if (highlightedArchiveId) {
+      const pending = pendingNavigation?.archiveId === highlightedArchiveId ? pendingNavigation : null;
       // Scroll to highlighted element after a short delay (to let the view render)
       const scrollTimer = setTimeout(() => {
         const element = document.querySelector(`[data-archive-id="${highlightedArchiveId}"]`);
         if (element) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        } else if (pendingNavigationArchiveId === highlightedArchiveId) {
-          showToast(t('archives.originalPrintNotVisible'), 'warning');
+        } else if (pending) {
+          showToast(t(pending.notVisibleKey), 'warning');
         }
-        if (pendingNavigationArchiveId === highlightedArchiveId) {
-          setPendingNavigationArchiveId(null);
+        if (pending) {
+          setPendingNavigation(null);
         }
       }, 100);
 
@@ -3187,12 +3201,37 @@ export function ArchivesPage() {
         clearTimeout(clearTimer);
       };
     }
-  }, [highlightedArchiveId, pendingNavigationArchiveId, showToast, t]);
+  }, [highlightedArchiveId, pendingNavigation, showToast, t]);
 
-  const { data: archives, isLoading } = useQuery({
+  const { data: archives, isLoading, dataUpdatedAt: archivesUpdatedAt, refetch: refetchArchives } = useQuery({
     queryKey: ['archives', filterPrinter],
     queryFn: () => api.getArchives(filterPrinter || undefined),
   });
+
+  // ?highlight=<archive id> (the queue card's and a project's archive links)
+  // points at one archive. It is looked for in a freshly fetched list: one
+  // cached from an earlier visit may predate the archive, which a queued job
+  // creates when it starts. So the page jump finds it, and the warning fires
+  // only when the filters really hide it.
+  const [searchParams] = useSearchParams();
+  const highlightParam = searchParams.get('highlight');
+  const handledHighlightRef = useRef<string | null>(null);
+  const [highlightRequest, setHighlightRequest] = useState<{ archiveId: number; requestedAt: number } | null>(null);
+  useEffect(() => {
+    if (!highlightParam || handledHighlightRef.current === highlightParam) return;
+    handledHighlightRef.current = highlightParam;
+    const archiveId = parseInt(highlightParam, 10);
+    if (!Number.isFinite(archiveId)) return;
+    setHighlightRequest({ archiveId, requestedAt: Date.now() });
+    refetchArchives();
+  }, [highlightParam, refetchArchives]);
+  useEffect(() => {
+    if (!highlightRequest || !archives || archivesUpdatedAt < highlightRequest.requestedAt) return;
+    setHighlightRequest(null);
+    if (viewMode === 'log' || viewMode === 'calendar') setViewMode('grid');
+    setPendingNavigation({ archiveId: highlightRequest.archiveId, notVisibleKey: 'archives.linkedArchiveNotVisible' });
+    setHighlightedArchiveId(highlightRequest.archiveId);
+  }, [highlightRequest, archives, archivesUpdatedAt, viewMode]);
 
   const { data: printers } = useQuery({
     queryKey: ['printers'],

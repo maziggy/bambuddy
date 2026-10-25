@@ -36,7 +36,7 @@ router = APIRouter(prefix="/camwall", tags=["camwall"])
 @router.get("/printers")
 async def list_camwall_printers(
     printer_scope: PrinterScope = RequireCamWallTokenIfAuthEnabled,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> list[dict]:
     """Every printer the token's owner may see (#1727), plus the handful of
     status fields a Cam Wall tile draws.

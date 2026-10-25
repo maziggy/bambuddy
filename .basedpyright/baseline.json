@@ -918,14 +918,6 @@
                     "endColumn": 102,
                     "lineCount": 1
                 }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 26,
-                    "endColumn": 32,
-                    "lineCount": 1
-                }
             }
         ],
         "./backend/app/api/routes/print_log.py": [
@@ -1026,8 +1018,8 @@
             {
                 "code": "reportAttributeAccessIssue",
                 "range": {
-                    "startColumn": 33,
-                    "endColumn": 59,
+                    "startColumn": 29,
+                    "endColumn": 55,
                     "lineCount": 1
                 }
             },

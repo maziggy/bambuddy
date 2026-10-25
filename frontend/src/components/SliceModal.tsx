@@ -1560,21 +1560,23 @@ function CloudStatusBanner({
 }
 
 // Build-plate options offered in the SliceModal (#1337). Values are the
-// canonical strings the slicer's StaticPrintConfig validator accepts as
-// `curr_bed_type` — BambuStudio is the default sidecar, so this matches its
-// enum; OrcaSlicer accepts the same set with a Supertack alias that users
-// can target via the same dropdown if they re-import their presets.
+// `curr_bed_type` names in BambuStudio's and OrcaSlicer's enum
+// (s_keys_map_BedType); the slicer CLI slices any other name as Cool Plate
+// (#3359). Smooth PEI is High Temp Plate there, so it has no entry of its own.
 const BED_TYPE_OPTIONS: { value: string; labelKey: string; fallback: string }[] = [
   { value: 'Cool Plate', labelKey: 'slice.bedType.coolPlate', fallback: 'Cool Plate' },
   {
-    value: 'Cool Plate (SuperTack)',
+    value: 'Supertack Plate',
     labelKey: 'slice.bedType.coolPlateSuperTack',
     fallback: 'Cool Plate SuperTack',
   },
   { value: 'Engineering Plate', labelKey: 'slice.bedType.engineering', fallback: 'Engineering Plate' },
-  { value: 'High Temp Plate', labelKey: 'slice.bedType.highTemp', fallback: 'High Temp Plate' },
+  {
+    value: 'High Temp Plate',
+    labelKey: 'slice.bedType.highTemp',
+    fallback: 'Smooth PEI Plate / High Temp Plate',
+  },
   { value: 'Textured PEI Plate', labelKey: 'slice.bedType.texturedPEI', fallback: 'Textured PEI Plate' },
-  { value: 'Smooth PEI Plate', labelKey: 'slice.bedType.smoothPEI', fallback: 'Smooth PEI Plate' },
 ];
 
 function BedTypeDropdown({
@@ -1599,6 +1601,10 @@ function BedTypeDropdown({
         className="flex-1 min-w-0 px-3 py-2 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm focus:outline-none focus:border-bambu-gray disabled:opacity-50"
       >
         <option value="">{t('slice.bedType.auto')}</option>
+        {/* A saved pipeline can hold a plate the list doesn't offer (saved
+            through the API). Shown as it is, so the select doesn't read
+            "Auto" while that plate is sent (#3359). */}
+        {value && !BED_TYPE_OPTIONS.some((opt) => opt.value === value) && <option value={value}>{value}</option>}
         {BED_TYPE_OPTIONS.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {t(opt.labelKey, opt.fallback)}

@@ -105,6 +105,9 @@ class NotificationProviderBase(BaseModel):
     # Event triggers - First layer complete
     on_first_layer_complete: bool = Field(default=False, description="Notify when first layer completes")
 
+    # Event triggers - A slicer pause coming up (#2984)
+    on_print_pause_upcoming: bool = Field(default=False, description="Notify before a pause in the print")
+
     # Messages from connected apps (POST /notifications/app-message)
     on_app_message: bool = Field(default=False, description="Deliver messages other applications send")
 
@@ -220,6 +223,9 @@ class NotificationProviderUpdate(IgnoresNullForRequiredColumns):
 
     # Event triggers - First layer complete
     on_first_layer_complete: bool | None = None
+
+    # Event triggers - A slicer pause coming up
+    on_print_pause_upcoming: bool | None = None
 
     # Messages from connected apps
     on_app_message: bool | None = None

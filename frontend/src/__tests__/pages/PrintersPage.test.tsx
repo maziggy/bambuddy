@@ -422,6 +422,40 @@ describe('PrintersPage', () => {
       });
     });
 
+    it('names the X2D aux fans by their side, left first (#3373)', async () => {
+      // On the X2D part 2 ("aux") is the left fan and part 10 ("aux2") the
+      // right one: Bambu Studio's N6.json, the other way round from the P2S.
+      renderWithStatus(
+        { ...mockPrinters[0], model: 'X2D' },
+        { ...statusWithFans, left_aux_fan_speed: 80, exhaust_fan_present: true },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Right Auxiliary Fan')).toBeInTheDocument();
+      });
+      expect(screen.queryByTitle('Auxiliary Fan')).not.toBeInTheDocument();
+
+      const order = ['Part Cooling Fan', 'Left Auxiliary Fan', 'Right Auxiliary Fan', 'Exhaust'].map(
+        (title) => screen.getByTitle(title),
+      );
+      for (let i = 1; i < order.length; i++) {
+        expect(order[i - 1].compareDocumentPosition(order[i])).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      }
+    });
+
+    it('keeps the P2S names: no right aux badge', async () => {
+      renderWithStatus(
+        { ...mockPrinters[0], model: 'P2S' },
+        { ...statusWithFans, left_aux_fan_speed: 80 },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Left Auxiliary Fan')).toBeInTheDocument();
+      });
+      expect(screen.getByTitle('Auxiliary Fan')).toBeInTheDocument();
+      expect(screen.queryByTitle('Right Auxiliary Fan')).not.toBeInTheDocument();
+    });
+
     it('shows left aux fan badge even at 0% while installed', async () => {
       renderWithStatus(
         { ...mockPrinters[0], model: 'P2S' },

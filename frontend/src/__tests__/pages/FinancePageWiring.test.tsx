@@ -352,6 +352,39 @@ describe('FinancePage wiring: cost centres', () => {
     ]);
   });
 
+  it('editing a private centre saves its budget without renaming it (#3358)', async () => {
+    // As the backend does: a private centre can't be renamed or deactivated.
+    server.use(
+      http.patch('*/api/v1/finance/cost-centers/22', async ({ request }) => {
+        await capture(request);
+        return HttpResponse.json(
+          { detail: 'Private cost centers cannot be deactivated or renamed; set their budget to 0 to prevent printing' },
+          { status: 400 },
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    await openAdmin(user);
+
+    await user.click(within(await centreRow('Alice private')).getByTitle('Edit'));
+    const dlg = await modal('Edit cost center');
+    await waitFor(() => expect(within(dlg).getByPlaceholderText('Name')).toHaveValue('Alice private'));
+    expect(within(dlg).getByPlaceholderText('Name')).toBeDisabled();
+    const budget = within(dlg).getByRole('spinbutton');
+    await user.clear(budget);
+    await user.type(budget, '0');
+    await user.click(within(dlg).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(screen.getByText('Cost center updated')).toBeInTheDocument());
+    expect(mutations()).toEqual([
+      {
+        method: 'PATCH',
+        path: '/api/v1/finance/cost-centers/22/budgets',
+        body: { total_budget: null, monthly_budget: 0 },
+      },
+    ]);
+  });
+
   it('delete -> confirm sends DELETE for that centre; private centres offer no delete', async () => {
     const user = userEvent.setup();
     await openAdmin(user);

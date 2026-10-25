@@ -39,6 +39,7 @@ from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session, get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope, ensure_model_target_allowed
+from backend.app.core.row_visibility import visible_row_clauses
 from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryFolder
@@ -75,7 +76,7 @@ from backend.app.schemas.library import (
     ZipExtractResponse,
     ZipExtractResult,
 )
-from backend.app.schemas.slicer import SliceRequest, SliceResponse
+from backend.app.schemas.slicer import ORCA_ONLY_BED_TYPES, SliceRequest, SliceResponse
 from backend.app.services.archive import ThreeMFParser, estimate_filament_cost
 from backend.app.services.design_settings import (
     DesignOverride,
@@ -163,18 +164,24 @@ def _ensure_library_file_visible(
     return library_file
 
 
-async def _linkable_archives(db: AsyncSession, archive_ids, printer_scope: PrinterScope) -> dict[int, str | None]:
-    """Print names of the archives among ``archive_ids`` on the caller's printers.
+async def _linkable_archives(
+    db: AsyncSession, archive_ids, printer_scope: PrinterScope, user: User | ApiKeyActor | None
+) -> dict[int, str | None]:
+    """Print names of the archives among ``archive_ids`` the caller sees in the archives.
 
-    A folder's link to any other archive reads as no link, and linking one
-    answers as for a missing archive.
+    Live archives on the caller's printers, their own unless they see
+    everyone's. A folder's link to any other archive reads as no link, and
+    linking one answers as for a missing archive.
     """
     ids = {i for i in archive_ids if i}
-    if not ids:
+    visible = visible_row_clauses(
+        PrintArchive, printer_scope, user, Permission.ARCHIVES_READ_ALL, Permission.ARCHIVES_READ_OWN
+    )
+    if not ids or visible is None:
         return {}
-    query = select(PrintArchive.id, PrintArchive.print_name).where(PrintArchive.id.in_(ids))
-    if (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
-        query = query.where(clause)
+    query = select(PrintArchive.id, PrintArchive.print_name).where(
+        PrintArchive.id.in_(ids), PrintArchive.deleted_at.is_(None), *visible
+    )
     return dict((await db.execute(query)).all())
 
 
@@ -688,6 +695,7 @@ async def save_3mf_bytes_to_library(
     source_type: str | None = None,
     source_url: str | None = None,
     owner_id: int | None = None,
+    dedupe_within: list | tuple | None = (),
 ) -> tuple[LibraryFile, bool]:
     """Save a fetched file into the library and return ``(library_file, was_existing)``.
 
@@ -697,14 +705,18 @@ async def save_3mf_bytes_to_library(
     if a LibraryFile with the same source_url already exists, the existing
     row is returned and the bytes are NOT re-saved (MakerWorld signed URLs
     change each download, so hash-based dedupe alone would miss re-imports).
+    ``dedupe_within`` narrows the rows that count as that copy to the ones the
+    importer may open; None imports a copy of their own regardless.
 
     Parses 3MF metadata + thumbnail the same way the multipart upload route
     does, via :class:`ThreeMFParser`, and renders an STL's thumbnail. Paths are stored as relative so the
     library is portable across installs.
     """
     # Source-URL-based dedupe: return the existing row untouched.
-    if source_url:
-        existing = await db.execute(LibraryFile.active().where(LibraryFile.source_url == source_url).limit(1))
+    if source_url and dedupe_within is not None:
+        existing = await db.execute(
+            LibraryFile.active().where(LibraryFile.source_url == source_url, *dedupe_within).limit(1)
+        )
         existing_row = existing.scalar_one_or_none()
         if existing_row is not None:
             return existing_row, True
@@ -721,6 +733,26 @@ async def save_3mf_bytes_to_library(
     if folder_id is not None:
         folder_q = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
         target_folder = folder_q.scalar_one_or_none()
+
+    # Another user's copy of this very import, which the importer may not
+    # open, may already sit on the mount under this name: theirs is stored
+    # beside it under a free name, as a slice is. Any other file of that name
+    # is still refused, so nothing put there outside Bambuddy is touched.
+    if (
+        source_url
+        and target_folder is not None
+        and target_folder.is_external
+        and target_folder.external_path
+        and Path(target_folder.external_path).is_dir()
+        and await db.scalar(
+            select(LibraryFile.id)
+            .where(LibraryFile.source_url == source_url, LibraryFile.deleted_at.is_(None))
+            .limit(1)
+        )
+        is not None
+    ):
+        with contextlib.suppress(PathTraversalError):
+            filename = _unique_external_name(Path(target_folder.external_path), filename)
 
     file_path, is_external = _resolve_upload_destination(target_folder, filename)
     ext = file_path.suffix.lower() or ".3mf"
@@ -1021,7 +1053,7 @@ async def _backfill_external_thumbnails(folder_ids: list[int]) -> None:
 @router.get("/folders/", response_model=list[FolderTreeItem])
 async def list_folders(
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -1029,6 +1061,7 @@ async def list_folders(
         )
     ),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Get all folders as a tree structure.
 
@@ -1049,7 +1082,7 @@ async def list_folders(
         .order_by(LibraryFolder.name)
     )
     rows = [row for row in result.all() if visible is None or row[0].id in visible]
-    archives = await _linkable_archives(db, [row[0].archive_id for row in rows], printer_scope)
+    archives = await _linkable_archives(db, [row[0].archive_id for row in rows], printer_scope, actor)
     own_files = _own_files_filter(user)
 
     # Get file counts per folder
@@ -1141,7 +1174,7 @@ async def list_folders(
 @router.get("/folders/by-project/{project_id}", response_model=list[FolderResponse])
 async def get_folders_by_project(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -1149,6 +1182,7 @@ async def get_folders_by_project(
         )
     ),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Get all folders linked to a specific project, those the user may see (#3201)."""
     user, _ = auth_result
@@ -1162,7 +1196,7 @@ async def get_folders_by_project(
         .order_by(LibraryFolder.name)
     )
     rows = [row for row in result.all() if visible is None or row[0].id in visible]
-    archives = await _linkable_archives(db, [row[0].archive_id for row in rows], printer_scope)
+    archives = await _linkable_archives(db, [row[0].archive_id for row in rows], printer_scope, actor)
 
     folders = []
     for folder, project_name in rows:
@@ -1209,7 +1243,7 @@ async def get_folders_by_project(
 @router.get("/folders/by-archive/{archive_id}", response_model=list[FolderResponse])
 async def get_folders_by_archive(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -1217,21 +1251,27 @@ async def get_folders_by_archive(
         )
     ),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Get all folders linked to a specific archive, those the user may see (#3201)."""
     user, _ = auth_result
-    return (await _folders_by_archive(db, user, [archive_id], printer_scope))[archive_id]
+    return (await _folders_by_archive(db, user, [archive_id], printer_scope, actor))[archive_id]
 
 
 async def _folders_by_archive(
-    db: AsyncSession, user: User | ApiKeyActor | None, archive_ids: list[int], printer_scope: PrinterScope
+    db: AsyncSession,
+    user: User | ApiKeyActor | None,
+    archive_ids: list[int],
+    printer_scope: PrinterScope,
+    actor: User | ApiKeyActor | None,
 ) -> dict[int, list]:
     """The folders linked to each archive that *user* may see (#3201), by archive id.
 
-    An archive on a printer outside *printer_scope* has none.
+    An archive *actor* (the caller, as ``RequestActor`` gives it) does not see
+    in the archives has none.
     """
     folders: dict[int, list] = {archive_id: [] for archive_id in archive_ids}
-    archives = await _linkable_archives(db, archive_ids, printer_scope)
+    archives = await _linkable_archives(db, archive_ids, printer_scope, actor)
     if not archives:
         return folders
     index = await _load_index(db, user)
@@ -1288,7 +1328,7 @@ async def _folders_by_archive(
 @router.post("/folders/", response_model=FolderResponse)
 async def create_folder(
     data: FolderCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
     actor: User | ApiKeyActor | None = RequestActor,
     printer_scope: PrinterScope = RequestPrinterScope,
@@ -1308,7 +1348,7 @@ async def create_folder(
         project_name = project.name
 
     # Verify archive exists if specified
-    archives = await _linkable_archives(db, [data.archive_id], printer_scope)
+    archives = await _linkable_archives(db, [data.archive_id], printer_scope, actor)
     if data.archive_id is not None and data.archive_id not in archives:
         raise HTTPException(status_code=404, detail="Archive not found")
 
@@ -1350,7 +1390,7 @@ async def create_folder(
 @router.get("/folders/{folder_id}", response_model=FolderResponse)
 async def get_folder(
     folder_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -1358,6 +1398,7 @@ async def get_folder(
         )
     ),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Get a folder by ID; 404 for a folder the user may not see (#3201)."""
     user, _ = auth_result
@@ -1376,7 +1417,7 @@ async def get_folder(
         raise HTTPException(status_code=404, detail="Folder not found")
 
     folder, project_name = row
-    archives = await _linkable_archives(db, [folder.archive_id], printer_scope)
+    archives = await _linkable_archives(db, [folder.archive_id], printer_scope, actor)
 
     # Get file count + latest file activity (#1770) in one trip
     agg_result = await db.execute(
@@ -1419,7 +1460,7 @@ _README_PREFERRED_STEMS = ("readme", "description")
 @router.get("/folders/{folder_id}/readme", response_model=FolderReadmeResponse)
 async def get_folder_readme(
     folder_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -1480,7 +1521,7 @@ async def get_folder_readme(
 async def update_folder(
     folder_id: int,
     data: FolderUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
@@ -1488,6 +1529,7 @@ async def update_folder(
         )
     ),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Update a folder.
 
@@ -1548,11 +1590,11 @@ async def update_folder(
     if data.archive_id is not None:
         if data.archive_id == 0:
             # A link the caller can't see is not theirs to remove.
-            if folder.archive_id in await _linkable_archives(db, [folder.archive_id], printer_scope):
+            if folder.archive_id in await _linkable_archives(db, [folder.archive_id], printer_scope, actor):
                 folder.archive_id = None
         else:
             # Verify archive exists
-            if data.archive_id not in await _linkable_archives(db, [data.archive_id], printer_scope):
+            if data.archive_id not in await _linkable_archives(db, [data.archive_id], printer_scope, actor):
                 raise HTTPException(status_code=404, detail="Archive not found")
             folder.archive_id = data.archive_id
 
@@ -1579,7 +1621,7 @@ async def update_folder(
     if folder.project_id:
         project_result = await db.execute(select(Project.name).where(Project.id == folder.project_id))
         project_name = project_result.scalar()
-    archives = await _linkable_archives(db, [folder.archive_id], printer_scope)
+    archives = await _linkable_archives(db, [folder.archive_id], printer_scope, actor)
 
     return FolderResponse(
         id=folder.id,
@@ -1603,7 +1645,7 @@ async def update_folder(
 @router.delete("/folders/{folder_id}")
 async def delete_folder(
     folder_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_DELETE_ALL,
@@ -1840,7 +1882,7 @@ def _validate_external_path(path_str: str) -> Path:
 @router.post("/folders/external", response_model=FolderResponse)
 async def create_external_folder(
     data: ExternalFolderCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     # GHSA-r2qv follow-up (I1): elevated from LIBRARY_UPLOAD to SETTINGS_UPDATE.
     # Registering a host filesystem path as a Bambuddy library folder is an
     # operator-level capability that crosses user boundaries (one user's
@@ -1917,7 +1959,7 @@ def _mtime_to_datetime(mtime: float) -> datetime:
 @router.post("/folders/{folder_id}/scan")
 async def scan_external_folder(
     folder_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
     actor: User | ApiKeyActor | None = RequestActor,
 ):
@@ -2282,7 +2324,7 @@ async def list_files(
     external_only: bool = False,
     recursive: bool = False,
     tag_ids: list[int] = Query(default_factory=list),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -2447,7 +2489,7 @@ async def upload_file(
     file: UploadFile = File(...),
     folder_id: int | None = None,
     generate_stl_thumbnails: bool = Query(default=True),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
     actor: User | ApiKeyActor | None = RequestActor,
 ):
@@ -2624,7 +2666,7 @@ async def extract_zip_file(
     preserve_structure: bool = Query(default=True),
     create_folder_from_zip: bool = Query(default=False),
     generate_stl_thumbnails: bool = Query(default=True),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
     actor: User | ApiKeyActor | None = RequestActor,
 ):
@@ -2941,7 +2983,7 @@ async def extract_zip_file(
 @router.post("/generate-stl-thumbnails", response_model=BatchThumbnailResponse)
 async def batch_generate_stl_thumbnails(
     request: BatchThumbnailRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
@@ -3088,7 +3130,7 @@ def is_sliced_file(filename: str) -> bool:
 @router.post("/files/combine", response_model=FileUploadResponse)
 async def combine_files(
     request: CombineFilesRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
     actor: User | ApiKeyActor | None = RequestActor,
 ):
@@ -3170,7 +3212,7 @@ async def combine_files(
 @router.post("/files/add-to-queue", response_model=AddToQueueResponse)
 async def add_files_to_queue(
     request: AddToQueueRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.QUEUE_CREATE)),
     printer_scope: PrinterScope = RequestPrinterScope,
     review_required: bool = QueueReviewRequired,
@@ -3410,7 +3452,7 @@ async def add_files_to_queue(
 @router.get("/files/{file_id}/plates")
 async def get_library_file_plates(
     file_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -3703,7 +3745,7 @@ async def get_library_file_plates(
 async def get_library_file_plate_thumbnail(
     file_id: int,
     plate_index: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.LIBRARY_READ_ALL,
@@ -3791,7 +3833,7 @@ async def get_library_file_filament_requirements(
     plate_id: int | None = None,
     request_id: str | None = None,
     full_slots: bool = False,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -4436,6 +4478,13 @@ async def _run_slicer_with_fallback(
     # gates the toggle on the picked printer matching the design's target,
     # so this path never re-targets across printer models.
     embedded_mode = bool(request.use_embedded_settings and is_3mf)
+    # The schema takes either slicer's plate names, but Bambu Studio slices a
+    # name it does not know as Cool Plate (#3359).
+    if not embedded_mode and preferred == "bambu_studio" and request.bed_type in ORCA_ONLY_BED_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bambu Studio has no {request.bed_type}. Pick another build plate or slice with OrcaSlicer.",
+        )
     # Bounds silence rather than total slicing time (#2730), so a heavy model
     # that keeps reporting progress runs to completion however long it takes.
     service = SlicerApiService(api_url, timeout_seconds=await get_stall_timeout_seconds(db))
@@ -4850,6 +4899,10 @@ async def guard_nozzle_class_reslice(
     return None
 
 
+# slice_and_persist's default owner: the user it slices for.
+_CALLER = object()
+
+
 async def slice_and_persist(
     db: AsyncSession,
     *,
@@ -4860,9 +4913,13 @@ async def slice_and_persist(
     request: SliceRequest,
     current_user_id: int | None,
     job_id: int | None = None,
+    owner_id: int | None | object = _CALLER,
 ) -> SliceResponse:
     """Slice a model and save the result as a new ``LibraryFile`` in
     ``folder_id`` (same folder as the source by convention).
+
+    ``current_user_id`` resolves cloud presets; the new file is ``owner_id``'s,
+    by default the same user.
 
     Always exports as ``.gcode.3mf`` so the existing library thumbnail
     pipeline works on the new file. Plain ``.gcode`` would have no
@@ -4965,7 +5022,7 @@ async def slice_and_persist(
     from backend.app.services.slice_dispatch import slice_dispatch as _dispatch
 
     # Nobody's, when the user was deleted while it sliced: the id may be someone else's now.
-    current_user_id = _dispatch.owner_now(job_id, current_user_id)
+    file_owner_id = _dispatch.owner_now(job_id, current_user_id if owner_id is _CALLER else owner_id)  # type: ignore[arg-type]
     new_file = LibraryFile(
         folder_id=folder_id,
         is_external=out_is_external,
@@ -4983,7 +5040,7 @@ async def slice_and_persist(
         thumbnail_path=thumbnail_relative,
         file_metadata=metadata,
         source_type="sliced",
-        created_by_id=current_user_id,
+        created_by_id=file_owner_id,
     )
     db.add(new_file)
     await db.commit()
@@ -5011,6 +5068,7 @@ async def slice_and_persist_as_archive(
     source_archive,  # PrintArchive — hint kept loose to avoid cyclic import
     current_user_id: int | None,
     job_id: int | None = None,
+    owner_id: int | None | object = _CALLER,
 ):
     """Slice a model and save the result as a new ``PrintArchive`` row,
     inheriting printer / project / makerworld metadata from the source
@@ -5154,7 +5212,7 @@ async def slice_and_persist_as_archive(
     from backend.app.services.slice_dispatch import slice_dispatch as _dispatch
 
     # Nobody's, when the user was deleted while it sliced: the id may be someone else's now.
-    current_user_id = _dispatch.owner_now(job_id, current_user_id)
+    current_user_id = _dispatch.owner_now(job_id, current_user_id if owner_id is _CALLER else owner_id)  # type: ignore[arg-type]
     new_archive = PrintArchive(
         printer_id=new_printer_id,
         project_id=source_archive.project_id,
@@ -5216,7 +5274,7 @@ async def slice_and_persist_as_archive(
 async def slice_library_file(
     file_id: int,
     request: SliceRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
     actor: User | ApiKeyActor | None = RequestActor,
@@ -5275,6 +5333,9 @@ async def slice_library_file(
     # cloud_token (#1182 follow-up).
     cloud_token_user = current_user or api_key_cloud_owner
     user_id = cloud_token_user.id if cloud_token_user else None
+    # The sliced file is its owner's also when no one resolves cloud presets,
+    # as a pipeline run's is.
+    owner_id = user_id if user_id is not None else (actor.id if isinstance(actor, ApiKeyActor) else None)
 
     # If the source has a `print_name` in its metadata (BambuStudio always
     # sets this; OrcaSlicer often leaves it blank), derive the sliced
@@ -5312,6 +5373,7 @@ async def slice_library_file(
                     request=request,
                     current_user_id=user_id,
                     job_id=job_id,
+                    owner_id=owner_id,
                 )
             except HTTPException as exc:
                 raise http_exception_to_job_error(exc) from exc
@@ -5321,7 +5383,7 @@ async def slice_library_file(
         kind="library_file",
         source_id=lib_file.id,
         source_name=lib_file.filename,
-        owner_id=user_id,
+        owner_id=owner_id,
         run=_run,
     )
     return {
@@ -5360,7 +5422,7 @@ async def print_library_file(
 @router.get("/files/{file_id}", response_model=FileResponseSchema)
 async def get_file(
     file_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -5459,7 +5521,7 @@ async def get_file(
 async def update_file(
     file_id: int,
     data: FileUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
@@ -5539,7 +5601,7 @@ async def update_file(
 @router.delete("/files/{file_id}")
 async def delete_file(
     file_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_DELETE_ALL,
@@ -5597,7 +5659,7 @@ async def delete_file(
 @router.get("/files/{file_id}/download")
 async def download_file(
     file_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -5624,7 +5686,7 @@ async def download_file(
 @router.post("/files/{file_id}/slicer-token")
 async def create_library_slicer_token(
     file_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -5652,7 +5714,7 @@ async def download_library_file_for_slicer(
     file_id: int,
     token: str,
     filename: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Download a library file using a slicer download token.
 
@@ -5686,7 +5748,7 @@ async def download_library_file_for_slicer(
 @router.get("/files/{file_id}/thumbnail")
 async def get_thumbnail(
     file_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.LIBRARY_READ_ALL,
@@ -5727,7 +5789,7 @@ async def get_thumbnail(
 async def upload_preview_thumbnail(
     file_id: int,
     thumbnail: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
@@ -5828,7 +5890,7 @@ async def upload_preview_thumbnail(
 async def upload_file_photo(
     file_id: int,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
@@ -5884,7 +5946,7 @@ async def upload_file_photo(
 async def get_file_photo(
     file_id: int,
     filename: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.LIBRARY_READ_ALL,
@@ -5917,7 +5979,7 @@ async def get_file_photo(
 async def delete_file_photo(
     file_id: int,
     filename: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
@@ -5963,7 +6025,7 @@ async def delete_file_photo(
 async def get_gcode(
     file_id: int,
     plate: int | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -6026,7 +6088,7 @@ async def get_gcode(
 @router.post("/files/move")
 async def move_files(
     data: FileMoveRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
@@ -6132,7 +6194,7 @@ async def move_files(
 @router.post("/bulk-delete", response_model=BulkDeleteResponse)
 async def bulk_delete(
     data: BulkDeleteRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_DELETE_ALL,
@@ -6232,7 +6294,7 @@ async def bulk_delete(
 
 @router.get("/stats")
 async def get_library_stats(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,

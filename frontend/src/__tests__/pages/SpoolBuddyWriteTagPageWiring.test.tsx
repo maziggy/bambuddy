@@ -170,9 +170,11 @@ describe.each([
     expect(mSb.writeTag).not.toHaveBeenCalled();
   });
 
-  it('Create with quantity 3 uses the bulk endpoint with N=3 and saves K-profiles for every created spool', async () => {
+  it('Create with quantity 3 uses the bulk endpoint with N=3 and leaves the created K-profiles alone', async () => {
     renderPage();
     await openQuickAddFormWithQuantity(3);
+    const listFetch = isSpoolman ? mApi.getSpoolmanInventorySpools : mApi.getSpools;
+    const fetchesBefore = listFetch.mock.calls.length;
     fireEvent.click(screen.getAllByText('Create Spool').at(-1)!);
 
     const bulk = isSpoolman ? mApi.bulkCreateSpoolmanInventorySpools : mApi.bulkCreateSpools;
@@ -188,24 +190,29 @@ describe.each([
     expect(mApi.createSpool).not.toHaveBeenCalled();
     expect(mApi.createSpoolmanInventorySpool).not.toHaveBeenCalled();
 
-    const ids = isSpoolman ? [601, 602, 603] : [501, 502, 503];
-    await waitFor(() => expect(saveK).toHaveBeenCalledTimes(3));
-    expect(saveK.mock.calls.map((c) => c[0])).toEqual(ids);
-    // No PA profile picked -> each spool's K-profiles are saved as empty.
-    for (const c of saveK.mock.calls) expect(c[1]).toEqual([]);
+    // No PA profile picked -> nothing is saved: an empty save would clear the
+    // product's profile default the create gave each spool (#1326).
+    // The list refetch comes after the K-profile save would have.
+    await waitFor(() => expect(listFetch.mock.calls.length).toBeGreaterThan(fetchesBefore));
+    expect(saveK).not.toHaveBeenCalled();
     expect(otherSaveK).not.toHaveBeenCalled();
   });
 
   it('Create with quantity 1 uses the single-create endpoint', async () => {
     renderPage();
     await openQuickAddFormWithQuantity(1);
+    const listFetch = isSpoolman ? mApi.getSpoolmanInventorySpools : mApi.getSpools;
+    const fetchesBefore = listFetch.mock.calls.length;
     fireEvent.click(screen.getAllByText('Create Spool').at(-1)!);
 
     const single = isSpoolman ? mApi.createSpoolmanInventorySpool : mApi.createSpool;
     await waitFor(() => expect(single).toHaveBeenCalledTimes(1));
     expect(mApi.bulkCreateSpools).not.toHaveBeenCalled();
     expect(mApi.bulkCreateSpoolmanInventorySpools).not.toHaveBeenCalled();
-    const saveK = isSpoolman ? mApi.saveSpoolmanKProfiles : mApi.saveSpoolKProfiles;
-    await waitFor(() => expect(saveK).toHaveBeenCalledWith(isSpoolman ? 800 : 700, []));
+    // No PA profile picked: the spool keeps the profile default the create gave it (#1326).
+    // The list refetch comes after the K-profile save would have.
+    await waitFor(() => expect(listFetch.mock.calls.length).toBeGreaterThan(fetchesBefore));
+    expect(mApi.saveSpoolKProfiles).not.toHaveBeenCalled();
+    expect(mApi.saveSpoolmanKProfiles).not.toHaveBeenCalled();
   });
 });

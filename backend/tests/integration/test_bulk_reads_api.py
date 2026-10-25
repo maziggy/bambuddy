@@ -429,7 +429,9 @@ class TestArchiveFolders:
         )
         await db_session.commit()
         admin = await _admin_token(async_client)
-        jwt, _ = await _user(async_client, admin, "member", ["library:read_all"], printer_ids=[mine.id])
+        jwt, _ = await _user(
+            async_client, admin, "member", ["library:read_all", "archives:read_all"], printer_ids=[mine.id]
+        )
 
         bulk = await _get(
             async_client,

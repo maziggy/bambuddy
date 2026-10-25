@@ -602,7 +602,7 @@ async def get_preset_values(
     source: str = Query(..., description="Preset tier: 'local', 'cloud', 'orca_cloud' or 'standard'."),
     id: str = Query(..., description="Preset id within that tier."),
     slot: str = Query("process", description="Preset slot. Only 'process' is supported today."),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
 ) -> dict:
@@ -664,7 +664,7 @@ async def get_preset_values(
 
 @router.get("/presets", response_model=UnifiedPresetsResponse)
 async def list_unified_presets(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD),
     api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
     refresh: bool = Query(
@@ -736,7 +736,7 @@ def _loaded_spool_tray(raw: dict, ams_id: int, tray_id: int, saved: SlotPresetMa
 
 @router.get("/loaded-spools", response_model=LoadedSpoolsResponse)
 async def list_loaded_spools(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_UPLOAD, Permission.PRINTERS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ) -> LoadedSpoolsResponse:
@@ -818,7 +818,7 @@ async def list_loaded_spools(
 @router.get("/preview-progress/{request_id}")
 async def get_preview_slice_progress(
     request_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,

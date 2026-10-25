@@ -13,6 +13,7 @@ import {
   Weight,
 } from 'lucide-react';
 import { queueItemThumbnailUrl } from '../utils/queueItemThumbnail';
+import { ThumbnailHoverPreview } from './ThumbnailHoverPreview';
 import { type TimeFormat, formatDuration, formatRelativeTime } from '../utils/date';
 import type { PrintQueueItem, Permission } from '../api/client';
 import { Button } from './Button';
@@ -74,30 +75,15 @@ export function CompactHistoryRow({
       <div className="flex items-center gap-2 sm:gap-3">
         <StatusIcon className={`w-4 h-4 shrink-0 ${config.color}`} />
 
-        <div className="relative shrink-0 history-thumb-hover">
-          <div className="w-8 h-8 bg-bambu-dark rounded overflow-hidden">
-            {thumbnailUrl ? (
-              <img src={thumbnailUrl} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-bambu-gray">
-                <Layers className="w-4 h-4" />
-              </div>
-            )}
-          </div>
-          {/* Hover preview — desktop only via CSS @media. Positioned to the
-              right of the thumbnail; the parent card has no overflow:hidden
-              so the popup escapes its rounded border. pointer-events-none so
-              it doesn't interfere with clicks on rows below. */}
-          {thumbnailUrl && (
-            <div className="history-thumb-preview absolute z-[60] left-full top-0 ml-2 w-48 h-48 pointer-events-none opacity-0 transition-opacity">
-              <img
-                src={thumbnailUrl}
-                alt=""
-                className="w-full h-full object-cover rounded-lg shadow-2xl border-2 border-bambu-dark-tertiary bg-bambu-dark"
-              />
+        <ThumbnailHoverPreview src={thumbnailUrl} className="w-8 h-8 shrink-0 bg-bambu-dark rounded overflow-hidden">
+          {thumbnailUrl ? (
+            <img src={thumbnailUrl} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-bambu-gray">
+              <Layers className="w-4 h-4" />
             </div>
           )}
-        </div>
+        </ThumbnailHoverPreview>
 
         <span className="text-sm text-white font-medium truncate min-w-0 flex-1">
           {displayName}

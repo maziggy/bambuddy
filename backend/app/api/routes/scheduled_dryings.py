@@ -31,7 +31,7 @@ async def create_scheduled_drying(
     payload: ScheduledDryingCreate,
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     printer_scope: PrinterScope = RequestPrinterScope,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     printer_scope.ensure(payload.printer_id)
     result = await db.execute(select(Printer).where(Printer.id == payload.printer_id))
@@ -74,7 +74,7 @@ async def list_scheduled_dryings(
     printer_id: int | None = None,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     query = select(ScheduledDrying).where(ScheduledDrying.status.in_(LISTED_STATUSES))
     if (clause := printer_scope.where_strict(ScheduledDrying.printer_id)) is not None:
@@ -90,7 +90,7 @@ async def cancel_scheduled_drying(
     scheduled_drying_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     printer_scope: PrinterScope = RequestPrinterScope,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     result = await db.execute(select(ScheduledDrying).where(ScheduledDrying.id == scheduled_drying_id))
     row = result.scalar_one_or_none()

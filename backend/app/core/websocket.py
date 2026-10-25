@@ -134,6 +134,29 @@ class ConnectionManager:
                 if conn in self.active_connections:
                     self.active_connections.remove(conn)
 
+    async def broadcast_to_users(self, user_ids: set[int], message: dict[str, Any]):
+        """Send a message to every connection of any of ``user_ids``, as
+        ``broadcast_to_user`` does for one."""
+        if not self.active_connections:
+            return
+
+        data = json.dumps(message)
+        printer_id = _message_printer_id(message)
+        async with self._lock:
+            disconnected = []
+            for connection in self.active_connections:
+                conn_uid = getattr(connection.state, "bambuddy_principal_user_id", None)
+                if conn_uid is None or conn_uid not in user_ids or not _may_receive(connection, printer_id):
+                    continue
+                try:
+                    await connection.send_text(data)
+                except Exception:
+                    disconnected.append(connection)
+
+            for conn in disconnected:
+                if conn in self.active_connections:
+                    self.active_connections.remove(conn)
+
     async def close_user(self, user_id: int):
         """Close a deleted user's sockets, which would otherwise keep receiving
         the messages of whoever is given their id next."""
@@ -262,22 +285,28 @@ class ConnectionManager:
             }
         )
 
-    async def send_print_confirm_request(self, printer_id: int, data: dict):
-        """Ask connected clients for a post-print outcome verdict (#1898)."""
-        await self.broadcast(
-            {
-                "type": "print_confirm_request",
-                "printer_id": printer_id,
-                "data": data,
-            }
-        )
+    async def send_print_confirm_request(self, printer_id: int, data: dict, user_ids: set[int] | None = None):
+        """Ask connected clients for a post-print outcome verdict (#1898).
+
+        ``user_ids`` are the users who may answer it; None asks everyone who
+        can see the printer.
+        """
+        message = {"type": "print_confirm_request", "printer_id": printer_id, "data": data}
+        if user_ids is None:
+            await self.broadcast(message)
+        else:
+            await self.broadcast_to_users(user_ids, message)
 
     async def send_archive_created(self, archive: dict):
-        """Notify clients that a new archive was created."""
+        """Notify clients that a new archive was created.
+
+        Only that one was, on which printer: whose it is and what it holds stays
+        with the archive routes, which every socket's client asks next anyway.
+        """
         await self.broadcast(
             {
                 "type": "archive_created",
-                "data": archive,
+                "data": {"printer_id": archive.get("printer_id")},
             }
         )
 
@@ -286,11 +315,12 @@ class ConnectionManager:
 
         Only sockets that may see the archive's printer receive it: callers send
         just the changed fields, so the printer is looked up here when missing.
+        As for a new archive, the message says no more than that.
         """
-        message: dict[str, Any] = {"type": "archive_updated", "data": archive}
-        if _message_printer_id(message) is None:
-            message["printer_id"] = await _archive_printer_id(archive.get("id"))
-        await self.broadcast(message)
+        printer_id = archive.get("printer_id")
+        if not isinstance(printer_id, int):
+            printer_id = await _archive_printer_id(archive.get("id"))
+        await self.broadcast({"type": "archive_updated", "printer_id": printer_id, "data": {"printer_id": printer_id}})
 
     async def send_queue_item_uploading(
         self,

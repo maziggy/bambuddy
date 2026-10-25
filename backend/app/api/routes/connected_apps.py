@@ -121,7 +121,7 @@ async def _get_app_or_404(db: AsyncSession, app_id: int) -> ConnectedApp:
 
 @router.get("/apps", response_model=list[ConnectedAppResponse])
 async def list_connected_apps(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     result = await db.execute(select(ConnectedApp).order_by(ConnectedApp.created_at.desc()))
@@ -131,7 +131,7 @@ async def list_connected_apps(
 @router.post("/apps", response_model=ConnectedAppSecretResponse)
 async def create_connected_app(
     data: ConnectedAppCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _admin: User | None = RequireAdminIfAuthEnabled(),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
@@ -160,7 +160,7 @@ async def create_connected_app(
 async def update_connected_app(
     app_id: int,
     data: ConnectedAppUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
@@ -179,7 +179,7 @@ async def update_connected_app(
 @router.post("/apps/{app_id}/rotate-secret", response_model=ConnectedAppSecretResponse)
 async def rotate_connected_app_secret(
     app_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
@@ -196,7 +196,7 @@ async def rotate_connected_app_secret(
 @router.delete("/apps/{app_id}")
 async def delete_connected_app(
     app_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
@@ -222,7 +222,7 @@ async def delete_connected_app(
 
 async def require_signed_in_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> User:
     """The user behind a Bambuddy login token. API keys are refused.
 
@@ -249,7 +249,7 @@ async def _app_for_authorize(db: AsyncSession, client_id: str, redirect_uri: str
 async def authorize_info(
     client_id: str = Query(..., max_length=64),
     redirect_uri: str = Query(..., max_length=500),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User = Depends(require_signed_in_user),
 ):
     """What the consent screen shows. Validates the request before the page acts on it."""
@@ -265,7 +265,7 @@ async def authorize_info(
 @router.post("/authorize", response_model=ConnectAuthorizeResponse)
 async def authorize(
     data: ConnectAuthorizeRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     user: User = Depends(require_signed_in_user),
 ):
     """Issue a code for the signed-in user and record their consent."""
@@ -328,7 +328,7 @@ def _token_error(status_code: int, error: str) -> HTTPException:
 async def exchange_code(
     request: Request,
     data: ConnectTokenRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Swap a code for the user's identity and permissions.
 

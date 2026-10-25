@@ -80,7 +80,7 @@ def _serialize_plug(plug: SmartPlug, *, can_edit: bool) -> SmartPlugResponse:
 
 @router.get("/", response_model=None)
 async def list_smart_plugs(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
     can_edit: bool = CallerEditsPlugs,
@@ -111,7 +111,7 @@ async def _printer_has_other_tasmota_plug(
 @router.post("/", response_model=SmartPlugResponseWithSecret)
 async def create_smart_plug(
     data: SmartPlugCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_CREATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -298,7 +298,7 @@ class PrinterCardPlugs(BaseModel):
 @router.get("/by-printer/{printer_id}", response_model=None)
 async def get_smart_plug_by_printer(
     printer_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
     can_edit: bool = CallerEditsPlugs,
 ):
@@ -315,7 +315,7 @@ async def get_smart_plug_by_printer(
 @router.get("/by-printer/{printer_id}/scripts", response_model=list[SmartPlugResponse])
 async def get_script_plugs_by_printer(
     printer_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
 ):
     """Get all HA entities assigned to a printer for display on printer card.
@@ -485,7 +485,7 @@ async def get_discovered_tasmota_devices(
 @router.post("/ha/test-connection", response_model=HATestConnectionResponse)
 async def test_ha_connection(
     request: HATestConnectionRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_CONTROL),
     can_update_settings: bool = Depends(probe_permissions_if_auth_enabled(Permission.SETTINGS_UPDATE)),
 ):
@@ -512,7 +512,7 @@ async def test_ha_connection(
 @router.post("/rest/test-connection", response_model=RESTTestConnectionResponse)
 async def test_rest_connection(
     request: RESTTestConnectionRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_CONTROL),
     can_update: bool = Depends(probe_permissions_if_auth_enabled(Permission.SMART_PLUGS_UPDATE)),
     printer_scope: PrinterScope = RequestPrinterScope,
@@ -536,7 +536,7 @@ async def test_rest_connection(
 
 @router.get("/ha/entities", response_model=list[HAEntity])
 async def list_ha_entities(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     search: str | None = None,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
 ):
@@ -564,7 +564,7 @@ async def list_ha_entities(
 
 @router.get("/ha/sensors", response_model=list[HASensorEntity])
 async def list_ha_sensor_entities(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
 ):
     """List available Home Assistant sensor entities for energy monitoring.
@@ -590,7 +590,7 @@ async def list_ha_sensor_entities(
 @router.get("/{plug_id}", response_model=None)
 async def get_smart_plug(
     plug_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
     can_edit: bool = CallerEditsPlugs,
@@ -607,7 +607,7 @@ async def get_smart_plug(
 async def update_smart_plug(
     plug_id: int,
     data: SmartPlugUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -730,7 +730,7 @@ async def delete_plug(db: AsyncSession, plug: SmartPlug) -> None:
 @router.delete("/{plug_id}")
 async def delete_smart_plug(
     plug_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_DELETE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -769,7 +769,7 @@ async def _get_service_for_plug(plug: SmartPlug, db: AsyncSession):
 async def control_smart_plug(
     plug_id: int,
     control: SmartPlugControl,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_CONTROL),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -841,7 +841,7 @@ async def control_smart_plug(
 @router.get("/{plug_id}/status", response_model=SmartPlugStatus)
 async def get_plug_status(
     plug_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -920,7 +920,7 @@ async def get_plug_status(
 @router.post("/test-connection")
 async def test_connection(
     data: SmartPlugTestConnection,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_CONTROL),
     can_update: bool = Depends(probe_permissions_if_auth_enabled(Permission.SMART_PLUGS_UPDATE)),
     printer_scope: PrinterScope = RequestPrinterScope,

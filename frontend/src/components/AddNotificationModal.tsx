@@ -81,6 +81,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
     provider?.on_location_ha_sensor_alert ?? false
   );
   const [onFirstLayerComplete, setOnFirstLayerComplete] = useState(provider?.on_first_layer_complete ?? false);
+  const [onPrintPauseUpcoming, setOnPrintPauseUpcoming] = useState(provider?.on_print_pause_upcoming ?? false);
   const [onAppMessage, setOnAppMessage] = useState(provider?.on_app_message ?? false);
 
   const [notifyLiveActivities, setNotifyLiveActivities] = useState(
@@ -270,6 +271,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
       on_ha_sensor_alert: onHaSensorAlert,
       on_location_ha_sensor_alert: onLocationHaSensorAlert,
       on_first_layer_complete: onFirstLayerComplete,
+      on_print_pause_upcoming: onPrintPauseUpcoming,
       on_app_message: onAppMessage,
     };
 
@@ -881,6 +883,13 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
                   </div>
                   <Toggle checked={onFirstLayerComplete} onChange={setOnFirstLayerComplete} />
                 </div>
+                <div className="flex items-center justify-between col-span-2">
+                  <div>
+                    <span className="text-sm text-white">{t('notifications.pauseUpcomingLabel')}</span>
+                    <span className="text-xs text-bambu-gray ml-1">{t('notifications.pauseUpcomingDescription')}</span>
+                  </div>
+                  <Toggle checked={onPrintPauseUpcoming} onChange={setOnPrintPauseUpcoming} />
+                </div>
               </div>
             </div>
 
@@ -971,6 +980,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
               if (onPrintConfirmRequest) enabledEvents.push({ key: 'on_print_confirm_request', label: t('notifications.printConfirmRequest') });
               if (onBedCooled) enabledEvents.push({ key: 'on_bed_cooled', label: t('notifications.bedCooled') });
               if (onFirstLayerComplete) enabledEvents.push({ key: 'on_first_layer_complete', label: t('notifications.firstLayerCompleteLabel') });
+              if (onPrintPauseUpcoming) enabledEvents.push({ key: 'on_print_pause_upcoming', label: t('notifications.pauseUpcomingLabel') });
               if (onPrinterOffline) enabledEvents.push({ key: 'on_printer_offline', label: t('notifications.offline') });
               if (onPrinterError) enabledEvents.push({ key: 'on_printer_error', label: t('notifications.error') });
               if (onHaSensorAlert) enabledEvents.push({ key: 'on_ha_sensor_alert', label: t('notifications.haSensorAlert') });

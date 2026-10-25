@@ -337,6 +337,27 @@ class TestPermissions:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_another_users_import_is_not_theirs(self, async_client, manyfold):
+        """A user who sees only their own files neither sees a colleague's import
+        nor gets it back for their own: they import a copy of their own."""
+        admin = await _admin(async_client)
+        await _connect(async_client, manyfold, admin)
+        perms = ["manyfold:view", "manyfold:import", "library:read_own", "library:upload"]
+        first = await _user(async_client, admin, "mffirst", perms)
+        second = await _user(async_client, admin, "mfsecond", perms)
+        body = {"model_id": "cube01", "file_id": "f1"}
+
+        theirs = (await async_client.post(f"{API}/import", headers=first, json=body)).json()
+        seen = (await async_client.get(f"{API}/models/cube01", headers=second)).json()
+        mine = (await async_client.post(f"{API}/import", headers=second, json=body)).json()
+        seen_after = (await async_client.get(f"{API}/models/cube01", headers=second)).json()
+
+        assert {f["id"]: f["library_file"] for f in seen["files"]}["f1"] is None
+        assert mine["was_existing"] is False and mine["library_file_id"] != theirs["library_file_id"]
+        assert {f["id"]: f["library_file"] for f in seen_after["files"]}["f1"]["id"] == mine["library_file_id"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_anonymous_preview_is_refused(self, async_client, manyfold):
         admin = await _admin(async_client)
         await _connect(async_client, manyfold, admin)

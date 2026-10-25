@@ -48,6 +48,7 @@ EVENT_NAMES = {
     "filament_low": "Filament Low",
     "maintenance_due": "Maintenance Due",
     "first_layer_complete": "First Layer Complete",
+    "print_pause_upcoming": "Pause Coming Up",
     "test": "Test Notification",
     # Queue notifications
     "queue_job_added": "Queue Job Added",
@@ -74,7 +75,7 @@ EVENT_NAMES = {
 @router.get("", response_model=list[NotificationTemplateResponse])
 @router.get("/", response_model=list[NotificationTemplateResponse])
 async def get_templates(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATION_TEMPLATES_READ),
 ):
     """Get all notification templates."""
@@ -101,7 +102,7 @@ async def get_variables(
 @router.get("/{template_id}", response_model=NotificationTemplateResponse)
 async def get_template(
     template_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATION_TEMPLATES_READ),
 ):
     """Get a single notification template."""
@@ -116,7 +117,7 @@ async def get_template(
 async def update_template(
     template_id: int,
     update: NotificationTemplateUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATION_TEMPLATES_UPDATE),
 ):
     """Update a notification template."""
@@ -142,7 +143,7 @@ async def update_template(
 @router.post("/{template_id}/reset", response_model=NotificationTemplateResponse)
 async def reset_template(
     template_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATION_TEMPLATES_UPDATE),
 ):
     """Reset a notification template to its default values."""

@@ -9,7 +9,7 @@ printer's SD card) is mocked; the printer manager knows no printer.
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -143,7 +143,7 @@ async def test_a_completed_print(test_engine, db_session, queued_print):
     archive, item, logs, charges = await _rows(db_session, queued_print["archive"], queued_print["item"])
     assert archive.status == "completed"
     assert item.status == "completed"
-    assert [log.status for log in logs] == ["completed"]
+    assert [(log.status, log.duration_unmeasured) for log in logs] == [("completed", None)]
     assert len(charges) == 1
     charge = charges[0]
     assert (charge.user_id, charge.cost_center_id, charge.print_queue_id, charge.print_run_id) == (
@@ -416,3 +416,105 @@ async def test_a_hung_sd_cleanup_does_not_hold_up_the_print_s_end(test_engine, d
     _archive, item, _logs, charges = await _rows(db_session, queued_print["archive"], queued_print["item"])
     assert item.status == "completed"
     assert len(charges) == 1
+
+
+async def test_a_reconciled_abort_says_no_status_update(test_engine, db_session, queued_print):
+    await _complete(test_engine, queued_print["printer"], "aborted", extra={"_reconciled": True})
+
+    archive, item, logs, _charges = await _rows(db_session, queued_print["archive"], queued_print["item"])
+    assert (archive.status, archive.failure_reason) == ("aborted", "noStatusUpdate")
+    assert [(log.status, log.duration_seconds, log.duration_unmeasured) for log in logs] == [("aborted", 0, True)]
+
+
+async def test_a_print_that_finished_while_bambuddy_restarted_is_completed(test_engine, db_session, queued_print):
+    """#3310: the reconnect closes it as completed, ended at its estimate."""
+    ended = datetime(2026, 10, 19, 11, 0, tzinfo=timezone.utc)
+    notif = await _complete(
+        test_engine,
+        queued_print["printer"],
+        "completed",
+        extra={"_reconciled": True, "_reconciled_completed_at": ended},
+    )
+
+    archive, item, logs, charges = await _rows(db_session, queued_print["archive"], queued_print["item"])
+    assert (archive.status, archive.failure_reason) == ("completed", None)
+    assert archive.completed_at.replace(tzinfo=None) == datetime(2026, 10, 19, 11, 0)
+    assert item.status == "completed"
+    assert [(log.status, log.failure_reason, log.duration_seconds, log.duration_unmeasured) for log in logs] == [
+        ("completed", None, 3 * 3600, True)
+    ]
+    assert len(charges) == 1
+    assert notif.on_print_complete.await_args.kwargs["archive_data"]["actual_time_seconds"] == 3 * 3600
+
+
+async def test_a_reconciled_completion_without_an_estimate_keeps_no_duration(test_engine, db_session, queued_print):
+    await _complete(test_engine, queued_print["printer"], "completed", extra={"_reconciled": True})
+
+    archive, _item, logs, _charges = await _rows(db_session, queued_print["archive"], queued_print["item"])
+    assert (archive.status, archive.failure_reason) == ("completed", None)
+    assert [(log.status, log.duration_seconds, log.duration_unmeasured) for log in logs] == [("completed", 0, True)]
+
+
+@pytest.mark.parametrize(
+    ("hms_errors", "reason"),
+    [
+        ([{"code": "0x4057", "attr": 0x0300_0000, "module": 0x03, "severity": 1}], "layerShift"),
+        ([], "noStatusUpdate"),
+    ],
+)
+async def test_a_reconciled_failure_takes_the_printer_s_reason(
+    test_engine, db_session, queued_print, hms_errors, reason
+):
+    await _complete(
+        test_engine,
+        queued_print["printer"],
+        "failed",
+        extra={"_reconciled": True, "hms_errors": hms_errors},
+    )
+
+    archive, _item, logs, _charges = await _rows(db_session, queued_print["archive"], queued_print["item"])
+    assert (archive.status, archive.failure_reason) == ("failed", reason)
+    assert [(log.status, log.duration_seconds, log.duration_unmeasured) for log in logs] == [("failed", 0, True)]
+
+
+async def test_the_reconcile_reads_the_plate_the_queue_job_printed(test_engine, db_session, queued_print):
+    """#3310: a reprint of plate 3 reuses an archive that says plate 1."""
+    from types import SimpleNamespace
+
+    archive = await db_session.get(PrintArchive, queued_print["archive"])
+    archive.subtask_id, archive.plate_id = "JOB1", 1
+    item = await db_session.get(PrintQueueItem, queued_print["item"])
+    item.plate_id = 3
+    # An earlier run of the archive, of another plate.
+    db_session.add(
+        PrintQueueItem(
+            printer_id=queued_print["printer"],
+            archive_id=archive.id,
+            status="completed",
+            position=2,
+            plate_id=5,
+        )
+    )
+    await db_session.commit()
+    state = SimpleNamespace(
+        state="FINISH",
+        subtask_id="JOB1",
+        subtask_name="part",
+        connected=True,
+        raw_data={},
+        progress=100,
+        layer_num=0,
+        hms_errors=[],
+    )
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    with (
+        patch("backend.app.main.async_session", maker),
+        patch("backend.app.main.printer_manager") as pm,
+        patch("backend.app.main._reconciled_end_time", return_value=None) as end_time,
+        patch("backend.app.main.on_print_complete", new=AsyncMock()) as complete,
+    ):
+        pm.get_status.return_value = state
+        assert await main_module.reconcile_stale_active_prints(queued_print["printer"]) == 1
+
+    assert end_time.call_args.args[2] == 3
+    assert complete.call_args.args[1]["status"] == "completed"

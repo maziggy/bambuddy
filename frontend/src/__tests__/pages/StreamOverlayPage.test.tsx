@@ -331,6 +331,33 @@ describe('StreamOverlayPage', () => {
       }
     });
 
+    it.each([
+      [90, { width: '720px', height: '1280px' }],
+      [0, null],
+    ])('fits a classic overlay camera turned %i degrees into the window (#3362)', async (rotation, expected) => {
+      const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains('classic-overlay') ? 1280 : 0;
+      });
+      const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains('classic-overlay') ? 720 : 0;
+      });
+      try {
+        server.use(http.get('/api/v1/printers/:id', () => HttpResponse.json({ ...mockPrinter, camera_rotation: rotation })));
+        renderOverlayPage(1, '');
+        const camera = await screen.findByAltText('Camera stream');
+        if (expected) {
+          await waitFor(() => expect(camera).toHaveStyle(expected));
+          expect(camera.style.transform).toBe(`translate(-50%, -50%) rotate(${rotation}deg)`);
+        } else {
+          await waitFor(() => expect(camera.style.transform).toBe(''));
+          expect(camera.style.width).toBe('');
+        }
+      } finally {
+        width.mockRestore();
+        height.mockRestore();
+      }
+    });
+
     it('renders selected fields and accessible progress', async () => {
       server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json(mockStatusPrinting)));
       renderOverlayPage(1, '?artwork=2&show=printer,model,filename,status,progress,layers,eta');

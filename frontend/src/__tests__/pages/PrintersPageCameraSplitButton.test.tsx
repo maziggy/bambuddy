@@ -15,7 +15,7 @@ import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 
-const permissions = { granted: ['camera:view', 'settings:update'] as string[] };
+const permissions = { granted: ['printers:read', 'camera:view', 'settings:update'] as string[] };
 
 const mockUseAuth = {
   user: { id: 1, username: 'operator', permissions: [] as string[] },
@@ -119,7 +119,7 @@ const storage = new Map<string, string>();
 describe('PrintersPage — camera split button', () => {
   beforeEach(() => {
     settingsWrites.length = 0;
-    permissions.granted = ['camera:view', 'settings:update'];
+    permissions.granted = ['printers:read', 'camera:view', 'settings:update'];
     storage.clear();
     vi.mocked(localStorage.getItem).mockImplementation((key: string) => storage.get(key) ?? null);
     vi.mocked(localStorage.setItem).mockImplementation((key: string, value: string) => {
@@ -212,7 +212,7 @@ describe('PrintersPage — camera split button', () => {
   it('still applies the pick for a user who cannot write settings', async () => {
     // A viewer has camera:view but not settings:update. Their choice has to
     // stick locally, or the menu would appear to do nothing on the next click.
-    permissions.granted = ['camera:view'];
+    permissions.granted = ['printers:read', 'camera:view'];
     renderPage('window');
     await openModeMenu();
     fireEvent.click(await screen.findByText(/Embedded Overlay/));

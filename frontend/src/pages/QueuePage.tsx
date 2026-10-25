@@ -88,6 +88,7 @@ import { ColorSubstitutionNotes } from '../components/ColorSubstitutionNotes';
 import { QueueTimelineView } from '../components/QueueTimelineView';
 import { compareQueueOrder } from '../utils/queueOrder';
 import { BatchOrdersView } from '../components/BatchOrdersView';
+import { ThumbnailHoverPreview } from '../components/ThumbnailHoverPreview';
 import { buildLoadedFilaments, type LoadedFilament } from '../hooks/useFilamentMapping';
 import { hasGcodeSnippets, useUiSettings } from '../hooks/useUiSettings';
 
@@ -805,7 +806,10 @@ function SortableQueueItem({
         )}
 
         {/* Thumbnail - use plate-specific thumbnail if plate_id is set */}
-        <div className="w-10 h-10 sm:w-14 sm:h-14 flex-shrink-0 bg-bambu-dark rounded-lg overflow-hidden">
+        <ThumbnailHoverPreview
+          src={thumbnailUrl}
+          className="w-10 h-10 sm:w-14 sm:h-14 flex-shrink-0 bg-bambu-dark rounded-lg overflow-hidden"
+        >
           {thumbnailUrl ? (
             <img src={thumbnailUrl} alt="" className="w-full h-full object-cover" />
           ) : (
@@ -813,7 +817,7 @@ function SortableQueueItem({
               <Layers className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
           )}
-        </div>
+        </ThumbnailHoverPreview>
 
         {/* Info */}
         <div className="flex-1 min-w-0">
@@ -832,7 +836,7 @@ function SortableQueueItem({
               </Link>
             ) : item.library_file_id ? (
               <Link
-                to={`/library?highlight=${item.library_file_id}`}
+                to={`/files?highlight=${item.library_file_id}`}
                 className="text-bambu-gray hover:text-bambu-green transition-colors flex-shrink-0"
                 title={t('queue.viewInFileManager')}
               >

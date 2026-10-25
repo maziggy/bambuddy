@@ -17,6 +17,7 @@ from sqlalchemy.engine import CursorResult
 from backend.app.api.routes._spoolman_helpers import spoolman_net_weight
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session
+from backend.app.services import spool_swaps
 from backend.app.services.spoolman import (
     SpoolmanClientError,
     SpoolmanNotFoundError,
@@ -935,6 +936,46 @@ class _PrintCost:
         self.priced += 1
 
 
+def _swap_splitter(printer_id: int, state, layer_usage_raw, end_layer: int, completed: bool) -> spool_swaps.Splitter:
+    """The print's spool swaps (services.spool_swaps) for the Spoolman charges.
+
+    ``layer_usage_raw`` is the tracking row's JSON, keys as strings; parsed only
+    when a tray was actually swapped.
+    """
+    if state is None:
+        from backend.app.services.printer_manager import printer_manager
+
+        state = printer_manager.get_status(printer_id)
+    if not isinstance(end_layer, int) or end_layer <= 0:
+        # The caller reads the printer's layers for single-slot prints only;
+        # a multi-colour print's swap needs them as much.
+        total = getattr(state, "total_layers", 0)
+        current = getattr(state, "layer_num", 0)
+        end_layer = max(total if isinstance(total, int) else 0, current if isinstance(current, int) else 0)
+
+    def layer_usage():
+        if not layer_usage_raw:
+            return None
+        return {int(layer): {int(fid): mm for fid, mm in f.items()} for layer, f in layer_usage_raw.items()}
+
+    return spool_swaps.Splitter(
+        getattr(state, "spool_change_log", None) if state is not None else None,
+        spool_swaps.SPOOLMAN,
+        layer_usage,
+        end_layer,
+        completed=completed,
+    )
+
+
+async def _fetch_spool_for_price(client, spool_id: int) -> dict | None:
+    """The spool row a swapped-in spool's share is priced from; None if it can't be read."""
+    try:
+        return await client.get_spool(spool_id)
+    except Exception as exc:  # noqa: BLE001 -- pricing is best-effort, the charge is not
+        logger.debug("[SPOOLMAN] Could not fetch spool %s for its price: %s", spool_id, exc)
+        return None
+
+
 async def _report_spool_usage_for_slots(
     client,
     filament_usage_items: list[tuple[int, float]],
@@ -946,6 +987,7 @@ async def _report_spool_usage_for_slots(
     slot_colors_out: dict[int, str] | None = None,
     slot_materials_out: dict[int, str] | None = None,
     cost_out: _PrintCost | None = None,
+    swaps: spool_swaps.Splitter | None = None,
 ) -> int:
     """Report usage to Spoolman for a list of (slot_id, grams) pairs.
 
@@ -1012,6 +1054,16 @@ async def _report_spool_usage_for_slots(
             if spool_id_to_use is not None:
                 resolution_path = "slot-assignment"
 
+        # A spool swapped by hand on this tray mid-print shares the slot's
+        # grams with the one it replaced (#3325); the first is the archive's.
+        shares = None
+        if swaps is not None:
+            shares = swaps.shares(*_global_tray_id_to_ams_slot(global_tray_id), slot_id, grams_used)
+            if shares and shares[0][0] != spool_id_to_use:
+                spool_id_to_use = shares[0][0]
+                resolution_path = "swap log"
+                spool_obj = spool_color_hex = spool_material = None
+
         if spool_id_to_use is None:
             logger.debug(
                 "[SPOOLMAN] Slot %s: no spool resolved (tag=%s, no slot-assignment)",
@@ -1044,23 +1096,31 @@ async def _report_spool_usage_for_slots(
             if slot_materials_out is not None and spool_material:
                 slot_materials_out[slot_id] = spool_material
 
-        try:
-            await client.use_spool(spool_id_to_use, grams_used)
-            logger.info(
-                "[SPOOLMAN] %s: slot %s: %sg -> spool %s (via %s)",
-                method_label,
-                slot_id,
-                grams_used,
-                spool_id_to_use,
-                resolution_path,
-            )
-            spools_updated += 1
-            # Priced only after the charge landed, so a spool Spoolman refused
-            # cannot contribute to what the print is said to have cost.
-            if cost_out is not None:
-                cost_out.add(grams_used, spool_obj, f"Slot {slot_id}")
-        except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
-            logger.warning("[SPOOLMAN] Failed to record usage for spool %s: %s", spool_id_to_use, exc)
+        for charge_spool_id, charge_grams in shares or [(spool_id_to_use, grams_used)]:
+            charge_obj = spool_obj
+            if shares:
+                charge_grams = round(charge_grams, 2)
+                if charge_grams <= 0:
+                    continue
+                if charge_spool_id != spool_id_to_use:
+                    charge_obj = await _fetch_spool_for_price(client, charge_spool_id) if cost_out is not None else None
+            try:
+                await client.use_spool(charge_spool_id, charge_grams)
+                logger.info(
+                    "[SPOOLMAN] %s: slot %s: %sg -> spool %s (via %s)",
+                    method_label,
+                    slot_id,
+                    charge_grams,
+                    charge_spool_id,
+                    resolution_path,
+                )
+                spools_updated += 1
+                # Priced only after the charge landed, so a spool Spoolman refused
+                # cannot contribute to what the print is said to have cost.
+                if cost_out is not None:
+                    cost_out.add(charge_grams, charge_obj, f"Slot {slot_id}")
+            except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
+                logger.warning("[SPOOLMAN] Failed to record usage for spool %s: %s", charge_spool_id, exc)
 
     return spools_updated
 
@@ -1080,6 +1140,7 @@ async def _report_spool_usage_split_by_tray_changes(
     slot_colors_out: dict[int, str] | None = None,
     slot_materials_out: dict[int, str] | None = None,
     cost_out: _PrintCost | None = None,
+    swaps: spool_swaps.Splitter | None = None,
 ) -> tuple[int, set[int]]:
     """Split each slot's grams across ``tray_changes`` and charge per-segment.
 
@@ -1151,6 +1212,22 @@ async def _report_spool_usage_split_by_tray_changes(
                 if spool_id_to_use is not None:
                     resolution_path = "slot-assignment"
 
+            # A spool swapped by hand on this tray within the segment (#3325).
+            seg_shares = None
+            if swaps is not None:
+                is_last = seg_idx + 1 >= len(tray_changes)
+                seg_shares = swaps.shares(
+                    *_global_tray_id_to_ams_slot(tray_global),
+                    slot_id,
+                    segment_grams,
+                    tray_changes[seg_idx][1],
+                    None if is_last else tray_changes[seg_idx + 1][1],
+                )
+                if seg_shares and seg_shares[0][0] != spool_id_to_use:
+                    spool_id_to_use = seg_shares[0][0]
+                    resolution_path = "swap log"
+                    spool_obj = spool_color_hex = spool_material = None
+
             if spool_id_to_use is None:
                 logger.info(
                     "[SPOOLMAN] Split slot %s seg %s tray=%d: no spool resolved — %.2fg lost from split accounting",
@@ -1188,29 +1265,35 @@ async def _report_spool_usage_split_by_tray_changes(
             if slot_materials_out is not None and slot_id not in slot_materials_out and spool_material:
                 slot_materials_out[slot_id] = spool_material
 
-            try:
-                await client.use_spool(spool_id_to_use, round(segment_grams, 2))
-                logger.info(
-                    "[SPOOLMAN] %s: slot %s seg %s tray=%d: %.2fg -> spool %s (via %s)",
-                    method_label,
-                    slot_id,
-                    seg_idx,
-                    tray_global,
-                    segment_grams,
-                    spool_id_to_use,
-                    resolution_path,
-                )
-                spools_updated += 1
-                if cost_out is not None:
-                    cost_out.add(round(segment_grams, 2), spool_obj, f"Split slot {slot_id} seg {seg_idx}")
-            except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
-                logger.warning(
-                    "[SPOOLMAN] Split slot %s seg %s: failed to record usage for spool %s: %s",
-                    slot_id,
-                    seg_idx,
-                    spool_id_to_use,
-                    exc,
-                )
+            for charge_spool_id, charge_grams in seg_shares or [(spool_id_to_use, segment_grams)]:
+                if charge_grams <= 0:
+                    continue
+                charge_obj = spool_obj
+                if charge_spool_id != spool_id_to_use:
+                    charge_obj = await _fetch_spool_for_price(client, charge_spool_id) if cost_out is not None else None
+                try:
+                    await client.use_spool(charge_spool_id, round(charge_grams, 2))
+                    logger.info(
+                        "[SPOOLMAN] %s: slot %s seg %s tray=%d: %.2fg -> spool %s (via %s)",
+                        method_label,
+                        slot_id,
+                        seg_idx,
+                        tray_global,
+                        charge_grams,
+                        charge_spool_id,
+                        resolution_path,
+                    )
+                    spools_updated += 1
+                    if cost_out is not None:
+                        cost_out.add(round(charge_grams, 2), charge_obj, f"Split slot {slot_id} seg {seg_idx}")
+                except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
+                    logger.warning(
+                        "[SPOOLMAN] Split slot %s seg %s: failed to record usage for spool %s: %s",
+                        slot_id,
+                        seg_idx,
+                        charge_spool_id,
+                        exc,
+                    )
 
     return spools_updated, handled_global_tray_ids
 
@@ -1229,7 +1312,11 @@ async def _report_partial_usage(
     data is unavailable.
     """
     from backend.app.services.printer_manager import printer_manager
-    from backend.app.utils.threemf_tools import get_cumulative_usage_at_layer, mm_to_grams
+    from backend.app.utils.threemf_tools import (
+        get_cumulative_usage_at_layer,
+        mm_to_grams,
+        slicer_grams_at_layer,
+    )
 
     async with async_session() as db:
         from backend.app.api.routes.settings import get_setting
@@ -1339,6 +1426,8 @@ async def _report_partial_usage(
     # (#1793). The G-code split is not used here: its last segment runs to the
     # end of the whole print. A multi-material print keeps the mapping.
     tray_changes = list(getattr(state, "tray_change_log", None) or []) if state else []
+    # Spools swapped by hand on a tray, shared out up to where the print stopped (#3325).
+    swaps = _swap_splitter(printer_id, state, layer_usage, current_layer, completed=False)
 
     async def _charge(usage_items: list[tuple[int, float]], method_label: str) -> int:
         used = [(slot_id, grams) for slot_id, grams in usage_items if grams > 0]
@@ -1359,6 +1448,7 @@ async def _report_partial_usage(
                 printer_serial,
                 printer_id=printer_id,
                 cost_out=cost_out,
+                swaps=swaps,
             )
             return updated
         return await _report_spool_usage_for_slots(
@@ -1370,6 +1460,7 @@ async def _report_partial_usage(
             printer_serial,
             printer_id=printer_id,
             cost_out=cost_out,
+            swaps=swaps,
         )
 
     # Try to use accurate G-code parsed data
@@ -1382,10 +1473,20 @@ async def _report_partial_usage(
         if usage_mm:
             logger.info("[SPOOLMAN] Using G-code parsed data for layer %s", current_layer)
 
-            # Build (slot_id, grams) list using Spoolman densities with 3MF fallback
+            # On the slicer's weights, as a finished print is (#3317); the
+            # rest from Spoolman densities with 3MF fallback.
+            scaled = slicer_grams_at_layer(layer_usage_int, current_layer, filament_usage)
+            # A finished print charges only the slots the slicer weighed, so a
+            # cancelled one charges no others either.
+            weighed = {u.get("slot_id") for u in filament_usage if (u.get("used_g") or 0) > 0}
             usage_items = []
             for filament_id, mm_used in usage_mm.items():
                 slot_id = filament_id + 1  # filament_id is 0-based, slot_id is 1-based
+                if filament_usage and slot_id not in weighed:
+                    continue
+                if slot_id in scaled:
+                    usage_items.append((slot_id, round(scaled[slot_id], 2)))
+                    continue
 
                 # Get density from Spoolman (most accurate), fall back to 3MF, then PLA default
                 global_tray_id = _resolve_global_tray_id(slot_id, slot_to_tray, ams_trays)
@@ -1583,6 +1684,7 @@ async def report_usage(printer_id: int, archive_id: int):
         # Priced as each charge lands, so the figure the archive ends up with
         # describes the same grams Spoolman actually had deducted (#2591).
         print_cost = _PrintCost()
+        swaps = _swap_splitter(printer_id, _state, layer_usage_raw, _layer_denom_hint, completed=True)
         handled_global_tray_ids: set[int] = set()
         spools_updated = 0
 
@@ -1629,6 +1731,7 @@ async def report_usage(printer_id: int, archive_id: int):
                     slot_colors_out=slot_colors,
                     slot_materials_out=slot_materials,
                     cost_out=print_cost,
+                    swaps=swaps,
                 )
                 spools_updated += split_updated
                 handled_global_tray_ids |= split_handled
@@ -1646,6 +1749,7 @@ async def report_usage(printer_id: int, archive_id: int):
                     slot_colors_out=slot_colors,
                     slot_materials_out=slot_materials,
                     cost_out=print_cost,
+                    swaps=swaps,
                 )
                 # Track which physical slots the 3MF path already covered so
                 # Path 2 doesn't double-charge them.

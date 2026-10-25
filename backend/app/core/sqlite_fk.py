@@ -92,6 +92,13 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         ("slicer_pipelines", "target_printer_id"),
         # A deleted printer's spools would stay "assigned" to it (SA-1).
         ("spool_assignment", "printer_id"),
+        # A profile default's K profile would select a calibration slot on
+        # the next printer given the id (#1326).
+        ("filament_profile_default_k_profile", "printer_id"),
+        # filament_profile_default: the next default given the id would take
+        # over its presets and K profiles (#1326).
+        ("filament_profile_default_k_profile", "profile_default_id"),
+        ("filament_profile_default_preset", "profile_default_id"),
         # external_links: the next link given the id would show the count an
         # app reported for the deleted one.
         ("external_link_badges", "link_id"),

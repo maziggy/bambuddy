@@ -10,6 +10,7 @@ nothing and may use no cost center.
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -529,3 +530,51 @@ class TestArchivesAndPipelines:
         # Refused by the ownership check, not later for the missing file
         assert response.status_code == 404
         assert response.json()["detail"] == "File not found"
+
+
+class TestSlicedThroughAKeyIsTheOwners:
+    """A key without the cloud scope resolves no cloud presets, but what it
+    slices is still its owner's, as a pipeline run it starts is."""
+
+    async def _slice(self, async_client, url, key):
+        from dataclasses import dataclass
+
+        @dataclass
+        class _Job:
+            id: int = 1
+            status: str = "pending"
+
+        with patch(
+            "backend.app.services.slice_dispatch.slice_dispatch.enqueue", new=AsyncMock(return_value=_Job())
+        ) as enqueue:
+            response = await async_client.post(url, json=_SLICE_BODY, headers=key)
+        assert response.status_code == 202, response.text
+        return enqueue.await_args.kwargs["owner_id"]
+
+    async def test_a_library_file(self, async_client, db_session, library_world, tmp_path, monkeypatch):
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+        (tmp_path / "mine.3mf").write_bytes(b"PK")
+        mine = LibraryFile(
+            filename="mine.3mf",
+            file_path="mine.3mf",
+            file_type="3mf",
+            file_size=2,
+            created_by_id=library_world["owner"].id,
+        )
+        db_session.add(mine)
+        await db_session.commit()
+
+        owner = await self._slice(async_client, f"/api/v1/library/files/{mine.id}/slice", library_world["key"])
+
+        assert owner == library_world["owner"].id
+
+    async def test_an_archive(self, async_client, db_session, library_world, tmp_path, monkeypatch):
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+        (tmp_path / "mine_archive.3mf").write_bytes(b"PK")
+        archive = await _archive(db_session, library_world["owner"].id, 77)
+        archive.file_path = "mine_archive.3mf"
+        await db_session.commit()
+
+        owner = await self._slice(async_client, f"/api/v1/archives/{archive.id}/slice", library_world["key"])
+
+        assert owner == library_world["owner"].id

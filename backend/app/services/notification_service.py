@@ -2630,6 +2630,44 @@ class NotificationService:
             variables=variables,
         )
 
+    async def on_print_pause_upcoming(
+        self,
+        printer_id: int,
+        printer_name: str,
+        filename: str,
+        *,
+        minutes: int,
+        layer: int,
+        total_layers: int,
+        db: AsyncSession,
+    ):
+        """A pause the slicer put into the print is coming up (#2984)."""
+        providers = await self._get_providers_for_event(db, "on_print_pause_upcoming", printer_id)
+        if not providers:
+            return
+
+        variables = {
+            "printer": printer_name,
+            "filename": self._clean_filename(filename),
+            # At least a minute: a pause seconds away still reads as "1m".
+            "time_to_pause": self._format_duration(max(minutes, 1) * 60),
+            "eta": await self._format_eta(max(minutes * 60, 1), db),
+            "layer": str(layer),
+            "total_layers": str(total_layers),
+        }
+
+        title, message = await self._build_message_from_template(db, "print_pause_upcoming", variables)
+        await self._send_to_providers(
+            providers,
+            title,
+            message,
+            db,
+            "print_pause_upcoming",
+            printer_id,
+            printer_name,
+            variables=variables,
+        )
+
     def clear_template_cache(self):
         """Clear the template cache. Call this when templates are updated."""
         self._template_cache.clear()

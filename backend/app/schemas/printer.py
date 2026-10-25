@@ -247,7 +247,7 @@ class AMSUnit(BaseModel):
     dry_sf_reason: list[int] = []  # Cannot-dry reasons from firmware (see CannotDryReason)
     dry_target_temp: int | None = None  # Active-cycle target °C (Bambu doesn't echo this)
     dry_filament: str | None = None  # Active-cycle filament name we sent
-    module_type: str = ""  # "ams", "n3f", "n3s"
+    module_type: str = ""  # "ams", "ams_f1", "n3f", "n3s"
 
 
 class NozzleInfoResponse(BaseModel):
@@ -348,6 +348,14 @@ class PrintOptionsResponse(BaseModel):
     filament_tangle_detect: bool = False
 
 
+class NextPause(BaseModel):
+    """The next pause the slicer put into the running print (#2984)."""
+
+    layer: int
+    # Minutes until the printer gets there; None while it reports no time left.
+    minutes: int | None = None
+
+
 class PrinterStatus(BaseModel):
     id: int
     name: str
@@ -435,12 +443,16 @@ class PrinterStatus(BaseModel):
     last_ams_update: float = 0.0
     # Number of printable objects in current print (for skip objects feature)
     printable_objects_count: int = 0
+    # The next pause the slicer put into the print, while it is running (#2984)
+    next_pause: NextPause | None = None
     # Fan speeds (0-100 percentage, None if not available for this model)
     cooling_fan_speed: int | None = None  # Part cooling fan
     big_fan1_speed: int | None = None  # Auxiliary fan
     big_fan2_speed: int | None = None  # Chamber/exhaust fan
     heatbreak_fan_speed: int | None = None  # Hotend heatbreak fan
-    # Left auxiliary part cooling fan (optional P2S/X2D accessory, airduct part id 10).
+    # Second auxiliary part cooling fan (airduct part id 10). Named for the P2S,
+    # where it is the left fan (an accessory kit); on the X2D it is the RIGHT one
+    # and big_fan1_speed (part 2) the left (#3373). The name stays for API clients.
     # None = not installed / not reported by this model.
     left_aux_fan_speed: int | None = None
     # Chamber exhaust fan present (P2S/X2D External Exhaust Fan kit; airduct part id 3).

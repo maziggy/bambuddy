@@ -552,12 +552,13 @@ class TestNfcEndpoints:
 
         assert resp.status_code == 200
         # merge_spool_extra was called twice:
-        #   1. clear tag from spool A (id=11) — set tag to ""
+        #   1. clear tag from spool A (id=11) — JSON-encoded "", as Spoolman
+        #      refuses a bare "" (#3312)
         #   2. set tag on spool B (id=22) — set tag to "DEADBEEF" (JSON-encoded)
         assert mock_client.merge_spool_extra.await_count == 2
         clear_call, bind_call = mock_client.merge_spool_extra.await_args_list
         assert clear_call.args[0] == 11
-        assert clear_call.args[1] == {"tag": ""}
+        assert clear_call.args[1] == {"tag": _json.dumps("")}
         assert bind_call.args[0] == 22
         assert bind_call.args[1] == {"tag": '"DEADBEEF"'}
 

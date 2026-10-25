@@ -189,7 +189,7 @@ async def ensure_default_types(db: AsyncSession) -> None:
 
 @router.get("/types", response_model=list[MaintenanceTypeResponse])
 async def get_maintenance_types(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
 ):
     """Get all maintenance types."""
@@ -205,7 +205,7 @@ async def get_maintenance_types(
 @router.post("/types", response_model=MaintenanceTypeResponse)
 async def create_maintenance_type(
     data: MaintenanceTypeCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_CREATE),
 ):
     """Create a custom maintenance type."""
@@ -228,7 +228,7 @@ async def create_maintenance_type(
 async def update_maintenance_type(
     type_id: int,
     data: MaintenanceTypeUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
 ):
     """Update a maintenance type."""
@@ -249,7 +249,7 @@ async def update_maintenance_type(
 @router.delete("/types/{type_id}")
 async def delete_maintenance_type(
     type_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
 ):
     """Delete a maintenance type."""
@@ -270,7 +270,7 @@ async def delete_maintenance_type(
 
 @router.post("/types/restore-defaults")
 async def restore_default_maintenance_types(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
 ):
     """Restore deleted default maintenance types."""
@@ -480,7 +480,7 @@ async def _get_printer_maintenance_internal(
 @router.get("/printers/{printer_id}", response_model=PrinterMaintenanceOverview)
 async def get_printer_maintenance(
     printer_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
 ):
     """Get maintenance overview for a specific printer."""
@@ -489,7 +489,7 @@ async def get_printer_maintenance(
 
 @router.get("/overview", response_model=list[PrinterMaintenanceOverview])
 async def get_all_maintenance_overview(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -515,7 +515,7 @@ async def get_all_maintenance_overview(
 async def update_printer_maintenance(
     item_id: int,
     data: PrinterMaintenanceUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -542,7 +542,7 @@ async def update_printer_maintenance(
 async def assign_maintenance_type(
     printer_id: int,
     type_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.MAINTENANCE_CREATE),
 ):
     """Assign a maintenance type to a specific printer (for custom types)."""
@@ -601,7 +601,7 @@ async def assign_maintenance_type(
 @router.delete("/items/{item_id}")
 async def remove_maintenance_item(
     item_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_DELETE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -629,7 +629,7 @@ async def remove_maintenance_item(
 async def perform_maintenance(
     item_id: int,
     data: PerformMaintenanceRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -709,7 +709,7 @@ async def perform_maintenance(
 @router.get("/items/{item_id}/history", response_model=list[MaintenanceHistoryResponse])
 async def get_maintenance_history(
     item_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -729,7 +729,7 @@ async def get_maintenance_history(
 
 @router.get("/summary")
 async def get_maintenance_summary(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.MAINTENANCE_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -768,7 +768,7 @@ async def get_maintenance_summary(
 async def set_printer_hours(
     printer_id: int,
     total_hours: float,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.MAINTENANCE_UPDATE),
 ):
     """Set the total print hours for a printer (adjusts offset to match).

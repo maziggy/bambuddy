@@ -6,6 +6,7 @@ import os
 import posixpath
 import re
 import secrets
+import shutil
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -103,7 +104,7 @@ from backend.app.core.database import async_session, engine, init_db
 from backend.app.core.static_assets import AssetStaticFiles
 from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
-from backend.app.services import kprofile_drift, print_dispatch_context, slot_unlink_grace
+from backend.app.services import kprofile_drift, pause_eta, print_dispatch_context, slot_unlink_grace
 from backend.app.services.ams_assignment_lock import get_ams_assignment_lock
 from backend.app.services.archive import ArchiveService, peek_plate_index_in_3mf, swap_plate_suffix
 from backend.app.services.archive_cost_estimate import (
@@ -857,6 +858,82 @@ def _is_bambuddy_authorized_print_in_memory(printer_id: int, state: PrinterState
     )
 
 
+def _reported_print_names(printer_id: int, state: PrinterState) -> set[str]:
+    """The names the printer reports for its print, as it echoes them (spaces become underscores)."""
+    return {_normalise_subtask_name(name) for _pid, name in _build_status_print_keys(printer_id, state)} - {""}
+
+
+async def _printing_archive_without_job_id(
+    db, printer_id: int, reported: set[str], *, dispatched_only: bool, live_only: bool = False
+):
+    """The newest printing archive on ``printer_id`` of a print that reported no job id, under a reported name.
+
+    An archive with a real id of its own is a print that reported one: a "0"
+    print is not it, even under the same name (one whose completion was missed
+    would otherwise cover it). ``dispatched_only`` keeps to archives carrying
+    Bambuddy's dispatch marker; ``live_only`` leaves out deleted ones.
+    """
+    from backend.app.models.archive import PrintArchive
+
+    query = select(PrintArchive).where(
+        PrintArchive.printer_id == printer_id,
+        PrintArchive.status == "printing",
+        or_(PrintArchive.subtask_id.is_(None), PrintArchive.subtask_id.in_(("", "0"))),
+    )
+    if dispatched_only:
+        query = query.where(or_(PrintArchive.billing_run_id.is_not(None), PrintArchive.created_by_id.is_not(None)))
+    if live_only:
+        query = query.where(PrintArchive.deleted_at.is_(None))
+    archives = await db.execute(query.order_by(PrintArchive.created_at.desc()))
+    return next((a for a in archives.scalars() if _archive_name_forms(a) & reported), None)
+
+
+async def running_print_archive(db, printer_id: int, state: PrinterState, *, printing_only: bool, by_name: bool):
+    """The archive of the print running on ``printer_id``, or None (#3327).
+
+    By the print's subtask_id first, which the firmware mints per print; with
+    ``printing_only`` only an archive that is still printing (a leftover row of
+    a completion never seen must not stand in for another job). A print
+    started outside the cloud (Bambu Studio over LAN, Handy, the printer's
+    screen) reports subtask_id "0", which links it to nothing: the archive
+    Bambuddy bound to the running print comes next, the one completion charges
+    and photographs. A restart forgets that binding and rebinds only Bambuddy's
+    own prints, so with ``by_name`` a "0" print last falls back to its printing
+    archive under the name the printer reports. That can be an earlier run of
+    the same name whose completion was missed while Bambuddy was down: good
+    enough for a plate label or a cover, not for which objects skip-objects
+    offers, so those callers leave it off. None until the archive exists, and
+    never a deleted one.
+    """
+    from backend.app.models.archive import PrintArchive
+
+    subtask_id = str(getattr(state, "subtask_id", "") or "").strip()
+    if subtask_id not in ("", "0"):
+        query = select(PrintArchive).where(
+            PrintArchive.printer_id == printer_id,
+            PrintArchive.subtask_id == subtask_id,
+            PrintArchive.deleted_at.is_(None),
+        )
+        if printing_only:
+            query = query.where(PrintArchive.status == "printing")
+        archive = await db.scalar(query.order_by(PrintArchive.created_at.desc()).limit(1))
+        if archive is not None:
+            return archive
+
+    bound = next(
+        (_active_prints[key] for key in _build_status_print_keys(printer_id, state) if key in _active_prints),
+        None,
+    )
+    if bound is not None:
+        return await db.scalar(select(PrintArchive).where(PrintArchive.id == bound, PrintArchive.deleted_at.is_(None)))
+    if not by_name or subtask_id != "0":
+        return None
+    reported = _reported_print_names(printer_id, state)
+    if not reported:
+        return None
+    return await _printing_archive_without_job_id(db, printer_id, reported, dispatched_only=False, live_only=True)
+
+
 def _bind_active_print(
     printer_id: int,
     archive_id: int,
@@ -947,23 +1024,10 @@ async def _is_bambuddy_authorized_print(printer_id: int, state: PrinterState, db
         # Bambuddy's printing archives on this printer under the name the
         # printer reports, compared as the printer echoes names (spaces become
         # underscores). Nothing reported to compare yet: wait.
-        reported = {_normalise_subtask_name(name) for _pid, name in possible_keys} - {""}
+        reported = _reported_print_names(printer_id, state)
         if not reported:
             return None
-        dispatched = await db.execute(
-            select(PrintArchive)
-            .where(
-                PrintArchive.printer_id == printer_id,
-                PrintArchive.status == "printing",
-                or_(PrintArchive.billing_run_id.is_not(None), PrintArchive.created_by_id.is_not(None)),
-                # An archive with a real id of its own is a print that reported
-                # one: a "0" print is not it, even under the same name (one whose
-                # completion was missed would otherwise cover it).
-                or_(PrintArchive.subtask_id.is_(None), PrintArchive.subtask_id.in_(("", "0"))),
-            )
-            .order_by(PrintArchive.created_at.desc())
-        )
-        archive = next((a for a in dispatched.scalars() if _archive_name_forms(a) & reported), None)
+        archive = await _printing_archive_without_job_id(db, printer_id, reported, dispatched_only=True)
     else:
         result = await db.execute(
             select(PrintArchive)
@@ -1830,6 +1894,10 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         notify_live_activities.observe(printer_id, state)
     except Exception:
         logging.getLogger(__name__).exception("Notify Live Activity status hook failed for printer %s", printer_id)
+    try:
+        pause_eta.observe(printer_id, state)
+    except Exception:
+        logging.getLogger(__name__).exception("Pause heads-up check failed for printer %s", printer_id)
     # Connected-edge reconciliation (#1542 follow-up). When the printer
     # transitions disconnected → connected — which covers both Bambuddy
     # startup (no prior connection) and a mid-session MQTT reconnect — fire
@@ -3744,6 +3812,65 @@ def _load_objects_from_archive(archive, printer_id: int, logger) -> None:
         logger.debug("Failed to extract printable objects from archive: %s", e)
 
 
+def _load_pauses_from_3mf(threemf_path, printer_id: int, *, warned_layers=(), passed_through_layer: int = 0) -> None:
+    """Read the running print's slicer pauses from its 3MF, in the background (#2984).
+
+    In a thread: a plate's G-code runs to tens of MB, and the print-start
+    handler must not wait for it. Kept only while the printer is still on
+    the print they were read for: a new print replaces the list.
+    ``warned_layers``: pauses this print was already warned about, kept on its
+    archive, so a restart does not send the heads-up again.
+    ``passed_through_layer``: for a print resumed after a restart, the layer it
+    is on. Its pauses up to there are behind it, though the printer's layer
+    reads 0 until it reports the next one.
+    """
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        return
+    state = client.state
+    read_for = state.pause_points
+    try:
+        plate_id = resolve_plate_id(state)
+    except Exception:
+        # Never at the cost of the print-start handler this runs inside.
+        logging.getLogger(__name__).warning("[Printer %s] Could not tell the plate to read pauses for", printer_id)
+        return
+
+    async def _load() -> None:
+        from backend.app.utils.threemf_tools import extract_pause_points_from_3mf
+
+        points = await asyncio.to_thread(extract_pause_points_from_3mf, Path(threemf_path), plate_id)
+        if state.pause_points is not read_for:
+            return
+        state.pause_points = [p for p in points if p.layer > passed_through_layer]
+        state.pause_warned_layers = set(state.pause_warned_layers) | set(warned_layers)
+        if points:
+            logging.getLogger(__name__).info(
+                "Loaded %s slicer pause(s) for printer %s at layer(s) %s",
+                len(points),
+                printer_id,
+                [p.layer for p in points],
+            )
+
+    spawn_background_task(_load(), name=f"load-pauses-{printer_id}")
+
+
+def _load_pauses_from_resumed_archive(archive, printer_id: int) -> None:
+    """Pauses for a print start taken as the resumption of a running print.
+
+    A restart while the print was paused makes its resume look like a new
+    print (#2984): the pauses warned about and passed are kept from before.
+    """
+    client = printer_manager.get_client(printer_id)
+    state = client.state if client else None
+    _load_pauses_from_3mf(
+        app_settings.base_dir / archive.file_path,
+        printer_id,
+        warned_layers=pause_eta.warned_layers_of(archive, state) if state is not None else (),
+        passed_through_layer=getattr(client, "layer_before_new_print", 0) if client else 0,
+    )
+
+
 async def _restore_printable_objects(printer_id: int, state, db, logger) -> None:
     """Put the skip-objects list back after a restart mid-print.
 
@@ -3758,34 +3885,29 @@ async def _restore_printable_objects(printer_id: int, state, db, logger) -> None
     object count, and the one endpoint that can rebuild the list is reachable
     only from the modal that button opens.
 
-    Anchored on ``subtask_id``, which the firmware mints per print, so a
-    leftover ``status="printing"`` row from a completion we never saw cannot
-    hand this print someone else's objects. Without one, nothing is loaded
-    rather than guessed — the reload path on ``GET /print/objects`` covers that
-    case on demand.
+    The archive is the running print's as ``running_print_archive`` finds it:
+    by subtask_id, or for a print that reports none by the archive bound to it
+    (#3327), never by name: a leftover ``status="printing"`` row from a
+    completion we never saw must not hand this print someone else's objects.
+    After a restart that binding exists only for Bambuddy's own prints, so a
+    print that reports no subtask_id loads nothing rather than a guess; the
+    reload path on ``GET /print/objects`` covers that case on demand.
     """
     client = printer_manager.get_client(printer_id)
-    if client is None or client.state.printable_objects:
+    if client is None or (client.state.printable_objects and client.state.pause_points):
         return
 
-    subtask_id = str(getattr(state, "subtask_id", "") or "").strip()
-    if subtask_id in ("", "0"):
-        return
-
-    from backend.app.models.archive import PrintArchive
-
-    archive = await db.scalar(
-        select(PrintArchive)
-        .where(
-            PrintArchive.printer_id == printer_id,
-            PrintArchive.status == "printing",
-            PrintArchive.subtask_id == subtask_id,
-        )
-        .order_by(PrintArchive.created_at.desc())
-        .limit(1)
-    )
-    if archive is not None:
-        _load_objects_from_archive(archive, printer_id, logger)
+    archive = await running_print_archive(db, printer_id, state, printing_only=True, by_name=False)
+    if archive is not None and archive.file_path:
+        if not client.state.printable_objects:
+            _load_objects_from_archive(archive, printer_id, logger)
+        # The slicer's pauses are in-memory only as well (#2984).
+        if not client.state.pause_points:
+            _load_pauses_from_3mf(
+                app_settings.base_dir / archive.file_path,
+                printer_id,
+                warned_layers=pause_eta.warned_layers_of(archive, state),
+            )
 
 
 # Retry ladder for a fallback archive created while the printer's FTPS cool-off
@@ -3817,6 +3939,65 @@ _fallback_3mf_retry_tasks: dict[int, asyncio.Task] = {}
 # done safely: `Lock.locked()` reads False between release and the queued waiter
 # resuming, so "no waiters" is not a question this API can answer.
 _fallback_recovery_locks: dict[int, asyncio.Lock] = {}
+
+
+# How many of a printer's newest archives a touchscreen reprint is compared
+# against (#3307). A repeat is usually of a recent job; the bound keeps a
+# print start from reading a long history's extra_data.
+_REPEAT_LOOKBACK = 200
+
+
+async def _archived_3mf_for_repeat(
+    db, printer_id: int, subtask_name: str | None, gcode_file: str | None, total_layers: int | None
+):
+    """The newest archive of the job this printer is running again, with its 3MF.
+
+    A "Print again" on the printer's screen never names the file on the card:
+    it reports its own history copy under a generic name
+    (``file:///userdata/project_file.gcode.3mf``), the 3MF's internal title as
+    ``subtask_name`` and the plate as ``gcode_file`` -- and the title is often
+    not the card file's name, so every lookup built from it misses (#3307).
+    An earlier run that was archived recorded that same title and plate in its
+    ``_print_data``, and holds the 3MF.
+
+    Same printer, same title, same plate, a 3MF still on disk. A layer count
+    known on both sides must agree: the same title and plate re-sliced is
+    another job. None when nothing matches.
+    """
+    from backend.app.models.archive import PrintArchive
+
+    if not subtask_name or not gcode_file:
+        return None
+    rows = (
+        (
+            await db.execute(
+                select(PrintArchive)
+                .where(
+                    PrintArchive.printer_id == printer_id,
+                    PrintArchive.deleted_at.is_(None),
+                    PrintArchive.file_path.isnot(None),
+                    PrintArchive.file_path != "",
+                )
+                .order_by(PrintArchive.created_at.desc(), PrintArchive.id.desc())
+                .limit(_REPEAT_LOOKBACK)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for archive in rows:
+        extra = archive.extra_data if isinstance(archive.extra_data, dict) else {}
+        run = extra.get("_print_data")
+        if not isinstance(run, dict):
+            continue
+        if run.get("subtask_name") != subtask_name or run.get("filename") != gcode_file:
+            continue
+        if total_layers and archive.total_layers and archive.total_layers != total_layers:
+            continue
+        if not (app_settings.base_dir / archive.file_path).is_file():
+            continue
+        return archive
+    return None
 
 
 async def _recover_fallback_archive(archive_id: int, source_3mf: Path, printer_id: int, *, price: bool = True) -> bool:
@@ -3904,6 +4085,9 @@ async def _recover_fallback_archive_locked(
             logger.warning(
                 "[RECOVER] Archive %s: could not add the 3MF to Spoolman's usage tracking", archive_id, exc_info=True
             )
+        if price and recovered.status == "printing" and recovered.file_path:
+            # Print start had no 3MF to read the slicer's pauses from (#2984).
+            _load_pauses_from_3mf(app_settings.base_dir / recovered.file_path, printer_id)
         if price and recovered.status == "printing":
             # Print start priced it from the default rate, having no 3MF to
             # estimate from; now it has one. An ended print is left alone: its
@@ -4201,6 +4385,22 @@ async def _dispatch_outcome_confirmation_safely(
             pass
 
 
+async def _outcome_answerers(db, owner_id: int | None) -> set[int] | None:
+    """Who may answer a print's outcome prompt in the app: its owner and anyone
+    who may change everyone's archives. None (everyone on the printer) with auth
+    off, or for a print nobody owns."""
+    from sqlalchemy.orm import selectinload
+
+    from backend.app.core.auth import is_auth_enabled
+    from backend.app.core.permissions import Permission
+    from backend.app.models.user import User
+
+    if owner_id is None or not await is_auth_enabled(db):
+        return None
+    users = (await db.execute(select(User).options(selectinload(User.groups)).where(User.is_active))).scalars().all()
+    return {owner_id} | {u.id for u in users if u.has_permission(Permission.ARCHIVES_UPDATE_ALL.value)}
+
+
 async def dispatch_outcome_confirmation(
     db,
     printer_id: int,
@@ -4267,6 +4467,7 @@ async def dispatch_outcome_confirmation(
             "archive_id": archive_id,
             "print_name": confirm_archive.print_name or confirm_archive.filename,
         },
+        user_ids=await _outcome_answerers(db, confirm_archive.created_by_id),
     )
     await notification_service.on_print_confirm_request(
         printer_id,
@@ -4412,6 +4613,9 @@ async def _dispatched_by_bambuddy(db, printer_id: int, filename: str | None, sub
 async def on_print_start(printer_id: int, data: dict):
     """Handle print start - archive the 3MF file immediately."""
     logger = logging.getLogger(__name__)
+    # The print's start, before the 3MF download that the archive waits for
+    # (#3327): a minute of it would otherwise be missing from the print time.
+    detected_at = datetime.now(timezone.utc)
 
     logger.info("[CALLBACK] on_print_start called for printer %s, data keys: %s", printer_id, list(data.keys()))
 
@@ -5010,6 +5214,8 @@ async def on_print_start(printer_id: int, data: dict):
 
                 # Extract printable objects from the archived 3MF file
                 _load_objects_from_archive(archive, printer_id, logger)
+                if archive.file_path:
+                    _load_pauses_from_3mf(app_settings.base_dir / archive.file_path, printer_id)
 
                 # Store Spoolman tracking data for per-filament usage reporting
                 try:
@@ -5123,6 +5329,8 @@ async def on_print_start(printer_id: int, data: dict):
                     }
                     await _send_print_start_notification(printer_id, data, archive_data, logger)
                 _load_objects_from_archive(existing_archive, printer_id, logger)
+                if existing_archive.file_path:
+                    _load_pauses_from_resumed_archive(existing_archive, printer_id)
                 return
 
             # Name-match only (no subtask_id to anchor on): decide resume vs.
@@ -5217,6 +5425,8 @@ async def on_print_start(printer_id: int, data: dict):
                     await _send_print_start_notification(printer_id, data, archive_data, logger)
                 # Extract printable objects from the archived 3MF file
                 _load_objects_from_archive(existing_archive, printer_id, logger)
+                if existing_archive.file_path:
+                    _load_pauses_from_resumed_archive(existing_archive, printer_id)
                 return
 
         # Build list of possible 3MF filenames to try
@@ -5314,6 +5524,17 @@ async def on_print_start(printer_id: int, data: dict):
         # leaves this False and schedules nothing. Anything else means the
         # transfer, not the file, is what failed, and that does not last (#3063).
         ftp_transfer_failed = False
+        # The narrower case of the above: the directory walk *listed* a file
+        # for this print and could not fetch it, so the file is on the card
+        # under a name that matches. The only failure that rules out an
+        # earlier run's 3MF standing in for it (#3307).
+        walk_transfer_failed = False
+        # Paths the sweep reached and could not transfer -- a timeout, not a
+        # 550. The directory walk lists the same folders and would download
+        # the same file again: on a slow A1 that was a second 300 s on the
+        # printer's one FTPS slot, at print start, for a file the recovery
+        # retry fetches with a deadline twice as long (#3308).
+        sweep_failed_paths: set[str] = set()
 
         # The print's name, for a fallback archive whose `subtask_name` the
         # plate guard below had to disown. Display only, and deliberately kept
@@ -5468,12 +5689,14 @@ async def on_print_start(printer_id: int, data: dict):
                     # exhausted transfer arrives here rather than as an
                     # exception (#3063).
                     ftp_transfer_failed = True
+                    sweep_failed_paths.add(remote_path)
                 except FileNotOnPrinterError:
                     # 550 — file isn't at this path. Advance to next candidate
                     # without burning the retry budget.
                     logger.debug("3MF not at %s (550), trying next path", remote_path)
                 except Exception as e:
                     ftp_transfer_failed = True
+                    sweep_failed_paths.add(remote_path)
                     logger.debug("FTP download failed for %s: %s", remote_path, e)
 
             if downloaded_filename or ftps_handshake_blocked(printer.ip_address):
@@ -5513,6 +5736,18 @@ async def on_print_start(printer_id: int, data: dict):
                     posixpath.join(search_dir, f.get("name", "")) for f in dir_files if not f.get("is_directory")
                 ]
             for remote_full_path in _3mf_files_for_print(listed_paths, search_term):
+                if remote_full_path in sweep_failed_paths:
+                    # Listed for this print, and its transfer already failed:
+                    # the same as a failed walk download, without spending a
+                    # second deadline on it. Skipping it cannot hand the walk a
+                    # look-alike: while a file of the print's own name is
+                    # listed, files that merely contain the name are not.
+                    logger.info(
+                        "Not downloading %s again: its transfer already failed; the recovery retry will fetch it",
+                        remote_full_path,
+                    )
+                    walk_transfer_failed = True
+                    continue
                 fname = posixpath.basename(remote_full_path)
                 logger.info("Found matching file: %s", remote_full_path)
                 temp_path = app_settings.archive_dir / "temp" / fname
@@ -5554,6 +5789,51 @@ async def on_print_start(printer_id: int, data: dict):
                 # The listing named the file, so it is on the card;
                 # only the transfer failed (#3063).
                 ftp_transfer_failed = True
+                walk_transfer_failed = True
+
+        # A "Print again" on the printer's screen names no file Bambuddy can
+        # find: only its history copy under a generic name, and the 3MF's
+        # internal title (#3307). When an earlier run of the same job was
+        # archived, its 3MF is the one being printed again. Not when the
+        # directory walk listed a file for this print and only its transfer
+        # failed: that file is on the card, and the retry fetches it. A
+        # cool-off or a failed sweep path is no such evidence -- the retry
+        # tries the same names, which this print's file never had.
+        reused_3mf_from: int | None = None
+        if not downloaded_filename and not walk_transfer_failed:
+            reported_layers = raw_mqtt.get("total_layer_num")
+            earlier = await _archived_3mf_for_repeat(
+                db,
+                printer_id,
+                subtask_name,
+                filename,
+                reported_layers if isinstance(reported_layers, int) and reported_layers > 0 else None,
+            )
+            if earlier is not None:
+                reuse_name = Path(earlier.filename or "").name or f"archive_{earlier.id}.3mf"
+                # Per printer: two printers reprinting the same job at once
+                # must not write one temp file (archive_print names the
+                # archive after original_filename, not this path).
+                reuse_path = app_settings.archive_dir / "temp" / f"reprint_{printer_id}_{reuse_name}"
+                try:
+                    reuse_path.parent.mkdir(parents=True, exist_ok=True)
+                    await asyncio.to_thread(shutil.copyfile, app_settings.base_dir / earlier.file_path, reuse_path)
+                except OSError as e:
+                    # A copy that fails leaves the print the fallback archive
+                    # it would have had, not no archive at all.
+                    logger.warning("Could not copy the 3MF of archive %s for printer %s: %s", earlier.id, printer_id, e)
+                else:
+                    temp_path = reuse_path
+                    downloaded_filename = reuse_name
+                    reused_3mf_from = earlier.id
+                    cache_3mf_download(printer_id, reuse_name, temp_path)
+                    logger.info(
+                        "No 3MF on printer %s for %s (%s); using the 3MF of archive %s, an earlier run of the same job",
+                        printer_id,
+                        subtask_name,
+                        filename,
+                        earlier.id,
+                    )
 
         # Validate the downloaded 3MF actually matches the plate that's running
         # (#1204): subtask_name lags across consecutive plates of the same model,
@@ -5754,7 +6034,7 @@ async def on_print_start(printer_id: int, data: dict):
                     print_name=print_name,
                     print_time_seconds=fallback_print_time,
                     status="printing",
-                    started_at=datetime.now(timezone.utc),
+                    started_at=detected_at,
                     subtask_id=subtask_id,
                     confirm_requested=await _ask_outcome_for_external_print(db, printer_id, subtask_name),
                     filament_type=mqtt_filament_meta.get("filament_type"),
@@ -5892,8 +6172,18 @@ async def on_print_start(printer_id: int, data: dict):
                 archive = await service.archive_print(
                     printer_id=printer_id,
                     source_file=temp_path,
-                    print_data={**data, "status": "printing"},
+                    print_data={
+                        **data,
+                        "status": "printing",
+                        # Where the 3MF came from when the printer had none to
+                        # give (#3307), for whoever reads this archive later.
+                        **({"_3mf_from_archive": reused_3mf_from} if reused_3mf_from is not None else {}),
+                    },
                     subtask_id=subtask_id,
+                    started_at=detected_at,
+                    # The reused copy's temp name carries the printer id; a
+                    # download's is the file's own name, as before.
+                    original_filename=downloaded_filename if reused_3mf_from is not None else None,
                 )
             except IntegrityError:
                 # archive_print removed the folder it had copied the 3MF into.
@@ -5999,6 +6289,11 @@ async def on_print_start(printer_id: int, data: dict):
                             )
                 except Exception as e:
                     logger.debug("Failed to extract printable objects: %s", e)
+
+                # From the archived copy: the downloaded one may be removed
+                # below while the pauses are still being read.
+                if archive is not None and archive.file_path:
+                    _load_pauses_from_3mf(app_settings.base_dir / archive.file_path, printer_id)
 
                 # Store Spoolman tracking data for per-filament usage reporting
                 try:
@@ -6799,6 +7094,7 @@ async def _restore_usage_tracking_session(printer_id: int, state, db, logger) ->
             clear_persisted_session,
             get_persisted_ams_mapping,
             get_persisted_print_name,
+            get_persisted_spool_change_log,
             restore_session,
         )
 
@@ -6830,6 +7126,12 @@ async def _restore_usage_tracking_session(printer_id: int, state, db, logger) ->
             # has captured since is newer.
             if state.print_ams_mapping is None:
                 state.print_ams_mapping = await get_persisted_ams_mapping(db, printer_id)
+            # Spools swapped on a tray before the restart (#3325); anything this
+            # process has recorded since goes after them.
+            persisted_swaps = await get_persisted_spool_change_log(db, printer_id)
+            if persisted_swaps:
+                seen = getattr(state, "spool_change_log", None) or []
+                state.spool_change_log = persisted_swaps + [item for item in seen if item not in persisted_swaps]
         if persisted_log:
             restored = [tuple(entry) for entry in persisted_log if isinstance(entry, (list, tuple)) and len(entry) == 2]
             # Anything this process already observed goes after the persisted
@@ -6937,11 +7239,11 @@ def _is_active_archive_stale(archive, state) -> tuple[bool, str]:
 
     Conservative on purpose: PAUSE / PREPARE / SLICING and any RUNNING state
     with matching subtask_id+subtask_name is left alone. The cost of a false
-    positive is a duplicate archive on the next real PRINT COMPLETE — the
-    reactive handler uses ``_active_prints`` for lookup, which the reconcile
-    clears on synthesis, so the real completion creates a fresh row instead
-    of overwriting the synthesised one (#1679). The cost of a false negative
-    is the ghost-print loop in #1542.
+    positive is a print closed while it still runs: the reconcile takes its
+    ``_active_prints`` entry and the archive is no longer ``printing``, so
+    the real PRINT COMPLETE later finds no archive to close (#1679). The
+    cost of a false negative is the ghost-print loop in #1542. What the
+    archive is closed as is ``_reconciled_outcome``'s call.
 
     Pre-push guard (#1679): when ``state.state`` is empty or ``"unknown"``,
     MQTT has connected but the first ``push_status`` response hasn't been
@@ -7064,6 +7366,71 @@ def _sd_files_in_use(state) -> set[str]:
     return in_use
 
 
+def _reconciled_outcome(archive, state) -> str:
+    """What a stale archive is closed as at reconnect (#3310).
+
+    A print that ends while Bambuddy restarts is never seen to end: the new
+    MQTT client's first status is already FINISH, which is not a transition.
+    The printer keeps reporting the finished job's ``subtask_id`` until the
+    next print, so a matching id proves the FINISH or FAILED is this
+    archive's. Anything else -- IDLE, another job, an id of "0" (a print
+    started outside the cloud) or none -- says only that the print is over,
+    not how, and stays ``aborted``.
+    """
+    current_state = (state.state or "").upper()
+    if current_state not in ("FINISH", "FAILED"):
+        return "aborted"
+    archive_id = (archive.subtask_id or "").strip()
+    current_id = str(state.subtask_id or "").strip()
+    if archive_id in ("", "0") or archive_id != current_id:
+        return "aborted"
+    return "completed" if current_state == "FINISH" else "failed"
+
+
+def _reconciled_end_time(archive, now: datetime, plate_id: int | None = None) -> datetime | None:
+    """When a print reconciled as completed most likely ended, or None (#3310).
+
+    The printer does not say when it finished, and the reconnect can be hours
+    later. Its start plus the slicer's estimate for the plate it printed,
+    never later than now, is the best guess; None when either is missing,
+    and the run then keeps no duration, as an aborted one does.
+
+    ``plate_id`` is the plate this run printed, from its queue job: a reprint
+    of another plate reuses the archive without changing ``archive.plate_id``.
+    """
+    started = archive.started_at
+    if not started:
+        return None
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    plate = plate_id if plate_id is not None else archive.plate_id
+    estimate = None
+    if archive.file_path:
+        from backend.app.utils.threemf_tools import extract_print_time_from_3mf
+
+        full_path = (
+            app_settings.base_dir / archive.file_path
+        )  # SEC-PATH-OK: archive.file_path is DB-stored, internally generated
+        try:
+            estimate = extract_print_time_from_3mf(full_path, plate)
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).debug(
+                "Plate estimate for reconciled archive %s unreadable: %s", archive.id, exc
+            )
+        if plate is None and estimate != archive.print_time_seconds:
+            # Without a plate the first plate's estimate is read. The archive
+            # carries the sum over all plates (#1593), so a difference means
+            # several plates and no telling which one printed.
+            estimate = None
+    elif plate is None:
+        # Nothing to read the plate from; the archive's own estimate, as for
+        # a single-plate file.
+        estimate = archive.print_time_seconds
+    if not estimate or estimate <= 0:
+        return None
+    return min(started + timedelta(seconds=int(estimate)), now)
+
+
 async def reconcile_stale_active_prints(printer_id: int) -> int:
     """Synthesise ``on_print_complete`` for archives whose print can't be
     running on the printer anymore.
@@ -7080,10 +7447,11 @@ async def reconcile_stale_active_prints(printer_id: int) -> int:
     cleanup chain handles SD-file deletion, status updates, usage tracking,
     and notifications.
 
-    Synthesised ``status="aborted"`` is the conservative label: we have no
-    proof the print finished successfully (and no progress evidence to
-    promote to ``"completed"``). The real PRINT COMPLETE callback, if it
-    fires later, overwrites the status with the correct value.
+    The status is ``_reconciled_outcome``'s: ``completed`` or ``failed``
+    when the printer still reports the archive's own job as finished or
+    failed, ``aborted`` otherwise. Nothing corrects it later: the archive is
+    no longer ``printing``, so a later PRINT COMPLETE finds no archive, and
+    after a restart the printer's FINISH is not one (#3310).
 
     Returns the number of archives reconciled.
     """
@@ -7110,6 +7478,19 @@ async def reconcile_stale_active_prints(printer_id: int) -> int:
     if not active:
         return 0
 
+    # The plate each run printed, from its queue job (#3310).
+    from backend.app.models.print_queue import PrintQueueItem
+
+    async with async_session() as db:
+        plate_rows = await db.execute(
+            select(PrintQueueItem.archive_id, PrintQueueItem.plate_id).where(
+                PrintQueueItem.printer_id == printer_id,
+                PrintQueueItem.status == "printing",
+                PrintQueueItem.archive_id.in_([a.id for a in active]),
+            )
+        )
+        run_plates = {archive_id: plate for archive_id, plate in plate_rows.all() if plate is not None}
+
     logger = logging.getLogger(__name__)
     for archive in active:
         is_stale, reason = _is_active_archive_stale(archive, state)
@@ -7128,18 +7509,30 @@ async def reconcile_stale_active_prints(printer_id: int) -> int:
         # metrics / debug logging). raw_data is the live printer state so
         # the usage tracker can compare end-of-print remain% against the
         # captured start values.
+        outcome = _reconciled_outcome(archive, state)
+        payload = {
+            "status": outcome,
+            "filename": archive.filename,
+            "subtask_name": archive.print_name or "",
+            "subtask_id": archive.subtask_id or "",
+            "raw_data": state.raw_data or {},
+            "_reconciled": True,
+        }
+        if outcome != "aborted":
+            # The printer's progress and layer are this job's, so a partial
+            # run is charged what it printed rather than nothing.
+            if state.progress:
+                payload["last_progress"] = state.progress
+            if state.layer_num:
+                payload["last_layer_num"] = state.layer_num
+        if outcome == "failed":
+            payload["hms_errors"] = [e.completion_payload() for e in state.hms_errors or []]
+        if outcome == "completed":
+            ended = _reconciled_end_time(archive, datetime.now(timezone.utc), run_plates.get(archive.id))
+            if ended:
+                payload["_reconciled_completed_at"] = ended
         try:
-            await on_print_complete(
-                printer_id,
-                {
-                    "status": "aborted",
-                    "filename": archive.filename,
-                    "subtask_name": archive.print_name or "",
-                    "subtask_id": archive.subtask_id or "",
-                    "raw_data": state.raw_data or {},
-                    "_reconciled": True,
-                },
-            )
+            await on_print_complete(printer_id, payload)
             reconciled += 1
         except Exception as e:
             # Catch-all: a reconciliation failure must not block the
@@ -8646,12 +9039,13 @@ async def _close_out_print(printer_id: int, data: dict):
             if hms_errors:
                 logger.info("[ARCHIVE] HMS errors at failure: %s", hms_errors)
             failure_reason = derive_failure_reason(status, hms_errors)
-            if data.get("_reconciled"):
+            if data.get("_reconciled") and (status == "aborted" or (status == "failed" and not failure_reason)):
                 # A reconciled completion closes out a stale archive at
                 # reconnect — it is not a user action, so don't mislabel it
                 # "userCancelled". It shares the stale-cleanup path's key
                 # (issue #2974) and records that the real end time is unknown,
-                # which is also why its logged duration is 0 (#2592).
+                # which is also why its logged duration is 0 (#2592). A failed
+                # one the printer's errors explain keeps their reason (#3310).
                 failure_reason = "noStatusUpdate"
             elif data.get("_kill_switch"):
                 # Not the user's cancel: the kill switch stopped a print that did
@@ -8666,7 +9060,11 @@ async def _close_out_print(printer_id: int, data: dict):
                 archive_id,
                 status=status,
                 completed_at=(
-                    datetime.now(timezone.utc) if status in ("completed", "failed", "aborted", "cancelled") else None
+                    # A reconciled completed print ended at an estimated time,
+                    # not at the reconnect (#3310).
+                    data.get("_reconciled_completed_at") or datetime.now(timezone.utc)
+                    if status in ("completed", "failed", "aborted", "cancelled")
+                    else None
                 ),
                 failure_reason=failure_reason,
             )
@@ -8878,8 +9276,11 @@ async def _close_out_print(printer_id: int, data: dict):
                     created_by_id=archive.created_by_id,
                     created_by_username=_print_user_info.get("username") if _print_user_info else None,
                     # Reconciled completions have an unknown real end time —
-                    # log 0 duration instead of the whole disconnect gap (#2592).
-                    reconciled=bool(data.get("_reconciled")),
+                    # log 0 duration instead of the whole disconnect gap (#2592),
+                    # unless it was estimated (#3310).
+                    reconciled=bool(data.get("_reconciled")) and not data.get("_reconciled_completed_at"),
+                    # Its time is the estimate or nothing, never measured (#3310).
+                    duration_unmeasured=bool(data.get("_reconciled")),
                 )
                 await record_archive_wear(db, archive, run_entry)
                 await db.commit()
@@ -9306,7 +9707,12 @@ async def _close_out_print(printer_id: int, data: dict):
                         # print ended while the printer was offline and
                         # completed_at is the reconnect, so the gap would read
                         # as the duration -- 14 h for a night offline (DB-C9).
-                        if archive.started_at and archive.completed_at and not data.get("_reconciled"):
+                        # An estimated end (#3310) gives the estimate.
+                        if (
+                            archive.started_at
+                            and archive.completed_at
+                            and (not data.get("_reconciled") or data.get("_reconciled_completed_at"))
+                        ):
                             elapsed = (archive.completed_at - archive.started_at).total_seconds()
                             if elapsed > 0:
                                 actual_time_seconds = int(elapsed)

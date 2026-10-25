@@ -45,7 +45,7 @@ async def get_printer_sensor_history(
         default=None,
         description="Comma-separated list of sensor kinds (nozzle, nozzle_2, bed, chamber). All by default.",
     ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.PRINTER_SENSOR_HISTORY_READ),
 ):
     """Return per-sensor heater history for a printer."""

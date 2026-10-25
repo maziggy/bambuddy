@@ -67,7 +67,7 @@ def _name_key(name: str) -> str:
 @router.get("", response_model=list[TagResponse])
 @router.get("/", response_model=list[TagResponse])
 async def list_tags(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -124,7 +124,7 @@ async def list_tags(
 @router.post("/", response_model=TagResponse, status_code=201)
 async def create_tag(
     payload: TagCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPDATE_ALL)),
 ) -> TagResponse:
     """Create a tag. Case-insensitive dup → 409."""
@@ -147,7 +147,7 @@ async def create_tag(
 async def update_tag(
     tag_id: int,
     payload: TagUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPDATE_ALL)),
 ) -> TagResponse:
     """Rename a tag. Case-insensitive dup → 409 (own-name no-op is allowed)."""
@@ -194,7 +194,7 @@ async def update_tag(
 @router.delete("/{tag_id}", status_code=204, response_model=None)
 async def delete_tag(
     tag_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPDATE_ALL)),
 ) -> None:
     """Delete a tag. Association rows ON DELETE CASCADE — files are untouched."""
@@ -208,7 +208,7 @@ async def delete_tag(
 @router.post("/bulk-assign", response_model=TagBulkAssignResponse)
 async def bulk_assign(
     payload: TagBulkAssignRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,

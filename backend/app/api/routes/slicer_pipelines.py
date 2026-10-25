@@ -66,7 +66,7 @@ def _to_response(row: SlicerPipeline) -> SlicerPipelineResponse:
 @router.get("/", response_model=SlicerPipelineListResponse)
 async def list_pipelines(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all pipelines, newest first. Soft-deleted rows are hidden."""
     result = await db.execute(
@@ -80,7 +80,7 @@ async def list_pipelines(
 async def create_pipeline(
     data: SlicerPipelineCreate,
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_WRITE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Create a new pipeline."""
     row = SlicerPipeline(
@@ -104,7 +104,7 @@ async def create_pipeline(
 async def get_pipeline(
     pipeline_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Read one pipeline by id."""
     result = await db.execute(
@@ -124,7 +124,7 @@ async def update_pipeline(
     pipeline_id: int,
     data: SlicerPipelineUpdate,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_WRITE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Update a pipeline. Only fields present in the payload are written."""
     result = await db.execute(
@@ -184,7 +184,7 @@ async def update_pipeline(
 async def delete_pipeline(
     pipeline_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_WRITE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Soft-delete a pipeline (sets is_deleted=True so PR B+ run history can
     still resolve pipeline metadata)."""

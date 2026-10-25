@@ -317,9 +317,16 @@ class TestApiKeys:
         item = await _queue(async_client, _auth(setup["student"]), setup["printer"].id, setup["archive"].id)
         key = await self._key(async_client, controller, can_control_printer=True)
 
+        # Someone else's job is not theirs to start at all
+        refused = await async_client.post(f"/api/v1/webhook/printer/{setup['printer'].id}/start", headers=key)
+        assert refused.status_code == 404
+        assert await _manual_start(item["id"]) is True
+
+        # Nor their own, while it waits for review
+        own = await _queue(async_client, _auth(controller), setup["printer"].id, setup["archive"].id)
         refused = await async_client.post(f"/api/v1/webhook/printer/{setup['printer'].id}/start", headers=key)
         assert refused.status_code == 403
-        assert await _manual_start(item["id"]) is True
+        assert await _manual_start(own["id"]) is True
 
         staff_key = await self._key(async_client, admin, can_control_printer=True)
         started = await async_client.post(f"/api/v1/webhook/printer/{setup['printer'].id}/start", headers=staff_key)

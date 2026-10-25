@@ -109,7 +109,7 @@ def _not_checked(printer: Printer) -> FirmwareUpdateInfo:
 
 @router.get("/updates", response_model=FirmwareUpdatesResponse)
 async def check_firmware_updates(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -168,7 +168,7 @@ async def check_firmware_updates(
 @router.get("/updates/{printer_id}", response_model=FirmwareUpdateInfo)
 async def check_printer_firmware(
     printer_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.FIRMWARE_READ),
 ):
     """
@@ -276,7 +276,7 @@ class FirmwareUploadStartResponse(BaseModel):
 async def prepare_firmware_upload(
     printer_id: int,
     version: str | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.FIRMWARE_READ),
 ):
     """
@@ -299,7 +299,7 @@ async def prepare_firmware_upload(
 async def start_firmware_upload(
     printer_id: int,
     version: str | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.FIRMWARE_UPDATE),
 ):
     """

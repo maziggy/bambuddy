@@ -513,6 +513,98 @@ describe('AuthContext', () => {
       expect(window.localStorage.removeItem).toHaveBeenCalledWith('auth_token');
     });
 
+    it('keeps asking after the first load gets no answer, and signs in when it does (#3360)', async () => {
+      // The reporter's kiosk: the database was out of connections while it
+      // loaded. It used to stop after three tries and show the login page.
+      let down = true;
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          down
+            ? HttpResponse.json({ detail: 'Authentication service temporarily unavailable' }, { status: 503 })
+            : HttpResponse.json({ id: 1, username: 'kiosk', is_active: true, permissions: [], groups: [] })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.loading).toBe(false), { timeout: 4000 });
+      expect(result.current.authUnconfirmed).toBe(true);
+      expect(result.current.user).toBeNull();
+      expect(getAuthToken()).toBe('valid-token');
+
+      down = false;
+      await waitFor(() => expect(result.current.user?.username).toBe('kiosk'), { timeout: 6000 });
+      expect(result.current.authUnconfirmed).toBe(false);
+    }, 12000);
+
+    it('ends the wait on a definite 401', async () => {
+      let down = true;
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          down
+            ? new HttpResponse(null, { status: 503 })
+            : HttpResponse.json({ detail: 'Invalid API key' }, { status: 401 })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.authUnconfirmed).toBe(true), { timeout: 4000 });
+
+      down = false;
+      await waitFor(() => expect(result.current.authUnconfirmed).toBe(false), { timeout: 6000 });
+      expect(result.current.user).toBeNull();
+      expect(getAuthToken()).toBeNull();
+    }, 12000);
+
+    it('waits instead of showing the open UI when even the auth status gets no answer', async () => {
+      let down = true;
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          down
+            ? new HttpResponse(null, { status: 503 })
+            : HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ id: 1, username: 'kiosk', is_active: true, permissions: [], groups: [] })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(result.current.authUnconfirmed).toBe(true);
+
+      down = false;
+      await waitFor(() => expect(result.current.user?.username).toBe('kiosk'), { timeout: 6000 });
+      expect(result.current.authEnabled).toBe(true);
+      expect(result.current.authUnconfirmed).toBe(false);
+    }, 12000);
+
+    it("persists a kiosk's ?token= key once a later try confirms it", async () => {
+      setAuthToken(null);
+      localStorage.removeItem('auth_token');
+      window.history.replaceState({}, '', '/spoolbuddy?token=bb_kiosk');
+      let down = true;
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          down
+            ? new HttpResponse(null, { status: 503 })
+            : HttpResponse.json({ id: 1, username: 'kiosk', is_active: true, permissions: [], groups: [] })
+        )
+      );
+      vi.mocked(window.localStorage.setItem).mockClear();
+      try {
+        const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+        await waitFor(() => expect(result.current.authUnconfirmed).toBe(true), { timeout: 4000 });
+        expect(window.localStorage.setItem).not.toHaveBeenCalledWith('auth_token', 'bb_kiosk');
+
+        down = false;
+        await waitFor(() => expect(result.current.user).not.toBeNull(), { timeout: 6000 });
+        expect(window.localStorage.setItem).toHaveBeenCalledWith('auth_token', 'bb_kiosk');
+      } finally {
+        window.history.replaceState({}, '', '/');
+      }
+    }, 12000);
+
     it('loads the user when the persisted token is valid', async () => {
       server.use(
         http.get('/api/v1/auth/me', () =>

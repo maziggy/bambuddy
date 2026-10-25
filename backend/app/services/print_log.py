@@ -50,6 +50,7 @@ async def write_log_entry(
     created_by_id: int | None = None,
     created_by_username: str | None = None,
     reconciled: bool = False,
+    duration_unmeasured: bool = False,
 ) -> PrintLogEntry:
     """Write a print log entry.
 
@@ -62,6 +63,10 @@ async def write_log_entry(
     entries we store an explicit ``0`` ("no measured runtime") rather than a
     fabricated duration; the stats total trusts a stored 0 instead of
     recomputing from the stale timestamps.
+
+    ``duration_unmeasured`` marks a run closed at reconnect, whose times were
+    not measured (#3310): ``completed_at`` is its start plus the slicer's
+    estimate, or the reconnect. The time accuracy leaves it out.
     """
     if reconciled:
         duration: int | None = 0
@@ -87,6 +92,7 @@ async def write_log_entry(
         "energy_kwh": energy_kwh,
         "energy_cost": energy_cost,
         "wear_cost": wear_cost_for_run(duration, wear_cost_per_hour),
+        "duration_unmeasured": True if duration_unmeasured else None,
         "failure_reason": failure_reason,
         "thumbnail_path": thumbnail_path,
         "created_by_id": created_by_id,

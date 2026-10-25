@@ -170,6 +170,12 @@ DEFAULT_TEMPLATES = [
         "body_template": "{printer}: {filename}\nLayer 1/{total_layers} done",
     },
     {
+        "event_type": "print_pause_upcoming",
+        "name": "Pause Coming Up",
+        "title_template": "Pause Coming Up",
+        "body_template": "{printer}: {filename}\nPauses in {time_to_pause} (about {eta}), at layer {layer}/{total_layers}",
+    },
+    {
         "event_type": "test",
         "name": "Test Notification",
         "title_template": "Bambuddy Test",

@@ -261,7 +261,7 @@ async def set_setup_completed(db: AsyncSession, completed: bool) -> None:
 
 
 @router.post("/setup", response_model=SetupResponse)
-async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
+async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db, scope="function")):
     """First-time setup: enable/disable authentication and create admin user."""
     import logging
 
@@ -414,7 +414,7 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/status")
-async def get_auth_status(db: AsyncSession = Depends(get_db)):
+async def get_auth_status(db: AsyncSession = Depends(get_db, scope="function")):
     """Get authentication status (public endpoint)."""
     auth_enabled = await is_auth_enabled(db)
     setup_completed = await is_setup_completed(db)
@@ -426,7 +426,7 @@ async def get_auth_status(db: AsyncSession = Depends(get_db)):
 @router.post("/disable", response_model=dict)
 async def disable_auth(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Disable authentication (admin only)."""
     import logging
@@ -467,7 +467,12 @@ async def disable_auth(
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(raw_request: Request, request: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
+async def login(
+    raw_request: Request,
+    request: LoginRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
     """Login and get access token.
 
     Supports username or email-based login. Username lookup is case-insensitive.
@@ -718,7 +723,7 @@ async def mint_media_token(
 async def get_current_user_info(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get current user information.
 
@@ -852,7 +857,7 @@ async def test_smtp_connection(
     test_request: TestSMTPRequest,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Test SMTP connection using the form's settings, else the saved ones (admin only when auth enabled).
 
@@ -898,7 +903,7 @@ async def test_smtp_connection(
 @router.get("/smtp", response_model=SMTPSettings | None)
 async def get_smtp_config(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get SMTP settings (admin only when auth enabled). Password is not returned."""
     smtp_settings = await get_smtp_settings(db)
@@ -913,7 +918,7 @@ async def save_smtp_config(
     smtp_settings: SMTPSettings,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Save SMTP settings (admin only when auth enabled).
 
@@ -960,7 +965,7 @@ async def save_smtp_config(
 @router.post("/advanced-auth/enable", response_model=dict)
 async def enable_advanced_auth(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Enable advanced authentication (admin only).
 
@@ -1005,7 +1010,7 @@ async def enable_advanced_auth(
 @router.post("/advanced-auth/disable", response_model=dict)
 async def disable_advanced_auth(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Disable advanced authentication (admin only)."""
     import logging
@@ -1037,7 +1042,7 @@ async def disable_advanced_auth(
 
 
 @router.get("/advanced-auth/status")
-async def get_advanced_auth_status(db: AsyncSession = Depends(get_db)):
+async def get_advanced_auth_status(db: AsyncSession = Depends(get_db, scope="function")):
     """Get advanced authentication status.
 
     Surfaces ``local_login_enabled`` and ``autologin_provider_id`` (#1589)
@@ -1128,7 +1133,7 @@ async def forgot_password(
     request: ForgotPasswordRequest,
     background_tasks: BackgroundTasks,
     raw_request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Request password reset via email (advanced auth only).
 
@@ -1269,7 +1274,9 @@ async def forgot_password(
 
 
 @router.post("/forgot-password/confirm", response_model=ForgotPasswordResponse)
-async def forgot_password_confirm(request: ForgotPasswordConfirmRequest, db: AsyncSession = Depends(get_db)):
+async def forgot_password_confirm(
+    request: ForgotPasswordConfirmRequest, db: AsyncSession = Depends(get_db, scope="function")
+):
     """Complete a password reset by supplying the token from the reset email.
 
     H-6: Atomically consumes the single-use token (DELETE…RETURNING) and sets
@@ -1327,7 +1334,7 @@ async def reset_user_password(
     request: ResetPasswordRequest,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Reset a user's password and send them an email (admin only, advanced auth only)."""
     # Reload user with groups for proper is_admin check
@@ -1566,7 +1573,7 @@ async def test_ldap(
     body: LDAPTestRequest | None = None,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Test the LDAP connection with the form's settings over the saved ones (admin only when auth enabled).
 
@@ -1604,7 +1611,7 @@ async def test_ldap(
 
 
 @router.get("/ldap/status")
-async def get_ldap_status(db: AsyncSession = Depends(get_db)):
+async def get_ldap_status(db: AsyncSession = Depends(get_db, scope="function")):
     """Get LDAP authentication status."""
     # Only fetch the minimum keys needed — never load secrets
     ldap_keys = ["ldap_enabled", "ldap_server_url"]
@@ -1629,7 +1636,7 @@ async def search_ldap_directory(
     q: str,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_CREATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Search the LDAP directory for users matching `q`.
 
@@ -1703,7 +1710,7 @@ async def provision_ldap_user(
     payload: LDAPProvisionRequest,
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_CREATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Provision a BamBuddy user from an existing LDAP directory entry.
 
@@ -1817,7 +1824,7 @@ async def create_long_lived_camera_token(
     payload: dict,
     response: Response,
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Mint a long-lived camera-stream token (#1108).
 
@@ -1882,7 +1889,7 @@ async def create_long_lived_camera_token(
 async def list_long_lived_tokens(
     user_id: int | None = None,
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List long-lived tokens.
 
@@ -1920,7 +1927,7 @@ async def list_long_lived_tokens(
 @router.get("/tokens/all", response_model=list[dict])
 async def list_all_long_lived_tokens(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Admin-only: every active long-lived token in the system, newest first.
     Used by the leak-triage view in admin settings.
@@ -1945,7 +1952,7 @@ async def list_all_long_lived_tokens(
 async def revoke_long_lived_token(
     token_id: int,
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Revoke a long-lived token. Owners can revoke their own; admins any."""
     from backend.app.models.long_lived_token import LongLivedToken
@@ -1984,7 +1991,7 @@ async def revoke_long_lived_token(
 @router.get("/encryption-status", response_model=EncryptionStatusResponse)
 async def get_encryption_status(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> EncryptionStatusResponse:
     """Report at-rest encryption status for OIDC + TOTP secrets.
 

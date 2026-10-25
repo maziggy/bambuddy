@@ -33,6 +33,7 @@ from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope
+from backend.app.core.row_visibility import visible_row_clauses
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.print_log import PrintLogEntry
@@ -429,15 +430,17 @@ async def compute_subtree_stats(db: AsyncSession, root_id: int) -> _SubtreeRepor
 @router.get("/", response_model=list[ProjectListResponse])
 async def list_projects(
     status: str | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """List all projects with basic stats."""
-    # Archive previews show only archives of the caller's printers, as the
-    # project's archive list does.
-    scope_clause = printer_scope.where(PrintArchive.printer_id)
-    preview_scope = [scope_clause] if scope_clause is not None else []
+    # Archive previews show only the archives the project's archive list shows
+    # the caller; the counts and totals cover every print.
+    preview_scope = visible_row_clauses(
+        PrintArchive, printer_scope, actor, Permission.ARCHIVES_READ_ALL, Permission.ARCHIVES_READ_OWN
+    )
     query = select(Project)
     if status:
         query = query.where(Project.status == status)
@@ -506,13 +509,15 @@ async def list_projects(
             progress_percent = round((archive_count / project.target_count) * 100, 1)
 
         # Get archive previews (up to 6 most recent)
-        archives_result = await db.execute(
-            select(PrintArchive)
-            .where(PrintArchive.project_id == project.id, _LIVE_ARCHIVE, *preview_scope)
-            .order_by(PrintArchive.created_at.desc())
-            .limit(6)
-        )
-        archives = archives_result.scalars().all()
+        archives = []
+        if preview_scope is not None:
+            archives_result = await db.execute(
+                select(PrintArchive)
+                .where(PrintArchive.project_id == project.id, _LIVE_ARCHIVE, *preview_scope)
+                .order_by(PrintArchive.created_at.desc())
+                .limit(6)
+            )
+            archives = archives_result.scalars().all()
         archive_previews = [
             ArchivePreview(
                 id=a.id,
@@ -560,7 +565,7 @@ async def list_projects(
 @router.post("/", response_model=ProjectResponse)
 async def create_project(
     data: ProjectCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
 ):
     """Create a new project."""
@@ -630,7 +635,7 @@ async def create_project(
 
 @router.get("/templates", response_model=list[ProjectListResponse])
 async def list_templates(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """List all project templates."""
@@ -676,7 +681,7 @@ async def list_templates(
 async def create_project_from_template(
     template_id: int,
     name: str = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
 ):
     """Create a new project from a template."""
@@ -765,7 +770,7 @@ async def create_project_from_template(
 @router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """Get a project by ID with detailed stats."""
@@ -819,7 +824,7 @@ async def get_project(
 async def update_project(
     project_id: int,
     data: ProjectUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Update a project."""
@@ -930,7 +935,7 @@ async def update_project(
 @router.delete("/{project_id}")
 async def delete_project(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_DELETE),
 ):
     """Delete a project. Archives and queue items will have project_id set to NULL."""
@@ -956,11 +961,12 @@ async def list_project_archives(
     project_id: int,
     limit: int = 100,
     offset: int = 0,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
-    """List archives in a project."""
+    """List the archives of a project the caller may see in the archives."""
     # Verify project exists
     result = await db.execute(select(Project).where(Project.id == project_id))
     if not result.scalar_one_or_none():
@@ -980,10 +986,12 @@ async def list_project_archives(
         .limit(limit)
         .offset(offset)
     )
-    # Only archives from printers the caller may see (#1727)
-    if (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
-        query = query.where(clause)
-    result = await db.execute(query)
+    visible = visible_row_clauses(
+        PrintArchive, printer_scope, actor, Permission.ARCHIVES_READ_ALL, Permission.ARCHIVES_READ_OWN
+    )
+    if visible is None:
+        return []
+    result = await db.execute(query.where(*visible))
     archives = result.scalars().all()
 
     # Import the response converter from archives module
@@ -999,20 +1007,28 @@ async def list_project_archives(
 @router.get("/{project_id}/queue")
 async def list_project_queue(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
-    """List queue items in a project."""
+    """List the queue items of a project the caller may see in the queue."""
     # Verify project exists
     result = await db.execute(select(Project).where(Project.id == project_id))
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Project not found")
 
     # Get queue items
-    query = select(PrintQueueItem).where(PrintQueueItem.project_id == project_id).order_by(PrintQueueItem.position)
-    if (clause := printer_scope.where(PrintQueueItem.printer_id)) is not None:
-        query = query.where(clause)
+    visible = visible_row_clauses(
+        PrintQueueItem, printer_scope, actor, Permission.QUEUE_READ_ALL, Permission.QUEUE_READ_OWN
+    )
+    if visible is None:
+        return []
+    query = (
+        select(PrintQueueItem)
+        .where(PrintQueueItem.project_id == project_id, *visible)
+        .order_by(PrintQueueItem.position)
+    )
     result = await db.execute(query)
     items = result.scalars().all()
 
@@ -1022,7 +1038,7 @@ async def list_project_queue(
 @router.get("/{project_id}/file-progress", response_model=list[ProjectFileProgress])
 async def get_project_file_progress(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
 ):
     """Completed-run counts per library file inside a project (#1897).
@@ -1104,33 +1120,21 @@ def _editable_rows(
 ):
     """Select the rows of ``ids`` the caller may relink, or None for none of them.
 
-    The same rows the caller could change through the archive or queue edit:
-    on their printers, and their own unless they may change everyone's. Rows
-    outside are skipped like missing ones, so the count names no hidden id. An
-    API key changes what its owner could. Auth off (no actor) changes all.
+    The same rows the caller could change through the archive or queue edit.
+    Rows outside are skipped like missing ones, so the count names no hidden
+    id. An API key changes what its owner could.
     """
-    query = select(model).where(model.id.in_(ids))
-    if (clause := printer_scope.where(model.printer_id)) is not None:
-        query = query.where(clause)
-    if actor is None:
-        return query
-    # A key acts with its owner's rights to these rows, not with its own scope
-    # flags (a project key needs no archive or queue flag, #1893), so it never
-    # reaches a row its owner could not change. A legacy key without an owner
-    # keeps every row of its printers.
-    user = actor.owner if isinstance(actor, ApiKeyActor) else actor
-    if user is None or user.has_permission(all_permission.value):
-        return query
-    if user.has_permission(own_permission.value):
-        return query.where(model.created_by_id == user.id)
-    return None
+    clauses = visible_row_clauses(model, printer_scope, actor, all_permission, own_permission)
+    if clauses is None:
+        return None
+    return select(model).where(model.id.in_(ids), *clauses)
 
 
 @router.post("/{project_id}/add-archives")
 async def add_archives_to_project(
     project_id: int,
     data: BatchAddArchives,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
     actor: User | ApiKeyActor | None = RequestActor,
@@ -1160,7 +1164,7 @@ async def add_archives_to_project(
 async def add_queue_items_to_project(
     project_id: int,
     data: BatchAddQueueItems,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
     actor: User | ApiKeyActor | None = RequestActor,
@@ -1190,7 +1194,7 @@ async def add_queue_items_to_project(
 async def remove_archives_from_project(
     project_id: int,
     data: BatchAddArchives,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
     actor: User | ApiKeyActor | None = RequestActor,
@@ -1238,7 +1242,7 @@ COVER_IMAGE_CONTENT_TYPES = {
 async def upload_project_cover_image(
     project_id: int,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Upload (or replace) the project's cover image (#1155).
@@ -1300,7 +1304,7 @@ async def upload_project_cover_image(
 @router.get("/{project_id}/cover-image")
 async def get_project_cover_image(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = Depends(require_media_token_permission(Permission.PROJECTS_READ)),
 ):
     """Stream the project's cover image (#1155).
@@ -1339,7 +1343,7 @@ async def get_project_cover_image(
 @router.delete("/{project_id}/cover-image")
 async def delete_project_cover_image(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Remove the project's cover image (#1155)."""
@@ -1366,24 +1370,29 @@ async def delete_project_cover_image(
 # ============ Phase 7: BOM Endpoints ============
 
 
-async def _visible_archive_names(db: AsyncSession, archive_ids, printer_scope: PrinterScope) -> dict[int, str | None]:
+async def _visible_archive_names(
+    db: AsyncSession, archive_ids, printer_scope: PrinterScope, actor: User | ApiKeyActor | None
+) -> dict[int, str | None]:
     """Print names of the archives among ``archive_ids`` the caller can see.
 
-    As the project's archive list: live archives on the caller's printers
-    (#1727). An archive missing from the result reads as missing.
+    As the project's archive list: live archives the caller sees there. An
+    archive missing from the result reads as missing.
     """
     ids = {i for i in archive_ids if i}
-    if not ids:
+    visible = visible_row_clauses(
+        PrintArchive, printer_scope, actor, Permission.ARCHIVES_READ_ALL, Permission.ARCHIVES_READ_OWN
+    )
+    if not ids or visible is None:
         return {}
-    query = select(PrintArchive.id, PrintArchive.print_name).where(PrintArchive.id.in_(ids), _LIVE_ARCHIVE)
-    if (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
-        query = query.where(clause)
+    query = select(PrintArchive.id, PrintArchive.print_name).where(PrintArchive.id.in_(ids), _LIVE_ARCHIVE, *visible)
     return dict((await db.execute(query)).all())
 
 
-async def _ensure_linkable_archive(db: AsyncSession, archive_id: int, printer_scope: PrinterScope) -> None:
+async def _ensure_linkable_archive(
+    db: AsyncSession, archive_id: int, printer_scope: PrinterScope, actor: User | ApiKeyActor | None
+) -> None:
     """Refuse a link to an archive the caller cannot see; hidden reads as missing."""
-    if archive_id not in await _visible_archive_names(db, [archive_id], printer_scope):
+    if archive_id not in await _visible_archive_names(db, [archive_id], printer_scope, actor):
         raise HTTPException(status_code=400, detail="Archive not found")
 
 
@@ -1411,9 +1420,10 @@ def _bom_response(item: ProjectBOMItem, visible_names: dict[int, str | None]) ->
 @router.get("/{project_id}/bom", response_model=list[BOMItemResponse])
 async def list_bom_items(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """List all BOM items for a project."""
     # Verify project exists
@@ -1429,7 +1439,7 @@ async def list_bom_items(
     )
     items = result.scalars().all()
 
-    names = await _visible_archive_names(db, [item.archive_id for item in items], printer_scope)
+    names = await _visible_archive_names(db, [item.archive_id for item in items], printer_scope, actor)
     return [_bom_response(item, names) for item in items]
 
 
@@ -1437,9 +1447,10 @@ async def list_bom_items(
 async def create_bom_item(
     project_id: int,
     data: BOMItemCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Add a BOM item to a project."""
     # Verify project exists
@@ -1450,7 +1461,7 @@ async def create_bom_item(
     # 0 means no archive, as on update.
     archive_id = data.archive_id or None
     if archive_id is not None:
-        await _ensure_linkable_archive(db, archive_id, printer_scope)
+        await _ensure_linkable_archive(db, archive_id, printer_scope, actor)
 
     # Get max sort order
     max_order_result = await db.execute(
@@ -1473,7 +1484,7 @@ async def create_bom_item(
     await db.flush()
     await db.refresh(item)
 
-    return _bom_response(item, await _visible_archive_names(db, [item.archive_id], printer_scope))
+    return _bom_response(item, await _visible_archive_names(db, [item.archive_id], printer_scope, actor))
 
 
 @router.patch("/{project_id}/bom/{item_id}", response_model=BOMItemResponse)
@@ -1481,9 +1492,10 @@ async def update_bom_item(
     project_id: int,
     item_id: int,
     data: BOMItemUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Update a BOM item."""
     result = await db.execute(
@@ -1511,7 +1523,7 @@ async def update_bom_item(
         # Also when unchanged: a hidden current link must answer as a missing one,
         # or resending its id would confirm it.
         if data.archive_id != 0:
-            await _ensure_linkable_archive(db, data.archive_id, printer_scope)
+            await _ensure_linkable_archive(db, data.archive_id, printer_scope, actor)
         item.archive_id = data.archive_id if data.archive_id != 0 else None
     if data.stl_filename is not None:
         item.stl_filename = data.stl_filename if data.stl_filename else None
@@ -1521,14 +1533,14 @@ async def update_bom_item(
     await db.flush()
     await db.refresh(item)
 
-    return _bom_response(item, await _visible_archive_names(db, [item.archive_id], printer_scope))
+    return _bom_response(item, await _visible_archive_names(db, [item.archive_id], printer_scope, actor))
 
 
 @router.delete("/{project_id}/bom/{item_id}")
 async def delete_bom_item(
     project_id: int,
     item_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_UPDATE),
 ):
     """Delete a BOM item."""
@@ -1551,7 +1563,7 @@ async def delete_bom_item(
 @router.post("/{project_id}/create-template", response_model=ProjectResponse)
 async def create_template_from_project(
     project_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
 ):
     """Create a template from an existing project."""
@@ -1657,11 +1669,13 @@ def _queue_item_name(item: PrintQueueItem) -> str | None:
 async def get_project_timeline(
     project_id: int,
     limit: int = 50,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
-    """Get timeline of events for a project."""
+    """Get timeline of events for a project, from the archives and queue items
+    the caller may see there."""
     # Verify project exists
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
@@ -1680,18 +1694,19 @@ async def get_project_timeline(
         )
     )
 
-    # Get archives and add events
-    archive_query = (
-        select(PrintArchive)
-        .where(PrintArchive.project_id == project_id, _LIVE_ARCHIVE)
-        .order_by(PrintArchive.created_at.desc())
-        .limit(limit)
+    # Get archives and add events, the ones the project's archive list shows
+    visible_archives = visible_row_clauses(
+        PrintArchive, printer_scope, actor, Permission.ARCHIVES_READ_ALL, Permission.ARCHIVES_READ_OWN
     )
-    # Only events from printers the caller may see, as the archive and queue
-    # lists of the project (#1727)
-    if (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
-        archive_query = archive_query.where(clause)
-    archives = (await db.execute(archive_query)).scalars().all()
+    archives = []
+    if visible_archives is not None:
+        archive_query = (
+            select(PrintArchive)
+            .where(PrintArchive.project_id == project_id, _LIVE_ARCHIVE, *visible_archives)
+            .order_by(PrintArchive.created_at.desc())
+            .limit(limit)
+        )
+        archives = (await db.execute(archive_query)).scalars().all()
 
     for archive in archives:
         if archive.status == "completed":
@@ -1719,21 +1734,24 @@ async def get_project_timeline(
                 )
             )
 
-    # Get queue items
-    queue_query = (
-        select(PrintQueueItem)
-        .where(PrintQueueItem.project_id == project_id)
-        .options(
-            selectinload(PrintQueueItem.archive),
-            selectinload(PrintQueueItem.library_file),
-            selectinload(PrintQueueItem.variants).selectinload(PrintQueueVariant.library_file),
-        )
-        .order_by(PrintQueueItem.created_at.desc())
-        .limit(limit)
+    # Get queue items, the ones the project's queue list shows
+    visible_items = visible_row_clauses(
+        PrintQueueItem, printer_scope, actor, Permission.QUEUE_READ_ALL, Permission.QUEUE_READ_OWN
     )
-    if (clause := printer_scope.where(PrintQueueItem.printer_id)) is not None:
-        queue_query = queue_query.where(clause)
-    queue_items = (await db.execute(queue_query)).scalars().all()
+    queue_items = []
+    if visible_items is not None:
+        queue_query = (
+            select(PrintQueueItem)
+            .where(PrintQueueItem.project_id == project_id, *visible_items)
+            .options(
+                selectinload(PrintQueueItem.archive),
+                selectinload(PrintQueueItem.library_file),
+                selectinload(PrintQueueItem.variants).selectinload(PrintQueueVariant.library_file),
+            )
+            .order_by(PrintQueueItem.created_at.desc())
+            .limit(limit)
+        )
+        queue_items = (await db.execute(queue_query)).scalars().all()
 
     for item in queue_items:
         if item.status == "printing":
@@ -1790,7 +1808,7 @@ def _stored_library_path(stored: str | None) -> Path | None:
 async def export_project(
     project_id: int,
     format: str = "zip",  # "zip" (with files) or "json" (metadata only)
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
     actor: User | ApiKeyActor | None = RequestActor,
 ):
@@ -1960,7 +1978,7 @@ async def _import_folder(
 @router.post("/import", response_model=ProjectResponse)
 async def import_project(
     data: ProjectImport,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
     actor: User | ApiKeyActor | None = RequestActor,
 ):
@@ -2038,7 +2056,7 @@ async def import_project(
 @router.post("/import/file", response_model=ProjectResponse)
 async def import_project_file(
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_CREATE),
     actor: User | ApiKeyActor | None = RequestActor,
 ):

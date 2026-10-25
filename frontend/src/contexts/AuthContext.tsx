@@ -6,6 +6,10 @@ interface AuthContextType {
   user: UserResponse | null;
   authEnabled: boolean;
   loading: boolean;
+  /** A token is stored but the server could not say whether it is valid
+   *  (backend or database down). Retried in the background; the route guards
+   *  wait instead of sending a kiosk to /login, where it can't sign in (#3360). */
+  authUnconfirmed: boolean;
   isAdmin: boolean;
   /** Login with username/password. Returns LoginResponse (may include requires_2fa). */
   login: (username: string, password: string, persistence?: TokenPersistence) => Promise<LoginResponse>;
@@ -25,10 +29,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authEnabled, setAuthEnabled] = useState(false);
   const [requiresSetup, setRequiresSetup] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [authUnconfirmed, setAuthUnconfirmed] = useState(false);
+  // A ?token= kiosk key not yet confirmed by the server, kept for a re-check
+  // that confirms it after a failed first load, which persists it then.
+  const pendingUrlTokenRef = useRef<string | null>(null);
   const hasRedirectedRef = useRef(false);
   const mountedRef = useRef(true);
 
   const checkAuthStatus = async () => {
+    let hasStoredToken = false;
     try {
       // Bootstrap: if URL has ?token= param, store it session-only first and
       // strip it from the URL. Allows SpoolBuddy kiosk to pass an API key via
@@ -42,6 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const urlToken = isStreamingPage ? null : urlParams.get('token');
       if (urlToken) {
         setAuthToken(urlToken, 'session'); // session-only until server confirms it's valid
+        pendingUrlTokenRef.current = urlToken;
         urlParams.delete('token');
         const cleanSearch = urlParams.toString();
         const cleanUrl = window.location.pathname
@@ -50,6 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         window.history.replaceState({}, '', cleanUrl);
       }
 
+      hasStoredToken = Boolean(getAuthToken());
       const status = await api.getAuthStatus();
       if (!mountedRef.current) return;
       setAuthEnabled(status.auth_enabled);
@@ -91,31 +102,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!mountedRef.current) return;
           if (currentUser) {
             setUser(currentUser);
+            setAuthUnconfirmed(false);
             // Persist kiosk token only after the server confirms it is valid.
             if (urlToken && token === urlToken) {
               setAuthToken(urlToken, 'persistent');
+              pendingUrlTokenRef.current = null;
             }
           } else {
             // No user: either a definitive 401 (token already cleared by
             // request()) or transient failures exhausted their retries. In the
-            // transient case we deliberately keep the token so a reload retries
-            // rather than forcing a re-login.
+            // transient case we deliberately keep the token and keep asking
+            // in the background, so the page comes back by itself (#3360).
+            setUser(null);
             if (definitiveAuthFailure) {
               setAuthToken(null);
+              setAuthUnconfirmed(false);
+            } else {
+              setAuthUnconfirmed(true);
+              runRecheckRef.current();
             }
-            setUser(null);
           }
         } else {
           setUser(null);
+          setAuthUnconfirmed(false);
         }
       } else {
         // Auth not enabled, allow access
         setUser(null);
+        setAuthUnconfirmed(false);
       }
     } catch {
       if (!mountedRef.current) return;
-      setAuthEnabled(false);
       setUser(null);
+      if (hasStoredToken) {
+        // No answer at all, but a token is stored: wait for one rather than
+        // showing the open UI or the login page (#3360).
+        setAuthUnconfirmed(true);
+        runRecheckRef.current();
+      } else {
+        setAuthEnabled(false);
+      }
     } finally {
       if (mountedRef.current) {
         setLoading(false);
@@ -145,7 +171,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       const currentUser = await api.getCurrentUser();
-      if (mountedRef.current) setUser(currentUser);
+      if (mountedRef.current) {
+        setUser(currentUser);
+        const pending = pendingUrlTokenRef.current;
+        if (pending && getAuthToken() === pending) {
+          setAuthToken(pending, 'persistent');
+          pendingUrlTokenRef.current = null;
+        }
+      }
       return true;
     } catch (err) {
       // 401: signed out. request() clears the token only for some messages,
@@ -178,6 +211,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!mountedRef.current) return;
     if (answered) {
       recheckDelayRef.current = 0;
+      setAuthUnconfirmed(false);
       return;
     }
     const delay = recheckDelayRef.current ? Math.min(recheckDelayRef.current * 2, 60000) : 2000;
@@ -251,6 +285,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthToken(token, persistence);
     setUser(userObj);
     setAuthEnabled(true);
+    setAuthUnconfirmed(false);
   };
 
   const logout = () => {
@@ -321,6 +356,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         authEnabled,
         loading,
+        authUnconfirmed,
         isAdmin,
         login,
         loginWithToken,

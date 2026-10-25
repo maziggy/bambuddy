@@ -171,7 +171,7 @@ import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { BulkPrinterToolbar, type PrinterState } from '../components/BulkPrinterToolbar';
 import { FileManagerModal } from '../components/FileManagerModal';
-import { EmbeddedCameraViewer } from '../components/EmbeddedCameraViewer';
+import { useEmbeddedCameras } from '../contexts/EmbeddedCameraContext';
 import { CameraWall } from '../components/CameraWall';
 import { DEFAULT_CAM_WALL_TILE_SIZE } from '../components/camWallTileSize';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
@@ -1726,6 +1726,12 @@ const MODELS_WITH_EXHAUST_LABEL: ReadonlySet<string> = new Set([
   'P2S',
   'X2D',
 ]);
+
+// Models whose aux fan (airduct part 2) is the LEFT one and part 10 the right
+// (#3373). Bambu Studio names them per model: on the X2D (N6) "2" is Left(Aux)
+// and "10" Right(Aux); on the P2S (N7) it is the other way round. Display
+// names, like MODELS_WITH_EXHAUST_LABEL above.
+const MODELS_WITH_LEFT_AUX_FIRST: ReadonlySet<string> = new Set(['X2D']);
 
 // ─── AMS Name Hover Card ──────────────────────────────────────────────────────
 // Wraps the AMS label (e.g. "AMS-A") and shows a popup with:
@@ -4462,6 +4468,25 @@ function PrinterCard({
                                     </span>
                                   </>
                                 )}
+                                {/* #2984: the next pause the slicer put into the print, so
+                                    nobody has to watch the layer count to be there for it. */}
+                                {status.next_pause && (
+                                  <span
+                                    className="flex min-w-0 items-center gap-1 text-blue-400"
+                                    title={t('printers.nextPauseAtLayer', { layer: status.next_pause.layer })}
+                                    data-testid="next-pause"
+                                  >
+                                    <Pause className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] shrink-0" />
+                                    <span className="truncate">
+                                      {status.next_pause.minutes != null
+                                        ? t('printers.pauseIn', {
+                                          time: formatDuration(Math.max(status.next_pause.minutes, 1) * 60),
+                                          eta: formatETA(status.next_pause.minutes, timeFormat, t),
+                                        })
+                                        : t('printers.pauseAtLayer', { layer: status.next_pause.layer })}
+                                    </span>
+                                  </span>
+                                )}
                                 {status.layer_num != null && status.total_layers != null && status.total_layers > 0 && (
                                   <span className="flex items-center gap-1">
                                     <Layers className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
@@ -4554,6 +4579,31 @@ function PrinterCard({
               // P2S/X2D entries in MODELS_WITH_CHAMBER_FAN became unreachable,
               // which reads as if removing them were safe.
               const showChamberFan = hasChamberFan && (!isExhaustModel || status.exhaust_fan_present);
+              // The second auxiliary part cooling fan (airduct part id 10):
+              // the left one on the P2S (an accessory kit), the right one on
+              // the X2D, where part 2 is the left. Only reported (non-null)
+              // when the firmware lists part 10, i.e. when the fan is fitted.
+              const leftAuxFirst = MODELS_WITH_LEFT_AUX_FIRST.has(printer.model ?? '');
+              const auxFan = {
+                key: 'aux',
+                label: leftAuxFirst ? t('printers.fans.leftAuxiliary') : t('printers.fans.auxiliary'),
+                value: status.big_fan1_speed ?? 0,
+                Icon: Wind,
+                activeClass: 'text-blue-600 dark:text-blue-400',
+              };
+              const aux2Fan =
+                status.left_aux_fan_speed != null
+                  ? {
+                      key: 'aux2',
+                      label: leftAuxFirst ? t('printers.fans.rightAuxiliary') : t('printers.fans.leftAuxiliary'),
+                      value: status.left_aux_fan_speed,
+                      Icon: Wind,
+                      activeClass: 'text-indigo-600 dark:text-indigo-400',
+                    }
+                  : null;
+              const auxFanItems = (leftAuxFirst ? [auxFan, aux2Fan] : [aux2Fan, auxFan]).filter(
+                (item): item is typeof auxFan => item !== null,
+              );
               const fanItems: {
                 key: string;
                 label: string;
@@ -4568,29 +4618,10 @@ function PrinterCard({
                   Icon: Fan,
                   activeClass: 'text-cyan-600 dark:text-cyan-400',
                 },
-                // Left auxiliary part cooling fan (optional P2S/X2D accessory).
-                // Only reported (non-null) when the firmware lists airduct part
-                // id 10, i.e. when the fan is physically installed. Placed
-                // before the right-hand auxiliary fan so the two aux badges read
-                // left-to-right in the same order as the physical hardware.
-                ...(status.left_aux_fan_speed != null
-                  ? [
-                      {
-                        key: 'aux2',
-                        label: t('printers.fans.leftAuxiliary'),
-                        value: status.left_aux_fan_speed,
-                        Icon: Wind,
-                        activeClass: 'text-indigo-600 dark:text-indigo-400',
-                      },
-                    ]
-                  : []),
-                {
-                  key: 'aux',
-                  label: t('printers.fans.auxiliary'),
-                  value: status.big_fan1_speed ?? 0,
-                  Icon: Wind,
-                  activeClass: 'text-blue-600 dark:text-blue-400',
-                },
+                // The two aux badges read left-to-right, in the same order as
+                // the physical hardware, so which comes first depends on the
+                // model (#3373).
+                ...auxFanItems,
                 ...(showChamberFan
                   ? [
                       {
@@ -4729,7 +4760,7 @@ function PrinterCard({
                       )}
                     </div>
                     {status.temperatures.chamber !== undefined && (() => {
-                      // Sensor-only models (X1C, X1E, P2S) show the chamber reading
+                      // Sensor-only models (X1C, P2S) show the chamber reading
                       // but can't act on M141, so we keep the card read-only there.
                       const hasChamberHeater = status.supports_chamber_heater === true;
                       return (
@@ -4897,8 +4928,8 @@ function PrinterCard({
                         <ChamberLight on={status.chamber_light ?? false} className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
                       </button>
 
-                      {/* Airduct Mode (P2S / X2D / H2*) */}
-                      {(['P2S', 'X2D', 'H2D', 'H2C', 'H2S'].includes(printer.model ?? '')) && (() => {
+                      {/* Airduct Mode (P2S / X2D / H2*, an H2D Pro stored as "H2D Pro", #3335) */}
+                      {(['P2S', 'X2D', 'H2D', 'H2D Pro', 'H2C', 'H2S'].includes(printer.model ?? '')) && (() => {
                         const isHeating = status.airduct_mode === 1;
                         const Icon = isHeating ? Flame : Snowflake;
                         const color = isHeating ? 'text-orange-600 dark:text-orange-400' : 'text-sky-600 dark:text-sky-400';
@@ -8900,30 +8931,9 @@ export function PrintersPage() {
   const [chosenCameraViewMode, setChosenCameraViewMode] = useState<CameraViewMode | null>(
     () => readStoredCameraViewMode()
   );
-  // Embedded camera viewer state - supports multiple simultaneous viewers
-  // Persisted to localStorage so cameras reopen after navigation
-  const [embeddedCameraPrinters, setEmbeddedCameraPrinters] = useState<Map<number, { id: number; name: string }>>(() => {
-    const saved = localStorage.getItem('openEmbeddedCameras');
-    if (saved) {
-      try {
-        const cameras = JSON.parse(saved) as Array<{ id: number; name: string }>;
-        return new Map(cameras.map(c => [c.id, c]));
-      } catch {
-        return new Map();
-      }
-    }
-    return new Map();
-  });
-
-  // Persist open cameras to localStorage when they change
-  useEffect(() => {
-    const cameras = Array.from(embeddedCameraPrinters.values());
-    if (cameras.length > 0) {
-      localStorage.setItem('openEmbeddedCameras', JSON.stringify(cameras));
-    } else {
-      localStorage.removeItem('openEmbeddedCameras');
-    }
-  }, [embeddedCameraPrinters]);
+  // The overlays themselves are hosted by the layout, so they stay open on
+  // every page (#2737).
+  const { openEmbeddedCamera } = useEmbeddedCameras();
 
   const { data: printers, isLoading } = useQuery({
     queryKey: ['printers'],
@@ -9896,7 +9906,7 @@ export function PrintersPage() {
             // A wall tile has no room for a split button, so it follows the
             // mode the card buttons last chose.
             if (cameraViewMode === 'embedded') {
-              setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }));
+              openEmbeddedCamera(id, name);
             } else {
               openCameraWindow(id);
             }
@@ -9991,7 +10001,7 @@ export function PrintersPage() {
                       onUnassignSpoolmanSpool={(id) => unassignSpoolmanMutation.mutate(id)}
                       timeFormat={settings?.time_format || 'system'}
                       cameraViewMode={cameraViewMode}
-                      onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
+                      onOpenEmbeddedCamera={openEmbeddedCamera}
                       onSelectCameraViewMode={selectCameraViewMode}
                       checkPrinterFirmware={firmwareChecksOn}
                       dryingPresets={effectiveDryingPresets}
@@ -10042,7 +10052,7 @@ export function PrintersPage() {
               } : undefined}
               timeFormat={settings?.time_format || 'system'}
               cameraViewMode={cameraViewMode}
-              onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
+              onOpenEmbeddedCamera={openEmbeddedCamera}
               onSelectCameraViewMode={selectCameraViewMode}
               checkPrinterFirmware={firmwareChecksOn}
               dryingPresets={effectiveDryingPresets}
@@ -10129,21 +10139,6 @@ export function PrintersPage() {
           onCancel={() => setBulkConfirmAction(null)}
         />
       )}
-
-      {/* Embedded Camera Viewers - multiple viewers can be open simultaneously */}
-      {Array.from(embeddedCameraPrinters.values()).map((camera, index) => (
-        <EmbeddedCameraViewer
-          key={camera.id}
-          printerId={camera.id}
-          printerName={camera.name}
-          viewerIndex={index}
-          onClose={() => setEmbeddedCameraPrinters(prev => {
-            const next = new Map(prev);
-            next.delete(camera.id);
-            return next;
-          })}
-        />
-      ))}
     </div>
   );
 }

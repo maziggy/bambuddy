@@ -583,13 +583,6 @@ body {
   background-color: color-mix(in srgb, var(--text-muted) 80%, transparent);
 }
 
-/* History row thumbnail hover-to-enlarge — desktop only (no hover on touch). */
-@media (hover: hover) and (pointer: fine) {
-  .history-thumb-hover:hover .history-thumb-preview {
-    opacity: 1;
-  }
-}
-
 /* Per-slot filament colour swatch in the slice modal (#2977). A native
    <input type="color"> paints its value inside a fixed inner padding and its
    own border, so at 14px the colour reads as a dot inside a pale ring rather

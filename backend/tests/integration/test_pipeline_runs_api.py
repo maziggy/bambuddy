@@ -7,7 +7,7 @@ needing a live sidecar in CI.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -1201,6 +1201,51 @@ class TestRunViaApiKey:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_a_run_a_key_starts_is_its_owners(
+        self,
+        async_client: AsyncClient,
+        pipeline_factory,
+        printer_factory,
+        library_file_factory,
+        db_session,
+    ):
+        """Without the cloud scope too: whose the run is decides who may cancel it."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class _FakeSliceJob:
+            id: int = 7778
+
+        printer = await printer_factory()
+        pipeline = await pipeline_factory(target_printer_id=printer.id)
+        src = await library_file_factory()
+        admin, key = await self._admin_and_key(
+            async_client, db_session, can_read_status=True, can_queue=True, can_manage_library=True
+        )
+
+        live_status = {"connected": True, "raw_data": {"ams": []}}
+        with (
+            patch(
+                "backend.app.api.routes.pipeline_runs._load_printer_status",
+                new=AsyncMock(return_value=live_status),
+            ),
+            patch(
+                "backend.app.services.slice_dispatch.slice_dispatch.enqueue",
+                new=AsyncMock(return_value=_FakeSliceJob()),
+            ) as enqueue,
+        ):
+            resp = await async_client.post(
+                f"/api/v1/slicer-pipelines/{pipeline['id']}/run",
+                json={"source_library_file_id": src.id, "copies": 1, "force": True},
+                headers={"X-API-Key": key},
+            )
+
+        assert resp.status_code == 202, resp.text
+        assert resp.json()["created_by"] == admin.id
+        assert enqueue.await_args.kwargs["owner_id"] == admin.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_a_key_without_manage_library_is_refused(
         self,
         async_client: AsyncClient,
@@ -1289,7 +1334,8 @@ class TestRunViaApiKey:
         db_session,
     ):
         """The fallback is the cloud scope's own opt-in, not a general identity
-        for API keys: a key without it slices unattributed, exactly as before."""
+        for API keys: a key without it resolves no cloud presets as anyone. The
+        run and its output are still its owner's."""
         from dataclasses import dataclass
 
         @dataclass
@@ -1301,18 +1347,22 @@ class TestRunViaApiKey:
         src = await library_file_factory()
         # Same owner and same three scopes as the test above — only the cloud
         # opt-in differs.
-        _, full_key = await self._admin_and_key(
+        admin, full_key = await self._admin_and_key(
             async_client, db_session, can_read_status=True, can_queue=True, can_manage_library=True
         )
 
+        from backend.app.api.routes import pipeline_runs
+
         enqueue = AsyncMock(return_value=_FakeSliceJob())
         live_status = {"connected": True, "raw_data": {"ams": []}}
+        orchestration = MagicMock(wraps=pipeline_runs._make_orchestration_callable)
         with (
             patch(
                 "backend.app.api.routes.pipeline_runs._load_printer_status",
                 new=AsyncMock(return_value=live_status),
             ),
             patch("backend.app.services.slice_dispatch.slice_dispatch.enqueue", new=enqueue),
+            patch("backend.app.api.routes.pipeline_runs._make_orchestration_callable", new=orchestration),
         ):
             resp = await async_client.post(
                 f"/api/v1/slicer-pipelines/{pipeline['id']}/run",
@@ -1321,7 +1371,8 @@ class TestRunViaApiKey:
             )
 
         assert resp.status_code == 202, resp.text
-        assert enqueue.await_args.kwargs["owner_id"] is None
+        assert orchestration.call_args.kwargs["creator_user_id"] is None
+        assert enqueue.await_args.kwargs["owner_id"] == admin.id
 
 
 class TestJobKeepsItsFinalStatus:

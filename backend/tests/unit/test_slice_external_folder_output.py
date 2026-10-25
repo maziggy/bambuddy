@@ -160,7 +160,7 @@ class TestSliceAndPersistWritesToTheMount:
             AsyncMock(return_value=(SliceResult(content, 3600, 12.5, 4200.0), False)),
         )
 
-    async def _slice_into(self, db_session, folder: LibraryFolder):
+    async def _slice_into(self, db_session, folder: LibraryFolder, **owner):
         db_session.add(folder)
         await db_session.commit()
         await db_session.refresh(folder)
@@ -174,6 +174,7 @@ class TestSliceAndPersistWritesToTheMount:
                 extra_metadata=None,
                 request=SliceRequest(printer_preset_id=1, process_preset_id=2, filament_preset_id=3),
                 current_user_id=None,
+                **owner,
             )
         file_row = await db_session.get(LibraryFile, response.library_file_id)
         return response, file_row
@@ -204,6 +205,22 @@ class TestSliceAndPersistWritesToTheMount:
         assert file_row.filename == "Bidoof (2).gcode.3mf"
         assert file_row.file_path == str(mount / "Bidoof (2).gcode.3mf")
         assert (mount / "Bidoof.gcode.3mf").read_bytes() == b"an earlier slice"
+
+    @pytest.mark.asyncio
+    async def test_the_file_can_be_someone_other_than_the_cloud_user(self, db_session, tmp_path):
+        """A pipeline run a key started: nobody resolves cloud presets, the
+        key's owner owns the result."""
+        from backend.app.models.user import User
+
+        owner = User(username="sliceowner", password_hash="x", role="user")
+        db_session.add(owner)
+        await db_session.commit()
+
+        _response, file_row = await self._slice_into(
+            db_session, LibraryFolder(name="Mine", parent_id=None, is_external=False), owner_id=owner.id
+        )
+
+        assert file_row.created_by_id == owner.id
 
     @pytest.mark.asyncio
     async def test_a_managed_folder_is_unaffected(self, db_session, tmp_path):

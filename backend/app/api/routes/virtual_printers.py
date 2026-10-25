@@ -136,7 +136,7 @@ async def _vp_to_dict(vp, db: AsyncSession, status: dict | None = None) -> dict:
 
 @router.get("")
 async def list_virtual_printers(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -166,7 +166,7 @@ async def list_virtual_printers(
 @router.post("")
 async def create_virtual_printer(
     body: VirtualPrinterCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -330,7 +330,7 @@ async def get_ca_certificate(
 @router.get("/{vp_id}/diagnostic", response_model=VPDiagnosticResult)
 async def diagnose_virtual_printer(
     vp_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -355,7 +355,7 @@ async def diagnose_virtual_printer(
 @router.get("/{vp_id}")
 async def get_virtual_printer(
     vp_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -378,7 +378,7 @@ async def get_virtual_printer(
 async def update_virtual_printer(
     vp_id: int,
     body: VirtualPrinterUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -604,7 +604,7 @@ def remove_upload_dir(upload_dir: Path) -> None:
 @router.delete("/{vp_id}")
 async def delete_virtual_printer(
     vp_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):

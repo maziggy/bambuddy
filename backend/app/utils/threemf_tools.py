@@ -6,12 +6,14 @@ accurate partial usage reporting for multi-material prints.
 """
 
 import hashlib
+import io
 import json
 import logging
 import math
 import re
 import zipfile
 from collections import OrderedDict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
@@ -54,7 +56,8 @@ def parse_gcode_layer_filament_usage(gcode_content: str) -> dict[int, dict[int, 
     G-code commands parsed:
         - M73 L<layer>: Layer change marker
         - M620 S<filament>: Filament/tool change (S255 = unload)
-        - G0/G1/G2/G3 E<amount>: Extrusion moves
+        - G0/G1/G2/G3 E<amount>: Extrusion moves (relative E; retractions
+          are subtracted, so each layer holds the net length fed)
     """
     layer_filaments: dict[int, dict[int, float]] = {}
     current_layer = 0
@@ -92,7 +95,7 @@ def parse_gcode_layer_filament_usage(gcode_content: str) -> dict[int, dict[int, 
                         new_layer = int(part[1:])
                         # Save current state before layer change
                         if cumulative_extrusion:
-                            layer_filaments[current_layer] = cumulative_extrusion.copy()
+                            layer_filaments[current_layer] = _snapshot(cumulative_extrusion)
                         current_layer = new_layer
                     except ValueError:
                         pass  # Skip G-code lines with unparseable layer numbers
@@ -127,18 +130,30 @@ def parse_gcode_layer_filament_usage(gcode_content: str) -> dict[int, dict[int, 
                 if part_upper.startswith("E"):
                     try:
                         extrusion = float(part[1:])
-                        # Only count positive extrusion (not retractions)
-                        if extrusion > 0:
-                            current = cumulative_extrusion.get(active_filament, 0)
-                            cumulative_extrusion[active_filament] = current + extrusion
+                        # Net sum, retractions included (#3317). Bambu G-code is
+                        # relative (M83): every retract is followed by an
+                        # un-retract of the same length, so counting only the
+                        # positive half added each pair to the total and put a
+                        # print 1.1-1.7x above the slicer's weight.
+                        current = cumulative_extrusion.get(active_filament, 0)
+                        cumulative_extrusion[active_filament] = current + extrusion
                     except ValueError:
                         pass  # Skip G-code lines with unparseable extrusion values
 
     # Save final layer state
     if cumulative_extrusion:
-        layer_filaments[current_layer] = cumulative_extrusion.copy()
+        layer_filaments[current_layer] = _snapshot(cumulative_extrusion)
 
     return layer_filaments
+
+
+def _snapshot(cumulative_extrusion: dict[int, float]) -> dict[int, float]:
+    """Copy the running totals for one layer, never below zero.
+
+    A filament retracted before it has extruded anything would otherwise read
+    as negative usage at that layer.
+    """
+    return {filament: max(mm, 0.0) for filament, mm in cumulative_extrusion.items()}
 
 
 def mm_to_grams(
@@ -186,15 +201,7 @@ def extract_layer_filament_usage_from_3mf(
     """
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
-            names = zf.namelist()
-            gcode_path = select_plate_gcode_name(names, plate_id)
-            if gcode_path is None:
-                # No plate asked for, or a file whose single G-code member
-                # doesn't follow the plate_N naming convention (non-Bambu
-                # slicers) — the lone member is unambiguous either way.
-                gcode_files = [f for f in names if f.endswith(".gcode")]
-                if plate_id is None or len(gcode_files) == 1:
-                    gcode_path = default_plate_gcode_name(names)
+            gcode_path = _printed_plate_gcode_name(zf.namelist(), plate_id)
             if gcode_path is None:
                 return None
 
@@ -203,6 +210,93 @@ def extract_layer_filament_usage_from_3mf(
             return parse_gcode_layer_filament_usage(gcode_content)
     except Exception:
         return None
+
+
+def _printed_plate_gcode_name(names: list[str], plate_id: int | None) -> str | None:
+    """The G-code member of the plate that printed, or None.
+
+    Exactly ``plate_id`` when it is in the file. With no plate asked for, or a
+    file whose single G-code member doesn't follow the plate_N naming
+    convention (non-Bambu slicers), the lone or lowest member: unambiguous
+    either way. Never another plate of a multi-plate file.
+    """
+    gcode_path = select_plate_gcode_name(names, plate_id)
+    if gcode_path is None:
+        gcode_files = [f for f in names if f.endswith(".gcode")]
+        if plate_id is None or len(gcode_files) == 1:
+            gcode_path = default_plate_gcode_name(names)
+    return gcode_path
+
+
+@dataclass(frozen=True)
+class PausePoint:
+    """A pause the slicer put into the print (#2984).
+
+    ``layer`` is the layer the printer reports while it waits: Bambu Studio and
+    OrcaSlicer write the pause after the layer-change G-code (``M73 L<n>``),
+    at the start of that layer. ``remaining_minutes`` is the slicer's time left
+    at that point, from the last ``M73 P<pct> R<min>`` before it, or None when
+    the G-code carries no such line.
+    """
+
+    layer: int
+    remaining_minutes: int | None
+
+
+def parse_gcode_pause_points(gcode_content: str) -> list[PausePoint]:
+    """The pauses in a plate's G-code, in print order.
+
+    A pause is ``M400 U1``: the pause G-code of every Bambu printer profile,
+    written by both slicers after their ``; PAUSE_PRINTING`` tag, and by hand in
+    a custom layer G-code. Bambu's start and end G-code never use it. One per
+    layer: a second pause on a layer the printer already stopped at adds no
+    new point to warn about.
+    """
+    return _pause_points(gcode_content.splitlines())
+
+
+def _pause_points(lines: Iterable[str]) -> list[PausePoint]:
+    pauses: list[PausePoint] = []
+    layer = 0
+    remaining: int | None = None
+    for raw in lines:
+        line = raw.lstrip()
+        if not line.startswith(("M73", "M400", "m73", "m400")):
+            continue
+        parts = line.split(";", 1)[0].split()
+        cmd = parts[0].upper() if parts else ""
+        params = [p.upper() for p in parts[1:]]
+        if cmd == "M73":
+            for param in params:
+                try:
+                    if param.startswith("L"):
+                        layer = int(param[1:])
+                    elif param.startswith("R"):
+                        remaining = int(param[1:])
+                except ValueError:
+                    pass  # A malformed value leaves the last good one
+        elif cmd == "M400" and "U1" in params:
+            if not pauses or pauses[-1].layer != layer:
+                pauses.append(PausePoint(layer=layer, remaining_minutes=remaining))
+    return pauses
+
+
+def extract_pause_points_from_3mf(file_path: Path, plate_id: int | None = None) -> list[PausePoint]:
+    """The pauses of the plate that is printing, or none when unreadable.
+
+    Line by line: a plate's G-code can run to 100 MB, and only its M73 and
+    M400 lines are wanted.
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            gcode_path = _printed_plate_gcode_name(zf.namelist(), plate_id)
+            if gcode_path is None:
+                return []
+            with zf.open(gcode_path) as member:
+                return _pause_points(io.TextIOWrapper(member, encoding="utf-8", errors="ignore"))
+    except Exception:
+        logger.debug("Could not read pauses from %s", file_path, exc_info=True)
+        return []
 
 
 def get_cumulative_usage_at_layer(
@@ -230,6 +324,42 @@ def get_cumulative_usage_at_layer(
 
     max_layer = max(relevant_layers)
     return layer_usage.get(max_layer, {})
+
+
+def slicer_grams_at_layer(
+    layer_usage: dict[int, dict[int, float]],
+    target_layer: int,
+    filament_usage: list[dict],
+) -> dict[int, float]:
+    """Grams per 1-based slot for a print stopped at ``target_layer`` (#3317).
+
+    The slicer's weight for each filament, times the share of that filament's
+    whole-print feed the G-code has done by ``target_layer``. A finished print
+    is charged the slicer's weight, and the G-code feeds more than the slicer
+    counts (the start sequence, the purge at a filament change) and ahead of
+    the layers it serves, so its grams on their own charged a print cancelled
+    near the end more than the same print finished.
+
+    Only slots the slicer weighed and the G-code fed by then; the caller
+    converts the others from millimetres.
+    """
+    if not layer_usage:
+        return {}
+    final = layer_usage[max(layer_usage)]
+    at_layer = get_cumulative_usage_at_layer(layer_usage, target_layer)
+    slicer_grams: dict[int, float] = {}
+    for usage in filament_usage:
+        slot_id, used_g = usage.get("slot_id"), usage.get("used_g") or 0
+        if isinstance(slot_id, int) and used_g > 0:
+            slicer_grams.setdefault(slot_id, used_g)
+    grams: dict[int, float] = {}
+    for filament_id, mm in at_layer.items():
+        slot_id = filament_id + 1
+        total_mm = final.get(filament_id, 0)
+        if slot_id in slicer_grams and total_mm > 0:
+            # The end sequence can retract a little after the last snapshot.
+            grams[slot_id] = slicer_grams[slot_id] * min(mm / total_mm, 1.0)
+    return grams
 
 
 def extract_filament_properties_from_3mf(file_path: Path) -> dict[int, dict]:
@@ -1022,6 +1152,8 @@ _BED_TEMP_KEYS: dict[str, tuple[str, str]] = {
     "High Temp Plate": ("hot_plate_temp_initial_layer", "hot_plate_temp"),
     "Textured PEI Plate": ("textured_plate_temp_initial_layer", "textured_plate_temp"),
     "Supertack Plate": ("supertack_plate_temp_initial_layer", "supertack_plate_temp"),
+    # OrcaSlicer only (PrintConfig.hpp get_bed_temp_key).
+    "Textured Cool Plate": ("textured_cool_plate_temp_initial_layer", "textured_cool_plate_temp"),
 }
 
 # Fallback for a config that names no plate: the Orca/PrusaSlicer spelling,
@@ -1663,18 +1795,51 @@ def extract_support_filament_slots_from_3mf(zf: zipfile.ZipFile) -> set[int]:
 
 _PAINT_COLOR_ATTR_RE = re.compile(rb'paint_color="([0-9A-Fa-f]+)"')
 
-# Painted-face quadtree leaves include both real filament assignments and
-# tiny edit artifacts (single-leaf accidents from "tried a colour, undid,
-# repainted with a different one"). The threshold's only job is dropping
-# accidents — anything the user spent meaningful effort on must survive.
-# 5% of an object's painted triangles is well below any 60/40 / 70/30 /
-# 33/33/33 split a real two- or three-colour print would hit, so all
-# intentional colours are kept; one-off single-leaf paints (typically
-# 0.1-1.5% in observed projects) are filtered. Note that this fallback
-# path runs ONLY when the preview-slice path can't reach the sidecar; in
-# the normal flow the slicer's own pruning produces the canonical list and
-# this threshold isn't reached.
-_PAINT_NOISE_THRESHOLD = 0.05
+
+def _painted_states(paint_color: bytes) -> set[int]:
+    """Filament numbers a triangle's ``paint_color`` paints with (#3355).
+
+    The string is the slicer's TriangleSelector tree, one hex digit per
+    4-bit node, written last node first. Each node: bits 0-1 are the
+    number of split sides; a split node (1-3) keeps the special side in bits
+    2-3 and is followed by split + 1 children. A leaf keeps its state in bits
+    2-3 (0 = unpainted, 1 or 2 = that filament); ``0b11`` there means the next
+    node holds ``state - 3``, and a ``0xF`` in that one means one more holds
+    ``state - 18``. Unpainted leaves print with the object's or part's own
+    filament, which the caller already counts. Reading each digit as a
+    filament number instead (extruder 1 is written ``4``, 2 ``8``, 3 ``0C``)
+    left real colours out, and the slice then overwrote them.
+
+    A string that ends early is malformed: what was read is kept.
+    """
+    nibbles = [int(chr(c), 16) for c in reversed(paint_color)]
+    states: set[int] = set()
+    pos = 0
+    pending = 1  # nodes still to read
+    try:
+        while pending:
+            pending -= 1
+            code = nibbles[pos]
+            pos += 1
+            split_sides = code & 0b11
+            if split_sides:
+                pending += split_sides + 1
+                continue
+            if code & 0b1100 == 0b1100:
+                low = nibbles[pos]
+                pos += 1
+                if low == 0b1111:
+                    state = nibbles[pos] + 18
+                    pos += 1
+                else:
+                    state = low + 3
+            else:
+                state = code >> 2
+            if state:
+                states.add(state)
+    except IndexError:
+        pass
+    return states
 
 
 def extract_plate_extruder_set_from_3mf(zf: zipfile.ZipFile, plate_id: int) -> set[int]:
@@ -1690,12 +1855,9 @@ def extract_plate_extruder_set_from_3mf(zf: zipfile.ZipFile, plate_id: int) -> s
        with distinct filaments).
     3. ``3D/Objects/object_*.model`` — ``paint_color`` attributes on
        individual ``<triangle>`` elements (used when the user "painted" a
-       face with a different filament). The encoding is a hex string where
-       each nibble is a TriangleSelector tree node: ``0`` = unpainted leaf,
-       ``F`` = branch (4 children follow), ``1``..``E`` = leaf painted with
-       extruder N. We don't decode the tree — every leaf-paint nibble in
-       the string IS the extruder number, so a flat scan over hex chars
-       yields the correct set without recursive parsing.
+       face with a different filament), decoded by :func:`_painted_states`.
+       Every painted leaf counts, however small: the slicer prints it with
+       that filament, so the slot is used.
 
     Without (3) the painted-face data is invisible: model_settings says
     every object on a multi-color plate uses extruder 1 by default but the
@@ -1785,33 +1947,9 @@ def extract_plate_extruder_set_from_3mf(zf: zipfile.ZipFile, plate_id: int) -> s
         except OSError:
             paint_cache[path] = out
             return out
-        # Per-extruder triangle coverage. Each painted triangle may have
-        # multiple leaf nibbles (the quadtree subdivides the face into
-        # painted regions); we count one triangle per unique extruder per
-        # match so the resulting fraction is "what share of painted
-        # triangles include at least one leaf with extruder N". Noise from
-        # one-off edit artifacts is filtered out at the threshold below.
-        extruder_triangles: dict[int, int] = {}
-        total_painted = 0
-        for match in _PAINT_COLOR_ATTR_RE.finditer(data):
-            total_painted += 1
-            seen: set[int] = set()
-            for ch in match.group(1):
-                # Hex digit → 4-bit value. 0 = unpainted leaf, F = branch
-                # (decoded recursively but children are encoded inline, so
-                # we'll see them on later iterations). 1-E = leaf painted
-                # with extruder N.
-                if ch in b"123456789":
-                    seen.add(ch - 0x30)
-                elif ch in b"ABCDEabcde":
-                    seen.add((ch & 0x4F) - 0x37)
-            for e in seen:
-                extruder_triangles[e] = extruder_triangles.get(e, 0) + 1
-        if total_painted > 0:
-            cutoff = max(1, int(total_painted * _PAINT_NOISE_THRESHOLD))
-            for ext, count in extruder_triangles.items():
-                if count >= cutoff:
-                    out.add(ext)
+        # Whole-triangle paints repeat ("4", "8", ...): decode each string once.
+        for paint in {match.group(1) for match in _PAINT_COLOR_ATTR_RE.finditer(data)}:
+            out |= _painted_states(paint)
         paint_cache[path] = out
         return out
 

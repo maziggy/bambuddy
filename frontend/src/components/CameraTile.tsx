@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, VideoOff, WifiOff } from 'lucide-react';
 import { getAuthToken, withStreamToken } from '../api/client';
 import { formatDuration } from '../utils/date';
 import { useStreamImgRef } from '../hooks/useStreamImgRef';
 import { useCameraViewerId } from '../hooks/useCameraViewerId';
+import { isSideways, useSidewaysBox } from '../hooks/useSidewaysBox';
 
 export type CameraTileMode = 'live' | 'snapshot' | 'paused';
 export type CameraTileStatusMode = 'off' | 'compact' | 'full';
@@ -236,7 +237,26 @@ export function CameraTile({
   // clickable and then does nothing.
   const interactive = onClick != null;
 
-  const transform = cameraRotation ? `rotate(${cameraRotation}deg)` : undefined;
+  // A sideways camera is laid out at the tile's sides swapped and centred, or
+  // the rotated picture is cut off at the tile's top and bottom (#3362).
+  // One ref for either root: the tile is a button when it can be clicked.
+  const tileRef = useRef<HTMLDivElement & HTMLButtonElement>(null);
+  const sideways = isSideways(cameraRotation);
+  const tile = useSidewaysBox(tileRef, sideways);
+  const imgStyle: CSSProperties | undefined =
+    sideways && tile
+      ? {
+          position: 'absolute',
+          left: '50%',
+          top: '50%',
+          width: tile.height,
+          height: tile.width,
+          maxWidth: 'none',
+          transform: `translate(-50%, -50%) rotate(${cameraRotation}deg)`,
+        }
+      : cameraRotation
+        ? { transform: `rotate(${cameraRotation}deg)` }
+        : undefined;
 
   const bucket = classifyState(printerState, hmsErrorCount);
   // Hide chip for idle to keep cold walls clean; always show when something
@@ -277,7 +297,7 @@ export function CameraTile({
           draggable={false}
           loading="lazy"
           className="h-full w-full select-none object-contain"
-          style={{ transform }}
+          style={imgStyle}
           onLoad={() => {
             clearFirstFrameTimer();
             renewalRef.current = 'none';
@@ -365,14 +385,14 @@ export function CameraTile({
 
   if (!interactive) {
     return (
-      <div className={rootClass} title={printerName}>
+      <div ref={tileRef} className={rootClass} title={printerName}>
         {content}
       </div>
     );
   }
 
   return (
-    <button type="button" onClick={onClick} className={rootClass} title={printerName}>
+    <button ref={tileRef} type="button" onClick={onClick} className={rootClass} title={printerName}>
       {content}
     </button>
   );

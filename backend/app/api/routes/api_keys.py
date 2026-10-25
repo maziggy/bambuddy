@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api-keys", tags=["api-keys"])
 
 @router.get("/", response_model=list[APIKeyResponse])
 async def list_api_keys(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.API_KEYS_READ),
 ):
     """List all API keys (without full key values)."""
@@ -39,7 +39,7 @@ async def list_api_keys(
 @router.post("/", response_model=APIKeyCreateResponse)
 async def create_api_key(
     data: APIKeyCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.API_KEYS_CREATE),
 ):
     """Create a new API key.
@@ -114,7 +114,7 @@ async def create_api_key(
 @router.get("/{key_id}", response_model=APIKeyResponse)
 async def get_api_key(
     key_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.API_KEYS_READ),
 ):
     """Get an API key by ID."""
@@ -131,7 +131,7 @@ async def get_api_key(
 async def update_api_key(
     key_id: int,
     data: APIKeyUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.API_KEYS_UPDATE),
 ):
     """Update an API key."""
@@ -220,7 +220,7 @@ async def drop_api_key_tokens(db: AsyncSession, key_ids) -> None:
 @router.delete("/{key_id}")
 async def delete_api_key(
     key_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.API_KEYS_DELETE),
 ):
     """Delete (revoke) an API key."""

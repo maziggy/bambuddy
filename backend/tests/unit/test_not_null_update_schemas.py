@@ -29,6 +29,7 @@ NOT_A_ROW_UPDATE = {
     "SpoolWeightUpdate": "a Spoolman spool, not a database row",
     "SpoolTagLinkRequest": "a Spoolman spool, not a database row",
     "SpoolmanFilamentPatch": "a Spoolman filament, not a database row",
+    "FilamentProfileDefaultWrite": "replaces a default as a whole; its validator reads a null key field as empty",
 }
 
 

@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { render } from '../utils';
 import { Layout } from '../../components/Layout';
 import { getAuthToken, setAuthToken } from '../../api/client';
@@ -373,6 +373,102 @@ describe('Layout', () => {
         // Version info is displayed in sidebar
         expect(document.body).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('camera launcher (#2737)', () => {
+    const originalMatchMedia = window.matchMedia;
+    const originalWidth = window.innerWidth;
+    /** Below 1144px the sidebar is a drawer and the compact header shows. */
+    function compactViewport() {
+      Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 390 });
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: (query: string) => ({ ...originalMatchMedia(query), matches: /max-width/.test(query) }),
+      });
+    }
+
+    beforeEach(() => {
+      server.use(
+        http.post('/api/v1/printers/:id/camera/stop', () => HttpResponse.json({ success: true })),
+        http.get('/api/v1/printers/:id/camera/status', () => HttpResponse.json({ active: true, stalled: false })),
+      );
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window, 'matchMedia', { writable: true, configurable: true, value: originalMatchMedia });
+      Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: originalWidth });
+    });
+
+    it('is on the Printers row of the sidebar, not in its footer', async () => {
+      render(<Layout />);
+
+      await waitFor(() => expect(document.querySelector('header')).toBeNull());
+      const aside = document.querySelector('aside')!;
+      const button = within(aside).getByRole('button', { name: 'Cameras' });
+      expect(button.closest('li')?.querySelector('a[href="/"]')).not.toBeNull();
+      expect(within(aside).getAllByRole('button', { name: 'Cameras' })).toHaveLength(1);
+    });
+
+    it('opens the camera list with the C key', async () => {
+      render(<Layout />);
+      await waitFor(() => expect(document.querySelector('aside')).not.toBeNull());
+
+      fireEvent.keyDown(document, { key: 'c' });
+      expect(await screen.findByRole('button', { name: /X1 Carbon/ })).toBeInTheDocument();
+
+      fireEvent.keyDown(document, { key: 'c' });
+      await waitFor(() => expect(screen.queryByRole('region', { name: 'Cameras' })).toBeNull());
+    });
+
+    it('leaves the C key alone while typing', async () => {
+      render(
+        <>
+          <input aria-label="search" />
+          <Layout />
+        </>,
+      );
+      await waitFor(() => expect(document.querySelector('aside')).not.toBeNull());
+
+      fireEvent.keyDown(screen.getByRole('textbox', { name: 'search' }), { key: 'c' });
+
+      expect(screen.queryByRole('region', { name: 'Cameras' })).toBeNull();
+    });
+
+    it('opens the header\'s list with the C key in the compact layout', async () => {
+      compactViewport();
+      render(<Layout />);
+      await waitFor(() => expect(document.querySelector('header')).not.toBeNull());
+
+      fireEvent.keyDown(document, { key: 'c' });
+
+      expect(await screen.findByRole('region', { name: 'Cameras' })).toBeInTheDocument();
+      // One list, the header's, not also the one in the closed drawer.
+      expect(screen.getAllByRole('region', { name: 'Cameras' })).toHaveLength(1);
+      expect(within(document.querySelector('header')!).getByRole('button', { name: 'Cameras' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+    });
+
+    it('is in the compact header, beside the bug report', async () => {
+      compactViewport();
+      render(<Layout />);
+
+      await waitFor(() => expect(document.querySelector('header')).not.toBeNull());
+      expect(within(document.querySelector('header')!).getByRole('button', { name: 'Cameras' })).toBeInTheDocument();
+    });
+
+    it('opens a camera overlay on a page other than Printers', async () => {
+      compactViewport();
+      render(<Layout />);
+      await waitFor(() => expect(document.querySelector('header')).not.toBeNull());
+
+      fireEvent.click(within(document.querySelector('header')!).getByRole('button', { name: 'Cameras' }));
+      fireEvent.click(await screen.findByRole('button', { name: /X1 Carbon/ }));
+
+      expect(await screen.findByTitle('Refresh stream')).toBeInTheDocument();
     });
   });
 

@@ -520,3 +520,38 @@ describe('CameraTile', () => {
     });
   });
 });
+
+// A portrait camera in a 16:9 tile was turned at the tile's size and cut off
+// at the top and bottom (#3362).
+describe('CameraTile with a camera turned sideways', () => {
+  beforeEach(() => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(new Response(null, { status: 200 }));
+    const isTile = (el: HTMLElement) => el.classList.contains('aspect-video');
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return isTile(this) ? 320 : 0;
+    });
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return isTile(this) ? 180 : 0;
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([90, 270])('lays a camera turned %i degrees out at the tile with its sides swapped', async (rotation) => {
+    render(<CameraTile printerId={42} printerName="A1 Mini" cameraRotation={rotation} mode="live" snapshotIntervalMs={5000} connected />);
+
+    const img = await screen.findByAltText('A1 Mini');
+    expect(img).toHaveStyle({ position: 'absolute', width: '180px', height: '320px' });
+    expect(img.style.transform).toBe(`translate(-50%, -50%) rotate(${rotation}deg)`);
+  });
+
+  it('only turns an upside-down camera', async () => {
+    render(<CameraTile printerId={42} printerName="A1 Mini" cameraRotation={180} mode="live" snapshotIntervalMs={5000} connected />);
+
+    const img = await screen.findByAltText('A1 Mini');
+    expect(img.style.transform).toBe('rotate(180deg)');
+    expect(img.style.width).toBe('');
+  });
+});

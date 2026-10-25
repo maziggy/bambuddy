@@ -33,7 +33,7 @@ router = APIRouter(prefix="/printers/{printer_id}/kprofiles", tags=["kprofiles"]
 async def get_kprofiles(
     printer_id: int,
     nozzle_diameter: str = "0.4",
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_READ),
 ):
     """Get K-profiles from a printer.
@@ -82,7 +82,7 @@ async def get_kprofiles(
 async def set_kprofile(
     printer_id: int,
     profile: KProfileCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_UPDATE),
 ):
     """Create or update a K-profile on the printer.
@@ -235,7 +235,7 @@ def _is_saved_profile(stored, profile: KProfileCreate) -> bool:
 async def set_kprofiles_batch(
     printer_id: int,
     profiles: list[KProfileCreate],
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_UPDATE),
 ):
     """Create multiple K-profiles in a single command (for dual-nozzle).
@@ -302,7 +302,7 @@ async def set_kprofiles_batch(
 async def delete_kprofile(
     printer_id: int,
     profile: KProfileDelete,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_DELETE),
 ):
     """Delete a K-profile from the printer.
@@ -352,7 +352,7 @@ async def delete_kprofile(
 @router.get("/notes", response_model=KProfileNoteResponse)
 async def get_kprofile_notes(
     printer_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_READ),
 ):
     """Get all K-profile notes for a printer.
@@ -380,7 +380,7 @@ async def get_kprofile_notes(
 async def set_kprofile_note(
     printer_id: int,
     note_data: KProfileNote,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_UPDATE),
 ):
     """Set or update a note for a K-profile.
@@ -429,7 +429,7 @@ async def set_kprofile_note(
 async def delete_kprofile_note(
     printer_id: int,
     setting_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.KPROFILES_DELETE),
 ):
     """Delete a note for a K-profile.

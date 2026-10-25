@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, AlertTriangle, Camera, Maximize, Minimize, WifiOff, ZoomIn, ZoomOut, Stethoscope } from 'lucide-react';
+import { RefreshCw, AlertTriangle, Camera, Maximize, Minimize, WifiOff, ZoomIn, ZoomOut, Stethoscope, PictureInPicture2 } from 'lucide-react';
 import { api, getAuthToken, getStreamToken, withStreamToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -12,6 +12,8 @@ import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModa
 import { CameraDiagnoseModal } from '../components/CameraDiagnoseModal';
 import { useStreamImgRef } from '../hooks/useStreamImgRef';
 import { useCameraViewerId } from '../hooks/useCameraViewerId';
+import { isSideways, useSidewaysBox } from '../hooks/useSidewaysBox';
+import { readOpenerTabId, requestCameraPopIn } from '../utils/camera';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 // The server's Retry-After for a snapshot while a live view starts.
@@ -21,6 +23,23 @@ const MAX_RECONNECT_DELAY = 30000; // 30 seconds
 const STALL_CHECK_INTERVAL = 5000; // Check every 5 seconds
 
 export function CameraPage() {
+  const { t } = useTranslation();
+  // Back into a Bambuddy tab as an overlay (#2737). The view unmounts, which
+  // stops its stream and every timer it runs, as closing the window would: a
+  // tab the user opened themselves cannot be closed by script, and is left
+  // saying where the camera went.
+  const [poppedIn, setPoppedIn] = useState(false);
+  if (poppedIn) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center p-4">
+        <p className="text-white text-center">{t('camera.poppedIn')}</p>
+      </div>
+    );
+  }
+  return <CameraView onPoppedIn={() => setPoppedIn(true)} />;
+}
+
+function CameraView({ onPoppedIn }: { onPoppedIn: () => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -659,6 +678,29 @@ export function CameraPage() {
 
   const isDisabled = streamLoading || transitioning || isReconnecting;
 
+  // A sideways camera is laid out with the video area's sides swapped. The
+  // viewport is the wrong box: the header and padding leave the area smaller,
+  // and a wide window cut the picture off at the top and bottom (#3362).
+  const videoAreaRef = useRef<HTMLDivElement>(null);
+  const sideways = isSideways(printer?.camera_rotation);
+  const videoArea = useSidewaysBox(videoAreaRef, sideways && id > 0);
+
+  // Read at load: the tab that opened this window is the one its
+  // sessionStorage was copied from.
+  const [openerTabId] = useState(readOpenerTabId);
+  const [popInPending, setPopInPending] = useState(false);
+  const popIn = async () => {
+    setPopInPending(true);
+    const moved = await requestCameraPopIn(id, printer?.name ?? '', openerTabId);
+    setPopInPending(false);
+    if (!moved) {
+      showToast(t('camera.popInNoTab'), 'warning');
+      return;
+    }
+    onPoppedIn();
+    window.close();
+  };
+
   if (!id) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -666,6 +708,7 @@ export function CameraPage() {
       </div>
     );
   }
+
 
   return (
     <div ref={containerRef} className="min-h-screen bg-black flex flex-col">
@@ -739,6 +782,15 @@ export function CameraPage() {
             <Stethoscope className="w-4 h-4 text-bambu-gray" />
           </button>
           <button
+            onClick={popIn}
+            disabled={popInPending}
+            className="p-1.5 hover:bg-bambu-dark-tertiary rounded disabled:opacity-50"
+            title={t('camera.popIn')}
+            aria-label={t('camera.popIn')}
+          >
+            <PictureInPicture2 className="w-4 h-4 text-bambu-gray" />
+          </button>
+          <button
             onClick={toggleFullscreen}
             className="p-1.5 hover:bg-bambu-dark-tertiary rounded"
             title={isFullscreen ? t('camera.exitFullscreen') : t('camera.fullscreen')}
@@ -764,7 +816,7 @@ export function CameraPage() {
         onTouchEnd={handleTouchEnd}
         style={{ touchAction: 'none' }}
       >
-        <div className="relative w-full h-full flex items-center justify-center">
+        <div ref={videoAreaRef} className="relative w-full h-full flex items-center justify-center">
           {(streamLoading || transitioning) && !isReconnecting && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
               <div className="text-center">
@@ -825,7 +877,11 @@ export function CameraPage() {
             className="max-w-full max-h-full object-contain select-none"
             style={{
               transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px) rotate(${printer?.camera_rotation || 0}deg)`,
-              ...(printer?.camera_rotation === 90 || printer?.camera_rotation === 270 ? { maxWidth: '100vh', maxHeight: '100vw' } : {}),
+              ...(sideways
+                ? videoArea
+                  ? { maxWidth: videoArea.height, maxHeight: videoArea.width }
+                  : { maxWidth: '100vh', maxHeight: '100vw' }
+                : {}),
               cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
             }}
             onError={currentUrl ? handleStreamError : undefined}

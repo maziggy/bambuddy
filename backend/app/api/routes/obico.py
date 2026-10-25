@@ -83,7 +83,7 @@ async def get_printer_status(
 @router.post("/test-connection")
 async def test_connection(
     req: TestConnectionRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Ping the Obico ML API health endpoint and check the token. Returns ok + raw body."""

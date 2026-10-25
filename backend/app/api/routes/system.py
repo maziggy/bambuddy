@@ -402,7 +402,7 @@ async def _get_storage_usage_cached(refresh: bool, max_age_seconds: int) -> dict
 
 @router.get("/info")
 async def get_system_info(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SYSTEM_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -602,7 +602,7 @@ async def get_storage_usage(
 
 @router.get("/health", response_model=ScanResult)
 async def get_system_health(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SYSTEM_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):

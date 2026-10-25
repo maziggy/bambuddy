@@ -129,7 +129,7 @@ async def _count_cloud_accounts(db: AsyncSession) -> tuple[int, int]:
 
 @router.get("/cloud-accounts", response_model=CloudAccountCounts)
 async def get_cloud_accounts(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_BACKUP),
 ):
     """How many cloud accounts the Cloud Profiles category would collect from.
@@ -172,7 +172,7 @@ def _config_to_response(config: GitHubBackupConfig) -> dict:
 
 @router.get("/config", response_model=GitHubBackupConfigResponse | None)
 async def get_config(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_BACKUP),
 ):
     """Get the current GitHub backup configuration."""
@@ -188,7 +188,7 @@ async def get_config(
 @router.post("/config", response_model=GitHubBackupConfigResponse)
 async def save_config(
     config_data: GitHubBackupConfigCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_BACKUP),
 ):
     """Create or update GitHub backup configuration.
@@ -264,7 +264,7 @@ async def save_config(
 @router.patch("/config", response_model=GitHubBackupConfigResponse)
 async def update_config(
     update_data: GitHubBackupConfigUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_BACKUP),
 ):
     """Partially update GitHub backup configuration."""
@@ -325,7 +325,7 @@ async def update_config(
 
 @router.delete("/config")
 async def delete_config(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_BACKUP),
 ):
     """Delete the GitHub backup configuration and all logs."""
@@ -363,7 +363,7 @@ async def test_connection(
 
 @router.post("/test-stored", response_model=GitHubTestConnectionResponse)
 async def test_stored_connection(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_BACKUP),
 ):
     """Test GitHub connection using stored configuration."""
@@ -386,7 +386,7 @@ async def test_stored_connection(
 
 @router.post("/run", response_model=GitHubBackupTriggerResponse)
 async def trigger_backup(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_BACKUP),
 ):
     """Manually trigger a backup."""
@@ -406,7 +406,7 @@ async def trigger_backup(
 
 @router.get("/status", response_model=GitHubBackupStatus)
 async def get_status(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_BACKUP),
 ):
     """Get current backup status."""
@@ -439,7 +439,7 @@ async def get_status(
 @router.get("/commits", response_model=GitHubCommitListResponse)
 async def list_commits(
     limit: int = Query(default=20, ge=1, le=100),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_RESTORE),
 ):
     """List recent backup commits so the user can pick one to restore from."""
@@ -456,7 +456,7 @@ async def list_commits(
 @router.get("/restore/preview", response_model=GitHubRestorePreview)
 async def preview_restore(
     ref: str = Query(default="HEAD", pattern=REF_PATTERN),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_RESTORE),
 ):
     """Report which categories a given backup commit contains."""
@@ -475,7 +475,7 @@ async def preview_restore(
 @router.post("/restore", response_model=GitHubRestoreResponse)
 async def restore_backup(
     request: GitHubRestoreRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_RESTORE),
 ):
     """Restore selected categories from one backup commit.
@@ -531,7 +531,7 @@ async def restore_backup(
 async def get_logs(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_BACKUP),
 ):
     """Get backup logs."""
@@ -569,7 +569,7 @@ async def get_logs(
 @router.delete("/logs")
 async def clear_logs(
     keep_last: int = Query(default=10, ge=0, le=100, description="Number of recent logs to keep"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_BACKUP),
 ):
     """Clear backup logs, optionally keeping the most recent entries."""

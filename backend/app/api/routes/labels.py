@@ -299,7 +299,7 @@ async def _spoolman_label_data(spool_ids: list[int], request: Request, db: Async
 async def render_local_inventory_labels(
     body: LabelRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> Response:
     """Render labels for spools in the local inventory."""
@@ -311,7 +311,7 @@ async def render_local_inventory_labels(
 async def preview_local_inventory_label(
     body: LabelPreviewRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> Response:
     """One label for a local spool, as a PNG, for the picker's preview."""
@@ -323,7 +323,7 @@ async def preview_local_inventory_label(
 async def render_spoolman_labels(
     body: LabelRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> Response:
     """Render labels for spools tracked in Spoolman."""
@@ -335,7 +335,7 @@ async def render_spoolman_labels(
 async def preview_spoolman_label(
     body: LabelPreviewRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> Response:
     """One label for a Spoolman spool, as a PNG, for the picker's preview."""

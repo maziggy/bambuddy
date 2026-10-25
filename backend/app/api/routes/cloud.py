@@ -76,7 +76,7 @@ async def _cloud_api_key_gate(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> None:
     """Router-level dependency: enforce API-key cloud-access fences (#1182).
 
@@ -148,7 +148,7 @@ def cloud_caller(*permissions: Permission):
 async def resolve_api_key_cloud_owner(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ) -> User | None:
     """Route-level dep for non-/cloud/* endpoints that need to read the
     caller's stored Bambu Cloud token (e.g. the slice path resolving cloud
@@ -384,7 +384,7 @@ async def build_authenticated_cloud(db: AsyncSession, user: User | None) -> Bamb
 
 @router.get("/status", response_model=CloudAuthStatus)
 async def get_auth_status(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """Get current cloud authentication status.
@@ -442,7 +442,7 @@ async def get_auth_status(
 @router.post("/login", response_model=CloudLoginResponse)
 async def login(
     request: CloudLoginRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """
@@ -484,7 +484,7 @@ async def login(
 @router.post("/verify", response_model=CloudLoginResponse)
 async def verify_code(
     request: CloudVerifyRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """
@@ -531,7 +531,7 @@ async def verify_code(
 @router.post("/token", response_model=CloudAuthStatus)
 async def set_token(
     request: CloudTokenRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """
@@ -569,7 +569,7 @@ async def set_token(
 
 @router.post("/logout")
 async def logout(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """Log out of Bambu Cloud."""
@@ -580,7 +580,7 @@ async def logout(
 @router.get("/settings", response_model=SlicerSettingsResponse)
 async def get_slicer_settings(
     version: str = _SLICER_API_VERSION,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """
@@ -653,7 +653,7 @@ async def get_slicer_settings(
 @router.get("/settings/{setting_id}")
 async def get_setting_detail(
     setting_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """
@@ -682,7 +682,7 @@ async def get_setting_detail(
 @router.get("/filaments", response_model=list[SlicerSetting])
 async def get_filament_presets(
     version: str = _SLICER_API_VERSION,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.FILAMENTS_READ),
 ):
     """
@@ -967,7 +967,7 @@ _filament_id_to_setting_id = filament_id_to_setting_id
 @router.post("/filament-info")
 async def get_filament_info(
     setting_ids: list[str] = Body(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.FILAMENTS_READ),
 ):
     """
@@ -1035,7 +1035,7 @@ async def get_filament_info(
 
 @router.get("/devices", response_model=list[CloudDevice])
 async def get_devices(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.PRINTERS_READ),
 ):
     """
@@ -1074,7 +1074,7 @@ async def get_devices(
 
 @router.get("/firmware-updates", response_model=FirmwareUpdatesResponse)
 async def get_firmware_updates(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.FIRMWARE_READ),
 ):
     """
@@ -1154,7 +1154,7 @@ async def get_firmware_updates(
 @router.post("/settings")
 async def create_setting(
     request: SlicerSettingCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """
@@ -1193,7 +1193,7 @@ async def create_setting(
 async def update_setting(
     setting_id: str,
     request: SlicerSettingUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """
@@ -1226,7 +1226,7 @@ async def update_setting(
 @router.delete("/settings/{setting_id}", response_model=SlicerSettingDeleteResponse)
 async def delete_setting(
     setting_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.CLOUD_AUTH),
 ):
     """

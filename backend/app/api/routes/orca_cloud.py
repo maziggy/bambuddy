@@ -516,7 +516,7 @@ async def _build_authenticated_service(
 @router.post("/device/start", response_model=OrcaDeviceStartResponse)
 async def device_start(
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.ORCA_CLOUD_AUTH),
 ):
     """Begin device pairing. Requests a device code from Orca, stores it
@@ -555,7 +555,7 @@ async def device_start(
 
 @router.post("/device/poll", response_model=OrcaDevicePollResponse)
 async def device_poll(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.ORCA_CLOUD_AUTH),
 ):
     """Poll the token endpoint once for the in-flight pairing. Returns an
@@ -608,7 +608,7 @@ async def device_poll(
 
 @router.get("/status", response_model=OrcaAuthStatusResponse)
 async def get_status(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.ORCA_CLOUD_AUTH),
 ):
     """Return whether the caller has an Orca Cloud session stored, plus
@@ -623,7 +623,7 @@ async def get_status(
 
 @router.post("/logout")
 async def logout(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.ORCA_CLOUD_AUTH),
 ):
     """Clear stored Orca Cloud credentials. Does not call Orca's disconnect
@@ -635,7 +635,7 @@ async def logout(
 
 @router.get("/profiles", response_model=OrcaProfileListResponse)
 async def list_profiles(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.ORCA_CLOUD_AUTH),
 ):
     """Return profile metadata grouped by type (``filament`` / ``printer``
@@ -675,7 +675,7 @@ async def list_profiles(
 @router.get("/profiles/{profile_id}", response_model=OrcaProfileDetail)
 async def get_profile(
     profile_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = cloud_caller(Permission.ORCA_CLOUD_AUTH),
 ):
     """Fetch a single profile's full content, shaped like

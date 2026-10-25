@@ -31,7 +31,7 @@
     "@tiptap/react": "^3.11.1",
     "@tiptap/starter-kit": "^3.11.1",
     "@types/three": "^0.181.0",
-    "dompurify": "^3.4.10",
+    "dompurify": "^3.4.17",
     "i18next": "25.6.3",
     "i18next-browser-languagedetector": "^8.2.0",
     "jsqr": "^1.4.0",
@@ -77,7 +77,7 @@
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^4.1.12",
     "baseline-browser-mapping": "^2.9.19",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
@@ -93,6 +93,6 @@
     "typescript-eslint": "^8.46.4",
     "unified": "^11.0.5",
     "vite": "^8.1.6",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   }
 }

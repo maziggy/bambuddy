@@ -261,6 +261,7 @@ _INT_SETTING_KEYS = frozenset(
         "queue_keep_warm_max_minutes",
         "queue_max_concurrent_uploads",
         "ambient_drying_sustained_minutes",
+        "pause_warning_minutes",
     }
 )
 
@@ -329,7 +330,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False, m
 @router.get("", response_model=AppSettings)
 @router.get("/", response_model=AppSettings)
 async def get_settings(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
     _is_api_key: bool = Depends(caller_is_api_key),
 ):
@@ -354,7 +355,7 @@ def _same_setting_value(new: object, old: object) -> bool:
 @router.put("/", response_model=AppSettings)
 async def update_settings(
     settings_update: AppSettingsUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Update application settings."""
@@ -509,7 +510,7 @@ async def update_settings(
 @router.patch("", response_model=AppSettings)
 async def patch_settings(
     settings_update: AppSettingsUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Partially update application settings (same as PUT, for REST compatibility)."""
@@ -531,7 +532,7 @@ class ElectricityPriceUpdate(BaseModel):
 @router.post("/electricity-price", response_model=AppSettings)
 async def update_electricity_price(
     payload: ElectricityPriceUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: ScopedCaller = Depends(require_energy_cost_update()),
     _is_api_key: bool = Depends(caller_is_api_key),
 ):
@@ -552,7 +553,7 @@ async def update_electricity_price(
 
 @router.post("/reset", response_model=AppSettings)
 async def reset_settings(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
@@ -570,7 +571,7 @@ async def reset_settings(
 
 @router.get("/default-sidebar-order")
 async def get_default_sidebar_order(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get the admin-set default sidebar order.
 
@@ -615,7 +616,7 @@ _UI_PREFERENCE_FIELDS: tuple[str, ...] = (
 
 
 @router.get("/ui-preferences")
-async def get_ui_preferences(db: AsyncSession = Depends(get_db)):
+async def get_ui_preferences(db: AsyncSession = Depends(get_db, scope="function")):
     """Get the curated subset of settings that any page needs to render correctly.
 
     Intentionally not gated on SETTINGS_READ — every authenticated user (and
@@ -702,7 +703,7 @@ _UI_FLAG_FIELDS: tuple[str, ...] = (
 
 @router.get("/ui-flags")
 async def get_ui_flags(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = Depends(require_auth_if_enabled),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -752,7 +753,7 @@ async def check_ffmpeg(
 
 @router.get("/spoolman")
 async def get_spoolman_settings(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
 ):
     """Get Spoolman integration settings."""
@@ -776,7 +777,7 @@ async def get_spoolman_settings(
 @router.put("/spoolman")
 async def update_spoolman_settings(
     settings: dict,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Update Spoolman integration settings.
@@ -1029,7 +1030,7 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
 
 @router.get("/backup")
 async def create_backup(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_BACKUP),
 ):
@@ -1468,7 +1469,7 @@ async def _import_sqlite_to_postgres(sqlite_path: Path):
 @router.post("/restore")
 async def restore_backup(
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_RESTORE),
 ):
@@ -1654,7 +1655,7 @@ async def restore_backup(
                 # checkpointed yet (seed_default_groups + init_db on first
                 # start, plus whatever background heartbeats wrote during
                 # the request window) sits in bambuddy.db-wal with valid
-                # checksums. The route handler's own `db: Depends(get_db)`
+                # checksums. The route handler's own `db: Depends(get_db, scope="function")`
                 # session also keeps a connection checked out across
                 # engine.dispose(), holding fds to the WAL inode. With
                 # `shutil.copy2` SQLite finds the stale WAL on the next
@@ -1830,7 +1831,7 @@ def _legacy_vp_status(status: dict, printer_scope: PrinterScope) -> dict:
 
 @router.get("/virtual-printer")
 async def get_virtual_printer_settings(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -1861,7 +1862,7 @@ async def update_virtual_printer_settings(
     remote_interface_ip: str = None,
     tailscale_disabled: bool = None,
     archive_name_source: str = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):

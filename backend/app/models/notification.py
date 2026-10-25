@@ -154,6 +154,9 @@ class NotificationProvider(Base):
     on_first_layer_complete: Mapped[bool | None] = mapped_column(
         Boolean, default=False
     )  # First layer finished printing
+    # A pause the slicer put into the print is coming up (#2984). Off by
+    # default: nothing new arrives on upgrade.
+    on_print_pause_upcoming: Mapped[bool | None] = mapped_column(Boolean, default=False, server_default=false())
     # Messages another application sends through Bambuddy (POST /notifications/app-message),
     # e.g. Bambuddy Orders' "an order needs you". Off by default: nothing new arrives on upgrade.
     on_app_message: Mapped[bool | None] = mapped_column(Boolean, default=False, server_default=false())

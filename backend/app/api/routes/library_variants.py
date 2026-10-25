@@ -186,7 +186,7 @@ async def _dissolve_if_too_small(db: AsyncSession, group: FileVariantGroup) -> b
 @router.post("/", response_model=VariantGroupResponse, status_code=201)
 async def create_variant_group(
     payload: VariantGroupCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
@@ -241,7 +241,7 @@ async def create_variant_group(
 @router.get("/by-file/{file_id}", response_model=VariantGroupResponse)
 async def get_group_for_file(
     file_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -268,7 +268,7 @@ async def get_group_for_file(
 @router.get("/{group_id}", response_model=VariantGroupResponse)
 async def get_variant_group(
     group_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -283,7 +283,7 @@ async def get_variant_group(
 async def update_variant_group(
     group_id: int,
     payload: VariantGroupUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
@@ -323,7 +323,7 @@ async def update_variant_group(
 async def add_variant_group_member(
     payload: VariantGroupMemberRequest,
     group_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
@@ -379,7 +379,7 @@ async def add_variant_group_member(
 async def remove_variant_group_member(
     group_id: int,
     file_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,
@@ -406,7 +406,7 @@ async def remove_variant_group_member(
 @router.delete("/{group_id}", response_model=None, status_code=204)
 async def delete_variant_group(
     group_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_UPDATE_ALL,

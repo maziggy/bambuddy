@@ -330,7 +330,7 @@ class TestTheDefaultPrintOptions:
 
 
 class TestAPipelineRun:
-    async def _run(self, db_session, test_engine, tmp_path):
+    async def _run(self, db_session, test_engine, tmp_path, owner_id=None, slices=None):
         from backend.app.api.routes.pipeline_runs import _make_orchestration_callable
         from backend.app.core.printer_scope import ALL_PRINTERS
         from backend.app.models.library import LibraryFile
@@ -352,7 +352,7 @@ class TestAPipelineRun:
         )
         db_session.add_all([source, pipeline])
         await db_session.commit()
-        run = PipelineRun(pipeline_id=pipeline.id, source_library_file_id=source.id, copies=2, created_by=None)
+        run = PipelineRun(pipeline_id=pipeline.id, source_library_file_id=source.id, copies=2, created_by=owner_id)
         db_session.add(run)
         await db_session.commit()
         db_session.add_all([PipelineJob(pipeline_run_id=run.id, copy_index=i) for i in range(2)])
@@ -361,6 +361,8 @@ class TestAPipelineRun:
         model.write_bytes(b"model")
 
         async def sliced(session, **kwargs):
+            if slices is not None:
+                slices.append(kwargs)
             out = LibraryFile(filename="pipe.gcode.3mf", file_path="library/pipe.gcode.3mf", file_type="3mf")
             out.file_size = 1
             session.add(out)
@@ -401,6 +403,19 @@ class TestAPipelineRun:
         assert all(item.timelapse for item in items)
         notify.assert_awaited_once()
         assert notify.await_args.kwargs["job_name"] == "pipe ×2"
+
+    async def test_the_sliced_file_is_the_runs_owners(self, db_session, test_engine, tmp_path, announced):
+        """Also when no one resolves cloud presets: a key without the cloud scope started it."""
+        owner = User(username="runowner", password_hash="x", role="user")
+        db_session.add(owner)
+        await db_session.commit()
+        slices: list = []
+
+        items = await self._run(db_session, test_engine, tmp_path, owner_id=owner.id, slices=slices)
+
+        assert [s["current_user_id"] for s in slices] == [None]
+        assert [s["owner_id"] for s in slices] == [owner.id]
+        assert {item.created_by_id for item in items} == {owner.id}
 
 
 class TestAVirtualPrinter:

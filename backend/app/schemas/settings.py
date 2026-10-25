@@ -127,6 +127,11 @@ class AppSettings(BaseModel):
         default=35.0, description="Bed temperature threshold for cooled notification (°C)"
     )
 
+    # Heads-up before a pause the slicer put into the print (#2984)
+    pause_warning_minutes: int = Field(
+        default=5, description="Minutes before a pause to send the pause-coming-up notification"
+    )
+
     # AMS threshold settings for humidity and temperature coloring
     ams_humidity_good: int = Field(default=40, description="Humidity threshold for good (green): <= this value")
     ams_humidity_fair: int = Field(
@@ -747,6 +752,7 @@ class AppSettingsUpdate(BaseModel):
     language: str | None = None
     notification_language: str | None = None
     bed_cooled_threshold: float | None = None
+    pause_warning_minutes: int | None = Field(default=None, ge=1, le=120)
     ams_humidity_good: int | None = None
     ams_humidity_fair: int | None = None
     ams_temp_good: float | None = None

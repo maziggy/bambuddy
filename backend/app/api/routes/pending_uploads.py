@@ -91,7 +91,7 @@ async def _augment_with_display_name(
 
 @router.get("/", response_model=list[PendingUploadResponse])
 async def list_pending_uploads(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_READ_ALL,
@@ -109,7 +109,7 @@ async def list_pending_uploads(
 
 @router.get("/count")
 async def get_pending_count(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_READ_ALL,
@@ -130,7 +130,7 @@ async def get_pending_count(
 
 @router.post("/archive-all")
 async def archive_all_pending(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
 ):
     """Archive all pending uploads."""
@@ -190,7 +190,7 @@ async def archive_all_pending(
 
 @router.delete("/discard-all")
 async def discard_all_pending(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_DELETE_ALL),
 ):
     """Discard all pending uploads."""
@@ -218,7 +218,7 @@ async def discard_all_pending(
 @router.get("/{upload_id}", response_model=PendingUploadResponse)
 async def get_pending_upload(
     upload_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_READ_ALL,
@@ -240,7 +240,7 @@ async def get_pending_upload(
 async def archive_pending_upload(
     upload_id: int,
     request: ArchiveRequest = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
 ):
     """Archive a pending upload."""
@@ -317,7 +317,7 @@ async def archive_pending_upload(
 @router.delete("/{upload_id}")
 async def discard_pending_upload(
     upload_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_DELETE_ALL),
 ):
     """Discard a pending upload without archiving."""

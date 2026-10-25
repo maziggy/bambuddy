@@ -65,7 +65,7 @@ async def _load_sensor(db: AsyncSession, sensor_id: int, printer_scope: PrinterS
 @router.get("/", response_model=list[PrinterHASensorResponse])
 async def list_ha_sensors(
     printer_id: int | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _READ,
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -83,7 +83,7 @@ async def list_ha_sensors(
 @router.get("/entities", response_model=list[HADisplayEntity])
 async def list_bindable_entities(
     search: str | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _READ,
 ):
     """List the Home Assistant entities that can be bound to a printer."""
@@ -103,7 +103,7 @@ async def list_bindable_entities(
 @router.get("/by-printer/{printer_id}/readings", response_model=list[PrinterHASensorReading])
 async def get_printer_sensor_readings(
     printer_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
 ):
     """Live state of a printer's card-visible sensors.
@@ -151,7 +151,7 @@ def _reading(sensor: PrinterHASensor) -> PrinterHASensorReading:
 @router.post("/", response_model=PrinterHASensorResponse)
 async def create_ha_sensor(
     data: PrinterHASensorCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _CREATE,
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -187,7 +187,7 @@ async def create_ha_sensor(
 @router.get("/{sensor_id}", response_model=PrinterHASensorResponse)
 async def get_ha_sensor(
     sensor_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _READ,
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -198,7 +198,7 @@ async def get_ha_sensor(
 async def update_ha_sensor(
     sensor_id: int,
     data: PrinterHASensorUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _UPDATE,
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -243,7 +243,7 @@ async def update_ha_sensor(
 @router.delete("/{sensor_id}")
 async def delete_ha_sensor(
     sensor_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = _DELETE,
     printer_scope: PrinterScope = RequestPrinterScope,
 ):

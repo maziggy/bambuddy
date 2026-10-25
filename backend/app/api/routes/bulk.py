@@ -33,6 +33,7 @@ from backend.app.api.routes.smart_plugs import (
 )
 from backend.app.core.auth import (
     ApiKeyActor,
+    RequestActor,
     RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
     require_ownership_permission,
@@ -62,7 +63,7 @@ async def get_printer_statuses(
     ids: str = Query(..., description="Comma-separated printer ids"),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """``GET /printers/{printer_id}/status`` for several printers. Unknown ids are left out."""
     wanted = [i for i in parse_id_list(ids) if printer_scope.allows(i)]
@@ -78,7 +79,7 @@ async def get_slot_presets_bulk(
     ids: str = Query(..., description="Comma-separated printer ids"),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """``GET /printers/{printer_id}/slot-presets`` for several printers, keyed by printer id."""
     wanted = [i for i in parse_id_list(ids) if printer_scope.allows(i)]
@@ -95,7 +96,7 @@ async def get_ams_labels_bulk(
     ids: str = Query(..., description="Comma-separated printer ids"),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """``GET /printers/{printer_id}/ams-labels`` for several printers, keyed by printer id."""
     wanted = [i for i in parse_id_list(ids) if printer_scope.allows(i)]
@@ -105,7 +106,7 @@ async def get_ams_labels_bulk(
 @router.get("/card-plugs", response_model=None, responses={200: {"model": dict[int, PrinterCardPlugs]}})
 async def get_smart_plugs_by_printers(
     ids: str = Query(..., description="Comma-separated printer ids"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
     can_edit: bool = CallerEditsPlugs,
@@ -139,7 +140,7 @@ async def get_smart_plugs_by_printers(
 @router.get("/ha-sensor-readings", response_model=dict[int, list[PrinterHASensorReading]])
 async def get_sensor_readings_by_printers(
     ids: str = Query(..., description="Comma-separated printer ids"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SMART_PLUGS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -160,7 +161,7 @@ async def get_sensor_readings_by_printers(
 @router.get("/firmware-updates", response_model=list[FirmwareUpdateInfo])
 async def check_printers_firmware(
     ids: str = Query(..., description="Comma-separated printer ids"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FIRMWARE_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -186,7 +187,7 @@ async def check_printers_firmware(
 async def list_queue_by_printers(
     ids: str = Query(..., description="Comma-separated printer ids"),
     status: str | None = Query(None, description="Filter by status; several may be given comma-separated"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.QUEUE_READ_ALL,
@@ -252,7 +253,7 @@ async def list_queue_by_printers(
 @router.get("/archive-folders", response_model=dict[int, list[FolderResponse]])
 async def get_folders_by_archives(
     ids: str = Query(..., description="Comma-separated archive ids"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.LIBRARY_READ_ALL,
@@ -260,6 +261,7 @@ async def get_folders_by_archives(
         )
     ),
     printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """``GET /library/folders/by-archive/{archive_id}`` for several archives, keyed by archive id.
 
@@ -270,4 +272,4 @@ async def get_folders_by_archives(
     archive_ids = parse_id_list(ids)
     if not archive_ids:
         return {}
-    return await _folders_by_archive(db, user, archive_ids, printer_scope)
+    return await _folders_by_archive(db, user, archive_ids, printer_scope, actor)

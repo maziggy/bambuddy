@@ -1449,6 +1449,10 @@ class SpoolmanClient:
                 initial_weight=tray.tray_weight if tray.tray_weight > 0 else None,
             )
             await self.add_native_tags(created, [tray.tray_uuid, chip_uid], tag_format)
+            # The product's profile default (#1326).
+            from backend.app.services.filament_profile_default import fill_auto_added_spoolman_spool
+
+            await fill_auto_added_spoolman_spool(created, self, include_slicer=not tray.tray_info_idx)
             return created
 
         # No-RFID fallback: use the spool ID resolved from the local slot-assignment table.

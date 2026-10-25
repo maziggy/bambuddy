@@ -12,6 +12,7 @@ import {
   type LocalPreset,
   type SlicerSetting,
   type SpoolCatalogEntry,
+  type SpoolKProfileInput,
 } from '../../api/client';
 import { getCurrencySymbol } from '../../utils/currency';
 import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
@@ -51,6 +52,7 @@ import {
   parsePresetName,
   saveRecentColor,
   withCurrentValue,
+  withProductDefaultKProfiles,
 } from '../../components/spool-form/utils';
 import { MATERIALS } from '../../components/spool-form/constants';
 import { NumberInput } from '../../components/NumberInput';
@@ -714,16 +716,12 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
 
   const saveKProfiles = async (spoolId: number) => {
     const save = spoolmanMode ? api.saveSpoolmanKProfiles : api.saveSpoolKProfiles;
-    if (selectedProfiles.size === 0) {
-      try {
-        await save(spoolId, []);
-      } catch {
-        // ignore
-      }
-      return;
-    }
+    // Only ever a spool just created: nothing picked leaves it with what the
+    // create gave it, the product's profile default (#1326). Saving the empty
+    // list would clear that.
+    if (selectedProfiles.size === 0) return;
 
-    const profiles = [];
+    let profiles: SpoolKProfileInput[] = [];
     for (const key of selectedProfiles) {
       const [printerIdStr, caliIdxStr, extruderStr] = key.split(':');
       const printerId = parseInt(printerIdStr);
@@ -754,6 +752,9 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
     }
 
     if (profiles.length > 0) {
+      // The save replaces the spool's whole list, and this page never shows
+      // the product's profile default the create applied (#1326).
+      profiles = await withProductDefaultKProfiles(profiles, formData);
       await save(spoolId, profiles);
     }
   };

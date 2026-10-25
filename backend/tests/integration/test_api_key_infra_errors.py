@@ -6,16 +6,23 @@ during a pool timeout, or when writing its last-used time hit "database is
 locked", and the web interface clears its sign-in on that message. Such an
 error now refuses the request with 503, as the auth checks in the middleware
 do, and is logged.
+
+Writing the key's last-used time is the exception: the key has been checked by
+then, so a failed write (a read-only replica after a failover) is logged and
+the key accepted. The time is written at most once a minute (#3360).
 """
 
 import logging
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import event, update
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core import auth
 from backend.app.models.api_key import APIKey
 
 
@@ -39,18 +46,35 @@ async def _key(async_client) -> str:
 
 
 @contextmanager
-def _failing(test_engine, statement_start: str):
-    """Make the next statement starting with *statement_start* fail as SQLite does when locked."""
-    state = {"failed": False}
+def _failing(test_engine, *statement_starts: str):
+    """Make the next statements starting with *statement_starts*, in turn, fail
+    as SQLite does when locked."""
+    state = {"failed": False, "left": list(statement_starts)}
 
     def hook(conn, cursor, statement, parameters, context, executemany):
-        if not state["failed"] and statement.lstrip().upper().startswith(statement_start):
-            state["failed"] = True
+        if state["left"] and statement.lstrip().upper().startswith(state["left"][0]):
+            state["left"].pop(0)
+            state["failed"] = not state["left"]
             raise OperationalError(statement, parameters, Exception("database is locked"))
 
     event.listen(test_engine.sync_engine, "before_cursor_execute", hook)
     try:
         yield state
+    finally:
+        event.remove(test_engine.sync_engine, "before_cursor_execute", hook)
+
+
+@contextmanager
+def _counting(test_engine, statement_start: str):
+    seen: list[str] = []
+
+    def hook(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith(statement_start):
+            seen.append(statement)
+
+    event.listen(test_engine.sync_engine, "before_cursor_execute", hook)
+    try:
+        yield seen
     finally:
         event.remove(test_engine.sync_engine, "before_cursor_execute", hook)
 
@@ -84,14 +108,108 @@ async def test_a_failed_key_lookup_is_a_logged_503(async_client, test_engine, ca
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_a_failed_last_used_write_is_a_503_not_an_invalid_key(async_client, test_engine):
+async def test_a_failed_last_used_write_still_lets_the_key_in(async_client, test_engine, caplog):
+    """The reporter's read-only replica: the key matched, only the write failed."""
     key = await _key(async_client)
 
-    with _failing(test_engine, "UPDATE API_KEYS") as state:
+    with _failing(test_engine, "UPDATE API_KEYS") as state, caplog.at_level(logging.WARNING):
+        response = await async_client.get(PROTECTED, headers={"X-API-Key": key})
+
+    assert state["failed"]
+    assert response.status_code == 200, response.text
+    assert "Could not record API key" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_failed_write_and_a_failed_reread_is_a_503(async_client, test_engine):
+    key = await _key(async_client)
+
+    with _failing(test_engine, "UPDATE API_KEYS", "SELECT API_KEYS") as state:
         response = await async_client.get(PROTECTED, headers={"X-API-Key": key})
 
     assert state["failed"]
     assert response.status_code == 503, response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_key_turned_off_before_the_reread_is_refused(async_client, test_engine):
+    key = await _key(async_client)
+    original = AsyncSession.refresh
+
+    async def refresh_after_disabling(self, instance, *args, **kwargs):
+        await original(self, instance, *args, **kwargs)
+        if isinstance(instance, APIKey):
+            instance.enabled = False
+
+    with (
+        _failing(test_engine, "UPDATE API_KEYS"),
+        patch.object(AsyncSession, "refresh", refresh_after_disabling),
+    ):
+        response = await async_client.get(PROTECTED, headers={"X-API-Key": key})
+
+    assert response.status_code == 401, response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_key_set_to_expire_before_the_reread_is_refused(async_client, test_engine):
+    """Setting a past expiry revokes a key just as turning it off does."""
+    key = await _key(async_client)
+    original = AsyncSession.refresh
+
+    async def refresh_after_expiring(self, instance, *args, **kwargs):
+        await original(self, instance, *args, **kwargs)
+        if isinstance(instance, APIKey):
+            instance.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+
+    with (
+        _failing(test_engine, "UPDATE API_KEYS"),
+        patch.object(AsyncSession, "refresh", refresh_after_expiring),
+    ):
+        response = await async_client.get(PROTECTED, headers={"X-API-Key": key})
+
+    assert response.status_code == 401, response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_failing_write_is_not_retried_on_every_request(async_client, test_engine):
+    """On SQLite each try waits out the busy timeout first."""
+    key = await _key(async_client)
+
+    with _counting(test_engine, "UPDATE API_KEYS") as writes, _failing(test_engine, "UPDATE API_KEYS"):
+        for _ in range(3):
+            response = await async_client.get(PROTECTED, headers={"X-API-Key": key})
+            assert response.status_code == 200, response.text
+
+    assert len(writes) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_last_used_is_written_at_most_once_a_minute(async_client, test_engine, db_session):
+    key = await _key(async_client)
+
+    with _counting(test_engine, "UPDATE API_KEYS") as writes:
+        for _ in range(3):
+            response = await async_client.get(PROTECTED, headers={"X-API-Key": key})
+            assert response.status_code == 200, response.text
+    assert len(writes) == 1
+
+    await db_session.execute(
+        update(APIKey)
+        .values(last_used=datetime.now(timezone.utc) - timedelta(minutes=2))
+        .where(APIKey.name == "integration")
+    )
+    await db_session.commit()
+    # The attempt this process remembers is a minute old too.
+    auth._api_key_last_used._attempts.clear()
+    with _counting(test_engine, "UPDATE API_KEYS") as writes:
+        response = await async_client.get(PROTECTED, headers={"X-API-Key": key})
+    assert response.status_code == 200, response.text
+    assert len(writes) == 1
 
 
 @pytest.mark.asyncio

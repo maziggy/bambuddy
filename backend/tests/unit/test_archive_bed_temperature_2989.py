@@ -39,10 +39,12 @@ class TestThePlateTheProjectIsSlicedFor:
             ("High Temp Plate", "hot_plate_temp"),
             ("Textured PEI Plate", "textured_plate_temp"),
             ("Supertack Plate", "supertack_plate_temp"),
+            ("Textured Cool Plate", "textured_cool_plate_temp"),
         ],
     )
     def test_every_plate_type_reads_its_own_array(self, bed_type, key):
-        """All five plates BambuStudio can name, each with its own key."""
+        """All five plates BambuStudio can name, and OrcaSlicer's Textured Cool
+        Plate, each with its own key."""
         assert _extract({"curr_bed_type": bed_type, key: ["65", "65"]}) == 65
 
     def test_the_fitted_plate_wins_over_the_others(self):

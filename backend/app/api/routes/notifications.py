@@ -155,6 +155,8 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         "on_bed_cooled": provider.on_bed_cooled,
         # First layer complete
         "on_first_layer_complete": provider.on_first_layer_complete,
+        # A slicer pause coming up (#2984)
+        "on_print_pause_upcoming": bool(provider.on_print_pause_upcoming),
         # Messages from connected apps
         "on_app_message": bool(provider.on_app_message),
         # Inventory stock alerts. Absent here, the toggles above always read
@@ -239,7 +241,7 @@ def _ensure_target_in_scope(printer_id: int | None, printer_scope: PrinterScope)
 
 @router.get("/", response_model=list[NotificationProviderResponse])
 async def list_notification_providers(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -253,7 +255,7 @@ async def list_notification_providers(
 @router.post("/", response_model=NotificationProviderResponse)
 async def create_notification_provider(
     provider_data: NotificationProviderCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_CREATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -309,6 +311,7 @@ async def create_notification_provider(
         on_bed_cooled=provider_data.on_bed_cooled,
         # First layer complete
         on_first_layer_complete=provider_data.on_first_layer_complete,
+        on_print_pause_upcoming=provider_data.on_print_pause_upcoming,
         on_app_message=provider_data.on_app_message,
         # Inventory stock alerts
         on_stock_reorder_alert=provider_data.on_stock_reorder_alert,
@@ -352,7 +355,7 @@ async def create_notification_provider(
 @router.post("/test-config", response_model=NotificationTestResponse)
 async def test_notification_config(
     test_request: NotificationTestRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_CREATE),
     can_update: bool = Depends(probe_permissions_if_auth_enabled(Permission.NOTIFICATIONS_UPDATE)),
     printer_scope: PrinterScope = RequestPrinterScope,
@@ -384,7 +387,7 @@ async def test_notification_config(
 
 @router.post("/test-all")
 async def test_all_notification_providers(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -447,7 +450,7 @@ async def get_notification_logs(
     event_type: str | None = Query(default=None),
     success: bool | None = Query(default=None),
     days: int | None = Query(default=7, ge=1, le=90, description="Filter logs from the last N days"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -514,7 +517,7 @@ async def get_notification_logs(
 @router.get("/logs/stats", response_model=NotificationLogStats)
 async def get_notification_log_stats(
     days: int = Query(default=7, ge=1, le=90, description="Statistics for the last N days"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -567,7 +570,7 @@ async def get_notification_log_stats(
 @router.delete("/logs")
 async def clear_notification_logs(
     older_than_days: int = Query(default=30, ge=1, description="Delete logs older than N days"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_DELETE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -648,7 +651,7 @@ def _check_app_message_rate(key: str) -> None:
 @router.post("/app-message", response_model=AppMessageResult)
 async def send_app_message(
     data: AppMessage,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     caller: ScopedCaller = Depends(require_notification_send()),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -671,7 +674,7 @@ async def send_app_message(
 
 @router.get("/app-message/channels", response_model=list[AppMessageChannel])
 async def app_message_channels(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: ScopedCaller = Depends(require_notification_send()),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -692,7 +695,7 @@ async def app_message_channels(
 @router.get("/{provider_id}", response_model=NotificationProviderResponse)
 async def get_notification_provider(
     provider_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -706,7 +709,7 @@ async def get_notification_provider(
 async def update_notification_provider(
     provider_id: int,
     update_data: NotificationProviderUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -795,7 +798,7 @@ async def update_notification_provider(
 @router.delete("/{provider_id}")
 async def delete_notification_provider(
     provider_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_DELETE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
@@ -815,7 +818,7 @@ async def delete_notification_provider(
 @router.post("/{provider_id}/test", response_model=NotificationTestResponse)
 async def test_notification_provider(
     provider_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.NOTIFICATIONS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):

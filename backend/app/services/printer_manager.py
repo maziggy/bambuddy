@@ -17,6 +17,7 @@ from backend.app.services.bambu_mqtt import (
     PrinterState,
     get_stage_name,
 )
+from backend.app.services.pause_eta import next_pause
 from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.kprofile_lookup import build_slot_k_resolver
 
@@ -59,7 +60,6 @@ A1_MODELS = frozenset(
     [
         # Display names
         "A1",
-        "A1 MINI",
         "A1-MINI",
         "A1MINI",
         # Internal codes (from MQTT/SSDP)
@@ -82,6 +82,16 @@ STG_CUR_IDLE_BUG_MODELS = A1_MODELS | frozenset(
 )
 
 
+def _normalize_model(model: str) -> str:
+    """Upper case without spaces, the form the model sets below hold (#3335).
+
+    A printer is stored as "H2D Pro" or "A1 Mini"; upper-casing alone kept the
+    space, and "H2D PRO" matched no set. Dashes stay: the sets name the X1C's
+    code as "BL-P001".
+    """
+    return model.strip().upper().replace(" ", "")
+
+
 def supports_chamber_temp(model: str | None) -> bool:
     """Check if a printer model has a real chamber temperature sensor.
 
@@ -90,15 +100,13 @@ def supports_chamber_temp(model: str | None) -> bool:
     """
     if not model:
         return False
-    # Normalize model name (uppercase, strip whitespace)
-    model_upper = model.strip().upper()
-    return model_upper in CHAMBER_TEMP_SUPPORTED_MODELS
+    return _normalize_model(model) in CHAMBER_TEMP_SUPPORTED_MODELS
 
 
 # Models with an ACTIVE chamber heater (M141 has an effect).
 # Many printers in CHAMBER_TEMP_SUPPORTED_MODELS only have a passive sensor —
-# X1C, X1E, P2S report chamber temperature but cannot actively heat it. Only
-# the models below ship a PTC heater that responds to M141.
+# X1C and P2S report chamber temperature but cannot actively heat it. Only
+# the models below ship a heater that responds to M141; the X1E heats to 60 °C.
 CHAMBER_HEATER_MODELS = frozenset(
     [
         # Display names
@@ -106,8 +114,10 @@ CHAMBER_HEATER_MODELS = frozenset(
         "H2D",
         "H2DPRO",
         "H2S",
+        "X1E",
         "X2D",
         # Internal codes (from MQTT/SSDP)
+        "C13",  # X1E
         "O1C",  # H2C
         "O1C2",  # H2C dual-nozzle variant
         "O1D",  # H2D
@@ -123,17 +133,17 @@ def supports_chamber_heater(model: str | None) -> bool:
     """Check if a printer model has an active chamber heater (responds to M141).
 
     The chamber temperature SENSOR is more widely deployed than the chamber
-    HEATER — X1C/X1E/P2S report chamber temp but ignore M141. Only H2C, H2D,
-    H2D Pro, H2S, X2D actually heat. Sensor-only models silently swallow the
+    HEATER — X1C/P2S report chamber temp but ignore M141. Only H2C, H2D,
+    H2D Pro, H2S, X1E, X2D actually heat. Sensor-only models silently swallow the
     command at the firmware level, so we 400 at the route to surface that.
     """
     if not model:
         return False
-    return model.strip().upper() in CHAMBER_HEATER_MODELS
+    return _normalize_model(model) in CHAMBER_HEATER_MODELS
 
 
 # Models with a cooling / heating airduct flap. Same set as the frontend
-# PrintersPage airduct-toggle whitelist (P2S, X2D, H2D, H2C, H2S, H2D Pro).
+# PrintersPage airduct-toggle whitelist (P2S, X2D, H2D, H2D Pro, H2C, H2S).
 # X1E has a chamber heater but NO airduct flap — the warm-air recirculation
 # happens via the fixed front-door inlet, so no `set_airduct` command is
 # needed (and the firmware ignores it). P2S has an airduct but no heater —
@@ -174,7 +184,7 @@ def supports_airduct(model: str | None) -> bool:
     """
     if not model:
         return False
-    return model.strip().upper() in CHAMBER_AIRDUCT_MODELS
+    return _normalize_model(model) in CHAMBER_AIRDUCT_MODELS
 
 
 def has_stg_cur_idle_bug(model: str | None) -> bool:
@@ -186,12 +196,11 @@ def has_stg_cur_idle_bug(model: str | None) -> bool:
     """
     if not model:
         return False
-    model_upper = model.strip().upper()
-    return model_upper in STG_CUR_IDLE_BUG_MODELS
+    return _normalize_model(model) in STG_CUR_IDLE_BUG_MODELS
 
 
 # Minimum firmware versions for AMS drying support (confirmed via capture testing)
-# Keys are exact model names (upper-cased). Do NOT use substring matching — it would
+# Keys are exact model names (upper-cased, no spaces). Do NOT use substring matching — it would
 # incorrectly gate X1E (matched by "X1") and H2D Pro (matched by "H2D").
 _DRYING_MIN_FIRMWARE: dict[str, str] = {
     "H2D": "01.02.30.00",
@@ -205,7 +214,7 @@ _DRYING_MIN_FIRMWARE: dict[str, str] = {
     "N7": "01.02.00.00",  # P2S internal model code
 }
 # Models that definitely don't support AMS drying (no AMS 2 Pro / AMS-HT compatibility)
-_DRYING_UNSUPPORTED_MODELS = frozenset({"A1", "A1MINI", "A1-MINI", "A1 MINI", "O1S", "N1", "N2S"})
+_DRYING_UNSUPPORTED_MODELS = frozenset({"A1", "A1MINI", "A1-MINI", "O1S", "N1", "N2S"})
 
 # Models whose AMS can dry, but only from the printer's own touchscreen. Bambu's P1
 # manual is explicit: "P1S connected AMS drying functions may only be controlled from
@@ -227,7 +236,7 @@ def drying_screen_only(model: str | None) -> bool:
     """
     if not model:
         return False
-    return model.strip().upper() in _DRYING_SCREEN_ONLY_MODELS
+    return _normalize_model(model) in _DRYING_SCREEN_ONLY_MODELS
 
 
 # Temperature keys the UI actually draws. `state.temperatures` is also working
@@ -321,7 +330,7 @@ def supports_drying(model: str | None, firmware: str | None) -> bool:
     """
     if not model:
         return False
-    model_upper = model.strip().upper()
+    model_upper = _normalize_model(model)
     if model_upper in _DRYING_UNSUPPORTED_MODELS or model_upper in _DRYING_SCREEN_ONLY_MODELS:
         return False
     if model_upper in _DRYING_MIN_FIRMWARE:
@@ -338,7 +347,6 @@ def supports_drying(model: str | None, firmware: str | None) -> bool:
 # will reject the command in those cases anyway via dry_sf_reason=[0] (TaskOccupied).
 _DRY_WHILE_PRINTING_MIN_FIRMWARE: dict[str, str] = {
     "H2D": "01.03.00.00",
-    "H2D PRO": "01.02.00.00",
     "H2DPRO": "01.02.00.00",
     "O1E": "01.02.00.00",  # H2D Pro SSDP code
     "O2D": "01.02.00.00",  # H2D Pro alternate code
@@ -369,7 +377,7 @@ def supports_drying_while_printing(model: str | None, firmware: str | None) -> b
     """
     if not model:
         return False
-    model_upper = model.strip().upper()
+    model_upper = _normalize_model(model)
     if model_upper not in _DRY_WHILE_PRINTING_MIN_FIRMWARE:
         return False
     return bool(firmware and firmware >= _DRY_WHILE_PRINTING_MIN_FIRMWARE[model_upper])
@@ -1760,6 +1768,8 @@ def printer_state_to_dict(
         "stg_cur_name": get_derived_status_name(state, model),
         # Printable objects count for skip objects feature
         "printable_objects_count": len(state.printable_objects),
+        # The next pause the slicer put into the running print (#2984)
+        "next_pause": next_pause(state),
         # Fan speeds (0-100 percentage, None if not available)
         "cooling_fan_speed": state.cooling_fan_speed,
         "big_fan1_speed": state.big_fan1_speed,

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
@@ -46,6 +46,11 @@ class PrintLogEntry(Base):
     energy_cost: Mapped[float | None] = mapped_column(Float)
     # Printer wear for this run: duration at the printer's hourly wear cost (#694).
     wear_cost: Mapped[float | None] = mapped_column(Float)
+    # True when the run's times were not measured: a print closed at reconnect
+    # (#3310), whose end is its start plus the slicer's estimate when it
+    # completed, or the reconnect (duration 0). Counted in
+    # the totals, left out of the time accuracy. NULL for a measured run.
+    duration_unmeasured: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     failure_reason: Mapped[str | None] = mapped_column(String(100))
     # User quality verdict ('good' / 'reject'), mirrored from the archive on
     # PATCH exactly like status/failure_reason (#1444 mirror) so verdict-aware

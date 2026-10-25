@@ -10,12 +10,25 @@ way to switch plates short of cloning the preset.
 """
 
 import json
+from datetime import datetime, timezone
 
 import pytest
 from pydantic import ValidationError
 
 from backend.app.api.routes.library import _patch_process_bed_type
+from backend.app.api.routes.pipeline_runs import _slice_request_from_pipeline
+from backend.app.models.slicer_pipeline import SlicerPipeline
 from backend.app.schemas.slicer import PresetRef, SliceRequest
+from backend.app.schemas.slicer_pipeline import SlicerPipelineCreate, SlicerPipelineResponse, SlicerPipelineUpdate
+
+
+def _request(bed_type):
+    return SliceRequest(
+        printer_preset=PresetRef(source="local", id="1"),
+        process_preset=PresetRef(source="local", id="2"),
+        filament_preset=PresetRef(source="local", id="3"),
+        bed_type=bed_type,
+    )
 
 
 class TestSliceRequestBedTypeField:
@@ -27,22 +40,35 @@ class TestSliceRequestBedTypeField:
         )
         assert req.bed_type is None
 
-    def test_bed_type_accepts_canonical_values(self):
-        for value in (
+    @pytest.mark.parametrize(
+        "value",
+        [
             "Cool Plate",
-            "Cool Plate (SuperTack)",
             "Engineering Plate",
             "High Temp Plate",
             "Textured PEI Plate",
-            "Smooth PEI Plate",
-        ):
-            req = SliceRequest(
-                printer_preset=PresetRef(source="local", id="1"),
-                process_preset=PresetRef(source="local", id="2"),
-                filament_preset=PresetRef(source="local", id="3"),
-                bed_type=value,
-            )
-            assert req.bed_type == value
+            "Supertack Plate",
+            "Textured Cool Plate",
+        ],
+    )
+    def test_bed_type_accepts_the_slicers_names(self, value):
+        assert _request(value).bed_type == value
+
+    @pytest.mark.parametrize(
+        ("old", "slicer_name"),
+        [("Cool Plate (SuperTack)", "Supertack Plate"), ("Smooth PEI Plate", "High Temp Plate")],
+    )
+    def test_the_names_bambuddy_used_to_send_become_the_slicers_names(self, old, slicer_name):
+        """The slicer CLI slices an unknown name as Cool Plate (#3359)."""
+        assert _request(old).bed_type == slicer_name
+
+    @pytest.mark.parametrize("value", ["Smooth PEI", "cool plate", "Textured Plate", "Default Plate"])
+    def test_a_name_no_slicer_knows_is_refused(self, value):
+        with pytest.raises(ValidationError, match="unknown bed_type"):
+            _request(value)
+
+    def test_an_empty_bed_type_is_still_no_override(self):
+        assert _request("").bed_type == ""
 
     def test_bed_type_rejects_overlong_input(self):
         with pytest.raises(ValidationError):
@@ -78,3 +104,62 @@ class TestPatchProcessBedType:
     def test_returns_input_unchanged_when_json_is_not_a_dict(self):
         not_a_dict = json.dumps(["this", "is", "an", "array"])
         assert _patch_process_bed_type(not_a_dict, "Cool Plate") is not_a_dict
+
+
+class TestAPipelineSavedWithAnOldName:
+    """Pipelines store the bed type the modal sent before #3359."""
+
+    def _pipeline(self, bed_type):
+        return SlicerPipeline(
+            name="p",
+            printer_preset_source="local",
+            printer_preset_id="1",
+            process_preset_source="local",
+            process_preset_id="2",
+            filament_presets_json='[{"source": "local", "id": "3"}]',
+            bed_type=bed_type,
+        )
+
+    def test_its_run_slices_on_the_supertack_plate(self):
+        assert _slice_request_from_pipeline(self._pipeline("Cool Plate (SuperTack)")).bed_type == "Supertack Plate"
+
+    def test_it_reads_back_with_the_slicers_name(self):
+        response = SlicerPipelineResponse(
+            id=1,
+            created_by=None,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            name="p",
+            printer_preset=PresetRef(source="local", id="1"),
+            process_preset=PresetRef(source="local", id="2"),
+            filament_presets=[PresetRef(source="local", id="3")],
+            bed_type="Smooth PEI Plate",
+        )
+        assert response.bed_type == "High Temp Plate"
+
+    def test_a_row_with_an_unknown_name_still_reads_back(self):
+        """The list endpoint must not break on a row it would now refuse."""
+        response = SlicerPipelineResponse(
+            id=1,
+            created_by=None,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            name="p",
+            printer_preset=PresetRef(source="local", id="1"),
+            process_preset=PresetRef(source="local", id="2"),
+            filament_presets=[PresetRef(source="local", id="3")],
+            bed_type="Glass Plate",
+        )
+        assert response.bed_type == "Glass Plate"
+
+    @pytest.mark.parametrize("schema", [SlicerPipelineCreate, SlicerPipelineUpdate])
+    def test_saving_one_converts_old_names_and_refuses_unknown_ones(self, schema):
+        fields = {
+            "name": "p",
+            "printer_preset": {"source": "local", "id": "1"},
+            "process_preset": {"source": "local", "id": "2"},
+            "filament_presets": [{"source": "local", "id": "3"}],
+        }
+        assert schema(**fields, bed_type="Cool Plate (SuperTack)").bed_type == "Supertack Plate"
+        with pytest.raises(ValidationError, match="unknown bed_type"):
+            schema(**fields, bed_type="Glass Plate")

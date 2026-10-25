@@ -424,6 +424,54 @@ class TestFetchOrcaCloudPresets:
         assert [p.inherits for p in slots["printer"]] == ["Bambu Lab H2D 0.4 nozzle", None, None]
 
     @pytest.mark.asyncio
+    async def test_quoted_compatible_printers_are_unquoted(self):
+        """#3380: Orca Cloud returns list settings INI-style — one string of
+        quoted items joined by ``;``. Left as-is, the names never equal the
+        selected printer preset and the SliceModal hides the profile."""
+        sp._orca_cloud_cache.clear()
+        svc_mock = MagicMock()
+        svc_mock.list_profiles = AsyncMock(
+            return_value=[
+                {
+                    "id": "f1",
+                    "name": "SUNLU PLA Meta @Bambu Lab X1 Carbon 0.4 nozzle",
+                    "content": {
+                        "type": "filament",
+                        "filament_type": "PLA",
+                        "default_filament_colour": '""',
+                        "compatible_printers": '"Bambu Lab X1 Carbon 0.4 nozzle";"Bambu Lab H2C 0.4 nozzle"',
+                    },
+                },
+                {"id": "f2", "name": "Only quotes", "content": {"type": "filament", "compatible_printers": '""'}},
+                {
+                    "id": "f3",
+                    "name": "Escaped",
+                    "content": {
+                        "type": "filament",
+                        "default_filament_colour": '"#FF0000"',
+                        "compatible_printers": ['"Printer \\"A\\""', "Bambu Lab A1 0.4 nozzle"],
+                    },
+                },
+            ]
+        )
+        svc_mock.close = AsyncMock()
+        user = MagicMock(id=1)
+        user.has_permission = MagicMock(return_value=True)
+        with (
+            patch.object(sp, "_load_orca_credentials", AsyncMock(return_value=self._orca_creds("tok"))),
+            patch.object(sp, "_build_orca_service", AsyncMock(return_value=svc_mock)),
+        ):
+            slots, _status = await sp._fetch_orca_cloud_presets(MagicMock(), user)
+
+        meta, only_quotes, escaped = slots["filament"]
+        assert meta.compatible_printers == ["Bambu Lab X1 Carbon 0.4 nozzle", "Bambu Lab H2C 0.4 nozzle"]
+        assert meta.filament_type == "PLA"
+        assert meta.filament_colour is None
+        assert only_quotes.compatible_printers is None
+        assert escaped.compatible_printers == ['Printer "A"', "Bambu Lab A1 0.4 nozzle"]
+        assert escaped.filament_colour == "#FF0000"
+
+    @pytest.mark.asyncio
     async def test_missing_or_malformed_compatible_printers_stays_none(self):
         """No data must read as "unknown", never as "compatible with nothing" —
         the SliceModal falls back to the name matcher for those."""
@@ -905,6 +953,31 @@ class TestParseCompatiblePrinters:
             "X1C",
             "A1",
         ]
+
+    def test_strips_ini_style_quotes(self):
+        """#3380: a quoted name stored on a local preset is unwrapped too."""
+        raw = '["\\"Bambu Lab X1 Carbon 0.4 nozzle\\"", "\\"\\""]'
+        assert sp._parse_compatible_printers(raw) == ["Bambu Lab X1 Carbon 0.4 nozzle"]
+
+
+class TestSlicerStrings:
+    """#3380: slicer string-list options, as a JSON array or an INI-style string."""
+
+    def test_ini_string(self):
+        assert sp._slicer_strings('"Bambu Lab X1 Carbon 0.4 nozzle";"Bambu Lab H2C 0.4 nozzle"') == [
+            "Bambu Lab X1 Carbon 0.4 nozzle",
+            "Bambu Lab H2C 0.4 nozzle",
+        ]
+        assert sp._slicer_strings("PLA;PETG") == ["PLA", "PETG"]
+        assert sp._slicer_strings('"Printer \\"A\\""') == ['Printer "A"']
+
+    def test_plain_values_pass_through(self):
+        assert sp._slicer_strings("Bambu Lab P2S 0.4 nozzle") == ["Bambu Lab P2S 0.4 nozzle"]
+        assert sp._slicer_strings(["X1C", ' "A1" ']) == ["X1C", "A1"]
+
+    def test_empty_and_malformed(self):
+        for raw in (None, "", '""', [], ["", "  "], {"a": 1}, 5):
+            assert sp._slicer_strings(raw) == []
 
 
 class TestListPrinterModels:

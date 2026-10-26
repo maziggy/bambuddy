@@ -2796,3 +2796,138 @@ describe('SliceModal — material and printer filtering (#2982)', () => {
     expect(labels.some((l) => l?.includes('0.06mm Fine @BBL A1 0.2 nozzle'))).toBe(false);
   });
 });
+
+describe('SliceModal — preset list order, stock duplicates and search (#3386)', () => {
+  const generics = Array.from({ length: 30 }, (_, i) => ({
+    id: `g-${i}`,
+    name: `Generic Filament ${i + 1}`,
+    source: 'standard' as const,
+  }));
+  const presets = makeUnified({
+    cloud: {
+      printer: [],
+      process: [],
+      filament: [
+        { id: 'PFUS-z', name: 'zeta PLA', source: 'cloud' },
+        { id: 'PFUS-10', name: 'alpha PLA 10', source: 'cloud' },
+        { id: 'PFUS-a', name: 'Alpha PLA', source: 'cloud' },
+        { id: 'PFUS-9', name: 'alpha PLA 9', source: 'cloud' },
+        { id: 'GFSA00', name: 'Bambu PLA Basic', source: 'cloud', stock: true },
+        { id: 'GFSA99', name: 'Bambu PLA Brand New', source: 'cloud', stock: true },
+      ],
+    },
+    standard: {
+      printer: [{ id: 'Bambu Lab X1 Carbon 0.4 nozzle', name: 'Bambu Lab X1 Carbon 0.4 nozzle', source: 'standard' }],
+      process: [{ id: '0.20mm Standard', name: '0.20mm Standard', source: 'standard' }],
+      filament: [
+        { id: 'Generic PVA', name: 'Generic PVA', source: 'standard' },
+        { id: 'Bambu Support For PLA', name: 'Bambu Support For PLA', source: 'standard' },
+        { id: 'eSUN PLA+', name: 'eSUN PLA+', source: 'standard' },
+        { id: 'Bambu PLA Matte', name: 'Bambu PLA Matte', source: 'standard' },
+        { id: 'Bambu PLA Basic', name: 'Bambu PLA Basic', source: 'standard' },
+        ...generics,
+      ],
+    },
+  });
+
+  const filamentSelect = () => presetSelects()[3];
+  const groupNames = (select: HTMLSelectElement, label: string) =>
+    Array.from(select.querySelectorAll('optgroup'))
+      .filter((g) => g.label === label)
+      .flatMap((g) => Array.from(g.querySelectorAll('option')).map((o) => o.textContent));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockApi.getSlicerPresets.mockResolvedValue(presets);
+    mockApi.getSlicerPresetValues.mockResolvedValue({ resolved: true, values: {}, reason: 'ok' });
+    mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [] });
+    mockApi.getSlicerLoadedSpools.mockResolvedValue({ printers: [] });
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100, filename: 'Cube.stl', plates: [], is_multi_plate: false,
+    });
+    mockApi.getLibraryFileFilamentRequirements.mockResolvedValue({
+      file_id: 100, filename: 'Cube.stl', plate_id: 1, filaments: [],
+    });
+  });
+
+  const open = async () => {
+    renderWithTracker({ source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' }, onClose: vi.fn() });
+    await waitFor(() => expect(presetSelects()).toHaveLength(4));
+    await waitFor(() => expect(filamentSelect().value).not.toBe(''));
+  };
+
+  it("sorts every group the way the bundled list is ordered", async () => {
+    await open();
+    // Bambu first, then other brands; by name without case, numbers by value.
+    expect(groupNames(filamentSelect(), 'Bambu Cloud')).toEqual([
+      'Bambu PLA Brand New',
+      'Alpha PLA',
+      'alpha PLA 9',
+      'alpha PLA 10',
+      'zeta PLA',
+    ]);
+    // Bambu, Generic, other brands; support materials after every filament.
+    const standard = groupNames(filamentSelect(), 'Standard');
+    expect(standard.slice(0, 4)).toEqual([
+      'Bambu PLA Basic',
+      'Bambu PLA Matte',
+      'Generic Filament 1',
+      'Generic Filament 2',
+    ]);
+    expect(standard.slice(-3)).toEqual(['eSUN PLA+', 'Bambu Support For PLA', 'Generic PVA']);
+  });
+
+  it('lists a stock Bambu Cloud preset once, under Standard', async () => {
+    await open();
+    // The bundled tier has "Bambu PLA Basic"; "Bambu PLA Brand New" is newer
+    // than the bundle and has nowhere else to appear, so it stays.
+    expect(groupNames(filamentSelect(), 'Bambu Cloud')).not.toContain('Bambu PLA Basic');
+    expect(groupNames(filamentSelect(), 'Bambu Cloud')).toContain('Bambu PLA Brand New');
+    expect(groupNames(filamentSelect(), 'Standard')).toContain('Bambu PLA Basic');
+  });
+
+  it('keeps a hidden stock preset when it is the selected one', async () => {
+    mockApi.getSlicerPresets.mockResolvedValue(
+      makeUnified({
+        cloud: {
+          printer: [],
+          process: [],
+          filament: [{ id: 'GFSA00', name: 'Bambu PLA Basic', source: 'cloud', stock: true }],
+        },
+        standard: presets.standard,
+      }),
+    );
+    await open();
+    // The auto-pick prefers the cloud tier; dropping its pick from the options
+    // would blank the select.
+    expect(filamentSelect().value).toBe('cloud:GFSA00');
+    expect(groupNames(filamentSelect(), 'Bambu Cloud')).toEqual(['Bambu PLA Basic']);
+  });
+
+  it('offers search only on long lists, and it never drops the selection', async () => {
+    const user = userEvent.setup();
+    await open();
+    // The filament list has 40 presets; printer and process have one each.
+    const buttons = screen.getAllByRole('button', { name: /Search presets/ });
+    expect(buttons).toHaveLength(1);
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    await user.click(buttons[0]);
+    const boxes = [screen.getByRole('searchbox')];
+    // The auto-pick lands on the first Bambu Cloud preset in API order.
+    expect(filamentSelect().selectedOptions[0].textContent).toBe('zeta PLA');
+
+    await user.type(boxes[0], 'pla ALPHA');
+    const names = Array.from(filamentSelect().options)
+      .filter((o) => o.value !== '')
+      .map((o) => o.textContent);
+    // Every word has to match, in any order and any case; the selected preset
+    // stays although it doesn't match, so the choice is never lost.
+    expect(names).toEqual(['Alpha PLA', 'alpha PLA 9', 'alpha PLA 10', 'zeta PLA']);
+    expect(filamentSelect().value).toBe('cloud:PFUS-z');
+
+    // Escape closes the box and brings the full list back.
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(groupNames(filamentSelect(), 'Standard')).toContain('Generic Filament 30');
+  });
+});

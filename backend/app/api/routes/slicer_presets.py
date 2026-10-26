@@ -181,13 +181,14 @@ async def _fetch_cloud_presets(
             # that share names with private ones get deduped out within the cloud
             # tier itself.
             seen_names: set[str] = set()
-            for entry in type_data.get("private", []) + type_data.get("public", []):
-                name = entry.get("name")
-                setting_id = entry.get("setting_id") or entry.get("id")
-                if not name or not setting_id or name in seen_names:
-                    continue
-                seen_names.add(name)
-                slots[slot].append(UnifiedPreset(id=setting_id, name=name, source="cloud"))
+            for stock, entries in ((False, type_data.get("private", [])), (True, type_data.get("public", []))):
+                for entry in entries:
+                    name = entry.get("name")
+                    setting_id = entry.get("setting_id") or entry.get("id")
+                    if not name or not setting_id or name in seen_names:
+                        continue
+                    seen_names.add(name)
+                    slots[slot].append(UnifiedPreset(id=setting_id, name=name, source="cloud", stock=stock))
 
         # Cloud filament presets carry no metadata in this response on
         # purpose: the per-preset detail endpoint

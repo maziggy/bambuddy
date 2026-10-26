@@ -4612,6 +4612,7 @@ export default {
     presetsHidden: 'скрыто: {{count}}',
     showAllPresets: 'Показать все',
     showFewerPresets: 'Показать меньше',
+    searchPresets: "Поиск профилей...",
     processSettings: 'Параметры процесса',
     processSettingsHint: 'Настройте выбранный профиль для этой нарезки. Всё, что вы не измените, останется как задано в профиле.',
     processSettingsChanged: 'изменено: {{count}}',

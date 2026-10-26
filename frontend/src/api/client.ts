@@ -2017,6 +2017,9 @@ export interface UnifiedPreset {
   // Printer presets only: the preset it was saved from, for the local and
   // OrcaSlicer Cloud tiers (#3250).
   inherits?: string | null;
+  // Bambu Cloud only: one of Bambu's own presets rather than the user's. The
+  // SliceModal lists it once, under Standard, when that tier has the name (#3386).
+  stock?: boolean;
 }
 export interface UnifiedPresetsBySlot {
   printer: UnifiedPreset[];

@@ -4862,6 +4862,7 @@ errors: {
     presetsHidden: '{{count}} dold',
     showAllPresets: 'Visa alla',
     showFewerPresets: 'Visa färre',
+    searchPresets: 'Sök förinställningar...',
     processSettings: 'Processinställningar',
     processSettingsHint: "Justera den valda förinställningen för denna slicing. Allt du inte rör förblir som förinställningen definierar det.",
     processSettingsChanged: '{{count}} ändrades',

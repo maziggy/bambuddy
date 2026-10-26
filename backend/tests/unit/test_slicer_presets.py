@@ -552,6 +552,9 @@ class TestFetchCloudPresets:
         assert status == "ok"
         names = [p.name for p in slots["printer"]]
         assert names == ["My X1C", "Bambu X1C Stock"]
+        # #3386: the public list is Bambu's stock presets — flagged so the
+        # SliceModal can list them once, under Standard.
+        assert [p.stock for p in slots["printer"]] == [False, True]
 
     @pytest.mark.asyncio
     async def test_cache_hit_skips_cloud_call(self):

@@ -4830,6 +4830,7 @@ export default {
     presetsHidden: '{{count}} ocultos',
     showAllPresets: 'Mostrar todos',
     showFewerPresets: 'Mostrar menos',
+    searchPresets: 'Buscar preajustes...',
     processSettings: 'Ajustes de proceso',
     processSettingsHint: 'Ajusta el perfil seleccionado para este corte. Todo lo que no toques se mantiene como lo define el perfil.',
     processSettingsChanged: '{{count}} cambiados',

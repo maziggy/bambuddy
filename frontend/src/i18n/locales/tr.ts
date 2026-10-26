@@ -4817,6 +4817,7 @@ export default {
     presetsHidden: '{{count}} gizli',
     showAllPresets: 'Tümünü göster',
     showFewerPresets: 'Daha az göster',
+    searchPresets: 'Ön ayarlarda ara...',
     processSettings: 'İşlem ayarları',
     processSettingsHint: 'Seçilen ön ayarı bu dilimleme için düzenleyin. Dokunmadığınız her şey ön ayardaki gibi kalır.',
     processSettingsChanged: '{{count}} değişti',

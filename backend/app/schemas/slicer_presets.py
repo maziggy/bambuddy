@@ -46,6 +46,10 @@ class UnifiedPreset(BaseModel):
     ("Bambu Lab H2D 0.4 nozzle - Skew") is listed in no process's
     ``compatible_printers`` and its name says nothing reliable about the
     model, so the SliceModal matches against this parent as well (#3250).
+
+    ``stock`` marks a Bambu Cloud preset as one of Bambu's own (the cloud's
+    "public" list) rather than the user's. The SliceModal lists those once,
+    under Standard, when the bundled tier has the same name (#3386).
     """
 
     id: str
@@ -55,6 +59,7 @@ class UnifiedPreset(BaseModel):
     filament_colour: str | None = None
     compatible_printers: list[str] | None = None
     inherits: str | None = None
+    stock: bool = False
 
 
 class UnifiedPresetsBySlot(BaseModel):

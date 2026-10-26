@@ -4828,6 +4828,7 @@ export default {
     presetsHidden: '{{count}} ausgeblendet',
     showAllPresets: 'Alle anzeigen',
     showFewerPresets: 'Weniger anzeigen',
+    searchPresets: 'Voreinstellungen suchen...',
     processSettings: 'Prozesseinstellungen',
     processSettingsHint: 'Passen Sie das gewählte Profil für diesen Slice an. Alles, was Sie nicht ändern, bleibt wie im Profil definiert.',
     processSettingsChanged: '{{count}} geändert',

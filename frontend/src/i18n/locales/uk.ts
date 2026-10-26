@@ -4860,6 +4860,7 @@ export default {
     presetsHidden: 'приховано: {{count}}',
     showAllPresets: 'Показати всі',
     showFewerPresets: 'Показати менше',
+    searchPresets: "Шукати профілі...",
     processSettings: 'Параметри процесу',
     processSettingsHint: 'Налаштуйте вибраний профіль для цього нарізання. Усе, чого ви не змінили, лишається як визначено профілем.',
     processSettingsChanged: 'змінено: {{count}}',

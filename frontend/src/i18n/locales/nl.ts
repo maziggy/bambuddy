@@ -4863,6 +4863,7 @@ export default {
     presetsHidden: '{{count}} verborgen',
     showAllPresets: 'Alles tonen',
     showFewerPresets: 'Minder tonen',
+    searchPresets: 'Presets zoeken...',
     processSettings: 'Procesinstellingen',
     processSettingsHint: 'Pas de gekozen preset aan voor deze slice. Alles wat je niet aanraakt blijft zoals de preset het definieert.',
     processSettingsChanged: '{{count}} gewijzigd',

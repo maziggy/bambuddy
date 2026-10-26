@@ -4815,6 +4815,7 @@ export default {
     presetsHidden: '已隱藏 {{count}} 項',
     showAllPresets: '顯示全部',
     showFewerPresets: '顯示較少',
+    searchPresets: '搜尋預設...',
     processSettings: '列印參數',
     processSettingsHint: '為本次切片調整所選預設。未變更的項目仍依預設定義。',
     processSettingsChanged: '已變更 {{count}} 項',

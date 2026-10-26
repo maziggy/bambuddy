@@ -4816,6 +4816,7 @@ export default {
     presetsHidden: '{{count}} masqués',
     showAllPresets: 'Tout afficher',
     showFewerPresets: 'Afficher moins',
+    searchPresets: 'Chercher presets...',
     processSettings: 'Paramètres de process',
     processSettingsHint: 'Ajustez le profil choisi pour ce découpage. Tout ce que vous ne modifiez pas reste tel que défini par le profil.',
     processSettingsChanged: '{{count}} modifiés',

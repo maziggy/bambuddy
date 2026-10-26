@@ -4815,6 +4815,7 @@ export default {
     presetsHidden: '已隐藏 {{count}} 项',
     showAllPresets: '显示全部',
     showFewerPresets: '显示较少',
+    searchPresets: '搜索预设...',
     processSettings: '工艺设置',
     processSettingsHint: '为本次切片调整所选预设。未改动的项目仍按预设定义。',
     processSettingsChanged: '已更改 {{count}} 项',

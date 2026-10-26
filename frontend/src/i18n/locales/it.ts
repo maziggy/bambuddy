@@ -4815,6 +4815,7 @@ export default {
     presetsHidden: '{{count}} nascosti',
     showAllPresets: 'Mostra tutti',
     showFewerPresets: 'Mostra meno',
+    searchPresets: 'Cerca preset...',
     processSettings: 'Impostazioni di processo',
     processSettingsHint: 'Regola il profilo scelto per questo slice. Tutto ciò che non tocchi resta come definito dal profilo.',
     processSettingsChanged: '{{count}} modificate',

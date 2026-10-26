@@ -363,15 +363,28 @@ def _slicer_strings(raw: object) -> list[str]:
     one string of quoted, ``\\``-escaped items joined by ``;``
     (``"Bambu Lab X1 Carbon 0.4 nozzle";"Bambu Lab H2C 0.4 nozzle"``). Left
     quoted, a ``compatible_printers`` name never equals the selected printer
-    preset and the SliceModal hides the profile for every printer. JSON arrays
-    go through the same parse, so a quoted item there is unwrapped too.
+    preset and the SliceModal hides the profile for every printer. A JSON
+    array is never INI-encoded, so its items only lose one surrounding pair of
+    quotes — a ``;`` or ``\\`` in a local name is kept. A string the INI parse
+    can't read (a bare newline) counts as no data rather than failing the
+    whole listing.
     """
-    if isinstance(raw, str):
-        raw = [raw]
-    if not isinstance(raw, list):
+    if isinstance(raw, list):
+        return [item for item in (_unquote(s) for s in raw if isinstance(s, str)) if item]
+    if not isinstance(raw, str):
         return []
-    rows = csv.reader((s for s in raw if isinstance(s, str)), delimiter=";", escapechar="\\", skipinitialspace=True)
+    try:
+        rows = list(csv.reader([raw], delimiter=";", escapechar="\\", skipinitialspace=True))
+    except csv.Error:
+        return []
     return [item.strip() for row in rows for item in row if item.strip()]
+
+
+def _unquote(item: str) -> str:
+    item = item.strip()
+    if len(item) >= 2 and item[0] == item[-1] == '"':
+        item = item[1:-1].strip()
+    return item
 
 
 def _parse_compatible_printers(raw: str | None) -> list[str] | None:

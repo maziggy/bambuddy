@@ -449,8 +449,13 @@ class TestFetchOrcaCloudPresets:
                     "content": {
                         "type": "filament",
                         "default_filament_colour": '"#FF0000"',
-                        "compatible_printers": ['"Printer \\"A\\""', "Bambu Lab A1 0.4 nozzle"],
+                        "compatible_printers": '"Printer \\"A\\"";"Bambu Lab A1 0.4 nozzle"',
                     },
+                },
+                {
+                    "id": "f4",
+                    "name": "Bare newline",
+                    "content": {"type": "filament", "filament_type": "PLA", "compatible_printers": "X1C\nP1S"},
                 },
             ]
         )
@@ -463,13 +468,16 @@ class TestFetchOrcaCloudPresets:
         ):
             slots, _status = await sp._fetch_orca_cloud_presets(MagicMock(), user)
 
-        meta, only_quotes, escaped = slots["filament"]
+        meta, only_quotes, escaped, bad = slots["filament"]
         assert meta.compatible_printers == ["Bambu Lab X1 Carbon 0.4 nozzle", "Bambu Lab H2C 0.4 nozzle"]
         assert meta.filament_type == "PLA"
         assert meta.filament_colour is None
         assert only_quotes.compatible_printers is None
         assert escaped.compatible_printers == ['Printer "A"', "Bambu Lab A1 0.4 nozzle"]
         assert escaped.filament_colour == "#FF0000"
+        # One unparseable value reads as "no data" and the rest of the listing survives.
+        assert bad.compatible_printers is None
+        assert bad.filament_type == "PLA"
 
     @pytest.mark.asyncio
     async def test_missing_or_malformed_compatible_printers_stays_none(self):
@@ -974,6 +982,13 @@ class TestSlicerStrings:
     def test_plain_values_pass_through(self):
         assert sp._slicer_strings("Bambu Lab P2S 0.4 nozzle") == ["Bambu Lab P2S 0.4 nozzle"]
         assert sp._slicer_strings(["X1C", ' "A1" ']) == ["X1C", "A1"]
+
+    def test_json_array_items_are_only_unquoted(self):
+        """A JSON array is never INI-encoded: a ``;`` or ``\\`` in a name stays."""
+        assert sp._slicer_strings(["My X1C; tuned", '"C:\\profiles\\X1C"']) == ["My X1C; tuned", "C:\\profiles\\X1C"]
+
+    def test_unparseable_string_is_no_data(self):
+        assert sp._slicer_strings("X1C\nP1S") == []
 
     def test_empty_and_malformed(self):
         for raw in (None, "", '""', [], ["", "  "], {"a": 1}, 5):

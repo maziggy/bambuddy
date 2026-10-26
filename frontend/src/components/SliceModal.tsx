@@ -117,9 +117,6 @@ function sortPresets(presets: UnifiedPreset[]): UnifiedPreset[] {
   );
 }
 
-// A dropdown with more presets than this gets a search button (#3386).
-const PRESET_SEARCH_MIN_ENTRIES = 30;
-
 // Inline spinner for the filament-requirements query. The backend runs a
 // preview slice on first open of an unsliced project file (cached after);
 // on a complex multi-color model that's a real slice — multi-second to
@@ -1814,12 +1811,10 @@ function PresetDropdown({
     sections.reduce((sum, s) => sum + s.entries.length, 0) + visibleOther.length + visibleFiltered.length;
 
   // Search narrows what is listed, never what is chosen: every word must
-  // appear in the name, and the selected preset always stays (#3386). The box
-  // opens from a button so a dialog full of filament rows stays compact.
-  const searchable =
-    sections.reduce((sum, s) => sum + s.entries.length, 0) + otherEntries.length + filteredEntries.length >
-    PRESET_SEARCH_MIN_ENTRIES;
-  const words = searchable && searching ? query.toLowerCase().split(/\s+/).filter(Boolean) : [];
+  // appear in the name, and the selected preset always stays (#3386). Every
+  // dropdown has it, so it is always where you look for it; the box opens from
+  // a button so a dialog full of filament rows stays compact.
+  const words = searching ? query.toLowerCase().split(/\s+/).filter(Boolean) : [];
   const closeSearch = () => {
     setSearching(false);
     setQuery('');
@@ -1852,42 +1847,38 @@ function PresetDropdown({
           />
         )}
         <label htmlFor={selectId}>{label}</label>
-        {(hiddenCount > 0 || showAll || searchable) && (
-          <span className="ml-auto flex items-center gap-1.5 font-normal">
-            {hiddenCount > 0 && (
-              <span className="text-bambu-gray/60">
-                {t('slice.presetsHidden', '{{count}} hidden', { count: hiddenCount })}
-              </span>
-            )}
-            {(hiddenCount > 0 || showAll) && (
-              <button
-                type="button"
-                onClick={() => setShowAll((v) => !v)}
-                disabled={disabled}
-                className="text-bambu-green hover:underline disabled:opacity-50 disabled:no-underline"
-              >
-                {showAll
-                  ? t('slice.showFewerPresets', 'Show fewer')
-                  : t('slice.showAllPresets', 'Show all')}
-              </button>
-            )}
-            {searchable && (
-              <button
-                type="button"
-                onClick={() => (searching ? closeSearch() : setSearching(true))}
-                disabled={disabled}
-                aria-pressed={searching}
-                aria-label={`${label}: ${t('slice.searchPresets', 'Search presets...')}`}
-                title={t('slice.searchPresets', 'Search presets...')}
-                className={`hover:text-white disabled:opacity-50 ${searching ? 'text-bambu-green' : ''}`}
-              >
-                <Search className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </span>
-        )}
+        <span className="ml-auto flex items-center gap-1.5 font-normal">
+          {hiddenCount > 0 && (
+            <span className="text-bambu-gray/60">
+              {t('slice.presetsHidden', '{{count}} hidden', { count: hiddenCount })}
+            </span>
+          )}
+          {(hiddenCount > 0 || showAll) && (
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              disabled={disabled}
+              className="text-bambu-green hover:underline disabled:opacity-50 disabled:no-underline"
+            >
+              {showAll
+                ? t('slice.showFewerPresets', 'Show fewer')
+                : t('slice.showAllPresets', 'Show all')}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => (searching ? closeSearch() : setSearching(true))}
+            disabled={disabled}
+            aria-pressed={searching}
+            aria-label={`${label}: ${t('slice.searchPresets', 'Search presets...')}`}
+            title={t('slice.searchPresets', 'Search presets...')}
+            className={`hover:text-white disabled:opacity-50 ${searching ? 'text-bambu-green' : ''}`}
+          >
+            <Search className="w-3.5 h-3.5" />
+          </button>
+        </span>
       </div>
-      {searchable && searching && (
+      {searching && (
         <input
           type="search"
           value={query}

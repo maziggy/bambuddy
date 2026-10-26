@@ -2904,14 +2904,14 @@ describe('SliceModal — preset list order, stock duplicates and search (#3386)'
     expect(groupNames(filamentSelect(), 'Bambu Cloud')).toEqual(['Bambu PLA Basic']);
   });
 
-  it('offers search only on long lists, and it never drops the selection', async () => {
+  it('offers search on every dropdown, and it never drops the selection', async () => {
     const user = userEvent.setup();
     await open();
-    // The filament list has 40 presets; printer and process have one each.
+    // Printer, process and filament each get one, however short the list.
     const buttons = screen.getAllByRole('button', { name: /Search presets/ });
-    expect(buttons).toHaveLength(1);
+    expect(buttons).toHaveLength(3);
     expect(screen.queryByRole('searchbox')).toBeNull();
-    await user.click(buttons[0]);
+    await user.click(screen.getByRole('button', { name: /^Filament.*Search presets/ }));
     const boxes = [screen.getByRole('searchbox')];
     // The auto-pick lands on the first Bambu Cloud preset in API order.
     expect(filamentSelect().selectedOptions[0].textContent).toBe('zeta PLA');

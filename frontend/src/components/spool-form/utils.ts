@@ -1,6 +1,7 @@
 import { api } from '../../api/client';
 import type { SlicerSetting, LocalPreset, BuiltinFilament, SpoolKProfileInput } from '../../api/client';
 import { installedNozzleDiameters } from '../../utils/amsHelpers';
+import { filamentIdToSettingId, settingIdToFilamentId } from '../../utils/filamentIds';
 import type { CalibrationProfile, ColorPreset, FilamentOption } from './types';
 import { KNOWN_VARIANTS, DEFAULT_BRANDS, RECENT_COLORS_KEY, MAX_RECENT_COLORS, STANDARD_NOZZLE_DIAMETERS } from './constants';
 
@@ -282,9 +283,7 @@ export function buildFilamentOptions(
   const builtinOptions: FilamentOption[] = [];
   if (builtinFilaments && builtinFilaments.length > 0) {
     for (const bf of builtinFilaments) {
-      const settingId = bf.filament_id.startsWith('GF')
-        ? 'GFS' + bf.filament_id.slice(2)
-        : bf.filament_id;
+      const settingId = filamentIdToSettingId(bf.filament_id);
       if (cloudCodes.has(bf.filament_id) || cloudCodes.has(settingId)) continue;
       builtinOptions.push({
         code: bf.filament_id,
@@ -391,20 +390,14 @@ export function saveRecentColor(color: ColorPreset, currentRecent: ColorPreset[]
 // Spools store ``slicer_filament`` as a setting_id like "GFSG98_09" (the "_NN"
 // suffix is the variant, the "S" infix marks it as a setting_id); printer
 // K-profiles store ``filament_id`` as "GFG98" (bare). Both shapes need
-// normalising before comparison.
+// normalising before comparison. The rule and its exceptions (SUNLU, a few
+// P1/X1 presets, #3387) live in ``utils/filamentIds``.
 //
-// This is the inverse of the filament_id→setting_id mapping at
-// ``buildFilamentOptions`` ("GFS" + filament_id.slice(2)), so a round-trip
-// stays consistent. Non-Bambu IDs (numeric local-preset IDs, Orca UUIDs)
-// are returned unchanged uppercase — they won't match any K-profile's
-// filament_id and the caller falls through to name-based matching.
+// Non-Bambu IDs (numeric local-preset IDs, Orca UUIDs) are returned unchanged
+// uppercase — they won't match any K-profile's filament_id and the caller
+// falls through to name-based matching.
 export function toFilamentId(id: string | null | undefined): string {
-  if (!id) return '';
-  // Drop "_NN" variant suffix.
-  let s = id.split('_')[0];
-  // Strip the "S" infix in "GFS..." so "GFSG98" → "GFG98".
-  if (/^GFS/i.test(s)) s = s.slice(0, 2) + s.slice(3);
-  return s.toUpperCase();
+  return settingIdToFilamentId((id || '').toUpperCase());
 }
 
 // "GFx99" identifiers (GFL99, GFG99, GFB99, ...) are Bambu's *generic* filament

@@ -4,6 +4,7 @@
  * for AMS, AMS-HT, and external spool configurations.
  */
 import { parseUTCDate } from './date';
+import { settingIdToFilamentId } from './filamentIds';
 
 /**
  * Normalize color format from various sources for CSS rendering.
@@ -719,8 +720,9 @@ export function slotPresetDescribesTray(
   const tray = (trayInfoIdx || '').split('_')[0].toUpperCase();
   const recorded = (presetTrayInfoIdx || '').split('_')[0].toUpperCase();
   if (recorded && tray) return recorded === tray;
-  if (!preset.startsWith('GFS') || !tray.startsWith('GF') || tray.startsWith('GFS')) return true;
-  return `GF${preset.slice(3)}` === tray;
+  if (!preset.startsWith('GFS') || !tray.startsWith('GF')) return true;
+  // The full id, suffix included, decides some presets' filament_id (#3387).
+  return settingIdToFilamentId((presetId || '').toUpperCase()) === tray;
 }
 
 export interface AmsTrayLike {

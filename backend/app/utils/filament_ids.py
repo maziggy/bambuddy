@@ -6,9 +6,27 @@ Bambu printers use two ID formats for filament presets:
   - **setting_id**: e.g. "GFSL05", "GFSG02", "GFSA00"
     Used by BambuStudio / Bambu Cloud API to resolve presets.
 
-The only difference for official Bambu filaments is an "S" inserted after "GF".
+For most official Bambu filaments the only difference is an "S" inserted after
+"GF". Two kinds do not follow that rule (#3387):
+  - SUNLU: setting_id "GFSNLS03_04", filament_id "GFSNL03" -- a filament_id
+    that itself starts with "GFS" plus a letter.
+  - About thirty P1/X1-series presets whose filament_id is another one
+    altogether ("GFSA05_10", Bambu PLA Matte @BBL P1P, is "GFA01", while every
+    other "GFSA05" is Bambu PLA Silk, "GFA05"). Those are listed by full
+    setting_id in ``filament_id_tables.SETTING_ID_FILAMENT_IDS``.
 User presets (starting with "P") use the same ID in both contexts.
 """
+
+import re
+
+from backend.app.utils.filament_id_tables import ORCA_FILAMENT_IDS, SETTING_ID_FILAMENT_IDS
+
+# SUNLU's ids in Bambu's catalogue: filament_id "GFSNL03", setting_id "GFSNLS03".
+_SUNLU_FILAMENT_ID = re.compile(r"GFSNL(\d+)")
+_SUNLU_SETTING_ID = re.compile(r"GFSNLS(\d+)")
+# OrcaSlicer's own filament ids ("OFMUWNkp"); Orca maps them to Bambu's at the
+# printer boundary with the table ORCA_FILAMENT_IDS is generated from.
+_ORCA_FILAMENT_ID = re.compile(r"OF[0-9A-Za-z]{6}")
 
 MATERIAL_TEMPS: dict[str, tuple[int, int]] = {
     "PLA": (190, 230),
@@ -76,8 +94,9 @@ GENERIC_IDS_REPLACED_ON_REUSE: frozenset[str] = frozenset(
 def filament_id_to_setting_id(filament_id: str) -> str:
     """Convert filament_id → setting_id (e.g. "GFL05" → "GFSL05").
 
-    - Already a setting_id ("GFSL05", "GFSS99") → returned unchanged; a
-      support filament_id ("GFS99") still converts.
+    - Already a setting_id ("GFSL05", "GFSS99", "GFSNLS03") → returned
+      unchanged; a support filament_id ("GFS99") still converts, and so does
+      SUNLU's ("GFSNL03" → "GFSNLS03").
     - User presets ("P…") → returned unchanged.
     - Empty / unknown → returned unchanged.
     """
@@ -87,6 +106,10 @@ def filament_id_to_setting_id(filament_id: str) -> str:
     # User presets start with "P" - leave unchanged
     if filament_id.startswith("P"):
         return filament_id
+
+    sunlu = _SUNLU_FILAMENT_ID.fullmatch(filament_id)
+    if sunlu:
+        return f"GFSNLS{sunlu.group(1)}"
 
     # Official Bambu presets: GFx## -> GFSx##
     if filament_id.startswith("GF") and len(filament_id) >= 4:
@@ -102,26 +125,53 @@ def filament_id_to_setting_id(filament_id: str) -> str:
 
 
 def setting_id_to_filament_id(setting_id: str) -> str:
-    """Convert setting_id → filament_id (e.g. "GFSL05" → "GFL05").
+    """Convert setting_id → filament_id (e.g. "GFSL05_07" → "GFL05"), with
+    any version suffix stripped.
 
-    - Already a filament_id ("GFL05", or a support one like "GFS99") →
-      returned unchanged.
-    - User presets ("P…") → returned unchanged.
-    - Empty / unknown → returned unchanged.
+    - A setting_id Bambu gives a filament_id the rule does not lead to → that
+      filament_id, looked up by the full id, suffix included (#3387).
+    - Already a filament_id ("GFL05", a support one like "GFS99", or SUNLU's
+      "GFSNL03") → returned unchanged.
+    - User presets ("P…") → returned without the suffix.
+    - Empty / unknown → returned without the suffix.
     """
     if not setting_id:
         return setting_id
 
-    # User presets start with "P" - leave unchanged
-    if setting_id.startswith("P"):
-        return setting_id
+    listed = SETTING_ID_FILAMENT_IDS.get(setting_id)
+    if listed:
+        return listed
+    return derived_filament_id(setting_id.split("_")[0])
+
+
+def derived_filament_id(base: str) -> str:
+    """The filament_id the naming rule gives for a suffix-free setting_id,
+    without the table of exceptions. ``scripts/generate_filament_id_tables.py``
+    lists exactly the presets where this differs from Bambu's own id."""
+    sunlu = _SUNLU_SETTING_ID.fullmatch(base)
+    if sunlu:
+        return f"GFSNL{sunlu.group(1)}"
+    if _SUNLU_FILAMENT_ID.fullmatch(base):
+        return base
 
     # Setting_id format: GFSx## -> GFx##  (remove the "S"). A digit after
     # "GFS" means a support filament_id, not a setting_id (see above).
-    if setting_id.startswith("GFS") and len(setting_id) >= 5 and setting_id[3].isalpha():
-        return f"GF{setting_id[3:]}"
+    if base.startswith("GFS") and len(base) >= 5 and base[3].isalpha():
+        return f"GF{base[3:]}"
 
-    return setting_id
+    return base
+
+
+def orca_to_bambu_filament_id(filament_id: str) -> str:
+    """The Bambu filament_id for an OrcaSlicer one ("OFMUWNkp" → "GFSNL03").
+
+    OrcaSlicer's system presets carry ids of their own; the printer only knows
+    Bambu's. An Orca id the table does not know returns ``""`` -- sent to the
+    printer it would resolve nowhere. Any other id is returned unchanged.
+    """
+    if _ORCA_FILAMENT_ID.fullmatch(filament_id or ""):
+        return ORCA_FILAMENT_IDS.get(filament_id, "")
+    return filament_id
 
 
 def normalize_slicer_filament(slicer_filament: str | None) -> tuple[str, str]:
@@ -137,10 +187,11 @@ def normalize_slicer_filament(slicer_filament: str | None) -> tuple[str, str]:
     if not raw:
         return ("", "")
 
-    # Strip version suffix (e.g. "GFSL05_07" → "GFSL05")
+    # Strip version suffix (e.g. "GFSL05_07" → "GFSL05"); the filament_id is
+    # read from the full id, since the suffix can decide it (#3387).
     base = raw.split("_")[0] if "_" in raw else raw
 
-    tray_info_idx = setting_id_to_filament_id(base)
+    tray_info_idx = setting_id_to_filament_id(raw)
     sid = filament_id_to_setting_id(base)
 
     return (tray_info_idx, sid)

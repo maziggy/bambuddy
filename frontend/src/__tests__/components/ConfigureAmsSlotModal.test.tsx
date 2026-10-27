@@ -435,6 +435,96 @@ describe('ConfigureAmsSlotModal', () => {
     expect(api.getCloudSettingDetail).not.toHaveBeenCalled();
   });
 
+  it.each([
+    // Bambu's list carries the preset's own id; a new preset needs no rule.
+    ['from Bambu\'s list', 'GFSX01_02', 'New Filament @BBL A1', 'GFX07', 'GFX07'],
+    // An older backend sends no filament_id; the rule knows SUNLU's shape and
+    // the presets that carry another filament's id.
+    ['without one in the list', 'GFSNLS03_04', 'SUNLU PLA+ @BBL A1', null, 'GFSNL03'],
+    ['without one in the list', 'GFSA05_10', 'Bambu PLA Matte @BBL P1P', undefined, 'GFA01'],
+  ])('sends a GFS* preset\'s own filament_id %s (#3387)', async (_how, settingId, name, listed, expected) => {
+    (api.getCloudSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      filament: [{ setting_id: settingId, name, filament_id: listed }],
+    });
+    render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={{ ...defaultProps.slotInfo, savedPresetId: settingId }} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(name)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Configure Slot/i }));
+    await waitFor(() => {
+      expect(api.configureAmsSlot).toHaveBeenCalled();
+    });
+
+    const payload = (api.configureAmsSlot as ReturnType<typeof vi.fn>).mock.calls[0][3];
+    expect(payload.tray_info_idx).toBe(expected);
+    expect(payload.setting_id).toBe(settingId);
+  });
+
+  // "GFSR99" is Generic TPU (GFU99) in Bambu's list, and the id Bambuddy
+  // itself saves for a Generic EVA (GFR99) slot; "GFSA05" likewise is Bambu
+  // PLA Matte @BBL X1 (GFA01) and Bambuddy's id for Bambu PLA Silk (GFA05).
+  const BARE = [
+    { setting_id: 'GFSR99', name: 'Generic TPU', filament_id: 'GFU99' },
+    { setting_id: 'GFSA05', name: 'Bambu PLA Matte @BBL X1', filament_id: 'GFA01' },
+  ];
+
+  it('sends the list\'s filament_id for a bare preset picked from the list (#3387)', async () => {
+    (api.getCloudSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ filament: BARE });
+    render(<ConfigureAmsSlotModal {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Generic TPU')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Generic TPU'));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Configure Slot/i })).not.toBeDisabled();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Configure Slot/i }));
+    await waitFor(() => {
+      expect(api.configureAmsSlot).toHaveBeenCalled();
+    });
+    expect((api.configureAmsSlot as ReturnType<typeof vi.fn>).mock.calls[0][3].tray_info_idx).toBe('GFU99');
+  });
+
+  it.each([
+    ['a Silk slot Bambuddy saved', 'GFSA05', 'GFA05', 'GFA05'],
+    ['a Generic TPU slot picked from the list', 'GFSR99', 'GFU99', 'GFU99'],
+    ['a slot reporting neither', 'GFSR99', undefined, 'GFR99'],
+  ])('keeps the filament of %s when it is saved again (#3387)', async (_what, saved, tray, expected) => {
+    (api.getCloudSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ filament: BARE });
+    render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={{ ...defaultProps.slotInfo, savedPresetId: saved, trayInfoIdx: tray }} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(BARE.find(p => p.setting_id === saved)!.name)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Configure Slot/i })).not.toBeDisabled();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Configure Slot/i }));
+    await waitFor(() => {
+      expect(api.configureAmsSlot).toHaveBeenCalled();
+    });
+    expect((api.configureAmsSlot as ReturnType<typeof vi.fn>).mock.calls[0][3].tray_info_idx).toBe(expected);
+  });
+
+  it('pre-selects a SUNLU preset from the id the slot reports (#3387)', async () => {
+    (api.getCloudSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      filament: [{ setting_id: 'GFSNLS03_04', name: 'SUNLU PLA+ @BBL A1', filament_id: 'GFSNL03' }],
+    });
+    render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={{ ...defaultProps.slotInfo, trayInfoIdx: 'GFSNL03' }} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('SUNLU PLA+ @BBL A1')).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Configure Slot/i })).not.toBeDisabled();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Configure Slot/i }));
+    await waitFor(() => {
+      expect(api.configureAmsSlot).toHaveBeenCalled();
+    });
+    expect((api.configureAmsSlot as ReturnType<typeof vi.fn>).mock.calls[0][3].setting_id).toBe('GFSNLS03_04');
+  });
+
   it('sends no tray_info_idx when the cloud detail fetch fails (#3003)', async () => {
     // Network/5xx from /cloud/settings/{id} must not abort the configure flow.
     // It leaves no filament_id to send, and the PFUS default is not a usable

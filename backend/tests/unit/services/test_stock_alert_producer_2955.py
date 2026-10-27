@@ -50,6 +50,7 @@ async def _spool(
     brand: str | None = "Bambu Lab",
     age_days: int = 100,
     archived: bool = False,
+    archived_days_ago: float | None = None,
     baseline: float = 0.0,
 ) -> Spool:
     spool = Spool(
@@ -62,7 +63,13 @@ async def _spool(
         weight_used=used,
         weight_used_baseline=baseline,
         created_at=utcnow_naive() - timedelta(days=age_days),
-        archived_at=utcnow_naive() if archived else None,
+        archived_at=(
+            utcnow_naive() - timedelta(days=archived_days_ago)
+            if archived_days_ago is not None
+            else utcnow_naive()
+            if archived
+            else None
+        ),
     )
     spool.k_profiles = []
     spool.assignments = []
@@ -533,6 +540,34 @@ async def test_an_archived_spool_is_not_stock(db_session, scheduler, notify):
     assert notify.on_stock_reorder_alert.await_args.args[2] == pytest.approx(80.0)
 
 
+@pytest.mark.asyncio
+async def test_a_used_up_spool_still_counts_towards_the_rate(db_session, scheduler, notify):
+    """#3399: 300 g left. On its own the spool ran 7 g/day, but a 1000 g spool of the
+    same SKU was used up and archived 10 days ago: 17 g/day, under the reorder point."""
+    await _sku(db_session)
+    await _spool(db_session, used=700.0)
+    await _spool(db_session, used=1000.0, archived_days_ago=10)
+    await db_session.commit()
+
+    await _pass(scheduler, db_session)
+
+    notify.on_stock_reorder_alert.assert_awaited_once()
+    # Its stock is still the 300 g of the spool that is left.
+    assert notify.on_stock_reorder_alert.await_args.args[2] == pytest.approx(300.0)
+
+
+@pytest.mark.asyncio
+async def test_a_spool_archived_over_90_days_ago_does_not_count(db_session, scheduler, notify):
+    await _sku(db_session)
+    await _spool(db_session, used=700.0)
+    await _spool(db_session, used=1000.0, archived_days_ago=91)
+    await db_session.commit()
+
+    await _pass(scheduler, db_session)
+
+    notify.on_stock_reorder_alert.assert_not_awaited()
+
+
 # -- failure and cost --------------------------------------------------------
 
 
@@ -834,6 +869,39 @@ async def test_spoolman_mode_alerts_from_one_collection_read(db_session, schedul
     notify.on_stock_reorder_alert.assert_awaited_once()
     assert notify.on_stock_reorder_alert.await_args.kwargs["color"] == "Black"
     client.get_all_spools.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_spoolman_mode_counts_a_used_up_spool_towards_the_rate(db_session, scheduler):
+    """#3399 in Spoolman mode: archived spools are read too, dated by their last use.
+
+    The forecast itself is checked: an alert fires the same for any rate above the
+    reorder point, so it could not tell which archived spools counted.
+    """
+    db_session.add(Settings(key="spoolman_enabled", value="true"))
+    await db_session.commit()
+    recent = _spoolman_spool(9, used=900.0)  # 100 g left on it: not stock either way
+    recent["archived"] = True
+    recent["last_used"] = (utcnow_naive() - timedelta(days=10)).isoformat() + "Z"
+    stale = _spoolman_spool(10, used=900.0)
+    stale["archived"] = True
+    stale["last_used"] = (utcnow_naive() - timedelta(days=91)).isoformat() + "Z"
+    never_used = _spoolman_spool(11, used=900.0)
+    never_used["archived"] = True  # dated by its registration 100 days ago: too old
+    undated = _spoolman_spool(12, used=900.0)
+    undated["archived"] = True
+    del undated["registered"]  # no date at all: not stock, and it doesn't count
+    client = _spoolman_client([_spoolman_spool(7, used=760.0), recent, stale, never_used, undated])
+
+    with patch("backend.app.services.spoolman.get_spoolman_client", AsyncMock(return_value=client)):
+        forecasts = await scheduler._stock_forecasts(db_session)
+
+    client.get_all_spools.assert_awaited_once_with(allow_archived=True)
+    ((forecast, named_by),) = forecasts.values()
+    # (760 + 900) g over the 100 days of the spools' age; the stale ones add nothing.
+    assert forecast.daily_rate_g == pytest.approx(16.6)
+    assert forecast.remaining_g == pytest.approx(240.0)
+    assert named_by.id == 7
 
 
 @pytest.mark.asyncio

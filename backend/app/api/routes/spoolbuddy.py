@@ -42,9 +42,20 @@ from backend.app.schemas.spoolbuddy import (
     WriteTagRequest,
     WriteTagResultRequest,
 )
-from backend.app.services.spool_tag_matcher import get_spool_by_tag
+from backend.app.services.spool_tag_matcher import (
+    begins_with_cascade_level_1,
+    cascade_level_1_uid,
+    cascade_level_1_uid_start,
+    get_spool_by_tag,
+    warn_cascade_level_1_ambiguous,
+)
 from backend.app.services.spoolman import SpoolmanClientError, SpoolmanNotFoundError, SpoolmanUnavailableError
-from backend.app.utils.tag_normalization import is_bambu_tray_uuid, normalize_tag_uid, normalize_tray_uuid
+from backend.app.utils.tag_normalization import (
+    is_bambu_tray_uuid,
+    normalize_hex,
+    normalize_tag_uid,
+    normalize_tray_uuid,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -439,6 +450,130 @@ async def _backfill_spoolman_tray_uuid(client, sm_spool: dict, tag_uid: str, tra
         logger.exception("SpoolBuddy: could not store tray_uuid %s on Spoolman spool %d", tray_uuid, spool_id)
 
 
+def _spoolman_native_tag_uids(sm_spool: dict) -> set[str]:
+    """The UIDs a Spoolman spool holds as native tags (Spoolman 0.27+)."""
+    uids = {normalize_hex(t.get("uid")) for t in sm_spool.get("tags") or [] if isinstance(t, dict)}
+    uids.discard("")
+    return uids
+
+
+def _spoolman_extra_tag_uid(sm_spool: dict) -> str:
+    """The tag UID in a Spoolman spool's extra.tag, which holds it JSON-encoded; empty when none."""
+    extra = sm_spool.get("extra")
+    raw_tag = extra.get("tag") if isinstance(extra, dict) else None
+    return normalize_hex(raw_tag) if isinstance(raw_tag, str) else ""
+
+
+def _spoolman_tag_links(sm_spool: dict) -> set[str]:
+    """Every UID a Spoolman spool is linked by: its native tags and extra.tag."""
+    return _spoolman_native_tag_uids(sm_spool) | ({_spoolman_extra_tag_uid(sm_spool)} - {""})
+
+
+def _spoolman_spool_by_cascade_level_1(spools: list[dict], tag_uid: str, sak: int | None = None) -> dict | None:
+    """Match a tag UID and a Spoolman link stored from the tag's cascade level 1, either way round.
+
+    The Spoolman counterpart of the built-in inventory's fallback in
+    get_spool_by_tag (#3258), with the same rules. A full 7- or 10-byte read
+    finds the active spool linked as 88 + the UID's first three bytes, as a
+    native tag or in extra.tag. A level-1 read from a daemon not updated yet
+    finds the active spool linked by the 7-byte UID it begins. Three bytes can
+    begin more than one tag, so only a single fitting spool is matched.
+    """
+    level1_uid = cascade_level_1_uid(tag_uid)
+    uid_start = cascade_level_1_uid_start(tag_uid, sak)
+    if not level1_uid and not uid_start:
+        return None
+
+    matches: list[dict] = []
+    for sm_spool in spools:
+        if not isinstance(sm_spool, dict) or sm_spool.get("archived"):
+            continue
+        links = _spoolman_tag_links(sm_spool)
+        if level1_uid in links or (
+            uid_start is not None and any(begins_with_cascade_level_1(uid, uid_start) for uid in links)
+        ):
+            matches.append(sm_spool)
+
+    if len(matches) == 1:
+        logger.info(
+            "Matched Spoolman spool %s by cascade level 1 of tag %s: links %s",
+            matches[0].get("id"),
+            normalize_hex(tag_uid),
+            sorted(_spoolman_tag_links(matches[0])),
+        )
+        return matches[0]
+    if len(matches) > 1:
+        warn_cascade_level_1_ambiguous(normalize_hex(tag_uid), [sm_spool.get("id") for sm_spool in matches])
+    return None
+
+
+async def _upgrade_spoolman_cascade_level_1_link(client, sm_spool: dict, full_uid: str, level1_uid: str) -> None:
+    """Move a Spoolman spool's tag link stored from cascade level 1 over to the full UID (#3258).
+
+    The scan has linked the full UID as a native tag already (add_native_tags).
+    An extra.tag holding the 88 form is rewritten to the full UID, and the 88
+    native tag is unlinked once the spool is linked by the full UID, natively
+    or in extra.tag, so the spool is never left without a link.
+
+    Best-effort: a write Spoolman refuses or fails is logged and the scan keeps
+    its match. Whatever is left of the 88 form stays on the spool, and the next
+    full scan of the tag comes here again and finishes the move.
+    """
+    spool_id = sm_spool.get("id")
+    if not isinstance(spool_id, int):
+        return
+    changed = False
+
+    if _spoolman_extra_tag_uid(sm_spool) == level1_uid:
+        try:
+            await client.merge_spool_extra(spool_id, {"tag": json.dumps(full_uid)})
+            changed = True
+            logger.info(
+                "SpoolBuddy: extra.tag %s of Spoolman spool %d rewritten to the full UID %s",
+                level1_uid,
+                spool_id,
+                full_uid,
+            )
+        except Exception as exc:
+            logger.warning(
+                "SpoolBuddy: could not rewrite extra.tag %s of Spoolman spool %d to %s, trying again on the next scan: %s",
+                level1_uid,
+                spool_id,
+                full_uid,
+                exc,
+            )
+
+    if level1_uid in _spoolman_native_tag_uids(sm_spool):
+        try:
+            current = await client.get_spool(spool_id)
+            if full_uid in _spoolman_tag_links(current):
+                await client.unlink_native_tag(spool_id, level1_uid)
+                changed = True
+                logger.info(
+                    "SpoolBuddy: native tag %s unlinked from Spoolman spool %d, now linked by the full UID %s",
+                    level1_uid,
+                    spool_id,
+                    full_uid,
+                )
+            else:
+                logger.info(
+                    "SpoolBuddy: Spoolman spool %d keeps native tag %s until the full UID %s is linked",
+                    spool_id,
+                    level1_uid,
+                    full_uid,
+                )
+        except Exception as exc:
+            logger.warning(
+                "SpoolBuddy: could not unlink native tag %s from Spoolman spool %d, trying again on the next scan: %s",
+                level1_uid,
+                spool_id,
+                exc,
+            )
+
+    if changed:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+
+
 @router.post("/nfc/tag-scanned")
 async def nfc_tag_scanned(
     req: TagScannedRequest,
@@ -509,13 +644,24 @@ async def nfc_tag_scanned(
                         cached_spools = await client.get_spools()
                     sm_spool = await client.find_spool_by_tag(uid, cached_spools=cached_spools)
 
+            # Last, a link stored from the tag's cascade level 1 (#3258), as
+            # get_spool_by_tag falls back to in the built-in inventory.
+            level1_read = cascade_level_1_uid_start(req.tag_uid, req.sak) is not None
+            level1_read_match = False
+            if sm_spool is None and (level1_read or cascade_level_1_uid(req.tag_uid)):
+                if cached_spools is None:
+                    cached_spools = await client.get_spools()
+                sm_spool = _spoolman_spool_by_cascade_level_1(cached_spools, req.tag_uid, req.sak)
+                level1_read_match = level1_read and sm_spool is not None
+
             if sm_spool is not None:
                 # What this scan read becomes a native tag of the spool: a spool found
                 # through extra.tag moves over on its first scan, and a Bambu spool
-                # collects the chip UID of each side as it is read.
-                await client.add_native_tags(
-                    sm_spool, [tray_uuid, req.tag_uid], "bambu" if tray_uuid else None, retry_refused=True
-                )
+                # collects the chip UID of each side as it is read. A level-1 read
+                # that matched through the fallback is not one: 88 + three bytes can
+                # begin more than one tag, and the spool is linked by the full UID.
+                scanned_uids = [tray_uuid] if level1_read_match else [tray_uuid, req.tag_uid]
+                await client.add_native_tags(sm_spool, scanned_uids, "bambu" if tray_uuid else None, retry_refused=True)
                 mapped = _map_spoolman_spool(sm_spool)
                 await ws_manager.broadcast(
                     {
@@ -546,6 +692,13 @@ async def nfc_tag_scanned(
                     }
                 )
                 logger.info("SpoolBuddy tag matched (Spoolman): %s -> spool %d", req.tag_uid, mapped["id"])
+                # A full read of a spool still linked by the 88 form, matched by the
+                # fallback or exactly after an earlier move stopped half-way.
+                level1_uid = cascade_level_1_uid(req.tag_uid)
+                if level1_uid and level1_uid in _spoolman_tag_links(sm_spool):
+                    await _upgrade_spoolman_cascade_level_1_link(
+                        client, sm_spool, normalize_hex(req.tag_uid), level1_uid
+                    )
                 if tray_uuid:
                     await _backfill_spoolman_tray_uuid(client, sm_spool, req.tag_uid, tray_uuid)
                 return {"status": "ok", "matched": True, "spool_id": mapped["id"]}
@@ -590,7 +743,7 @@ async def nfc_tag_scanned(
             return {"status": "ok", "matched": False, "spool_id": None}
     else:
         # Local mode — exclusive lookup, no Spoolman fallback.
-        spool = await get_spool_by_tag(db, req.tag_uid, tray_uuid or "")
+        spool = await get_spool_by_tag(db, req.tag_uid, tray_uuid or "", req.sak)
         if spool:
             await ws_manager.broadcast(
                 {

@@ -63,6 +63,14 @@ BAMBU_CONTEXT = b"RFID-A\x00"  # 7 bytes including null terminator
 # Blocks to read for Bambu tag data
 BAMBU_BLOCKS = [1, 2, 4, 5, 9]
 
+# ISO 14443-3 anticollision: SEL codes of cascade levels 1-3, the cascade tag
+# that opens a level's four bytes when the UID goes on at the next level, and
+# the SAK bit that says it does. A 4-byte UID ends at level 1, a 7-byte UID
+# (NTAG, Ultralight) at level 2, a 10-byte UID at level 3 (#3258).
+CASCADE_LEVELS = (0x93, 0x95, 0x97)
+CASCADE_TAG = 0x88
+SAK_UID_INCOMPLETE = 0x04
+
 
 def hkdf_derive_keys(uid: bytes) -> bytes:
     """Derive 96 bytes of MIFARE key material (16 sectors * 6 bytes each).
@@ -234,7 +242,11 @@ class PN5180:
     # -- ISO 14443A --
 
     def activate_type_a(self):
-        """Full Type A activation: WUPA -> Anticollision -> SELECT. Returns (uid, sak) or None."""
+        """Full Type A activation: WUPA -> Anticollision -> SELECT, for each cascade level.
+
+        Returns (uid, sak) with the complete 4-, 7- or 10-byte UID, cascade tags
+        dropped, and the SAK of the last SELECT; or None.
+        """
         # Crypto off, CRC off
         self.write_reg_and(0x00, 0xFFFFFFBF)
         self.write_reg_and(0x12, 0xFFFFFFFE)
@@ -271,46 +283,64 @@ class PN5180:
         if atqa[0] == 0xFF or atqa[0] == 0x00:
             return None
 
-        # Anti-collision Level 1
-        self.write_reg(0x03, 0xFFFFFFFF)
-        self.set_transceive_mode()
-        time.sleep(0.002)
+        uid = b""
+        for level, sel in enumerate(CASCADE_LEVELS):
+            if level > 0:
+                # The previous SELECT turned CRC on; anticollision frames carry none
+                self.write_reg_and(0x12, 0xFFFFFFFE)
+                self.write_reg_and(0x19, 0xFFFFFFFE)
 
-        self.send_data([0x93, 0x20])
-        time.sleep(0.010)
+            # Anti-collision
+            self.write_reg(0x03, 0xFFFFFFFF)
+            self.set_transceive_mode()
+            time.sleep(0.002)
 
-        rx_status = self.read_reg(0x13)
-        rx_len = rx_status & 0x1FF
-        if rx_len < 5 or rx_len > 64:
-            return None
+            self.send_data([sel, 0x20])
+            time.sleep(0.010)
 
-        uid_buf = self.read_data(5)
-        uid = uid_buf[:4]
-        bcc = uid[0] ^ uid[1] ^ uid[2] ^ uid[3]
-        if bcc != uid_buf[4]:
-            return None
+            rx_status = self.read_reg(0x13)
+            rx_len = rx_status & 0x1FF
+            if rx_len < 5 or rx_len > 64:
+                return None
 
-        # SELECT
-        self.write_reg(0x03, 0xFFFFFFFF)
-        self.set_transceive_mode()
-        time.sleep(0.002)
+            uid_buf = self.read_data(5)
+            part = uid_buf[:4]
+            bcc = part[0] ^ part[1] ^ part[2] ^ part[3]
+            if bcc != uid_buf[4]:
+                return None
 
-        # Enable CRC for SELECT
-        self.write_reg_or(0x19, 0x01)
-        self.write_reg_or(0x12, 0x01)
+            # SELECT
+            self.write_reg(0x03, 0xFFFFFFFF)
+            self.set_transceive_mode()
+            time.sleep(0.002)
 
-        self.send_data([0x93, 0x70, uid[0], uid[1], uid[2], uid[3], bcc])
-        time.sleep(0.010)
+            # Enable CRC for SELECT
+            self.write_reg_or(0x19, 0x01)
+            self.write_reg_or(0x12, 0x01)
 
-        rx_status = self.read_reg(0x13)
-        rx_len = rx_status & 0x1FF
-        if rx_len < 1:
-            return None
+            self.send_data([sel, 0x70, part[0], part[1], part[2], part[3], bcc])
+            time.sleep(0.010)
 
-        sak_buf = self.read_data(min(rx_len, 3))
-        sak = sak_buf[0]
+            rx_status = self.read_reg(0x13)
+            rx_len = rx_status & 0x1FF
+            if rx_len < 1:
+                return None
 
-        return bytes(uid), sak
+            sak_buf = self.read_data(min(rx_len, 3))
+            sak = sak_buf[0]
+
+            if not sak & SAK_UID_INCOMPLETE:
+                return bytes(uid + part), sak
+
+            # UID goes on at the next level: these four bytes are the cascade
+            # tag and the next three bytes of the UID
+            if part[0] != CASCADE_TAG:
+                print(f"    SAK 0x{sak:02X} at cascade level {level + 1} without cascade tag: {part.hex().upper()}")
+                return None
+            uid += part[1:]
+
+        print(f"    UID still incomplete after cascade level 3: {uid.hex().upper()}")
+        return None
 
     # -- MIFARE Classic --
 

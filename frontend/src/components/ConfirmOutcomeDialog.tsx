@@ -85,6 +85,7 @@ export function ConfirmOutcomeDialog({ archiveId, onClose }: ConfirmOutcomeDialo
         mode="create"
         archiveId={archiveId}
         archiveName={name}
+        preselectPlateId={archive.plate_id}
         onClose={onClose}
       />
     );

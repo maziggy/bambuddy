@@ -12,7 +12,9 @@ import { server } from '../mocks/server';
 
 // The reject flow can hand off into the full PrintModal — not under test here.
 vi.mock('../../components/PrintModal', () => ({
-  PrintModal: () => <div data-testid="print-modal" />,
+  PrintModal: ({ preselectPlateId }: { preselectPlateId?: number | null }) => (
+    <div data-testid="print-modal" data-plate={String(preselectPlateId)} />
+  ),
 }));
 
 const baseArchive = {
@@ -143,6 +145,17 @@ describe('ConfirmOutcomeDialog', () => {
     await waitFor(() => {
       expect(screen.getByTestId('print-modal')).toBeInTheDocument();
     });
+  });
+
+  it('reprints the plate the archive printed (#3395)', async () => {
+    server.use(http.get('/api/v1/archives/42', () => HttpResponse.json({ ...baseArchive, plate_id: 10 })));
+    const user = userEvent.setup();
+    render(<ConfirmOutcomeDialog archiveId={42} onClose={vi.fn()} />);
+
+    await user.click(await screen.findByText('Reject'));
+    await user.click(await screen.findByText('Print again'));
+
+    expect(await screen.findByTestId('print-modal')).toHaveAttribute('data-plate', '10');
   });
 
   it('shows the already-decided state instead of the buttons', async () => {

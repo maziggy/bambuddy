@@ -232,3 +232,62 @@ def test_the_scenarios_cover_both_alerts_and_neither():
     """The pin means little if no scenario ever alerts."""
     flags = {(e["reorder_alert"], e["stock_break_alert"]) for e in EXPECTED.values()}
     assert flags == {(False, False), (True, False), (False, True)}
+
+
+# -- #3399: used-up spools still count towards the rate ------------------------
+
+
+def _archived(spool_id: int, used: float, age_days: float, archived_days_ago: float) -> StockSpool:
+    spool = _spool(spool_id, used, age_days)
+    return StockSpool(**{**spool.__dict__, "archived_at": _ago(archived_days_ago)})
+
+
+KEY = sku_key("PLA", "Basic", "Bambu Lab", "Black")
+
+
+def test_a_recently_archived_spool_counts_towards_the_rate_not_the_stock():
+    """The reporter's case: 900 g used on a spool archived since, 16 g on the one left."""
+    spools = [_spool(1, 16, 20), _archived(2, 900, 100, 10)]
+
+    forecast, named_by = forecast_all(spools, {}, {}, 0, NOW)[KEY]
+
+    # (16 + 900) g over the 100 days since the older spool, not 16 g over 20.
+    assert forecast.daily_rate_g == pytest.approx(9.16)
+    # The archived spool's 100 g left are not stock.
+    assert forecast.remaining_g == pytest.approx(984)
+    assert named_by.id == 1
+
+
+def test_a_spool_archived_over_90_days_ago_does_not_count():
+    spools = [_spool(1, 16, 20), _archived(2, 1000, 200, 91)]
+
+    forecast, _ = forecast_all(spools, {}, {}, 0, NOW)[KEY]
+
+    assert forecast.daily_rate_g == pytest.approx(0.8)
+
+
+def test_the_window_includes_its_last_day():
+    spools = [_spool(1, 16, 20), _archived(2, 1000, 100, 90)]
+
+    forecast, _ = forecast_all(spools, {}, {}, 0, NOW)[KEY]
+
+    assert forecast.daily_rate_g == pytest.approx(10.16)
+
+
+def test_a_sku_with_only_archived_spools_is_not_forecast():
+    """Every spool archived usually means the filament is no longer bought."""
+    assert forecast_all([_archived(2, 1000, 100, 10)], {}, {}, 0, NOW) == {}
+
+
+def test_a_recently_archived_spools_history_counts():
+    spools = [_spool(1, 100, 30), _archived(2, 900, 60, 5)]
+    history = _history((1, 2, 100), (2, 20, 300), (2, 10, 600))
+
+    with_archived, _ = forecast_all(spools, history, {}, 0, NOW)[KEY]
+    alone, _ = forecast_all(spools[:1], history, {}, 0, NOW)[KEY]
+
+    assert with_archived.daily_rate_g == pytest.approx(
+        history_rate([r for records in history.values() for r in records], NOW)[0]
+    )
+    # With only the stock spool's single day there is no history rate at all.
+    assert alone.daily_rate_g == pytest.approx(delta_rate(spools[:1], NOW))

@@ -13,7 +13,21 @@ from backend.app.services.octoeverywhere_actions import execute_action
 async def test_dispatches_action_with_quality_without_fake_confidence(action, frame):
     with patch("backend.app.services.octoeverywhere_actions.execute_detection_action", new_callable=AsyncMock) as run:
         await execute_action(1, action, "benchy", 2, frame)
-    run.assert_awaited_once_with(1, action, "benchy", None, frame, print_quality=2)
+    run.assert_awaited_once_with(1, action, "benchy", None, frame, print_quality=2, printer_name=None)
+
+
+async def test_prepared_action_reuses_printer_name_without_another_lookup():
+    with (
+        patch("backend.app.services.obico_actions._get_printer_name", new_callable=AsyncMock) as lookup,
+        patch("backend.app.services.obico_actions._pause_print") as pause,
+        patch("backend.app.services.obico_actions._turn_off_linked_plugs", new_callable=AsyncMock) as off,
+        patch("backend.app.services.obico_actions._notify", new_callable=AsyncMock) as notify,
+    ):
+        await execute_action(1, "pause_and_off", "benchy", 2, b"frame", printer_name="Prepared printer")
+    lookup.assert_not_awaited()
+    pause.assert_called_once_with(1)
+    off.assert_awaited_once_with(1)
+    notify.assert_awaited_once_with(1, "Prepared printer", "benchy", None, "pause_and_off", b"frame", print_quality=2)
 
 
 async def test_pause_and_power_off_also_notify():

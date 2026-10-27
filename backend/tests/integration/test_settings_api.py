@@ -91,9 +91,24 @@ class TestSettingsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    @pytest.mark.parametrize("key", ["ambient_drying_sustained_minutes", "default_filament_cost", "auto_archive"])
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "ambient_drying_sustained_minutes",
+            "default_filament_cost",
+            "auto_archive",
+            "obico_enabled",
+            "obico_sensitivity",
+            "obico_action",
+            "obico_poll_interval",
+            "octoeverywhere_enabled",
+            "octoeverywhere_confidence",
+            "octoeverywhere_action",
+            "octoeverywhere_poll_interval",
+        ],
+    )
     async def test_null_for_a_typed_setting_is_refused_and_not_stored(self, async_client: AsyncClient, key):
-        """A null for a boolean or numeric setting would be stored as the literal
+        """A null for a typed setting would be stored as the literal
         "None". The whole request is refused, so a valid field sent alongside it
         is not half-applied either."""
         before = (await async_client.get("/api/v1/settings/")).json()
@@ -103,9 +118,34 @@ class TestSettingsAPI:
 
         assert response.status_code == 422
         assert key in response.json()["detail"]
-        after = (await async_client.get("/api/v1/settings/")).json()
+        response = await async_client.get("/api/v1/settings/")
+        assert response.status_code == 200
+        after = response.json()
         assert after[key] == before[key]
         assert after["currency"] == before["currency"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "enabled_key, null_key",
+        [("obico_enabled", "octoeverywhere_enabled"), ("octoeverywhere_enabled", "obico_enabled")],
+    )
+    async def test_enabling_provider_does_not_hide_null_other_provider(
+        self, async_client: AsyncClient, enabled_key, null_key
+    ):
+        before = (await async_client.get("/api/v1/settings/")).json()
+
+        response = await async_client.put(
+            "/api/v1/settings/", json={enabled_key: True, null_key: None, "currency": "EUR"}
+        )
+
+        assert response.status_code == 422
+        assert null_key in response.json()["detail"]
+        response = await async_client.get("/api/v1/settings/")
+        assert response.status_code == 200
+        after = response.json()
+        for key in (enabled_key, null_key, "currency"):
+            assert after[key] == before[key]
 
     @pytest.mark.asyncio
     @pytest.mark.integration

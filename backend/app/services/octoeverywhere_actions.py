@@ -4,7 +4,15 @@ from backend.app.services.obico_actions import execute_action as execute_detecti
 
 
 async def execute_action(
-    printer_id: int, action: str, task_name: str, print_quality: int, frame: bytes | None = None
+    printer_id: int,
+    action: str,
+    task_name: str,
+    print_quality: int,
+    frame: bytes | None = None,
+    *,
+    printer_name: str | None = None,
 ) -> None:
     """Dispatch a suggested action without treating print quality as confidence."""
-    await execute_detection_action(printer_id, action, task_name, None, frame, print_quality=print_quality)
+    await execute_detection_action(
+        printer_id, action, task_name, None, frame, print_quality=print_quality, printer_name=printer_name
+    )

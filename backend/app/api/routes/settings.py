@@ -219,6 +219,8 @@ _BOOL_SETTING_KEYS = frozenset(
         "local_login_enabled",
         "preheat_enabled",
         "queue_keep_bed_warm",
+        "obico_enabled",
+        "octoeverywhere_enabled",
     }
 )
 
@@ -236,7 +238,9 @@ _FLOAT_SETTING_KEYS = frozenset(
 
 # String settings limited to a fixed set of values, which a stored "None"
 # would break when the settings response is built.
-_ENUM_SETTING_KEYS = frozenset({"energy_price_source"})
+_ENUM_SETTING_KEYS = frozenset(
+    {"energy_price_source", "obico_sensitivity", "obico_action", "octoeverywhere_confidence", "octoeverywhere_action"}
+)
 
 _INT_SETTING_KEYS = frozenset(
     {
@@ -262,6 +266,7 @@ _INT_SETTING_KEYS = frozenset(
         "queue_max_concurrent_uploads",
         "ambient_drying_sustained_minutes",
         "pause_warning_minutes",
+        "obico_poll_interval",
         "octoeverywhere_poll_interval",
     }
 )
@@ -383,16 +388,9 @@ async def update_settings(
     if update_data.get("octoeverywhere_api_key") is None:
         update_data.pop("octoeverywhere_api_key", None)
 
-    # Only one failure detection provider may control a print at a time.
-    if update_data.get("obico_enabled") and update_data.get("octoeverywhere_enabled"):
-        raise HTTPException(status_code=400, detail="Enable only one AI failure detection provider at a time.")
-    if update_data.get("octoeverywhere_enabled"):
-        update_data["obico_enabled"] = False
-    elif update_data.get("obico_enabled"):
-        update_data["octoeverywhere_enabled"] = False
-
-    # An explicit null for a boolean or numeric setting has no meaning -- these
-    # are not clearable -- and would be stored as the literal "None".
+    # These typed settings are not clearable: null would be stored as "None".
+    # Check before normalizing provider flags so enabling one cannot hide a
+    # null submitted for the other.
     null_keys = sorted(
         key
         for key, value in update_data.items()
@@ -400,6 +398,14 @@ async def update_settings(
     )
     if null_keys:
         raise HTTPException(status_code=422, detail=f"These settings cannot be null: {', '.join(null_keys)}")
+
+    # Only one failure detection provider may control a print at a time.
+    if update_data.get("obico_enabled") and update_data.get("octoeverywhere_enabled"):
+        raise HTTPException(status_code=400, detail="Enable only one AI failure detection provider at a time.")
+    if update_data.get("octoeverywhere_enabled"):
+        update_data["obico_enabled"] = False
+    elif update_data.get("obico_enabled"):
+        update_data["octoeverywhere_enabled"] = False
 
     # Settings that decide who can sign in are admin-only, like the user routes.
     # Only a real change counts: the settings page sends every field on each

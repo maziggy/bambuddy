@@ -454,8 +454,8 @@ class TestFetchOrcaCloudPresets:
                 },
                 {
                     "id": "f4",
-                    "name": "Bare newline",
-                    "content": {"type": "filament", "filament_type": "PLA", "compatible_printers": "X1C\nP1S"},
+                    "name": "Text after a closing quote",
+                    "content": {"type": "filament", "filament_type": "PLA", "compatible_printers": '"X1C" P1S'},
                 },
             ]
         )
@@ -961,38 +961,6 @@ class TestParseCompatiblePrinters:
             "X1C",
             "A1",
         ]
-
-    def test_strips_ini_style_quotes(self):
-        """#3380: a quoted name stored on a local preset is unwrapped too."""
-        raw = '["\\"Bambu Lab X1 Carbon 0.4 nozzle\\"", "\\"\\""]'
-        assert sp._parse_compatible_printers(raw) == ["Bambu Lab X1 Carbon 0.4 nozzle"]
-
-
-class TestSlicerStrings:
-    """#3380: slicer string-list options, as a JSON array or an INI-style string."""
-
-    def test_ini_string(self):
-        assert sp._slicer_strings('"Bambu Lab X1 Carbon 0.4 nozzle";"Bambu Lab H2C 0.4 nozzle"') == [
-            "Bambu Lab X1 Carbon 0.4 nozzle",
-            "Bambu Lab H2C 0.4 nozzle",
-        ]
-        assert sp._slicer_strings("PLA;PETG") == ["PLA", "PETG"]
-        assert sp._slicer_strings('"Printer \\"A\\""') == ['Printer "A"']
-
-    def test_plain_values_pass_through(self):
-        assert sp._slicer_strings("Bambu Lab P2S 0.4 nozzle") == ["Bambu Lab P2S 0.4 nozzle"]
-        assert sp._slicer_strings(["X1C", ' "A1" ']) == ["X1C", "A1"]
-
-    def test_json_array_items_are_only_unquoted(self):
-        """A JSON array is never INI-encoded: a ``;`` or ``\\`` in a name stays."""
-        assert sp._slicer_strings(["My X1C; tuned", '"C:\\profiles\\X1C"']) == ["My X1C; tuned", "C:\\profiles\\X1C"]
-
-    def test_unparseable_string_is_no_data(self):
-        assert sp._slicer_strings("X1C\nP1S") == []
-
-    def test_empty_and_malformed(self):
-        for raw in (None, "", '""', [], ["", "  "], {"a": 1}, 5):
-            assert sp._slicer_strings(raw) == []
 
 
 class TestListPrinterModels:

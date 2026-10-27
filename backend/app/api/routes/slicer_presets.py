@@ -11,7 +11,6 @@ without faking an "ok with empty list" response.
 
 from __future__ import annotations
 
-import csv
 import hashlib
 import json
 import logging
@@ -75,6 +74,7 @@ from backend.app.utils.printer_models import (
     normalize_printer_model,
     normalize_printer_model_id,
 )
+from backend.app.utils.slicer_strings import first_slicer_string, slicer_strings
 
 logger = logging.getLogger(__name__)
 
@@ -279,8 +279,8 @@ async def _fetch_orca_cloud_presets(
                 # Bambu/Orca filament profiles store these as single-element
                 # lists (the historical multi-extruder shape) — a JSON array or
                 # an INI-style string. Take the first non-empty element.
-                filament_type = next(iter(_slicer_strings(content.get("filament_type"))), None)
-                filament_colour = next(iter(_slicer_strings(content.get("default_filament_colour"))), None)
+                filament_type = first_slicer_string(content.get("filament_type"))
+                filament_colour = first_slicer_string(content.get("default_filament_colour"))
             preset = UnifiedPreset(
                 id=str(preset_id),
                 name=str(name),
@@ -348,43 +348,12 @@ def _content_compatible_printers(content: dict) -> list[str] | None:
 
     Orca profiles carry it as a list of printer-preset names (the same shape
     ``orca_profiles.py`` stores on import) or as one INI-style string — see
-    :func:`_slicer_strings`. Returns ``None`` for missing / empty / malformed values so
-    the caller leaves the field unset and the SliceModal falls back to the
-    name-based matcher, rather than treating "no data" as "compatible with
-    nothing".
+    :func:`slicer_strings`. Returns ``None`` for missing / empty / malformed
+    values so the caller leaves the field unset and the SliceModal falls back
+    to the name-based matcher, rather than treating "no data" as "compatible
+    with nothing".
     """
-    return _slicer_strings(content.get("compatible_printers")) or None
-
-
-def _slicer_strings(raw: object) -> list[str]:
-    """A slicer string-list option as plain, non-empty strings (#3380).
-
-    Orca Cloud returns a list the way the slicer writes it to its INI files —
-    one string of quoted, ``\\``-escaped items joined by ``;``
-    (``"Bambu Lab X1 Carbon 0.4 nozzle";"Bambu Lab H2C 0.4 nozzle"``). Left
-    quoted, a ``compatible_printers`` name never equals the selected printer
-    preset and the SliceModal hides the profile for every printer. A JSON
-    array is never INI-encoded, so its items only lose one surrounding pair of
-    quotes — a ``;`` or ``\\`` in a local name is kept. A string the INI parse
-    can't read (a bare newline) counts as no data rather than failing the
-    whole listing.
-    """
-    if isinstance(raw, list):
-        return [item for item in (_unquote(s) for s in raw if isinstance(s, str)) if item]
-    if not isinstance(raw, str):
-        return []
-    try:
-        rows = list(csv.reader([raw], delimiter=";", escapechar="\\", skipinitialspace=True))
-    except csv.Error:
-        return []
-    return [item.strip() for row in rows for item in row if item.strip()]
-
-
-def _unquote(item: str) -> str:
-    item = item.strip()
-    if len(item) >= 2 and item[0] == item[-1] == '"':
-        item = item[1:-1].strip()
-    return item
+    return slicer_strings(content.get("compatible_printers")) or None
 
 
 def _parse_compatible_printers(raw: str | None) -> list[str] | None:
@@ -399,7 +368,7 @@ def _parse_compatible_printers(raw: str | None) -> list[str] | None:
         return None
     if not isinstance(data, list):
         return None
-    return _slicer_strings(data) or None
+    return slicer_strings(data) or None
 
 
 def _parse_filament_metadata(setting_json: str | None) -> tuple[str | None, str | None]:

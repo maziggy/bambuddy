@@ -513,3 +513,37 @@ describe('ArchivesPage wiring: print log', () => {
     expect(mutations()).toHaveLength(0);
   });
 });
+
+describe('ArchivesPage wiring: reprint opens on the archive plate (#3395)', () => {
+  const plate = (index: number) => ({
+    index, name: '', has_thumbnail: false, thumbnail_url: null, objects: [`Part ${index}`],
+    filaments: [], print_time_seconds: 600, filament_used_grams: 5,
+  });
+
+  beforeEach(() => {
+    server.use(
+      http.get('*/api/v1/archives/', () =>
+        HttpResponse.json(ARCHIVES.map((a) => ({ ...a, file_path: `archive/${a.id}.gcode.3mf`, plate_id: a.id === 2 ? 3 : null }))),
+      ),
+      http.get('*/api/v1/archives/:id/plates', () =>
+        HttpResponse.json({ is_multi_plate: true, plates: [plate(1), plate(2), plate(3)] }),
+      ),
+      http.get('*/api/v1/archives/:id/filament-requirements', () => HttpResponse.json({ filaments: [] })),
+    );
+  });
+
+  it.each([
+    ['card', null, (el: HTMLElement) => within(el).getByRole('button', { name: /Print/ })],
+    ['list row', 'list', (el: HTMLElement) => within(el).getByTitle('Print')],
+  ])('%s Print preselects the plate the archive printed', async (_where, mode, button) => {
+    viewMode = mode;
+    const user = userEvent.setup();
+    render(<ArchivesPage />);
+
+    await user.click(button(await cardFor(2)));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('selected-plates-summary')).toHaveTextContent(/^Plate 3$/);
+    });
+  });
+});

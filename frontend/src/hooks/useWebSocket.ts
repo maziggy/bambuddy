@@ -495,6 +495,11 @@ export function useWebSocket() {
         // Both inventory modes: the Spoolman AMS sync raises this event too, and
         // its slot rows live under their own query keys.
         invalidateSlotQueries();
+        // A Spoolman move clears the spool's fallback tag for the slot it left
+        // (#1574). The slot cards fall back to the tag -> spool map once the
+        // slot row is gone, so a cached map kept the spool on its old slot in
+        // every tab but the one that moved it. Fetched in Spoolman mode only.
+        queryClient.invalidateQueries({ queryKey: ['linked-spools'] });
         break;
 
       case 'spool_assignment_verified': {

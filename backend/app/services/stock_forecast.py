@@ -8,6 +8,10 @@ pins the two to the same numbers on the same inputs.
 The pieces, in the order the panel applies them:
 
 * Spools are grouped by SKU -- ``(material, subtype, brand, color_name)``.
+  Archived spools are not stock, but one archived in the last
+  ``ARCHIVED_RATE_WINDOW_DAYS`` still counts towards how fast the SKU is used:
+  used-up spools are archived, and leaving out what they took makes a SKU in
+  weekly use look untouched (#3399). A SKU with no stock left is not forecast.
 * The daily rate comes from usage history when there are at least two distinct
   days of it (weighted by a 30-day half-life, so recent prints dominate), and
   from consumption since the spool baseline over the age of the oldest spool
@@ -47,6 +51,10 @@ _FALLBACK_RATE_G_PER_DAY = 5
 
 _SECONDS_PER_DAY = 86400.0
 
+# An archived spool counts towards the rate for this long after it was archived.
+# Older ones would stretch the delta rate's age over years and dilute it.
+ARCHIVED_RATE_WINDOW_DAYS = 90
+
 SkuKey = tuple[str, str, str, str]
 
 
@@ -68,6 +76,8 @@ class StockSpool:
     weight_used: float
     weight_used_baseline: float
     created_at: datetime | None
+    # When the spool was archived (Spoolman: its last use); None while it is stock.
+    archived_at: datetime | None = None
     # True when color_name is not a name the spool carries but the subtype standing in
     # for one (Spoolman mode does this so the list has no blank colours). The SKU key
     # keeps it, as the panel does; anything shown to a person should not.
@@ -122,6 +132,11 @@ class SkuForecast:
 def _utc(moment: datetime) -> datetime:
     """A naive timestamp is UTC: that is what the database stores."""
     return moment.replace(tzinfo=timezone.utc) if moment.tzinfo is None else moment.astimezone(timezone.utc)
+
+
+def archived_counts(archived_at: datetime, now: datetime) -> bool:
+    """Whether a spool archived then still counts towards its SKU's rate."""
+    return (_utc(now) - _utc(archived_at)).total_seconds() <= ARCHIVED_RATE_WINDOW_DAYS * _SECONDS_PER_DAY
 
 
 def history_rate(records: Sequence[UsageRecord], now: datetime) -> tuple[float, float] | None:
@@ -191,16 +206,20 @@ def forecast_sku(
     settings: SkuSettings,
     global_lead_time_days: int,
     now: datetime,
+    used_up: Sequence[StockSpool] = (),
 ) -> SkuForecast:
-    """Forecast one SKU from its spools. ``spools`` must be non-empty and share a key."""
+    """Forecast one SKU from its spools. ``spools`` (its stock) must be non-empty
+    and share a key; ``used_up`` are its recently archived spools, which count
+    towards the rate only."""
     lead_time = max(global_lead_time_days, settings.lead_time_days)
     remaining = sum(s.remaining_g for s in spools)
+    rate_spools = [*spools, *used_up]
 
     # Only history from spools that were never reset: a reset spool's earlier
     # events have no anchor and would inflate the rate. A spool with no
     # baseline is clean and keeps its records.
     history: list[UsageRecord] = []
-    for spool in spools:
+    for spool in rate_spools:
         if spool.weight_used_baseline == 0:
             history.extend(history_by_spool.get(spool.id, ()))
 
@@ -210,7 +229,7 @@ def forecast_sku(
     if measured is not None:
         rate, std_dev = measured
     else:
-        rate = delta_rate(spools, now)
+        rate = delta_rate(rate_spools, now)
 
     sigma = std_dev if std_dev is not None else (rate * _FALLBACK_SIGMA_FRACTION if rate is not None else 0.0)
     statistical_safety_g = Z_95 * sigma * math.sqrt(lead_time)
@@ -257,20 +276,25 @@ def forecast_all(
     global_lead_time_days: int,
     now: datetime,
 ) -> ForecastMap:
-    """Forecast every SKU present in ``spools``.
+    """Forecast every SKU that has stock in ``spools``.
 
-    Returns each SKU's forecast with the first spool of its group, which is what
-    a caller needs to name the SKU (material, subtype, brand, colour) without a
-    second lookup. The caller passes only spools that count as stock -- archived
-    ones excluded -- because what is archived differs by inventory mode.
+    Returns each SKU's forecast with the first stock spool of its group, which is
+    what a caller needs to name the SKU (material, subtype, brand, colour)
+    without a second lookup. A spool with ``archived_at`` set is not stock; the
+    caller sets it however its inventory mode records archiving. One archived
+    within ``ARCHIVED_RATE_WINDOW_DAYS`` counts towards its SKU's rate.
 
     A colour-specific SKU with no settings row of its own falls back to the
     colourless row, which is where settings saved before colour became part of
     the key still live.
     """
     groups: dict[SkuKey, list[StockSpool]] = {}
+    used_up: dict[SkuKey, list[StockSpool]] = {}
     for spool in spools:
-        groups.setdefault(spool.key, []).append(spool)
+        if spool.archived_at is None:
+            groups.setdefault(spool.key, []).append(spool)
+        elif archived_counts(spool.archived_at, now):
+            used_up.setdefault(spool.key, []).append(spool)
 
     out: ForecastMap = {}
     for key, members in groups.items():
@@ -278,7 +302,14 @@ def forecast_all(
         if settings is None and key[3] != "":
             settings = sku_settings.get((key[0], key[1], key[2], ""))
         out[key] = (
-            forecast_sku(members, history_by_spool, settings or SkuSettings(), global_lead_time_days, now),
+            forecast_sku(
+                members,
+                history_by_spool,
+                settings or SkuSettings(),
+                global_lead_time_days,
+                now,
+                used_up=used_up.get(key, ()),
+            ),
             members[0],
         )
     return out

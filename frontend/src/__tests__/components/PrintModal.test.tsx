@@ -1167,6 +1167,88 @@ describe('PrintModal', () => {
       expect((queueRequests[1] as { plate_id: number }).plate_id).toBe(3);
     });
 
+    // #3395: a reprint opens on the plate the archive printed, not plate 1.
+    async function submitAndCollect(preselectPlateId: number | null) {
+      const queueRequests: { plate_id: number }[] = [];
+      server.use(
+        http.post('/api/v1/queue/', async ({ request }) => {
+          queueRequests.push((await request.json()) as { plate_id: number });
+          return HttpResponse.json({ id: queueRequests.length, status: 'pending' });
+        }),
+      );
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="create"
+          archiveId={1}
+          archiveName="MultiPlate.3mf"
+          preselectPlateId={preselectPlateId}
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+      await waitFor(() => {
+        expect(screen.getByText('Select All 3 Plates')).toBeInTheDocument();
+      });
+      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+      await waitFor(() => {
+        expect(queueRequests.length).toBe(1);
+      });
+      return queueRequests.map((r) => r.plate_id);
+    }
+
+    it('queues the pre-selected plate only', async () => {
+      expect(await submitAndCollect(3)).toEqual([3]);
+      expect(screen.getByTestId('selected-plates-summary')).toHaveTextContent('Plate 3');
+    });
+
+    it('falls back to the first plate when the file no longer has the pre-selected one', async () => {
+      expect(await submitAndCollect(9)).toEqual([1]);
+    });
+
+    it('names the selected plates beside the buttons, with their names', async () => {
+      server.use(
+        http.get('/api/v1/archives/:id/plates', () =>
+          HttpResponse.json({
+            ...multiPlateResponse,
+            plates: multiPlateResponse.plates.map((p) => (p.index === 2 ? { ...p, name: 'Lid' } : p)),
+          }),
+        ),
+      );
+      const user = userEvent.setup();
+      render(
+        <PrintModal mode="create" archiveId={1} archiveName="MultiPlate.3mf" preselectPlateId={2} onClose={mockOnClose} />
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId('selected-plates-summary')).toHaveTextContent('Plate 2 – Lid');
+      });
+      await user.click(screen.getByText('Plate 3'));
+      expect(screen.getByTestId('selected-plates-summary')).toHaveTextContent('Plate 2 – Lid, Plate 3');
+    });
+
+    it('scrolls the pre-selected plate into view', async () => {
+      const scrolled: string[] = [];
+      const original = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = function (this: Element) {
+        scrolled.push(this.textContent ?? '');
+      };
+      try {
+        render(
+          <PrintModal mode="create" archiveId={1} archiveName="MultiPlate.3mf" preselectPlateId={3} onClose={mockOnClose} />
+        );
+        await waitFor(() => {
+          expect(scrolled.length).toBe(1);
+        });
+        expect(scrolled[0]).toContain('Part C');
+        // Once: picking another plate doesn't move the list again.
+        await userEvent.setup().click(screen.getByText('Plate 1'));
+        expect(scrolled.length).toBe(1);
+      } finally {
+        Element.prototype.scrollIntoView = original;
+      }
+    });
+
     it('creates one queue item per plate when submitting with select-all', async () => {
       const queueRequests: unknown[] = [];
       server.use(

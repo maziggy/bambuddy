@@ -357,7 +357,9 @@ class TestACustomPresetsOwnFilamentId:
                 slicer_filament_name=None,
                 material="PLA",
             )
-        assert idx == "GFNLS03"
+        # SUNLU PLA+'s own id: its setting_id does not follow the "drop the S"
+        # rule, which gave "GFNLS03", an id no profile has (#3387).
+        assert idx == "GFSNL03"
         assert sid == "PFUSfb87cd50b76616"
 
 

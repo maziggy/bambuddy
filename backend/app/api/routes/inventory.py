@@ -1,5 +1,6 @@
 import json
 import logging
+from contextlib import AsyncExitStack
 from datetime import date, datetime, timezone
 
 import httpx
@@ -69,7 +70,7 @@ from backend.app.schemas.supplier import (
     SupplierUpdate,
 )
 from backend.app.services import filament_profile_default as profile_defaults, slot_unlink_grace, spool_swaps
-from backend.app.services.ams_assignment_lock import get_ams_assignment_lock
+from backend.app.services.ams_assignment_lock import get_ams_assignment_lock, get_spool_move_lock
 from backend.app.services.ams_slot_presence import spool_present
 from backend.app.services.location_service import (
     DUPLICATE_LOCATION_NAME,
@@ -2424,6 +2425,12 @@ async def list_assignments(
     return responses
 
 
+async def _printers_holding_spool(db: AsyncSession, spool_id: int, printer_scope: PrinterScope) -> set[int]:
+    """The printers in the caller's scope with a slot assigned to the spool."""
+    held = await db.execute(select(SpoolAssignment.printer_id).where(SpoolAssignment.spool_id == spool_id).distinct())
+    return {pid for pid in held.scalars() if printer_scope.allows(pid)}
+
+
 @router.post("/assignments", response_model=SpoolAssignmentResponse)
 async def assign_spool(
     data: SpoolAssignmentCreate,
@@ -2502,34 +2509,80 @@ async def assign_spool(
 
     # 3. Upsert assignment (replace if same printer+ams+tray), under the lock
     # the AMS change handler writes the printer's slots with.
-    async with get_ams_assignment_lock(data.printer_id):
-        existing = await db.execute(
-            select(SpoolAssignment).where(
-                SpoolAssignment.printer_id == data.printer_id,
-                SpoolAssignment.ams_id == data.ams_id,
-                SpoolAssignment.tray_id == data.tray_id,
+    #
+    # A move (#1574) also takes the spool out of every other slot it holds, in
+    # the same commit, so a failed move leaves it where it was instead of in no
+    # slot. Moves of one spool take turns (get_spool_move_lock): two at once
+    # would each read where the spool is before the other committed, and both
+    # assign it. The slots' printers are locked as well, in id order so two
+    # moves can't take the same two locks the other way round. Which printers
+    # those are is read again once the locks are held: a move served first, a
+    # plain assign or an AMS change may have put the spool on one more, and
+    # then this one lets go and locks the larger set. A slot on a printer
+    # outside the caller's scope stays assigned, as unassigning leaves it
+    # (#1727).
+    locked_printer_ids = {data.printer_id}
+    if data.move:
+        locked_printer_ids |= await _printers_holding_spool(db, data.spool_id, printer_scope)
+    vacated: list[tuple[int, int, int]] = []
+    while True:
+        async with AsyncExitStack() as locks:
+            if data.move:
+                await locks.enter_async_context(get_spool_move_lock("inventory", data.spool_id))
+            for pid in sorted(locked_printer_ids):
+                await locks.enter_async_context(get_ams_assignment_lock(pid))
+            if data.move:
+                holding = await _printers_holding_spool(db, data.spool_id, printer_scope)
+                if not holding <= locked_printer_ids:
+                    locked_printer_ids |= holding
+                    continue
+                others = await db.execute(
+                    select(SpoolAssignment).where(
+                        SpoolAssignment.spool_id == data.spool_id,
+                        SpoolAssignment.printer_id.in_(locked_printer_ids),
+                    )
+                )
+                for row in others.scalars().all():
+                    if (row.printer_id, row.ams_id, row.tray_id) != (data.printer_id, data.ams_id, data.tray_id):
+                        vacated.append((row.printer_id, row.ams_id, row.tray_id))
+                        await db.delete(row)
+            existing = await db.execute(
+                select(SpoolAssignment).where(
+                    SpoolAssignment.printer_id == data.printer_id,
+                    SpoolAssignment.ams_id == data.ams_id,
+                    SpoolAssignment.tray_id == data.tray_id,
+                )
             )
-        )
-        old = existing.scalar_one_or_none()
-        if old:
-            await db.delete(old)
-            await db.flush()
+            old = existing.scalar_one_or_none()
+            if old:
+                await db.delete(old)
+                await db.flush()
 
-        assignment = SpoolAssignment(
-            spool_id=data.spool_id,
-            printer_id=data.printer_id,
-            ams_id=data.ams_id,
-            tray_id=data.tray_id,
-            fingerprint_color=fingerprint_color,
-            fingerprint_type=fingerprint_type,
-        )
-        db.add(assignment)
-        await spool_swaps.record_assignment(
-            db, data.printer_id, data.ams_id, data.tray_id, data.spool_id, spool_swaps.INVENTORY
-        )
-        await db.commit()
+            assignment = SpoolAssignment(
+                spool_id=data.spool_id,
+                printer_id=data.printer_id,
+                ams_id=data.ams_id,
+                tray_id=data.tray_id,
+                fingerprint_color=fingerprint_color,
+                fingerprint_type=fingerprint_type,
+            )
+            db.add(assignment)
+            await spool_swaps.record_assignment(
+                db, data.printer_id, data.ams_id, data.tray_id, data.spool_id, spool_swaps.INVENTORY
+            )
+            await db.commit()
+        break
     await db.refresh(assignment)
     slot_unlink_grace.forget_slot(data.printer_id, data.ams_id, data.tray_id)
+    if vacated:
+        logger.info(
+            "Moved spool %d to printer %d AMS%d-T%d from %s",
+            spool.id,
+            data.printer_id,
+            data.ams_id,
+            data.tray_id,
+            ", ".join(f"printer {p} AMS{a}-T{t}" for p, a, t in vacated),
+        )
 
     # 4. Auto-configure AMS slot via MQTT.
     #
@@ -2645,14 +2698,15 @@ async def assign_spool(
             data.tray_id,
         )
 
-    await ws_manager.broadcast(
-        {
-            "type": "spool_assignment_changed",
-            "printer_id": data.printer_id,
-            "ams_id": data.ams_id,
-            "tray_id": data.tray_id,
-        }
-    )
+    for printer_id, ams_id, tray_id in [*vacated, (data.printer_id, data.ams_id, data.tray_id)]:
+        await ws_manager.broadcast(
+            {
+                "type": "spool_assignment_changed",
+                "printer_id": printer_id,
+                "ams_id": ams_id,
+                "tray_id": tray_id,
+            }
+        )
 
     return response
 

@@ -6,7 +6,7 @@ import { Layers, Settings2, Package, Unlink, Link2, X } from 'lucide-react';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { api } from '../../api/client';
 import type { PrinterStatus, AMSTray, SpoolAssignment } from '../../api/client';
-import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, formatSlotLabel, isBambuLabSpool, resolveSlotNozzleDiameter, slotPresetDescribesTray } from '../../utils/amsHelpers';
+import { getGlobalTrayId, getEmptySlotKind, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, formatSlotLabel, isBambuLabSpool, resolveSlotNozzleDiameter, slotPresetDescribesTray } from '../../utils/amsHelpers';
 import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
 import { mapModelCode } from '../../utils/printerModel';
 import { spoolSwatchStyle } from '../../components/spoolbuddy/spoolPaint';
@@ -273,7 +273,7 @@ export function SpoolBuddyAmsPage() {
     printerId: number;
     amsId: number;
     trayId: number;
-    trayInfo: { type: string; material?: string; profile?: string; color: string; location: string };
+    trayInfo: { type: string; material?: string; profile?: string; color: string; location: string; emptyKind?: 'physical' | 'reset' | null };
   } | null>(null);
 
   // Link spool modal state (Spoolman)
@@ -432,7 +432,7 @@ export function SpoolBuddyAmsPage() {
 
   const openAssignFromPicker = useCallback(() => {
     if (!slotActionPicker || !selectedPrinterId) return;
-    const { amsId, trayId, trayType, trayColor, location } = slotActionPicker;
+    const { amsId, trayId, tray, trayType, trayColor, location } = slotActionPicker;
     setSlotActionPicker(null);
     setAssignSpoolModal({
       printerId: selectedPrinterId,
@@ -443,6 +443,7 @@ export function SpoolBuddyAmsPage() {
         material: trayType,
         color: trayColor?.slice(0, 6) || '',
         location,
+        emptyKind: getEmptySlotKind(tray),
       },
     });
   }, [slotActionPicker, selectedPrinterId]);

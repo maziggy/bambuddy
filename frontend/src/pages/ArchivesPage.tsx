@@ -1567,6 +1567,7 @@ function ArchiveCard({
           mode="create"
           archiveId={archive.id}
           archiveName={archive.print_name || archive.filename}
+          preselectPlateId={archive.plate_id}
           onClose={() => setShowReprint(false)}
         />
       )}
@@ -2696,6 +2697,7 @@ function ArchiveListRow({
           mode="create"
           archiveId={archive.id}
           archiveName={archive.print_name || archive.filename}
+          preselectPlateId={archive.plate_id}
           onClose={() => setShowReprint(false)}
         />
       )}

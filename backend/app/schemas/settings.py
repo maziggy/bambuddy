@@ -894,7 +894,7 @@ class AppSettingsUpdate(BaseModel):
     octoeverywhere_api_key: str | None = None
     # Unset fields default to None; the settings route rejects an explicit null
     # for numeric settings before it can be stored.
-    octoeverywhere_poll_interval: int | None = Field(default=None, ge=5, le=30, strict=True)
+    octoeverywhere_poll_interval: int | None = Field(default=None, ge=5, le=30)
     octoeverywhere_confidence: str | None = None
     octoeverywhere_action: str | None = None
     octoeverywhere_enabled_printers: str | None = None

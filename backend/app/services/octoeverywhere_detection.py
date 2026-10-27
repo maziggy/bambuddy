@@ -199,7 +199,9 @@ class OctoEverywhereDetectionService:
 
     def __init__(self):
         self._task: asyncio.Task | None = None
+        self._running = False
         self._checks: dict[int, asyncio.Task] = {}
+        self._actions: set[asyncio.Task] = set()
         self._states: dict[int, _PrintState] = {}
         self._configuration: tuple[str, str] | None = None
         self._settings: dict | None = None
@@ -240,12 +242,14 @@ class OctoEverywhereDetectionService:
         self._refresh_last_error()
 
     async def start(self):
+        self._running = True
         if self._task is not None and not self._task.done():
             return
         logger.info("Starting OctoEverywhere detection service")
         self._task = asyncio.create_task(self._loop())
 
     def stop(self):
+        self._running = False
         if self._task:
             self._task.cancel()
             self._task = None
@@ -253,6 +257,9 @@ class OctoEverywhereDetectionService:
         for task in self._checks.values():
             task.cancel()
         self._checks.clear()
+        for task in self._actions:
+            task.cancel()
+        self._actions.clear()
         self._states.clear()
         self._generation += 1
         self._configuration = None
@@ -286,24 +293,27 @@ class OctoEverywhereDetectionService:
         self._settings = None
         generation = self._generation
         task = self._task
-        restart = task is not None and not task.done()
         self._task = None
-        if task is not None:
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
-        # Printer checks run independently of the loop, so cancel and drain
-        # them before applying settings or restarting the scheduler.
-        checks = [task for task in self._checks.values() if task is not asyncio.current_task()]
-        for task in checks:
-            task.cancel()
-        if checks:
-            await asyncio.gather(*checks, return_exceptions=True)
-        settings = await self._load_settings()
-        if self._generation == generation:
-            self._cache_settings(settings)
-            self._apply_settings(settings)
-        if restart and self._task is None:
-            await self.start()
+        try:
+            if task is not None:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            # Cancel stale inspections, but let already committed actions finish.
+            checks = [task for task in self._checks.values() if task is not asyncio.current_task()]
+            for task in checks:
+                task.cancel()
+            if checks:
+                await asyncio.gather(*checks, return_exceptions=True)
+            settings = await self._load_settings()
+            if self._generation == generation:
+                self._cache_settings(settings)
+                self._apply_settings(settings)
+        finally:
+            # A failed/cancelled refresh must not permanently stop detection.
+            # Lifecycle intent is separate from settings generations so stop()
+            # during this refresh cannot accidentally resurrect the scheduler.
+            if self._running and self._task is None:
+                await self.start()
 
     def _cache_settings(self, settings: dict):
         self._settings = settings
@@ -346,6 +356,7 @@ class OctoEverywhereDetectionService:
 
     async def _load_settings(self) -> dict:
         keys = [
+            "obico_enabled",
             "octoeverywhere_enabled",
             "octoeverywhere_api_key",
             "octoeverywhere_confidence",
@@ -378,7 +389,10 @@ class OctoEverywhereDetectionService:
             poll_interval = DEFAULT_POLL_INTERVAL
 
         return {
-            "enabled": rows.get("octoeverywhere_enabled", "false").lower() == "true",
+            # Restores can bypass PUT /settings and leave both flags enabled.
+            # Refuse to act while the other provider is enabled as well.
+            "enabled": rows.get("octoeverywhere_enabled", "false").lower() == "true"
+            and rows.get("obico_enabled", "false").lower() != "true",
             "api_key": (rows.get("octoeverywhere_api_key") or "").strip(),
             "confidence": rows.get("octoeverywhere_confidence", "medium"),
             "action": rows.get("octoeverywhere_action", "notify"),
@@ -752,16 +766,51 @@ class OctoEverywhereDetectionService:
             # A pause or power cut always notifies, even after a warning: the
             # user needs to know the printer stopped. Notify-only would just
             # repeat the warning, so it stays silent.
-            if action != "notify" or not state.warning_fired:
-                await self._dispatch_action(printer_id, action, task_name, print_quality, frame)
-            state.action_fired = True
-            state.warning_fired = True
+            if action == "notify" and state.warning_fired:
+                state.action_fired = True
+                return
         elif warning and not state.warning_fired:
-            await self._dispatch_action(printer_id, "notify", task_name, print_quality, frame)
-            state.warning_fired = True
+            action = "notify"
+        else:
+            return
+
+        # Preparation is still cancellable: a print/settings change before any
+        # side effect must prevent stale hardware control.
+        printer_name = await self._prepare_action(printer_id)
+        if not self._is_current(printer_id, state, status, generation):
+            return
+        # Once committed, a pause/disconnect or autosave must neither interrupt
+        # the remaining plug-off/notification nor make this print act twice.
+        state.action_fired = state.action_fired or pause
+        state.warning_fired = True
+        action_task = asyncio.create_task(
+            self._dispatch_action(printer_id, action, task_name, print_quality, frame, printer_name=printer_name)
+        )
+        self._actions.add(action_task)
+        action_task.add_done_callback(self._action_done)
+        await asyncio.shield(action_task)
+
+    async def _prepare_action(self, printer_id: int) -> str:
+        from backend.app.services.obico_actions import _get_printer_name
+
+        return await _get_printer_name(printer_id)
+
+    def _action_done(self, task: asyncio.Task):
+        self._actions.discard(task)
+        if not task.cancelled():
+            error = task.exception()
+            if error is not None:
+                logger.error("OctoEverywhere action task failed: %s", type(error).__name__)
 
     async def _dispatch_action(
-        self, printer_id: int, action: str, task_name: str, print_quality: int, frame: bytes | None = None
+        self,
+        printer_id: int,
+        action: str,
+        task_name: str,
+        print_quality: int,
+        frame: bytes | None = None,
+        *,
+        printer_name: str | None = None,
     ):
         from backend.app.services.octoeverywhere_actions import execute_action
 
@@ -769,7 +818,7 @@ class OctoEverywhereDetectionService:
             "OctoEverywhere: print issue on printer %s (quality=%s) — action=%s", printer_id, print_quality, action
         )
         try:
-            await execute_action(printer_id, action, task_name, print_quality, frame)
+            await execute_action(printer_id, action, task_name, print_quality, frame, printer_name=printer_name)
         except Exception as exc:
             self._set_last_error("OctoEverywhere could not execute the configured failure action.")
             logger.error("OctoEverywhere action dispatch failed: %s", type(exc).__name__)

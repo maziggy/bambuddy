@@ -90,9 +90,11 @@ async def test_write_only_key_preserved_replaced_and_removed(async_client):
 
 
 @pytest.mark.integration
-async def test_fixed_interval_round_trip(async_client):
+@pytest.mark.parametrize("as_text", [False, True])
+async def test_fixed_interval_round_trip(async_client, as_text):
     for interval in (5, 30, 20):
-        response = await async_client.put("/api/v1/settings/", json={"octoeverywhere_poll_interval": interval})
+        value = str(interval) if as_text else interval
+        response = await async_client.put("/api/v1/settings/", json={"octoeverywhere_poll_interval": value})
         assert response.status_code == 200
         assert response.json()["octoeverywhere_poll_interval"] == interval
         settings = (await async_client.get("/api/v1/settings/")).json()
@@ -171,7 +173,10 @@ async def test_rejects_two_enabled_providers(async_client):
         {"octoeverywhere_poll_interval": 5.5},
         {"octoeverywhere_poll_interval": True},
         {"octoeverywhere_poll_interval": None},
-        {"octoeverywhere_poll_interval": "20"},
+        {"octoeverywhere_poll_interval": "4"},
+        {"octoeverywhere_poll_interval": "31"},
+        {"octoeverywhere_poll_interval": "5.5"},
+        {"octoeverywhere_poll_interval": "invalid"},
     ],
 )
 async def test_invalid_settings_rejected(async_client, payload):

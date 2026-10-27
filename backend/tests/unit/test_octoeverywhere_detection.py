@@ -92,6 +92,7 @@ async def poll_once(detector, configuration):
 def detector():
     service = OctoEverywhereDetectionService()
     service._capture_frame = AsyncMock(return_value=FAKE_JPEG)
+    service._prepare_action = AsyncMock(return_value="Printer")
     service._dispatch_action = AsyncMock()
     return service
 
@@ -524,7 +525,9 @@ class TestProcessing:
             httpx.Response(200, json=process_payload(PauseSuggested=True, PrintQuality=2)),
         ]
         await detector._check_printer(1, printer_status(), settings(action="pause"))
-        detector._dispatch_action.assert_awaited_once_with(1, "pause", "test-print", 2, FAKE_JPEG)
+        detector._dispatch_action.assert_awaited_once_with(
+            1, "pause", "test-print", 2, FAKE_JPEG, printer_name="Printer"
+        )
 
     @pytest.mark.parametrize("action", ["pause", "pause_and_off"])
     async def test_pause_after_warning_sends_its_own_notification(self, detector, http_client, clock, action):
@@ -1004,7 +1007,9 @@ class TestFasterInspectionTiming:
         assert state.frame_count == 2
         assert state.error is None
         assert state.verdict == "warning"
-        detector._dispatch_action.assert_awaited_once_with(1, "notify", "test-print", 4, FAKE_JPEG)
+        detector._dispatch_action.assert_awaited_once_with(
+            1, "notify", "test-print", 4, FAKE_JPEG, printer_name="Printer"
+        )
         assert "private-recommendation" not in "\n".join(
             record.message for record in caplog.records if record.name == MODULE
         )
@@ -2462,6 +2467,81 @@ class TestLifecycle:
         detector._poll_once.assert_awaited_once_with(updated)
         assert detector._settings is updated
 
+    @pytest.mark.parametrize("failure", ["error", "cancel"])
+    async def test_failed_refresh_restarts_scheduler_and_reloads_settings(self, detector, failure):
+        polled = asyncio.Event()
+        loading = asyncio.Event()
+        detector._load_settings = AsyncMock(return_value=settings())
+        detector._poll_once = AsyncMock(side_effect=lambda configuration: polled.set())
+        await detector.start()
+        await asyncio.wait_for(polled.wait(), timeout=1)
+        polled.clear()
+        updated = settings(action="pause")
+
+        async def load_settings():
+            if detector._load_settings.await_count == 1:
+                if failure == "error":
+                    raise RuntimeError("database temporarily unavailable")
+                loading.set()
+                await asyncio.Event().wait()
+            return updated
+
+        detector._load_settings = AsyncMock(side_effect=load_settings)
+        refresh = asyncio.create_task(detector.refresh_settings())
+        try:
+            if failure == "cancel":
+                await asyncio.wait_for(loading.wait(), timeout=1)
+                refresh.cancel()
+            with pytest.raises(RuntimeError if failure == "error" else asyncio.CancelledError):
+                await refresh
+            await asyncio.wait_for(polled.wait(), timeout=1)
+            assert detector.get_status()["is_running"] is True
+            assert detector._settings is updated
+            assert detector._load_settings.await_count == 2
+        finally:
+            task = detector._task
+            detector.stop()
+            await asyncio.gather(task, return_exceptions=True)
+
+    @pytest.mark.parametrize("failure", ["none", "error", "cancel"])
+    async def test_stop_during_refresh_never_restarts_scheduler(self, detector, failure):
+        polled = asyncio.Event()
+        loading = asyncio.Event()
+        release = asyncio.Event()
+        detector._load_settings = AsyncMock(return_value=settings())
+        detector._poll_once = AsyncMock(side_effect=lambda configuration: polled.set())
+        await detector.start()
+        await asyncio.wait_for(polled.wait(), timeout=1)
+
+        async def load_settings():
+            loading.set()
+            await release.wait()
+            if failure == "error":
+                raise RuntimeError("database temporarily unavailable")
+            return settings()
+
+        detector._load_settings = AsyncMock(side_effect=load_settings)
+        refresh = asyncio.create_task(detector.refresh_settings())
+        await asyncio.wait_for(loading.wait(), timeout=1)
+        detector.stop()
+        if failure == "cancel":
+            refresh.cancel()
+        release.set()
+        results = await asyncio.gather(refresh, return_exceptions=True)
+        if failure == "error":
+            assert isinstance(results[0], RuntimeError)
+        elif failure == "cancel":
+            assert isinstance(results[0], asyncio.CancelledError)
+        assert detector._task is None
+        assert detector._settings is None
+        assert detector.get_status()["is_running"] is False
+
+    async def test_refresh_of_stopped_service_does_not_start_scheduler(self, detector):
+        detector._load_settings = AsyncMock(return_value=settings())
+        await detector.refresh_settings()
+        assert detector._task is None
+        assert detector.get_status()["is_running"] is False
+
     async def test_concurrent_refresh_keeps_the_latest_settings_in_cache(self, detector, clock):
         loading = asyncio.Event()
         release = asyncio.Event()
@@ -2511,6 +2591,186 @@ class TestLifecycle:
         detector.stop()
         await asyncio.gather(task, return_exceptions=True)
 
+    async def test_overlapping_refreshes_keep_one_scheduler_and_latest_settings(self, detector):
+        loading = asyncio.Event()
+        release = asyncio.Event()
+        updated = settings(action="pause")
+
+        async def loop():
+            await asyncio.Event().wait()
+
+        async def load_settings():
+            if detector._load_settings.await_count == 1:
+                loading.set()
+                await release.wait()
+                return settings()
+            return updated
+
+        detector._loop = AsyncMock(side_effect=loop)
+        detector._load_settings = AsyncMock(side_effect=load_settings)
+        await detector.start()
+        await asyncio.sleep(0)
+        refresh = asyncio.create_task(detector.refresh_settings())
+        try:
+            await asyncio.wait_for(loading.wait(), timeout=1)
+            await detector.refresh_settings()
+            replacement = detector._task
+            release.set()
+            await asyncio.wait_for(refresh, timeout=1)
+            assert detector._task is replacement
+            assert detector._settings is updated
+            assert detector._loop.await_count == 2
+        finally:
+            release.set()
+            task = detector._task
+            detector.stop()
+            await asyncio.gather(refresh, task, return_exceptions=True)
+
+    @pytest.mark.parametrize(
+        "action, blocked_stage, change",
+        [
+            ("notify", "notification", "refresh"),
+            ("pause", "notification", "pause"),
+            ("pause_and_off", "plug", "pause"),
+            ("pause_and_off", "plug", "disconnect"),
+            ("pause_and_off", "notification", "disconnect"),
+            ("pause_and_off", "notification", "refresh"),
+        ],
+    )
+    async def test_committed_action_finishes_once_despite_check_cancellation(
+        self, detector, http_client, manager, clock, action, blocked_stage, change
+    ):
+        blocked = asyncio.Event()
+        release = asyncio.Event()
+        configuration = settings(action=action)
+        detector._dispatch_action = OctoEverywhereDetectionService._dispatch_action.__get__(detector)
+        verdict = {"WarningSuggested": True} if action == "notify" else {"PauseSuggested": True}
+        http_client.post.side_effect = [
+            httpx.Response(200, json=context_payload()),
+            httpx.Response(200, json=process_payload(**verdict)),
+            httpx.Response(200, json=process_payload(**verdict)),
+        ]
+
+        async def wait_at_stage(stage):
+            if stage == blocked_stage:
+                blocked.set()
+                await release.wait()
+
+        with (
+            patch("backend.app.services.obico_actions._get_printer_name", new_callable=AsyncMock) as lookup,
+            patch("backend.app.services.obico_actions._pause_print") as pause,
+            patch(
+                "backend.app.services.obico_actions._turn_off_linked_plugs",
+                new_callable=AsyncMock,
+            ) as off,
+            patch("backend.app.services.obico_actions._notify", new_callable=AsyncMock) as notify,
+        ):
+
+            async def turn_off(*args):
+                await wait_at_stage("plug")
+
+            async def send_notification(*args, **kwargs):
+                await wait_at_stage("notification")
+
+            off.side_effect = turn_off
+            notify.side_effect = send_notification
+            poll = asyncio.create_task(poll_once(detector, configuration))
+            try:
+                await asyncio.wait_for(blocked.wait(), timeout=1)
+                committed = tuple(detector._actions)
+                assert len(committed) == 1
+                assert detector._states[1].warning_fired is True
+                assert detector._states[1].action_fired is (action != "notify")
+                if change == "refresh":
+                    detector._load_settings = AsyncMock(return_value=configuration)
+                    await detector.refresh_settings()
+                else:
+                    if change == "pause":
+                        manager.get_all_statuses.return_value[1].state = "PAUSE"
+                    else:
+                        manager.is_connected.return_value = False
+                    await detector._poll_once(configuration)
+                await asyncio.wait_for(poll, timeout=1)
+                assert not committed[0].done()
+
+                # Resuming/reconnecting the same print, or the next autosaved
+                # warning assessment, must not enqueue the action again.
+                manager.get_all_statuses.return_value[1].state = "RUNNING"
+                manager.is_connected.return_value = True
+                clock.return_value = 140
+                await poll_once(detector, configuration)
+                assert tuple(detector._actions) == committed
+                release.set()
+                await asyncio.wait_for(asyncio.gather(*committed), timeout=1)
+                assert detector._actions == set()
+                lookup.assert_not_awaited()
+                assert pause.call_count == (action != "notify")
+                assert off.await_count == (action == "pause_and_off")
+                notify.assert_awaited_once()
+            finally:
+                release.set()
+                remaining_actions = tuple(detector._actions)
+                detector.stop()
+                await asyncio.gather(poll, *remaining_actions, return_exceptions=True)
+
+    @pytest.mark.parametrize("change", ["pause", "new_print", "settings"])
+    async def test_action_preparation_rechecks_print_before_committing(self, detector, http_client, change):
+        status = printer_status()
+
+        async def prepare(printer_id):
+            if change == "pause":
+                status.state = "PAUSE"
+            elif change == "new_print":
+                status.subtask_id = "print-2"
+            else:
+                detector._generation += 1
+            return "Printer"
+
+        detector._prepare_action.side_effect = prepare
+        http_client.post.side_effect = [
+            httpx.Response(200, json=context_payload()),
+            httpx.Response(200, json=process_payload(PauseSuggested=True)),
+        ]
+        await detector._check_printer(1, status, settings(action="pause_and_off"))
+        detector._dispatch_action.assert_not_awaited()
+        assert detector._states[1].warning_fired is False
+        assert detector._states[1].action_fired is False
+        assert detector._actions == set()
+
+    async def test_stop_cancels_owned_action_and_cleans_up(self, detector, http_client, manager):
+        started = asyncio.Event()
+
+        async def dispatch(*args, **kwargs):
+            started.set()
+            await asyncio.Event().wait()
+
+        detector._dispatch_action.side_effect = dispatch
+        http_client.post.side_effect = [
+            httpx.Response(200, json=context_payload()),
+            httpx.Response(200, json=process_payload(PauseSuggested=True)),
+        ]
+        poll = asyncio.create_task(poll_once(detector, settings(action="pause")))
+        await asyncio.wait_for(started.wait(), timeout=1)
+        actions = tuple(detector._actions)
+        detector.stop()
+        await asyncio.wait_for(asyncio.gather(poll, *actions, return_exceptions=True), timeout=1)
+        assert actions[0].cancelled()
+        assert detector._actions == set()
+
+    async def test_action_failure_is_reported_and_owned_task_is_removed(self, detector, http_client, manager):
+        detector._dispatch_action = OctoEverywhereDetectionService._dispatch_action.__get__(detector)
+        http_client.post.side_effect = [
+            httpx.Response(200, json=context_payload()),
+            httpx.Response(200, json=process_payload(PauseSuggested=True)),
+        ]
+        with patch(
+            "backend.app.services.octoeverywhere_actions.execute_action", side_effect=RuntimeError("action failed")
+        ):
+            await poll_once(detector, settings(action="pause"))
+        assert detector._actions == set()
+        assert detector._states[1].action_fired is True
+        assert detector.get_status()["last_error"] == "OctoEverywhere could not execute the configured failure action."
+
     @pytest.mark.parametrize("change", ["print_ended", "disabled", "key_changed", "account_blocked"])
     async def test_cancel_during_action_lookup_prevents_hardware_control(
         self, detector, http_client, manager, clock, change
@@ -2528,6 +2788,7 @@ class TestLifecycle:
 
         # Exercise the real action dispatcher: its printer-name database lookup
         # awaits before pause/power-off, which used to leave a cancellation gap.
+        detector._prepare_action = OctoEverywhereDetectionService._prepare_action.__get__(detector)
         detector._dispatch_action = OctoEverywhereDetectionService._dispatch_action.__get__(detector)
         http_client.post.side_effect = [
             httpx.Response(200, json=context_payload()),

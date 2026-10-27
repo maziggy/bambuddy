@@ -150,6 +150,7 @@ class ObicoDetectionService:
     async def _load_settings(self) -> dict:
         keys = [
             "obico_enabled",
+            "octoeverywhere_enabled",
             "obico_ml_url",
             "bambuddy_internal_url",
             "obico_ml_token",
@@ -173,7 +174,10 @@ class ObicoDetectionService:
             enabled_printers = None  # None = all printers
 
         return {
-            "enabled": rows.get("obico_enabled", "false").lower() == "true",
+            # Restores can bypass PUT /settings's provider selection. A
+            # conflicting configuration must never start both detectors.
+            "enabled": rows.get("obico_enabled", "false").lower() == "true"
+            and rows.get("octoeverywhere_enabled", "false").lower() != "true",
             "ml_url": (rows.get("obico_ml_url") or "").rstrip("/"),
             "ml_token": (rows.get("obico_ml_token") or "").strip(),
             "sensitivity": rows.get("obico_sensitivity", "medium"),

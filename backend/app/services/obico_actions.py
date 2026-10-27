@@ -21,6 +21,7 @@ async def execute_action(
     frame: bytes | None = None,
     *,
     print_quality: int | None = None,
+    printer_name: str | None = None,
 ) -> None:
     """Run the configured action for a detected print failure.
 
@@ -28,7 +29,10 @@ async def execute_action(
     frame: the camera snapshot the ML model flagged, if any — attached to
         the notification so the recipient can see what triggered it.
     """
-    printer_name = await _get_printer_name(printer_id)
+    # OctoEverywhere resolves the name before committing an action so stale
+    # checks can still be cancelled before any hardware control begins.
+    if printer_name is None:
+        printer_name = await _get_printer_name(printer_id)
 
     if action in ("pause", "pause_and_off"):
         _pause_print(printer_id)

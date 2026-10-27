@@ -2880,7 +2880,10 @@ export default {
     styleVibrant: "Яскравий",
     themeToggleHint: "Перемикайтеся між темним, світлим і системним режимами за допомогою значка на бічній панелі.",
     progressInTitle: "Прогрес у вкладці",
-    progressInTitleDescription: "Показує відсоток активного друку та кільце прогресу на вкладці браузера.",
+    progressInTitleDescription: 'Показувати перебіг активного друку у вкладці браузера та на значку сайту.',
+    tabDisplay: 'Вигляд вкладки',
+    tabDisplayPercentage: 'Відсоток',
+    tabDisplayTime: 'Час до завершення',
     // Archive
     autoArchivePrints: "Автоматично архівувати друки",
     autoArchiveDescription: "Автоматично зберігати файли 3MF після завершення друку. Якщо вимкнено, жоден принтер не архівує друк, запущений не з Bambuddy.",

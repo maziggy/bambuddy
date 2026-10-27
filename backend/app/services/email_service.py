@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formataddr, formatdate, make_msgid, parseaddr
 from typing import Any
 
 from sqlalchemy import select
@@ -174,6 +175,24 @@ async def save_smtp_settings(db: AsyncSession, smtp_settings: SMTPSettings) -> N
         await upsert_setting(db, Settings, key, value)
 
 
+def add_required_headers(msg: MIMEMultipart, from_email: str) -> None:
+    """Add the Date and Message-ID headers RFC 5322 requires (#3376).
+
+    Neither smtplib nor the MIME classes add them, and strict receivers
+    (amavis's bad_header policy) quarantine mail without a Date after the
+    SMTP server already accepted it. The Message-ID domain comes from the
+    sender address; without one, make_msgid() would look up the container's
+    hostname, which can block on DNS and leaks an internal name.
+    """
+    _local, at, domain = parseaddr(from_email)[1].rpartition("@")
+    if not at or not domain:
+        domain = "bambuddy.local"
+    if "Date" not in msg:
+        msg["Date"] = formatdate(localtime=True)
+    if "Message-ID" not in msg:
+        msg["Message-ID"] = make_msgid(domain=domain)
+
+
 def send_email(
     smtp_settings: SMTPSettings,
     to_email: str,
@@ -203,7 +222,7 @@ def send_email(
         # multipart/related wraps multipart/alternative so the inline image
         # travels with the HTML part without becoming a visible attachment.
         msg = MIMEMultipart("related")
-        msg["From"] = f"{smtp_settings.smtp_from_name} <{smtp_settings.smtp_from_email}>"
+        msg["From"] = formataddr((smtp_settings.smtp_from_name, smtp_settings.smtp_from_email))
         msg["To"] = to_email
         msg["Subject"] = subject
 
@@ -218,7 +237,7 @@ def send_email(
         msg.attach(img)
     else:
         msg = MIMEMultipart("alternative")
-        msg["From"] = f"{smtp_settings.smtp_from_name} <{smtp_settings.smtp_from_email}>"
+        msg["From"] = formataddr((smtp_settings.smtp_from_name, smtp_settings.smtp_from_email))
         msg["To"] = to_email
         msg["Subject"] = subject
 
@@ -228,6 +247,8 @@ def send_email(
         # Attach HTML part if provided
         if body_html:
             msg.attach(MIMEText(body_html, "html"))
+
+    add_required_headers(msg, smtp_settings.smtp_from_email)
 
     # Send email
     try:
@@ -258,7 +279,7 @@ def send_email(
                 if auth_enabled and smtp_settings.smtp_password and smtp_settings.smtp_username:
                     server.login(smtp_settings.smtp_username, smtp_settings.smtp_password)
                 server.send_message(msg)
-        logger.info(f"Email sent successfully to {to_email}")
+        logger.info(f"Email accepted by SMTP server for {to_email}")
     except Exception as e:
         logger.error(f"Failed to send email to {to_email}: {e}")
         raise

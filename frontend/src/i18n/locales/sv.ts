@@ -2882,7 +2882,10 @@ export default {
     styleVibrant: 'Livfull',
     themeToggleHint: 'Växla mellan mörkt, ljust och systemläge med ikonen i sidomenyn.',
     progressInTitle: 'Utskriftsförlopp i flik',
-    progressInTitleDescription: 'Visa den aktiva utskriftens procentförlopp och en ring i webbläsarfliken.',
+    progressInTitleDescription: 'Visa förloppet för den aktiva utskriften i webbläsarfliken och favikonen.',
+    tabDisplay: 'Flikvisning',
+    tabDisplayPercentage: 'Procent',
+    tabDisplayTime: 'Återstående tid',
     // Archive
     autoArchivePrints: 'Auto-arkivera utskrifter',
     autoArchiveDescription: 'Spara automatiskt 3MF-filer när utskrifter slutförs. Av: ingen skrivare arkiverar utskrifter som startats utanför Bambuddy.',

@@ -131,6 +131,16 @@ _STOCK_ALERTS_SETTING_KEY = "stock_alerts_notified"
 _STOCK_FORECAST_HISTORY_LIMIT = 5000
 
 
+def _spoolman_time(value: object) -> datetime | None:
+    """A Spoolman ISO timestamp, or None when missing or unreadable."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 def _remaining_percent(label_weight: int | float | None, weight_used: float | None) -> float | None:
     """Remaining filament as a percentage of the label weight.
 
@@ -5760,7 +5770,14 @@ class PrintScheduler:
     async def _stock_spools_internal(self, db: AsyncSession) -> list[stock_forecast.StockSpool]:
         from backend.app.models.spool import Spool
 
-        rows = (await db.execute(select(Spool).where(Spool.archived_at.is_(None)))).scalars().all()
+        # Stock, and the spools archived recently enough to count towards the
+        # rate (stock_forecast.archived_counts decides; this only trims the read).
+        cutoff = utcnow_naive() - timedelta(days=stock_forecast.ARCHIVED_RATE_WINDOW_DAYS + 1)
+        rows = (
+            (await db.execute(select(Spool).where(or_(Spool.archived_at.is_(None), Spool.archived_at >= cutoff))))
+            .scalars()
+            .all()
+        )
         return [
             stock_forecast.StockSpool(
                 id=spool.id,
@@ -5772,6 +5789,7 @@ class PrintScheduler:
                 weight_used=float(spool.weight_used or 0),
                 weight_used_baseline=float(spool.weight_used_baseline or 0),
                 created_at=spool.created_at,
+                archived_at=spool.archived_at,
             )
             for spool in rows
         ]
@@ -5798,9 +5816,10 @@ class PrintScheduler:
     async def _stock_spools_spoolman(self) -> list[stock_forecast.StockSpool] | None:
         """Spoolman's spools in the forecast's shape, or None when Spoolman cannot be reached.
 
-        ``get_all_spools`` leaves archived spools out unless asked, which is the
-        exclusion the internal query applies explicitly. ``_map_spoolman_spool``
-        is the same mapping the Inventory page (and so the panel) reads.
+        Archived ones too: a recently used-up spool counts towards its SKU's
+        rate (#3399). ``_map_spoolman_spool`` is the same mapping the Inventory
+        page (and so the panel) reads; it dates archiving by the spool's last
+        use, as Spoolman records no archive date.
         """
         from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
         from backend.app.services.spoolman import SpoolmanUnavailableError, get_spoolman_client
@@ -5810,7 +5829,7 @@ class PrintScheduler:
             logger.debug("Stock forecast skipped, no Spoolman client (spoolman_enabled without a URL?)")
             return None
         try:
-            raw_spools = await client.get_all_spools()
+            raw_spools = await client.get_all_spools(allow_archived=True)
         except SpoolmanUnavailableError as e:
             logger.debug("Stock forecast skipped, Spoolman unreachable: %s", e)
             return None
@@ -5821,12 +5840,12 @@ class PrintScheduler:
                 mapped = _map_spoolman_spool(raw)
             except ValueError:
                 continue
-            created_at = None
-            if mapped.get("created_at"):
-                try:
-                    created_at = datetime.fromisoformat(str(mapped["created_at"]).replace("Z", "+00:00"))
-                except ValueError:
-                    created_at = None
+            created_at = _spoolman_time(mapped.get("created_at"))
+            archived_at = None
+            if raw.get("archived"):
+                # Archived without a date to tell when: not stock, and too old to
+                # count towards the rate.
+                archived_at = _spoolman_time(mapped.get("archived_at")) or datetime(1970, 1, 1, tzinfo=timezone.utc)
             spools.append(
                 stock_forecast.StockSpool(
                     id=mapped["id"],
@@ -5838,6 +5857,7 @@ class PrintScheduler:
                     weight_used=float(mapped.get("weight_used") or 0),
                     weight_used_baseline=float(mapped.get("weight_used_baseline") or 0),
                     created_at=created_at,
+                    archived_at=archived_at,
                     color_name_is_synthesized=bool(mapped.get("color_name_is_synthesized")),
                 )
             )

@@ -27,6 +27,7 @@ from backend.app.models.notification import (
     TelegramPendingVerdict,
 )
 from backend.app.models.notification_template import NotificationTemplate
+from backend.app.services.email_service import add_required_headers
 from backend.app.services.notify_client import NotifyClient, NotifyError, notify_credentials, notify_supports_photos
 from backend.app.services.print_confirmation import one_tap_url
 from backend.app.utils.notification_photos import save_notification_photo
@@ -1020,6 +1021,8 @@ class NotificationService:
                 msg["To"] = to_email
                 msg["Subject"] = f"[Bambuddy] {subject}"
                 msg.attach(MIMEText(body, "plain"))
+
+            add_required_headers(msg, from_email)
 
             # smtplib is synchronous and blocking: a wedged / greylisting /
             # firewall-dropped relay leaves recv() stuck. Two problems, two

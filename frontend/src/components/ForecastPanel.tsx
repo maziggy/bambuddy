@@ -18,6 +18,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useUiSettings } from '../hooks/useUiSettings';
 import { ConfirmModal } from './ConfirmModal';
+import { parseUTCDate } from '../utils/date';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -27,7 +28,21 @@ interface SkuGroup {
   subtype: string | null;
   brand: string | null;
   colorName: string | null;
+  /** The SKU's stock: its spools that are not archived. */
   spools: InventorySpool[];
+  /** Spools archived in the last ARCHIVED_RATE_WINDOW_DAYS: no stock, but what
+   *  they were used for counts towards the rate (#3399). */
+  usedUp: InventorySpool[];
+}
+
+// An archived spool counts towards its SKU's rate for this long after it was
+// archived; older ones would stretch the estimate over years and dilute it.
+// Same as stock_forecast.ARCHIVED_RATE_WINDOW_DAYS in the backend.
+const ARCHIVED_RATE_WINDOW_DAYS = 90;
+
+function archivedCounts(archivedAt: string, now: number): boolean {
+  const at = parseUTCDate(archivedAt)?.getTime();
+  return at !== undefined && !Number.isNaN(at) && now - at <= ARCHIVED_RATE_WINDOW_DAYS * 86400000;
 }
 
 interface SkuForecast {
@@ -64,6 +79,14 @@ const CHART_COLORS = ['#1DB954', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
 
 function skuKey(material: string, subtype: string | null, brand: string | null, colorName: string | null) {
   return `${material}||${subtype ?? ''}||${brand ?? ''}||${colorName ?? ''}`;
+}
+
+/** A SKU's name for people. In Spoolman mode a filament with no colour name
+ *  gets its subtype as one ("PLA Basic" named "Black"), which printed the word
+ *  twice: "Bambu Lab PLA Basic Black Black" (#3400). The key keeps the colour. */
+function skuLabel(brand: string | null, material: string, subtype: string | null, colorName: string | null) {
+  const sameAsSubtype = !!colorName && !!subtype && colorName.trim().toLowerCase() === subtype.trim().toLowerCase();
+  return [brand, material, subtype, sameAsSubtype ? null : colorName].filter(Boolean).join(' ');
 }
 
 function addDays(date: Date, days: number): Date {
@@ -232,9 +255,17 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
     for (const spool of spools) {
       if (spool.archived_at) continue;
       const key = skuKey(spool.material, spool.subtype, spool.brand, spool.color_name);
-      const g = map.get(key) ?? { key, material: spool.material, subtype: spool.subtype, brand: spool.brand, colorName: spool.color_name, spools: [] };
+      const g = map.get(key) ?? { key, material: spool.material, subtype: spool.subtype, brand: spool.brand, colorName: spool.color_name, spools: [], usedUp: [] };
       g.spools.push(spool);
       map.set(key, g);
+    }
+    // Used-up spools are archived. They are not stock, and a SKU with nothing
+    // left is not forecast, but leaving out what they took makes a SKU in weekly
+    // use look untouched (#3399).
+    const now = Date.now();
+    for (const spool of spools) {
+      if (!spool.archived_at || !archivedCounts(spool.archived_at, now)) continue;
+      map.get(skuKey(spool.material, spool.subtype, spool.brand, spool.color_name))?.usedUp.push(spool);
     }
     return [...map.values()];
   }, [spools]);
@@ -256,14 +287,16 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
 
       const totalRemainingG = group.spools.reduce((s, sp) => s + Math.max(0, sp.label_weight - sp.weight_used), 0);
       const totalLabelG = group.spools.reduce((s, sp) => s + sp.label_weight, 0);
+      const rateSpools = [...group.spools, ...group.usedUp];
       // Consumed since baseline (post-reset); see InventoryPage stats calc (#1390).
-      const totalUsedG = group.spools.reduce((s, sp) => s + Math.max(0, sp.weight_used - (sp.weight_used_baseline ?? 0)), 0);
+      // Used-up spools included: it ranks the most-used SKUs.
+      const totalUsedG = rateSpools.reduce((s, sp) => s + Math.max(0, sp.weight_used - (sp.weight_used_baseline ?? 0)), 0);
 
       // Only include history from spools that haven't been reset — pre-reset
       // events on a reset spool have no anchor timestamp so they'd inflate the
       // rate. Spools without a baseline are clean and keep their records.
       const groupHistory: SpoolUsageRecord[] = [];
-      for (const s of group.spools) {
+      for (const s of rateSpools) {
         if ((s.weight_used_baseline ?? 0) === 0) {
           groupHistory.push(...(usageBySpoolId.get(s.id) ?? []));
         }
@@ -279,7 +312,7 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
         dailyRateStdDev = histResult.stdDev;
         rateTier = 'history';
       } else {
-        const delta = computeDeltaRate(group.spools);
+        const delta = computeDeltaRate(rateSpools);
         if (delta !== null) { dailyRateG = delta; rateTier = 'delta'; }
       }
 
@@ -628,7 +661,7 @@ function SortableTh({
 
 function AlertBanner({ forecast: f, onCart }: { forecast: SkuForecast; onCart: () => void }) {
   const { t } = useTranslation();
-  const label = [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' ');
+  const label = skuLabel(f.group.brand, f.group.material, f.group.subtype, f.group.colorName);
   const isBreak = f.stockBreakAlert;
 
   return (
@@ -676,7 +709,7 @@ function UsageChart({ forecasts, days: maxDays, onDaysChange }: {
 
   const series = forecasts.map((f, idx) => ({
     key: f.group.key,
-    label: [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' '),
+    label: skuLabel(f.group.brand, f.group.material, f.group.subtype, f.group.colorName),
     color: CHART_COLORS[idx % CHART_COLORS.length],
     rop: f.reorderPointG,
     points: buildProjectionSeries(f, maxDays),
@@ -884,7 +917,7 @@ function ForecastRow({
 
   const snoozed = f.settings?.alerts_snoozed ?? false;
 
-  const label = [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' ');
+  const label = skuLabel(f.group.brand, f.group.material, f.group.subtype, f.group.colorName);
   // Use getSwatchStyle so a Clear (alpha=00) lead spool renders as a
   // checkerboard rather than collapsing to solid black (#1545).
   const colorStyle = f.group.spools[0]?.rgba ? getSwatchStyle(f.group.spools[0].rgba) : { backgroundColor: '#4B5563' };
@@ -1439,7 +1472,7 @@ function ShoppingListPanel({
             </thead>
             <tbody className="divide-y divide-bambu-dark-tertiary">
               {items.map((item) => {
-                const lbl = [item.brand, item.material, item.subtype, item.color_name].filter(Boolean).join(' ');
+                const lbl = skuLabel(item.brand, item.material, item.subtype, item.color_name);
                 const hasBreak = breakAlerts.some((a) => a.item.id === item.id);
                 const f = forecastMap.get(skuKey(item.material, item.subtype, item.brand, item.color_name)) ?? null;
                 const avgSpoolG = f && f.totalSpools > 0 ? f.totalLabelG / f.totalSpools : 1000;
@@ -1571,7 +1604,7 @@ function CartLogisticsRow({
   onRemove: () => void;
 }) {
   const { t } = useTranslation();
-  const label = [item.brand, item.material, item.subtype, item.color_name].filter(Boolean).join(' ');
+  const label = skuLabel(item.brand, item.material, item.subtype, item.color_name);
 
   // Build a timeline showing stock depletion, arrival bump, then post-arrival depletion.
   // Two points are inserted at day `lt` (just-before and just-after arrival) so the
@@ -1806,7 +1839,7 @@ function AddToCartModal({
   onAdd: (item: { material: string; subtype: string | null; brand: string | null; color_name: string | null; quantity_spools: number; note: string | null }) => void;
 }) {
   const { t } = useTranslation();
-  const label = [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' ');
+  const label = skuLabel(f.group.brand, f.group.material, f.group.subtype, f.group.colorName);
   const [mode, setMode] = useState<'qty' | 'duration'>('qty');
   const [qty, setQty] = useState('1');
   const [durationDays, setDurationDays] = useState('30');

@@ -632,6 +632,9 @@ describe('useWebSocket hook', () => {
       // The print dialog prices each slot and shows its grams from this one,
       // in both modes; an open dialog kept the previous spool's figures.
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['printer-inventory-remain'] });
+      // A Spoolman move clears the old slot's fallback tag; the slot cards in
+      // other tabs and on the kiosk read the tag -> spool map (#1574).
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['linked-spools'] });
 
       vi.useRealTimers();
       vi.unstubAllGlobals();

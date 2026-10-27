@@ -23,10 +23,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import event, select
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from backend.app.core.auth import get_printer_scope_if_auth_enabled
+from backend.app.core.database import Base, _set_sqlite_pragmas
 from backend.app.core.printer_scope import PrinterScope
 from backend.app.main import app
 from backend.app.models.spool import Spool
@@ -238,6 +239,49 @@ class TestBuiltInMove:
 
         assert response.status_code == 200, response.text
 
+    async def test_a_slot_the_spool_gained_while_the_move_waited_is_cleared_too(
+        self, async_client: AsyncClient, db_session, printer_factory, offline_printers
+    ):
+        """The printers to lock are read again once the locks are held: here a
+        plain assign put the spool on a printer the move had not locked."""
+        here = await printer_factory(name="Here")
+        there = await printer_factory(name="There")
+        spool = await _spool(db_session)
+
+        lock = get_ams_assignment_lock(here.id)
+        await lock.acquire()
+        try:
+            move = asyncio.ensure_future(
+                async_client.post("/api/v1/inventory/assignments", json=_assign(spool.id, here.id, 0, 0, move=True))
+            )
+            await _until_queued(lock, 1)
+            await _assign_row(db_session, spool.id, there.id, 1, 1)
+        finally:
+            lock.release()
+        response = await asyncio.wait_for(move, 10)
+
+        assert response.status_code == 200, response.text
+        assert await _slots(db_session) == {(spool.id, here.id, 0, 0)}
+
+
+class TestBuiltInConcurrentMoves:
+    @pytest.fixture
+    async def test_engine(self, test_engine, tmp_path):
+        """Two requests at once need a connection each, as the app's pool gives
+        them. The suite's in-memory SQLite database is a single connection,
+        shared by every session, and one request's commit there fails while the
+        other's statement is open ("SQL statements in progress"). On SQLite
+        these tests get a database file instead; PostgreSQL pools already."""
+        if test_engine.dialect.name != "sqlite":
+            yield test_engine
+            return
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'moves.db'}")
+        event.listen(engine.sync_engine, "connect", _set_sqlite_pragmas)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        yield engine
+        await engine.dispose()
+
     @pytest.mark.parametrize("starts_in_a_slot", [True, False], ids=["from-a-slot", "from-no-slot"])
     async def test_two_moves_of_the_same_spool_leave_it_in_one_slot(
         self, async_client: AsyncClient, db_session, printer_factory, offline_printers, starts_in_a_slot
@@ -271,30 +315,6 @@ class TestBuiltInMove:
         assert [r.status_code for r in responses] == [200, 200]
         slots = await _slots(db_session)
         assert len(slots) == 1, slots
-
-    async def test_a_slot_the_spool_gained_while_the_move_waited_is_cleared_too(
-        self, async_client: AsyncClient, db_session, printer_factory, offline_printers
-    ):
-        """The printers to lock are read again once the locks are held: here a
-        plain assign put the spool on a printer the move had not locked."""
-        here = await printer_factory(name="Here")
-        there = await printer_factory(name="There")
-        spool = await _spool(db_session)
-
-        lock = get_ams_assignment_lock(here.id)
-        await lock.acquire()
-        try:
-            move = asyncio.ensure_future(
-                async_client.post("/api/v1/inventory/assignments", json=_assign(spool.id, here.id, 0, 0, move=True))
-            )
-            await _until_queued(lock, 1)
-            await _assign_row(db_session, spool.id, there.id, 1, 1)
-        finally:
-            lock.release()
-        response = await asyncio.wait_for(move, 10)
-
-        assert response.status_code == 200, response.text
-        assert await _slots(db_session) == {(spool.id, here.id, 0, 0)}
 
 
 # ---------------------------------------------------------------------------

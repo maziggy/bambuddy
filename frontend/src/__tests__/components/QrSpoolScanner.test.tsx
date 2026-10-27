@@ -2,8 +2,9 @@
  * The shared spool QR scanner (#1574): its live loop keeps scanning after a
  * frame or a callback fails, hands a label over once while it stays in view
  * (other codes read in between or not), says why when there's no camera,
- * releases the camera when it closes, and a photo still decoding when it
- * closes is not handed to a caller that moved on.
+ * releases the camera when it closes, a photo that comes back while the
+ * caller is busy is handed over once it's free, and a photo still decoding
+ * when it closes is not handed to a caller that moved on.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -206,6 +207,24 @@ describe('QrSpoolScanner', () => {
       pickPhoto();
 
       await waitFor(() => expect(onDecode).toHaveBeenCalledTimes(2));
+    });
+
+    it('hands over a photo once the caller is free, when it turned busy while the photo was taken', async () => {
+      vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 10, height: 10, close: vi.fn() }));
+      jsQR.mockReturnValue({ data: PAYLOAD });
+      const onDecode = vi.fn();
+      const { rerender } = render(<QrSpoolScanner onDecode={onDecode} busy={false} error={null} />);
+
+      // The button was free when tapped; the caller turned busy (a list
+      // refetching as the page got focus back) before the photo came back.
+      rerender(<QrSpoolScanner onDecode={onDecode} busy error={null} />);
+      pickPhoto();
+      await new Promise((r) => setTimeout(r, 50));
+      expect(onDecode).not.toHaveBeenCalled();
+
+      rerender(<QrSpoolScanner onDecode={onDecode} busy={false} error={null} />);
+      await waitFor(() => expect(onDecode).toHaveBeenCalledTimes(1));
+      expect(onDecode).toHaveBeenCalledWith(PAYLOAD);
     });
 
     it('says the live camera needs HTTPS when the page is not a secure origin', async () => {

@@ -155,7 +155,15 @@ export function QrSpoolScanner({ onDecode, busy, error, targetLabel }: QrSpoolSc
     };
   }, []);
 
-  const isBusy = busy || decoding;
+  // A photo taken while the caller was busy, waiting for it to be free. The
+  // native camera app is open a while, and the caller can turn busy meanwhile
+  // (a spool list refetching as the page gets focus back): the photo is
+  // handed over once it's free, not dropped.
+  const [waitingPhoto, setWaitingPhoto] = useState<string | null>(null);
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+
+  const isBusy = busy || decoding || waitingPhoto !== null;
 
   const handOver = (text: string) => {
     setPhotoError(null);
@@ -182,16 +190,27 @@ export function QrSpoolScanner({ onDecode, busy, error, targetLabel }: QrSpoolSc
     setHoldingPayload(false);
   };
 
+  useEffect(() => {
+    if (waitingPhoto === null || busy) return;
+    setWaitingPhoto(null);
+    handOver(waitingPhoto);
+    // handOver is recreated each render; only the caller turning free matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, waitingPhoto]);
+
   const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // allow re-picking the same file; the File is GC'd after decode
-    if (!file || isBusy) return;
+    // Only one photo at a time. The caller being busy now is no reason to
+    // drop one: the button was enabled when it was tapped.
+    if (!file || decoding || waitingPhoto !== null) return;
     setPhotoError(null);
     setDecoding(true);
     try {
       const text = await decodeImageBlob(file);
       if (!mountedRef.current) return;
       if (!text) setPhotoError(t('inventory.qrAssign.noQrInPhoto'));
+      else if (busyRef.current) setWaitingPhoto(text);
       else handOver(text);
     } catch {
       if (mountedRef.current) setPhotoError(t('inventory.qrAssign.noQrInPhoto'));

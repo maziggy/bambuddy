@@ -62,6 +62,7 @@ from backend.app.services.pipeline_eligibility import (
     check_pipeline_eligibility,
 )
 from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
+from backend.app.services.print_options import default_print_options_for_new_queue_item
 
 logger = logging.getLogger(__name__)
 
@@ -574,6 +575,8 @@ def _make_orchestration_callable(
 
             # No per-job ask-for-outcome toggle on a pipeline run either (#1898).
             confirm_outcome = await confirm_outcome_for_new_queue_item(session)
+            # ...nor for timelapse and the calibrations (#3397).
+            print_options = await default_print_options_for_new_queue_item(session)
 
             for job, (printer_id, target_model) in zip(jobs, assignments, strict=False):
                 queue_item = PrintQueueItem(
@@ -583,6 +586,7 @@ def _make_orchestration_callable(
                     created_by_id=creator_user_id,
                     status="pending",
                     confirm_outcome=confirm_outcome,
+                    **print_options,
                 )
                 session.add(queue_item)
                 await session.flush()

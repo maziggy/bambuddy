@@ -13,6 +13,7 @@ from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.schemas.printer import HMSErrorResponse, hms_error_responses
 from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
+from backend.app.services.print_options import default_print_options_for_new_queue_item
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.queue_position import next_queue_position
 
@@ -141,6 +142,8 @@ async def webhook_add_to_queue(
         # No dialog to pick this per job, so the install-wide default decides
         # whether the finished print asks for a verdict (#1898).
         confirm_outcome=await confirm_outcome_for_new_queue_item(db),
+        # Likewise timelapse and the calibrations (#3397).
+        **await default_print_options_for_new_queue_item(db),
         # Attribute to the key's owner so the item shows up under `queue:read_own`
         # for the person whose key it is. Legacy keys predating per-user ownership
         # have no `user_id`, and those rows stay ownerless.

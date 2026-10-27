@@ -861,6 +861,225 @@ class TestProcessing:
         assert detector.get_status()["last_error"] is not None
 
 
+class TestNotificationReminders:
+    @staticmethod
+    def respond_with_warning(url, **kwargs):
+        payload = context_payload() if url == CREATE_CONTEXT_URL else process_payload(WarningSuggested=True)
+        return httpx.Response(200, json=payload)
+
+    @pytest.mark.parametrize("action", ["notify", "pause", "pause_and_off"])
+    @pytest.mark.parametrize("suggestion", ["WarningSuggested", "PauseSuggested"])
+    @pytest.mark.parametrize("offset", [-1, 0])
+    async def test_positive_result_repeats_only_after_three_hours(
+        self, detector, http_client, clock, action, suggestion, offset
+    ):
+        # Use monotonic zero too: a recorded attempt at zero is not "never sent".
+        clock.return_value = 0
+        http_client.post.side_effect = [
+            httpx.Response(200, json=context_payload()),
+            httpx.Response(200, json=process_payload(**{suggestion: True})),
+            httpx.Response(200, json=process_payload(**{suggestion: True})),
+            httpx.Response(200, json=process_payload(**{suggestion: True})),
+        ]
+        await detector._check_printer(1, printer_status(), settings(action=action))
+        assert detector._states[1].last_notification_at == 0
+        clock.return_value = 3 * 60 * 60 + offset
+        await detector._check_printer(1, printer_status(), settings(action=action))
+        expected_actions = [action if suggestion == "PauseSuggested" else "notify"]
+        if offset == 0:
+            expected_actions.append("notify")
+            assert detector._states[1].last_notification_at == 3 * 60 * 60
+            clock.return_value = 6 * 60 * 60
+            await detector._check_printer(1, printer_status(), settings(action=action))
+            expected_actions.append("notify")
+            assert detector._states[1].last_notification_at == 6 * 60 * 60
+        else:
+            assert detector._states[1].last_notification_at == 0
+        assert [call.args[1] for call in detector._dispatch_action.await_args_list] == expected_actions
+
+    @pytest.mark.parametrize("action", ["pause", "pause_and_off"])
+    async def test_first_hardware_action_bypasses_warning_cooldown_and_restarts_it(
+        self, detector, http_client, clock, action
+    ):
+        http_client.post.side_effect = [
+            httpx.Response(200, json=context_payload()),
+            httpx.Response(200, json=process_payload(WarningSuggested=True)),
+            httpx.Response(200, json=process_payload(PauseSuggested=True)),
+            httpx.Response(200, json=process_payload(PauseSuggested=True)),
+            httpx.Response(200, json=process_payload(PauseSuggested=True)),
+        ]
+        await detector._check_printer(1, printer_status(), settings(action=action))
+        clock.return_value = 140
+        await detector._check_printer(1, printer_status(), settings(action=action))
+        assert [call.args[1] for call in detector._dispatch_action.await_args_list] == ["notify", action]
+        assert detector._states[1].last_notification_at == 140
+        clock.return_value = 100 + 3 * 60 * 60
+        await detector._check_printer(1, printer_status(), settings(action=action))
+        assert detector._dispatch_action.await_count == 2
+        clock.return_value = 140 + 3 * 60 * 60
+        await detector._check_printer(1, printer_status(), settings(action=action))
+        assert [call.args[1] for call in detector._dispatch_action.await_args_list] == ["notify", action, "notify"]
+
+    @pytest.mark.parametrize("result", ["safe", "malformed", "api_error"])
+    async def test_expired_cooldown_requires_a_valid_positive_result(self, detector, http_client, clock, result):
+        if result == "api_error":
+            non_warning = httpx.Response(503)
+        elif result == "malformed":
+            non_warning = httpx.Response(200, json=process_payload(WarningSuggested="true"))
+        else:
+            non_warning = httpx.Response(200, json=process_payload())
+        http_client.post.side_effect = [
+            httpx.Response(200, json=context_payload()),
+            httpx.Response(200, json=process_payload(WarningSuggested=True)),
+            non_warning,
+            httpx.Response(200, json=process_payload(WarningSuggested=True)),
+        ]
+        await detector._check_printer(1, printer_status(), settings())
+        clock.return_value = 100 + 3 * 60 * 60
+        await detector._check_printer(1, printer_status(), settings())
+        assert detector._dispatch_action.await_count == 1
+        assert detector._states[1].last_notification_at == 100
+        clock.return_value += ERROR_RETRY_INTERVAL
+        await detector._check_printer(1, printer_status(), settings())
+        assert detector._dispatch_action.await_count == 2
+        assert detector._states[1].last_notification_at == clock.return_value
+
+    async def test_safe_frame_before_cooldown_does_not_rearm_early(self, detector, http_client, clock):
+        http_client.post.side_effect = [
+            httpx.Response(200, json=context_payload()),
+            httpx.Response(200, json=process_payload(WarningSuggested=True)),
+            httpx.Response(200, json=process_payload()),
+            httpx.Response(200, json=process_payload(WarningSuggested=True)),
+        ]
+        for now in (100, 140, 180):
+            clock.return_value = now
+            await detector._check_printer(1, printer_status(), settings())
+        assert detector._dispatch_action.await_count == 1
+        assert detector._states[1].last_notification_at == 100
+
+    @pytest.mark.parametrize("change", ["autosave", "key", "confidence", "pause", "disconnect", "context"])
+    async def test_same_print_changes_preserve_reminder_cooldown(self, detector, http_client, manager, clock, change):
+        http_client.post.side_effect = self.respond_with_warning
+        configuration = settings()
+        await poll_once(detector, configuration)
+        clock.return_value = 500
+        if change == "autosave":
+            detector._load_settings = AsyncMock(return_value=configuration)
+            await detector.refresh_settings()
+        elif change == "key":
+            configuration = settings(api_key="replacement-key")
+        elif change == "confidence":
+            configuration = settings(confidence="high")
+        elif change == "pause":
+            manager.get_all_statuses.return_value[1].state = "PAUSE"
+            await poll_once(detector, configuration)
+            manager.get_all_statuses.return_value[1].state = "RUNNING"
+        elif change == "disconnect":
+            manager.is_connected.return_value = False
+            await poll_once(detector, configuration)
+            manager.is_connected.return_value = True
+        else:
+            detector._states[1].context = None
+        await poll_once(detector, configuration)
+        assert detector._dispatch_action.await_count == 1
+        assert detector._states[1].last_notification_at == 100
+        clock.return_value = 100 + 3 * 60 * 60
+        await poll_once(detector, configuration)
+        assert detector._dispatch_action.await_count == 2
+
+    @pytest.mark.parametrize("change", ["new_print", "print_start", "stop", "disable"])
+    async def test_discarded_print_state_allows_an_immediate_new_notification(
+        self, detector, http_client, manager, clock, change
+    ):
+        http_client.post.side_effect = self.respond_with_warning
+        await poll_once(detector, settings())
+        clock.return_value = 500
+        if change == "new_print":
+            manager.get_all_statuses.return_value[1].subtask_id = "print-2"
+        elif change == "print_start":
+            detector.reset_printer(1)
+        elif change == "stop":
+            detector.stop()
+        else:
+            await poll_once(detector, settings(enabled=False))
+        await poll_once(detector, settings())
+        assert detector._dispatch_action.await_count == 2
+        assert detector._states[1].last_notification_at == 500
+
+    async def test_each_printer_has_its_own_reminder_deadline(self, detector, http_client, clock):
+        http_client.post.side_effect = self.respond_with_warning
+        await detector._check_printer(1, printer_status(), settings())
+        clock.return_value = 1000
+        await detector._check_printer(2, printer_status(subtask_id="print-2"), settings())
+        clock.return_value = 100 + 3 * 60 * 60
+        await detector._check_printer(1, printer_status(), settings())
+        await detector._check_printer(2, printer_status(subtask_id="print-2"), settings())
+        assert [call.args[0] for call in detector._dispatch_action.await_args_list] == [1, 2, 1]
+        clock.return_value = 1000 + 3 * 60 * 60
+        await detector._check_printer(2, printer_status(subtask_id="print-2"), settings())
+        assert [call.args[0] for call in detector._dispatch_action.await_args_list] == [1, 2, 1, 2]
+
+    async def test_expired_cooldown_does_not_fire_while_waiting_for_a_fresh_result(
+        self, detector, http_client, manager, clock
+    ):
+        http_client.post.side_effect = self.respond_with_warning
+        await poll_once(detector, settings())
+        clock.return_value = 100 + 3 * 60 * 60
+        checking = asyncio.Event()
+        release = asyncio.Event()
+
+        async def process(url, **kwargs):
+            checking.set()
+            await release.wait()
+            return httpx.Response(200, json=process_payload())
+
+        http_client.post.side_effect = process
+        poll = asyncio.create_task(poll_once(detector, settings()))
+        try:
+            await asyncio.wait_for(checking.wait(), timeout=1)
+            assert detector._dispatch_action.await_count == 1
+            assert detector._states[1].last_notification_at == 100
+        finally:
+            release.set()
+            await asyncio.wait_for(poll, timeout=1)
+        assert detector._dispatch_action.await_count == 1
+
+    async def test_autosave_cancels_check_without_duplicating_inflight_reminder(
+        self, detector, http_client, manager, clock
+    ):
+        http_client.post.side_effect = self.respond_with_warning
+        await poll_once(detector, settings())
+        clock.return_value = 100 + 3 * 60 * 60
+        sending = asyncio.Event()
+        release = asyncio.Event()
+
+        async def notify(*args, **kwargs):
+            sending.set()
+            await release.wait()
+
+        detector._dispatch_action.side_effect = notify
+        poll = asyncio.create_task(poll_once(detector, settings()))
+        try:
+            await asyncio.wait_for(sending.wait(), timeout=1)
+            assert detector._states[1].last_notification_at == clock.return_value
+            committed = tuple(detector._actions)
+            detector._load_settings = AsyncMock(return_value=settings())
+            await detector.refresh_settings()
+            await asyncio.wait_for(poll, timeout=1)
+            assert not committed[0].done()
+            clock.return_value += 40
+            await poll_once(detector, settings())
+            assert detector._dispatch_action.await_count == 2
+            release.set()
+            await asyncio.wait_for(asyncio.gather(*committed), timeout=1)
+            assert detector._actions == set()
+        finally:
+            release.set()
+            actions = tuple(detector._actions)
+            detector.stop()
+            await asyncio.gather(poll, *actions, return_exceptions=True)
+
+
 class TestFasterInspectionTiming:
     @pytest.mark.parametrize(
         "minimum, recommended, configured, delay",

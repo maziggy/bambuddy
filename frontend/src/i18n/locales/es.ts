@@ -4831,6 +4831,8 @@ export default {
     showAllPresets: 'Mostrar todos',
     showFewerPresets: 'Mostrar menos',
     searchPresets: 'Buscar preajustes...',
+    closeSearch: 'Cerrar búsqueda',
+    noMatchingPresets: 'No se encontraron preajustes coincidentes.',
     processSettings: 'Ajustes de proceso',
     processSettingsHint: 'Ajusta el perfil seleccionado para este corte. Todo lo que no toques se mantiene como lo define el perfil.',
     processSettingsChanged: '{{count}} cambiados',

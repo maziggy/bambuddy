@@ -2,7 +2,8 @@
 
 The endpoint stitches together four preset sources (local / orca_cloud /
 cloud / standard). It does NOT dedup across tiers — every tier surfaces
-its full list so the user can pick any source. Bambu Cloud filament
+its full list so the user can pick any source — except Bambu Cloud's stock
+presets that Standard also lists (#3386). Bambu Cloud filament
 metadata is enriched from same-named entries in the other tiers so it
 can still score in the SliceModal's auto-pick. These tests pin the
 enrich behaviour, the cloud-status mapping, and the per-user / sidecar
@@ -553,7 +554,7 @@ class TestFetchCloudPresets:
         names = [p.name for p in slots["printer"]]
         assert names == ["My X1C", "Bambu X1C Stock"]
         # #3386: the public list is Bambu's stock presets — flagged so the
-        # SliceModal can list them once, under Standard.
+        # listing can drop the ones Standard also has.
         assert [p.stock for p in slots["printer"]] == [False, True]
 
     @pytest.mark.asyncio
@@ -699,6 +700,37 @@ class TestFetchCloudPresets:
             await sp._fetch_cloud_presets(MagicMock(), user)
         # Two calls — first refresh, second a normal cache hit.
         assert cloud_mock.get_slicer_settings.await_count == 1
+
+
+class TestDropStockDuplicates:
+    """#3386: Bambu Cloud's stock presets are listed once, under Standard."""
+
+    def test_drops_stock_twins_and_maps_them(self):
+        cloud = {
+            "printer": [],
+            "process": [],
+            "filament": [
+                UnifiedPreset(id="PFUS1", name="Bambu PLA Basic @BBL X1C", source="cloud"),
+                UnifiedPreset(id="GFSA00", name="Bambu PLA Basic @BBL X1C", source="cloud", stock=True),
+                UnifiedPreset(id="GFSA99", name="Bambu PLA Brand New @BBL X1C", source="cloud", stock=True),
+            ],
+        }
+        standard = {
+            "printer": [],
+            "process": [],
+            "filament": [UnifiedPreset(id="std-basic", name="Bambu PLA Basic @BBL X1C", source="standard")],
+        }
+        kept, aliases = sp._drop_stock_duplicates(cloud, standard)
+        # The user's own preset of the same name stays, and so does a stock
+        # preset newer than the sidecar's bundle.
+        assert [p.id for p in kept["filament"]] == ["PFUS1", "GFSA99"]
+        assert {k: v.model_dump() for k, v in aliases.items()} == {
+            "cloud:GFSA00": {"source": "standard", "id": "std-basic"}
+        }
+
+    def test_stock_flag_stays_out_of_the_response(self):
+        preset = UnifiedPreset(id="GFSA99", name="x", source="cloud", stock=True)
+        assert "stock" not in preset.model_dump()
 
 
 class TestFetchBundledPresets:

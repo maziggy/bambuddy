@@ -4866,6 +4866,8 @@ export default {
     showAllPresets: 'Show all',
     showFewerPresets: 'Show fewer',
     searchPresets: 'Search presets...',
+    closeSearch: 'Close search',
+    noMatchingPresets: 'No matching presets found.',
     processSettings: 'Process settings',
     processSettingsHint: "Adjust the picked preset for this slice. Anything you don't touch stays as the preset defines it.",
     processSettingsChanged: '{{count}} changed',

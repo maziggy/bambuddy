@@ -4817,6 +4817,8 @@ export default {
     showAllPresets: 'Tout afficher',
     showFewerPresets: 'Afficher moins',
     searchPresets: 'Chercher presets...',
+    closeSearch: 'Fermer la recherche',
+    noMatchingPresets: 'Aucun profil trouvé.',
     processSettings: 'Paramètres de process',
     processSettingsHint: 'Ajustez le profil choisi pour ce découpage. Tout ce que vous ne modifiez pas reste tel que défini par le profil.',
     processSettingsChanged: '{{count}} modifiés',

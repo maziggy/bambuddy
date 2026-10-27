@@ -4816,6 +4816,8 @@ export default {
     showAllPresets: 'Mostra tutti',
     showFewerPresets: 'Mostra meno',
     searchPresets: 'Cerca preset...',
+    closeSearch: 'Chiudi ricerca',
+    noMatchingPresets: 'Nessun preset corrispondente trovato.',
     processSettings: 'Impostazioni di processo',
     processSettingsHint: 'Regola il profilo scelto per questo slice. Tutto ciò che non tocchi resta come definito dal profilo.',
     processSettingsChanged: '{{count}} modificate',

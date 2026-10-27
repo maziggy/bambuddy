@@ -4861,6 +4861,8 @@ export default {
     showAllPresets: 'Показати всі',
     showFewerPresets: 'Показати менше',
     searchPresets: "Шукати профілі...",
+    closeSearch: "Закрити пошук",
+    noMatchingPresets: "Відповідних профілів не знайдено.",
     processSettings: 'Параметри процесу',
     processSettingsHint: 'Налаштуйте вибраний профіль для цього нарізання. Усе, чого ви не змінили, лишається як визначено профілем.',
     processSettingsChanged: 'змінено: {{count}}',

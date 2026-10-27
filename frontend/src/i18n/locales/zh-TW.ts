@@ -4816,6 +4816,8 @@ export default {
     showAllPresets: '顯示全部',
     showFewerPresets: '顯示較少',
     searchPresets: '搜尋預設...',
+    closeSearch: '關閉搜尋',
+    noMatchingPresets: '未找到匹配的預設。',
     processSettings: '列印參數',
     processSettingsHint: '為本次切片調整所選預設。未變更的項目仍依預設定義。',
     processSettingsChanged: '已變更 {{count}} 項',

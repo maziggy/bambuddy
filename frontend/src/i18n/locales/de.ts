@@ -4829,6 +4829,8 @@ export default {
     showAllPresets: 'Alle anzeigen',
     showFewerPresets: 'Weniger anzeigen',
     searchPresets: 'Voreinstellungen suchen...',
+    closeSearch: 'Suche schließen',
+    noMatchingPresets: 'Keine passenden Voreinstellungen gefunden.',
     processSettings: 'Prozesseinstellungen',
     processSettingsHint: 'Passen Sie das gewählte Profil für diesen Slice an. Alles, was Sie nicht ändern, bleibt wie im Profil definiert.',
     processSettingsChanged: '{{count}} geändert',

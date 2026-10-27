@@ -4621,6 +4621,8 @@ export default {
     showAllPresets: '모두 표시',
     showFewerPresets: '간략히 표시',
     searchPresets: '프리셋 검색...',
+    closeSearch: '검색 닫기',
+    noMatchingPresets: '일치하는 프리셋을 찾을 수 없습니다.',
     processSettings: '프로세스 설정',
     processSettingsHint: '이 슬라이스에 사용할 프리셋을 조정합니다. 건드리지 않은 항목은 프리셋 정의를 그대로 따릅니다.',
     processSettingsChanged: '{{count}}개 변경됨',

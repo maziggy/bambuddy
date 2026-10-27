@@ -4816,6 +4816,8 @@ export default {
     showAllPresets: 'Mostrar todos',
     showFewerPresets: 'Mostrar menos',
     searchPresets: 'Pesquisar predefinições...',
+    closeSearch: 'Fechar pesquisa',
+    noMatchingPresets: 'Nenhuma predefinição correspondente encontrada.',
     processSettings: 'Configurações de processo',
     processSettingsHint: 'Ajuste o perfil escolhido para este fatiamento. Tudo o que você não alterar permanece como o perfil define.',
     processSettingsChanged: '{{count}} alterados',

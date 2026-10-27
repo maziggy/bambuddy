@@ -225,6 +225,45 @@ describe('SliceModal — online printers and loaded spools (#3172)', () => {
     expect(labels).not.toContain('Generic PETG @BBL H2D');
   });
 
+  it('matches a slot saved with a stock cloud profile to its Standard twin (#3386)', async () => {
+    flags({ 'bambuddy.slice.onlyLoadedSpools': 'true' });
+    // The listing drops Bambu Cloud's stock copy of the profile and names its
+    // Standard twin instead; the slot was saved with the cloud copy, under a
+    // name nothing else in the listing matches.
+    mockApi.getSlicerPresets.mockResolvedValue({
+      ...PRESETS,
+      stock_aliases: { 'cloud:GFSA01': { source: 'standard', id: 'Bambu PLA Matte @BBL H2D' } },
+    });
+    const tray = LOADED.printers[0].ams[0].trays[0];
+    mockApi.getSlicerLoadedSpools.mockResolvedValue({
+      printers: [
+        {
+          ...LOADED.printers[0],
+          ams: [
+            {
+              ...LOADED.printers[0].ams[0],
+              trays: [
+                {
+                  ...tray,
+                  tray_sub_brands: null,
+                  saved_preset: {
+                    preset_id: 'GFSA01',
+                    preset_name: 'My matte',
+                    preset_source: 'cloud',
+                    tray_info_idx: 'GFA01',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    renderModal();
+    await waitFor(() => expect(selectFor('Filament profile').value).toBe('standard:Bambu PLA Matte @BBL H2D'));
+    expect(optionLabels(selectFor('Filament profile'))).not.toContain('Bambu PLA Basic @BBL H2D');
+  });
+
   it('never auto-picks a loaded spool of another material', async () => {
     flags({ 'bambuddy.slice.onlyLoadedSpools': 'true' });
     mockApi.getLibraryFileFilamentRequirements.mockResolvedValue({

@@ -2017,9 +2017,6 @@ export interface UnifiedPreset {
   // Printer presets only: the preset it was saved from, for the local and
   // OrcaSlicer Cloud tiers (#3250).
   inherits?: string | null;
-  // Bambu Cloud only: one of Bambu's own presets rather than the user's. The
-  // SliceModal lists it once, under Standard, when that tier has the name (#3386).
-  stock?: boolean;
 }
 export interface UnifiedPresetsBySlot {
   printer: UnifiedPreset[];
@@ -2065,14 +2062,17 @@ export interface LoadedSpoolsResponse {
 }
 export interface UnifiedPresetsResponse {
   // Priority order: local > orca_cloud > cloud > standard. No cross-tier
-  // dedup — every tier surfaces its full list so the user can pick from
-  // any source. The order drives auto-pick + visual group rendering only.
+  // dedup (apart from stock_aliases below) — every tier surfaces its full
+  // list so the user can pick from any source. The order drives auto-pick + visual group rendering only.
   orca_cloud: UnifiedPresetsBySlot;
   cloud: UnifiedPresetsBySlot;
   local: UnifiedPresetsBySlot;
   standard: UnifiedPresetsBySlot;
   cloud_status: SlicerCloudStatus;
   orca_cloud_status: SlicerCloudStatus;
+  // Bambu Cloud's stock presets that Standard also lists are left out of the
+  // cloud tier (#3386); each "cloud:<id>" maps to its Standard twin.
+  stock_aliases?: Record<string, PresetRef>;
 }
 
 // Slicer Pipelines (#1425) — named bundles of preset slots the SliceModal

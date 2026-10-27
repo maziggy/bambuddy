@@ -4613,6 +4613,8 @@ export default {
     showAllPresets: 'Показать все',
     showFewerPresets: 'Показать меньше',
     searchPresets: "Поиск профилей...",
+    closeSearch: "Закрыть поиск",
+    noMatchingPresets: "Подходящие профили не найдены.",
     processSettings: 'Параметры процесса',
     processSettingsHint: 'Настройте выбранный профиль для этой нарезки. Всё, что вы не измените, останется как задано в профиле.',
     processSettingsChanged: 'изменено: {{count}}',

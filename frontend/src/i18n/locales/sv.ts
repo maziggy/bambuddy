@@ -4863,6 +4863,8 @@ errors: {
     showAllPresets: 'Visa alla',
     showFewerPresets: 'Visa färre',
     searchPresets: 'Sök förinställningar...',
+    closeSearch: 'Stäng sökning',
+    noMatchingPresets: 'Inga matchande förinställningar hittade.',
     processSettings: 'Processinställningar',
     processSettingsHint: "Justera den valda förinställningen för denna slicing. Allt du inte rör förblir som förinställningen definierar det.",
     processSettingsChanged: '{{count}} ändrades',

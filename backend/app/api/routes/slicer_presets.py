@@ -699,6 +699,7 @@ async def list_unified_presets(
     standard = await _fetch_bundled_presets(db, refresh=refresh)
 
     orca_cloud, cloud, local, standard = _enrich_cloud_metadata(orca_cloud, cloud, local, standard)
+    cloud, stock_aliases = _drop_stock_duplicates(cloud, standard)
 
     return UnifiedPresetsResponse(
         orca_cloud=UnifiedPresetsBySlot(**orca_cloud),
@@ -707,7 +708,35 @@ async def list_unified_presets(
         standard=UnifiedPresetsBySlot(**standard),
         cloud_status=cloud_status,
         orca_cloud_status=orca_cloud_status,
+        stock_aliases=stock_aliases,
     )
+
+
+def _drop_stock_duplicates(
+    cloud: dict[str, list[UnifiedPreset]],
+    standard: dict[str, list[UnifiedPreset]],
+) -> tuple[dict[str, list[UnifiedPreset]], dict[str, PresetRef]]:
+    """Drop Bambu Cloud stock presets that Standard lists under the same name (#3386).
+
+    Bambu's stock cloud presets are the bundled ones again, so the Bambu Cloud
+    tier keeps the user's own. Runs after :func:`_enrich_cloud_metadata`, so
+    the #2628 bridge has already seen both copies. A stock preset Standard
+    lacks stays: the cloud follows Bambu's releases, the sidecar's bundle
+    only its image. Returns the kept presets and a ``"cloud:<id>"`` →
+    Standard twin map for refs saved with a dropped copy.
+    """
+    kept: dict[str, list[UnifiedPreset]] = {}
+    aliases: dict[str, PresetRef] = {}
+    for slot, presets in cloud.items():
+        twins = {p.name: p for p in standard.get(slot, [])}
+        kept[slot] = []
+        for p in presets:
+            twin = twins.get(p.name) if p.stock else None
+            if twin is None:
+                kept[slot].append(p)
+            else:
+                aliases[f"cloud:{p.id}"] = PresetRef(source="standard", id=twin.id)
+    return kept, aliases
 
 
 def _loaded_spool_tray(raw: dict, ams_id: int, tray_id: int, saved: SlotPresetMapping | None) -> LoadedSpoolTray:

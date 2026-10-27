@@ -4818,6 +4818,8 @@ export default {
     showAllPresets: 'Tümünü göster',
     showFewerPresets: 'Daha az göster',
     searchPresets: 'Ön ayarlarda ara...',
+    closeSearch: 'Aramayı kapat',
+    noMatchingPresets: 'Eşleşen ön ayar bulunamadı.',
     processSettings: 'İşlem ayarları',
     processSettingsHint: 'Seçilen ön ayarı bu dilimleme için düzenleyin. Dokunmadığınız her şey ön ayardaki gibi kalır.',
     processSettingsChanged: '{{count}} değişti',

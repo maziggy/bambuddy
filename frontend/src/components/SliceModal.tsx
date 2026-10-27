@@ -33,7 +33,9 @@ import {
   findPresetByName,
   pickDefault,
   pickFilamentForSlot,
+  listedRef,
   pickProcessDefault,
+  refValue,
   statesDifferentMaterial,
   type Slot,
 } from '../utils/slicePresetPicker';
@@ -84,7 +86,7 @@ interface SliceModalProps {
 function toRefValue(ref: PresetRef | null): string {
   // The HTML `<select>` value space is flat strings; encode source + id so
   // the same preset name can live in multiple tiers without collision.
-  return ref ? `${ref.source}:${ref.id}` : '';
+  return ref ? refValue(ref) : '';
 }
 
 function fromRefValue(raw: string): PresetRef | null {
@@ -98,23 +100,54 @@ function fromRefValue(raw: string): PresetRef | null {
 }
 
 // Every preset group is listed in the order the slicer's bundled list already
-// uses (#3386): real filaments before support materials, then Bambu, Generic
-// and other brands, each by name. The cloud tiers arrive in whatever order the
+// uses (#3386): Bambu, Generic and other brands, each by name, with support
+// filaments after the real ones. The cloud tiers arrive in whatever order the
 // service returns, which reads as no order at all. Names compare without case
-// and with numbers by value, so "0.4 nozzle" sorts before "0.6 nozzle" and
-// "PA6" before "PA12".
-const PRESET_NAME_ORDER = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+// and with numbers by value, decimals included, so "0.08mm" sorts before
+// "0.2mm" and "PA6" before "PA12".
+const NAME_TEXT_ORDER = new Intl.Collator(undefined, { sensitivity: 'base' });
+const NAME_NUMBER = /(\d+(?:\.\d+)?)/;
 const SUPPORT_MATERIAL = /\b(support|pva|bvoh|hips)\b/i;
 
-function presetRank(name: string): number {
-  const brand = /^bambu\b/i.test(name) ? 0 : /^generic\b/i.test(name) ? 1 : 2;
-  return (SUPPORT_MATERIAL.test(name) ? 3 : 0) + brand;
+// split() with a capture group puts the numbers at the odd indices.
+function compareNameParts(pa: string[], pb: string[]): number {
+  for (let i = 0; i < Math.min(pa.length, pb.length); i++) {
+    const d = i % 2 ? Number(pa[i]) - Number(pb[i]) : NAME_TEXT_ORDER.compare(pa[i], pb[i]);
+    if (d) return d;
+  }
+  return pa.length - pb.length;
 }
 
-function sortPresets(presets: UnifiedPreset[]): UnifiedPreset[] {
-  return [...presets].sort(
-    (a, b) => presetRank(a.name) - presetRank(b.name) || PRESET_NAME_ORDER.compare(a.name, b.name),
-  );
+function presetRank(name: string, slot: Slot): number {
+  const brand = /^bambu\b/i.test(name) ? 0 : /^generic\b/i.test(name) ? 1 : 2;
+  return (slot === 'filament' && SUPPORT_MATERIAL.test(name) ? 3 : 0) + brand;
+}
+
+function sortPresets(presets: UnifiedPreset[], slot: Slot): UnifiedPreset[] {
+  return presets
+    .map((p) => ({ p, rank: presetRank(p.name, slot), parts: p.name.split(NAME_NUMBER) }))
+    .sort(
+      (a, b) =>
+        a.rank - b.rank || compareNameParts(a.parts, b.parts) || NAME_TEXT_ORDER.compare(a.p.name, b.p.name),
+    )
+    .map(({ p }) => p);
+}
+
+// Every tier sorted once, for the dropdowns. The auto-picks keep the
+// listing's own order, so sorting never changes what is preselected.
+function sortListing(data: UnifiedPresetsResponse): UnifiedPresetsResponse {
+  const sortTier = (tier: UnifiedPresetsBySlot): UnifiedPresetsBySlot => ({
+    printer: sortPresets(tier.printer, 'printer'),
+    process: sortPresets(tier.process, 'process'),
+    filament: sortPresets(tier.filament, 'filament'),
+  });
+  return {
+    ...data,
+    local: sortTier(data.local),
+    orca_cloud: sortTier(data.orca_cloud),
+    cloud: sortTier(data.cloud),
+    standard: sortTier(data.standard),
+  };
 }
 
 // Inline spinner for the filament-requirements query. The backend runs a
@@ -489,6 +522,8 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
     }
   };
 
+  const sortedPresets = useMemo(() => presetsQuery.data && sortListing(presetsQuery.data), [presetsQuery.data]);
+
   // Canonical Bambu printer-model registry — drives the @BBL <code> name
   // fallback in slicerPrinterMatch for cloud / standard presets (#1325).
   // Long staleTime: the registry only changes across backend releases.
@@ -566,7 +601,7 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
   }, [onlyConnectedModels, loadedPrinters, printerModels, printerParents]);
   const filamentFilter = useMemo(() => {
     if (!onlyLoadedSpools || loadedFilamentRefs.size === 0) return null;
-    return (p: UnifiedPreset) => loadedFilamentRefs.has(`${p.source}:${p.id}`);
+    return (p: UnifiedPreset) => loadedFilamentRefs.has(toRefValue(p));
   }, [onlyLoadedSpools, loadedFilamentRefs]);
   // The preset listing with only the loaded spools' filaments, for the
   // auto-pick while that filter is on.
@@ -1010,15 +1045,18 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
                     // Apply slot state. The filament list is right-padded from
                     // current state so a pipeline with fewer entries than the
                     // current source's slot count keeps the existing tail.
+                    // A pipeline saved with a stock Bambu Cloud preset gets
+                    // the Standard copy the dialog lists instead (#3386).
+                    const listed = (ref: PresetRef) => (presetsQuery.data ? listedRef(presetsQuery.data, ref) : ref);
                     explicitPrinter.current = true;
-                    setPrinterPreset(picked.printer_preset);
-                    setProcessPreset(picked.process_preset);
+                    setPrinterPreset(listed(picked.printer_preset));
+                    setProcessPreset(listed(picked.process_preset));
                     setBedType(picked.bed_type);
                     setFilamentPresets((current) => {
                       const next = current.length > 0 ? [...current] : picked.filament_presets.map(() => null);
                       for (let i = 0; i < next.length; i++) {
                         if (i < picked.filament_presets.length) {
-                          next[i] = picked.filament_presets[i];
+                          next[i] = listed(picked.filament_presets[i]);
                           // Applying a pipeline is as deliberate as picking
                           // from the dropdown, so the slots it fills are
                           // exempt from the material re-pick too.
@@ -1168,7 +1206,7 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
               <PresetDropdown
                 label={t('slice.printer')}
                 slot="printer"
-                data={presetsQuery.data}
+                data={sortedPresets ?? presetsQuery.data}
                 value={printerPreset}
                 onChange={(ref) => {
                   explicitPrinter.current = true;
@@ -1205,7 +1243,7 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
               <PresetDropdown
                 label={t('slice.process')}
                 slot="process"
-                data={presetsQuery.data}
+                data={sortedPresets ?? presetsQuery.data}
                 value={processPreset}
                 onChange={setProcessPreset}
                 disabled={isEnqueuing || useEmbedded}
@@ -1295,7 +1333,7 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
                       key={`filament-${idx}`}
                       label={label}
                       slot="filament"
-                      data={presetsQuery.data}
+                      data={sortedPresets ?? presetsQuery.data}
                       value={filamentPresets[idx] ?? null}
                       onChange={(ref) => {
                         explicitFilamentSlots.current.add(idx);
@@ -1699,6 +1737,7 @@ function PresetDropdown({
   const colourId = `${selectId}-colour`;
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
+  const searchButton = useRef<HTMLButtonElement>(null);
   const selectedRefValue = toRefValue(value);
 
   // Tier sections (imported → cloud → standard), plus — for a process /
@@ -1719,19 +1758,8 @@ function PresetDropdown({
     // all-filtered-out case below.
     const unfiltered: { tierLabel: string; entries: UnifiedPreset[] }[] = [];
     const other: UnifiedPreset[] = [];
-    const standardNames = new Set(data.standard[slot].map((p) => p.name));
     for (const { key, label: lk, fallback } of tiers) {
-      let entries = (data[key] as UnifiedPresetsBySlot)[slot];
-      // Bambu's stock cloud presets are the bundled ones again: list them once,
-      // under Standard, so the Bambu Cloud group holds the user's own (#3386).
-      // A stock preset Standard lacks stays, and so does the selected one —
-      // the auto-pick can land on it, and dropping it would blank the select.
-      if (key === 'cloud') {
-        entries = entries.filter(
-          (p) => !p.stock || !standardNames.has(p.name) || `${p.source}:${p.id}` === selectedRefValue,
-        );
-      }
-      entries = sortPresets(entries);
+      const entries = (data[key] as UnifiedPresetsBySlot)[slot];
       if (entries.length > 0) unfiltered.push({ tierLabel: t(lk, fallback), entries });
       if (!filterByPrinter) {
         if (entries.length > 0) compatSections.push({ tierLabel: t(lk, fallback), entries });
@@ -1783,44 +1811,53 @@ function PresetDropdown({
         if (entries.length > 0) kept.push({ tierLabel: section.tierLabel, entries });
       }
       if (kept.length > 0) {
-        return { sections: kept, otherEntries: sortPresets(other), filteredEntries: sortPresets(filtered) };
+        return { sections: kept, otherEntries: other, filteredEntries: filtered };
       }
     }
-    return { sections: compatSections, otherEntries: sortPresets(other), filteredEntries: [] as UnifiedPreset[] };
-  }, [data, slot, t, selectedPrinterName, compatIndex, allowed, selectedRefValue]);
+    return { sections: compatSections, otherEntries: other, filteredEntries: [] as UnifiedPreset[] };
+  }, [data, slot, t, selectedPrinterName, compatIndex, allowed]);
+
+  // Search narrows what is listed, never what is chosen: every word must
+  // appear in the name, and the selected preset always stays (#3386). Every
+  // dropdown has it, so it is always where you look for it; the box opens from
+  // a button so a dialog full of filament rows stays compact. A query looks
+  // through the held-back groups too, which keep their labels.
+  const words = searching ? query.toLowerCase().split(/\s+/).filter(Boolean) : [];
+  const expanded = showAll || words.length > 0;
 
   // Other-printer presets are held back by default so the list shows what is
   // usable on the selected printer. Two things are never hidden: a preset whose
   // compatibility is merely *unknown* (it never reaches otherEntries), and the
   // one currently selected — a pipeline or an auto-pick can land on a
   // cross-printer preset, and dropping it from the options would blank the
-  // select and silently discard the choice.
+  // select and silently discard the choice. These groups mix tiers, so they
+  // are sorted once they are shown.
   const visibleOther = useMemo(() => {
-    if (showAll) return otherEntries;
-    return otherEntries.filter((p) => `${p.source}:${p.id}` === selectedRefValue);
-  }, [showAll, otherEntries, selectedRefValue]);
+    if (expanded) return sortPresets(otherEntries, slot);
+    return otherEntries.filter((p) => toRefValue(p) === selectedRefValue);
+  }, [expanded, otherEntries, slot, selectedRefValue]);
 
   const visibleFiltered = useMemo(() => {
-    if (showAll) return filteredEntries;
-    return filteredEntries.filter((p) => `${p.source}:${p.id}` === selectedRefValue);
-  }, [showAll, filteredEntries, selectedRefValue]);
+    if (expanded) return sortPresets(filteredEntries, slot);
+    return filteredEntries.filter((p) => toRefValue(p) === selectedRefValue);
+  }, [expanded, filteredEntries, slot, selectedRefValue]);
 
   const hiddenCount =
     otherEntries.length - visibleOther.length + filteredEntries.length - visibleFiltered.length;
   const totalEntries =
     sections.reduce((sum, s) => sum + s.entries.length, 0) + visibleOther.length + visibleFiltered.length;
 
-  // Search narrows what is listed, never what is chosen: every word must
-  // appear in the name, and the selected preset always stays (#3386). Every
-  // dropdown has it, so it is always where you look for it; the box opens from
-  // a button so a dialog full of filament rows stays compact.
-  const words = searching ? query.toLowerCase().split(/\s+/).filter(Boolean) : [];
   const closeSearch = () => {
     setSearching(false);
     setQuery('');
   };
-  const matches = (p: UnifiedPreset) =>
-    words.every((w) => p.name.toLowerCase().includes(w)) || `${p.source}:${p.id}` === selectedRefValue;
+  const nameMatches = (p: UnifiedPreset) => words.every((w) => p.name.toLowerCase().includes(w));
+  const matches = (p: UnifiedPreset) => nameMatches(p) || toRefValue(p) === selectedRefValue;
+  const noMatches =
+    words.length > 0 &&
+    !sections.some((s) => s.entries.some(nameMatches)) &&
+    !visibleFiltered.some(nameMatches) &&
+    !visibleOther.some(nameMatches);
   const shownSections = words.length
     ? sections
         .map((s) => ({ tierLabel: s.tierLabel, entries: s.entries.filter(matches) }))
@@ -1866,12 +1903,12 @@ function PresetDropdown({
             </button>
           )}
           <button
+            ref={searchButton}
             type="button"
             onClick={() => (searching ? closeSearch() : setSearching(true))}
             disabled={disabled}
-            aria-pressed={searching}
-            aria-label={`${label}: ${t('slice.searchPresets', 'Search presets...')}`}
-            title={t('slice.searchPresets', 'Search presets...')}
+            aria-label={`${label}: ${searching ? t('slice.closeSearch', 'Close search') : t('common.search', 'Search')}`}
+            title={searching ? t('slice.closeSearch', 'Close search') : t('common.search', 'Search')}
             className={`hover:text-white disabled:opacity-50 ${searching ? 'text-bambu-green' : ''}`}
           >
             <Search className="w-3.5 h-3.5" />
@@ -1884,7 +1921,10 @@ function PresetDropdown({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') closeSearch();
+            if (e.key !== 'Escape') return;
+            closeSearch();
+            // The input unmounts, which would leave focus on <body>.
+            searchButton.current?.focus();
           }}
           autoFocus
           disabled={disabled}
@@ -1893,10 +1933,15 @@ function PresetDropdown({
           className="w-full px-3 py-1.5 mb-1 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm placeholder:text-bambu-gray focus:outline-none focus:border-bambu-gray disabled:opacity-50"
         />
       )}
+      {noMatches && (
+        <p role="status" className="text-xs text-bambu-gray mb-1">
+          {t('slice.noMatchingPresets', 'No matching presets found.')}
+        </p>
+      )}
       <div className="flex items-stretch gap-2">
       <select
         id={selectId}
-        value={toRefValue(value)}
+        value={selectedRefValue}
         onChange={(e) => onChange(fromRefValue(e.target.value))}
         disabled={disabled || totalEntries === 0}
         className="w-full px-3 py-2 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm focus:outline-none focus:border-bambu-gray disabled:opacity-50"
@@ -1909,7 +1954,7 @@ function PresetDropdown({
         {shownSections.map((section) => (
           <optgroup key={section.tierLabel} label={section.tierLabel}>
             {section.entries.map((p) => (
-              <option key={`${p.source}:${p.id}`} value={`${p.source}:${p.id}`}>
+              <option key={toRefValue(p)} value={toRefValue(p)}>
                 {p.name}
               </option>
             ))}
@@ -1918,7 +1963,7 @@ function PresetDropdown({
         {shownFiltered.length > 0 && (
           <optgroup label={filteredLabel ?? t('slice.otherPrinters')}>
             {shownFiltered.map((p) => (
-              <option key={`${p.source}:${p.id}`} value={`${p.source}:${p.id}`}>
+              <option key={toRefValue(p)} value={toRefValue(p)}>
                 {p.name}
               </option>
             ))}
@@ -1927,7 +1972,7 @@ function PresetDropdown({
         {shownOther.length > 0 && (
           <optgroup label={t('slice.otherPrinters')}>
             {shownOther.map((p) => (
-              <option key={`${p.source}:${p.id}`} value={`${p.source}:${p.id}`}>
+              <option key={toRefValue(p)} value={toRefValue(p)}>
                 {p.name}
               </option>
             ))}

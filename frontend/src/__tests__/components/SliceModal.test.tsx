@@ -2812,22 +2812,35 @@ describe('SliceModal — preset list order, stock duplicates and search (#3386)'
         { id: 'PFUS-10', name: 'alpha PLA 10', source: 'cloud' },
         { id: 'PFUS-a', name: 'Alpha PLA', source: 'cloud' },
         { id: 'PFUS-9', name: 'alpha PLA 9', source: 'cloud' },
-        { id: 'GFSA00', name: 'Bambu PLA Basic', source: 'cloud', stock: true },
-        { id: 'GFSA99', name: 'Bambu PLA Brand New', source: 'cloud', stock: true },
+        // Stock, but newer than the bundle: the listing keeps it under Bambu Cloud.
+        { id: 'GFSA99', name: 'Bambu PLA Brand New', source: 'cloud' },
       ],
     },
     standard: {
       printer: [{ id: 'Bambu Lab X1 Carbon 0.4 nozzle', name: 'Bambu Lab X1 Carbon 0.4 nozzle', source: 'standard' }],
-      process: [{ id: '0.20mm Standard', name: '0.20mm Standard', source: 'standard' }],
+      process: [
+        { id: '0.20mm Standard', name: '0.20mm Standard', source: 'standard' },
+        { id: '0.12mm Fine tree support', name: '0.12mm Fine tree support', source: 'standard' },
+        { id: '0.08mm Extra Fine', name: '0.08mm Extra Fine', source: 'standard' },
+        { id: '0.4mm Draft', name: '0.4mm Draft', source: 'standard' },
+      ],
       filament: [
         { id: 'Generic PVA', name: 'Generic PVA', source: 'standard' },
         { id: 'Bambu Support For PLA', name: 'Bambu Support For PLA', source: 'standard' },
         { id: 'eSUN PLA+', name: 'eSUN PLA+', source: 'standard' },
         { id: 'Bambu PLA Matte', name: 'Bambu PLA Matte', source: 'standard' },
         { id: 'Bambu PLA Basic', name: 'Bambu PLA Basic', source: 'standard' },
+        {
+          id: 'Bambu PETG HF @BBL H2D',
+          name: 'Bambu PETG HF @BBL H2D',
+          source: 'standard',
+          compatible_printers: ['Bambu Lab H2D 0.4 nozzle'],
+        },
         ...generics,
       ],
     },
+    // The listing dropped Bambu Cloud's stock copy of "Bambu PLA Basic".
+    stock_aliases: { 'cloud:GFSA00': { source: 'standard', id: 'Bambu PLA Basic' } },
   });
 
   const filamentSelect = () => presetSelects()[3];
@@ -2875,43 +2888,51 @@ describe('SliceModal — preset list order, stock duplicates and search (#3386)'
       'Generic Filament 2',
     ]);
     expect(standard.slice(-3)).toEqual(['eSUN PLA+', 'Bambu Support For PLA', 'Generic PVA']);
+    // Decimals compare by value, and "support" only means a support material
+    // in a filament list.
+    expect(groupNames(presetSelects()[1], 'Standard')).toEqual([
+      '0.08mm Extra Fine',
+      '0.12mm Fine tree support',
+      '0.20mm Standard',
+      '0.4mm Draft',
+    ]);
   });
 
-  it('lists a stock Bambu Cloud preset once, under Standard', async () => {
-    await open();
-    // The bundled tier has "Bambu PLA Basic"; "Bambu PLA Brand New" is newer
-    // than the bundle and has nowhere else to appear, so it stays.
-    expect(groupNames(filamentSelect(), 'Bambu Cloud')).not.toContain('Bambu PLA Basic');
-    expect(groupNames(filamentSelect(), 'Bambu Cloud')).toContain('Bambu PLA Brand New');
-    expect(groupNames(filamentSelect(), 'Standard')).toContain('Bambu PLA Basic');
-  });
-
-  it('keeps a hidden stock preset when it is the selected one', async () => {
-    mockApi.getSlicerPresets.mockResolvedValue(
-      makeUnified({
-        cloud: {
-          printer: [],
-          process: [],
-          filament: [{ id: 'GFSA00', name: 'Bambu PLA Basic', source: 'cloud', stock: true }],
+  it('applies a pipeline saved with a stock Bambu Cloud preset as its Standard copy', async () => {
+    const user = userEvent.setup();
+    mockApi.listSlicerPipelines.mockResolvedValue({
+      pipelines: [
+        {
+          id: 7,
+          name: 'Old pipeline',
+          description: null,
+          printer_preset: { source: 'standard', id: 'Bambu Lab X1 Carbon 0.4 nozzle' },
+          process_preset: { source: 'standard', id: '0.20mm Standard' },
+          filament_presets: [{ source: 'cloud', id: 'GFSA00' }],
+          bed_type: null,
+          target_kind: 'printer_class',
+          target_printer_id: null,
+          target_model_class: null,
+          fanout_strategy: 'max_parallel',
+          created_by: null,
+          created_at: '',
+          updated_at: '',
         },
-        standard: presets.standard,
-      }),
-    );
+      ],
+    });
     await open();
-    // The auto-pick prefers the cloud tier; dropping its pick from the options
-    // would blank the select.
-    expect(filamentSelect().value).toBe('cloud:GFSA00');
-    expect(groupNames(filamentSelect(), 'Bambu Cloud')).toEqual(['Bambu PLA Basic']);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Apply pipeline' }), '7');
+    expect(filamentSelect().value).toBe('standard:Bambu PLA Basic');
   });
 
   it('offers search on every dropdown, and it never drops the selection', async () => {
     const user = userEvent.setup();
     await open();
     // Printer, process and filament each get one, however short the list.
-    const buttons = screen.getAllByRole('button', { name: /Search presets/ });
+    const buttons = screen.getAllByRole('button', { name: /: Search$/ });
     expect(buttons).toHaveLength(3);
     expect(screen.queryByRole('searchbox')).toBeNull();
-    await user.click(screen.getByRole('button', { name: /^Filament.*Search presets/ }));
+    await user.click(screen.getByRole('button', { name: /^Filament.*: Search$/ }));
     const boxes = [screen.getByRole('searchbox')];
     // The auto-pick lands on the first Bambu Cloud preset in API order.
     expect(filamentSelect().selectedOptions[0].textContent).toBe('zeta PLA');
@@ -2925,9 +2946,29 @@ describe('SliceModal — preset list order, stock duplicates and search (#3386)'
     expect(names).toEqual(['Alpha PLA', 'alpha PLA 9', 'alpha PLA 10', 'zeta PLA']);
     expect(filamentSelect().value).toBe('cloud:PFUS-z');
 
-    // Escape closes the box and brings the full list back.
+    expect(screen.queryByText('No matching presets found.')).toBeNull();
+
+    // Only the selection left: say so rather than leave a one-entry list.
+    await user.type(boxes[0], ' nothing');
+    expect(screen.getByRole('status')).toHaveTextContent('No matching presets found.');
+
+    // Escape closes the box, brings the full list back and returns focus to
+    // the button that opened it.
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('searchbox')).toBeNull();
     expect(groupNames(filamentSelect(), 'Standard')).toContain('Generic Filament 30');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Filament.*: Search$/ }));
+  });
+
+  it('searches the held-back presets too, under their own label', async () => {
+    const user = userEvent.setup();
+    await open();
+    // A preset for another printer is held back behind "Show all".
+    expect(Array.from(filamentSelect().options).map((o) => o.textContent)).not.toContain('Bambu PETG HF @BBL H2D');
+
+    await user.click(screen.getByRole('button', { name: /^Filament.*: Search$/ }));
+    await user.type(screen.getByRole('searchbox'), 'petg hf');
+    expect(groupNames(filamentSelect(), 'Other printers')).toEqual(['Bambu PETG HF @BBL H2D']);
+    expect(screen.queryByText('No matching presets found.')).toBeNull();
   });
 });

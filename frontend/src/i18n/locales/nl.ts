@@ -4864,6 +4864,8 @@ export default {
     showAllPresets: 'Alles tonen',
     showFewerPresets: 'Minder tonen',
     searchPresets: 'Presets zoeken...',
+    closeSearch: 'Zoeken sluiten',
+    noMatchingPresets: 'Geen overeenkomende presets gevonden.',
     processSettings: 'Procesinstellingen',
     processSettingsHint: 'Pas de gekozen preset aan voor deze slice. Alles wat je niet aanraakt blijft zoals de preset het definieert.',
     processSettingsChanged: '{{count}} gewijzigd',

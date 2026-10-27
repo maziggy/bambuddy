@@ -4829,6 +4829,8 @@ export default {
     showAllPresets: 'すべて表示',
     showFewerPresets: '表示を減らす',
     searchPresets: 'プリセットを検索...',
+    closeSearch: '検索を閉じる',
+    noMatchingPresets: '一致するプリセットが見つかりません。',
     processSettings: 'プロセス設定',
     processSettingsHint: 'このスライス用に選択したプリセットを調整します。変更しない項目はプリセットの定義のままです。',
     processSettingsChanged: '{{count}} 件変更',

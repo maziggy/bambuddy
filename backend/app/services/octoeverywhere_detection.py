@@ -33,6 +33,7 @@ DETECTION_TIMEOUT = 30.0
 POLL_INTERVAL = 5
 DEFAULT_POLL_INTERVAL = 20
 ERROR_RETRY_INTERVAL = 60
+NOTIFICATION_REPEAT_INTERVAL = 3 * 60 * 60
 HISTORY_MAX = 50
 # Gadget's confidence levels: 1 suggests a warning or pause soonest, with more
 # false positives; 5 waits until the model is most certain.
@@ -106,6 +107,7 @@ class _PrintState:
     failures: int = 0
     warning_fired: bool = False
     action_fired: bool = False
+    last_notification_at: float | None = None
 
 
 def _process_interval(server_interval: int | None, poll_interval: int, recommended_interval: int | None = None) -> int:
@@ -761,15 +763,21 @@ class OctoEverywhereDetectionService:
                 }
             )
 
+        notification_due = not state.warning_fired or (
+            state.last_notification_at is not None
+            and time.monotonic() - state.last_notification_at >= NOTIFICATION_REPEAT_INTERVAL
+        )
         if pause and not state.action_fired:
             action = settings["action"]
             # A pause or power cut always notifies, even after a warning: the
-            # user needs to know the printer stopped. Notify-only would just
-            # repeat the warning, so it stays silent.
-            if action == "notify" and state.warning_fired:
+            # user needs to know the printer stopped. Notify-only follows the
+            # same reminder cadence as warnings.
+            if action == "notify" and not notification_due:
                 state.action_fired = True
                 return
-        elif warning and not state.warning_fired:
+        elif (warning or pause) and notification_due:
+            # Only a fresh positive assessment can trigger a reminder. Never
+            # repeat hardware control, even if Gadget still suggests pausing.
             action = "notify"
         else:
             return
@@ -783,6 +791,9 @@ class OctoEverywhereDetectionService:
         # the remaining plug-off/notification nor make this print act twice.
         state.action_fired = state.action_fired or pause
         state.warning_fired = True
+        # Reserve the reminder deadline before yielding, including when a
+        # settings save cancels this check while the notification is in flight.
+        state.last_notification_at = time.monotonic()
         action_task = asyncio.create_task(
             self._dispatch_action(printer_id, action, task_name, print_quality, frame, printer_name=printer_name)
         )

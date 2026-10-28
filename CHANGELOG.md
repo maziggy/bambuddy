@@ -5,6 +5,7 @@ All notable changes to Bambuddy will be documented in this file.
 ## [1.3.0] - Unreleased
 
 ### Added
+- **SpoolBuddy sends a Bambu tag's data with each scan (#2685, contributed by @hibikipr in #3389)** — A scan of a Bambu Lab tag sent only its tray UUID. The daemon now also reads block 6 (drying and nozzle temperatures) and sends the tag's data blocks (material, type, colour, weight, temperatures) along with the scan, for Bambuddy to decode. A Bambuddy that doesn't know them yet ignores them.
 - **Assign a spool by scanning its QR label (#1574, requested and contributed by @samedyuksel in #1606)** — Putting a spool into an AMS slot or away into storage meant finding it in a list. Its label's QR code can now be scanned with the phone or tablet camera instead.
   - **Assign by QR:** a new button on the **Inventory** page and on SpoolBuddy's Inventory page. Pick an AMS slot or a storage location, then scan the spool. A spool scanned into a slot leaves the slot it was in, in the same save, so a failed move leaves it where it was. A spool scanned into storage gets that location, as the Locations filter shows it.
   - **From the Assign Spool dialog:** **Scan a spool QR** next to the spool list assigns the scanned spool to the slot the dialog was opened for.

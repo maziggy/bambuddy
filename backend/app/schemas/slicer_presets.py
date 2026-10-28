@@ -48,6 +48,8 @@ class UnifiedPreset(BaseModel):
     ("Bambu Lab H2D 0.4 nozzle - Skew") is listed in no process's
     ``compatible_printers`` and its name says nothing reliable about the
     model, so the SliceModal matches against this parent as well (#3250).
+    OrcaSlicer Cloud filament presets carry it too: one saved with only the
+    keys the user changed takes its material from this parent (#3403).
 
     ``stock`` marks a Bambu Cloud preset as one of Bambu's own (the cloud's
     "public" list) rather than the user's. Internal only: the listing drops

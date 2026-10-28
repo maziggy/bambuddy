@@ -294,3 +294,32 @@ describe('InventoryPage - LOCATION column (Spoolman mode)', () => {
     expect(container.textContent).not.toContain('C4');
   });
 });
+
+describe('InventoryPage - Forecast in Spoolman mode (#3406)', () => {
+  it("the forecast does not read the built-in inventory's usage history", async () => {
+    localStorage.clear();
+    let usageHistoryRead = false;
+    server.use(
+      http.get('/api/v1/settings/', () => HttpResponse.json(mockSettings)),
+      http.get('/api/v1/inventory/assignments', () => HttpResponse.json([])),
+      http.get('/api/v1/inventory/catalog', () => HttpResponse.json([])),
+      http.get('/api/v1/settings/spoolman', () =>
+        HttpResponse.json({ spoolman_enabled: 'true', spoolman_url: 'http://localhost:7912' })
+      ),
+      http.get('/api/v1/spoolman/inventory/spools', () => HttpResponse.json([mockSpoolmanSpool])),
+      http.get('/api/v1/spoolman/inventory/slot-assignments/all', () => HttpResponse.json([])),
+      http.get('/api/v1/inventory/usage', () => {
+        usageHistoryRead = true;
+        return HttpResponse.json([]);
+      }),
+    );
+
+    const { container } = render(<InventoryPageRouter />);
+    await waitFor(() => expect(container.textContent).toContain('Bambu Lab'));
+    screen.getByRole('button', { name: /forecast/i }).click();
+
+    // The forecast is up, with the rate from the spool's own consumption.
+    expect(await screen.findByText('Est.')).toBeInTheDocument();
+    expect(usageHistoryRead).toBe(false);
+  });
+});

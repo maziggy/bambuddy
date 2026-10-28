@@ -22,6 +22,16 @@ function findFolder(folders: LibraryFolderTree[], id: number): LibraryFolderTree
 }
 
 /**
+ * Whether the current user may put things into `folder`. A library:*_own user
+ * sees shared folders they cannot write to (#3201); those stay listed in the
+ * pickers but are never a destination. The picker's disabled state and the
+ * folder drop targets both use this, so the two cannot drift apart.
+ */
+export function isWritableFolder(folder: Pick<LibraryFolderTree, 'can_write'>): boolean {
+  return folder.can_write !== false;
+}
+
+/**
  * Folder ids that may NOT become the new parent of `folderId` (#3305): the
  * folder itself, everything below it (the server rejects those with 400 too,
  * this just keeps them out of the picker), and every external folder with its
@@ -45,7 +55,8 @@ export function moveDisallowedFolderIds(folders: LibraryFolderTree[], folderId: 
 /**
  * Whether dropping / moving `folder` onto `destinationId` (null = root) would
  * actually change anything the server accepts. False for the folder itself,
- * its descendants, external destinations, and the parent it already has.
+ * its descendants, external destinations, destinations the user may not write
+ * to, and the parent it already has.
  */
 export function isValidFolderMove(
   folders: LibraryFolderTree[],
@@ -55,5 +66,7 @@ export function isValidFolderMove(
   if (folder.is_external) return false;
   if ((folder.parent_id ?? null) === destinationId) return false;
   if (destinationId === null) return true;
+  const destination = findFolder(folders, destinationId);
+  if (!destination || !isWritableFolder(destination)) return false;
   return !moveDisallowedFolderIds(folders, folder.id).has(destinationId);
 }

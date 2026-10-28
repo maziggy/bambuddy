@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect, lazy, Suspense, type DragEvent } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect, useId, lazy, Suspense, type DragEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueries, useMutation, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -91,7 +91,7 @@ import { assignableProjects } from '../utils/projectTree';
 import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import { isSlicedLibraryFile, isSliceableLibraryFile } from '../utils/libraryFiles';
 import { useUiSettings } from '../hooks/useUiSettings';
-import { FOLDER_DRAG_TYPE, isValidFolderMove, moveDisallowedFolderIds } from '../utils/libraryFolders';
+import { FOLDER_DRAG_TYPE, isValidFolderMove, isWritableFolder, moveDisallowedFolderIds } from '../utils/libraryFolders';
 
 type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
 type SortDirection = 'asc' | 'desc';
@@ -550,7 +550,7 @@ function FolderTargetList({ folders, rootLabel, currentId, disabledIds, disabled
   const flattenFolders = (items: LibraryFolderTree[], depth = 0): MoveTarget[] => {
     const result: MoveTarget[] = [];
     for (const item of items) {
-      result.push({ id: item.id, name: item.name, depth, canWrite: item.can_write !== false });
+      result.push({ id: item.id, name: item.name, depth, canWrite: isWritableFolder(item) });
       if (item.children.length > 0) {
         result.push(...flattenFolders(item.children, depth + 1));
       }
@@ -853,7 +853,8 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading, t }: LinkFolderMo
 
 // Folder drag and drop (#3305). The page owns the dragged folder (so drop
 // targets can decide validity during dragover, when the payload is not yet
-// readable) and the mutation; rows and columns only report where it landed.
+// readable), the one highlighted target and the mutation; rows and columns
+// only report where it landed.
 interface FolderDragProps {
   canDrag: (folder: LibraryFolderTree) => boolean;
   onDragStart: (folder: LibraryFolderTree, e: DragEvent) => void;
@@ -862,36 +863,58 @@ interface FolderDragProps {
   // root) be a real, allowed move? False while nothing is being dragged.
   canDropOn: (destinationId: number | null) => boolean;
   onDrop: (destinationId: number | null) => void;
+  // The drop target under the pointer (a useId key), or null. Shared so a
+  // column stops highlighting the moment a row inside it takes over.
+  activeTarget: string | null;
+  setActiveTarget: (key: string | null) => void;
 }
 
 // Drop-target behaviour for one destination: accepts the drag only when the
-// page says the move is valid, highlights while hovered, and swallows the
-// drop so the page-wide upload zone never sees it.
+// page says the move is valid and highlights while it is the active target.
+// A folder drag never travels past the innermost target, accepted or not:
+// a row that refuses the drop (e.g. the folder's own parent) must not hand it
+// to the column around it, which would move the folder somewhere else. It
+// also keeps the drag away from the page-wide upload zone.
 function useFolderDropTarget(folderDrag: FolderDragProps | undefined, destinationId: number | null) {
-  const [isOver, setIsOver] = useState(false);
+  const key = useId();
   if (!folderDrag) return { isOver: false, handlers: {} };
-  const accepts = (e: DragEvent) => e.dataTransfer.types.includes(FOLDER_DRAG_TYPE) && folderDrag.canDropOn(destinationId);
-  const handlers = {
-    onDragOver: (e: DragEvent) => {
-      if (!accepts(e)) return;
+  const isFolderDrag = (e: DragEvent) => e.dataTransfer.types.includes(FOLDER_DRAG_TYPE);
+  const claim = (e: DragEvent) => {
+    e.stopPropagation();
+    const accepted = folderDrag.canDropOn(destinationId);
+    if (accepted) {
       e.preventDefault();
-      e.stopPropagation();
       e.dataTransfer.dropEffect = 'move';
-      if (!isOver) setIsOver(true);
+    } else {
+      // Not cancelling the event is what makes the browser show "no drop".
+      e.dataTransfer.dropEffect = 'none';
+    }
+    const next = accepted ? key : null;
+    if (folderDrag.activeTarget !== next) folderDrag.setActiveTarget(next);
+  };
+  const handlers = {
+    onDragEnter: (e: DragEvent) => {
+      if (isFolderDrag(e)) claim(e);
+    },
+    onDragOver: (e: DragEvent) => {
+      if (isFolderDrag(e)) claim(e);
     },
     onDragLeave: (e: DragEvent) => {
       const next = e.relatedTarget as Node | null;
-      if (!next || !(e.currentTarget as Node).contains(next)) setIsOver(false);
+      if ((!next || !(e.currentTarget as Node).contains(next)) && folderDrag.activeTarget === key) {
+        folderDrag.setActiveTarget(null);
+      }
     },
     onDrop: (e: DragEvent) => {
-      if (!accepts(e)) return;
-      e.preventDefault();
+      if (!isFolderDrag(e)) return;
       e.stopPropagation();
-      setIsOver(false);
+      folderDrag.setActiveTarget(null);
+      if (!folderDrag.canDropOn(destinationId)) return;
+      e.preventDefault();
       folderDrag.onDrop(destinationId);
     },
   };
-  return { isOver, handlers };
+  return { isOver: folderDrag.activeTarget === key, handlers };
 }
 
 const FOLDER_DROP_TARGET_CLASS = 'ring-1 ring-inset ring-bambu-green bg-bambu-green/10';
@@ -1818,6 +1841,10 @@ export function FileManagerPage() {
   // Folder being moved via the context menu picker / by drag (#3305).
   const [moveFolder, setMoveFolder] = useState<LibraryFolderTree | null>(null);
   const [draggingFolder, setDraggingFolder] = useState<LibraryFolderTree | null>(null);
+  // The one folder drop target under the pointer. A single page-level value
+  // (not one flag per target) so a column can never stay lit after a row
+  // inside it took the drag or the drop (#3305 review).
+  const [folderDropTarget, setFolderDropTarget] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'folder' | 'bulk'; id: number; count?: number } | null>(null);
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
   const [sliceFile, setSliceFile] = useState<LibraryFileListItem | null>(null);
@@ -2360,7 +2387,10 @@ export function FileManagerPage() {
       e.dataTransfer.effectAllowed = 'move';
       setDraggingFolder(folder);
     },
-    onDragEnd: () => setDraggingFolder(null),
+    onDragEnd: () => {
+      setDraggingFolder(null);
+      setFolderDropTarget(null);
+    },
     canDropOn: (destinationId) =>
       draggingFolder !== null && !!folders && isValidFolderMove(folders, draggingFolder, destinationId),
     onDrop: (destinationId) => {
@@ -2368,6 +2398,8 @@ export function FileManagerPage() {
       moveFolderMutation.mutate({ id: draggingFolder.id, parentId: destinationId });
       setDraggingFolder(null);
     },
+    activeTarget: folderDropTarget,
+    setActiveTarget: setFolderDropTarget,
   };
 
   const renameFileMutation = useMutation({

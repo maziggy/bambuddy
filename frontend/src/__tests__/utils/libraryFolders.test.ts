@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { LibraryFolderTree } from '../../api/client';
-import { isValidFolderMove, moveDisallowedFolderIds } from '../../utils/libraryFolders';
+import { isValidFolderMove, isWritableFolder, moveDisallowedFolderIds } from '../../utils/libraryFolders';
 
 function folder(id: number, overrides: Partial<LibraryFolderTree> = {}): LibraryFolderTree {
   return {
@@ -103,5 +103,18 @@ describe('isValidFolderMove', () => {
   it('never moves an external folder', () => {
     expect(isValidFolderMove(tree, tree[2], 5)).toBe(false);
     expect(isValidFolderMove(tree, tree[2].children[0], null)).toBe(false);
+  });
+
+  it('refuses a destination the user may not write to, and one that is not in the tree', () => {
+    const readOnly = [...tree, folder(6, { can_write: false })];
+    expect(isValidFolderMove(readOnly, two, 6)).toBe(false);
+    expect(isValidFolderMove(tree, two, 999)).toBe(false);
+  });
+});
+
+describe('isWritableFolder', () => {
+  it('follows the can_write flag the server sends', () => {
+    expect(isWritableFolder({ can_write: true })).toBe(true);
+    expect(isWritableFolder({ can_write: false })).toBe(false);
   });
 });

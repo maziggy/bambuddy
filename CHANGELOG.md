@@ -2,7 +2,7 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [1.3.0b1] - Unreleased
+## [1.3.0] - Unreleased
 
 ### Added
 - **Assign a spool by scanning its QR label (#1574, requested and contributed by @samedyuksel in #1606)** — Putting a spool into an AMS slot or away into storage meant finding it in a list. Its label's QR code can now be scanned with the phone or tablet camera instead.

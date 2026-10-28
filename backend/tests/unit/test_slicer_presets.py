@@ -155,6 +155,116 @@ class TestEnrichCloudMetadata:
         assert c["filament"][0].filament_colour == "#FFFFFF"
 
 
+def _filaments(source: str, *items: tuple[str, str | None]) -> dict[str, list[UnifiedPreset]]:
+    """A tier with only filament presets, from (name, filament_type) pairs."""
+    return {
+        "printer": [],
+        "process": [],
+        "filament": [UnifiedPreset(id=n, name=n, source=source, filament_type=t) for n, t in items],
+    }
+
+
+class TestEnrichMaterialWithoutTwin:
+    """#3403: with OrcaSlicer preferred, the bundle has no H2C profiles, so a
+    Bambu Cloud "@BBL H2C" filament has no same-named twin and used to stay
+    untyped -- a PETG-CF slot then auto-picked Generic PETG."""
+
+    def _bundled(self) -> dict[str, list[UnifiedPreset]]:
+        # The OrcaSlicer 2.4.2 bundle as it lists these: every printer's
+        # profile but the H2C, and Orca's own "@System" generics.
+        return _filaments(
+            "standard",
+            ("Generic PETG-CF @BBL X1C", "PETG-CF"),
+            ("Generic PETG-CF @BBL H2D", "PETG-CF"),
+            ("Generic PETG-CF @System", "PETG"),
+            ("Generic PETG @BBL X1C", "PETG"),
+            ("Generic PE-CF @BBL X1C", "PE-CF"),
+            ("Generic PE-CF @System", "PE"),
+        )
+
+    def test_bambu_cloud_stock_profile_takes_the_material_of_its_other_printers(self):
+        cloud = _filaments(
+            "cloud",
+            ("Generic PETG @BBL H2C", None),
+            ("Generic PETG-CF @BBL H2C", None),
+            ("Generic PETG-CF @BBL H2C 0.4 nozzle", None),
+            ("Generic PE-CF @BBL H2C", None),
+        )
+
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(
+            _filaments("orca_cloud"), cloud, _filaments("local"), self._bundled()
+        )
+
+        assert [p.filament_type for p in c["filament"]] == ["PETG", "PETG-CF", "PETG-CF", "PE-CF"]
+        # Material only: the colour of another printer's profile isn't this one's.
+        assert all(p.filament_colour is None for p in c["filament"])
+
+    def test_disagreeing_bundled_materials_leave_it_unknown(self):
+        bundled = _filaments("standard", ("Odd PLA @BBL X1C", "PLA"), ("Odd PLA @BBL A1", "PLA-CF"))
+        cloud = _filaments("cloud", ("Odd PLA @BBL H2C", None))
+
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(_filaments("orca_cloud"), cloud, _filaments("local"), bundled)
+
+        assert c["filament"][0].filament_type is None
+
+    def test_only_bundled_bbl_names_count(self):
+        """A name without "@BBL", or a user's own "@BBL"-named profile, is no
+        source of another profile's material."""
+        local = _filaments("local", ("Generic PLA @BBL X1C", "PETG"))
+        cloud = _filaments("cloud", ("Generic PETG-CF", None), ("Generic PLA @BBL H2C", None))
+
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(_filaments("orca_cloud"), cloud, local, self._bundled())
+
+        assert [p.filament_type for p in c["filament"]] == [None, None]
+
+    def test_a_users_copy_of_a_stock_profile_is_left_unknown(self):
+        """Its material may be the one the user changed it to."""
+        cloud = _filaments("cloud", ("Generic PETG @BBL H2C - Copy", None), ("Generic PETG @BBL H2C 0.4 nozzle", None))
+
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(
+            _filaments("orca_cloud"), cloud, _filaments("local"), self._bundled()
+        )
+
+        assert [p.filament_type for p in c["filament"]] == [None, "PETG"]
+
+    def test_a_stated_material_is_kept(self):
+        cloud = _filaments("cloud", ("Generic PETG-CF @BBL H2C", "PETG"))
+
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(
+            _filaments("orca_cloud"), cloud, _filaments("local"), self._bundled()
+        )
+
+        assert c["filament"][0].filament_type == "PETG"
+
+    def test_orca_cloud_profile_takes_the_material_of_its_parent(self):
+        orca = _filaments(
+            "orca_cloud",
+            ("My PETG-CF", None),
+            ("My PETG-CF fast", None),
+            ("My H2C PETG-CF", None),
+            ("Loop A", None),
+            ("Loop B", None),
+            ("Typed", "PLA"),
+            ("From System", None),
+        )
+        parents = {
+            "My PETG-CF": "Generic PETG-CF @BBL X1C",  # bundled, same name
+            "My PETG-CF fast": "My PETG-CF",  # through another user profile
+            "My H2C PETG-CF": "Generic PETG-CF @BBL H2C",  # not bundled: by filament
+            "Loop A": "Loop B",
+            "Loop B": "Loop A",
+            "Typed": "Generic PETG @BBL X1C",
+            # Orca's own generic states the coarser PETG: no source.
+            "From System": "Generic PETG-CF @System",
+        }
+        for p in orca["filament"]:
+            p.inherits = parents[p.name]
+
+        oc, _c, _l, _s = sp._enrich_cloud_metadata(orca, _filaments("cloud"), _filaments("local"), self._bundled())
+
+        assert [p.filament_type for p in oc["filament"]] == ["PETG-CF", "PETG-CF", "PETG-CF", None, None, "PLA", None]
+
+
 class TestEnrichCompatiblePrinters:
     """#2628: the same name bridge carries ``compatible_printers`` onto the
     tiers that don't ship one. Bambu Cloud never does — so a profile whose
@@ -422,6 +532,39 @@ class TestFetchOrcaCloudPresets:
             slots, _ = await sp._fetch_orca_cloud_presets(MagicMock(), user)
 
         assert [p.inherits for p in slots["printer"]] == ["Bambu Lab H2D 0.4 nozzle", None, None]
+
+    @pytest.mark.asyncio
+    async def test_filament_preset_carries_the_preset_it_was_saved_from(self):
+        """#3403: a filament saved with only the keys the user changed states no
+        material of its own; the enrich pass reads it off this parent."""
+        sp._orca_cloud_cache.clear()
+        svc_mock = MagicMock()
+        svc_mock.list_profiles = AsyncMock(
+            return_value=[
+                {
+                    "id": "f1",
+                    "name": "My PETG-CF",
+                    "content": {"type": "filament", "inherits": "Generic PETG-CF @BBL X1C"},
+                },
+                {
+                    "id": "p1",
+                    "name": "Orca 0.20mm",
+                    "content": {"type": "print", "inherits": "0.20mm Standard @BBL X1C"},
+                },
+            ]
+        )
+        svc_mock.close = AsyncMock()
+        user = MagicMock(id=1)
+        user.has_permission = MagicMock(return_value=True)
+        with (
+            patch.object(sp, "_load_orca_credentials", AsyncMock(return_value=self._orca_creds("tok"))),
+            patch.object(sp, "_build_orca_service", AsyncMock(return_value=svc_mock)),
+        ):
+            slots, _ = await sp._fetch_orca_cloud_presets(MagicMock(), user)
+
+        assert slots["filament"][0].inherits == "Generic PETG-CF @BBL X1C"
+        assert slots["filament"][0].filament_type is None
+        assert slots["process"][0].inherits is None
 
     @pytest.mark.asyncio
     async def test_missing_or_malformed_compatible_printers_stays_none(self):

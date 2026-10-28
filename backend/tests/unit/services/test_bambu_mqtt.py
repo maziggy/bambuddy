@@ -8245,9 +8245,29 @@ class TestKProfileRequestCorrelation:
     async def test_pending_entry_is_released_on_timeout(self, mqtt_client):
         # A timed-out attempt must not leave its entry behind, or a later
         # broadcast would be matched to a request nobody is waiting on.
-        profiles = await mqtt_client.get_kprofiles(nozzle_diameter="0.8", timeout=0.01, max_retries=1)
-        assert profiles == []
+        from backend.app.services.bambu_mqtt import KProfileReadError
+
+        with pytest.raises(KProfileReadError):
+            await mqtt_client.get_kprofiles(nozzle_diameter="0.8", timeout=0.01, max_retries=1)
         assert mqtt_client._pending_kprofile_requests == {}
+
+    @pytest.mark.asyncio
+    async def test_no_answer_is_an_error_not_an_empty_table(self, mqtt_client):
+        """#3404: an empty list is a printer without profiles for the nozzle."""
+        from backend.app.services.bambu_mqtt import KProfileReadError
+
+        with pytest.raises(KProfileReadError, match="did not answer"):
+            await mqtt_client.get_kprofiles(nozzle_diameter="0.4", timeout=0.01, max_retries=2)
+        assert mqtt_client._client.publish.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_not_connected_is_an_error(self, mqtt_client):
+        from backend.app.services.bambu_mqtt import KProfileReadError
+
+        mqtt_client.state.connected = False
+        with pytest.raises(KProfileReadError, match="not connected"):
+            await mqtt_client.get_kprofiles(nozzle_diameter="0.4", timeout=0.01)
+        mqtt_client._client.publish.assert_not_called()
 
 
 class TestConnectRefusalReporting:

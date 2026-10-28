@@ -1831,6 +1831,9 @@ export interface SlicerSetting {
   user_id: string | null;
   updated_time: string | null;
   is_custom: boolean;
+  // The id Bambu Studio puts in an AMS slot for the preset; not derivable
+  // from setting_id for every preset (#3387). Absent from older backends.
+  filament_id?: string | null;
 }
 
 export interface SpoolCatalogEntry {
@@ -7182,7 +7185,9 @@ export const api = {
     ),
   getAssignments: (printerId?: number) =>
     request<SpoolAssignment[]>(`/inventory/assignments${printerId ? `?printer_id=${printerId}` : ''}`),
-  assignSpool: (data: { spool_id: number; printer_id: number; ams_id: number; tray_id: number }) =>
+  // move: the spool also leaves any other slot it is in, in the same
+  // transaction (#1574) -- for a scanned spool, the one in the user's hand.
+  assignSpool: (data: { spool_id: number; printer_id: number; ams_id: number; tray_id: number; move?: boolean }) =>
     request<SpoolAssignment>('/inventory/assignments', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -7410,7 +7415,8 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ weight_grams: weightGrams }),
     }),
-  assignSpoolmanSlot: (data: { spoolman_spool_id: number; printer_id: number; ams_id: number; tray_id: number }) =>
+  // move: as assignSpool's (#1574).
+  assignSpoolmanSlot: (data: { spoolman_spool_id: number; printer_id: number; ams_id: number; tray_id: number; move?: boolean }) =>
     request<InventorySpool>('/spoolman/inventory/slot-assignments', {
       method: 'POST',
       body: JSON.stringify(data),

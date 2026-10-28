@@ -621,6 +621,7 @@ async def get_slicer_settings(
                         user_id=s.get("user_id"),
                         updated_time=s.get("updated_time"),
                         is_custom=True,
+                        filament_id=_listed_filament_id(s),
                     )
                 )
             # Public (default) presets
@@ -634,6 +635,7 @@ async def get_slicer_settings(
                         user_id=s.get("user_id"),
                         updated_time=s.get("updated_time"),
                         is_custom=False,
+                        filament_id=_listed_filament_id(s),
                     )
                 )
             setattr(result, our_type, parsed)
@@ -800,11 +802,15 @@ _BUILTIN_FILAMENT_NAMES: dict[str, str] = {
     "GFA07": "Bambu PLA Marble",
     "GFA08": "Bambu PLA Sparkle",
     "GFA09": "Bambu PLA Tough",
+    "GFA10": "Bambu PLA Tough+",
     "GFA11": "Bambu PLA Aero",
     "GFA12": "Bambu PLA Glow",
     "GFA13": "Bambu PLA Dynamic",
     "GFA15": "Bambu PLA Galaxy",
     "GFA16": "Bambu PLA Wood",
+    "GFA17": "Bambu PLA Translucent",
+    "GFA18": "Bambu PLA Lite",
+    "GFA19": "Bambu PLA Pure",
     "GFA50": "Bambu PLA-CF",
     "GFB00": "Bambu ABS",
     "GFB01": "Bambu ASA",
@@ -821,6 +827,7 @@ _BUILTIN_FILAMENT_NAMES: dict[str, str] = {
     "GFG00": "Bambu PETG Basic",
     "GFG01": "Bambu PETG Translucent",
     "GFG02": "Bambu PETG HF",
+    "GFG03": "Bambu PETG Matte",
     "GFG50": "Bambu PETG-CF",
     "GFG60": "PolyLite PETG",
     "GFG96": "Generic PETG HF",
@@ -869,6 +876,13 @@ _BUILTIN_FILAMENT_NAMES: dict[str, str] = {
     "GFS97": "Generic BVOH",
     "GFS98": "Generic HIPS",
     "GFS99": "Generic PVA",
+    "GFSNL02": "SUNLU PLA Matte",
+    "GFSNL03": "SUNLU PLA+",
+    "GFSNL04": "SUNLU PLA+ 2.0",
+    "GFSNL05": "SUNLU Silk PLA+",
+    "GFSNL06": "SUNLU PLA Marble",
+    "GFSNL07": "SUNLU Wood PLA",
+    "GFSNL08": "SUNLU PETG",
     "GFT01": "Bambu PET-CF",
     "GFT02": "Bambu PPS-CF",
     "GFT97": "Generic PPS",
@@ -876,6 +890,8 @@ _BUILTIN_FILAMENT_NAMES: dict[str, str] = {
     "GFU00": "Bambu TPU 95A HF",
     "GFU01": "Bambu TPU 95A",
     "GFU02": "Bambu TPU for AMS",
+    "GFU03": "Bambu TPU 90A",
+    "GFU04": "Bambu TPU 85A",
     "GFU98": "Generic TPU for AMS",
     "GFU99": "Generic TPU",
 }
@@ -958,6 +974,12 @@ async def _enrich_from_local_presets(
             result[fid] = {"name": "", "k": None}
 
     return result
+
+
+def _listed_filament_id(entry: dict) -> str | None:
+    """The filament_id an entry of Bambu's preset list carries, if it is one."""
+    raw = entry.get("filament_id")
+    return (raw.strip() or None) if isinstance(raw, str) else None
 
 
 # _filament_id_to_setting_id is now imported from backend.app.utils.filament_ids

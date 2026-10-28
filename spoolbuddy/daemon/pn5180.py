@@ -63,7 +63,9 @@ BAMBU_CONTEXT = b"RFID-A\x00"  # 7 bytes including null terminator
 
 # Blocks to read for Bambu tag data. Block 9 (sector 2) holds the tray UUID,
 # the same on both tags of a spool and equal to the AMS's tray_uuid (#984).
-BAMBU_BLOCKS = [1, 2, 4, 5, 9]
+# Block 6 holds the drying and nozzle temperatures; with 1, 2, 4 and 5
+# (material, type, colour, weight) it is sent as raw_blocks (#2685).
+BAMBU_BLOCKS = [1, 2, 4, 5, 6, 9]
 
 # ISO 14443-3 anticollision: SEL codes of cascade levels 1-3, the cascade tag
 # that opens a level's four bytes when the UID goes on at the next level, and

@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '../utils';
 import { ConfigureAmsSlotModal } from '../../components/ConfigureAmsSlotModal';
 import { api } from '../../api/client';
@@ -678,6 +679,54 @@ describe('ConfigureAmsSlotModal', () => {
     expect(screen.getByRole('button', { name: /Configure Slot/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Reset Slot/i })).toBeInTheDocument();
+  });
+
+  it('says the K-profiles could not be read when the printer did not answer (#3404)', async () => {
+    (api.getKProfiles as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('The printer did not answer the K-profile request'),
+    );
+    const slotInfo = { ...defaultProps.slotInfo, savedPresetId: 'GFSL05_09' };
+    // Retrying the way the app's client does: the dialog must not ask again,
+    // the backend has already asked the printer three times.
+    const retrying = new QueryClient({ defaultOptions: { queries: { retry: 1, retryDelay: 0 } } });
+    render(
+      <QueryClientProvider client={retrying}>
+        <ConfigureAmsSlotModal {...defaultProps} slotInfo={slotInfo} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/The printer did not answer, so its K-profiles could not be read/).length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText(/No matching K profiles found/)).not.toBeInTheDocument();
+    expect(api.getKProfiles).toHaveBeenCalledTimes(1);
+  });
+
+  it('opened again after a failed read, it loads instead of saying the printer did not answer (#3404)', async () => {
+    // A read without data goes back to pending when it runs again, so the
+    // dialog shows its loading state, not the failed read's hint.
+    let answer: (v: unknown) => void = () => {};
+    (api.getKProfiles as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('The printer did not answer the K-profile request'))
+      .mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    const slotInfo = { ...defaultProps.slotInfo, savedPresetId: 'GFSL05_09' };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const modal = (open: boolean) => (
+      <QueryClientProvider client={client}>
+        <ConfigureAmsSlotModal {...defaultProps} isOpen={open} slotInfo={slotInfo} />
+      </QueryClientProvider>
+    );
+    const unread = /The printer did not answer, so its K-profiles could not be read/;
+    const { rerender } = render(modal(true));
+    await waitFor(() => expect(screen.getAllByText(unread).length).toBeGreaterThan(0));
+
+    rerender(modal(false));
+    rerender(modal(true));
+    await waitFor(() => expect(api.getKProfiles).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(unread)).not.toBeInTheDocument();
+
+    answer(mockKProfiles);
+    await waitFor(() => expect(screen.getByRole('option', { name: /PLA Basic \(K=0.020\)/ })).toBeInTheDocument());
   });
 
   it('surfaces a K-profile whose name does not match the preset when filament_id agrees (#1688)', async () => {

@@ -2244,7 +2244,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         </div>
       ) : viewMode === 'forecast' ? (
         /* Forecast view */
-        <ForecastPanel spools={spools || []} />
+        <ForecastPanel spools={spools || []} spoolmanMode={spoolmanMode} />
       ) : viewMode === 'cards' ? (
         /* Cards view */
         pagedItems.length > 0 ? (

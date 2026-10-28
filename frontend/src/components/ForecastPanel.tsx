@@ -205,7 +205,7 @@ function buildProjectionSeries(
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
+export function ForecastPanel({ spools, spoolmanMode = false }: { spools: InventorySpool[]; spoolmanMode?: boolean }) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { t } = useTranslation();
@@ -227,7 +227,12 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
 
   const { data: settings } = useUiSettings({ enabled: canRead });
   const { data: skuSettingsList = [] } = useQuery({ queryKey: ['sku-settings'], queryFn: api.getSkuSettings, staleTime: 60_000, enabled: canRead });
-  const { data: usageHistory = [] } = useQuery({ queryKey: ['all-usage-history-forecast'], queryFn: () => api.getAllUsageHistory(5000), staleTime: 60_000, enabled: canRead });
+  // Bambuddy's usage history is the built-in inventory's, keyed by its own
+  // spool ids. In Spoolman mode a Spoolman id that matches one, left over from
+  // before the switch, would borrow that spool's history (#3406): the rate is
+  // the consumption delta there, as in the backend's stock alerts.
+  const { data: fetchedUsageHistory } = useQuery({ queryKey: ['all-usage-history-forecast'], queryFn: () => api.getAllUsageHistory(5000), staleTime: 60_000, enabled: canRead && !spoolmanMode });
+  const usageHistory = useMemo(() => (spoolmanMode ? [] : (fetchedUsageHistory ?? [])), [spoolmanMode, fetchedUsageHistory]);
   const { data: shoppingList = [] } = useQuery({ queryKey: ['shopping-list'], queryFn: api.getShoppingList, staleTime: 30_000, enabled: canRead });
 
   const globalLeadTime = settings?.forecast_global_lead_time_days ?? 0;

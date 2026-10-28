@@ -60,8 +60,9 @@ BAMBU_MASTER_KEY = bytes(
 )
 BAMBU_CONTEXT = b"RFID-A\x00"  # 7 bytes including null terminator
 
-# Blocks to read for Bambu tag data
-BAMBU_BLOCKS = [1, 2, 4, 5, 9]
+# Blocks to read for Bambu tag data, as daemon/pn5180.py reads them: block 6
+# holds the temperatures, block 9 the tray UUID (#2685)
+BAMBU_BLOCKS = [1, 2, 4, 5, 6, 9]
 
 # ISO 14443-3 anticollision: SEL codes of cascade levels 1-3, the cascade tag
 # that opens a level's four bytes when the UID goes on at the next level, and

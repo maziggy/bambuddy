@@ -220,6 +220,46 @@ class TestNfcReaderPoll:
         assert data["tag_uid"] == "04ECE673D32A81"
         assert data["sak"] == 0x00
         assert data["tag_type"] == "ntag"
+        # NTAGs are not Bambu tags: no block read, nothing for the backend to decode (#2685)
+        assert data["raw_blocks"] is None
+
+    def test_bambu_tag_is_reported_with_its_data_blocks(self, pn5180_mod):
+        """A MIFARE Classic poll sends the blocks read_bambu_tag() read, as hex, for the backend to decode (#2685)."""
+        from daemon.nfc_reader import NFCReader
+
+        reader = NFCReader()
+        reader._nfc = _reader(pn5180_mod, FakeChip(UID_4, sak=0x08))
+        # Whatever blocks the driver is told to read; block 9 holds the tray UUID
+        tray_uuid = bytes.fromhex("36B6C12DB3DA4A39A50C275F510BD399")
+        reader._nfc.read_bambu_tag = MagicMock(
+            side_effect=lambda uid: {
+                block: tray_uuid if block == 9 else bytes([block]) * 16 for block in pn5180_mod.BAMBU_BLOCKS
+            }
+        )
+
+        event, data = reader.poll()
+
+        assert event == "tag_detected"
+        assert data["tag_type"] == "mifare_classic"
+        reader._nfc.read_bambu_tag.assert_called_once_with(UID_4)
+        # Block 6 (temperatures) included, not just the blocks the tray UUID needs
+        assert sorted(data["raw_blocks"], key=int) == ["1", "2", "4", "5", "6", "9"]
+        assert data["raw_blocks"]["6"] == "06" * 16
+        assert data["raw_blocks"]["9"] == "36B6C12DB3DA4A39A50C275F510BD399"
+        assert data["tray_uuid"] == "36B6C12DB3DA4A39A50C275F510BD399"
+
+    def test_failed_bambu_read_sends_no_blocks(self, pn5180_mod):
+        from daemon.nfc_reader import NFCReader
+
+        reader = NFCReader()
+        reader._nfc = _reader(pn5180_mod, FakeChip(UID_4, sak=0x08))
+        reader._nfc.read_bambu_tag = MagicMock(return_value=None)
+
+        event, data = reader.poll()
+
+        assert event == "tag_detected"
+        assert data["raw_blocks"] is None
+        assert data["tray_uuid"] is None
 
 
 class TestReadTagDiagnostic:

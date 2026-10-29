@@ -1,0 +1,200 @@
+2026-10-30 07:43:30,245 INFO [backend.app.services.bambu_mqtt] [449f3718] [[SERIAL]] Set chamber lights off (seq=124)
+2026-10-30 07:43:30,248 INFO [uvicorn.access] [-] [IP]:62577 - "POST /api/v1/printers/1/chamber-light?on=false HTTP/1.1" 200
+2026-10-30 07:43:39,760 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-10-30 07:43:39,765 INFO [backend.app.api.routes.camera] [cc22e713] Camera viewer detached from printer-1 (subscribers=0)
+2026-10-30 07:43:44,768 INFO [backend.app.api.routes.camera] [cc22e713] Camera stream cancelled (stream_id=1-fanout-313462cd)
+2026-10-30 07:47:10,443 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 07:52:10,464 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 07:57:10,505 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 08:02:10,530 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 08:07:10,571 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 08:12:10,613 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 08:17:10,635 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 08:22:10,661 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 08:27:10,702 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 08:32:10,740 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 08:37:10,782 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 08:42:10,824 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 08:47:10,864 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 08:51:42,704 INFO [uvicorn.access] [-] [IP]:50007 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-10-30 08:51:42,818 INFO [uvicorn.access] [-] [IP]:50013 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-10-30 08:52:10,903 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 08:57:10,937 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 09:02:10,974 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 09:07:11,015 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 09:12:11,056 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 09:17:11,097 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 09:22:11,138 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 09:27:11,178 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 09:30:37,498 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Captured ams_mapping from print command: [0]
+2026-10-30 09:30:37,499 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] External project_file payload: {"ams_mapping": [0], "ams_mapping2": [{"ams_id": 0, "slot_id": 0}], "auto_bed_leveling": 2, "bed_leveling": false, "bed_type": "textured_plate", "cfg": "0", "command": "project_file", "extrude_cali_flag": 0, "file": "Lid 1.gcode.3mf", "flow_cali": false, "layer_inspect": true, "md5": "0C73DE271DFD1588CA0C536BC9E2F422", "nozzle_offset_cali": 2, "param": "Metadata/plate_1.gcode", "profile_id": "0", "project_id": "0", "sequence_id": "20000", "subtask_id": "0", "subtask_name": "Lid 1", "task_id": "0", "timelapse": true, "url": "ftp://Lid 1.gcode.3mf", "use_ams": true, "vibration_cali": false}
+2026-10-30 09:30:39,050 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT START detected - file: /data/Metadata/plate_1.gcode, subtask: Lid 1, is_new: True, is_file_change: False
+2026-10-30 09:30:39,051 INFO [backend.app.main] [-] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-10-30 09:30:39,070 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Skipped trays with invalid remain% for printer 1: AMS0-T0(remain=-1), AMS0-T1(remain=-1), AMS0-T2(remain=-1)
+2026-10-30 09:30:39,070 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping=[0], tray_now=255, last_loaded_tray=0
+2026-10-30 09:30:39,071 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping-related keys: {'mapping': [0], 'ams_extruder_map': {'0': 0}}
+2026-10-30 09:30:39,071 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 0: T0(type=PLA, color=28334AFF, now=?, tar=?), T1(type=PLA, color=163043FF, now=?, tar=?), T2(type=PLA, color=000000FF, now=?, tar=?), T3(type=PETG, color=0086D6FF, now=?, tar=?)
+2026-10-30 09:30:39,074 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Snapshotted 1 spool assignments for printer 1: {'0-3': 1}
+2026-10-30 09:30:39,084 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (2 trays): {'0-3': 66, '255-0': 0}
+2026-10-30 09:30:39,091 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-10-30 09:30:39,092 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: /data/Metadata/plate_1.gcode, subtask: Lid 1
+2026-10-30 09:30:39,096 INFO [backend.app.main] [-] Trying filenames: ['Lid 1.gcode.3mf', 'Lid 1.3mf', 'plate_1.gcode.3mf', 'plate_1.3mf', 'Lid_1.gcode.3mf', 'Lid_1.3mf']
+2026-10-30 09:30:39,758 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-10-30 09:30:39,809 INFO [backend.app.services.bambu_ftp] [-] Successfully downloaded /Lid 1.gcode.3mf to /app/data/archive/temp/Lid 1.gcode.3mf (109734 bytes)
+2026-10-30 09:30:39,809 INFO [backend.app.services.bambu_ftp] [-] FTP mode cached for [IP]: prot_p
+2026-10-30 09:30:39,815 INFO [backend.app.main] [-] Downloaded: /Lid 1.gcode.3mf
+2026-10-30 09:30:39,860 INFO [backend.app.main] [-] Created archive 10 for Lid 1.gcode.3mf
+2026-10-30 09:30:39,863 INFO [backend.app.main] [-] [ENERGY] No smart plug for printer 1 (archive 10)
+2026-10-30 09:30:39,871 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:30:39,873 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:30:42,008 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 347319 bytes
+2026-10-30 09:30:42,009 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 347319 bytes
+2026-10-30 09:30:42,009 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 ([PRINTER])
+2026-10-30 09:30:42,013 INFO [backend.app.services.notification_service] [-] No notification providers configured for print_start event on printer 1
+2026-10-30 09:30:42,017 INFO [backend.app.main] [-] Loaded 2 printable objects for printer 1
+2026-10-30 09:30:42,020 INFO [backend.app.services.spoolman_tracking] [-] [SPOOLMAN] Printer 1: slots with no usable remain% at print start: AMS0-T0(remain=-1), AMS0-T1(remain=-1), AMS0-T2(remain=-1)
+2026-10-30 09:30:42,091 INFO [backend.app.services.spoolman_tracking] [-] [SPOOLMAN] Stored tracking data for print: printer=1, archive=10 (3mf=yes, remain_snapshot=2 slot(s))
+2026-10-30 09:30:42,091 INFO [backend.app.services.spoolman_tracking] [-] [SPOOLMAN] Print start: archive 10 slot_to_tray=[0] (source: print_cmd)
+2026-10-30 09:30:42,762 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P2S, prot_c=False)
+2026-10-30 09:30:42,813 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 30 video files for printer 1
+2026-10-30 09:32:11,220 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 09:34:26,357 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:34:26,359 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:34:28,483 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 337375 bytes
+2026-10-30 09:34:28,483 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 337375 bytes
+2026-10-30 09:36:22,358 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-10-30 09:36:56,256 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:36:56,258 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:36:58,343 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 321409 bytes
+2026-10-30 09:36:58,344 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 321409 bytes
+2026-10-30 09:37:11,244 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 09:37:20,584 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:37:20,588 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:37:22,712 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 226368 bytes
+2026-10-30 09:37:22,712 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 226368 bytes
+2026-10-30 09:37:25,165 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:37:25,167 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:37:27,206 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 169911 bytes
+2026-10-30 09:37:27,207 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 169911 bytes
+2026-10-30 09:37:51,376 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:37:51,381 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:37:53,501 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 215554 bytes
+2026-10-30 09:37:53,502 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 215554 bytes
+2026-10-30 09:38:18,806 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:38:18,810 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:38:21,027 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 241457 bytes
+2026-10-30 09:38:21,028 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 241457 bytes
+2026-10-30 09:38:46,612 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:38:46,616 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:38:48,900 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 212037 bytes
+2026-10-30 09:38:48,909 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 212037 bytes
+2026-10-30 09:39:14,632 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:39:14,634 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:39:16,717 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 185393 bytes
+2026-10-30 09:39:16,717 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 185393 bytes
+2026-10-30 09:39:43,496 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:39:43,498 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:39:45,627 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 191138 bytes
+2026-10-30 09:39:45,628 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 191138 bytes
+2026-10-30 09:40:21,686 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:40:21,691 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:40:23,794 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 211601 bytes
+2026-10-30 09:40:23,795 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 211601 bytes
+2026-10-30 09:40:25,272 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:40:25,274 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:40:27,383 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 240612 bytes
+2026-10-30 09:40:27,384 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 240612 bytes
+2026-10-30 09:40:48,970 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:40:48,974 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:40:51,070 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 150416 bytes
+2026-10-30 09:40:51,070 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 150416 bytes
+2026-10-30 09:41:21,362 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:41:21,366 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:41:23,477 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 171404 bytes
+2026-10-30 09:41:23,478 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 171404 bytes
+2026-10-30 09:41:33,800 INFO [uvicorn.access] [-] [IP]:51000 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-10-30 09:41:33,856 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-10-30 09:41:33,857 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-10-30 09:41:33,858 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-10-30 09:41:36,113 INFO [uvicorn.access] [-] [IP]:63123 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-10-30 09:41:36,137 INFO [uvicorn.access] [-] [IP]:63124 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-10-30 09:41:36,574 INFO [uvicorn.access] [-] [IP]:63122 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-10-30 09:41:36,622 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-10-30 09:41:36,624 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-10-30 09:41:36,625 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-10-30 09:41:37,122 INFO [backend.app.api.routes.printers] [42bf829f] Cover: resolved plate 1 before download (subtask=Lid 1)
+2026-10-30 09:41:37,123 INFO [backend.app.api.routes.printers] [42bf829f] Cover using cached 3MF from /app/data/archive/temp/Lid 1.gcode.3mf (avoided duplicate FTP)
+2026-10-30 09:41:37,124 INFO [backend.app.api.routes.printers] [42bf829f] Downloaded file size: 109734 bytes
+2026-10-30 09:41:37,226 INFO [backend.app.api.routes.cloud] [4978bb23] get_filament_info called with 4 IDs: ['GFA00', 'GFL99', 'GFG00', 'GFN98']
+2026-10-30 09:41:37,257 INFO [uvicorn.access] [-] [IP]:63123 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-10-30 09:41:53,377 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:41:53,380 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:41:53,687 INFO [uvicorn.access] [-] [IP]:63131 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-10-30 09:41:53,757 INFO [backend.app.api.routes.camera] [90e39a64] Using RTSP protocol for P2S
+2026-10-30 09:41:53,758 INFO [backend.app.api.routes.camera] [90e39a64] Camera viewer attached to printer-1 (subscribers=1)
+2026-10-30 09:41:53,763 INFO [backend.app.api.routes.camera] [90e39a64] Starting RTSP camera stream for [IP] (stream_id=1-fanout-5e4af5e7, model=P2S, fps=15, probesize=1000000, analyzeduration=500000)
+2026-10-30 09:41:53,772 INFO [uvicorn.access] [-] [IP]:63132 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-10-30 09:41:56,024 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 176080 bytes
+2026-10-30 09:41:56,025 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 176080 bytes
+2026-10-30 09:41:57,885 INFO [backend.app.api.routes.camera] [90e39a64] Camera viewer detached from printer-1 (subscribers=0)
+2026-10-30 09:42:02,887 INFO [backend.app.api.routes.camera] [90e39a64] Camera stream cancelled (stream_id=1-fanout-5e4af5e7)
+2026-10-30 09:42:04,888 WARNING [backend.app.api.routes.camera] [90e39a64] ffmpeg didn't terminate gracefully, killing (stream_id=1-fanout-5e4af5e7)
+2026-10-30 09:42:11,284 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 09:42:13,860 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-10-30 09:42:18,544 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:42:18,546 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:42:20,588 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 186664 bytes
+2026-10-30 09:42:20,589 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 186664 bytes
+2026-10-30 09:42:43,739 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:42:43,744 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:42:43,745 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:42:45,863 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 200485 bytes
+2026-10-30 09:42:45,864 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 200485 bytes
+2026-10-30 09:42:45,866 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 200485 bytes (no second connection opened)
+2026-10-30 09:42:45,867 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 200485 bytes
+2026-10-30 09:43:10,357 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:43:10,357 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:43:10,359 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:43:12,444 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 190901 bytes
+2026-10-30 09:43:12,445 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 190901 bytes
+2026-10-30 09:43:12,445 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 190901 bytes (no second connection opened)
+2026-10-30 09:43:12,446 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 190901 bytes
+2026-10-30 09:43:36,453 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:43:36,455 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:43:38,517 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 185734 bytes
+2026-10-30 09:43:38,518 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 185734 bytes
+2026-10-30 09:44:01,696 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:44:01,698 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:44:03,740 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 207838 bytes
+2026-10-30 09:44:03,741 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 207838 bytes
+2026-10-30 09:44:27,351 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 09:44:27,354 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: P2S)
+2026-10-30 09:44:29,468 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 192596 bytes
+2026-10-30 09:44:29,469 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 192596 bytes
+2026-10-30 09:44:34,267 INFO [backend.app.api.routes.support] [82cea576] Log level changed to DEBUG
+2026-10-30 09:44:34,268 INFO [backend.app.api.routes.bug_report] [82cea576] Bug report: enabled debug logging
+2026-10-30 09:44:34,268 DEBUG [backend.app.services.bambu_mqtt] [82cea576] [[SERIAL]] Requesting status update (pushall)
+2026-10-30 09:44:34,271 INFO [uvicorn.access] [-] [IP]:63169 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-10-30 09:44:35,149 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-10-30 09:44:35,150 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-10-30 09:44:35,151 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-10-30 09:44:35,152 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_1.gcode, subtask_name: Lid 1
+2026-10-30 09:44:35,152 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'cfs': [], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '1', 'tray_is_bbl_bits': 'f', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '0', 'unbind_ams_stat': 0, 'version': 11486}
+2026-10-30 09:44:35,153 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 0
+2026-10-30 09:44:35,154 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-10-30 09:44:35,155 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x10002003 -> extruder 0
+2026-10-30 09:44:35,156 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-10-30 09:44:35,157 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-10-30 09:44:35,158 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-30 09:44:35,159 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-10-30 09:44:35,159 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 33°C (heater OFF)
+2026-10-30 09:44:35,160 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-10-30 09:44:35,161 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=33.0, heating=False, respect_local=False
+2026-10-30 09:44:35,161 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 33.0, target: 0.0, heating: False
+2026-10-30 09:44:35,162 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-10-30 09:44:35,163 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'enable', 'tl_external_free_kb': 6655152, 'tl_external_total_kb': 30655856, 'tl_internal_free_kb': 575615, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-10-30 09:44:35,164 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Timelapse detected during print (from ipcam)
+2026-10-30 09:44:35,165 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -72dBm
+2026-10-30 09:44:35,166 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-10-30 09:44:35,167 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [0]
+2026-10-30 09:44:35,168 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_1.gcode, subtask: Lid 1

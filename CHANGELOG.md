@@ -5,6 +5,10 @@ All notable changes to Bambuddy will be documented in this file.
 ## [1.3.0] - Unreleased
 
 ### Added
+- **Move a folder in the File Manager (#3305, requested and contributed by @rojosinalma in #3306)** — A folder could not be moved once created, only rebuilt elsewhere by hand. It can now go to the root or into another folder.
+  - **Move folder…** in a folder's menu, in the sidebar tree and the columns view, opens the same picker as **Move files**, with **Root** on top. The folder itself, its subfolders, external folders and folders you can't write to are greyed out, and the current parent is marked.
+  - **Drag and drop:** drag a folder onto another folder, onto a column's empty space, or onto **All Files** for the root. A drop that would change nothing or isn't allowed shows no-drop and sends nothing. Dragging files to upload works as before.
+  - **On the server:** external folders can't be moved, nothing can be moved into one, and a destination that doesn't exist is refused, so an API call can't do what the File Manager doesn't offer.
 - **SpoolBuddy sends a Bambu tag's data with each scan (#2685, contributed by @hibikipr in #3389)** — A scan of a Bambu Lab tag sent only its tray UUID. The daemon now also reads block 6 (drying and nozzle temperatures) and sends the tag's data blocks (material, type, colour, weight, temperatures) along with the scan, for Bambuddy to decode. A Bambuddy that doesn't know them yet ignores them.
 - **Assign a spool by scanning its QR label (#1574, requested and contributed by @samedyuksel in #1606)** — Putting a spool into an AMS slot or away into storage meant finding it in a list. Its label's QR code can now be scanned with the phone or tablet camera instead.
   - **Assign by QR:** a new button on the **Inventory** page and on SpoolBuddy's Inventory page. Pick an AMS slot or a storage location, then scan the spool. A spool scanned into a slot leaves the slot it was in, in the same save, so a failed move leaves it where it was. A spool scanned into storage gets that location, as the Locations filter shows it.

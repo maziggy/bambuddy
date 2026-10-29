@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from daemon.config import Config
-from daemon.main import heartbeat_loop, scale_poll_loop
+from daemon.main import heartbeat_loop, nfc_poll_loop, scale_poll_loop
 
 
 def _make_config(**overrides):
@@ -352,3 +352,53 @@ class TestReRegistration:
         api.register_device.assert_awaited()
         assert api.register_device.await_args.kwargs["device_id"] == "dev-1"
         assert config.tare_offset == 5
+
+
+class TestNfcPollLoopTagScanned:
+    """nfc_poll_loop forwards everything a tag_detected event carries to the backend (#2685)."""
+
+    @pytest.mark.asyncio
+    async def test_raw_blocks_reach_tag_scanned(self):
+        raw_blocks = {"1": "41" * 16, "9": "36B6C12DB3DA4A39A50C275F510BD399"}
+        events = [
+            (
+                "tag_detected",
+                {
+                    "tag_uid": "865947E2",
+                    "sak": 0x08,
+                    "tag_type": "mifare_classic",
+                    "tray_uuid": "36B6C12DB3DA4A39A50C275F510BD399",
+                    "raw_blocks": raw_blocks,
+                },
+            )
+        ]
+        nfc = MagicMock()
+        nfc.ok = True
+        nfc.poll = lambda: events.pop(0) if events else ("none", None)
+        api = AsyncMock()
+        config = _make_config(nfc_poll_interval=0.0)
+        shared = {"nfc": nfc, "display": MagicMock(), "pending_write": None}
+
+        async def _inline_to_thread(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        with patch("daemon.main.asyncio.to_thread", _inline_to_thread):
+            task = asyncio.create_task(nfc_poll_loop(config, api, shared))
+            for _ in range(20):
+                await asyncio.sleep(0)
+                if api.tag_scanned.await_count:
+                    break
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        api.tag_scanned.assert_awaited_once_with(
+            device_id="dev-1",
+            tag_uid="865947E2",
+            tray_uuid="36B6C12DB3DA4A39A50C275F510BD399",
+            sak=0x08,
+            tag_type="mifare_classic",
+            raw_blocks=raw_blocks,
+        )

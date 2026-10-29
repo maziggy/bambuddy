@@ -76,7 +76,7 @@ from backend.app.utils.ams_humidity import ams_humidity_percent
 from backend.app.utils.archive_paths import archive_photos_dir
 from backend.app.utils.color_utils import perceptual_color_distance
 from backend.app.utils.filament_types import canonical_filament_type
-from backend.app.utils.filename import derive_remote_filename
+from backend.app.utils.filename import InvalidFilenameError, derive_remote_filename, validate_print_filename
 from backend.app.utils.library_paths import move_library_photos
 from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.printer_models import (
@@ -375,13 +375,59 @@ DISPATCH_MAX_ATTEMPTS = 3
 # item, which failed the same way. One P2S whose file service was out of
 # connection slots ate 43 queued jobs in ten minutes that way.
 #
-# Not here: AUTH (a wrong access code needs the user), STORAGE (a full or
-# missing card does too), NOT_FOUND (a Bambuddy-side path problem), UNKNOWN,
-# and an upload that overran its deadline -- each of those would fail the same
-# way on every retry.
+# STORAGE (a missing, full or unusable card or USB drive) and AUTH (a rejected
+# access code) were left out at first, because they need the user. But
+# failing the item leaves the printer just as idle, and #3409's H2D with an
+# unusable USB stick ate seven jobs within an hour. Every job sent to that
+# printer fails the same way, so they wait too; the retry finds the fix once
+# the user has made it.
+#
+# A 553 can also be this one file: a name the card's filesystem cannot hold.
+# That one fails the item, see `_start_print`.
+#
+# Not here: NOT_FOUND (a path problem, which can be this one file), UNKNOWN,
+# and an upload that overran its deadline -- each retry of that costs a whole
+# upload that would be just as slow.
 _UPLOAD_REQUEUE_KINDS: frozenset[FtpFailureKind] = frozenset(
-    {FtpFailureKind.HANDSHAKE, FtpFailureKind.COOLOFF, FtpFailureKind.TIMEOUT, FtpFailureKind.NETWORK}
+    {
+        FtpFailureKind.HANDSHAKE,
+        FtpFailureKind.COOLOFF,
+        FtpFailureKind.TIMEOUT,
+        FtpFailureKind.NETWORK,
+        FtpFailureKind.STORAGE,
+        FtpFailureKind.AUTH,
+    }
 )
+
+
+def _refused_upload_hold_reason(printer_label: str, kind: FtpFailureKind | None) -> str:
+    """What a job waiting on a printer that refused its last upload shows.
+
+    Storage and the access code need the user to do something, so they say
+    what; the rest clear on their own.
+    """
+    if kind is FtpFailureKind.STORAGE:
+        return f"{printer_label} refused to store the file — check its SD card or USB drive. {_REFUSED_UPLOAD_TAIL}"
+    if kind is FtpFailureKind.AUTH:
+        return (
+            f"{printer_label} refused the file transfer — check its access code on the Printers page. "
+            f"{_REFUSED_UPLOAD_TAIL}"
+        )
+    return f"{printer_label} is not accepting files — {_REFUSED_UPLOAD_TAIL}"
+
+
+_REFUSED_UPLOAD_TAIL = "Bambuddy will retry automatically"
+
+
+def _asks_nothing_new(waiting_reason: str) -> bool:
+    """A model job's reason made only of busy printers and printers that refused an upload.
+
+    The refusal sent its own notification (`_requeue_after_upload_refused`),
+    so this one has nothing to add.
+    """
+    parts = [p.strip() for p in waiting_reason.split(" | ")]
+    return all(p.startswith("Busy:") or p.endswith(_REFUSED_UPLOAD_TAIL) for p in parts)
+
 
 # How long a printer whose upload was put back stays out of dispatch (#3210).
 # The first window matches the FTP client's own handshake cool-off, so the
@@ -1233,12 +1279,14 @@ class PrintScheduler:
         # Refused uploads in a row per printer, which sets the next backoff
         # window. Cleared by a successful upload to that printer.
         self._upload_refusals: dict[int, int] = {}
-        # Printers whose current run of refusals has already sent its one
-        # "job waiting" notification. Each retry clears the item's waiting
-        # reason and the next refusal sets it again, which `hold_item` reads as
-        # a new reason; without this, every retry would notify. Cleared with
-        # `_upload_refusals`.
-        self._upload_refusal_notified: set[int] = set()
+        # Why each printer in `_upload_backoff` refused its last upload, for
+        # the reason its jobs show. Cleared with `_upload_refusals`.
+        self._upload_refusal_kind: dict[int, FtpFailureKind] = {}
+        # The "job waiting" text last sent for each printer's current run of
+        # refusals. A refusal notifies only when its text differs, so a run
+        # notifies once, and again only if it turns into something the user
+        # has to fix. Cleared with `_upload_refusals`.
+        self._upload_refusal_notified: dict[int, str] = {}
         # Track which printers are currently auto-drying (printer_id -> start timestamp)
         self._drying_in_progress: dict[int, float] = {}
         # Per-AMS memory of the auto-drying cycles WE armed, keyed by
@@ -1570,6 +1618,8 @@ class PrintScheduler:
         for keyed in (
             self._upload_backoff,
             self._upload_refusals,
+            self._upload_refusal_kind,
+            self._upload_refusal_notified,
             self._wake_failures,
             self._drying_in_progress,
             self._dispatch_holds,
@@ -1578,7 +1628,6 @@ class PrintScheduler:
             self._terminal_since,
         ):
             keyed.pop(printer_id, None)
-        self._upload_refusal_notified.discard(printer_id)
         for keyed in (self._auto_dry_units, self._auto_dry_above):
             for key in [key for key in keyed if key[0] == printer_id]:
                 del keyed[key]
@@ -1886,26 +1935,21 @@ class PrintScheduler:
             now_mono = time.monotonic()
             # In backoff this pass. Kept apart from busy_printers so keep-warm
             # can leave them out: there is no print to keep a bed warm for.
+            # Their holds are written silently: the refusal that put a printer
+            # here sent the "job waiting" notification for its run (#3409).
             backoff_printers: set[int] = set()
-            # In backoff, and the "job waiting" notification for this run of
-            # refusals has gone out already. Their holds are written silently.
-            silent_hold_printers: set[int] = set()
             for backoff_pid, retry_at in list(self._upload_backoff.items()):
                 if now_mono >= retry_at:
                     del self._upload_backoff[backoff_pid]
                     continue
                 backoff_printers.add(backoff_pid)
-                if backoff_pid in self._upload_refusal_notified:
-                    silent_hold_printers.add(backoff_pid)
-                else:
-                    self._upload_refusal_notified.add(backoff_pid)
                 mark_busy(
                     backoff_pid,
                     f"its file service refused the last upload; retrying in {retry_at - now_mono:.0f}s",
                 )
                 item_hold_reasons.setdefault(
                     backoff_pid,
-                    f"{printer_label(backoff_pid)} is not accepting files — Bambuddy will retry automatically",
+                    _refused_upload_hold_reason(printer_label(backoff_pid), self._upload_refusal_kind.get(backoff_pid)),
                 )
 
             # Printers held by a Home Assistant sensor interlock (#1148) — an
@@ -2105,7 +2149,7 @@ class PrintScheduler:
                         await hold_item(
                             item,
                             item_hold_reasons.get(item.printer_id) or f"Busy: {printer_label(item.printer_id)}",
-                            notify=item.printer_id not in silent_hold_printers,
+                            notify=item.printer_id not in backoff_printers,
                         )
                         continue
 
@@ -2401,6 +2445,7 @@ class PrintScheduler:
                                 is_short=is_short,
                                 drying_ids=drying_held,
                                 unmatched_on=unmatched_on,
+                                refused_uploads={pid: self._upload_refusal_kind.get(pid) for pid in backoff_printers},
                             )
                             # "Only if the previous print succeeded" is about the
                             # printer the job lands on: one whose last print failed
@@ -2474,7 +2519,7 @@ class PrintScheduler:
                         if (
                             waiting_reason
                             and (not was_waiting or self._is_busy_only(previous_reason or ""))
-                            and not self._is_busy_only(waiting_reason)
+                            and not _asks_nothing_new(waiting_reason)
                         ):
                             job_name = await self._get_job_name(db, item)
                             await notification_service.on_queue_job_waiting(
@@ -2833,51 +2878,105 @@ class PrintScheduler:
         printer: Printer,
         error_msg: str,
         toast_uid: int | None,
+        kind: FtpFailureKind,
     ) -> None:
         """Put an item back in the queue after its file never reached the printer (#3210).
 
-        The item keeps its printer. Its AMS mapping was computed against that
-        printer's trays, and nothing on the row says whether a mapping was
-        computed or set by the user, so moving it to a sibling could print from
-        the wrong slots. The printer goes into `_upload_backoff` instead, which
-        keeps every other item away from it; this one waits there and is the
-        only thing that knocks again, once per backoff window. The window
-        grows with each refusal in a row; see ``_upload_backoff_seconds``.
+        The printer goes into `_upload_backoff`, which keeps every item away
+        from it until the window ends. The window grows with each refusal in a
+        row; see ``_upload_backoff_seconds``.
+
+        An item pinned to this printer keeps it, waits there, and is the one
+        that knocks again. An item for "Any <model>" goes back to the pool
+        instead, so another printer of the model can take it (#3409). Only the
+        assignment goes: the next model assignment drops whatever on the row
+        was worked out for one printer, as it does for every model job.
+
+        The first refusal in a run sends the one "Job waiting" notification,
+        and a later one only if it asks for something else (a card after a
+        dropped connection). It cannot wait for the hold the way it used to: a
+        released item is not held on this printer, so nothing would say why
+        it stopped. A job cancelled or moved during the upload sends none.
 
         `dispatch_attempts` is not charged: that budget bounds a printer that
         takes the file and then never starts, which this is not.
         """
         refusals = self._upload_refusals.get(printer.id, 0) + 1
         self._upload_refusals[printer.id] = refusals
+        self._upload_refusal_kind[printer.id] = kind
         backoff = _upload_backoff_seconds(refusals)
         self._upload_backoff[printer.id] = time.monotonic() + backoff
-        # The row is still `pending` -- it only moves to `printing` after a
-        # successful upload -- so there is no status to write back. Writing one
-        # anyway would undo a cancel that landed during the upload.
-        if item.error_message:
+        released = False
+        if item.target_model:
+            # Only while it is still pending on this printer: a cancel, or a
+            # move the user made during the upload, stands.
+            result = cast(
+                CursorResult,
+                await db.execute(
+                    update(PrintQueueItem)
+                    .where(PrintQueueItem.id == item.id)
+                    .where(PrintQueueItem.status == "pending")
+                    .where(PrintQueueItem.printer_id == printer.id)
+                    .values(printer_id=None, error_message=None)
+                    .execution_options(synchronize_session=False)
+                ),
+            )
+            await db.commit()
+            released = result.rowcount > 0
+        elif item.error_message:
+            # The row is still `pending` -- it only moves to `printing` after a
+            # successful upload -- so there is no status to write back. Writing
+            # one anyway would undo a cancel that landed during the upload.
             item.error_message = None
             await db.commit()
         logger.warning(
-            "Queue item %s: upload to printer %s (%s) never reached it — %s Kept in the queue; "
+            "Queue item %s: upload to printer %s (%s) never reached it — %s Kept in the queue%s; "
             "refusal %d in a row, so the printer is out of dispatch for %ds.",
             item.id,
             printer.id,
             printer.name,
             error_msg,
+            " and returned to the pool" if released else "",
             refusals,
             backoff,
         )
+        reason = _refused_upload_hold_reason(printer.name or f"printer {printer.id}", kind)
+        if self._upload_refusal_notified.get(printer.id) != reason and await self._still_waiting_on(
+            db, item.id, None if released else printer.id
+        ):
+            self._upload_refusal_notified[printer.id] = reason
+            try:
+                await notification_service.on_queue_job_waiting(
+                    job_name=await self._get_job_name(db, item),
+                    target_model=item.target_model or printer.model or "",
+                    waiting_reason=reason,
+                    db=db,
+                    printer_id=printer.id,
+                )
+            except Exception as e:
+                # The job is safe in the queue either way.
+                logger.debug("Waiting notification failed for item %s: %s", item.id, e)
         try:
             # Closes the dispatch toast for this attempt. Without it the toast
             # keeps spinning on an upload that has ended.
             await ws_manager.send_queue_item_failed(
                 user_id=toast_uid,
                 queue_item_id=item.id,
-                printer_id=item.printer_id,
+                printer_id=printer.id,
                 reason="upload_failed",
             )
         except Exception:
             pass  # toast is best-effort
+
+    @staticmethod
+    async def _still_waiting_on(db: AsyncSession, item_id: int, printer_id: int | None) -> bool:
+        """Whether the item is still pending, on *printer_id* (None: unassigned)."""
+        row = (
+            await db.execute(
+                select(PrintQueueItem.status, PrintQueueItem.printer_id).where(PrintQueueItem.id == item_id)
+            )
+        ).one_or_none()
+        return row is not None and row.status == "pending" and row.printer_id == printer_id
 
     def _rollback_unconfirmed_print_user(self, item_id: int) -> None:
         printer_id = self._unconfirmed_print_user.pop(item_id, None)
@@ -3307,6 +3406,7 @@ class PrintScheduler:
         is_short: Callable[[int], Awaitable[bool]] | None = None,
         drying_ids: set[int] | None = None,
         unmatched_on: Callable[[int], Awaitable[list[str]]] | None = None,
+        refused_uploads: Mapping[int, FtpFailureKind | None] | None = None,
     ) -> tuple[int | None, str | None]:
         """Find an idle, connected printer matching the model with compatible filaments.
 
@@ -3336,6 +3436,9 @@ class PrintScheduler:
                           passed over like one missing a filament type: the checks
                           above only ask whether each type and forced colour is
                           loaded somewhere, not on the right nozzle or once per slot.
+            refused_uploads: Excluded printers out of dispatch after a refused upload,
+                             with why (#3409). Each is named with the reason its own
+                             queue rows show, not as "Busy".
 
         Returns:
             Tuple of (printer_id, waiting_reason):
@@ -3355,6 +3458,9 @@ class PrintScheduler:
 
         # Track reasons for skipping printers
         printers_busy = []
+        # Printers out of dispatch after a refused upload, worded as the
+        # printer's own queue rows word it: "Busy" would read as printing (#3409).
+        printers_refused: list[str] = []
         printers_offline = []
         printers_offline_no_plug = []
         printers_missing_filament: list[tuple[str, list[str]]] = []
@@ -3364,6 +3470,9 @@ class PrintScheduler:
         short_fallback: int | None = None
 
         for printer in printers:
+            if printer.id in exclude_ids and refused_uploads and printer.id in refused_uploads:
+                printers_refused.append(_refused_upload_hold_reason(printer.name, refused_uploads[printer.id]))
+                continue
             if printer.id in exclude_ids:
                 # Printer is already claimed by another job in this scheduling run.
                 # For force-color jobs, still check if the color would match — if not,
@@ -3515,7 +3624,7 @@ class PrintScheduler:
                 # by itself, so the job is not actually waiting on anybody to change a
                 # spool (#2876 — offline printers reach this list now that a switched-off
                 # printer's own filament is read).
-                if not printers_busy and not printers_offline:
+                if not printers_busy and not printers_offline and not printers_refused:
                     all_missing = sorted({c for _, cols in printers_missing_filament for c in cols})
                     return None, f"No matching material/color. Waiting on {', '.join(all_missing)}"
                 # else: fall through — the self-resolving entries are appended below
@@ -3524,6 +3633,7 @@ class PrintScheduler:
                     f"{name} (needs {', '.join(missing)})" for name, missing in printers_missing_filament
                 ]
                 reasons.append(f"Waiting for filament: {'; '.join(names_and_missing)}")
+        reasons.extend(printers_refused)
         if printers_busy:
             reasons.append(f"Busy: {', '.join(printers_busy)}")
         if printers_offline:
@@ -9283,8 +9393,17 @@ class PrintScheduler:
             # handshake that never reached the printer's filesystem (#2899).
             error_msg = upload_error or describe_upload_failure(upload_failure.failure)
             failure = upload_failure.failure
+            if failure is not None and failure.kind is FtpFailureKind.STORAGE:
+                try:
+                    validate_print_filename(remote_filename)
+                except InvalidFilenameError as e:
+                    # This 553 is the file's name, which no card can hold, not
+                    # the printer's storage: it would be refused on every retry
+                    # and every printer, so this item fails and the queue goes on.
+                    upload_error = f"The printer could not create the file {remote_filename!r}: {e}. Rename the file."
+                    error_msg = upload_error
             if upload_error is None and failure is not None and failure.kind in _UPLOAD_REQUEUE_KINDS:
-                await self._requeue_after_upload_refused(db, item, printer, error_msg, toast_uid)
+                await self._requeue_after_upload_refused(db, item, printer, error_msg, toast_uid, failure.kind)
                 return
             if not await self._fail_dispatch(db, item, error_msg):
                 await self._close_cancelled_dispatch_toast(item, toast_uid)
@@ -9319,7 +9438,8 @@ class PrintScheduler:
         # The printer took a file, so any run of refused uploads is over: the
         # next refusal starts again at the shortest backoff, and notifies (#3210).
         self._upload_refusals.pop(printer.id, None)
-        self._upload_refusal_notified.discard(printer.id)
+        self._upload_refusal_kind.pop(printer.id, None)
+        self._upload_refusal_notified.pop(printer.id, None)
 
         # Parse AMS mapping if stored
         ams_mapping = None

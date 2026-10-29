@@ -1,6 +1,6 @@
-"""Tests for daemon.nfc_reader — tray UUID extraction from Bambu tag blocks."""
+"""Tests for daemon.nfc_reader — tray UUID extraction and raw blocks from Bambu tag blocks."""
 
-from daemon.nfc_reader import _extract_tray_uuid
+from daemon.nfc_reader import _extract_tray_uuid, _raw_blocks
 
 # Measured on a real spool: block 9 equals the tray_uuid the AMS reports (#984).
 BLOCK9 = bytes.fromhex("9E0B0717BEE94D7887EB1D8DFD1A14F3")
@@ -26,3 +26,14 @@ class TestExtractTrayUuid:
 
     def test_empty_blocks(self):
         assert _extract_tray_uuid({}) is None
+
+
+class TestRawBlocks:
+    def test_blocks_as_uppercase_hex_keyed_by_block_number(self):
+        assert _raw_blocks({9: BLOCK9, 4: BLOCK4_PLA_MATTE}) == {
+            "4": "504C41204D6174746500000000000000",
+            "9": "9E0B0717BEE94D7887EB1D8DFD1A14F3",
+        }
+
+    def test_empty_blocks(self):
+        assert _raw_blocks({}) == {}

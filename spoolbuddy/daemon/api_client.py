@@ -168,6 +168,7 @@ class APIClient:
         tray_uuid: str | None = None,
         sak: int | None = None,
         tag_type: str | None = None,
+        raw_blocks: dict[str, str] | None = None,
     ) -> dict | None:
         return await self._post(
             "/nfc/tag-scanned",
@@ -177,6 +178,7 @@ class APIClient:
                 "tray_uuid": tray_uuid,
                 "sak": sak,
                 "tag_type": tag_type,
+                "raw_blocks": raw_blocks,
             },
         )
 

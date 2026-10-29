@@ -53,6 +53,12 @@ class PrintArchive(Base):
     # timestamps. NULL for archives predating this, and for baselines taken at
     # completion time, which are useless by construction.
     timelapse_baseline: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # The baseline above was taken off a card that could not be read, so it
+    # says nothing about what was on it. The completion scan then attaches a
+    # video only when exactly one is unclaimed, rather than picking between
+    # several (#3412). Read only alongside a non-NULL baseline, and written by
+    # everything that writes one.
+    timelapse_baseline_unread: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     source_3mf_path: Mapped[str | None] = mapped_column(String(500))  # Original project 3MF from slicer
     f3d_path: Mapped[str | None] = mapped_column(String(500))  # Fusion 360 design file
 

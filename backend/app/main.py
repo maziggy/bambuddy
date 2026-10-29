@@ -562,6 +562,9 @@ _hms_forget_when_gone: dict[int, set[str]] = {}
 # Track timelapse file baselines at print start: {printer_id: set of video filenames}
 # Used for snapshot-diff detection at print completion
 _timelapse_baselines: dict[int, set[str]] = {}
+# Printers whose baseline above was taken off a card that could not be read,
+# so it is empty without the card being empty (#3412).
+_timelapse_baselines_unread: set[int] = set()
 
 # Track printers waiting for bed to cool after print completion.
 # Event-driven: fires when bed_temper arrives via MQTT below threshold.
@@ -1263,6 +1266,7 @@ async def forget_printer(printer_id: int) -> None:
         _printer_offline_published,
         _nozzle_count_updated,
         _runtime_seen_connected,
+        _timelapse_baselines_unread,
     ):
         marked.discard(printer_id)
 
@@ -6333,6 +6337,17 @@ async def on_print_start(printer_id: int, data: dict):
 
 
 _TIMELAPSE_VIDEO_EXTENSIONS = (".mp4", ".avi")
+_TIMELAPSE_DIRECTORIES = ("/timelapse", "/timelapse/video", "/record", "/recording")
+
+# A baseline that could not be read at print start is read again on this
+# schedule while the print runs (#3412). The printer writes the video only once
+# the print has ended, so a reading taken mid-print is as good as one taken at
+# the start. The interval is shorter than the FTPS handshake cool-off (300 s),
+# which is what usually makes the card unreadable, so the first reading after
+# it ends is not long behind; while the cool-off runs a round costs nothing, as
+# no connection is opened. The cap bounds a print that never reports an end.
+_TIMELAPSE_BASELINE_REREAD_INTERVAL_SECONDS = 120.0
+_TIMELAPSE_BASELINE_REREAD_MAX_ATTEMPTS = 720
 
 # Poll schedule for the post-print timelapse scan (#2704). Module-level so
 # tests can shrink them without waiting out real delays.
@@ -6391,26 +6406,55 @@ async def _claimed_timelapse_names(db, printer_id: int, exclude_archive_id: int)
     return {Path(p).stem for p in rows.scalars().all() if p}
 
 
-def _timelapse_listing_is_trustworthy(printer) -> bool:
-    """Whether an *empty* timelapse listing for *printer* can be believed.
+async def _read_timelapse_baseline(printer) -> tuple[set[str], bool]:
+    """The video names on *printer*'s card, and whether the card was read.
 
-    ``list_files_async`` answers ``[]`` when its connect fails rather than
-    raising, so a card behind the FTPS handshake cool-off is indistinguishable
-    from one holding no videos. Everywhere that only wants to know "is there a
-    video yet" the difference does not matter — both mean "not yet, retry".
+    ``_list_timelapse_videos`` answers ``[]`` when its connect fails rather
+    than raising, so a card behind the FTPS handshake cool-off, or one whose
+    listing timed out, is indistinguishable from one holding no videos.
+    Everywhere that only wants to know "is there a video yet" the difference
+    does not matter -- both mean "not yet, retry".
 
     It matters where an empty listing is recorded as a *baseline*. Recording
     "the card held nothing" for a card that was never read means every video on
-    it counts as new once the cool-off expires, and the completion scan then
-    attaches a stale video to this print and deletes it from the printer
-    (#2957 follow-up). Those two callers ask this first.
+    it counts as new, and the completion scan then attaches a stale video to
+    this print and deletes it from the printer (#2957 follow-up, #3412). So an
+    empty listing is asked again here in a way that tells the two apart: the
+    card counts as read only when every directory walked answered, with a
+    listing or with "no such directory". One that failed may be the one
+    holding the videos.
     """
-    from backend.app.services.bambu_ftp import ftps_handshake_blocked
+    from backend.app.services.bambu_ftp import ftps_handshake_blocked, list_files_result_async
+
+    files, _ = await _list_timelapse_videos(printer)
+    if files:
+        return {f.get("name", "") for f in files}, True
 
     ip_address = getattr(printer, "ip_address", None)
+    printer_id = getattr(printer, "id", None)
     if not ip_address:
-        return True
-    return not ftps_handshake_blocked(ip_address)
+        return set(), True
+    # No card in the slot: nothing to read, and nothing a video could land on.
+    if printer_id is not None and not external_storage_present(printer_manager.get_status(printer_id)):
+        return set(), True
+
+    for timelapse_path in _TIMELAPSE_DIRECTORIES:
+        if ftps_handshake_blocked(ip_address):
+            # Below any path: every remaining one would fail the same way.
+            return set(), False
+        listing = await list_files_result_async(
+            ip_address, printer.access_code, timelapse_path, printer_model=printer.model
+        )
+        if not (listing.available or listing.missing):
+            return set(), False
+        videos = [
+            f
+            for f in listing.files
+            if not f.get("is_directory") and f.get("name", "").lower().endswith(_TIMELAPSE_VIDEO_EXTENSIONS)
+        ]
+        if videos:
+            return {f.get("name", "") for f in videos}, True
+    return set(), True
 
 
 async def _list_timelapse_videos(printer) -> tuple[list[dict], str | None]:
@@ -6421,8 +6465,8 @@ async def _list_timelapse_videos(printer) -> tuple[list[dict], str | None]:
     and found_path is the directory where they were found, or ([], None).
 
     An empty return does not distinguish "no videos" from "could not read the
-    card" — see :func:`_timelapse_listing_is_trustworthy`, which the two
-    baseline callers consult before believing one.
+    card" — see :func:`_read_timelapse_baseline`, which the two baseline
+    callers use instead.
     """
     from backend.app.services.bambu_ftp import list_files_async
 
@@ -6441,7 +6485,7 @@ async def _list_timelapse_videos(printer) -> tuple[list[dict], str | None]:
         logger.debug("[TIMELAPSE] Skipping the scan for printer %s: it reports no external storage", printer_id)
         return [], None
 
-    for timelapse_path in ["/timelapse", "/timelapse/video", "/record", "/recording"]:
+    for timelapse_path in _TIMELAPSE_DIRECTORIES:
         try:
             found_files = await list_files_async(
                 printer.ip_address, printer.access_code, timelapse_path, printer_model=printer.model
@@ -6484,25 +6528,28 @@ async def _capture_timelapse_baseline_at_start(
     completion already contains the new video and would poison a later scan.
     """
     names: set[str] | None = None
+    unread = False
+    _timelapse_baselines_unread.discard(printer_id)
     try:
-        if not _timelapse_listing_is_trustworthy(printer):
-            # Recorded anyway, deliberately. An empty baseline taken off a card
-            # we could not read is not authoritative, but it is still the right
-            # *default*: Bambuddy deletes each video from the printer once it is
-            # attached, so the usual card holds exactly one video at completion
-            # and an empty baseline resolves it correctly. Persisting NULL
+        names, read = await _read_timelapse_baseline(printer)
+        unread = not read
+        _timelapse_baselines[printer_id] = names
+        if unread:
+            # Recorded anyway, deliberately, and marked. An empty baseline taken
+            # off a card we could not read is not evidence, but it is still the
+            # right *default*: Bambuddy deletes each video from the printer once
+            # it is attached, so the usual card holds exactly one video at
+            # completion and an empty baseline resolves it. Persisting NULL
             # instead would send completion to take its own snapshot, by which
             # point this print's video is on the card and would be swallowed by
-            # it. The ambiguity is handled where it actually bites — see
-            # ``require_unambiguous`` in the scan (#2957 follow-up).
+            # it. The mark keeps the scan from choosing between several videos
+            # (#3412), and the card is read again while the print runs.
+            _timelapse_baselines_unread.add(printer_id)
             logger.warning(
-                "[TIMELAPSE] Baseline for printer %s taken while its file service is in the FTPS "
-                "handshake cool-off, so the card could not be read — treating it as empty",
+                "[TIMELAPSE] Baseline for printer %s taken while its card could not be read — "
+                "treating it as empty for now and reading it again during the print",
                 printer_id,
             )
-        baseline_files, _ = await _list_timelapse_videos(printer)
-        names = {f.get("name", "") for f in baseline_files}
-        _timelapse_baselines[printer_id] = names
         logger.info(
             "[TIMELAPSE] Baseline at print start: %s video files for printer %s",
             len(names),
@@ -6511,29 +6558,145 @@ async def _capture_timelapse_baseline_at_start(
     except Exception as e:
         logger.warning("[TIMELAPSE] Failed to capture baseline at print start: %s", e)
 
-    if archive_id is None:
-        return
-    try:
-        async with async_session() as db:
-            from backend.app.models.archive import PrintArchive
+    run_started_at: datetime | None = None
+    if archive_id is not None:
+        try:
+            async with async_session() as db:
+                from backend.app.models.archive import PrintArchive
 
-            archive = await db.get(PrintArchive, archive_id)
-            if archive is not None:
-                # Written even when the listing failed, and then as NULL. A
-                # reprint reuses the archive row, so leaving the previous run's
-                # baseline in place would have the scan diff this print against
-                # the state of the printer before the *last* one — and a stale
-                # baseline reads as authoritative, where NULL correctly falls
-                # back to a fresh snapshot.
-                archive.timelapse_baseline = sorted(names) if names is not None else None
-                await db.commit()
-    except Exception as e:
-        # In-memory baseline still covers the normal completion path.
-        logger.warning("[TIMELAPSE] Failed to persist baseline for archive %s: %s", archive_id, e)
+                archive = await db.get(PrintArchive, archive_id)
+                if archive is not None:
+                    # Written even when the listing failed, and then as NULL. A
+                    # reprint reuses the archive row, so leaving the previous
+                    # run's baseline in place would have the scan diff this print
+                    # against the state of the printer before the *last* one —
+                    # and a stale baseline reads as authoritative, where NULL
+                    # correctly falls back to a fresh snapshot.
+                    archive.timelapse_baseline = sorted(names) if names is not None else None
+                    archive.timelapse_baseline_unread = unread
+                    run_started_at = archive.started_at
+                    await db.commit()
+        except Exception as e:
+            # In-memory baseline still covers the normal completion path.
+            logger.warning("[TIMELAPSE] Failed to persist baseline for archive %s: %s", archive_id, e)
+
+    if unread and names is not None:
+        spawn_background_task(
+            _reread_unread_timelapse_baseline(printer_id, names, archive_id, run_started_at),
+            name=f"reread-timelapse-baseline-{printer_id}",
+        )
+
+
+# Before the print has ended there is no video yet: a long PREPARE (heating,
+# levelling) counts as much as the print itself.
+_BASELINE_REREAD_STATES = _ACTIVE_PRINT_STATES | {"PREPARE", "SLICING"}
+
+
+def _schedule_timelapse_scan(archive_id: int, printer_id: int, *, plate_id: int | None) -> None:
+    """Start the completion scan with the print-start baseline: the names, and
+    whether they were taken off a card that could not be read. Taking them
+    ends any re-read still running for it."""
+    unread = printer_id in _timelapse_baselines_unread
+    _timelapse_baselines_unread.discard(printer_id)
+    baseline = _timelapse_baselines.pop(printer_id, None)
+    spawn_background_task(
+        _scan_for_timelapse_with_retries(archive_id, baseline, plate_id=plate_id, baseline_unread=unread),
+        name=f"scan-timelapse-{archive_id}",
+    )
+
+
+def _unread_baseline_round(printer_id: int, names: set[str]) -> bool | None:
+    """Whether to read an unread baseline again now: True to read, None to
+    skip this round, False once it is over -- the print it was taken for is
+    no longer the one on the printer, has stopped printing, or the baseline
+    has been read.
+
+    ``names`` is the very set object recorded at print start: completion pops
+    it and the next print records a new one, so identity marks the run. A
+    printer that is momentarily disconnected says nothing about its print, so
+    that only skips the round.
+    """
+    if _timelapse_baselines.get(printer_id) is not names or printer_id not in _timelapse_baselines_unread:
+        return False
+    state = printer_manager.get_status(printer_id)
+    if state is None or not state.connected:
+        return None
+    return state.state in _BASELINE_REREAD_STATES
+
+
+async def _reread_unread_timelapse_baseline(
+    printer_id: int, names: set[str], archive_id: int | None, run_started_at: datetime | None
+) -> None:
+    """Read again a print-start baseline the card could not give (#3412).
+
+    The printer writes the video only once the print has ended, so the card
+    read at any point during the print holds exactly what it held at the
+    start. Each round stops once the print is no longer the one the baseline
+    was taken for or has stopped printing, and checks that again after the
+    listing returns, before anything is recorded.
+    """
+    from backend.app.models.archive import PrintArchive
+    from backend.app.models.printer import Printer
+
+    logger = logging.getLogger(__name__)
+    for _ in range(_TIMELAPSE_BASELINE_REREAD_MAX_ATTEMPTS):
+        await asyncio.sleep(_TIMELAPSE_BASELINE_REREAD_INTERVAL_SECONDS)
+        now = _unread_baseline_round(printer_id, names)
+        if now is False:
+            return
+        if now is None:
+            continue
+        try:
+            async with async_session() as db:
+                printer = await db.get(Printer, printer_id)
+            if printer is None:
+                return
+            fresh, read = await _read_timelapse_baseline(printer)
+        except Exception as e:
+            logger.debug("[TIMELAPSE] Re-reading the baseline for printer %s failed: %s", printer_id, e)
+            continue
+        if not read:
+            continue
+        now = _unread_baseline_round(printer_id, names)
+        if now is False:
+            return
+        if now is None:
+            # The printer dropped off while the listing was out, so nothing
+            # says it did not end meanwhile: keep the reading for a round that
+            # can vouch for it.
+            continue
+
+        names.update(fresh)
+        _timelapse_baselines_unread.discard(printer_id)
+        logger.info(
+            "[TIMELAPSE] Baseline for printer %s read during the print: %s video files",
+            printer_id,
+            len(fresh),
+        )
+        if archive_id is None:
+            return
+        try:
+            async with async_session() as db:
+                archive = await db.get(PrintArchive, archive_id)
+                # Only the run it was taken for: by now the row can belong to a
+                # reprint, whose baseline is its own.
+                if archive is not None and archive.started_at == run_started_at and archive.timelapse_baseline_unread:
+                    archive.timelapse_baseline = sorted(names)
+                    archive.timelapse_baseline_unread = False
+                    await db.commit()
+        except Exception as e:
+            # The in-memory baseline is read now, which covers completion
+            # unless Bambuddy restarts first.
+            logger.warning("[TIMELAPSE] Failed to persist the re-read baseline for archive %s: %s", archive_id, e)
+        return
 
 
 async def _scan_for_timelapse_with_retries(
-    archive_id: int, baseline_names: set[str] | None = None, *, plate_id: int | None = None
+    archive_id: int,
+    baseline_names: set[str] | None = None,
+    *,
+    plate_id: int | None = None,
+    baseline_unread: bool = False,
 ):
     """Poll the printer for this print's timelapse and attach it.
 
@@ -6552,11 +6715,14 @@ async def _scan_for_timelapse_with_retries(
 
     On success the video is deleted from the printer, which keeps ``/timelapse``
     down to the unclaimed files and makes the next diff unambiguous.
+
+    ``baseline_unread`` marks the caller's baseline as taken off a card that
+    could not be read; a stored one carries the same mark on the archive.
     """
     logger = logging.getLogger(__name__)
 
-    # Cleared when the baseline had to be taken off a card we could not read, so
-    # the attach step refuses to choose between several candidates (#2957).
+    # Cleared when the baseline was taken off a card we could not read, so the
+    # attach step refuses to choose between several candidates (#2957, #3412).
     baseline_trusted = True
 
     # --- Phase 1: establish the baseline -------------------------------------
@@ -6581,7 +6747,23 @@ async def _scan_for_timelapse_with_retries(
             # video is its own.
             run_started_at = archive.started_at
 
-            if baseline_names is not None:
+            if (
+                baseline_names is not None
+                and baseline_unread
+                and archive.timelapse_baseline is not None
+                and not archive.timelapse_baseline_unread
+            ):
+                # The card was read at print start, and the in-memory copy is
+                # one Bambuddy took after a restart off a card it could not
+                # read: the stored one is this run's and is evidence.
+                baseline_names = set(archive.timelapse_baseline)
+                logger.info(
+                    "[TIMELAPSE] Using stored baseline over an unread one: %s existing video files for archive %s",
+                    len(baseline_names),
+                    archive_id,
+                )
+            elif baseline_names is not None:
+                baseline_trusted = not baseline_unread
                 logger.info(
                     "[TIMELAPSE] Using print-start baseline: %s existing video files for archive %s",
                     len(baseline_names),
@@ -6590,6 +6772,7 @@ async def _scan_for_timelapse_with_retries(
             elif archive.timelapse_baseline is not None:
                 # Persisted at print start — survives a restart mid-print.
                 baseline_names = set(archive.timelapse_baseline)
+                baseline_trusted = not archive.timelapse_baseline_unread
                 logger.info(
                     "[TIMELAPSE] Using stored baseline: %s existing video files for archive %s",
                     len(baseline_names),
@@ -6602,25 +6785,22 @@ async def _scan_for_timelapse_with_retries(
                     logger.warning("[TIMELAPSE] Printer not found for archive %s, aborting", archive_id)
                     return
 
-                if not _timelapse_listing_is_trustworthy(printer):
+                baseline_names, baseline_trusted = await _read_timelapse_baseline(printer)
+                if not baseline_trusted:
                     # The card is unreadable at the one moment a baseline has to
-                    # be taken, so the empty listing below means "we never
-                    # looked", not "these are all new". Carry on with it anyway
-                    # — the usual card holds exactly one video, which resolves
+                    # be taken, so the empty listing means "we never looked",
+                    # not "these are all new". Carry on with it anyway — the
+                    # usual card holds exactly one video, which resolves
                     # correctly — but stop the poll from *choosing* between
                     # several, which is how a stale video got attached to this
                     # print and then deleted off the printer (#2957 follow-up).
-                    baseline_trusted = False
                     logger.warning(
-                        "[TIMELAPSE] Baseline for archive %s taken while printer %s is in the FTPS "
-                        "handshake cool-off. A single new video still resolves; several will not be "
-                        "guessed between — use Scan for Timelapse to pick one by hand",
+                        "[TIMELAPSE] Baseline for archive %s taken while printer %s's card could not be "
+                        "read. A single new video still resolves; several will not be guessed between — "
+                        "use Scan for Timelapse to pick one by hand",
                         archive_id,
                         archive.printer_id,
                     )
-
-                baseline_files, _ = await _list_timelapse_videos(printer)
-                baseline_names = {f.get("name", "") for f in baseline_files}
                 logger.info(
                     "[TIMELAPSE] Baseline snapshot (fallback): %s existing video files for archive %s",
                     len(baseline_names),
@@ -9945,11 +10125,7 @@ async def _close_out_print(printer_id: int, data: dict):
         logger.info("[TIMELAPSE] Timelapse was active during print, scheduling auto-scan for archive %s", archive_id)
         # Schedule timelapse scan as background task with retries
         # The printer needs time to encode the video after print completion
-        baseline = _timelapse_baselines.pop(printer_id, None)
-        spawn_background_task(
-            _scan_for_timelapse_with_retries(archive_id, baseline, plate_id=notify_plate_id),
-            name=f"scan-timelapse-{archive_id}",
-        )
+        _schedule_timelapse_scan(archive_id, printer_id, plate_id=notify_plate_id)
         log_timing("Timelapse scan scheduled")
 
     logger.info("[CALLBACK] on_print_complete finished for printer %s, archive %s", printer_id, archive_id)

@@ -286,6 +286,9 @@ class FileListResult:
     # The printer did not answer within the wait: slow, not necessarily gone
     # (a large /ipcam on a slow card), so not reported as unavailable (TO-C13).
     timed_out: bool = False
+    # The printer answered that the directory does not exist (550). Still not
+    # ``available``, but an answer about the card, not a failure to reach it.
+    missing: bool = False
 
 
 # Listings still running, by printer and folder: a refresh joins the one in
@@ -2180,6 +2183,8 @@ async def list_files_result_async(
             connected.set()
             try:
                 return FileListResult(files=client.list_files(path, raise_on_error=True), available=True)
+            except ftplib.error_perm as e:
+                return FileListResult(files=[], available=False, missing=str(e).startswith("550"))
             except (OSError, ftplib.Error):
                 return FileListResult(files=[], available=False)
             finally:
@@ -2203,7 +2208,7 @@ async def list_files_result_async(
         logger.warning("FTP list_files timed out after %ss for %s", timeout, path)
         return FileListResult(files=[], available=False, timed_out=connected.is_set())
     # Joined callers share the listing; each gets entries of its own to edit.
-    return FileListResult(files=[dict(f) for f in result.files], available=result.available)
+    return FileListResult(files=[dict(f) for f in result.files], available=result.available, missing=result.missing)
 
 
 async def find_remote_file_async(

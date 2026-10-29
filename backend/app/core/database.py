@@ -5896,6 +5896,15 @@ async def _run_migrations(conn):
             {"off": False},
         )
 
+    # Migration: mark a timelapse baseline taken off an unreadable card
+    # (#3412). Off for every existing row, which is what they were treated as.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN timelapse_baseline_unread BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE print_archives ADD COLUMN timelapse_baseline_unread BOOLEAN DEFAULT FALSE"
+        )
+
     await _migrate_auth_datetimes_to_timestamp(conn)
     await _migrate_add_missing_set_null_fks(conn)
     await _migrate_wallet_transactions_keep_deleted_users(conn)
@@ -5957,6 +5966,7 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("oidc_providers", "is_autologin"),
     ("oidc_providers", "is_env_managed"),
     ("print_archives", "bambuddy_forced_timelapse"),
+    ("print_archives", "timelapse_baseline_unread"),
     ("print_archives", "wallet_charge_skipped"),
     ("print_queue", "bed_levelling"),
     ("print_queue", "cleanup_library_after_dispatch"),

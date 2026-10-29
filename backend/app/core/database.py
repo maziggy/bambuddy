@@ -40,7 +40,8 @@ def _resolve_pool_kwargs() -> dict:
 
     Dialect-aware defaults, each overridable via env (``DB_POOL_SIZE`` etc.):
       - PostgreSQL: pool_size 20 + max_overflow 60, ``pool_pre_ping`` (recover
-        server-dropped connections instead of erroring the request) and
+        server-dropped connections instead of erroring the request;
+        ``DB_POOL_PRE_PING=false`` turns it off) and
         ``pool_recycle`` 1800s. The old hard-coded 10 + 20 exhausted on large
         farms while printer callbacks held connections. The 80-connection
         ceiling fits a stock server (max_connections 100, 3 reserved for
@@ -86,7 +87,7 @@ def _resolve_pool_kwargs() -> dict:
         kwargs = {
             "pool_size": pool_size,
             "max_overflow": max_overflow,
-            "pool_pre_ping": True,
+            "pool_pre_ping": settings.db_pool_pre_ping if settings.db_pool_pre_ping is not None else True,
             "pool_recycle": settings.db_pool_recycle if settings.db_pool_recycle is not None else 1800,
             # LIFO checkout keeps a bursty farm on a small hot connection set and
             # lets overflow connections recycle out during quiet spells (#2572).

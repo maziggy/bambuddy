@@ -1288,7 +1288,8 @@ class BambuFTPClient:
             # 452 is "insufficient storage" -- a 4xx, so ftplib raises it as
             # error_temp rather than error_perm, but it is the printer talking
             # about its card just as 552/553 are. As NETWORK it would read as a
-            # connection problem, and the queue would retry it forever (#3210).
+            # connection problem, and the queue would say it retries by itself
+            # instead of asking for the card to be checked (#3210, #3409).
             is_storage = isinstance(e, ftplib.Error) and code == "452"
             kind = FtpFailureKind.STORAGE if is_storage else FtpFailureKind.NETWORK
             self.last_failure = FtpFailure(kind, str(e), code)
@@ -1450,7 +1451,7 @@ def describe_upload_failure(failure: FtpFailure | None) -> str:
     if failure.kind is FtpFailureKind.STORAGE:
         return (
             f"The printer refused to store the file ({failure.code or 'storage error'}). Check that its SD card "
-            "is inserted, has space free, and is formatted FAT32 or exFAT."
+            "or USB drive is inserted, has space free, and is formatted FAT32 or exFAT."
         )
     if failure.kind is FtpFailureKind.HANDSHAKE:
         return (

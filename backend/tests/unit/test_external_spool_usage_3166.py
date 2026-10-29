@@ -159,7 +159,9 @@ RAW_DATA = {
 }
 
 
-async def _track(ams_mapping, filament_usage, tray_now_at_start=-1, tray_now=255):
+async def _track(
+    ams_mapping, filament_usage, tray_now_at_start=-1, tray_now=255, last_loaded_tray=-1, tray_change_log=()
+):
     charged: list[tuple[int, int]] = []
 
     async def resolve(printer_id, ams_id, tray_id, **kwargs):
@@ -171,8 +173,8 @@ async def _track(ams_mapping, filament_usage, tray_now_at_start=-1, tray_now=255
         progress=100,
         layer_num=50,
         tray_now=tray_now,
-        last_loaded_tray=-1,
-        tray_change_log=[],
+        last_loaded_tray=last_loaded_tray,
+        tray_change_log=list(tray_change_log),
         raw_data=RAW_DATA,
     )
     with (
@@ -228,3 +230,21 @@ class TestTheTrackerCharges:
         results, charged = await _track([-1], ABS_ONLY, tray_now_at_start=255)
         assert (0, 0) not in charged
         assert [r["spool_id"] for r in results] == [4]
+
+    @pytest.mark.asyncio
+    async def test_the_right_holder_beats_a_tray_an_earlier_print_loaded(self):
+        # #3405: a print from the right holder never updates last_loaded_tray,
+        # so it still names AMS slot 1 from the print before.
+        results, charged = await _track([-1], ABS_ONLY, tray_now_at_start=255, last_loaded_tray=0)
+        assert (0, 0) not in charged
+        assert [r["spool_id"] for r in results] == [4]
+
+    @pytest.mark.asyncio
+    async def test_a_tray_loaded_during_the_print_still_wins_over_255(self):
+        # An H2D reads 255 at start and end of an AMS print; the tray it
+        # loaded in between is in the tray-change log.
+        usage = [{"slot_id": 1, "used_g": 10.0, "type": "PLA", "color": "#000000"}]
+        results, charged = await _track(
+            [-1], usage, tray_now_at_start=255, last_loaded_tray=0, tray_change_log=[(0, 2)]
+        )
+        assert [r["spool_id"] for r in results] == [20]

@@ -891,6 +891,13 @@ class NozzleInfo:
 # in time. Not a refusal: firmware that predates the ack never answers.
 CALI_ACK_UNCONFIRMED = "no acknowledgement from printer"
 
+
+class KProfileReadError(Exception):
+    """The printer's K-profile table could not be read: not connected, or no
+    answer to any attempt. Not an empty table, which is a printer without
+    profiles for that nozzle (#3404)."""
+
+
 # Time the printer has to list a skipped object in s_obj before the skip is
 # logged as not confirmed.
 SKIP_CONFIRM_TIMEOUT_S = 60.0
@@ -7215,18 +7222,24 @@ class BambuMQTTClient:
             max_retries: Maximum number of retry attempts
 
         Returns:
-            List of KProfile objects
+            List of KProfile objects; empty when the printer has none for
+            the nozzle.
+
+        Raises:
+            KProfileReadError: not connected, or no answer to any attempt.
+                Returning an empty list made that a printer without profiles
+                (#3404).
         """
         if not self._client or not self.state.connected:
             logger.warning("[%s] Cannot get K-profiles: not connected", self.serial_number)
-            return []
+            raise KProfileReadError("Printer not connected")
 
         # Capture current event loop for thread-safe callback
         try:
             self._loop = asyncio.get_running_loop()
         except RuntimeError:
             logger.warning("[%s] No running event loop", self.serial_number)
-            return []
+            raise KProfileReadError("No running event loop") from None
 
         for attempt in range(max_retries):
             # Register this attempt under its own sequence_id so a concurrent
@@ -7272,7 +7285,7 @@ class BambuMQTTClient:
                 self._pending_kprofile_requests.pop(seq_id, None)
 
         logger.error("[%s] Failed to get K-profiles after %s attempts", self.serial_number, max_retries)
-        return []
+        raise KProfileReadError("The printer did not answer the K-profile request")
 
     def _publish_cali_write(self, command: dict, seq_id: str) -> bool:
         """Publish a K-profile write and arm its ack slot.

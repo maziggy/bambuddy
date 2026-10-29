@@ -25,6 +25,43 @@ from backend.app.services import spool_swaps
 logger = logging.getLogger(__name__)
 
 
+def has_second_external_holder(raw_data: dict | None) -> bool:
+    """Whether the printer has a second external holder (vt_tray 255).
+
+    ``tray_now`` 255 means "nothing loaded" on a printer with one external
+    holder, and the right-hand external spool on one with two (H2D, X2D),
+    which lists it in ``vt_tray``. Both inventory modes read it this way
+    (#3405).
+    """
+    for vt in (raw_data or {}).get("vt_tray") or []:
+        if not isinstance(vt, dict):
+            continue
+        try:
+            if int(vt.get("id", 0)) == 255:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def mapping_names_no_used_tray(slot_to_tray: list | None, filament_usage: list[dict] | None) -> bool:
+    """Whether a slot-to-tray mapping names no tray for any slot the print used.
+
+    Such a mapping carries no evidence at all: typically a flat ams_mapping
+    whose external spool is -1 and came without an ams_mapping2 to resolve it
+    (#3166). Both inventory modes drop it, so the printer's own readings
+    (``tray_now``, the tray-change log) decide which tray fed the print
+    instead of every slot reading as unfed (#3405).
+    """
+    if not slot_to_tray:
+        return False
+    used_slots = [u.get("slot_id", 0) for u in filament_usage or [] if u.get("used_g", 0) > 0]
+    return bool(used_slots) and all(
+        not (0 < s <= len(slot_to_tray) and isinstance(slot_to_tray[s - 1], int) and slot_to_tray[s - 1] >= 0)
+        for s in used_slots
+    )
+
+
 def _decode_mqtt_mapping(mapping_raw: list | None) -> list[int] | None:
     """Decode MQTT mapping field (snow-encoded) to bambuddy global tray IDs.
 
@@ -1635,22 +1672,15 @@ async def _track_from_3mf(
     )
 
     # A mapping that names no tray for any slot the print used carries no
-    # evidence at all -- typically a flat ams_mapping whose external spool is
-    # -1 and came without an ams_mapping2 to resolve it (#3166). Drop it so the
-    # tray_now evidence below decides, rather than leaving every slot unfed.
-    if slot_to_tray:
-        used_slots = [u.get("slot_id", 0) for u in filament_usage if u.get("used_g", 0) > 0]
-        if used_slots and all(
-            not (0 < s <= len(slot_to_tray) and isinstance(slot_to_tray[s - 1], int) and slot_to_tray[s - 1] >= 0)
-            for s in used_slots
-        ):
-            logger.info(
-                "[UsageTracker] 3MF: mapping %s names no tray for used slots %s — ignoring it",
-                slot_to_tray,
-                used_slots,
-            )
-            slot_to_tray = None
-            mapping_source = None
+    # evidence at all; see mapping_names_no_used_tray. Drop it so the tray_now
+    # evidence below decides, rather than leaving every slot unfed.
+    if mapping_names_no_used_tray(slot_to_tray, filament_usage):
+        logger.info(
+            "[UsageTracker] 3MF: mapping %s names no tray for the used slots — ignoring it",
+            slot_to_tray,
+        )
+        slot_to_tray = None
+        mapping_source = None
 
     # 5. For single-filament non-queue prints, use tray_now from printer state
     #    Priority: tray_change_log (multi-tray split) > tray_now_at_start > current tray_now
@@ -1693,15 +1723,22 @@ async def _track_from_3mf(
         elif state and 0 <= state.tray_now <= 254:
             tray_now_override = state.tray_now
             logger.info("[UsageTracker] 3MF: using current tray_now=%d", state.tray_now)
+        elif (
+            state
+            and state.tray_now == 255
+            and has_second_external_holder(getattr(state, "raw_data", None))
+            and not any(isinstance(c, (tuple, list)) and c and 0 <= c[0] <= 254 for c in tray_changes)
+        ):
+            # 255 = "no filament" on legacy printers, but valid 2nd external
+            # spool on H2-series. Ahead of last_loaded_tray: a print from that
+            # holder never updates it, so it still names the tray an earlier
+            # print used (#3405). A tray the printer switched to during this
+            # print says the 255 is an unload after it, not the feed.
+            tray_now_override = state.tray_now
+            logger.info("[UsageTracker] 3MF: using tray_now=255 (H2-series external spool)")
         elif state and 0 <= state.last_loaded_tray <= 253:
             tray_now_override = state.last_loaded_tray
             logger.info("[UsageTracker] 3MF: using last_loaded_tray=%d (post-retract fallback)", state.last_loaded_tray)
-        elif state and state.tray_now == 255:
-            # 255 = "no filament" on legacy printers, but valid 2nd external spool on H2-series
-            vt_tray = state.raw_data.get("vt_tray") or []
-            if any(int(vt.get("id", 0)) == 255 for vt in vt_tray if isinstance(vt, dict)):
-                tray_now_override = state.tray_now
-                logger.info("[UsageTracker] 3MF: using tray_now=255 (H2-series external spool)")
         if tray_now_override is None:
             logger.info(
                 "[UsageTracker] 3MF: no valid tray_now (at_start=%d, current=%s, last_loaded=%s)",

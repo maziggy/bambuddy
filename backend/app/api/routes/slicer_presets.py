@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -304,7 +305,9 @@ async def _fetch_orca_cloud_presets(
                 # which the picker treats as usable and auto-picks for a
                 # printer the profile was never built for.
                 preset.compatible_printers = _content_compatible_printers(content)
-            elif slot == "printer":
+            if slot in ("printer", "filament"):
+                # A filament's parent gives it the material its own content
+                # leaves out (#3403); see _enrich_cloud_metadata.
                 preset.inherits = _content_inherits(content)
             slots[slot].append(preset)
         _orca_cloud_cache[cache_key] = (now, slots)
@@ -528,6 +531,19 @@ def _enrich_cloud_metadata(
     this function exists post-#1712 — without the enrich the Bambu Cloud
     tier can't score in ``pickFilamentForSlot``.
 
+    A filament with no same-named twin still gets a material when one can be
+    told for sure (#3403), for both cloud tiers:
+      - an Orca Cloud profile saved with only the keys the user changed takes
+        it from the profile it inherits from;
+      - a stock ``<filament> @BBL <printer>`` profile takes it from the bundled
+        profiles of the same filament for other printers, when they all agree.
+        With OrcaSlicer preferred the bundle has no H2C profiles at all, so
+        without this every Bambu Cloud "@BBL H2C" filament is untyped and a
+        PETG-CF slot can pick Generic PETG. Only ``@BBL`` names count: Orca's
+        "Generic PETG-CF @System" states PETG.
+    Only ever fills a gap, and only the material: the colour of another
+    printer's profile is not this one's.
+
     Compatibility merge (#2628): the same name bridge carries
     ``compatible_printers`` onto any process / filament entry that lacks it.
     Bambu Cloud never ships the list, so a profile whose NAME carries no
@@ -559,6 +575,42 @@ def _enrich_cloud_metadata(
             if p.filament_colour is None and c is not None:
                 p.filament_colour = c
 
+    # Material of the bundled "<filament> @BBL <printer>" profiles, per
+    # filament, kept only where every printer's profile states the same one.
+    bundled_types: dict[str, set[str]] = {}
+    for p in standard["filament"]:
+        base = _bbl_filament_base(p.name)
+        if base and p.filament_type:
+            bundled_types.setdefault(base, set()).add(p.filament_type)
+    type_by_base = {base: next(iter(types)) for base, types in bundled_types.items() if len(types) == 1}
+    # The parents an Orca Cloud profile can name. Of the bundle, only "@BBL"
+    # profiles: Orca's own "Generic PETG-CF @System" states PETG, and a
+    # user's PETG-CF saved from it would then be left out of PETG-CF slots.
+    type_by_name = {
+        p.name: p.filament_type
+        for tier in (local, orca_cloud, standard)
+        for p in tier["filament"]
+        if p.filament_type and (tier is not standard or _bbl_filament_base(p.name))
+    }
+    orca_parent = {p.name: p.inherits for p in orca_cloud["filament"] if p.inherits}
+
+    def _material_for(name: str) -> str | None:
+        seen: set[str] = set()
+        while name and name not in seen:
+            seen.add(name)
+            if name in type_by_name:
+                return type_by_name[name]
+            base = _bbl_filament_base(name)
+            if base in type_by_base:
+                return type_by_base[base]
+            name = orca_parent.get(name, "")
+        return None
+
+    for tier in (orca_cloud, cloud):
+        for p in tier["filament"]:
+            if p.filament_type is None:
+                p.filament_type = _material_for(p.name)
+
     # Compatibility bridge (#2628). Runs over both slots that carry the
     # list, and in both directions between the cloud tiers — whichever copy
     # of a profile knows its printers teaches the ones that don't.
@@ -578,6 +630,22 @@ def _enrich_cloud_metadata(
                         p.compatible_printers = list(borrowed)
 
     return orca_cloud, cloud, local, standard
+
+
+# What follows "@BBL " in a stock filament name: the printer, and maybe the
+# nozzle ("H2C", "H2C 0.4 nozzle"). True of every name in both bundles.
+_BBL_PRINTER_TAIL = re.compile(r"[A-Z0-9]+( \d\.\d nozzle)?")
+
+
+def _bbl_filament_base(name: str) -> str | None:
+    """The filament part of a stock ``<filament> @BBL <printer>`` name
+    ("Generic PETG-CF @BBL H2C 0.4 nozzle" -> "Generic PETG-CF"), else None.
+    A name with more after the printer is a user's copy ("... @BBL H2C -
+    Copy"), whose material may have been changed: None."""
+    base, sep, printer = name.partition(" @BBL ")
+    if not sep or not _BBL_PRINTER_TAIL.fullmatch(printer):
+        return None
+    return base.strip() or None
 
 
 @router.get("/printer-models")

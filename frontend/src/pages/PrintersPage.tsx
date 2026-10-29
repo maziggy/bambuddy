@@ -2245,7 +2245,7 @@ function PrinterCard({
     printerId: number;
     amsId: number;
     trayId: number;
-    trayInfo: { type: string; color: string; location: string; material?: string; profile?: string };
+    trayInfo: { type: string; color: string; location: string; material?: string; profile?: string; emptyKind?: 'physical' | 'reset' | null };
   } | null>(null);
   const [configureSlotModal, setConfigureSlotModal] = useState<{
     amsId: number;
@@ -5824,6 +5824,7 @@ function PrinterCard({
                                             profile: '',
                                             color: '',
                                             location: `${getAmsLabel(ams.id)} Slot ${slotIdx + 1}`,
+                                            emptyKind,
                                           },
                                         })}
                                       >
@@ -6227,6 +6228,7 @@ function PrinterCard({
                                         profile: '',
                                         color: '',
                                         location: getAmsLabel(ams.id),
+                                        emptyKind,
                                       },
                                     })}
                                   >
@@ -6504,6 +6506,7 @@ function PrinterCard({
                                           profile: '',
                                           color: '',
                                           location: `External Slot ${slotTrayId + 1}`,
+                                          emptyKind,
                                         },
                                       })}
                                     >

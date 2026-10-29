@@ -205,12 +205,21 @@ class NFCReader:
 
                 # Try reading Bambu tag data
                 tray_uuid = None
+                raw_blocks = None
                 tag_type = "mifare_classic" if sak in (0x08, 0x18) else "ntag" if sak in (0x00, 0x04) else "unknown"
 
                 if sak in (0x08, 0x18):
-                    blocks = self._nfc.read_bambu_tag(uid_bytes)
+                    # A reader fault mid-read (a BUSY timeout, an SPI error) must
+                    # not escape poll() and stop the loop: report the tag without
+                    # its tray UUID, so matching falls back to the UID (#3377)
+                    try:
+                        blocks = self._nfc.read_bambu_tag(uid_bytes)
+                    except Exception as e:
+                        logger.warning("Bambu tag read failed for %s: %s", uid_hex, e)
+                        blocks = None
                     if blocks:
                         tray_uuid = _extract_tray_uuid(blocks)
+                        raw_blocks = _raw_blocks(blocks)
 
                 logger.info("Tag detected: %s (SAK=0x%02X, type=%s)", uid_hex, sak, tag_type)
                 return "tag_detected", {
@@ -218,6 +227,7 @@ class NFCReader:
                     "sak": sak,
                     "tag_type": tag_type,
                     "tray_uuid": tray_uuid,
+                    "raw_blocks": raw_blocks,
                 }
 
             # Tag still present — no event
@@ -253,3 +263,8 @@ def _extract_tray_uuid(blocks: dict[int, bytes]) -> str | None:
     if uuid_str == "0" * 32:
         return None
     return uuid_str
+
+
+def _raw_blocks(blocks: dict[int, bytes]) -> dict[str, str]:
+    """Bambu tag blocks as {"block number": "32 uppercase hex chars"}, for the backend to decode (#2685)."""
+    return {str(block): data.hex().upper() for block, data in sorted(blocks.items())}

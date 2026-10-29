@@ -70,6 +70,7 @@ import type {
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
+import { LibraryTagFilterRail } from '../components/LibraryTagFilterRail';
 import { PrintModal } from '../components/PrintModal';
 import { ModelViewerModal } from '../components/ModelViewerModal';
 import { SliceModal } from '../components/SliceModal';
@@ -3148,46 +3149,15 @@ export function FileManagerPage() {
             via `order-first` and the page itself scrolls. */}
         <div className="flex-1 flex flex-col lg:flex-row min-w-0 min-h-0 gap-4 lg:gap-6">
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          {/* Tag filter rail (#1268). Lists every catalog tag as a togglable
-              chip — active chips are filled green and show an X, inactive
-              chips are outlined and toggle ON when clicked. Clicking an active
-              chip removes it from the filter. Hidden entirely when the
+          {/* Tag filter rail (#1268, #3411). Hidden entirely when the
               catalog is empty so brand-new installs don't see a stray rail. */}
           {tagCatalog.length > 0 && (
-            <div className="mb-3 flex flex-wrap items-center gap-2 p-2 sm:p-3 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary">
-              <span className="text-xs text-bambu-gray font-medium shrink-0">
-                {t('fileManager.tags.filterLabel')}
-              </span>
-              {tagCatalog.map((tg) => {
-                const active = selectedTagIds.includes(tg.id);
-                return (
-                  <button
-                    key={tg.id}
-                    type="button"
-                    onClick={() => toggleTagFilter(tg.id)}
-                    className={
-                      active
-                        ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-bambu-green/20 text-bambu-green border border-bambu-green/40 hover:bg-bambu-green/30 transition-colors'
-                        : 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-bambu-dark text-bambu-gray border border-bambu-dark-tertiary hover:text-white hover:border-bambu-green/40 transition-colors'
-                    }
-                    title={tg.name}
-                  >
-                    <TagIcon className="w-3 h-3" />
-                    <span>{tg.name}</span>
-                    {active && <X className="w-3 h-3" />}
-                  </button>
-                );
-              })}
-              {selectedTagIds.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedTagIds([])}
-                  className="ml-auto text-xs text-bambu-gray hover:text-white shrink-0"
-                >
-                  {t('fileManager.tags.clearAll')}
-                </button>
-              )}
-            </div>
+            <LibraryTagFilterRail
+              tags={tagCatalog}
+              selectedIds={selectedTagIds}
+              onToggle={toggleTagFilter}
+              onClear={() => setSelectedTagIds([])}
+            />
           )}
           {/* External folder info bar */}
           {selectedFolder?.is_external && (

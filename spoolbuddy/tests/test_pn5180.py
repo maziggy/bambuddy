@@ -261,6 +261,30 @@ class TestNfcReaderPoll:
         assert data["raw_blocks"] is None
         assert data["tray_uuid"] is None
 
+    @pytest.mark.parametrize(
+        "error",
+        [TimeoutError("PN5180 BUSY timeout"), OSError(5, "Input/output error")],
+        ids=["busy-timeout", "spi-error"],
+    )
+    def test_reader_fault_during_bambu_read_still_reports_the_tag(self, pn5180_mod, error, caplog):
+        """A fault in read_bambu_tag() must not escape poll() and stop nfc_poll_loop (#3377)."""
+        from daemon.nfc_reader import NFCReader, NFCState
+
+        reader = NFCReader()
+        reader._nfc = _reader(pn5180_mod, FakeChip(UID_4, sak=0x08))
+        reader._nfc.read_bambu_tag = MagicMock(side_effect=error)
+
+        with caplog.at_level("WARNING", logger="daemon.nfc_reader"):
+            event, data = reader.poll()
+
+        assert event == "tag_detected"
+        assert data["tag_uid"] == UID_4.hex().upper()
+        assert data["tag_type"] == "mifare_classic"
+        # Matched by UID instead; the tag stays present, so it isn't reported again
+        assert data["tray_uuid"] is None
+        assert reader.state == NFCState.TAG_PRESENT
+        assert any("Bambu tag read failed for " + UID_4.hex().upper() in r.getMessage() for r in caplog.records)
+
 
 class TestReadTagDiagnostic:
     """The Read Tag diagnostic has its own activate_type_a() and shows the UID the daemon reports."""
@@ -277,3 +301,192 @@ class TestReadTagDiagnostic:
         chip = FakeChip(UID_7, sak=0x00, gone_at_level=1)
 
         assert _reader(read_tag_mod, chip).activate_type_a() is None
+
+
+# --- read_bambu_tag retries (#3377) ---
+
+BAMBU_UID = bytes.fromhex("8659A1B2")
+
+
+def _sectors(mod) -> int:
+    return len({block // 4 for block in mod.BAMBU_BLOCKS})
+
+
+def _make_reader(mod, auth_results, reactivate_results=None):
+    """A PN5180 with the hardware calls mocked out; auth_results feeds mfc_authenticate."""
+    reader = mod.PN5180.__new__(mod.PN5180)
+    reader.write_reg = MagicMock()
+    reader.write_reg_and = MagicMock()
+    reader.mfc_authenticate = MagicMock(side_effect=auth_results)
+    reader.mfc_read_block = MagicMock(side_effect=lambda block: bytes([block]) * 16)
+    if reactivate_results is None:
+        reader.reactivate_card = MagicMock(return_value=(BAMBU_UID, 0x08))
+    else:
+        reader.reactivate_card = MagicMock(side_effect=reactivate_results)
+    return reader
+
+
+class TestReadBambuTagReselectRetry:
+    def test_failed_initial_reselect_is_retried(self, pn5180_mod):
+        mod = pn5180_mod
+        reader = _make_reader(mod, [True] * _sectors(mod), reactivate_results=[None, (BAMBU_UID, 0x08)])
+        blocks = reader.read_bambu_tag(BAMBU_UID)
+        assert sorted(blocks) == mod.BAMBU_BLOCKS
+        assert reader.reactivate_card.call_count == 2
+        assert reader.mfc_authenticate.call_count == _sectors(mod)
+
+    def test_gives_up_when_the_card_never_reselects(self, pn5180_mod):
+        mod = pn5180_mod
+        reader = _make_reader(mod, [], reactivate_results=[None] * mod.BAMBU_READ_ATTEMPTS)
+        assert reader.read_bambu_tag(BAMBU_UID) is None
+        assert reader.reactivate_card.call_count == mod.BAMBU_READ_ATTEMPTS
+        reader.mfc_authenticate.assert_not_called()
+
+    def test_a_different_tag_is_not_read(self, pn5180_mod):
+        mod = pn5180_mod
+        reader = _make_reader(mod, [], reactivate_results=[(bytes.fromhex("12E97229"), 0x08)])
+        assert reader.read_bambu_tag(BAMBU_UID) is None
+        assert reader.reactivate_card.call_count == 1
+        reader.mfc_authenticate.assert_not_called()
+
+
+class TestReadBambuTagAuthRetry:
+    def test_first_try_success_does_not_reselect(self, pn5180_mod):
+        mod = pn5180_mod
+        reader = _make_reader(mod, [True] * _sectors(mod))
+        blocks = reader.read_bambu_tag(BAMBU_UID)
+        assert sorted(blocks) == mod.BAMBU_BLOCKS
+        assert reader.mfc_authenticate.call_count == _sectors(mod)
+        assert reader.reactivate_card.call_count == 1  # only the initial reset
+
+    def test_transient_failure_is_retried_after_reselect(self, pn5180_mod):
+        mod = pn5180_mod
+        reader = _make_reader(mod, [False] + [True] * _sectors(mod))
+        blocks = reader.read_bambu_tag(BAMBU_UID)
+        assert sorted(blocks) == mod.BAMBU_BLOCKS
+        assert blocks[9] == bytes([9]) * 16
+        assert reader.mfc_authenticate.call_count == _sectors(mod) + 1
+        assert reader.reactivate_card.call_count == 2  # initial reset + one re-select
+
+    def test_gives_up_after_all_attempts_fail(self, pn5180_mod):
+        mod = pn5180_mod
+        reader = _make_reader(mod, [False] * mod.BAMBU_READ_ATTEMPTS)
+        assert reader.read_bambu_tag(BAMBU_UID) is None
+        assert reader.mfc_authenticate.call_count == mod.BAMBU_READ_ATTEMPTS
+        assert reader.reactivate_card.call_count == mod.BAMBU_READ_ATTEMPTS
+        reader.mfc_read_block.assert_not_called()
+
+    def test_failed_reselect_skips_to_next_attempt(self, pn5180_mod):
+        mod = pn5180_mod
+        reader = _make_reader(
+            mod,
+            [False] + [True] * _sectors(mod),
+            reactivate_results=[(BAMBU_UID, 0x08), None, (BAMBU_UID, 0x08)],
+        )
+        blocks = reader.read_bambu_tag(BAMBU_UID)
+        assert sorted(blocks) == mod.BAMBU_BLOCKS
+        # The attempt whose re-select failed never tried to authenticate
+        assert reader.mfc_authenticate.call_count == _sectors(mod) + 1
+        assert reader.reactivate_card.call_count == 3
+
+    def test_a_reselect_onto_a_different_tag_is_not_used(self, pn5180_mod):
+        mod = pn5180_mod
+        reader = _make_reader(
+            mod,
+            [False] + [True] * _sectors(mod),
+            reactivate_results=[(BAMBU_UID, 0x08), (bytes.fromhex("12E97229"), 0x08), (BAMBU_UID, 0x08)],
+        )
+        blocks = reader.read_bambu_tag(BAMBU_UID)
+        assert sorted(blocks) == mod.BAMBU_BLOCKS
+        assert reader.mfc_authenticate.call_count == _sectors(mod) + 1
+        assert reader.reactivate_card.call_count == 3
+
+    def test_failure_in_later_sector_is_retried(self, pn5180_mod):
+        mod = pn5180_mod
+        reader = _make_reader(mod, [True, False, False, True, True])
+        blocks = reader.read_bambu_tag(BAMBU_UID)
+        assert sorted(blocks) == mod.BAMBU_BLOCKS
+        retried_blocks = [c.args[0] for c in reader.mfc_authenticate.call_args_list[1:4]]
+        assert all(block // 4 == 1 for block in retried_blocks)
+
+
+def _flaky_reads(bad_reads):
+    """mfc_read_block that returns bad_reads[block] (popped in order) before the real data."""
+
+    def read(block):
+        if bad_reads.get(block):
+            return bad_reads[block].pop(0)
+        return bytes([block]) * 16
+
+    return read
+
+
+class TestReadBambuTagBlockRetry:
+    def test_every_block_is_read_twice(self, pn5180_mod):
+        mod = pn5180_mod
+        reader = _make_reader(mod, [True] * _sectors(mod))
+        reader.read_bambu_tag(BAMBU_UID)
+        reads = [c.args[0] for c in reader.mfc_read_block.call_args_list]
+        assert reads == [block for block in mod.BAMBU_BLOCKS for _ in range(2)]
+
+    def test_failed_block_read_redoes_the_sector(self, pn5180_mod):
+        mod = pn5180_mod
+        reader = _make_reader(mod, [True] * (_sectors(mod) + 1))
+        reader.mfc_read_block.side_effect = _flaky_reads({9: [None]})
+        blocks = reader.read_bambu_tag(BAMBU_UID)
+        assert blocks[9] == bytes([9]) * 16
+        assert reader.reactivate_card.call_count == 2  # initial reset + one re-select
+        assert reader.mfc_authenticate.call_count == _sectors(mod) + 1
+        assert reader.mfc_authenticate.call_args_list[-1].args[0] == 9
+
+    def test_a_corrupted_read_is_not_returned(self, pn5180_mod):
+        mod = pn5180_mod
+        """Two reads that disagree are retried, never passed on (#3377: a wrong tray UUID)."""
+        corrupted = bytes.fromhex("ABF589198C443E7722AAF1B987B46D7E")
+        reader = _make_reader(mod, [True] * (_sectors(mod) + 1))
+        reader.mfc_read_block.side_effect = _flaky_reads({9: [corrupted]})
+        blocks = reader.read_bambu_tag(BAMBU_UID)
+        assert blocks[9] == bytes([9]) * 16
+        assert reader.mfc_authenticate.call_count == _sectors(mod) + 1
+
+    def test_gives_up_when_a_block_never_reads(self, pn5180_mod):
+        mod = pn5180_mod
+        reader = _make_reader(mod, [True] * (_sectors(mod) + mod.BAMBU_READ_ATTEMPTS))
+        reader.mfc_read_block.side_effect = _flaky_reads({4: [None] * mod.BAMBU_READ_ATTEMPTS})
+        assert reader.read_bambu_tag(BAMBU_UID) is None
+        assert reader.reactivate_card.call_count == mod.BAMBU_READ_ATTEMPTS
+
+
+class TestMfcReadBlockStatus:
+    """mfc_read_block() accepts a frame only when RX_STATUS shows 16 bytes and nothing else (#3377).
+
+    The values are the ones measured on a real SpoolBuddy (PN5180, genuine Bambu tag):
+    every good read gave RX_STATUS 0x010; a tag's NAK gave 0x18000; no answer gave 0.
+    """
+
+    @staticmethod
+    def _reader(mod, rx_status: int):
+        reader = mod.PN5180.__new__(mod.PN5180)
+        reader.write_reg = MagicMock()
+        reader.write_reg_or = MagicMock()
+        reader.set_transceive_mode = MagicMock()
+        reader.send_data = MagicMock()
+        reader.read_reg = MagicMock(return_value=rx_status)
+        reader.read_data = MagicMock(return_value=bytes(range(16)))
+        return reader
+
+    def test_good_read_returns_the_block(self, pn5180_mod):
+        reader = self._reader(pn5180_mod, 0x00000010)
+        assert reader.mfc_read_block(4) == bytes(range(16))
+        reader.read_reg.assert_called_once_with(0x13)
+        reader.read_data.assert_called_once_with(16)
+
+    @pytest.mark.parametrize(
+        "rx_status",
+        [0x00018000, 0x00000000, 0x00000008, 0x00018010, 0x00000210],
+        ids=["tag-nak", "no-answer", "short-frame", "16-bytes-with-error-bits", "16-bytes-with-a-frame-bit"],
+    )
+    def test_anything_but_a_clean_16_byte_frame_is_a_failed_read(self, pn5180_mod, rx_status):
+        reader = self._reader(pn5180_mod, rx_status)
+        assert reader.mfc_read_block(4) is None
+        reader.read_data.assert_not_called()

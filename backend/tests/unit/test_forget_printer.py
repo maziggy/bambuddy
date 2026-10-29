@@ -224,12 +224,14 @@ async def test_the_plate_references_of_a_printer_go(tmp_path, monkeypatch):
 
 
 async def test_the_scheduler_and_live_activities_forget_it():
+    from backend.app.services.bambu_ftp import FtpFailureKind
     from backend.app.services.notify_live_activities import notify_live_activities
     from backend.app.services.print_scheduler import scheduler
 
     scheduler._upload_backoff[GONE] = 1e12
     scheduler._upload_refusals[GONE] = 6
-    scheduler._upload_refusal_notified.add(GONE)
+    scheduler._upload_refusal_notified[GONE] = "printer is not accepting files"
+    scheduler._upload_refusal_kind[GONE] = FtpFailureKind.STORAGE
     scheduler._wake_failures[GONE] = 1e12
     scheduler._dispatch_holds[GONE] = (1.0, "IDLE", None)
     scheduler._auto_dry_units[(GONE, 0)] = {}
@@ -242,6 +244,7 @@ async def test_the_scheduler_and_live_activities_forget_it():
     assert GONE not in scheduler._upload_backoff
     assert GONE not in scheduler._upload_refusals
     assert GONE not in scheduler._upload_refusal_notified
+    assert GONE not in scheduler._upload_refusal_kind
     assert GONE not in scheduler._wake_failures
     assert GONE not in scheduler._dispatch_holds
     assert (GONE, 0) not in scheduler._auto_dry_units

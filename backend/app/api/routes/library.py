@@ -1558,12 +1558,24 @@ async def update_folder(
         folder.name = data.name
 
     if data.parent_id is not None:
+        new_parent_id = data.parent_id or None  # 0 means move to root
+        # An external folder mirrors a path on disk, so it stays where the scan
+        # put it; sending its current parent back is not a move (#3305).
+        if folder.is_external and new_parent_id != folder.parent_id:
+            raise HTTPException(status_code=400, detail="External folders cannot be moved")
+
         # Prevent circular reference
         if data.parent_id == folder_id:
             raise HTTPException(status_code=400, detail="Folder cannot be its own parent")
 
-        # Check for circular reference in ancestors
-        if data.parent_id != 0:  # 0 means move to root
+        if new_parent_id is not None:
+            parent = await db.get(LibraryFolder, new_parent_id)
+            if parent is None:
+                raise HTTPException(status_code=404, detail="Parent folder not found")
+            if parent.is_external and new_parent_id != folder.parent_id:
+                raise HTTPException(status_code=400, detail="Cannot move a folder into an external folder")
+
+            # Check for circular reference in ancestors
             current_id = data.parent_id
             while current_id is not None:
                 if current_id == folder_id:

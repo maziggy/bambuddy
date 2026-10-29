@@ -5,6 +5,7 @@ All notable changes to Bambuddy will be documented in this file.
 ## [1.3.0] - Unreleased
 
 ### Added
+- **`DB_POOL_PRE_PING` to turn off the PostgreSQL connection check (#3396, requested and contributed by @oh-forf in #3413)** — Every pooled PostgreSQL session first checks its connection, and SQLAlchemy wraps that check in an empty `BEGIN; ROLLBACK;`. On a small install that made `pg_stat_database` show around 80% rolled-back transactions and set off rollback-ratio alerts in monitoring. `DB_POOL_PRE_PING=false` skips the check and roughly halves the rollback count. The default stays on: with it off, a connection the server dropped fails the first request that uses it, so turn it off only for a database on the same host or LAN.
 - **Move a folder in the File Manager (#3305, requested and contributed by @rojosinalma in #3306)** — A folder could not be moved once created, only rebuilt elsewhere by hand. It can now go to the root or into another folder.
   - **Move folder…** in a folder's menu, in the sidebar tree and the columns view, opens the same picker as **Move files**, with **Root** on top. The folder itself, its subfolders, external folders and folders you can't write to are greyed out, and the current parent is marked.
   - **Drag and drop:** drag a folder onto another folder, onto a column's empty space, or onto **All Files** for the root. A drop that would change nothing or isn't allowed shows no-drop and sends nothing. Dragging files to upload works as before.

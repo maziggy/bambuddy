@@ -53,7 +53,7 @@ class UnifiedPreset(BaseModel):
 
     ``stock`` marks a Bambu Cloud preset as one of Bambu's own (the cloud's
     "public" list) rather than the user's. Internal only: the listing drops
-    those that Standard also has (#3386).
+    the Standard presets of the same names (#3386).
     """
 
     id: str
@@ -76,7 +76,7 @@ class UnifiedPresetsBySlot(BaseModel):
 
 class UnifiedPresetsResponse(BaseModel):
     """Every tier carries its full preset list — no cross-tier dedup, except
-    that Bambu Cloud's stock presets are listed once, under Standard (#3386).
+    that Bambu Cloud's stock presets are listed once, under Bambu Cloud (#3386).
 
     Priority order: ``local > orca_cloud > cloud > standard``. The order
     drives auto-pick (first non-empty tier wins, name-lookup walks tiers
@@ -90,9 +90,9 @@ class UnifiedPresetsResponse(BaseModel):
     (signed out / token expired / network down). Each tier has its own
     status because they can fail independently.
 
-    ``stock_aliases`` maps each dropped stock preset (``"cloud:<id>"``) to its
-    Standard twin, so a pipeline or AMS slot saved with the cloud copy still
-    finds it.
+    ``stock_aliases`` maps each dropped Standard preset (``"standard:<id>"``)
+    to its Bambu Cloud stock twin, so a pipeline or AMS slot saved with the
+    Standard copy still finds it.
     """
 
     orca_cloud: UnifiedPresetsBySlot = UnifiedPresetsBySlot()

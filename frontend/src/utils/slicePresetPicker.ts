@@ -50,9 +50,9 @@ export function refValue(ref: PresetRef): string {
   return `${ref.source}:${ref.id}`;
 }
 
-// The listing drops Bambu Cloud's stock presets that Standard also has
-// (#3386). A ref saved with one of those — a pipeline, an AMS slot's preset —
-// is pointed at the Standard twin the listing names instead.
+// The listing drops the Standard presets that Bambu Cloud's stock list also
+// has (#3386). A ref saved with one of those — a pipeline, an AMS slot's
+// preset — is pointed at the cloud twin the listing names instead.
 export function listedRef(by: UnifiedPresetsResponse, ref: PresetRef): PresetRef {
   return by.stock_aliases?.[refValue(ref)] ?? ref;
 }

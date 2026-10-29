@@ -2070,8 +2070,8 @@ export interface UnifiedPresetsResponse {
   standard: UnifiedPresetsBySlot;
   cloud_status: SlicerCloudStatus;
   orca_cloud_status: SlicerCloudStatus;
-  // Bambu Cloud's stock presets that Standard also lists are left out of the
-  // cloud tier (#3386); each "cloud:<id>" maps to its Standard twin.
+  // Standard presets that Bambu Cloud's stock list also has are left out of
+  // the standard tier (#3386); each "standard:<id>" maps to its cloud twin.
   stock_aliases?: Record<string, PresetRef>;
 }
 

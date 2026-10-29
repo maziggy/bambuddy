@@ -2814,6 +2814,8 @@ describe('SliceModal — preset list order, stock duplicates and search (#3386)'
         { id: 'PFUS-9', name: 'alpha PLA 9', source: 'cloud' },
         // Stock, but newer than the bundle: the listing keeps it under Bambu Cloud.
         { id: 'GFSA99', name: 'Bambu PLA Brand New', source: 'cloud' },
+        // Stock, and the listing dropped its Standard twin.
+        { id: 'GFSA00', name: 'Bambu PLA Basic', source: 'cloud' },
       ],
     },
     standard: {
@@ -2829,7 +2831,6 @@ describe('SliceModal — preset list order, stock duplicates and search (#3386)'
         { id: 'Bambu Support For PLA', name: 'Bambu Support For PLA', source: 'standard' },
         { id: 'eSUN PLA+', name: 'eSUN PLA+', source: 'standard' },
         { id: 'Bambu PLA Matte', name: 'Bambu PLA Matte', source: 'standard' },
-        { id: 'Bambu PLA Basic', name: 'Bambu PLA Basic', source: 'standard' },
         {
           id: 'Bambu PETG HF @BBL H2D',
           name: 'Bambu PETG HF @BBL H2D',
@@ -2839,8 +2840,8 @@ describe('SliceModal — preset list order, stock duplicates and search (#3386)'
         ...generics,
       ],
     },
-    // The listing dropped Bambu Cloud's stock copy of "Bambu PLA Basic".
-    stock_aliases: { 'cloud:GFSA00': { source: 'standard', id: 'Bambu PLA Basic' } },
+    // The listing dropped the Standard copy of "Bambu PLA Basic".
+    stock_aliases: { 'standard:Bambu PLA Basic': { source: 'cloud', id: 'GFSA00' } },
   });
 
   const filamentSelect = () => presetSelects()[3];
@@ -2873,6 +2874,7 @@ describe('SliceModal — preset list order, stock duplicates and search (#3386)'
     await open();
     // Bambu first, then other brands; by name without case, numbers by value.
     expect(groupNames(filamentSelect(), 'Bambu Cloud')).toEqual([
+      'Bambu PLA Basic',
       'Bambu PLA Brand New',
       'Alpha PLA',
       'alpha PLA 9',
@@ -2882,10 +2884,10 @@ describe('SliceModal — preset list order, stock duplicates and search (#3386)'
     // Bambu, Generic, other brands; support materials after every filament.
     const standard = groupNames(filamentSelect(), 'Standard');
     expect(standard.slice(0, 4)).toEqual([
-      'Bambu PLA Basic',
       'Bambu PLA Matte',
       'Generic Filament 1',
       'Generic Filament 2',
+      'Generic Filament 3',
     ]);
     expect(standard.slice(-3)).toEqual(['eSUN PLA+', 'Bambu Support For PLA', 'Generic PVA']);
     // Decimals compare by value, and "support" only means a support material
@@ -2898,7 +2900,7 @@ describe('SliceModal — preset list order, stock duplicates and search (#3386)'
     ]);
   });
 
-  it('applies a pipeline saved with a stock Bambu Cloud preset as its Standard copy', async () => {
+  it('applies a pipeline saved with a hidden Standard preset as its Bambu Cloud copy', async () => {
     const user = userEvent.setup();
     mockApi.listSlicerPipelines.mockResolvedValue({
       pipelines: [
@@ -2908,7 +2910,7 @@ describe('SliceModal — preset list order, stock duplicates and search (#3386)'
           description: null,
           printer_preset: { source: 'standard', id: 'Bambu Lab X1 Carbon 0.4 nozzle' },
           process_preset: { source: 'standard', id: '0.20mm Standard' },
-          filament_presets: [{ source: 'cloud', id: 'GFSA00' }],
+          filament_presets: [{ source: 'standard', id: 'Bambu PLA Basic' }],
           bed_type: null,
           target_kind: 'printer_class',
           target_printer_id: null,
@@ -2922,7 +2924,7 @@ describe('SliceModal — preset list order, stock duplicates and search (#3386)'
     });
     await open();
     await user.selectOptions(screen.getByRole('combobox', { name: 'Apply pipeline' }), '7');
-    expect(filamentSelect().value).toBe('standard:Bambu PLA Basic');
+    expect(filamentSelect().value).toBe('cloud:GFSA00');
   });
 
   it('offers search on every dropdown, and it never drops the selection', async () => {
@@ -2934,6 +2936,9 @@ describe('SliceModal — preset list order, stock duplicates and search (#3386)'
     expect(screen.queryByRole('searchbox')).toBeNull();
     await user.click(screen.getByRole('button', { name: /^Filament.*: Search$/ }));
     const boxes = [screen.getByRole('searchbox')];
+    // The status line is there, empty, from the moment the box opens.
+    const status = screen.getByRole('status');
+    expect(status.textContent).toBe('');
     // The auto-pick lands on the first Bambu Cloud preset in API order.
     expect(filamentSelect().selectedOptions[0].textContent).toBe('zeta PLA');
 
@@ -2950,7 +2955,9 @@ describe('SliceModal — preset list order, stock duplicates and search (#3386)'
 
     // Only the selection left: say so rather than leave a one-entry list.
     await user.type(boxes[0], ' nothing');
-    expect(screen.getByRole('status')).toHaveTextContent('No matching presets found.');
+    // Same element, new text: screen readers announce a change, not a mount.
+    expect(screen.getByRole('status')).toBe(status);
+    expect(status).toHaveTextContent('No matching presets found.');
 
     // Escape closes the box, brings the full list back and returns focus to
     // the button that opened it.

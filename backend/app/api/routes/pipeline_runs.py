@@ -34,6 +34,7 @@ from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
+from backend.app.api.routes.slicer_presets import listed_ref, load_stock_aliases
 from backend.app.core.auth import (
     ApiKeyActor,
     QueueReviewRequired,
@@ -165,13 +166,19 @@ def _make_status_lookup():
     return _lookup
 
 
-def _slice_request_from_pipeline(pipeline: SlicerPipeline) -> SliceRequest:
+def _slice_request_from_pipeline(
+    pipeline: SlicerPipeline, stock_aliases: dict[str, PresetRef] | None = None
+) -> SliceRequest:
+    """``stock_aliases`` is the preset listing's map (``load_stock_aliases``):
+    a ref the listing hides behind its Bambu Cloud twin slices with that twin,
+    as it does from the Slice dialog (#3386)."""
+    aliases = stock_aliases or {}
     try:
         raw_filaments = json.loads(pipeline.filament_presets_json or "[]")
     except (json.JSONDecodeError, TypeError):
         raw_filaments = []
     filament_presets = [
-        PresetRef(source=r["source"], id=r["id"])
+        listed_ref(aliases, PresetRef(source=r["source"], id=r["id"]))
         for r in raw_filaments
         if isinstance(r, dict) and "source" in r and "id" in r
     ]
@@ -188,8 +195,12 @@ def _slice_request_from_pipeline(pipeline: SlicerPipeline) -> SliceRequest:
             ),
         ) from None
     return SliceRequest(
-        printer_preset=PresetRef(source=pipeline.printer_preset_source, id=pipeline.printer_preset_id),
-        process_preset=PresetRef(source=pipeline.process_preset_source, id=pipeline.process_preset_id),
+        printer_preset=listed_ref(
+            aliases, PresetRef(source=pipeline.printer_preset_source, id=pipeline.printer_preset_id)
+        ),
+        process_preset=listed_ref(
+            aliases, PresetRef(source=pipeline.process_preset_source, id=pipeline.process_preset_id)
+        ),
         filament_presets=filament_presets,
         bed_type=bed_type,
         export_3mf=True,
@@ -566,7 +577,9 @@ def _make_orchestration_callable(
             try:
                 # Inside the try: a row with a bed type no slicer knows fails
                 # the run instead of leaving it in "slicing" (#3359).
-                slice_request = _slice_request_from_pipeline(pipeline)
+                # The owner's listing, the one their Slice dialog shows.
+                owner = await session.get(User, run.created_by) if run.created_by is not None else None
+                slice_request = _slice_request_from_pipeline(pipeline, await load_stock_aliases(session, owner))
                 slice_response = await slice_and_persist(
                     session,
                     model_bytes=model_bytes,

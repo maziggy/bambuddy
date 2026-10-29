@@ -157,7 +157,7 @@ function savedRef(saved: LoadedSpoolPreset, data: UnifiedPresetsResponse): Prese
     return m ? { source: 'local', id: m[1] } : null;
   }
   if (saved.preset_source === 'cloud' || saved.preset_source === 'orca_cloud') {
-    // A stock cloud preset is listed as its Standard twin (#3386).
+    // A ref the listing hides is pointed at the twin it lists (#3386).
     return saved.preset_id ? listedRef(data, { source: saved.preset_source, id: saved.preset_id }) : null;
   }
   // "builtin_<filament id>" names a bundled filament by its id, which the

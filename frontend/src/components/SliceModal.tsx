@@ -1933,9 +1933,11 @@ function PresetDropdown({
           className="w-full px-3 py-1.5 mb-1 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm placeholder:text-bambu-gray focus:outline-none focus:border-bambu-gray disabled:opacity-50"
         />
       )}
-      {noMatches && (
-        <p role="status" className="text-xs text-bambu-gray mb-1">
-          {t('slice.noMatchingPresets', 'No matching presets found.')}
+      {/* Mounted with the search box and only its text changes, so screen
+          readers announce it when a query stops matching. */}
+      {searching && (
+        <p role="status" className={noMatches ? 'text-xs text-bambu-gray mb-1' : 'sr-only'}>
+          {noMatches ? t('slice.noMatchingPresets', 'No matching presets found.') : ''}
         </p>
       )}
       <div className="flex items-stretch gap-2">

@@ -67,6 +67,10 @@ BAMBU_CONTEXT = b"RFID-A\x00"  # 7 bytes including null terminator
 # (material, type, colour, weight) it is sent as raw_blocks (#2685).
 BAMBU_BLOCKS = [1, 2, 4, 5, 6, 9]
 
+# Tries for the initial card re-select and for each sector (auth plus block
+# reads) before a Bambu tag read is abandoned (#3377)
+BAMBU_READ_ATTEMPTS = 5
+
 # ISO 14443-3 anticollision: SEL codes of cascade levels 1-3, the cascade tag
 # that opens a level's four bytes when the UID goes on at the next level, and
 # the SAK bit that says it does. A 4-byte UID ends at level 1, a 7-byte UID
@@ -417,10 +421,13 @@ class PN5180:
         self.send_data([0x30, block])
         time.sleep(0.010)
 
-        # Check RX status
+        # Check RX status: 16 bytes and nothing flagged above the length field.
+        # Measured on a SpoolBuddy (#3377): every good read gave exactly 0x010,
+        # while a tag's NAK set bits 15-16 (0x18000) with length 0. A frame
+        # whose status carries any upper bit is treated as a failed read.
         rx_status = self.read_reg(0x13)
         rx_len = rx_status & 0x1FF
-        if rx_len != 16:
+        if rx_len != 16 or rx_status & ~0x1FF:
             return None
 
         return self.read_data(16)
@@ -487,6 +494,12 @@ class PN5180:
 
         return self.activate_type_a()
 
+    def _reselect_card(self) -> tuple[bytes, int] | None:
+        """Clear Crypto1 state and IRQs, then re-select the card. Returns (uid, sak) or None."""
+        self.write_reg_and(0x00, 0xFFFFFFBF)  # Clear MFC_CRYPTO1_ON (bit 6)
+        self.write_reg(0x03, 0xFFFFFFFF)
+        return self.reactivate_card()
+
     def read_bambu_tag(self, uid: bytes) -> dict[int, bytes] | None:
         """Read Bambu tag data blocks using HKDF-derived keys.
 
@@ -498,13 +511,13 @@ class PN5180:
         # Derive per-sector keys from UID
         keys = hkdf_derive_keys(uid)
 
-        # Clear Crypto1 state and IRQs
-        self.write_reg_and(0x00, 0xFFFFFFBF)  # Clear MFC_CRYPTO1_ON (bit 6)
-        self.write_reg(0x03, 0xFFFFFFFF)
-
-        # Reactivate card (may have timed out)
-        result = self.reactivate_card()
-        if result is None:
+        # Reactivate card (may have timed out); the re-select itself does not
+        # always succeed first time
+        for _ in range(BAMBU_READ_ATTEMPTS):
+            result = self._reselect_card()
+            if result is not None:
+                break
+        else:
             logger.debug("Failed to reactivate card for Bambu tag read")
             return None
 
@@ -514,23 +527,41 @@ class PN5180:
             return None
 
         # Read blocks with per-sector authentication
-        blocks = {}
-        current_sector = -1
-
+        sectors: dict[int, list[int]] = {}
         for block in BAMBU_BLOCKS:
-            sector = block // 4
+            sectors.setdefault(block // 4, []).append(block)
 
-            # Authenticate when entering a new sector
-            if sector != current_sector:
-                key = get_sector_key(keys, block)
-                if not self.mfc_authenticate(block, key, uid):
-                    logger.debug("Auth failed for block %d (sector %d)", block, sector)
-                    return None
-                current_sector = sector
+        blocks = {}
+        for sector, sector_blocks in sectors.items():
+            key = get_sector_key(keys, sector_blocks[0])
+            # Auth and reads do not always succeed first time, and a failure
+            # halts the card or leaves Crypto1 out of step, so re-select the
+            # card and redo the whole sector before retrying
+            for attempt in range(BAMBU_READ_ATTEMPTS):
+                if attempt:
+                    logger.debug("Retrying sector %d (attempt %d)", sector, attempt + 1)
+                    result = self._reselect_card()
+                    if result is None or result[0] != uid:
+                        continue
+                sector_data = self._read_sector(sector, sector_blocks, key, uid)
+                if sector_data is not None:
+                    blocks.update(sector_data)
+                    break
+            else:
+                return None
 
-            # Read the block
+        return blocks
+
+    def _read_sector(self, sector: int, sector_blocks: list[int], key: bytes, uid: bytes) -> dict[int, bytes] | None:
+        """Authenticate a sector and read its blocks, each twice so a corrupted read is caught."""
+        if not self.mfc_authenticate(sector_blocks[0], key, uid):
+            logger.debug("Auth failed for block %d (sector %d)", sector_blocks[0], sector)
+            return None
+
+        blocks = {}
+        for block in sector_blocks:
             data = self.mfc_read_block(block)
-            if data is None:
+            if data is None or self.mfc_read_block(block) != data:
                 logger.debug("Read failed for block %d", block)
                 return None
             blocks[block] = data

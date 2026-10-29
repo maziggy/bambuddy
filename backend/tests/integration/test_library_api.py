@@ -164,6 +164,68 @@ class TestLibraryFoldersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_move_folder_into_another_folder(self, async_client: AsyncClient, folder_factory, db_session):
+        """A folder moves under another folder with parent_id (#3305)."""
+        projects = await folder_factory(name="Projects")
+        archive = await folder_factory(name="Archive")
+        response = await async_client.put(f"/api/v1/library/folders/{archive.id}", json={"parent_id": projects.id})
+        assert response.status_code == 200
+        assert response.json()["parent_id"] == projects.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_move_folder_to_root(self, async_client: AsyncClient, folder_factory, db_session):
+        """parent_id 0 lifts a nested folder to the top level (#3305)."""
+        projects = await folder_factory(name="Projects")
+        nested = await folder_factory(name="Nested", parent_id=projects.id)
+        response = await async_client.put(f"/api/v1/library/folders/{nested.id}", json={"parent_id": 0})
+        assert response.status_code == 200
+        assert response.json()["parent_id"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_move_folder_into_missing_parent_is_404(self, async_client: AsyncClient, folder_factory, db_session):
+        """A parent_id that does not exist is refused before anything changes (#3305)."""
+        folder = await folder_factory(name="Projects")
+        response = await async_client.put(f"/api/v1/library/folders/{folder.id}", json={"parent_id": 9999})
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Parent folder not found"
+        await db_session.refresh(folder)
+        assert folder.parent_id is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_move_external_folder_is_refused(self, async_client: AsyncClient, folder_factory, db_session):
+        """An external folder mirrors a path on disk and cannot be moved (#3305)."""
+        target = await folder_factory(name="Projects")
+        external = await folder_factory(name="Mount", is_external=True, external_path="/data/mount")
+        for parent_id in (target.id, 0):
+            response = await async_client.put(f"/api/v1/library/folders/{external.id}", json={"parent_id": parent_id})
+            if parent_id == 0:
+                # Already at the root: not a move, so it goes through.
+                assert response.status_code == 200
+            else:
+                assert response.status_code == 400
+                assert response.json()["detail"] == "External folders cannot be moved"
+        await db_session.refresh(external)
+        assert external.parent_id is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_move_folder_into_external_folder_is_refused(
+        self, async_client: AsyncClient, folder_factory, db_session
+    ):
+        """Nothing can be moved into an external folder (#3305)."""
+        external = await folder_factory(name="Mount", is_external=True, external_path="/data/mount")
+        folder = await folder_factory(name="Projects")
+        response = await async_client.put(f"/api/v1/library/folders/{folder.id}", json={"parent_id": external.id})
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Cannot move a folder into an external folder"
+        await db_session.refresh(folder)
+        assert folder.parent_id is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_delete_folder(self, async_client: AsyncClient, folder_factory, db_session):
         """Verify folder can be deleted."""
         folder = await folder_factory()

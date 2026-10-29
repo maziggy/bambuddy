@@ -91,6 +91,14 @@ class Settings(BaseSettings):
     # overflow connections age out via pool_recycle instead of churning the whole
     # pool. Override with DB_POOL_USE_LIFO. No effect on SQLite. (#2572)
     db_pool_use_lifo: bool | None = Field(default=None)
+    # pool_pre_ping (PostgreSQL default on): every checkout first runs a liveness
+    # ping, which SQLAlchemy's asyncpg dialect wraps in its own transaction, so
+    # each pooled session costs an extra ``BEGIN; ROLLBACK`` round-trip that
+    # shows up in ``pg_stat_database.xact_rollback``. Set DB_POOL_PRE_PING=false
+    # to skip it; ``pool_recycle`` then bounds how long a dead connection can
+    # survive, but a connection dropped by the server or a proxy in between is
+    # no longer replaced transparently. No effect on SQLite.
+    db_pool_pre_ping: bool | None = Field(default=None)
 
     # Logging
     log_level: str = "INFO"  # Override with LOG_LEVEL env var or DEBUG=true

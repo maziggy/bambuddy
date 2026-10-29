@@ -40,7 +40,8 @@ def _resolve_pool_kwargs() -> dict:
 
     Dialect-aware defaults, each overridable via env (``DB_POOL_SIZE`` etc.):
       - PostgreSQL: pool_size 20 + max_overflow 60, ``pool_pre_ping`` (recover
-        server-dropped connections instead of erroring the request) and
+        server-dropped connections instead of erroring the request;
+        ``DB_POOL_PRE_PING=false`` turns it off) and
         ``pool_recycle`` 1800s. The old hard-coded 10 + 20 exhausted on large
         farms while printer callbacks held connections. The 80-connection
         ceiling fits a stock server (max_connections 100, 3 reserved for
@@ -86,7 +87,7 @@ def _resolve_pool_kwargs() -> dict:
         kwargs = {
             "pool_size": pool_size,
             "max_overflow": max_overflow,
-            "pool_pre_ping": True,
+            "pool_pre_ping": settings.db_pool_pre_ping if settings.db_pool_pre_ping is not None else True,
             "pool_recycle": settings.db_pool_recycle if settings.db_pool_recycle is not None else 1800,
             # LIFO checkout keeps a bursty farm on a small hot connection set and
             # lets overflow connections recycle out during quiet spells (#2572).
@@ -5895,6 +5896,19 @@ async def _run_migrations(conn):
             {"off": False},
         )
 
+    # Migration: per-print usage of Spoolman spools (#3407), so Spoolman mode
+    # has the usage history the built-in inventory has.
+    await _safe_execute(conn, "ALTER TABLE spool_usage_history ADD COLUMN spoolman_spool_id INTEGER")
+
+    # Migration: mark a timelapse baseline taken off an unreadable card
+    # (#3412). Off for every existing row, which is what they were treated as.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN timelapse_baseline_unread BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE print_archives ADD COLUMN timelapse_baseline_unread BOOLEAN DEFAULT FALSE"
+        )
+
     await _migrate_auth_datetimes_to_timestamp(conn)
     await _migrate_add_missing_set_null_fks(conn)
     await _migrate_wallet_transactions_keep_deleted_users(conn)
@@ -5956,6 +5970,7 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("oidc_providers", "is_autologin"),
     ("oidc_providers", "is_env_managed"),
     ("print_archives", "bambuddy_forced_timelapse"),
+    ("print_archives", "timelapse_baseline_unread"),
     ("print_archives", "wallet_charge_skipped"),
     ("print_queue", "bed_levelling"),
     ("print_queue", "cleanup_library_after_dispatch"),

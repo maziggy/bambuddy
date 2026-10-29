@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool, spoolman_net_weight
-from backend.app.api.routes.spoolman_inventory import _clear_stale_tag_links
+from backend.app.api.routes.spoolman_inventory import _announce_freed_slots, _clear_stale_tag_links
 from backend.app.core.auth import (
     RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
@@ -20,6 +20,7 @@ from backend.app.core.auth import (
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope
+from backend.app.core.websocket import ws_manager
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.spool_assignment import SpoolAssignment
@@ -1003,6 +1004,11 @@ async def link_spool(
             else "via /spools/{id}/link"
         ),
     )
+    # Pages open elsewhere find a slot's spool by its tag, and by the slot row
+    # when one was written: both changed (#3402).
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    if printer_context:
+        await _announce_freed_slots([printer_context])
 
     # Auto-configure AMS slot via MQTT (best-effort; tag link and slot assignment already persisted)
     if printer_context:
@@ -1292,7 +1298,12 @@ async def unlink_spool(
 
     # Remove local slot assignment for this spool (all slots — a spool can only be in one at a time)
     try:
-        await db.execute(delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == spool_id))
+        result = await db.execute(
+            delete(SpoolmanSlotAssignment)
+            .where(SpoolmanSlotAssignment.spoolman_spool_id == spool_id)
+            .returning(SpoolmanSlotAssignment.printer_id, SpoolmanSlotAssignment.ams_id, SpoolmanSlotAssignment.tray_id)
+        )
+        freed = list(result.tuples())
         await db.commit()
     except Exception:
         await db.rollback()
@@ -1300,6 +1311,8 @@ async def unlink_spool(
         raise HTTPException(status_code=500, detail="Failed to remove local slot assignment")
 
     logger.info("Unlinked Spoolman spool %s", spool_id)
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    await _announce_freed_slots(freed)
     return {"success": True, "message": f"Spool {spool_id} unlinked from AMS"}
 
 
@@ -1423,4 +1436,7 @@ async def create_spool_from_slot(
                 detail=f"Spool created in Spoolman but slot assignment failed: {exc}",
             ) from exc
 
+    if sync_result.get("id"):
+        await ws_manager.broadcast({"type": "inventory_changed"})
+        await _announce_freed_slots([(req.printer_id, req.ams_id, req.tray_id)])
     return {"success": True, "spool_id": sync_result.get("id")}

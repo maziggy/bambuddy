@@ -19,6 +19,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useUiSettings } from '../hooks/useUiSettings';
 import { ConfirmModal } from './ConfirmModal';
 import { parseUTCDate } from '../utils/date';
+import { ownRecords, timeOf } from '../utils/usageHistory';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,9 @@ interface SkuGroup {
   /** Spools archived in the last ARCHIVED_RATE_WINDOW_DAYS: no stock, but what
    *  they were used for counts towards the rate (#3399). */
   usedUp: InventorySpool[];
+  /** It has spools archived longer ago than that: it was in use before the
+   *  rate's window, so the window is observed in full (#3407). */
+  usedBefore: boolean;
 }
 
 // An archived spool counts towards its SKU's rate for this long after it was
@@ -167,20 +171,52 @@ function computeHistoryRate(records: SpoolUsageRecord[]): { rate: number; stdDev
   return { rate: mean, stdDev: Math.sqrt(variance) };
 }
 
-function computeDeltaRate(spools: InventorySpool[]): number | null {
-  // Use weight_used - baseline so "Reset usage to 0" on the Inventory page
-  // makes forecast restart from zero rather than carrying stale lifetime
-  // consumption across the reset (#1390).
-  const totalUsed = spools.reduce((s, sp) => s + Math.max(0, sp.weight_used - (sp.weight_used_baseline ?? 0)), 0);
-  if (totalUsed === 0) return null;
-  const now = Date.now();
-  const oldestMs = spools.reduce((min, sp) => {
-    const t = new Date(sp.created_at).getTime();
-    return t < min ? t : min;
-  }, now);
-  const daysSinceOldest = (now - oldestMs) / 86400000;
-  if (daysSinceOldest < 1) return null;
-  return totalUsed / daysSinceOldest;
+// The rate when there is not enough usage history (#3407). A spool's total is
+// all there is, so it is spread evenly over the time the spool was in use: from
+// its first use (Spoolman's first_used, else its earliest usage record, else
+// its creation) to its last (else its archiving, else now). What falls inside
+// the last ARCHIVED_RATE_WINDOW_DAYS is divided by the days of that window,
+// which starts no earlier than the SKU's first use (all of it, when the SKU
+// has spools archived before the window), so shelf time is not use
+// and the grams and the days cover the same span. Same as
+// stock_forecast.delta_rate in the backend.
+function computeDeltaRate(
+  spools: InventorySpool[],
+  firstUse: Map<number, number>,
+  usedBefore: boolean,
+  now: number,
+): number | null {
+  const spans: { consumed: number; start: number; end: number }[] = [];
+  for (const sp of spools) {
+    // Use weight_used - baseline so "Reset usage to 0" on the Inventory page
+    // makes forecast restart from zero rather than carrying stale lifetime
+    // consumption across the reset (#1390).
+    const consumed = Math.max(0, sp.weight_used - (sp.weight_used_baseline ?? 0));
+    if (consumed <= 0) continue;
+    const endAt = timeOf(sp.last_used) ?? timeOf(sp.archived_at);
+    const end = endAt === null ? now : Math.min(endAt, now);
+    const startAt = timeOf(sp.first_used) ?? firstUse.get(sp.id) ?? timeOf(sp.created_at);
+    const start = startAt === null ? end : Math.min(startAt, end);
+    spans.push({ consumed, start, end });
+  }
+  if (spans.length === 0) return null;
+
+  const windowStart = now - ARCHIVED_RATE_WINDOW_DAYS * 86400000;
+  const observedFrom = usedBefore ? windowStart : Math.max(windowStart, Math.min(...spans.map(s => s.start)));
+  const days = (now - observedFrom) / 86400000;
+  if (days < 1) return null;
+  let grams = 0;
+  for (const { consumed, start, end } of spans) {
+    const length = end - start;
+    if (length < 86400000) {
+      // Used up within a day: all of it at its end.
+      if (end >= observedFrom) grams += consumed;
+      continue;
+    }
+    const inside = end - Math.max(start, observedFrom);
+    if (inside > 0) grams += (consumed * inside) / length;
+  }
+  return grams / days;
 }
 
 function buildProjectionSeries(
@@ -227,12 +263,15 @@ export function ForecastPanel({ spools, spoolmanMode = false }: { spools: Invent
 
   const { data: settings } = useUiSettings({ enabled: canRead });
   const { data: skuSettingsList = [] } = useQuery({ queryKey: ['sku-settings'], queryFn: api.getSkuSettings, staleTime: 60_000, enabled: canRead });
-  // Bambuddy's usage history is the built-in inventory's, keyed by its own
-  // spool ids. In Spoolman mode a Spoolman id that matches one, left over from
-  // before the switch, would borrow that spool's history (#3406): the rate is
-  // the consumption delta there, as in the backend's stock alerts.
-  const { data: fetchedUsageHistory } = useQuery({ queryKey: ['all-usage-history-forecast'], queryFn: () => api.getAllUsageHistory(5000), staleTime: 60_000, enabled: canRead && !spoolmanMode });
-  const usageHistory = useMemo(() => (spoolmanMode ? [] : (fetchedUsageHistory ?? [])), [spoolmanMode, fetchedUsageHistory]);
+  // Each inventory's own usage history, keyed by its own spool ids: in
+  // Spoolman mode the rows Bambuddy wrote for the Spoolman spools it charged
+  // (#3407), never the built-in ones, whose ids a Spoolman id can match (#3406).
+  const { data: usageHistory = [] } = useQuery({
+    queryKey: ['all-usage-history-forecast', spoolmanMode],
+    queryFn: () => api.getAllUsageHistory(5000, undefined, spoolmanMode),
+    staleTime: 60_000,
+    enabled: canRead,
+  });
   const { data: shoppingList = [] } = useQuery({ queryKey: ['shopping-list'], queryFn: api.getShoppingList, staleTime: 30_000, enabled: canRead });
 
   const globalLeadTime = settings?.forecast_global_lead_time_days ?? 0;
@@ -246,21 +285,22 @@ export function ForecastPanel({ spools, spoolmanMode = false }: { spools: Invent
   const usageBySpoolId = useMemo(() => {
     const m = new Map<number, SpoolUsageRecord[]>();
     for (const r of usageHistory) {
+      const spoolId = spoolmanMode ? r.spoolman_spool_id : r.spool_id;
       // Usage of a deleted spool belongs to no spool here.
-      if (r.spool_id === null) continue;
-      const arr = m.get(r.spool_id) ?? [];
+      if (spoolId === null || spoolId === undefined) continue;
+      const arr = m.get(spoolId) ?? [];
       arr.push(r);
-      m.set(r.spool_id, arr);
+      m.set(spoolId, arr);
     }
     return m;
-  }, [usageHistory]);
+  }, [usageHistory, spoolmanMode]);
 
   const groups = useMemo((): SkuGroup[] => {
     const map = new Map<string, SkuGroup>();
     for (const spool of spools) {
       if (spool.archived_at) continue;
       const key = skuKey(spool.material, spool.subtype, spool.brand, spool.color_name);
-      const g = map.get(key) ?? { key, material: spool.material, subtype: spool.subtype, brand: spool.brand, colorName: spool.color_name, spools: [], usedUp: [] };
+      const g = map.get(key) ?? { key, material: spool.material, subtype: spool.subtype, brand: spool.brand, colorName: spool.color_name, spools: [], usedUp: [], usedBefore: false };
       g.spools.push(spool);
       map.set(key, g);
     }
@@ -269,14 +309,19 @@ export function ForecastPanel({ spools, spoolmanMode = false }: { spools: Invent
     // use look untouched (#3399).
     const now = Date.now();
     for (const spool of spools) {
-      if (!spool.archived_at || !archivedCounts(spool.archived_at, now)) continue;
-      map.get(skuKey(spool.material, spool.subtype, spool.brand, spool.color_name))?.usedUp.push(spool);
+      if (!spool.archived_at) continue;
+      const group = map.get(skuKey(spool.material, spool.subtype, spool.brand, spool.color_name));
+      if (!group) continue;
+      if (archivedCounts(spool.archived_at, now)) group.usedUp.push(spool);
+      // Only a spool that was used says the SKU was in use before the window.
+      else if (spool.weight_used > 0) group.usedBefore = true;
     }
     return [...map.values()];
   }, [spools]);
 
   const forecasts = useMemo((): SkuForecast[] => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
+    const now = Date.now();
 
     return groups.map((group): SkuForecast => {
       // Fall back to the NULL-colour row that pre-upgrade users have so their
@@ -300,10 +345,17 @@ export function ForecastPanel({ spools, spoolmanMode = false }: { spools: Invent
       // Only include history from spools that haven't been reset — pre-reset
       // events on a reset spool have no anchor timestamp so they'd inflate the
       // rate. Spools without a baseline are clean and keep their records.
+      // Spoolman hands deleted spools' ids on; built-in ids are never reused.
+      const own = new Map(
+        rateSpools.map(s => {
+          const records = usageBySpoolId.get(s.id) ?? [];
+          return [s.id, spoolmanMode ? ownRecords(s, records) : records] as const;
+        }),
+      );
       const groupHistory: SpoolUsageRecord[] = [];
       for (const s of rateSpools) {
         if ((s.weight_used_baseline ?? 0) === 0) {
-          groupHistory.push(...(usageBySpoolId.get(s.id) ?? []));
+          groupHistory.push(...(own.get(s.id) ?? []));
         }
       }
 
@@ -317,7 +369,16 @@ export function ForecastPanel({ spools, spoolmanMode = false }: { spools: Invent
         dailyRateStdDev = histResult.stdDev;
         rateTier = 'history';
       } else {
-        const delta = computeDeltaRate(rateSpools);
+        // A spool's first use is its earliest record, kept or not: a reset
+        // drops records from the rate, not from when use began.
+        const firstUse = new Map<number, number>();
+        for (const s of rateSpools) {
+          for (const r of own.get(s.id) ?? []) {
+            const at = timeOf(r.created_at);
+            if (at !== null && at < (firstUse.get(s.id) ?? Infinity)) firstUse.set(s.id, at);
+          }
+        }
+        const delta = computeDeltaRate(rateSpools, firstUse, group.usedBefore, now);
         if (delta !== null) { dailyRateG = delta; rateTier = 'delta'; }
       }
 
@@ -354,7 +415,7 @@ export function ForecastPanel({ spools, spoolmanMode = false }: { spools: Invent
         reorderAlert, stockBreakAlert,
       };
     });
-  }, [groups, settingsMap, usageBySpoolId, globalLeadTime]);
+  }, [groups, settingsMap, usageBySpoolId, globalLeadTime, spoolmanMode]);
 
   const uniqueMaterials = useMemo(() =>
     [...new Set(groups.map((g) => g.material))].sort(),
@@ -1246,7 +1307,8 @@ function SafetyMarginField({
         approx: displayG !== null ? t('forecast.safetyMarginHintDaysApprox', { g: displayG }) : '',
       })
     : t('forecast.safetyMarginHintG', {
-        approx: dailyRateG !== null ? t('forecast.safetyMarginHintGApprox', { days: Math.round(value / dailyRateG) }) : '',
+        // A SKU not used lately has a rate of 0 (#3407): no day count to give.
+        approx: dailyRateG ? t('forecast.safetyMarginHintGApprox', { days: Math.round(value / dailyRateG) }) : '',
       });
 
   return (
@@ -1278,7 +1340,7 @@ function SafetyMarginField({
           {displayG !== null && unit === 'days' && (
             <span className="text-lg font-semibold text-white">≈ {displayG}g</span>
           )}
-          {unit === 'g' && dailyRateG !== null && (
+          {unit === 'g' && !!dailyRateG && (
             <span className="text-lg font-semibold text-white">≈ {Math.round(value / dailyRateG)}d</span>
           )}
           <button onClick={onEdit} className="p-1 text-bambu-gray hover:text-white rounded transition-colors"><Edit2 className="w-3 h-3" /></button>

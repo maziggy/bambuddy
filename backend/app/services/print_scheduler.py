@@ -5864,13 +5864,16 @@ class PrintScheduler:
             spools = await self._stock_spools_spoolman()
             if spools is None:
                 return None
-            # Spoolman owns the usage in this mode and Bambuddy's own history
-            # table holds nothing for those spools, so the rate is always the
-            # delta rate. Bambuddy's table is deliberately not consulted: its ids
-            # are local spool ids, and a Spoolman id that happens to match one
+            # The Spoolman spools' own rows (#3407), keyed by Spoolman id. Never
+            # the built-in ones: a Spoolman id that matches a local spool id
             # (left over from before Spoolman was switched on) would borrow an
-            # unrelated spool's history.
-            history: dict[int, list[stock_forecast.UsageRecord]] = {}
+            # unrelated spool's history (#3406).
+            history = await self._stock_usage_history(db, spoolman=True)
+            history = {
+                spool.id: stock_forecast.own_records(spool, history[spool.id])
+                for spool in spools
+                if spool.id in history
+            }
         else:
             spools = await self._stock_spools_internal(db)
             history = await self._stock_usage_history(db)
@@ -5880,14 +5883,10 @@ class PrintScheduler:
     async def _stock_spools_internal(self, db: AsyncSession) -> list[stock_forecast.StockSpool]:
         from backend.app.models.spool import Spool
 
-        # Stock, and the spools archived recently enough to count towards the
-        # rate (stock_forecast.archived_counts decides; this only trims the read).
-        cutoff = utcnow_naive() - timedelta(days=stock_forecast.ARCHIVED_RATE_WINDOW_DAYS + 1)
-        rows = (
-            (await db.execute(select(Spool).where(or_(Spool.archived_at.is_(None), Spool.archived_at >= cutoff))))
-            .scalars()
-            .all()
-        )
+        # Every spool: stock, the recently archived ones that count towards the
+        # rate, and the older ones that tell it the SKU was in use before its
+        # window (#3407). stock_forecast.forecast_all sorts them.
+        rows = (await db.execute(select(Spool))).scalars().all()
         return [
             stock_forecast.StockSpool(
                 id=spool.id,
@@ -5900,16 +5899,27 @@ class PrintScheduler:
                 weight_used_baseline=float(spool.weight_used_baseline or 0),
                 created_at=spool.created_at,
                 archived_at=spool.archived_at,
+                last_used_at=spool.last_used,
             )
             for spool in rows
         ]
 
-    async def _stock_usage_history(self, db: AsyncSession) -> dict[int, list[stock_forecast.UsageRecord]]:
+    async def _stock_usage_history(
+        self, db: AsyncSession, *, spoolman: bool = False
+    ) -> dict[int, list[stock_forecast.UsageRecord]]:
+        """Usage rows by spool id, for one inventory: its own ids, as the forecast
+        panel reads them from the usage endpoint."""
         from backend.app.models.spool_usage_history import SpoolUsageHistory
 
+        spool_id = SpoolUsageHistory.spoolman_spool_id if spoolman else SpoolUsageHistory.spool_id
         rows = (
             await db.execute(
-                select(SpoolUsageHistory.spool_id, SpoolUsageHistory.created_at, SpoolUsageHistory.weight_used)
+                select(spool_id, SpoolUsageHistory.created_at, SpoolUsageHistory.weight_used)
+                .where(
+                    SpoolUsageHistory.spoolman_spool_id.is_not(None)
+                    if spoolman
+                    else SpoolUsageHistory.spoolman_spool_id.is_(None)
+                )
                 .order_by(SpoolUsageHistory.created_at.desc())
                 .limit(_STOCK_FORECAST_HISTORY_LIMIT)
             )
@@ -5968,6 +5978,8 @@ class PrintScheduler:
                     weight_used_baseline=float(mapped.get("weight_used_baseline") or 0),
                     created_at=created_at,
                     archived_at=archived_at,
+                    first_used_at=_spoolman_time(mapped.get("first_used")),
+                    last_used_at=_spoolman_time(mapped.get("last_used")),
                     color_name_is_synthesized=bool(mapped.get("color_name_is_synthesized")),
                 )
             )

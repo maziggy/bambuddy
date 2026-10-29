@@ -778,9 +778,14 @@ class GitHubBackupService:
         result = await db.execute(select(Spool))
         spools = result.scalars().all()
 
-        if not spools:
-            return
+        if spools:
+            self._collect_spool_list(spools, files)
 
+        # Collected without built-in spools too: in Spoolman mode the usage
+        # history names Spoolman's spools, and there are no built-in ones (#3407).
+        await self._collect_spool_usage(db, files)
+
+    def _collect_spool_list(self, spools, files: dict) -> None:
         spool_list = []
         for s in spools:
             spool_data = {
@@ -832,8 +837,9 @@ class GitHubBackupService:
             "version": "1.0",
             "spools": spool_list,
         }
+        logger.info("Collected %d spools", len(spool_list))
 
-        # Collect usage history
+    async def _collect_spool_usage(self, db: AsyncSession, files: dict) -> None:
         usage_result = await db.execute(select(SpoolUsageHistory))
         usages = usage_result.scalars().all()
 
@@ -844,6 +850,7 @@ class GitHubBackupService:
                     {
                         "id": u.id,
                         "spool_id": u.spool_id,
+                        "spoolman_spool_id": u.spoolman_spool_id,
                         "printer_id": u.printer_id,
                         "print_name": u.print_name,
                         "archive_id": u.archive_id,
@@ -859,7 +866,7 @@ class GitHubBackupService:
                 "usage_history": usage_list,
             }
 
-        logger.info("Collected %d spools and %d usage records", len(spool_list), len(usages))
+        logger.info("Collected %d usage records", len(usages))
 
     async def _collect_archives(self, db: AsyncSession, files: dict):
         """Collect print archive metadata (no binary files)."""

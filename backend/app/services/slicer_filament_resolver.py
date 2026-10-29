@@ -51,6 +51,7 @@ from backend.app.utils.filament_ids import (
     setting_id_to_filament_id,
 )
 from backend.app.utils.filament_types import is_material_name
+from backend.app.utils.slicer_strings import first_slicer_string
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +238,8 @@ def _preset_filament_type(raw: object) -> str | None:
     """Read a slicer preset's ``filament_type`` field.
 
     Bambu Studio and OrcaSlicer both store it as a one-element array
-    (``["PLA"]``); some hand-written and older profiles store a bare string.
+    (``["PLA"]``); some hand-written and older profiles store a bare string,
+    and Orca Cloud can return it INI-quoted (``'"PLA"'``, #3380).
     ``orca_profiles._extract_filament_fields`` accepts both and this has to
     agree with it, since that is what fills ``LocalPreset.filament_type``.
 
@@ -248,11 +250,7 @@ def _preset_filament_type(raw: object) -> str | None:
     ``filament_type`` is a product line, which is the case this whole module
     exists to keep out of an AMS slot.
     """
-    if isinstance(raw, list):
-        raw = raw[0] if raw else None
-    if isinstance(raw, str) and raw.strip():
-        return raw.strip()
-    return None
+    return first_slicer_string(raw)
 
 
 async def resolve_slicer_filament(

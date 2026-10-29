@@ -427,6 +427,34 @@ async def test_orca_cloud_unparseable_string_list_is_forwarded_as_is():
 
 
 @pytest.mark.asyncio
+async def test_orca_cloud_json_array_lists_are_forwarded_unchanged():
+    """Only a string is INI-parsed: an array that already is one must not be
+    re-read, or its names would merge into one and the slice be refused."""
+    db = MagicMock()
+    user = MagicMock()
+    user.has_permission = MagicMock(return_value=True)
+    svc_mock = MagicMock()
+    svc_mock.get_profile = AsyncMock(
+        return_value={
+            "content": {
+                "compatible_printers": ["X1C 0.4", "H2C 0.4"],
+                "filament_type": ["PLA", "PETG"],
+                "default_filament_colour": ["", "#FF0000"],
+            }
+        }
+    )
+    svc_mock.close = AsyncMock()
+    with patch.object(preset_resolver, "_build_orca_service", AsyncMock(return_value=svc_mock)):
+        out = await preset_resolver._resolve_orca_cloud(
+            db, user, PresetRef(source="orca_cloud", id="abc"), slot="filament"
+        )
+    payload = json.loads(out)
+    assert payload["compatible_printers"] == ["X1C 0.4", "H2C 0.4"]
+    assert payload["filament_type"] == ["PLA", "PETG"]
+    assert payload["default_filament_colour"] == ["", "#FF0000"]
+
+
+@pytest.mark.asyncio
 async def test_orca_cloud_auth_error_returns_401():
     db = MagicMock()
     user = MagicMock()

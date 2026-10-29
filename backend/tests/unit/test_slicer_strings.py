@@ -34,6 +34,7 @@ def test_the_slicer_parse_keeps_empty_items():
     """Per-extruder lists keep their positions."""
     assert unescape_strings_cstyle('"";"#FF0000"') == ["", "#FF0000"]
     assert unescape_strings_cstyle('""') == [""]
+    assert unescape_strings_cstyle('"#FF0000";') == ["#FF0000", ""]
     assert unescape_strings_cstyle("") == []
     assert unescape_strings_cstyle('"X1C" P1S') is None
 

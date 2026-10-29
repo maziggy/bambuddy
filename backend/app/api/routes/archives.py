@@ -2113,10 +2113,10 @@ async def _spoolman_owns_cost(db: AsyncSession) -> bool:
 
     Both cost recalculations below rebuild a print's cost from
     ``SpoolUsageHistory``, and fall back to the built-in Filament catalogue or
-    the global default rate when there are no rows for it. In Spoolman mode
-    there are never any rows -- the built-in usage tracker is handed
-    ``spoolman_owns_usage`` at print start and writes none -- so that fallback
-    is not a recalculation, it is a downgrade: it would overwrite the
+    the global default rate when there are no rows for it. In Spoolman mode a
+    print has rows only since #3407, when Spoolman charges started being
+    recorded; for an older print, or one whose charges Spoolman refused, that
+    fallback is not a recalculation, it is a downgrade: it would overwrite the
     Spoolman-priced figure ``spoolman_tracking`` recorded at completion with a
     default-rate one, and the per-slot spool resolution it came from is
     transient and cannot be rebuilt here (#2591).

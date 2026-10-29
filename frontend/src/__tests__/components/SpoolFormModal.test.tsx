@@ -27,6 +27,7 @@ vi.mock('../../api/client', () => ({
     getBuiltinFilaments: vi.fn().mockResolvedValue([]),
     getPrinters: vi.fn().mockResolvedValue([]),
     getSpoolUsageHistory: vi.fn().mockResolvedValue([]),
+    getSpoolmanSpoolUsageHistory: vi.fn().mockResolvedValue([]),
     createSpool: vi.fn().mockResolvedValue({ id: 99 }),
     createSpoolmanInventorySpool: vi.fn().mockResolvedValue({ id: 88 }),
     updateSpool: vi.fn().mockResolvedValue({ id: 1 }),
@@ -658,6 +659,25 @@ describe('SpoolFormModal Spoolman K-profile support', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("shows a Spoolman spool's own usage history (#3407)", async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolmanSpool}
+        mode="edit"
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('Edit Spool')).toBeInTheDocument());
+    openColorAndCostTab();
+
+    await waitFor(() => expect(api.getSpoolmanSpoolUsageHistory).toHaveBeenCalledWith(spoolmanSpool.id));
+    expect(api.getSpoolUsageHistory).not.toHaveBeenCalled();
   });
 
   it('shows the Printers tab for Spoolman spools in non-quickAdd mode', async () => {

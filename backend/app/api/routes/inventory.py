@@ -3079,14 +3079,28 @@ async def get_material_number_stats(
 async def get_all_usage_history(
     limit: int = 100,
     printer_id: int | None = None,
+    spoolman: bool = False,
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
-    """Get global usage history, optionally filtered by printer."""
+    """Get global usage history, optionally filtered by printer.
+
+    One inventory's at a time: ``spoolman`` for the Spoolman spools'
+    (#3407), otherwise the built-in ones'. Each keys its spools by its own ids.
+    """
     from backend.app.models.spool_usage_history import SpoolUsageHistory
 
-    query = select(SpoolUsageHistory).order_by(SpoolUsageHistory.created_at.desc()).limit(limit)
+    query = (
+        select(SpoolUsageHistory)
+        .where(
+            SpoolUsageHistory.spoolman_spool_id.is_not(None)
+            if spoolman
+            else SpoolUsageHistory.spoolman_spool_id.is_(None)
+        )
+        .order_by(SpoolUsageHistory.created_at.desc())
+        .limit(limit)
+    )
     if printer_id is not None:
         query = query.where(SpoolUsageHistory.printer_id == printer_id)
     if (clause := printer_scope.where(SpoolUsageHistory.printer_id)) is not None:

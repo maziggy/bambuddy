@@ -105,15 +105,18 @@ describe('ForecastPanel: used-up spools (#3399)', () => {
   it('counts a spool archived 10 days ago towards the rate, not the stock', async () => {
     render(<ForecastPanel spools={[stock, usedUp(10)]} />);
 
-    // (16 + 900) g over the 100 days since the older spool, not 16 g over 20.
-    expect(await screen.findByText('9.2g/d')).toBeInTheDocument();
+    // 16 g plus the 800 of the 900 g that fall inside the last 90 days, over
+    // those 90 days (#3407), not 16 g over 20.
+    expect(await screen.findByText('9.1g/d')).toBeInTheDocument();
     expect(screen.getByText('984g')).toBeInTheDocument();
   });
 
-  it('leaves out a spool archived over 90 days ago', async () => {
+  it('a spool archived over 90 days ago adds no grams', async () => {
     render(<ForecastPanel spools={[stock, usedUp(91)]} />);
 
-    expect(await screen.findByText('0.8g/d')).toBeInTheDocument();
+    // But the SKU was in use before the window, so all 90 days count (#3407):
+    // 16 g over 90, not over the 20 since the newer spool was added.
+    expect(await screen.findByText('0.2g/d')).toBeInTheDocument();
   });
 
   it('does not forecast a SKU whose spools are all archived', async () => {

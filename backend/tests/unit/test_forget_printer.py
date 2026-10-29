@@ -76,6 +76,7 @@ def _entries(printer_id: int) -> dict[str, tuple]:
         "_hms_print_state": (printer_id, "RUNNING"),
         "_hms_forget_when_gone": (printer_id, {"0300_0001"}),
         "_timelapse_baselines": (printer_id, {"video.mp4"}),
+        "_timelapse_baselines_unread": (printer_id, None),
         "_bed_cool_waiters": (printer_id, {"threshold": 35.0, "filename": "cube", "registered_at": 1.0}),
         "_user_stopped_printers": (printer_id, None),
         "_kill_switch_stopped": (printer_id, None),

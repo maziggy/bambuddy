@@ -298,7 +298,9 @@ describe('InventoryPage - LOCATION column (Spoolman mode)', () => {
 describe('InventoryPage - Forecast in Spoolman mode (#3406)', () => {
   it("the forecast does not read the built-in inventory's usage history", async () => {
     localStorage.clear();
-    let usageHistoryRead = false;
+    // The Spoolman spools' own rows are read (#3407), never the built-in ones.
+    let builtInUsageRead = false;
+    let spoolmanUsageRead = false;
     server.use(
       http.get('/api/v1/settings/', () => HttpResponse.json(mockSettings)),
       http.get('/api/v1/inventory/assignments', () => HttpResponse.json([])),
@@ -308,8 +310,9 @@ describe('InventoryPage - Forecast in Spoolman mode (#3406)', () => {
       ),
       http.get('/api/v1/spoolman/inventory/spools', () => HttpResponse.json([mockSpoolmanSpool])),
       http.get('/api/v1/spoolman/inventory/slot-assignments/all', () => HttpResponse.json([])),
-      http.get('/api/v1/inventory/usage', () => {
-        usageHistoryRead = true;
+      http.get('/api/v1/inventory/usage', ({ request }) => {
+        if (new URL(request.url).searchParams.get('spoolman') === 'true') spoolmanUsageRead = true;
+        else builtInUsageRead = true;
         return HttpResponse.json([]);
       }),
     );
@@ -320,6 +323,7 @@ describe('InventoryPage - Forecast in Spoolman mode (#3406)', () => {
 
     // The forecast is up, with the rate from the spool's own consumption.
     expect(await screen.findByText('Est.')).toBeInTheDocument();
-    expect(usageHistoryRead).toBe(false);
+    await waitFor(() => expect(spoolmanUsageRead).toBe(true));
+    expect(builtInUsageRead).toBe(false);
   });
 });

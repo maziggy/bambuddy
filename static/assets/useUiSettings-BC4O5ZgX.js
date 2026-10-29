@@ -1,1 +1,0 @@
-import{a as e}from"./client-Wixdakxn.js";import{t}from"./useQuery-DkJQ4hAK.js";import{n}from"./AuthContext-CtlY1WKC.js";function r(r={}){let{hasPermission:i}=n(),a=i(`settings:read`);return t({queryKey:a?[`settings`]:[`ui-settings`],queryFn:a?()=>e.getSettings():()=>e.getUiSettings(),...r})}function i(e){return!!(e?.gcode_snippets||e?.has_gcode_snippets)}export{r as n,i as t};

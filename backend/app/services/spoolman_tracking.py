@@ -8,7 +8,7 @@ Supports accurate partial usage reporting for failed/cancelled prints.
 import json
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import cast
 
 from sqlalchemy import delete, select
@@ -690,8 +690,11 @@ async def cleanup_tracking(
     db,
     last_layer_num: int | None = None,
     last_progress: int | None = None,
+    status: str = "failed",
 ) -> float | None:
     """Report partial usage and clean up Spoolman tracking data for failed/aborted prints.
+
+    ``status`` is the print's, recorded on its usage-history rows.
 
     Returns what the charged spools' prices make the run cost, or None when
     none of them carries a price (or nothing was tracked)."""
@@ -722,6 +725,12 @@ async def cleanup_tracking(
         )
     except Exception as e:
         logger.warning("[SPOOLMAN] Partial usage report failed: %s", e)
+    try:
+        await _record_usage_history(db, printer_id, archive_id, status, print_cost)
+    except Exception as e:
+        # The charges landed in Spoolman; only the local record is missing.
+        await db.rollback()
+        logger.warning("[SPOOLMAN] Could not record the usage history for archive %s: %s", archive_id, e)
 
     # Delete tracking data
     await db.execute(
@@ -923,6 +932,52 @@ def _spool_cost_per_gram(spool: dict | None) -> float | None:
 
 
 @dataclass
+class _Charge:
+    """One Spoolman spool charged for a print: what the usage history records."""
+
+    spool_id: int
+    grams: float
+    # Per gram, from the spool; None when it carries no usable price.
+    rate: float | None
+    net_weight: float | None
+
+
+async def _record_usage_history(db, printer_id: int, archive_id: int, status: str, print_cost: "_PrintCost") -> None:
+    """Write a usage-history row per charged Spoolman spool, as the built-in
+    inventory does per charged spool (#3407).
+
+    Spoolman keeps only per-spool totals, so without these Spoolman mode had no
+    per-print usage at all: no trend for the stock forecast, and no usage list
+    on the spool. Priced from the spool, as the archive's cost is: a charge to a
+    spool without a price is recorded without one, so recalculating the
+    archive's cost keeps the figure completion left it at rather than pricing
+    those grams at the default rate (``_apply_spool_cost_to_archive``).
+    """
+    if not print_cost.charges:
+        return
+    from backend.app.models.archive import PrintArchive
+    from backend.app.models.spool_usage_history import SpoolUsageHistory
+
+    archive = await db.get(PrintArchive, archive_id)
+    print_name = archive.print_name if archive is not None else None
+    for charge in print_cost.charges:
+        db.add(
+            SpoolUsageHistory(
+                spool_id=None,
+                spoolman_spool_id=charge.spool_id,
+                printer_id=printer_id,
+                print_name=print_name,
+                archive_id=archive_id,
+                weight_used=round(charge.grams, 1),
+                percent_used=round(charge.grams / charge.net_weight * 100) if charge.net_weight else 0,
+                status=status,
+                cost=round(charge.grams * charge.rate, 2) if charge.rate is not None else None,
+            )
+        )
+    await db.commit()
+
+
+@dataclass
 class _PrintCost:
     """What a print cost, accumulated as each slot is actually charged.
 
@@ -940,12 +995,16 @@ class _PrintCost:
     unpriced_grams: float = 0.0
     priced: int = 0
     unpriced: int = 0
+    # Each charge as it landed, for the usage history (#3407).
+    charges: list[_Charge] = field(default_factory=list)
 
-    def add(self, grams: float, spool: dict | None, label: str) -> None:
+    def add(self, grams: float, spool: dict | None, label: str, *, spool_id: int | None = None) -> None:
         """Price ``grams`` off ``spool``. Call only after the charge succeeded."""
         if grams <= 0:
             return
         rate = _spool_cost_per_gram(spool)
+        if spool_id is not None:
+            self.charges.append(_Charge(spool_id, grams, rate, _as_positive_number(spoolman_net_weight(spool or {}))))
         if rate is None:
             self.unpriced += 1
             self.unpriced_grams += grams
@@ -1138,7 +1197,7 @@ async def _report_spool_usage_for_slots(
                 # Priced only after the charge landed, so a spool Spoolman refused
                 # cannot contribute to what the print is said to have cost.
                 if cost_out is not None:
-                    cost_out.add(charge_grams, charge_obj, f"Slot {slot_id}")
+                    cost_out.add(charge_grams, charge_obj, f"Slot {slot_id}", spool_id=charge_spool_id)
             except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
                 logger.warning("[SPOOLMAN] Failed to record usage for spool %s: %s", charge_spool_id, exc)
 
@@ -1305,7 +1364,12 @@ async def _report_spool_usage_split_by_tray_changes(
                     )
                     spools_updated += 1
                     if cost_out is not None:
-                        cost_out.add(round(charge_grams, 2), charge_obj, f"Split slot {slot_id} seg {seg_idx}")
+                        cost_out.add(
+                            round(charge_grams, 2),
+                            charge_obj,
+                            f"Split slot {slot_id} seg {seg_idx}",
+                            spool_id=charge_spool_id,
+                        )
                 except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
                     logger.warning(
                         "[SPOOLMAN] Split slot %s seg %s: failed to record usage for spool %s: %s",
@@ -1863,6 +1927,7 @@ async def report_usage(printer_id: int, archive_id: int):
         # -- and the grams have already been deducted from these spools, so the
         # archive should say what that deduction was worth.
         await _apply_spool_cost_to_archive(db, archive_id, print_cost)
+        await _record_usage_history(db, printer_id, archive_id, "completed", print_cost)
 
 
 def _print_used_tray_keys(
@@ -2040,7 +2105,7 @@ async def _report_remain_delta_for_slots(
         # ``spool`` here is the full row fetched above for its net weight,
         # so the price is already in hand (#2591).
         if cost_out is not None:
-            cost_out.add(grams_used, spool, f"AMS{ams_id}-T{tray_id}")
+            cost_out.add(grams_used, spool, f"AMS{ams_id}-T{tray_id}", spool_id=spool_id)
         # No 3MF slot_id for this path — use the AMS slot key so the maps can
         # still be inspected by callers if needed. The archive rewrites
         # (#1494 colour, #2563 type) key on 3MF slot_ids, so remain-delta-only

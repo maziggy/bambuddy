@@ -1058,6 +1058,10 @@ async def nfc_write_result(
                 # fall through to broadcast + raise 502 below
 
             await db.commit()
+            # The tag moved between Spoolman spools, or the stale holders were
+            # cleared before a link that then failed: either way pages open
+            # elsewhere hold a tag -> spool map that changed (#3402).
+            await ws_manager.broadcast({"type": "inventory_changed"})
             if _tag_link_ok:
                 await ws_manager.broadcast(
                     {

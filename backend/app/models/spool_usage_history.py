@@ -15,6 +15,11 @@ class SpoolUsageHistory(Base):
     # Kept when the spool is deleted, like the archive link below: the usage is
     # what the prints cost, and what recalculating their cost reads.
     spool_id: Mapped[int | None] = mapped_column(ForeignKey("spool.id", ondelete="SET NULL"), nullable=True)
+    # The Spoolman spool charged, in Spoolman mode, where ``spool_id`` stays
+    # NULL: Spoolman's ids are its own and would collide with built-in ones
+    # (#3406). No foreign key, as the spool lives in Spoolman; cleared when
+    # the spool is deleted through Bambuddy (#3407).
+    spoolman_spool_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id", ondelete="SET NULL"))
     print_name: Mapped[str | None] = mapped_column(String(500))
     # The spool's consumption outlives the archive: deleting the archive only

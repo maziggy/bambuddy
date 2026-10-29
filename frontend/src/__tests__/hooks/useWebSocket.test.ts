@@ -506,6 +506,8 @@ describe('useWebSocket hook', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['material-number-stats'] });
       // A weight synced or weighed elsewhere reaches printer cards through the slot rows (WU-9).
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['spool-assignments'] });
+      // A Spoolman spool linked to a tag elsewhere: the slot cards find it by tag (#3402).
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['linked-spools'] });
 
       vi.useRealTimers();
       vi.unstubAllGlobals();

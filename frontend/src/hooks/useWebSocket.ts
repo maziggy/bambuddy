@@ -488,6 +488,9 @@ export function useWebSocket() {
         debouncedInvalidate('material-number-stats');
         // Printer cards and slot views read a spool's weight from the slot rows.
         debouncedInvalidate('spool-assignments');
+        // A Spoolman spool's tag is spool data too, and the slot cards find a
+        // spool by its tag (#3402).
+        debouncedInvalidate('linked-spools');
         break;
 
       case 'spool_assignment_changed':

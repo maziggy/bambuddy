@@ -1969,11 +1969,6 @@ async def assign_spoolman_slot(
             body.tray_id,
             ", ".join(f"printer {p} AMS{a}-T{t}" for p, a, t in vacated),
         )
-    # Other tabs and the SpoolBuddy kiosk follow slot changes over the
-    # websocket, as the built-in assign announces them: the slots the spool
-    # left, and the one it went to.
-    await _announce_freed_slots([*vacated, target])
-
     # #1457: clear stale fallback-tag links on OTHER spools still bound to this
     # slot. Without this, a non-RFID slot's deterministic fallback tag stays
     # attached to the previous spool in Spoolman's extra.tag and re-surfaces in
@@ -1986,6 +1981,12 @@ async def assign_spoolman_slot(
             tray_id=body.tray_id,
             keep_spool_id=body.spoolman_spool_id,
         )
+
+    # Other tabs and the SpoolBuddy kiosk follow slot changes over the
+    # websocket, as the built-in assign announces them: the slots the spool
+    # left, and the one it went to. After the tag clean-up above, which the
+    # pages read back with the slot rows (#3402).
+    await _announce_freed_slots([*vacated, target])
 
     mapped = _map_spoolman_spool(spool)
 
@@ -2288,12 +2289,20 @@ async def unassign_spoolman_slot(
         unassign = delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == spoolman_spool_id)
         if (clause := printer_scope.where_strict(SpoolmanSlotAssignment.printer_id)) is not None:
             unassign = unassign.where(clause)
-        await db.execute(unassign)
+        result = await db.execute(
+            unassign.returning(
+                SpoolmanSlotAssignment.printer_id, SpoolmanSlotAssignment.ams_id, SpoolmanSlotAssignment.tray_id
+            )
+        )
+        freed = list(result.tuples())
         await db.commit()
     except Exception as exc:
         await db.rollback()
         logger.error("Failed to delete slot assignment: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to remove slot assignment") from exc
+    # Other tabs, other clients' pages and the SpoolBuddy kiosk follow slot
+    # changes over the websocket (#3402).
+    await _announce_freed_slots(freed)
 
     # Fetch the spool from Spoolman to return in InventorySpool format.
     # If the spool no longer exists in Spoolman, the local unassignment still succeeded.

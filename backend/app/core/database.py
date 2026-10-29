@@ -5896,6 +5896,10 @@ async def _run_migrations(conn):
             {"off": False},
         )
 
+    # Migration: per-print usage of Spoolman spools (#3407), so Spoolman mode
+    # has the usage history the built-in inventory has.
+    await _safe_execute(conn, "ALTER TABLE spool_usage_history ADD COLUMN spoolman_spool_id INTEGER")
+
     # Migration: mark a timelapse baseline taken off an unreadable card
     # (#3412). Off for every existing row, which is what they were treated as.
     if is_sqlite():

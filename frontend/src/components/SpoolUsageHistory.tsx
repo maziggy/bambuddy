@@ -6,6 +6,7 @@ import type { SpoolUsageRecord } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { parseUTCDate } from '../utils/date';
+import { ownRecords } from '../utils/usageHistory';
 function formatDate(dateStr: string): string {
   const date = parseUTCDate(dateStr);
   if (!date) return '';
@@ -15,6 +16,10 @@ function formatDate(dateStr: string): string {
 
 interface SpoolUsageHistoryProps {
   spoolId: number;
+  // A Spoolman spool: the rows Bambuddy wrote for the prints it charged (#3407).
+  spoolman?: boolean;
+  // When the spool was created: older rows are an earlier spool's that had its id.
+  createdAt?: string | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -23,20 +28,22 @@ const STATUS_COLORS: Record<string, string> = {
   aborted: 'text-yellow-700 dark:text-yellow-400',
 };
 
-export function SpoolUsageHistory({ spoolId }: SpoolUsageHistoryProps) {
+export function SpoolUsageHistory({ spoolId, spoolman = false, createdAt = null }: SpoolUsageHistoryProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
-  const { data: history, isLoading } = useQuery({
-    queryKey: ['spool-usage', spoolId],
-    queryFn: () => api.getSpoolUsageHistory(spoolId),
+  const { data: fetched, isLoading } = useQuery({
+    queryKey: ['spool-usage', spoolman, spoolId],
+    queryFn: () => (spoolman ? api.getSpoolmanSpoolUsageHistory(spoolId) : api.getSpoolUsageHistory(spoolId)),
   });
 
+  const history = fetched && spoolman ? ownRecords({ created_at: createdAt }, fetched) : fetched;
+
   const clearMutation = useMutation({
-    mutationFn: () => api.clearSpoolUsageHistory(spoolId),
+    mutationFn: () => (spoolman ? api.clearSpoolmanSpoolUsageHistory(spoolId) : api.clearSpoolUsageHistory(spoolId)),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['spool-usage', spoolId] });
+      queryClient.invalidateQueries({ queryKey: ['spool-usage', spoolman, spoolId] });
       showToast(t('inventory.historyCleared'), 'success');
     },
   });

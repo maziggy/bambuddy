@@ -18,7 +18,7 @@ from datetime import datetime
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import delete, select, text, tuple_
+from sqlalchemy import delete, select, text, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -48,11 +48,13 @@ from backend.app.models.ams_label import AmsLabel
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.spool_filament_preset import SpoolmanFilamentPreset
+from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.models.supplier import SpoolmanSpoolSupplier, Supplier
 from backend.app.models.user import User
 from backend.app.schemas.spool import SpoolFilamentPresetBase, SpoolKProfileBase, naive_utc
+from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
 from backend.app.schemas.spoolman import SlotAmsId, SlotTrayId, SpoolmanFilamentPatch, SpoolmanSlotAssignmentEnriched
 from backend.app.schemas.supplier import SpoolSupplierLinkInput
 from backend.app.services import filament_profile_default as profile_defaults, slot_unlink_grace, spool_swaps
@@ -1144,10 +1146,16 @@ async def _purge_local_rows_for_spool(db: AsyncSession, spool_id: int) -> None:
     reference count non-zero, so deleting that supplier answers 409 forever
     with no way for the user to find the phantom reference (#2988).
 
+    Its usage history is kept, as a deleted built-in spool's is, but no longer
+    names it: Spoolman can hand the id to a new spool, which would inherit it.
+
     The caller commits.
     """
     for model in (SpoolmanKProfile, SpoolmanFilamentPreset, SpoolmanSpoolSupplier):
         await db.execute(delete(model).where(model.spoolman_spool_id == spool_id))
+    await db.execute(
+        update(SpoolUsageHistory).where(SpoolUsageHistory.spoolman_spool_id == spool_id).values(spoolman_spool_id=None)
+    )
 
 
 @router.delete("/spools/{spool_id}")
@@ -2402,6 +2410,35 @@ def _filament_preset_to_dict(p: SpoolmanFilamentPreset) -> dict:
         "slicer_filament_name": p.slicer_filament_name,
         "created_at": p.created_at,
     }
+
+
+@router.get("/spools/{spool_id}/usage", response_model=list[SpoolUsageHistoryResponse])
+async def get_spoolman_spool_usage_history(
+    spool_id: int = Path(..., gt=0),
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """A Spoolman spool's per-print usage, as Bambuddy charged it (#3407)."""
+    result = await db.execute(
+        select(SpoolUsageHistory)
+        .where(SpoolUsageHistory.spoolman_spool_id == spool_id)
+        .order_by(SpoolUsageHistory.created_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+@router.delete("/spools/{spool_id}/usage")
+async def clear_spoolman_spool_usage_history(
+    spool_id: int = Path(..., gt=0),
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> dict:
+    """Clear a Spoolman spool's usage history. Spoolman's own totals are untouched."""
+    await db.execute(delete(SpoolUsageHistory).where(SpoolUsageHistory.spoolman_spool_id == spool_id))
+    await db.commit()
+    return {"status": "cleared"}
 
 
 @router.get("/spools/{spool_id}/filament-presets")

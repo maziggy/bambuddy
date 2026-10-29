@@ -108,7 +108,21 @@ describe('ForecastPanel: usage history in Spoolman mode (#3406)', () => {
 
     expect(await screen.findByText('2.5g/d')).toBeInTheDocument();
     expect(screen.queryByText('Trend')).toBeNull();
-    expect(mocked.getAllUsageHistory).not.toHaveBeenCalled();
+    // The Spoolman spools' own rows are asked for (#3407); built-in rows that
+    // come back anyway name no Spoolman spool.
+    expect(mocked.getAllUsageHistory).toHaveBeenCalledWith(5000, undefined, true);
+  });
+
+  it("the Spoolman spools' own usage rows give Spoolman mode the trend (#3407)", async () => {
+    const spoolmanHistory = [30, 20, 10].map(
+      (daysAgo, i) =>
+        ({ id: i + 1, spool_id: null, spoolman_spool_id: 6, created_at: ago(daysAgo), weight_used: 30 }) as SpoolUsageRecord,
+    );
+    mocked.getAllUsageHistory.mockResolvedValue(spoolmanHistory);
+    render(<ForecastPanel spools={[spoolman6]} spoolmanMode />);
+
+    expect(await screen.findByText('Trend')).toBeInTheDocument();
+    expect(screen.getByText('3.0g/d')).toBeInTheDocument();
   });
 
   it('history cached in built-in mode is not used after switching to Spoolman', async () => {

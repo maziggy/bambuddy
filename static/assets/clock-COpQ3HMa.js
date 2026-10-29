@@ -1,0 +1,1 @@
+import{C as e}from"./client-8XqSBxc-.js";var t=e(`clock`,[[`path`,{d:`M12 6v6l4 2`,key:`mmk7yg`}],[`circle`,{cx:`12`,cy:`12`,r:`10`,key:`1mglay`}]]);export{t};

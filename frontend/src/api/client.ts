@@ -3921,6 +3921,8 @@ export interface InventorySpool {
   note: string | null;
   added_full: boolean | null;
   last_used: string | null;
+  // Spoolman mode: when the spool was first printed with (#3407).
+  first_used?: string | null;
   // Last drying (#2863): stamped when an AMS drying run of at least half its
   // length ends, or set by hand. Temperature and hours are null when unknown.
   last_dried_at?: string | null;
@@ -4064,6 +4066,8 @@ export interface SpoolUsageRecord {
   id: number;
   // null: the spool was deleted, its usage kept
   spool_id: number | null;
+  // Spoolman mode: the Spoolman spool charged (#3407); spool_id is null then.
+  spoolman_spool_id?: number | null;
   printer_id: number | null;
   print_name: string | null;
   weight_used: number;
@@ -7314,8 +7318,15 @@ export const api = {
   },
   getSpoolUsageHistory: (spoolId: number, limit = 50) =>
     request<SpoolUsageRecord[]>(`/inventory/spools/${spoolId}/usage?limit=${limit}`),
-  getAllUsageHistory: (limit = 100, printerId?: number) =>
-    request<SpoolUsageRecord[]>(`/inventory/usage?limit=${limit}${printerId ? `&printer_id=${printerId}` : ''}`),
+  // One inventory's at a time: ``spoolman`` for the Spoolman spools' (#3407).
+  getAllUsageHistory: (limit = 100, printerId?: number, spoolman = false) =>
+    request<SpoolUsageRecord[]>(
+      `/inventory/usage?limit=${limit}${printerId ? `&printer_id=${printerId}` : ''}${spoolman ? '&spoolman=true' : ''}`,
+    ),
+  getSpoolmanSpoolUsageHistory: (spoolId: number, limit = 50) =>
+    request<SpoolUsageRecord[]>(`/spoolman/inventory/spools/${spoolId}/usage?limit=${limit}`),
+  clearSpoolmanSpoolUsageHistory: (spoolId: number) =>
+    request<{ status: string }>(`/spoolman/inventory/spools/${spoolId}/usage`, { method: 'DELETE' }),
   clearSpoolUsageHistory: (spoolId: number) =>
     request<{ status: string }>(`/inventory/spools/${spoolId}/usage`, { method: 'DELETE' }),
   syncWeightsFromAms: () =>

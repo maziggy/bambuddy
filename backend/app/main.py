@@ -9084,6 +9084,7 @@ async def _close_out_print(printer_id: int, data: dict):
                         db,
                         last_layer_num=data.get("last_layer_num"),
                         last_progress=data.get("last_progress"),
+                        status=data.get("status") or "failed",
                     )
             except Exception as e:
                 logger.debug("[SPOOLMAN] Cleanup failed: %s", e)

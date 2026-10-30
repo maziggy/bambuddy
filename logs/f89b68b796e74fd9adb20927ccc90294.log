@@ -1,0 +1,200 @@
+2026-10-30 10:38:06,586 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:38:06,606 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:38:06,607 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:38:36,689 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:38:36,707 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:38:36,708 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:38:55,157 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:38:55,158 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-30 10:38:57,495 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 112346 bytes
+2026-10-30 10:39:06,810 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:39:06,825 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:39:06,825 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:39:36,906 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:39:36,927 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:39:36,928 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:40:07,027 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:40:07,050 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:40:07,052 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:40:15,069 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 10:40:21,940 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:40:21,943 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-30 10:40:24,285 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 106106 bytes
+2026-10-30 10:40:37,150 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:40:37,169 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:40:37,170 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:41:07,270 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:41:07,293 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:41:07,294 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:41:37,383 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:41:37,402 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:41:37,403 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:41:48,739 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:41:48,739 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-30 10:41:51,111 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 118401 bytes
+2026-10-30 10:42:07,498 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:42:07,514 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:42:07,515 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:42:25,127 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:42:25,128 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-30 10:42:27,467 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 110938 bytes
+2026-10-30 10:42:37,606 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:42:37,627 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:42:37,628 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:43:07,720 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:43:07,741 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:43:07,742 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:43:13,603 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:43:13,604 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-30 10:43:15,874 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 95797 bytes
+2026-10-30 10:43:37,849 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:43:37,867 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:43:37,868 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:44:07,957 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:44:07,975 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:44:07,976 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:44:38,067 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:44:38,087 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:44:38,088 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:44:40,403 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:44:40,404 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:44:40,405 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-30 10:44:42,835 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 122880 bytes
+2026-10-30 10:44:42,836 INFO [backend.app.services.camera] [-] Reusing in-flight camera capture for [IP]: 122880 bytes (no second connection opened)
+2026-10-30 10:44:42,837 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 122880 bytes
+2026-10-30 10:45:08,174 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:45:08,192 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:45:08,192 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:45:15,092 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 10:45:38,280 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:45:38,302 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:45:38,303 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:46:07,196 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:46:07,198 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-30 10:46:08,392 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:46:08,402 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:46:08,402 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:46:09,661 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 130304 bytes
+2026-10-30 10:46:38,482 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:46:38,507 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:46:38,508 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:47:08,603 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:47:08,621 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:47:08,621 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:47:34,003 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:47:34,004 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-30 10:47:36,388 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 118575 bytes
+2026-10-30 10:47:38,718 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:47:38,735 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:47:38,736 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:48:04,295 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:48:04,296 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-30 10:48:06,547 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 94571 bytes
+2026-10-30 10:48:08,836 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:48:08,858 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:48:08,859 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:48:38,952 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:48:38,972 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:48:38,973 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:48:58,805 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:48:58,807 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-30 10:49:01,153 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 112689 bytes
+2026-10-30 10:49:09,057 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:49:09,074 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:49:09,075 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:49:39,160 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:49:39,188 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:49:39,189 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:50:09,281 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:50:09,298 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:50:09,299 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:50:15,119 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 10:50:25,582 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:50:25,583 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-30 10:50:27,955 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 122832 bytes
+2026-10-30 10:50:39,388 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:50:39,403 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:50:39,404 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:51:09,490 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:51:09,511 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:51:09,512 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:51:39,615 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:51:39,636 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:51:39,637 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:51:50,418 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:51:50,419 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-30 10:51:52,770 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 124783 bytes
+2026-10-30 10:52:09,738 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:52:09,750 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:52:09,751 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:52:39,835 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:52:39,852 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:52:39,853 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:53:09,942 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:53:09,965 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:53:09,966 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:53:15,210 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:53:15,210 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-30 10:53:17,607 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 115462 bytes
+2026-10-30 10:53:40,059 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:53:40,078 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:53:40,079 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:53:49,526 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:53:49,527 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-30 10:53:51,723 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 90083 bytes
+2026-10-30 10:54:10,144 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:54:10,154 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:54:10,155 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:54:33,563 INFO [uvicorn.access] [-] [IP]:56291 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-10-30 10:54:33,583 INFO [backend.app.api.routes.cloud] [c661e1bb] get_filament_info called with 1 IDs: ['GFG99']
+2026-10-30 10:54:33,598 INFO [uvicorn.access] [-] [IP]:51429 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-10-30 10:54:33,866 INFO [uvicorn.access] [-] [IP]:57247 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-10-30 10:54:34,808 INFO [backend.app.api.routes.printers] [426b69e3] Cover: resolved plate 1 before download (subtask=adelka_suplicek)
+2026-10-30 10:54:40,201 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:54:40,211 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:54:40,212 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:54:42,037 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-10-30 10:54:42,037 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-10-30 10:54:44,411 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 123552 bytes
+2026-10-30 10:55:10,289 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:55:10,337 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:55:10,337 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:55:15,138 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-10-30 10:55:40,421 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(121, 1, 109, None), (122, 1, 109, None), (123, 1, 109, None), (124, 1, 109, None)]
+2026-10-30 10:55:40,431 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 4}
+2026-10-30 10:55:40,432 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — an item is already printing on it (now: connected=True, state=RUNNING, awaiting_plate_clear=False)
+2026-10-30 10:55:50,951 INFO [backend.app.api.routes.support] [85b8e29f] Log level changed to DEBUG
+2026-10-30 10:55:50,951 INFO [backend.app.api.routes.bug_report] [85b8e29f] Bug report: enabled debug logging
+2026-10-30 10:55:50,952 DEBUG [backend.app.services.bambu_mqtt] [85b8e29f] [[SERIAL]] Requesting status update (pushall)
+2026-10-30 10:55:50,954 INFO [uvicorn.access] [-] [IP]:50105 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-10-30 10:55:50,996 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-10-30 10:55:51,031 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-10-30 10:55:51,032 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: adelka_suplicek.3mf, subtask_name: adelka_suplicek
+2026-10-30 10:55:51,032 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': '9', 'tray_is_bbl_bits': '9', 'tray_tar': '0', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': '9', 'tray_reading_bits': '0', 'version': 11, 'insert_flag': False, 'power_on_flag': False}
+2026-10-30 10:55:51,033 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 0
+2026-10-30 10:55:51,033 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-10-30 10:55:51,033 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-10-30 10:55:51,034 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-10-30 10:55:51,034 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-10-30 10:55:51,034 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-30 10:55:51,035 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-10-30 10:55:51,035 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-10-30 10:55:51,036 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-10-30 10:55:51,036 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-10-30 10:55:51,037 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83887104, 'code': 65604, 'action': 0, 'timestamp': 1780415089}]
+2026-10-30 10:55:51,038 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-10-30 10:55:51,038 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -61dBm
+2026-10-30 10:55:51,039 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-10-30 10:55:51,039 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: adelka_suplicek.3mf, subtask: adelka_suplicek
+2026-10-30 10:55:51,500 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP NOTIFY for A1M Bambuddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-10-30 10:55:53,018 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-30 10:55:55,034 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-30 10:55:57,057 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-30 10:55:59,079 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-30 10:56:01,092 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-30 10:56:01,092 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -60dBm
+2026-10-30 10:56:01,957 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: added 30s, total=509465s (141.52h)
+2026-10-30 10:56:01,966 DEBUG [backend.app.main] [-] Updated runtime for 1 printer(s)
+2026-10-30 10:56:03,111 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-30 10:56:05,138 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-10-30 10:56:07,152 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status

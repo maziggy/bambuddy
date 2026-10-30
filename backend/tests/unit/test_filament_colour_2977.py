@@ -111,9 +111,21 @@ class TestThePresetDefaultReader:
         # store a one-element array.
         assert _preset_default_colour({"default_filament_colour": "#123456"}) == "#123456"
 
+    def test_reads_the_ini_string_form(self):
+        # Orca Cloud returns list options the way the slicer writes its INI
+        # files (#3380).
+        assert _preset_default_colour({"default_filament_colour": '"#123456";"#654321"'}) == "#123456"
+
     @pytest.mark.parametrize(
         "profile",
-        [{}, {"default_filament_colour": []}, {"default_filament_colour": None}, {"default_filament_colour": "  "}],
+        [
+            {},
+            {"default_filament_colour": []},
+            {"default_filament_colour": None},
+            {"default_filament_colour": "  "},
+            {"default_filament_colour": '""'},
+            {"default_filament_colour": [""]},
+        ],
     )
     def test_absent_or_empty_reads_as_no_colour(self, profile):
         assert _preset_default_colour(profile) == ""

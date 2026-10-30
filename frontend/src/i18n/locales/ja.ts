@@ -1839,6 +1839,7 @@ export default {
     exportFailed: 'エクスポートに失敗しました',
     layoutReset: 'レイアウトをリセットしました',
     recalculatedCosts: '{{count}}件のアーカイブのコストを再計算しました',
+    recalculateSpoolmanUnreachable: 'Spoolman に接続できませんでした：そのスプールの使用記録 {{count}} 件は以前の価格のままです',
     recalculateFailed: 'コストの再計算に失敗しました',
     // Loading
     loadingStats: '統計を読み込み中...',
@@ -7416,6 +7417,7 @@ export default {
       assignToAms: 'AMSに割り当て',
       syncWeight: '重量同期',
       addToInventory: 'インベントリに追加',
+      quickAddFromTag: 'Bambuタグから読み取った情報でこのスプールを追加します。後でBambuddyで編集できます。',
       assignToAmsTitle: 'AMSに割り当て',
       selectSlot: 'スロットを選択',
       assign: '割り当て',
@@ -7648,6 +7650,9 @@ export default {
         skip: 'コンテナで実行されていません — 該当しません。',
         skip_unknown: 'Bambuddy は {{runtime}} で実行されていますが、ネットワークモードを判別できませんでした。プリンター検出や仮想プリンターが動作しない場合は、ホストネットワークでコンテナを再作成してください。',
         skip_system_container: 'Bambuddy は {{runtime}} のシステムコンテナで実行されており、仮想マシンと同様に LAN 上にあります — 該当しません。',
+        pass_macvlan: '{{runtime}} の macvlan ネットワークで実行中です。LAN 上に独自のアドレスを持っています。',
+        pass_ipvlan: '{{runtime}} の ipvlan ネットワーク (L2) で実行中です。LAN 上に独自のアドレスを持っています。',
+        warn_ipvlan_l3: 'Bambuddy は {{runtime}} の L3 モードの ipvlan ネットワークで実行されています。L3 モードはブロードキャストもマルチキャストも通さないため、スライサーは仮想プリンターを見つけられず、プリンターはサブネットスキャンでしか見つかりません — 代わりに macvlan ネットワークか ipvlan の L2 モードを使用してください。',
       },
       subnet: {
         title: 'ネットワークサブネット',

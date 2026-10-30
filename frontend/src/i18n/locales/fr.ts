@@ -1839,6 +1839,7 @@ export default {
     exportFailed: 'Échec export',
     layoutReset: 'Mise en page réinitialisée',
     recalculatedCosts: 'Coûts recalculés pour {{count}} archives',
+    recalculateSpoolmanUnreachable: 'Spoolman injoignable : {{count}} enregistrements de consommation de ses bobines gardent leur ancien prix',
     recalculateFailed: 'Échec du calcul',
     // Loading
     loadingStats: 'Chargement des statistiques...',
@@ -7403,6 +7404,7 @@ export default {
       assignToAms: 'Assigner à l\'AMS',
       syncWeight: 'Synchroniser le poids',
       addToInventory: 'Ajouter à l\'inventaire',
+      quickAddFromTag: 'Ajoute cette bobine avec les informations lues sur son étiquette Bambu. Vous pourrez les modifier plus tard dans Bambuddy.',
       assignToAmsTitle: 'Assigner à l\'AMS',
       selectSlot: 'Sélectionner un emplacement',
       assign: 'Assigner',
@@ -7635,6 +7637,9 @@ export default {
         skip: 'Ne fonctionne pas dans un conteneur — non applicable.',
         skip_unknown: 'Bambuddy fonctionne dans {{runtime}}, mais son mode réseau n\'a pas pu être déterminé. Si la découverte d\'imprimantes ou l\'imprimante virtuelle ne fonctionnent pas, recréez le conteneur en réseau host.',
         skip_system_container: 'Bambuddy fonctionne dans un conteneur système {{runtime}}, présent sur le LAN comme une machine virtuelle — non applicable.',
+        pass_macvlan: 'Fonctionne dans {{runtime}} sur un réseau macvlan, avec sa propre adresse sur le LAN.',
+        pass_ipvlan: 'Fonctionne dans {{runtime}} sur un réseau ipvlan (L2), avec sa propre adresse sur le LAN.',
+        warn_ipvlan_l3: "Bambuddy fonctionne dans {{runtime}} sur un réseau ipvlan en mode L3. Le mode L3 ne transmet ni broadcast ni multicast : le slicer ne trouve pas l'imprimante virtuelle et les imprimantes ne peuvent être trouvées que par l'analyse du sous-réseau — utilisez plutôt un réseau macvlan ou le mode ipvlan L2.",
       },
       subnet: {
         title: 'Sous-réseau',

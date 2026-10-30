@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, AlertTriangle, RefreshCw, Unlink } from 'lucide-react';
-import type { MatchedSpool } from '../../hooks/useSpoolBuddyState';
+import type { MatchedSpool, UnknownTagData } from '../../hooks/useSpoolBuddyState';
 import { spoolbuddyApi } from '../../api/client';
 import { SpoolIcon } from './SpoolIcon';
 import { resolveSpoolColorName, spoolColorString } from '../../utils/colors';
@@ -221,14 +221,18 @@ interface UnknownTagCardProps {
   tagUid: string;
   scaleWeight: number | null;
   coreWeight?: number;
+  // What a Bambu tag's own blocks say about the roll (#2685). When present
+  // the card shows that spool, so a Bambu roll doesn't look unrecognised
+  // before Add to Inventory is opened.
+  tagData?: UnknownTagData | null;
   onLinkSpool?: () => void;
   onAddToInventory?: () => void;
   onClose?: () => void;
 }
 
-export function UnknownTagCard({ tagUid, scaleWeight, coreWeight, onLinkSpool, onAddToInventory, onClose }: UnknownTagCardProps) {
+export function UnknownTagCard({ tagUid, scaleWeight, coreWeight, tagData, onLinkSpool, onAddToInventory, onClose }: UnknownTagCardProps) {
   const { t } = useTranslation();
-  const defaultCoreWeight = coreWeight ?? DEFAULT_CORE_WEIGHT_G;
+  const defaultCoreWeight = coreWeight ?? tagData?.core_weight ?? DEFAULT_CORE_WEIGHT_G;
   const grossWeight = scaleWeight !== null
     ? Math.round(Math.max(0, scaleWeight))
     : null;
@@ -238,15 +242,32 @@ export function UnknownTagCard({ tagUid, scaleWeight, coreWeight, onLinkSpool, o
 
   return (
     <div className="flex flex-col items-center text-center space-y-5">
-      <div className="w-20 h-20 rounded-2xl bg-green-500/15 flex items-center justify-center">
-        <svg className="w-10 h-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
-        </svg>
-      </div>
-      <div>
-        <h3 className="text-lg font-semibold text-zinc-100">{t('spoolbuddy.dashboard.newTag', 'New Tag Detected')}</h3>
-        <p className="text-sm text-zinc-500 font-mono mt-1">{tagUid}</p>
-      </div>
+      {tagData ? (
+        <>
+          <SpoolIcon color={spoolColorString(tagData.rgba)} isEmpty={false} size={80} spool={tagData} />
+          <div>
+            <h3 className="text-lg font-semibold text-zinc-100">
+              {[tagData.brand, tagData.material, tagData.subtype].filter(Boolean).join(' ')}
+            </h3>
+            {tagData.color_name && <p className="text-sm text-zinc-300 mt-0.5">{tagData.color_name}</p>}
+            <p className="text-xs text-zinc-500 mt-1">
+              {t('spoolbuddy.dashboard.newTag', 'New Tag Detected')} · <span className="font-mono">{tagUid}</span>
+            </p>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="w-20 h-20 rounded-2xl bg-green-500/15 flex items-center justify-center">
+            <svg className="w-10 h-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-zinc-100">{t('spoolbuddy.dashboard.newTag', 'New Tag Detected')}</h3>
+            <p className="text-sm text-zinc-500 font-mono mt-1">{tagUid}</p>
+          </div>
+        </>
+      )}
       {grossWeight !== null && (
         <div className="text-sm text-zinc-400">
           <span className="font-mono font-semibold">{grossWeight}g</span> {t('spoolbuddy.dashboard.onScale', 'on scale')}

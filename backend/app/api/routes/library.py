@@ -118,6 +118,7 @@ from backend.app.utils.filename import (
 from backend.app.utils.library_paths import library_photos_dir, remove_library_photos_dir
 from backend.app.utils.printer_models import is_gcode_compatible
 from backend.app.utils.safe_path import PathTraversalError, assert_under, safe_join_under
+from backend.app.utils.slicer_strings import first_slicer_string
 from backend.app.utils.threemf_tools import (
     carries_gcode,
     default_plate_gcode_name,
@@ -4092,10 +4093,7 @@ def _preset_default_colour(profile: dict) -> str:
     ``filament_colour: ["#00AE42"]``. Bambu Studio consumes the default in the
     GUI when a project is created, not in ``--load-filaments``.
     """
-    raw = profile.get("default_filament_colour")
-    if isinstance(raw, list):
-        raw = raw[0] if raw else None
-    return raw.strip() if isinstance(raw, str) else ""
+    return first_slicer_string(profile.get("default_filament_colour")) or ""
 
 
 def _patch_filament_colours(

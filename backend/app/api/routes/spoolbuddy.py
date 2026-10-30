@@ -42,6 +42,7 @@ from backend.app.schemas.spoolbuddy import (
     WriteTagRequest,
     WriteTagResultRequest,
 )
+from backend.app.services.bambu_tag_blocks import spool_prefill_from_tag
 from backend.app.services.spool_tag_matcher import (
     begins_with_cascade_level_1,
     cascade_level_1_uid,
@@ -774,6 +775,15 @@ async def nfc_tag_scanned(
                 await _backfill_local_tray_uuid(db, spool, req.tag_uid, tray_uuid)
             return {"status": "ok", "matched": True, "spool_id": spool.id}
 
+    # What the tag itself says about the roll, so the kiosk's Quick Add can
+    # create the spool AMS sync would have created, not a blank PLA (#2685)
+    tag_data = None
+    if req.raw_blocks:
+        try:
+            tag_data = await spool_prefill_from_tag(db, req.raw_blocks)
+        except Exception:
+            logger.warning("Could not decode Bambu tag blocks for %s", req.tag_uid, exc_info=True)
+
     await ws_manager.broadcast(
         {
             "type": "spoolbuddy_unknown_tag",
@@ -782,6 +792,7 @@ async def nfc_tag_scanned(
             "tray_uuid": tray_uuid,
             "sak": req.sak,
             "tag_type": req.tag_type,
+            "tag_data": tag_data,
         }
     )
     logger.info(

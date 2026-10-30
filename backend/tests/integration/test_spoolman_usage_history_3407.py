@@ -43,6 +43,13 @@ async def _built_in_spool(db) -> Spool:
     return spool
 
 
+def _spoolman_with(*spools):
+    """Spoolman as Recalculate Costs reads its prices (#3414)."""
+    client = MagicMock()
+    client.get_all_spools = AsyncMock(return_value=list(spools))
+    return patch("backend.app.services.usage_repricing._spoolman_client", AsyncMock(return_value=client))
+
+
 async def _rows(db) -> list[SpoolUsageHistory]:
     return list((await db.execute(select(SpoolUsageHistory).execution_options(populate_existing=True))).scalars().all())
 
@@ -102,7 +109,8 @@ async def test_recalculating_keeps_the_cost_of_a_print_from_unpriced_spools(
     db_session.add(_row(spoolman_spool_id=41, grams=100.0, archive_id=archive.id, cost=None))
     await db_session.commit()
 
-    assert (await async_client.post("/api/v1/archives/recalculate-costs")).status_code == 200
+    with _spoolman_with({"id": 41, "initial_weight": 1000, "filament": {"weight": 1000}}):
+        assert (await async_client.post("/api/v1/archives/recalculate-costs")).status_code == 200
 
     assert (await async_client.get(f"/api/v1/archives/{archive.id}")).json()["cost"] == 3.0
 
@@ -183,7 +191,8 @@ async def test_the_stock_alerts_use_the_spoolman_rows_in_spoolman_mode(db_sessio
 async def test_recalculating_costs_rebuilds_a_spoolman_archive_from_its_rows(
     async_client: AsyncClient, db_session, printer_factory, archive_factory
 ):
-    """The rows carry what the charges were priced at, so the figure stays."""
+    """The rows carry what the charges were priced at; at the spool's price
+    unchanged, the figure stays."""
     db_session.add(Settings(key="spoolman_enabled", value="true"))
     db_session.add(Settings(key="default_filament_cost", value="25"))
     printer = await printer_factory()
@@ -192,7 +201,8 @@ async def test_recalculating_costs_rebuilds_a_spoolman_archive_from_its_rows(
     db_session.add(_row(spoolman_spool_id=41, grams=100.0, archive_id=archive.id, cost=4.0))
     await db_session.commit()
 
-    assert (await async_client.post("/api/v1/archives/recalculate-costs")).status_code == 200
+    with _spoolman_with({"id": 41, "price": 40.0, "initial_weight": 1000, "filament": {"weight": 1000}}):
+        assert (await async_client.post("/api/v1/archives/recalculate-costs")).status_code == 200
 
     assert (await async_client.get(f"/api/v1/archives/{archive.id}")).json()["cost"] == 4.0
 

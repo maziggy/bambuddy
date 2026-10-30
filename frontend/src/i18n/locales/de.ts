@@ -1840,6 +1840,7 @@ export default {
     exportFailed: 'Export fehlgeschlagen',
     layoutReset: 'Layout zurückgesetzt',
     recalculatedCosts: 'Kosten für {{count}} Archive neu berechnet',
+    recalculateSpoolmanUnreachable: 'Spoolman war nicht erreichbar: {{count}} Verbrauchseinträge seiner Spulen behalten ihren alten Preis',
     recalculateFailed: 'Kosten konnten nicht neu berechnet werden',
     // Loading
     loadingStats: 'Statistiken werden geladen...',
@@ -7415,6 +7416,7 @@ export default {
       assignToAms: 'AMS zuweisen',
       syncWeight: 'Gewicht sync.',
       addToInventory: 'Zum Inventar hinzufügen',
+      quickAddFromTag: 'Fügt diese Spule mit den Daten von ihrem Bambu-Tag hinzu. Du kannst sie später in Bambuddy bearbeiten.',
       assignToAmsTitle: 'AMS zuweisen',
       selectSlot: 'Slot auswählen',
       assign: 'Zuweisen',
@@ -7647,6 +7649,9 @@ export default {
         skip: 'Läuft nicht in einem Container — nicht zutreffend.',
         skip_unknown: 'Bambuddy läuft in {{runtime}}, der Netzwerkmodus konnte jedoch nicht ermittelt werden. Falls die Druckererkennung oder der virtuelle Drucker nicht funktionieren, erstellen Sie den Container mit Host-Netzwerk neu.',
         skip_system_container: 'Bambuddy läuft in einem {{runtime}}-Systemcontainer, der wie eine virtuelle Maschine direkt im LAN liegt — nicht zutreffend.',
+        pass_macvlan: 'Läuft in {{runtime}} in einem macvlan-Netzwerk, mit eigener Adresse im LAN.',
+        pass_ipvlan: 'Läuft in {{runtime}} in einem ipvlan-Netzwerk (L2), mit eigener Adresse im LAN.',
+        warn_ipvlan_l3: 'Bambuddy läuft in {{runtime}} in einem ipvlan-Netzwerk im L3-Modus. Der L3-Modus leitet weder Broadcast noch Multicast weiter, daher findet der Slicer den virtuellen Drucker nicht und Drucker lassen sich nur per Subnetz-Scan finden — verwenden Sie stattdessen ein macvlan-Netzwerk oder den ipvlan-L2-Modus.',
       },
       subnet: {
         title: 'Netzwerk-Subnetz',

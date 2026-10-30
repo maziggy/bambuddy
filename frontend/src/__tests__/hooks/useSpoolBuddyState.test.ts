@@ -160,6 +160,50 @@ describe('useSpoolBuddyState', () => {
     expect(result.current.unknownTrayUuid).toBe('DEADBEEFDEADBEEFDEADBEEFDEADBEEF');
   });
 
+  it('UNKNOWN_TAG keeps the data decoded from a Bambu tag until the tag is lifted (#2685)', () => {
+    const tagData = {
+      material: 'PLA',
+      subtype: 'Basic',
+      color_name: 'Cyan',
+      rgba: '0086D6FF',
+      extra_colors: null,
+      effect_type: null,
+      brand: 'Bambu Lab',
+      label_weight: 1000,
+      slicer_filament: 'GFA00',
+      slicer_filament_name: 'Bambu PLA Basic',
+      nozzle_temp_min: 190,
+      nozzle_temp_max: 230,
+      core_weight: 250,
+      core_weight_catalog_id: 7,
+      variant_id: 'A00-B08',
+      diameter: 1.75,
+      drying_temp: 55,
+      drying_time: 8,
+    };
+    const { result } = renderHook(() => useSpoolBuddyState());
+
+    act(() => {
+      dispatchCustomEvent('spoolbuddy-unknown-tag', { tag_uid: '865947E2', device_id: 'dev-1', tag_data: tagData });
+    });
+    expect(result.current.unknownTagData).toEqual(tagData);
+
+    act(() => {
+      dispatchCustomEvent('spoolbuddy-tag-removed', { tag_uid: '865947E2', device_id: 'dev-1' });
+    });
+    expect(result.current.unknownTagData).toBeNull();
+  });
+
+  it('UNKNOWN_TAG without tag_data leaves unknownTagData empty (#2685)', () => {
+    const { result } = renderHook(() => useSpoolBuddyState());
+
+    act(() => {
+      dispatchCustomEvent('spoolbuddy-unknown-tag', { tag_uid: 'AABB1122334455FF', device_id: 'dev-1' });
+    });
+    expect(result.current.unknownTagUid).toBe('AABB1122334455FF');
+    expect(result.current.unknownTagData).toBeNull();
+  });
+
   it('UNKNOWN_TAG without tray_uuid leaves unknownTrayUuid null', () => {
     const { result } = renderHook(() => useSpoolBuddyState());
 

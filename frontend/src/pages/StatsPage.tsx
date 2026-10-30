@@ -1108,6 +1108,9 @@ export function StatsPage() {
       const result = await api.recalculateCosts();
       await Promise.all([refetchStats(), refetchArchives()]);
       showToast(t('stats.recalculatedCosts', { count: result.updated }));
+      if (result.spoolman_unreachable) {
+        showToast(t('stats.recalculateSpoolmanUnreachable', { count: result.spoolman_unreachable }), 'warning');
+      }
     } catch {
       showToast(t('stats.recalculateFailed'), 'error');
     } finally {

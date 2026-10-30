@@ -57,20 +57,17 @@ def is_bambu_tag(tag_uid: str, tray_uuid: str, tray_info_idx: str) -> bool:
     return uuid_valid or (is_valid_tag(tag_uid, tray_uuid) and has_preset)
 
 
-async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
-    """Create a new Spool inventory entry from AMS tray MQTT data.
+async def resolve_tray_fields(db: AsyncSession, tray_data: dict) -> dict:
+    """The spool fields an AMS tray report describes: material, colour, profile, temps, label weight.
 
-    Extracts material, subtype, color, temps, and tag info from the tray dict.
-    Looks up core_weight from the spool catalog if a Bambu Lab entry matches.
+    Shared by AMS auto-creation and SpoolBuddy's Quick Add prefill from a decoded
+    tag (#2685), so a roll gets the same material, colour name and profile
+    whichever reader saw it. Returns a dict of ``Spool`` column values.
     """
-    from backend.app.models.spool_catalog import SpoolCatalogEntry
-
     tray_type = tray_data.get("tray_type", "")  # "PLA"
     tray_sub_brands = tray_data.get("tray_sub_brands", "")  # "PLA Basic"
     tray_color = tray_data.get("tray_color", "FFFFFFFF")  # RRGGBBAA
     tray_id_name = tray_data.get("tray_id_name", "")  # Color name e.g. "Jade White"
-    tag_uid = _normalize_tag_uid(tray_data.get("tag_uid", ""))
-    tray_uuid = _normalize_tray_uuid(tray_data.get("tray_uuid", ""))
     tray_info_idx = tray_data.get("tray_info_idx", "")
     nozzle_min = tray_data.get("nozzle_temp_min", 0)
     nozzle_max = tray_data.get("nozzle_temp_max", 0)
@@ -161,6 +158,39 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
                 continue
             break
 
+    # Resolve slicer filament name from builtin table
+    slicer_filament_name = None
+    if tray_info_idx:
+        try:
+            from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
+
+            slicer_filament_name = _BUILTIN_FILAMENT_NAMES.get(tray_info_idx)
+        except Exception:
+            pass
+        # Fallback: use tray_sub_brands as the display name
+        if not slicer_filament_name and tray_sub_brands:
+            slicer_filament_name = tray_sub_brands
+
+    return {
+        "material": material,
+        "subtype": subtype,
+        "color_name": color_name,
+        "rgba": rgba,
+        "extra_colors": extra_colors,
+        "effect_type": effect_type,
+        "brand": "Bambu Lab",
+        "label_weight": label_weight,
+        "slicer_filament": tray_info_idx or None,
+        "slicer_filament_name": slicer_filament_name,
+        "nozzle_temp_min": int(nozzle_min) if nozzle_min else None,
+        "nozzle_temp_max": int(nozzle_max) if nozzle_max else None,
+    }
+
+
+async def bambu_spool_core_weight(db: AsyncSession) -> tuple[int, int | None]:
+    """The empty-spool weight an RFID roll arrives on, and the catalog row it came from (if any)."""
+    from backend.app.models.spool_catalog import SpoolCatalogEntry
+
     # Look up core weight from the spool catalog by exact name. The previous
     # "Bambu Lab%" prefix query had no matching step and no ORDER BY, so it took
     # whichever of the three Bambu Lab rows the database returned first — High Temp
@@ -185,19 +215,21 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     if catalog_entry:
         core_weight = catalog_entry.weight
         core_weight_catalog_id = catalog_entry.id
+    return core_weight, core_weight_catalog_id
 
-    # Resolve slicer filament name from builtin table
-    slicer_filament_name = None
-    if tray_info_idx:
-        try:
-            from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
 
-            slicer_filament_name = _BUILTIN_FILAMENT_NAMES.get(tray_info_idx)
-        except Exception:
-            pass
-        # Fallback: use tray_sub_brands as the display name
-        if not slicer_filament_name and tray_sub_brands:
-            slicer_filament_name = tray_sub_brands
+async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
+    """Create a new Spool inventory entry from AMS tray MQTT data.
+
+    Extracts material, subtype, color, temps, and tag info from the tray dict.
+    Looks up core_weight from the spool catalog if a Bambu Lab entry matches.
+    """
+    fields = await resolve_tray_fields(db, tray_data)
+    material, subtype, color_name = fields["material"], fields["subtype"], fields["color_name"]
+    label_weight = fields["label_weight"]
+    tag_uid = _normalize_tag_uid(tray_data.get("tag_uid", ""))
+    tray_uuid = _normalize_tray_uuid(tray_data.get("tray_uuid", ""))
+    core_weight, core_weight_catalog_id = await bambu_spool_core_weight(db)
 
     # Calculate initial weight_used from AMS remain percentage
     remain_raw = tray_data.get("remain")
@@ -223,22 +255,11 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     )
 
     spool = Spool(
-        material=material,
-        subtype=subtype,
-        color_name=color_name,
-        rgba=rgba,
-        extra_colors=extra_colors,
-        effect_type=effect_type,
-        brand="Bambu Lab",
+        **fields,
         material_number=material_number,
-        label_weight=label_weight,
         core_weight=core_weight,
         core_weight_catalog_id=core_weight_catalog_id,
         weight_used=weight_used,
-        slicer_filament=tray_info_idx or None,
-        slicer_filament_name=slicer_filament_name,
-        nozzle_temp_min=int(nozzle_min) if nozzle_min else None,
-        nozzle_temp_max=int(nozzle_max) if nozzle_max else None,
         tag_uid=tag_uid if tag_uid and tag_uid != ZERO_TAG_UID else None,
         tray_uuid=tray_uuid if tray_uuid and tray_uuid != ZERO_TRAY_UUID else None,
         data_origin="rfid_auto",

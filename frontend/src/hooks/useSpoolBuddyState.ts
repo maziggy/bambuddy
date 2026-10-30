@@ -20,6 +20,30 @@ export interface MatchedSpool {
   weight_used: number;
 }
 
+// What an unknown Bambu tag's own blocks say about the roll, resolved by the
+// backend the way AMS auto-creation resolves a tray (#2685). Quick Add creates
+// the spool from it. Absent for non-Bambu tags and older daemons.
+export interface UnknownTagData {
+  material: string;
+  subtype: string | null;
+  color_name: string | null;
+  rgba: string | null;
+  extra_colors: string | null;
+  effect_type: string | null;
+  brand: string;
+  label_weight: number;
+  slicer_filament: string | null;
+  slicer_filament_name: string | null;
+  nozzle_temp_min: number | null;
+  nozzle_temp_max: number | null;
+  core_weight: number;
+  core_weight_catalog_id: number | null;
+  variant_id: string | null;
+  diameter: number | null;
+  drying_temp: number | null;
+  drying_time: number | null;
+}
+
 export interface SpoolBuddyState {
   weight: number | null;
   weightStable: boolean;
@@ -27,6 +51,7 @@ export interface SpoolBuddyState {
   matchedSpool: MatchedSpool | null;
   unknownTagUid: string | null;
   unknownTrayUuid: string | null;
+  unknownTagData: UnknownTagData | null;
   deviceOnline: boolean;
   deviceId: string | null;
 }
@@ -34,7 +59,7 @@ export interface SpoolBuddyState {
 type Action =
   | { type: 'WEIGHT_UPDATE'; weight: number; stable: boolean; rawAdc: number; deviceId: string }
   | { type: 'TAG_MATCHED'; spool: MatchedSpool; deviceId: string }
-  | { type: 'UNKNOWN_TAG'; tagUid: string; trayUuid: string | null; deviceId: string }
+  | { type: 'UNKNOWN_TAG'; tagUid: string; trayUuid: string | null; tagData: UnknownTagData | null; deviceId: string }
   | { type: 'TAG_REMOVED'; deviceId: string }
   | { type: 'DEVICE_ONLINE'; deviceId: string }
   | { type: 'DEVICE_OFFLINE'; deviceId: string };
@@ -46,6 +71,7 @@ const initialState: SpoolBuddyState = {
   matchedSpool: null,
   unknownTagUid: null,
   unknownTrayUuid: null,
+  unknownTagData: null,
   deviceOnline: false,
   deviceId: null,
 };
@@ -67,6 +93,7 @@ function reducer(state: SpoolBuddyState, action: Action): SpoolBuddyState {
         matchedSpool: action.spool,
         unknownTagUid: null,
         unknownTrayUuid: null,
+        unknownTagData: null,
         deviceId: action.deviceId,
       };
     case 'UNKNOWN_TAG':
@@ -75,6 +102,7 @@ function reducer(state: SpoolBuddyState, action: Action): SpoolBuddyState {
         matchedSpool: null,
         unknownTagUid: action.tagUid,
         unknownTrayUuid: action.trayUuid ?? null,
+        unknownTagData: action.tagData,
         deviceId: action.deviceId,
       };
     case 'TAG_REMOVED':
@@ -83,6 +111,7 @@ function reducer(state: SpoolBuddyState, action: Action): SpoolBuddyState {
         matchedSpool: null,
         unknownTagUid: null,
         unknownTrayUuid: null,
+        unknownTagData: null,
       };
     case 'DEVICE_ONLINE':
       return {
@@ -149,6 +178,7 @@ export function useSpoolBuddyState() {
       type: 'UNKNOWN_TAG',
       tagUid: detail.tag_uid ?? '',
       trayUuid: detail.tray_uuid ?? null,
+      tagData: detail.tag_data ?? null,
       deviceId: detail.device_id ?? '',
     });
   }, []);

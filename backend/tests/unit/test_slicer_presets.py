@@ -536,6 +536,62 @@ class TestFetchOrcaCloudPresets:
         assert [p.inherits for p in slots["printer"]] == ["Bambu Lab H2D 0.4 nozzle", None, None]
 
     @pytest.mark.asyncio
+    async def test_quoted_compatible_printers_are_unquoted(self):
+        """#3380: Orca Cloud returns list settings INI-style — one string of
+        quoted items joined by ``;``. Left as-is, the names never equal the
+        selected printer preset and the SliceModal hides the profile."""
+        sp._orca_cloud_cache.clear()
+        svc_mock = MagicMock()
+        svc_mock.list_profiles = AsyncMock(
+            return_value=[
+                {
+                    "id": "f1",
+                    "name": "SUNLU PLA Meta @Bambu Lab X1 Carbon 0.4 nozzle",
+                    "content": {
+                        "type": "filament",
+                        "filament_type": "PLA",
+                        "default_filament_colour": '""',
+                        "compatible_printers": '"Bambu Lab X1 Carbon 0.4 nozzle";"Bambu Lab H2C 0.4 nozzle"',
+                    },
+                },
+                {"id": "f2", "name": "Only quotes", "content": {"type": "filament", "compatible_printers": '""'}},
+                {
+                    "id": "f3",
+                    "name": "Escaped",
+                    "content": {
+                        "type": "filament",
+                        "default_filament_colour": '"#FF0000"',
+                        "compatible_printers": '"Printer \\"A\\"";"Bambu Lab A1 0.4 nozzle"',
+                    },
+                },
+                {
+                    "id": "f4",
+                    "name": "Text after a closing quote",
+                    "content": {"type": "filament", "filament_type": "PLA", "compatible_printers": '"X1C" P1S'},
+                },
+            ]
+        )
+        svc_mock.close = AsyncMock()
+        user = MagicMock(id=1)
+        user.has_permission = MagicMock(return_value=True)
+        with (
+            patch.object(sp, "_load_orca_credentials", AsyncMock(return_value=self._orca_creds("tok"))),
+            patch.object(sp, "_build_orca_service", AsyncMock(return_value=svc_mock)),
+        ):
+            slots, _status = await sp._fetch_orca_cloud_presets(MagicMock(), user)
+
+        meta, only_quotes, escaped, bad = slots["filament"]
+        assert meta.compatible_printers == ["Bambu Lab X1 Carbon 0.4 nozzle", "Bambu Lab H2C 0.4 nozzle"]
+        assert meta.filament_type == "PLA"
+        assert meta.filament_colour is None
+        assert only_quotes.compatible_printers is None
+        assert escaped.compatible_printers == ['Printer "A"', "Bambu Lab A1 0.4 nozzle"]
+        assert escaped.filament_colour == "#FF0000"
+        # One unparseable value reads as "no data" and the rest of the listing survives.
+        assert bad.compatible_printers is None
+        assert bad.filament_type == "PLA"
+
+    @pytest.mark.asyncio
     async def test_filament_preset_carries_the_preset_it_was_saved_from(self):
         """#3403: a filament saved with only the keys the user changed states no
         material of its own; the enrich pass reads it off this parent."""

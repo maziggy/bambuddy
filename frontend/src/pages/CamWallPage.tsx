@@ -20,7 +20,7 @@
  * mint the WS ticket anyway.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { CameraWall, type CameraWallStatus } from '../components/CameraWall';
@@ -29,6 +29,7 @@ import { type CameraTileStatusMode } from '../components/CameraTile';
 import { api, setStreamToken } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthRetrying } from '../components/AuthRetrying';
+import { isStandaloneWebApp } from '../utils/camera';
 
 // Kiosk polling cadence. Matches the staleTime the in-page wall runs at, so a
 // tile's chip is never more stale than it would be on the Printers page.
@@ -72,6 +73,7 @@ function tileSizeFrom(params: URLSearchParams): number {
 export function CamWallPage() {
   const { t } = useTranslation();
   const location = useLocation();
+  const navigate = useNavigate();
   const { authEnabled, loading: authLoading, user, authUnconfirmed } = useAuth();
   const [searchParams] = useSearchParams();
 
@@ -189,7 +191,13 @@ export function CamWallPage() {
         tileSize={tileSize}
         statuses={kiosk ? kioskStatuses : undefined}
         showSettings={!kiosk}
-        onTileClick={kiosk ? undefined : (id) => window.open(`/camera/${id}`, `camera-${id}`)}
+        // A home-screen web app has no second window: the camera opens in
+        // place and its back button returns here (#3419).
+        onTileClick={
+          kiosk
+            ? undefined
+            : (id) => (isStandaloneWebApp() ? navigate(`/camera/${id}`) : window.open(`/camera/${id}`, `camera-${id}`))
+        }
         // Writes to the same localStorage keys the Printers page reads, so a
         // change made here follows the user back there. A kiosk wall hides the
         // popover, so these never fire.

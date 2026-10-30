@@ -2191,11 +2191,14 @@ async def recalculate_all_costs(
 ):
     """Recalculate costs for all archives based on filament usage and prices."""
     from backend.app.services.print_log import mirror_archive_cost
+    from backend.app.services.usage_repricing import reprice_usage
 
     # Only the archives of the caller's printers, as the archive list shows them.
     query = select(PrintArchive)
+    scoped_ids = None
     if (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
         query = query.where(clause)
+        scoped_ids = select(PrintArchive.id).where(clause)
     result = await db.execute(query)
     archives = list(result.scalars().all())
 
@@ -2204,6 +2207,15 @@ async def recalculate_all_costs(
     filaments = {f.type: f.cost_per_kg for f in filament_result.scalars().all()}
 
     default_cost_per_kg = await _default_cost_per_kg(db)
+    spoolman_owns = await _spoolman_owns_cost(db)
+
+    # The usage first, at the spools' current prices: the sums below read it,
+    # and a price corrected since the print changed nothing otherwise (#3414).
+    # A caller limited to some printers leaves the usage of no archive alone.
+    repriced = await reprice_usage(
+        db, scoped_ids, default_cost_per_kg=default_cost_per_kg, spoolman_enabled=spoolman_owns
+    )
+    await db.flush()
 
     # Pre-fetch all usage costs and tracked weight by archive_id.
     # Tracked weight is used to top-up the cost at the default rate for any
@@ -2232,8 +2244,6 @@ async def recalculate_all_costs(
             )
         ).all()
     }
-
-    spoolman_owns = await _spoolman_owns_cost(db)
 
     updated = 0
     preserved = 0
@@ -2272,15 +2282,24 @@ async def recalculate_all_costs(
         if new_cost is not None and archive.cost != new_cost:
             previous_cost = archive.cost
             archive.cost = new_cost
-            # Its run had the old figure: statistics read the run's cost.
-            await mirror_archive_cost(db, archive, previous_cost)
+            # Its run had the old figure: statistics read the run's cost. A
+            # run its own usage priced keeps that, repriced above.
+            await mirror_archive_cost(db, archive, previous_cost, skip_runs=repriced.priced_runs)
             updated += 1
 
     await db.commit()
     message = f"Recalculated costs for {updated} archives"
     if preserved:
         message += f"; kept {preserved} priced from Spoolman"
-    return {"message": message, "updated": updated, "preserved": preserved}
+    if repriced.spoolman_unreachable:
+        message += f"; Spoolman not reachable, {repriced.spoolman_unreachable} usage records kept their price"
+    return {
+        "message": message,
+        "updated": updated,
+        "preserved": preserved,
+        "usage_repriced": repriced.repriced,
+        "spoolman_unreachable": repriced.spoolman_unreachable,
+    }
 
 
 @router.get("/{archive_id}/duplicates")

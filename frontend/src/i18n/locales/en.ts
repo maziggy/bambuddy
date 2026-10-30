@@ -1859,6 +1859,7 @@ export default {
     exportFailed: 'Export failed',
     layoutReset: 'Layout reset',
     recalculatedCosts: 'Recalculated costs for {{count}} archives',
+    recalculateSpoolmanUnreachable: 'Spoolman could not be reached: {{count}} usage records of its spools kept their old price',
     recalculateFailed: 'Failed to recalculate costs',
     // Loading
     loadingStats: 'Loading statistics...',

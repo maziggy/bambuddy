@@ -1856,6 +1856,7 @@ export default {
     exportFailed: 'Kunde inte exportera',
     layoutReset: 'Layout återställd',
     recalculatedCosts: 'Omberäknade kostnader för {{count}} arkiv',
+    recalculateSpoolmanUnreachable: 'Spoolman kunde inte nås: {{count}} förbrukningsposter för dess spolar behöll sitt gamla pris',
     recalculateFailed: 'Kunde inte omberäkna kostnader',
     // Loading
     loadingStats: 'Laddar statistik...',

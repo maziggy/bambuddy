@@ -1840,6 +1840,7 @@ export default {
     exportFailed: 'Error en la exportación',
     layoutReset: 'Disposición restablecida',
     recalculatedCosts: 'Costes recalculados para {{count}} archivos',
+    recalculateSpoolmanUnreachable: 'No se pudo conectar con Spoolman: {{count}} registros de consumo de sus bobinas conservan su precio anterior',
     recalculateFailed: 'Error al recalcular los costes',
     // Loading
     loadingStats: 'Cargando estadísticas...',

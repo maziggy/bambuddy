@@ -1855,6 +1855,7 @@ export default {
     exportFailed: "Помилка експорту",
     layoutReset: "Розташування віджетів скинуто",
     recalculatedCosts: "Перераховано вартість архівів: {{count}}",
+    recalculateSpoolmanUnreachable: 'Spoolman недоступний: {{count}} записів витрати його котушок зберегли стару ціну',
     recalculateFailed: "Не вдалося перерахувати витрати",
     // Loading
     loadingStats: "Завантаження статистики...",

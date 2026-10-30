@@ -1839,6 +1839,7 @@ export default {
     exportFailed: '匯出失敗',
     layoutReset: '佈局已重設',
     recalculatedCosts: '已為 {{count}} 個歸檔重新計算成本',
+    recalculateSpoolmanUnreachable: '無法連線至 Spoolman：其線軸的 {{count}} 筆用量記錄保留原價',
     recalculateFailed: '重新計算成本失敗',
     // Loading
     loadingStats: '載入統計資料中...',

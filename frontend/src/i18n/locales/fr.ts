@@ -1839,6 +1839,7 @@ export default {
     exportFailed: 'Échec export',
     layoutReset: 'Mise en page réinitialisée',
     recalculatedCosts: 'Coûts recalculés pour {{count}} archives',
+    recalculateSpoolmanUnreachable: 'Spoolman injoignable : {{count}} enregistrements de consommation de ses bobines gardent leur ancien prix',
     recalculateFailed: 'Échec du calcul',
     // Loading
     loadingStats: 'Chargement des statistiques...',

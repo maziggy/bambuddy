@@ -1840,6 +1840,7 @@ export default {
     exportFailed: 'Dışa aktarma başarısız',
     layoutReset: 'Düzen sıfırlandı',
     recalculatedCosts: '{{count}} arşiv için maliyetler yeniden hesaplandı',
+    recalculateSpoolmanUnreachable: "Spoolman'a ulaşılamadı: makaralarının {{count}} kullanım kaydı eski fiyatını korudu",
     recalculateFailed: 'Maliyetler yeniden hesaplanamadı',
     // Yükleniyor
     loadingStats: 'İstatistikler yükleniyor...',

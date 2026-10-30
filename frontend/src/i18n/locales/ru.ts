@@ -1767,6 +1767,7 @@ export default {
     exportFailed: "Не удалось экспортировать данные",
     layoutReset: "Расположение сброшено",
     recalculatedCosts: "Пересчитана стоимость архивов: {{count}}",
+    recalculateSpoolmanUnreachable: 'Spoolman недоступен: {{count}} записей расхода его катушек сохранили старую цену',
     recalculateFailed: "Не удалось пересчитать стоимость",
     loadingStats: "Загрузка статистики...",
     noPermissionResetLayout: "У вас нет разрешения сбрасывать расположение",

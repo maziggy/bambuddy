@@ -1770,6 +1770,7 @@ export default {
     exportFailed: '내보내기 실패',
     layoutReset: '레이아웃이 초기화되었습니다',
     recalculatedCosts: '{{count}}개 아카이브의 비용이 재계산되었습니다',
+    recalculateSpoolmanUnreachable: 'Spoolman에 연결할 수 없습니다: 해당 스풀의 사용 기록 {{count}}개는 이전 가격을 유지합니다',
     recalculateFailed: '비용 재계산 실패',
     loadingStats: '통계 로딩 중...',
     noPermissionResetLayout: '레이아웃을 초기화할 권한이 없습니다',

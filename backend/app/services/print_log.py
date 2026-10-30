@@ -4,6 +4,7 @@ Log entries are written to a separate table and never touch archives or queue it
 """
 
 import logging
+from collections.abc import Set as AbstractSet
 from datetime import datetime, timezone
 
 from sqlalchemy import func, or_, select
@@ -117,18 +118,23 @@ async def write_log_entry(
     return entry
 
 
-async def mirror_archive_cost(db: AsyncSession, archive, previous_cost: float | None) -> None:
+async def mirror_archive_cost(
+    db: AsyncSession, archive, previous_cost: float | None, *, skip_runs: AbstractSet[int] = frozenset()
+) -> None:
     """Give the archive's newest run the archive's new cost, if it had the old one.
 
     Statistics, project totals and batch sums read a run's cost. A completed
     run without its own spool price took the archive's (or none), so a new
     archive cost belongs to it too. A run its spools priced keeps that price,
     and a failed or cancelled run keeps its own: it printed only part of it.
+    A run in ``skip_runs`` was given its own new cost already.
     """
     entry = await db.scalar(
         select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id).order_by(PrintLogEntry.id.desc()).limit(1)
     )
-    if entry is not None and entry.status == "completed" and entry.cost in (None, previous_cost):
+    if entry is None or entry.id in skip_runs:
+        return
+    if entry.status == "completed" and entry.cost in (None, previous_cost):
         entry.cost = archive.cost
 
 

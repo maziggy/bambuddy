@@ -1839,6 +1839,7 @@ export default {
     exportFailed: 'Export non riuscito',
     layoutReset: 'Layout reimpostato',
     recalculatedCosts: 'Costi ricalcolati per {{count}} archivi',
+    recalculateSpoolmanUnreachable: 'Spoolman non raggiungibile: {{count}} registrazioni di consumo delle sue bobine mantengono il prezzo precedente',
     recalculateFailed: 'Ricalcolo costi non riuscito',
     // Loading
     loadingStats: 'Caricamento statistiche...',

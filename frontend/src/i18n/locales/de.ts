@@ -1840,6 +1840,7 @@ export default {
     exportFailed: 'Export fehlgeschlagen',
     layoutReset: 'Layout zurückgesetzt',
     recalculatedCosts: 'Kosten für {{count}} Archive neu berechnet',
+    recalculateSpoolmanUnreachable: 'Spoolman war nicht erreichbar: {{count}} Verbrauchseinträge seiner Spulen behalten ihren alten Preis',
     recalculateFailed: 'Kosten konnten nicht neu berechnet werden',
     // Loading
     loadingStats: 'Statistiken werden geladen...',

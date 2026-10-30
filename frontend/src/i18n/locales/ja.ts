@@ -1839,6 +1839,7 @@ export default {
     exportFailed: 'エクスポートに失敗しました',
     layoutReset: 'レイアウトをリセットしました',
     recalculatedCosts: '{{count}}件のアーカイブのコストを再計算しました',
+    recalculateSpoolmanUnreachable: 'Spoolman に接続できませんでした：そのスプールの使用記録 {{count}} 件は以前の価格のままです',
     recalculateFailed: 'コストの再計算に失敗しました',
     // Loading
     loadingStats: '統計を読み込み中...',

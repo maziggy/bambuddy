@@ -1839,6 +1839,7 @@ export default {
     exportFailed: 'Falha na exportação',
     layoutReset: 'Layout redefinido',
     recalculatedCosts: 'Custos recalculados para {{count}} arquivos',
+    recalculateSpoolmanUnreachable: 'Não foi possível acessar o Spoolman: {{count}} registros de consumo dos seus carretéis mantiveram o preço anterior',
     recalculateFailed: 'Falha ao recalcular custos',
     // Loading
     loadingStats: 'Carregando estatísticas...',

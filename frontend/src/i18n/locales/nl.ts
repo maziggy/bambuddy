@@ -1857,6 +1857,7 @@ export default {
     exportFailed: 'Export mislukt',
     layoutReset: 'Indeling gereset',
     recalculatedCosts: 'Kosten voor {{count}} archieven opnieuw berekend',
+    recalculateSpoolmanUnreachable: 'Spoolman was niet bereikbaar: {{count}} verbruiksregistraties van zijn spoelen houden hun oude prijs',
     recalculateFailed: 'Kosten opnieuw berekenen mislukt',
     // Loading
     loadingStats: 'Statistieken laden...',

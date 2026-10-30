@@ -1839,6 +1839,7 @@ export default {
     exportFailed: '导出失败',
     layoutReset: '布局已重置',
     recalculatedCosts: '已为 {{count}} 个归档重新计算成本',
+    recalculateSpoolmanUnreachable: '无法连接 Spoolman：其线轴的 {{count}} 条用量记录保留原价',
     recalculateFailed: '重新计算成本失败',
     // Loading
     loadingStats: '加载统计数据中...',

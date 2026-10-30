@@ -7694,6 +7694,9 @@ errors: {
         skip: 'Körs inte i Docker — inte tillämpligt.',
         skip_unknown: 'Bambuddy körs i {{runtime}}, men dess nätverksläge kunde inte fastställas. Om skrivarupptäckt eller den virtuella skrivaren inte fungerar, återskapa containern med värdnätverk.',
         skip_system_container: 'Bambuddy körs i en {{runtime}} systemcontainer, som sitter på LAN som en virtuell maskin — inte tillämpligt.',
+        pass_macvlan: 'Körs i {{runtime}} på ett macvlan-nätverk, med en egen adress på LAN.',
+        pass_ipvlan: 'Körs i {{runtime}} på ett ipvlan-nätverk (L2), med en egen adress på LAN.',
+        warn_ipvlan_l3: 'Bambuddy körs i {{runtime}} på ett ipvlan-nätverk i L3-läge. L3-läget släpper inte igenom broadcast eller multicast, så slicern hittar inte den virtuella skrivaren och skrivare kan bara hittas med nätverksskanningen — använd ett macvlan-nätverk eller ipvlan L2-läge i stället.',
       },
       subnet: {
         title: 'Nätverkssubnät',

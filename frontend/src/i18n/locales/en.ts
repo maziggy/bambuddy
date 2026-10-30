@@ -7698,6 +7698,9 @@ export default {
         skip: 'Not running in a container — not applicable.',
         skip_unknown: 'Bambuddy is running in {{runtime}}, but its network mode could not be determined. If printer discovery or the Virtual Printer do not work, recreate the container with host networking.',
         skip_system_container: 'Bambuddy is running in a {{runtime}} system container, which sits on the LAN like a virtual machine — not applicable.',
+        pass_macvlan: 'Running in {{runtime}} on a macvlan network, with its own address on the LAN.',
+        pass_ipvlan: 'Running in {{runtime}} on an ipvlan network (L2), with its own address on the LAN.',
+        warn_ipvlan_l3: 'Bambuddy is running in {{runtime}} on an ipvlan network in L3 mode. L3 mode passes no broadcast or multicast, so the slicer cannot find the Virtual Printer and printers can only be found with the subnet scan — use a macvlan network or ipvlan L2 mode instead.',
       },
       subnet: {
         title: 'Network subnet',

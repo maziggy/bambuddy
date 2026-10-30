@@ -7653,6 +7653,9 @@ export default {
         skip: 'No se está ejecutando en un contenedor — no aplicable.',
         skip_unknown: 'Bambuddy se está ejecutando en {{runtime}}, pero no se pudo determinar su modo de red. Si la detección de impresoras o la impresora virtual no funcionan, vuelva a crear el contenedor con red de host.',
         skip_system_container: 'Bambuddy se está ejecutando en un contenedor de sistema {{runtime}}, que está en la LAN como una máquina virtual — no aplicable.',
+        pass_macvlan: 'Ejecutándose en {{runtime}} en una red macvlan, con su propia dirección en la LAN.',
+        pass_ipvlan: 'Ejecutándose en {{runtime}} en una red ipvlan (L2), con su propia dirección en la LAN.',
+        warn_ipvlan_l3: 'Bambuddy se está ejecutando en {{runtime}} en una red ipvlan en modo L3. El modo L3 no transmite broadcast ni multicast, por lo que el slicer no encuentra la impresora virtual y las impresoras solo se pueden encontrar con el escaneo de subred — usa una red macvlan o el modo ipvlan L2.',
       },
       subnet: {
         title: 'Subred de la red',

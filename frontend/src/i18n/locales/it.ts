@@ -7632,6 +7632,9 @@ export default {
         skip: 'Non in esecuzione in un container — non applicabile.',
         skip_unknown: 'Bambuddy è in esecuzione in {{runtime}}, ma non è stato possibile determinarne la modalità di rete. Se il rilevamento delle stampanti o la stampante virtuale non funzionano, ricrea il container con rete host.',
         skip_system_container: 'Bambuddy è in esecuzione in un container di sistema {{runtime}}, presente sulla LAN come una macchina virtuale — non applicabile.',
+        pass_macvlan: 'In esecuzione in {{runtime}} su una rete macvlan, con un proprio indirizzo sulla LAN.',
+        pass_ipvlan: 'In esecuzione in {{runtime}} su una rete ipvlan (L2), con un proprio indirizzo sulla LAN.',
+        warn_ipvlan_l3: 'Bambuddy è in esecuzione in {{runtime}} su una rete ipvlan in modalità L3. La modalità L3 non inoltra broadcast né multicast, quindi lo slicer non trova la stampante virtuale e le stampanti si possono trovare solo con la scansione della sottorete — usa invece una rete macvlan o la modalità ipvlan L2.',
       },
       subnet: {
         title: 'Sottorete',

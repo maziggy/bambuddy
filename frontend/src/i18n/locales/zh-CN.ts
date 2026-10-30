@@ -7630,6 +7630,9 @@ export default {
         skip: '未在容器中运行 — 不适用。',
         skip_unknown: 'Bambuddy 正在 {{runtime}} 中运行，但无法确定其网络模式。如果打印机发现或虚拟打印机无法使用，请使用 host 网络重新创建容器。',
         skip_system_container: 'Bambuddy 正在 {{runtime}} 系统容器中运行，它像虚拟机一样直接位于局域网中 — 不适用。',
+        pass_macvlan: '正在 {{runtime}} 的 macvlan 网络中运行，在局域网中拥有自己的地址。',
+        pass_ipvlan: '正在 {{runtime}} 的 ipvlan 网络 (L2) 中运行，在局域网中拥有自己的地址。',
+        warn_ipvlan_l3: 'Bambuddy 正在 {{runtime}} 的 L3 模式 ipvlan 网络中运行。L3 模式不转发广播和组播，因此切片软件无法找到虚拟打印机，打印机也只能通过子网扫描找到 — 请改用 macvlan 网络或 ipvlan L2 模式。',
       },
       subnet: {
         title: '网络子网',

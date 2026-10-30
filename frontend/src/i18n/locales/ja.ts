@@ -7646,6 +7646,9 @@ export default {
         skip: 'コンテナで実行されていません — 該当しません。',
         skip_unknown: 'Bambuddy は {{runtime}} で実行されていますが、ネットワークモードを判別できませんでした。プリンター検出や仮想プリンターが動作しない場合は、ホストネットワークでコンテナを再作成してください。',
         skip_system_container: 'Bambuddy は {{runtime}} のシステムコンテナで実行されており、仮想マシンと同様に LAN 上にあります — 該当しません。',
+        pass_macvlan: '{{runtime}} の macvlan ネットワークで実行中です。LAN 上に独自のアドレスを持っています。',
+        pass_ipvlan: '{{runtime}} の ipvlan ネットワーク (L2) で実行中です。LAN 上に独自のアドレスを持っています。',
+        warn_ipvlan_l3: 'Bambuddy は {{runtime}} の L3 モードの ipvlan ネットワークで実行されています。L3 モードはブロードキャストもマルチキャストも通さないため、スライサーは仮想プリンターを見つけられず、プリンターはサブネットスキャンでしか見つかりません — 代わりに macvlan ネットワークか ipvlan の L2 モードを使用してください。',
       },
       subnet: {
         title: 'ネットワークサブネット',

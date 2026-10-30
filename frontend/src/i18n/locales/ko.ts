@@ -7885,7 +7885,10 @@ export default {
         warn: 'Bambuddy가 {{runtime}}에서 브리지 네트워크로 실행 중입니다. 프린터 검색과 가상 프린터에는 호스트 네트워크가 필요합니다 — 호스트 네트워크로 컨테이너를 재생성하세요(docker-compose에서는 "network_mode: host", Podman에서는 "--network=host").',
         skip: '컨테이너에서 실행 중이 아닙니다 — 해당 없음.',
         skip_unknown: 'Bambuddy가 {{runtime}}에서 실행 중이지만 네트워크 모드를 확인할 수 없습니다. 프린터 검색이나 가상 프린터가 작동하지 않으면 호스트 네트워크로 컨테이너를 재생성하세요.',
-        skip_system_container: 'Bambuddy가 {{runtime}} 시스템 컨테이너에서 실행 중이며, 가상 머신처럼 LAN에 연결되어 있습니다 — 해당 없음.'
+        skip_system_container: 'Bambuddy가 {{runtime}} 시스템 컨테이너에서 실행 중이며, 가상 머신처럼 LAN에 연결되어 있습니다 — 해당 없음.',
+        pass_macvlan: '{{runtime}}의 macvlan 네트워크에서 실행 중이며, LAN에 자체 주소가 있습니다.',
+        pass_ipvlan: '{{runtime}}의 ipvlan 네트워크(L2)에서 실행 중이며, LAN에 자체 주소가 있습니다.',
+        warn_ipvlan_l3: 'Bambuddy가 {{runtime}}의 L3 모드 ipvlan 네트워크에서 실행 중입니다. L3 모드는 브로드캐스트와 멀티캐스트를 전달하지 않으므로 슬라이서가 가상 프린터를 찾을 수 없고 프린터는 서브넷 스캔으로만 찾을 수 있습니다 — 대신 macvlan 네트워크 또는 ipvlan L2 모드를 사용하세요.'
       },
       subnet: {
         title: '네트워크 서브넷',

@@ -11,7 +11,7 @@ import { CameraDiagnoseModal } from './CameraDiagnoseModal';
 import { useStreamImgRef } from '../hooks/useStreamImgRef';
 import { useCameraViewerId } from '../hooks/useCameraViewerId';
 import { isSideways, useSidewaysBox } from '../hooks/useSidewaysBox';
-import { openCameraWindow } from '../utils/camera';
+import { isStandaloneWebApp, openCameraWindow } from '../utils/camera';
 import { useIsSidebarCompact } from '../hooks/useIsSidebarCompact';
 
 export interface EmbeddedCameraViewerProps {
@@ -658,17 +658,20 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
               <Fullscreen className="w-3.5 h-3.5 text-bambu-gray" />
             )}
           </button>
-          <button
-            onClick={() => {
-              // The overlay stays when a popup blocker stopped the window.
-              if (openCameraWindow(printerId)) onClose();
-            }}
-            className="p-1 hover:bg-bambu-dark-tertiary rounded"
-            title={t('camera.popOut')}
-            aria-label={t('camera.popOut')}
-          >
-            <ExternalLink className="w-3.5 h-3.5 text-bambu-gray" />
-          </button>
+          {/* No window to pop out to in a home-screen web app (#3419). */}
+          {!isStandaloneWebApp() && (
+            <button
+              onClick={() => {
+                // The overlay stays when a popup blocker stopped the window.
+                if (openCameraWindow(printerId)) onClose();
+              }}
+              className="p-1 hover:bg-bambu-dark-tertiary rounded"
+              title={t('camera.popOut')}
+              aria-label={t('camera.popOut')}
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-bambu-gray" />
+            </button>
+          )}
           <button
             onClick={() => setIsMinimized(!isMinimized)}
             className="p-1 hover:bg-bambu-dark-tertiary rounded"

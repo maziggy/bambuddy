@@ -146,6 +146,26 @@ describe('PrintersPage — camera split button', () => {
     );
   });
 
+  it('opens the overlay and offers no window in a home-screen web app (#3419)', async () => {
+    // iOS loads a window.open URL into the app itself, with no way back.
+    storage.set('cameraViewMode', 'window');
+    Object.defineProperty(navigator, 'standalone', { value: true, configurable: true });
+    try {
+      renderPage('window');
+      await waitFor(() => expect(document.getElementById('printer-card-1')).not.toBeNull());
+      const icon = await screen.findByTitle('Open camera overlay');
+      await waitFor(() => expect(icon).not.toBeDisabled());
+      expect(screen.queryByLabelText('Camera View Mode')).toBeNull();
+
+      fireEvent.click(icon);
+
+      expect(await screen.findByTitle('Refresh stream')).toBeInTheDocument();
+      expect(openSpy).not.toHaveBeenCalled();
+    } finally {
+      delete (navigator as Navigator & { standalone?: boolean }).standalone;
+    }
+  });
+
   it('offers both modes from the caret', async () => {
     renderPage('window');
     await openModeMenu();

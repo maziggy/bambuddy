@@ -178,7 +178,7 @@ def _slice_request_from_pipeline(
     except (json.JSONDecodeError, TypeError):
         raw_filaments = []
     filament_presets = [
-        listed_ref(aliases, PresetRef(source=r["source"], id=r["id"]))
+        _stored_ref(aliases, r["source"], r["id"])
         for r in raw_filaments
         if isinstance(r, dict) and "source" in r and "id" in r
     ]
@@ -195,16 +195,28 @@ def _slice_request_from_pipeline(
             ),
         ) from None
     return SliceRequest(
-        printer_preset=listed_ref(
-            aliases, PresetRef(source=pipeline.printer_preset_source, id=pipeline.printer_preset_id)
-        ),
-        process_preset=listed_ref(
-            aliases, PresetRef(source=pipeline.process_preset_source, id=pipeline.process_preset_id)
-        ),
+        printer_preset=_stored_ref(aliases, pipeline.printer_preset_source, pipeline.printer_preset_id),
+        process_preset=_stored_ref(aliases, pipeline.process_preset_source, pipeline.process_preset_id),
         filament_presets=filament_presets,
         bed_type=bed_type,
         export_3mf=True,
     )
+
+
+def _stored_ref(aliases: dict[str, PresetRef], source: str, preset_id: str) -> PresetRef:
+    """A ref as the pipeline row stores it, pointed at the twin the listing shows."""
+    return listed_ref(aliases, PresetRef.model_validate({"source": source, "id": preset_id}))
+
+
+async def _pipeline_slice_request(
+    db: AsyncSession, pipeline: SlicerPipeline, cloud_user_id: int | None
+) -> SliceRequest:
+    """The run's slice request, with the aliases of the user who resolves its
+    cloud presets (``current_user_id`` on ``slice_and_persist``), not the
+    run's owner: a key without the cloud scope resolves none, so a hidden
+    Standard ref mapped to its cloud twin would be refused (#3386)."""
+    cloud_user = await db.get(User, cloud_user_id) if cloud_user_id is not None else None
+    return _slice_request_from_pipeline(pipeline, await load_stock_aliases(db, cloud_user))
 
 
 def _compute_job_status(
@@ -577,9 +589,7 @@ def _make_orchestration_callable(
             try:
                 # Inside the try: a row with a bed type no slicer knows fails
                 # the run instead of leaving it in "slicing" (#3359).
-                # The owner's listing, the one their Slice dialog shows.
-                owner = await session.get(User, run.created_by) if run.created_by is not None else None
-                slice_request = _slice_request_from_pipeline(pipeline, await load_stock_aliases(session, owner))
+                slice_request = await _pipeline_slice_request(session, pipeline, creator_user_id)
                 slice_response = await slice_and_persist(
                     session,
                     model_bytes=model_bytes,

@@ -341,7 +341,8 @@ class TestCostCalculationScenarios:
             brand="BrandA",
             label_weight=1000,
             core_weight=250,
-            cost_per_kg=20.0,
+            # 20 g of it cost the 0.50 its usage records.
+            cost_per_kg=25.0,
         )
         spool_old = Spool(
             material="ABS",

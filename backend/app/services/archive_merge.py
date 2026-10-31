@@ -112,6 +112,14 @@ async def find_groups(db: AsyncSession, visible: list) -> list[MergeGroup]:
             )
         ).all()
     )
+    member_runs: dict[int, list[PrintLogEntry]] = {}
+    for run in await db.scalars(
+        select(PrintLogEntry)
+        .where(PrintLogEntry.archive_id.in_([a.id for a in members]))
+        .execution_options(**{INCLUDE_OPEN_RUNS: True})
+    ):
+        if run.archive_id is not None:
+            member_runs.setdefault(run.archive_id, []).append(run)
     groups = []
     for group in by_key.values():
         if len(group) < 2:
@@ -119,7 +127,7 @@ async def find_groups(db: AsyncSession, visible: list) -> list[MergeGroup]:
         skipped = None
         if any(a.id in busy for a in group):
             skipped = SKIPPED_BUSY
-        elif await asyncio.to_thread(_conflicting_extras, group):
+        elif await asyncio.to_thread(_conflicting_extras, group) or _videos_conflict(group, member_runs):
             skipped = SKIPPED_CONFLICTING_FILES
         groups.append(
             MergeGroup(
@@ -291,6 +299,18 @@ def _orphan_video(archive: PrintArchive, runs: list[PrintLogEntry]) -> bool:
     return not any(r.timelapse_path is None and not owns_media(r) for r in runs)
 
 
+def _videos_conflict(archives: list[PrintArchive], runs: dict[int, list[PrintLogEntry]]) -> bool:
+    """Whether a video an archive alone holds (``_orphan_video``) is not the
+    group's one video: the archive shows one, so the other would be lost."""
+    orphans = {a.timelapse_path for a in archives if _orphan_video(a, runs.get(a.id, []))}
+    if not orphans:
+        return False
+    videos = {r.timelapse_path for own in runs.values() for r in own if r.timelapse_path} | {
+        a.timelapse_path for a in archives if a.timelapse_path
+    }
+    return len(orphans) > 1 or bool(videos - orphans)
+
+
 def _latest(runs, *, where) -> PrintLogEntry | None:
     """The latest by start of ``runs`` that ``where`` admits."""
     return max(
@@ -424,12 +444,8 @@ async def _merge(
     # hand to one never printed): the archive keeps it only if it is the one
     # video of the group, or it would be lost or hide another.
     orphans = {a.id: a.timelapse_path for a in rows.values() if _orphan_video(a, runs[a.id])}
-    if orphans:
-        videos = {r.timelapse_path for own in runs.values() for r in own if r.timelapse_path} | {
-            a.timelapse_path for a in rows.values() if a.timelapse_path
-        }
-        if len(orphans) > 1 or videos - set(orphans.values()):
-            return SKIPPED_CONFLICTING_FILES, []
+    if _videos_conflict(list(rows.values()), runs):
+        return SKIPPED_CONFLICTING_FILES, []
 
     # Plan, reading only: the files to place in the survivor's folder. The
     # survivor's own files where it lost them, from the first archive that

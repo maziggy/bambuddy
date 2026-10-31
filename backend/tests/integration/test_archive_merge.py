@@ -554,7 +554,7 @@ async def test_a_video_attached_by_hand_beside_another_waits(async_client, db_se
     [group] = (await async_client.get("/api/v1/archives/merge-preview")).json()["groups"]
     response = await async_client.post("/api/v1/archives/merge", json={"survivor_ids": [dupes.x]})
 
-    assert group["skipped"] is None
+    assert group["skipped"] == "conflicting_files"
     assert response.json()["skipped"] == [{"survivor_id": dupes.x, "reason": "conflicting_files"}]
 
 

@@ -105,6 +105,15 @@ describe('ArchivesPage ?highlight=', () => {
     expect(await screen.findByText('Linked archive not visible - try clearing filters')).toBeInTheDocument();
   });
 
+  it('marks the archive a merged one went into (archive redesign P2)', async () => {
+    server.use(http.get('/api/v1/archives/31', () => HttpResponse.json(archive(2, 'Bracket'))));
+    window.history.pushState({}, '', '/archives?highlight=31');
+    render(<ArchivesPage />);
+
+    await waitFor(() => expect(card('Bracket').style.outline).toContain('solid'));
+    expect(screen.queryByText(/not visible - try clearing filters/)).not.toBeInTheDocument();
+  });
+
   it('looks for the archive in a fresh list, not one cached before it existed', async () => {
     beforeTheJobStarted = true;
     window.history.pushState({}, '', '/archives');

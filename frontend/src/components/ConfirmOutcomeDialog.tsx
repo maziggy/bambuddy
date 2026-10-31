@@ -35,10 +35,13 @@ export function ConfirmOutcomeDialog({ archiveId, runId, onClose }: ConfirmOutco
     queryKey: ['archive', archiveId, runId ?? null],
     queryFn: () => api.getArchive(archiveId, runId),
   });
+  // The archive the answer goes to: a link to one merged into another
+  // (archive redesign P2) loads that one, and the merged id writes nothing.
+  const targetId = archive?.id ?? archiveId;
 
   const verdictMutation = useMutation({
     mutationFn: (data: { user_verdict: 'good' | 'reject'; failure_reason?: string }) =>
-      api.updateArchive(archiveId, {
+      api.updateArchive(targetId, {
         ...data,
         user_verdict_source: 'dialog',
         ...(runId != null ? { run_id: runId } : {}),
@@ -46,6 +49,7 @@ export function ConfirmOutcomeDialog({ archiveId, runId, onClose }: ConfirmOutco
     onSuccess: (_updated, variables) => {
       queryClient.invalidateQueries({ queryKey: ['archives'] });
       queryClient.invalidateQueries({ queryKey: ['archive', archiveId] });
+      queryClient.invalidateQueries({ queryKey: ['archive', targetId] });
       showToast(
         variables.user_verdict === 'good'
           ? t('confirmOutcome.savedGood')
@@ -63,7 +67,7 @@ export function ConfirmOutcomeDialog({ archiveId, runId, onClose }: ConfirmOutco
   // The finish photo is prepended to archive.photos at print end (#1397);
   // fall back to the thumbnail when no camera shot exists.
   const photoFilename = archive?.photos?.[0] ?? null;
-  const photoUrl = photoFilename ? api.getArchivePhotoUrl(archiveId, photoFilename) : null;
+  const photoUrl = photoFilename ? api.getArchivePhotoUrl(targetId, photoFilename) : null;
   const alreadyDecided = archive?.user_verdict != null;
   // Why this print already has a verdict — the plate-clear default answers
   // prompts on its own, and without this the answer looks like it appeared

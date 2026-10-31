@@ -101,6 +101,27 @@ describe('ConfirmOutcomeDialog', () => {
     });
   });
 
+  it('answers the archive a merged one went into (archive redesign P2)', async () => {
+    const user = userEvent.setup();
+    let merged: Record<string, unknown> | null = null;
+    server.use(
+      // The merged id's lookup returns the archive it went into.
+      http.get('/api/v1/archives/31', () => HttpResponse.json(baseArchive)),
+      http.patch('/api/v1/archives/31', async ({ request }) => {
+        merged = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(baseArchive);
+      }),
+    );
+    render(<ConfirmOutcomeDialog archiveId={31} onClose={vi.fn()} />);
+
+    await screen.findByText('Bracket');
+    expect(screen.getByAltText('Bracket')).toHaveAttribute('src', expect.stringContaining('/archives/42/photos/'));
+    await user.click(screen.getByText('Good'));
+
+    await waitFor(() => expect(patchPayload).toEqual({ user_verdict: 'good', user_verdict_source: 'dialog' }));
+    expect(merged).toBeNull();
+  });
+
   it('records a reject with an optional reason', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();

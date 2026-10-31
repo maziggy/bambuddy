@@ -17,6 +17,7 @@ import {
   Upload,
   ExternalLink,
   CheckSquare,
+  Combine,
   Square,
   X,
   Globe,
@@ -84,6 +85,7 @@ import { PrintModal } from '../components/PrintModal';
 import { ConfirmOutcomeDialog } from '../components/ConfirmOutcomeDialog';
 import { UploadModal } from '../components/UploadModal';
 import { PurgeArchivesModal } from '../components/PurgeArchivesModal';
+import { MergeDuplicatesModal } from '../components/MergeDuplicatesModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { EditArchiveModal, FAILURE_REASON_KEYS } from '../components/EditArchiveModal';
 import { PrintLogModal } from '../components/PrintLogModal';
@@ -3141,6 +3143,9 @@ export function ArchivesPage() {
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [showTagManagement, setShowTagManagement] = useState(false);
   const [showPurgeModal, setShowPurgeModal] = useState(false);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  // What the merge API asks for: it changes and removes whole archives.
+  const canMergeDuplicates = hasPermission('archives:update_all') && hasPermission('archives:delete_all');
   const [highlightedArchiveId, setHighlightedArchiveId] = useState<number | null>(null);
   // An archive navigated to from elsewhere, and the warning shown when the
   // current filters hide it.
@@ -3242,8 +3247,22 @@ export function ArchivesPage() {
     if (!highlightRequest || !archives || archivesUpdatedAt < highlightRequest.requestedAt) return;
     setHighlightRequest(null);
     if (viewMode === 'log' || viewMode === 'calendar') setViewMode('grid');
-    setPendingNavigation({ archiveId: highlightRequest.archiveId, notVisibleKey: 'archives.linkedArchiveNotVisible' });
-    setHighlightedArchiveId(highlightRequest.archiveId);
+    const highlight = (archiveId: number) => {
+      setPendingNavigation({ archiveId, notVisibleKey: 'archives.linkedArchiveNotVisible' });
+      setHighlightedArchiveId(archiveId);
+    };
+    if (archives.some((a) => a.id === highlightRequest.archiveId)) {
+      highlight(highlightRequest.archiveId);
+      return;
+    }
+    // Not listed: maybe merged into another archive (archive redesign P2),
+    // which the archive's own lookup answers with. Not cancelled when this
+    // effect re-runs: clearing the request above re-runs it.
+    const requested = highlightRequest.archiveId;
+    api
+      .getArchive(requested)
+      .then((found) => highlight(found.id))
+      .catch(() => highlight(requested));
   }, [highlightRequest, archives, archivesUpdatedAt, viewMode]);
 
   const { data: printers } = useQuery({
@@ -3968,6 +3987,16 @@ export function ArchivesPage() {
         </div>
       )}
 
+      {collection === 'duplicates' && canMergeDuplicates && (
+        <div className="mb-6 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-3 flex items-center gap-3">
+          <Combine className="w-5 h-5 text-bambu-green flex-shrink-0" />
+          <div className="flex-1 min-w-0 text-sm text-bambu-gray-light">{t('archiveMerge.duplicatesHint')}</div>
+          <Button variant="secondary" size="sm" onClick={() => setShowMergeModal(true)}>
+            {t('archiveMerge.headerButton')}
+          </Button>
+        </div>
+      )}
+
       {no3MFWarning?.has_fallback && !no3MFWarningDismissed && (
         <div className="mb-6 rounded-lg border border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-4 py-3 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
@@ -4138,6 +4167,16 @@ export function ArchivesPage() {
             <Upload className="w-4 h-4" />
             Upload 3MF
           </Button>
+          {canMergeDuplicates && (
+            <Button
+              variant="secondary"
+              onClick={() => setShowMergeModal(true)}
+              title={t('archiveMerge.headerTooltip')}
+            >
+              <Combine className="w-4 h-4 mr-2" />
+              {t('archiveMerge.headerButton')}
+            </Button>
+          )}
           {hasPermission('archives:purge') && (
             <Button
               variant="secondary"
@@ -4767,6 +4806,9 @@ export function ArchivesPage() {
           initialFiles={uploadFiles}
         />
       )}
+
+      {/* Merge duplicate archives (archive redesign P2) */}
+      {showMergeModal && <MergeDuplicatesModal onClose={() => setShowMergeModal(false)} />}
 
       {/* Archive bulk-purge modal (#1008 follow-up) */}
       {showPurgeModal && (

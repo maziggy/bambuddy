@@ -652,6 +652,53 @@ describe('ArchivesPage', () => {
     });
   });
 
+  // Archive redesign P2: merging changes and removes whole archives, so the
+  // button is there only for those the merge API lets through.
+  describe('merge duplicates button', () => {
+    const signInWith = (permissions: string[]) => {
+      setAuthToken('merge-token', 'session');
+      server.use(
+        http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('/api/v1/auth/me', () => HttpResponse.json({
+          id: 7,
+          username: 'operator',
+          is_active: true,
+          is_admin: false,
+          groups: [],
+          permissions,
+          created_at: '2026-08-18T00:00:00Z',
+        })),
+        http.get('*/api/v1/archives/merge-preview', () => HttpResponse.json({ groups: [] })),
+      );
+    };
+
+    it('opens the merge dialog for a user who may update and delete all archives', async () => {
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      render(<ArchivesPage />);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Merge duplicates' }));
+      expect(await screen.findByText('No duplicates to merge.')).toBeInTheDocument();
+    });
+
+    it('is offered in the Duplicates collection', async () => {
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      render(<ArchivesPage />);
+
+      await screen.findByRole('button', { name: 'Merge duplicates' });
+      expect(screen.queryByText(/can be merged into one, with every print of them/)).toBeNull();
+      fireEvent.change(screen.getByDisplayValue('All Archives'), { target: { value: 'duplicates' } });
+      expect(await screen.findByText(/can be merged into one, with every print of them/)).toBeInTheDocument();
+    });
+
+    it('is not there for a user who may only update all archives', async () => {
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_own']);
+      render(<ArchivesPage />);
+
+      await screen.findByText('Archives');
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Merge duplicates' })).toBeNull());
+    });
+  });
+
   // #1898: the "outcome?" badge on a print still waiting for its verdict opens
   // the dialog. The PATCH behind it checks archives:update against the owner,
   // like the menu item beside it, so for anyone else the badge is a status only.

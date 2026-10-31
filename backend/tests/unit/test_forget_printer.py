@@ -212,6 +212,32 @@ async def test_forget_printer_clears_the_services():
     assert not [key for key in printer_file_cache._entries if key[0] == GONE]
 
 
+async def test_forget_printer_cancels_octoeverywhere_detection(monkeypatch):
+    from backend.app.services.octoeverywhere_detection import OctoEverywhereDetectionService, _PrintState
+
+    detector = OctoEverywhereDetectionService()
+    detector._states = {GONE: _PrintState(), KEPT: _PrintState()}
+    detector._settings = {"enabled_printers": {GONE, KEPT}}
+    gone_check, kept_check = _sleeper(), _sleeper()
+    detector._checks = {GONE: gone_check, KEPT: kept_check}
+    monkeypatch.setattr(main, "octoeverywhere_detection_service", detector)
+    try:
+        await main.forget_printer(GONE)
+        await asyncio.sleep(0)
+
+        assert GONE not in detector._states
+        assert GONE not in detector._checks
+        assert gone_check.cancelled()
+        assert KEPT in detector._states
+        assert detector._checks[KEPT] is kept_check
+        assert not kept_check.done()
+        assert detector._settings is None
+    finally:
+        gone_check.cancel()
+        kept_check.cancel()
+        await asyncio.gather(gone_check, kept_check, return_exceptions=True)
+
+
 async def test_the_plate_references_of_a_printer_go(tmp_path, monkeypatch):
     from backend.app.services import plate_detection
 

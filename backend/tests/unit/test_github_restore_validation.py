@@ -8,6 +8,7 @@ unknown) is not restored, and neither is a user's email code sign-in flag.
 import pytest
 from sqlalchemy import select
 
+from backend.app.api.routes.settings import _build_settings_response
 from backend.app.models.settings import Settings
 from backend.app.schemas.github_backup import RestoreCategory
 from backend.app.services.github_restore import _ADDRESS_KEYS, SETTINGS_PATH, GitHubRestoreService, _CategoryTally
@@ -85,6 +86,30 @@ async def test_a_value_the_editor_accepts_is_restored(db_session, key, value):
     assert written == {key}
     assert _note(tally, "settingsInvalidSkipped") is None
     assert _note(tally, "settingsUnknownSkipped") is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("interval", ["5", "20", "30"])
+async def test_octoeverywhere_interval_restores_from_backup_text(db_session, interval):
+    key = "octoeverywhere_poll_interval"
+    tally, written, stored = await _restore(db_session, {key: interval}, local={key: "10"})
+
+    assert stored[key] == interval
+    assert written == {key}
+    assert _note(tally, "settingsInvalidSkipped") is None
+    response = await _build_settings_response(db_session)
+    assert response.octoeverywhere_poll_interval == int(interval)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("interval", ["4", "31", "5.5", "invalid"])
+async def test_invalid_octoeverywhere_interval_is_not_restored(db_session, interval):
+    key = "octoeverywhere_poll_interval"
+    tally, written, stored = await _restore(db_session, {key: interval}, local={key: "20"})
+
+    assert stored[key] == "20"
+    assert written == set()
+    assert _note(tally, "settingsInvalidSkipped") is not None
 
 
 @pytest.mark.asyncio

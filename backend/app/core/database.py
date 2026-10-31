@@ -5704,6 +5704,10 @@ async def _run_migrations(conn):
     # alone (a {password} in it renders as nothing).
     await _migrate_welcome_template_without_password(conn)
 
+    # Migration: use the same AI detection template for either provider (#3236).
+    # Seeding only inserts missing templates; preserve any customized wording.
+    await _migrate_ai_failure_detection_template(conn)
+
     # Migration: supplier master list + spool assignments (#2988).
     # create_all() covers fresh installs; this covers upgrades.
     await _migrate_create_supplier_tables(conn)
@@ -7003,6 +7007,23 @@ async def _migrate_welcome_template_without_password(conn) -> None:
     await conn.execute(
         text("UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"),
         {"new": new, "et": "user_created", "old": old},
+    )
+
+
+async def _migrate_ai_failure_detection_template(conn) -> None:
+    """Replace the legacy confidence-only AI body while preserving custom text."""
+    from sqlalchemy import text
+
+    from backend.app.models.notification_template import DEFAULT_TEMPLATES
+
+    default = next(t for t in DEFAULT_TEMPLATES if t["event_type"] == "ai_failure_detection")
+    await conn.execute(
+        text("UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"),
+        {
+            "new": default["body_template"],
+            "et": "ai_failure_detection",
+            "old": "{printer}: {task_name}\nConfidence: {confidence}\nAction taken: {action}",
+        },
     )
 
 

@@ -97,7 +97,7 @@ DEFAULT_TEMPLATES = [
         "event_type": "ai_failure_detection",
         "name": "AI Failure Detection",
         "title_template": "Possible Print Failure Detected",
-        "body_template": "{printer}: {task_name}\nConfidence: {confidence}\nAction taken: {action}",
+        "body_template": "{printer}: {task_name}\nProvider: {provider}\nPrint quality: {print_quality}\nConfidence: {confidence}\nAction taken: {action}",
     },
     {
         "event_type": "plate_not_empty",

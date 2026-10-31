@@ -560,3 +560,45 @@ async def test_the_reconcile_reads_the_plate_the_queue_job_printed(test_engine, 
 
     assert end_time.call_args.args[2] == 3
     assert complete.call_args.args[1]["status"] == "completed"
+
+
+async def test_the_completions_media_work_holds_the_archive(test_engine, db_session, queued_print):
+    """The scan, the layer stitch and the finish-photo upgrade find their
+    print by the archive's id: held against a merge (archive redesign P2)."""
+    from backend.app.services import archive_work
+
+    held = []
+    real = archive_work.held_while
+
+    def spy(archive_id, work):
+        held.append((archive_id, work.__name__))
+        return real(archive_id, work)
+
+    from backend.app.core.tasks import spawn_background_task
+
+    # One shared SQLite connection: tasks take turns, but for the notification.
+    turn = asyncio.Lock()
+
+    async def in_turn(coro):
+        async with turn:
+            return await coro
+
+    def spawn(coro, name=None, **kwargs):
+        return spawn_background_task(coro if name == "photo-then-notify" else in_turn(coro), name=name, **kwargs)
+
+    with (
+        patch("backend.app.main.spawn_background_task", side_effect=spawn),
+        patch("backend.app.services.camera.capture_finish_photo", AsyncMock(return_value=None)),
+        patch.object(archive_work, "held_while", side_effect=spy),
+        patch("backend.app.main._scan_for_timelapse_with_retries", AsyncMock()),
+        patch("backend.app.main._capture_finish_photo_from_timelapse", AsyncMock(return_value=(None, True))),
+        patch("backend.app.main._upgrade_finish_photo_from_timelapse", AsyncMock()),
+        patch("backend.app.api.routes.settings.get_setting", AsyncMock(return_value="true")),
+    ):
+        await _complete(test_engine, queued_print["printer"], "completed", extra={"timelapse_was_active": True})
+
+    assert {name for archive_id, name in held if archive_id == queued_print["archive"]} >= {
+        "_background_layer_timelapse"
+    }
+    assert sum(1 for archive_id, _ in held if archive_id == queued_print["archive"]) >= 3
+    assert not archive_work.is_held(queued_print["archive"])

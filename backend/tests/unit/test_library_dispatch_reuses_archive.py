@@ -331,3 +331,87 @@ async def test_while_it_prints_elsewhere_its_plate_and_cost_centre_stay_that_pri
 
     assert item.archive_id == existing
     assert (archive.plate_id, archive.cost_center_id) == (1, 5)
+
+
+@pytest.mark.asyncio
+async def test_not_an_archive_being_merged(case):
+    """A merge is moving it into another archive (archive redesign P2)."""
+    from backend.app.services import archive_work
+
+    existing = await case.archive()
+    with archive_work.merging([existing]):
+        assert await _claim(case, PrintScheduler(), await case.item()) is None
+
+
+@pytest.mark.asyncio
+async def test_the_chosen_archive_is_held_until_the_dispatch_ends(case):
+    from backend.app.services import archive_work
+
+    existing = await case.archive()
+    scheduler = PrintScheduler()
+    item_id = await case.item()
+
+    assert await _claim(case, scheduler, item_id) == existing
+    assert archive_work.is_held(existing)
+    scheduler._release_held_archive(item_id)
+    assert not archive_work.is_held(existing)
+
+
+@pytest.mark.parametrize("fails", [False, True], ids=["sent", "failed"])
+@pytest.mark.asyncio
+async def test_the_dispatch_releases_its_archive_when_it_ends(fails):
+    """Sent or failed, a merge may take the archive again; another dispatch's
+    hold is left alone."""
+    from backend.app.services import archive_work
+
+    scheduler = PrintScheduler()
+
+    async def start_print(db, item):
+        scheduler._hold_archive(597, 298)
+        if fails:
+            raise RuntimeError("upload failed")
+
+    scheduler._hold_archive(600, 300)
+    db = MagicMock()
+    db.get = AsyncMock(return_value=MagicMock(id=597))
+    session = MagicMock()
+    session.__aenter__ = AsyncMock(return_value=db)
+    session.__aexit__ = AsyncMock(return_value=False)
+    with ExitStack() as stack:
+        stack.enter_context(patch("backend.app.services.print_scheduler.async_session", return_value=session))
+        stack.enter_context(patch.object(scheduler, "_claim_for_dispatch", AsyncMock(return_value=True)))
+        stack.enter_context(patch.object(scheduler, "_start_print", side_effect=start_print))
+        stack.enter_context(patch.object(scheduler, "_clear_dispatch_claim", AsyncMock()))
+        if fails:
+            stack.enter_context(pytest.raises(RuntimeError))
+        await scheduler._dispatch_one(597)
+
+    assert (archive_work.is_held(298), archive_work.is_held(300)) == (False, True)
+
+
+@pytest.mark.asyncio
+async def test_a_queued_print_of_a_merged_archive_prints_the_one_it_went_into(case):
+    """Queued while the merge ran (archive redesign P2)."""
+    from backend.app.models.archive_alias import ArchiveAlias
+
+    survivor = await case.archive()
+    merged = await case.archive(deleted_at=datetime(2026, 10, 31), tags="merged")
+    async with case.session_maker() as db:
+        db.add(ArchiveAlias(merged_archive_id=merged, archive_id=survivor))
+        await db.commit()
+
+    item, archive = await _start(case, await case.item(archive_id=merged, library_file_id=None), AsyncMock())
+
+    assert (item.archive_id, archive.id) == (survivor, survivor)
+
+
+def test_the_completions_media_work_holds_the_archive():
+    """Held from the spawn: a merge would move the print's run away."""
+    from backend.app.services import archive_work
+
+    spawned = []
+    with patch.object(main_module, "spawn_background_task", side_effect=lambda coro, **_: spawned.append(coro)):
+        main_module._schedule_timelapse_scan(41, 1, plate_id=None, run_id=7)
+
+    assert archive_work.is_held(41)
+    spawned[0].close()

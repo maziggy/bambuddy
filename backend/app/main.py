@@ -6767,9 +6767,16 @@ def _schedule_timelapse_scan(
     unread = printer_id in _timelapse_baselines_unread
     _timelapse_baselines_unread.discard(printer_id)
     baseline = _timelapse_baselines.pop(printer_id, None)
+    from backend.app.services import archive_work
+
+    # Held while it looks: it finds its print by the archive's id, which a
+    # merge would move away (archive redesign P2).
     spawn_background_task(
-        _scan_for_timelapse_with_retries(
-            archive_id, baseline, plate_id=plate_id, baseline_unread=unread, run_id=run_id
+        archive_work.held_while(
+            archive_id,
+            _scan_for_timelapse_with_retries(
+                archive_id, baseline, plate_id=plate_id, baseline_unread=unread, run_id=run_id
+            ),
         ),
         name=f"scan-timelapse-{archive_id}",
     )
@@ -10178,12 +10185,17 @@ async def _close_out_print(printer_id: int, data: dict):
             # silently drops the other's entry, leaving a JPEG on disk that the
             # gallery never lists.
             if timelapse_still_pending:
+                from backend.app.services import archive_work
+
                 spawn_background_task(
-                    _upgrade_finish_photo_from_timelapse(
+                    archive_work.held_while(
                         archive_id,
-                        archive_dir,
-                        rotation=getattr(printer, "camera_rotation", 0),
-                        run_id=completed_run_id,
+                        _upgrade_finish_photo_from_timelapse(
+                            archive_id,
+                            archive_dir,
+                            rotation=getattr(printer, "camera_rotation", 0),
+                            run_id=completed_run_id,
+                        ),
                     ),
                     name=f"finish-photo-upgrade-{archive_id}",
                 )
@@ -10486,7 +10498,14 @@ async def _close_out_print(printer_id: int, data: dict):
                 except Exception:
                     pass  # Best-effort timelapse session cancellation on error
 
-    spawn_background_task(_background_layer_timelapse(), name="background-layer-timelapse")
+    from backend.app.services import archive_work
+
+    # Held through the stitch, which can take longer than a merge waits after
+    # a print (archive redesign P2).
+    layer_timelapse = _background_layer_timelapse()
+    if archive_id:
+        layer_timelapse = archive_work.held_while(archive_id, layer_timelapse)
+    spawn_background_task(layer_timelapse, name="background-layer-timelapse")
 
     log_timing("All background tasks scheduled")
 

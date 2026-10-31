@@ -1992,8 +1992,12 @@ class ArchiveService:
 
         # For non-MP4 videos (e.g. AVI from P1S), kick off background conversion
         if not filename.lower().endswith(".mp4"):
+            from backend.app.services import archive_work
+
+            # Held from the spawn, not from when the task first runs: a merge
+            # in between would move the video out from under it.
             spawn_background_task(
-                _convert_timelapse_to_mp4(archive_id, timelapse_file),
+                archive_work.held_while(archive_id, _convert_held_timelapse(archive_id, timelapse_file)),
                 name=f"timelapse-convert-{archive_id}",
             )
 
@@ -2039,8 +2043,17 @@ async def _convert_timelapse_to_mp4(archive_id: int, source_path: Path) -> None:
     """Background task: convert non-MP4 timelapse (e.g. AVI from P1S) to MP4.
 
     Runs with low CPU priority (-threads 1, nice) so it doesn't starve
-    other processes on resource-constrained devices like Raspberry Pi.
+    other processes on resource-constrained devices like Raspberry Pi. Holds
+    the archive meanwhile (archive_work): a merge would move the video out
+    from under it.
     """
+    from backend.app.services import archive_work
+
+    await archive_work.held_while(archive_id, _convert_held_timelapse(archive_id, source_path))
+
+
+async def _convert_held_timelapse(archive_id: int, source_path: Path) -> None:
+    """``_convert_timelapse_to_mp4``'s conversion."""
     import asyncio
 
     from backend.app.core.database import async_session

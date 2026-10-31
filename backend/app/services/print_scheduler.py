@@ -1378,6 +1378,10 @@ class PrintScheduler:
         # event-loop thread, so this dict needs no lock.
         # item_id -> (task, printer_id)
         self._inflight: dict[int, tuple[asyncio.Task, int | None]] = {}
+        # The archive each dispatch in flight prints into, held in
+        # services/archive_work so a merge leaves it alone until the dispatch
+        # ends: item_id -> archive_id. Same threading as above.
+        self._held_archives: dict[int, int] = {}
         # Expected prints registered by `_start_print` that have not yet had a
         # print command sent. Populated at registration, dropped once
         # `start_print()` succeeds, and rolled back by `_dispatch_one` on every
@@ -2847,6 +2851,8 @@ class PrintScheduler:
                 # Likewise the print user it set: the printer's next print is
                 # not this item's.
                 self._rollback_unconfirmed_print_user(item_id)
+                # Its archive is no longer held for it (archive_work).
+                self._release_held_archive(item_id)
                 # Mirror the pre-#1625 background-dispatch lifecycle: a
                 # reservation survives only after start_print() accepted the
                 # command. Failure, cancellation, deferral, and exceptions all
@@ -8054,6 +8060,20 @@ class PrintScheduler:
 
         return prev_item.status in ("completed", "cancelled")
 
+    def _hold_archive(self, item_id: int, archive_id: int) -> None:
+        """Hold the archive a dispatch prints into until it ends (archive_work)."""
+        from backend.app.services import archive_work
+
+        self._release_held_archive(item_id)
+        archive_work.hold(archive_id)
+        self._held_archives[item_id] = archive_id
+
+    def _release_held_archive(self, item_id: int) -> None:
+        from backend.app.services import archive_work
+
+        if (archive_id := self._held_archives.pop(item_id, None)) is not None:
+            archive_work.release(archive_id)
+
     @staticmethod
     async def _printing_elsewhere(db: AsyncSession, archive_id: int) -> bool:
         """Whether a print of the archive is running (its run open)."""
@@ -8107,8 +8127,15 @@ class PrintScheduler:
                 .order_by(PrintArchive.id.desc())
             )
         ).all()
+        from backend.app.services import archive_work
+
         for candidate in candidates:
+            # Not one a merge is moving into another archive right now; held
+            # from here, with no await between, until the dispatch ends.
+            if archive_work.is_merging(candidate.id):
+                continue
             if candidate.file_path and (settings.base_dir / candidate.file_path).is_file():
+                self._hold_archive(item.id, candidate.id)
                 return candidate
         return None
 
@@ -8992,6 +9019,15 @@ class PrintScheduler:
             # Print from archive
             result = await db.execute(select(PrintArchive).where(PrintArchive.id == item.archive_id))
             archive = result.scalar_one_or_none()
+            if archive is not None and archive.deleted_at is not None:
+                # Merged into another archive since it was queued (archive
+                # redesign P2): print that one, whose file it now holds.
+                from backend.app.services.archive_merge import resolve_alias
+
+                if (into := await resolve_alias(db, archive.id)) is not None:
+                    archive = await db.get(PrintArchive, into)
+                    if archive is not None:
+                        item.archive_id = archive.id
             if not archive:
                 if not await self._fail_dispatch(db, item, "Archive not found"):
                     return
@@ -9093,6 +9129,7 @@ class PrintScheduler:
                         plate_id=item.plate_id,  # selected plate → Print History (#2603)
                     )
                 if archive:
+                    self._hold_archive(item.id, archive.id)
                     item.archive_id = archive.id
                     if item.confirm_outcome:
                         archive.confirm_requested = True  # ask-for-outcome opt-in (#1898)

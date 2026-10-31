@@ -12,6 +12,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
@@ -700,6 +701,63 @@ async def list_archives(
             )
         )
     return result
+
+
+@router.get("/merge-preview")
+async def preview_archive_merge(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL, Permission.ARCHIVES_DELETE_ALL),
+    printer_scope: PrinterScope = RequestPrinterScope,
+):
+    """The archives that hold the same file, which "Merge duplicates" makes
+    one (archive redesign P2): same file, owner and project. The oldest stays;
+    a group with an archive at work (printing, queued, just printed) is left
+    out for now (``skipped``)."""
+    from backend.app.services.archive_merge import find_groups, merge_scope_clauses
+
+    def brief(archive: PrintArchive, runs: int) -> dict:
+        return {
+            "id": archive.id,
+            "print_name": archive.print_name,
+            "filename": archive.filename,
+            "created_at": archive.created_at,
+            "run_count": runs,
+        }
+
+    groups = await find_groups(db, merge_scope_clauses(printer_scope))
+    return {
+        "groups": [
+            {
+                "survivor": brief(g.survivor, g.run_counts.get(g.survivor.id, 0)),
+                "merged": [brief(a, g.run_counts.get(a.id, 0)) for a in g.merged],
+                "skipped": g.skipped,
+            }
+            for g in groups
+        ]
+    }
+
+
+class ArchiveMergeRequest(BaseModel):
+    # Each group by its oldest archive, the one that stays; its members are
+    # taken as they stand when the merge runs.
+    survivor_ids: list[int] = Field(min_length=1, max_length=500)
+
+
+@router.post("/merge")
+async def merge_archives(
+    body: ArchiveMergeRequest,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL, Permission.ARCHIVES_DELETE_ALL),
+    printer_scope: PrinterScope = RequestPrinterScope,
+):
+    """Merge the duplicate groups of ``survivor_ids`` (see ``/merge-preview``)."""
+    from backend.app.core.websocket import ws_manager
+    from backend.app.services.archive_merge import merge, merge_scope_clauses
+
+    merged, skipped = await merge(db, list(dict.fromkeys(body.survivor_ids)), merge_scope_clauses(printer_scope))
+    for group in merged:
+        await ws_manager.send_archive_updated({"id": group["survivor_id"]})
+    return {"merged": merged, "skipped": skipped}
 
 
 @router.get("/last-per-printer", response_model=list[ArchiveResponse])
@@ -2008,7 +2066,15 @@ async def get_archive(
 
     user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all, printer_scope)
+    found = await service.get_archive(archive_id)
+    if found is None or found.deleted_at is not None:
+        # Merged into another archive (archive redesign P2): that one, as a
+        # link or bookmark to the merged archive meant.
+        from backend.app.services.archive_merge import resolve_alias
+
+        if (into := await resolve_alias(db, archive_id)) is not None:
+            found = await service.get_archive(into)
+    archive = await _ensure_archive_visible(found, user, can_read_all, printer_scope)
     run = await run_of_archive(db, archive.id, run_id) if run_id is not None else None
     if run_id is not None and (run is None or not printer_scope.allows(run.printer_id)):
         raise HTTPException(404, "Run not found")

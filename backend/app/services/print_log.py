@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.print_log import INCLUDE_OPEN_RUNS, RUN_OPEN, PrintLogEntry
@@ -447,7 +447,9 @@ async def open_run(
         # Not the archive's: that is the latest dispatch's, or the id an
         # earlier print of the archive was charged under.
         billing_run_id=(item.billing_run_id if item is not None else None) or str(uuid.uuid4()),
-        cost_center_id=(item.cost_center_id if item is not None else None) or archive.cost_center_id,
+        # The queue item's, none included: the archive's is another print's
+        # when the same file prints on several printers at once.
+        cost_center_id=item.cost_center_id if item is not None else archive.cost_center_id,
         confirm_requested=archive.confirm_requested,
         quantity=archive.quantity,
         # Its own finish photos from here on (``owns_media``).
@@ -625,16 +627,17 @@ def owns_media(run: PrintLogEntry) -> bool:
 
 
 async def superseded(db: AsyncSession, run: PrintLogEntry) -> bool:
-    """Whether a later print of the run's archive has started on its printer,
-    or of its plate: a video landing now is not the run's to take. The one on
-    its printer is that print's own, and a plate keeps one video, the latest
-    print's (a reprint replaces it). Another plate on another printer leaves
-    the run's video to it."""
+    """Whether a later print of the run's archive took over its video: one
+    started on its printer, whose video a video landing now may be, or one of
+    its plate that has its video already: a plate keeps one video, its latest
+    print's (a reprint replaces it, ``drop_earlier_plate_videos``). A later
+    print of the plate still running on another printer leaves the run its
+    video until it has one of its own, which it may never get."""
     if run.archive_id is None or run.started_at is None:
         return False
     same = [PrintLogEntry.printer_id == run.printer_id] if run.printer_id is not None else []
     if run.plate_id is not None:
-        same.append(PrintLogEntry.plate_id == run.plate_id)
+        same.append(and_(PrintLogEntry.plate_id == run.plate_id, PrintLogEntry.timelapse_path.is_not(None)))
     if not same:
         return False
     later = await db.scalar(
@@ -649,6 +652,43 @@ async def superseded(db: AsyncSession, run: PrintLogEntry) -> bool:
         .execution_options(**{INCLUDE_OPEN_RUNS: True})
     )
     return later is not None
+
+
+async def drop_earlier_plate_videos(db: AsyncSession, run: PrintLogEntry) -> list[str]:
+    """Take the videos of the archive's earlier prints of ``run``'s plate off
+    their runs, now that ``run`` has its own: a plate keeps one video, its
+    latest print's. The one the archive shows too, when it is one of them.
+    Returns their paths, for the caller to delete once committed; a path
+    another run (of another plate) still holds is left. Does not commit."""
+    from backend.app.models.archive import PrintArchive
+
+    if run.archive_id is None or run.plate_id is None or run.started_at is None:
+        return []
+    runs = list(
+        await db.scalars(
+            select(PrintLogEntry)
+            .where(PrintLogEntry.archive_id == run.archive_id, PrintLogEntry.timelapse_path.is_not(None))
+            .execution_options(**{INCLUDE_OPEN_RUNS: True})
+        )
+    )
+    earlier = [
+        r
+        for r in runs
+        if r.id != run.id
+        and r.plate_id == run.plate_id
+        and r.started_at is not None
+        and r.started_at < run.started_at
+        and r.timelapse_path != run.timelapse_path
+    ]
+    kept = {r.timelapse_path for r in runs if r not in earlier}
+    paths = {r.timelapse_path for r in earlier} - kept
+    for r in earlier:
+        r.timelapse_path = None
+    archive = await db.get(PrintArchive, run.archive_id)
+    if archive is not None and archive.timelapse_path in paths:
+        archive.timelapse_path = None
+        archive.timelapse_plate_id = None
+    return sorted(p for p in paths if p)
 
 
 def add_run_photo(run: PrintLogEntry | None, filename: str, *, first: bool = False) -> None:

@@ -12,6 +12,7 @@ made here on purpose.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -69,10 +70,8 @@ def _clean():
     from backend.app.services.printer_manager import printer_manager
 
     main_module._print_plate_ids.clear()
-    main_module._archive_runs_finishing.clear()
     yield
     main_module._print_plate_ids.clear()
-    main_module._archive_runs_finishing.clear()
     printer_manager._awaiting_plate_clear.clear()
 
 
@@ -1525,3 +1524,53 @@ async def test_a_restart_keeps_the_first_printers_run_while_another_plate_prints
     [after] = [r for r in await _all_runs(db_session, farm.archive) if r.printer_id == farm.printer]
     assert (after.id, after.started_at, after.billing_run_id) == kept
     assert after.energy_start_kwh == 10.0
+
+
+async def test_a_queued_prints_cost_centre_is_its_queue_items_none_included(db_session, farm):
+    """The same file printing on another printer under a cost centre left it
+    on the archive: a queued print without one is not charged to it."""
+    from backend.app.services.finance_billing import apply_print_charge_for_archive
+
+    archive = await db_session.get(PrintArchive, farm.archive)
+    archive.cost_center_id = farm.center
+    archive.extra_data = {"filament_grams_total": 100.0}
+    item = PrintQueueItem(printer_id=farm.printer, archive_id=farm.archive, status="printing", position=1)
+    db_session.add(item)
+    await db_session.flush()
+    run = PrintLogEntry(
+        archive_id=farm.archive,
+        printer_id=farm.printer,
+        status="printing",
+        billing_run_id="run-1",
+        queue_item_id=item.id,
+        cost_center_id=None,
+    )
+    db_session.add(run)
+    await db_session.commit()
+
+    assert await apply_print_charge_for_archive(
+        db_session,
+        farm.archive,
+        charged_user_id=farm.user,
+        run_entry_id=run.id,
+        run_status="completed",
+        filament_usage=(10.0, 100.0),
+    )
+    await db_session.commit()
+
+    [charge] = await _charges(db_session)
+    assert charge.cost_center_id is None
+
+
+async def test_a_run_opened_for_a_queue_item_takes_its_cost_centre_none_included(db_session, farm):
+    from backend.app.services.print_log import open_run
+
+    archive = await db_session.get(PrintArchive, farm.archive)
+    archive.cost_center_id = farm.center
+    archive.started_at = datetime(2026, 10, 31, 9)
+    db_session.add(PrintQueueItem(printer_id=farm.printer, archive_id=farm.archive, status="printing", position=1))
+    await db_session.commit()
+
+    run = await open_run(db_session, archive, printer_id=farm.printer)
+
+    assert run is not None and run.cost_center_id is None

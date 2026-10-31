@@ -1916,7 +1916,7 @@ class ArchiveService:
         """
         import asyncio
 
-        from backend.app.services.print_log import is_newest_run, newest_run, run_of
+        from backend.app.services.print_log import drop_earlier_plate_videos, is_newest_run, newest_run, run_of
 
         archive = await self.get_archive(archive_id)
         if not archive:
@@ -1974,10 +1974,20 @@ class ArchiveService:
         relpath = str(timelapse_file.relative_to(settings.base_dir))
         if run is not None:
             run.timelapse_path = relpath
+        # A plate keeps its latest print's video: earlier prints of it that
+        # got theirs meanwhile (printing on other printers at once) lose them.
+        replaced = await drop_earlier_plate_videos(self.db, run) if run_id is not None and run is not None else []
         if run_id is None or (run is not None and await is_newest_run(self.db, run)):
             archive.timelapse_path = relpath
             archive.timelapse_plate_id = plate_id
         await self.db.commit()
+        for old_relpath in replaced:
+            try:
+                old_file = safe_join_under(settings.base_dir, old_relpath, http=False)
+            except PathTraversalError:
+                continue
+            await asyncio.to_thread(old_file.unlink, missing_ok=True)
+            logger.info("Replaced plate %s's earlier timelapse %s on archive %s", plate_id, old_relpath, archive_id)
         await _announce_timelapse(archive_id, attached=True)
 
         # For non-MP4 videos (e.g. AVI from P1S), kick off background conversion

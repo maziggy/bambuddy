@@ -6,10 +6,10 @@ same file, flagged as duplicates of each other. The dispatch now adds its run
 to the archive the file already has: same file, same owner, same project, from
 this library file (or one since deleted).
 
-An archive holds one active run, and uploads run in parallel, so it is only
-taken while idle: not printing, not sent or waiting to start, not queued, not
-claimed by another dispatch still uploading. A print of the file running at
-the same time gets an archive of its own, as before.
+Also while the file prints, is queued or still finishing elsewhere: each
+print of an archive is its own run, with its own start, end, charge, energy,
+outcome, timelapse and photos (archive redesign), as the copies of a batch
+always were.
 """
 
 import hashlib
@@ -41,11 +41,9 @@ HASH = hashlib.sha256(CONTENT).hexdigest()
 def _clean_print_state():
     main_module._active_prints.clear()
     main_module._expected_prints.clear()
-    main_module._archive_runs_finishing.clear()
     yield
     main_module._active_prints.clear()
     main_module._expected_prints.clear()
-    main_module._archive_runs_finishing.clear()
 
 
 @pytest.fixture
@@ -153,7 +151,7 @@ async def test_an_archive_whose_library_file_was_deleted_is_reused(case):
 
 
 @pytest.mark.asyncio
-async def test_the_newest_idle_archive_is_taken(case):
+async def test_the_newest_archive_is_taken(case):
     await case.archive()
     newest = await case.archive(tags="newest")
     assert await _claim(case, PrintScheduler(), await case.item()) == newest
@@ -169,7 +167,6 @@ async def test_the_newest_idle_archive_is_taken(case):
         pytest.param({}, {"project_id": 3}, id="project-print-of-a-loose-archive"),
         pytest.param({"library_file_id": 999}, {}, id="another-library-file"),
         pytest.param({"deleted_at": datetime(2026, 10, 1)}, {}, id="deleted"),
-        pytest.param({"status": "printing"}, {}, id="printing"),
         pytest.param({"on_disk": False}, {}, id="its-copy-is-gone"),
     ],
 )
@@ -180,23 +177,17 @@ async def test_no_archive_that_is_not_this_files_or_not_usable(case, archive_ove
 
 
 @pytest.mark.asyncio
-async def test_not_while_another_queue_item_prints_or_waits_on_it(case):
+async def test_also_while_another_queue_item_prints_or_waits_on_it(case):
     existing = await case.archive()
     await case.item(archive_id=existing, library_file_id=None, status="pending")
-    assert await _claim(case, PrintScheduler(), await case.item()) is None
+    assert await _claim(case, PrintScheduler(), await case.item()) == existing
 
 
 @pytest.mark.asyncio
-async def test_not_while_one_of_its_prints_runs_or_finishes(case):
-    existing = await case.archive()
+async def test_also_while_one_of_its_prints_runs(case):
+    existing = await case.archive(status="printing")
     main_module._active_prints[(case.printer_id, "planter.3mf")] = existing
-    assert await _claim(case, PrintScheduler(), await case.item()) is None
-
-    # Completed, but its timelapse is still being looked for: that scan tells
-    # its run by the archive's start time, which a new run would change.
-    main_module._active_prints.clear()
-    main_module._archive_runs_finishing[existing] = 1
-    assert await _claim(case, PrintScheduler(), await case.item()) is None
+    assert await _claim(case, PrintScheduler(), await case.item()) == existing
 
 
 @pytest.mark.asyncio
@@ -209,16 +200,13 @@ async def test_a_name_left_from_an_earlier_dispatch_does_not_block_it(case):
 
 
 @pytest.mark.asyncio
-async def test_two_dispatches_in_flight_never_share_it(case):
+async def test_two_dispatches_in_flight_share_it(case):
+    """The same file sent to two printers at once: one archive, two runs."""
     existing = await case.archive()
     scheduler = PrintScheduler()
     first, second = await case.item(), await case.item()
 
     assert await _claim(case, scheduler, first) == existing
-    assert await _claim(case, scheduler, second) is None
-
-    # The first dispatch ended: the archive is free for the next print.
-    scheduler._release_archive_claims(first)
     assert await _claim(case, scheduler, second) == existing
 
 
@@ -304,31 +292,42 @@ async def test_a_reprint_of_another_plate_shows_that_plate(case):
     assert archive.plate_id == 3
 
 
-@pytest.mark.parametrize("fails", [False, True], ids=["sent", "failed"])
 @pytest.mark.asyncio
-async def test_the_dispatch_gives_its_claim_back_when_it_ends(fails):
-    """Sent, its print shows as running; failed, the archive is free again.
-    Another dispatch's claim is left alone."""
-    scheduler = PrintScheduler()
+async def test_the_file_sent_to_two_printers_at_once_has_one_archive(case):
+    """The first copy is printing when the second is sent: both are the
+    archive's, each printer's print its own run."""
+    existing = await case.archive()
+    async with case.session_maker() as db:
+        other = Printer(name="P1S", serial_number="SERIAL-2", ip_address="127.0.0.2", access_code="code", model="P1S")
+        db.add(other)
+        await db.commit()
+        other_id = other.id
+    archive_print = AsyncMock()
 
-    async def start_print(db, item):
-        scheduler._archive_claims[298] = 597
-        if fails:
-            raise RuntimeError("upload failed")
+    first, _ = await _start(case, await case.item(), archive_print)
+    async with case.session_maker() as db:
+        (await db.get(PrintArchive, existing)).status = "printing"
+        (await db.get(PrintQueueItem, first.id)).status = "printing"
+        await db.commit()
+    main_module._active_prints[(case.printer_id, "planter.3mf")] = existing
+    second, _ = await _start(case, await case.item(printer_id=other_id), archive_print)
 
-    scheduler._archive_claims[300] = 600
-    db = MagicMock()
-    db.get = AsyncMock(return_value=MagicMock(id=597))
-    session = MagicMock()
-    session.__aenter__ = AsyncMock(return_value=db)
-    session.__aexit__ = AsyncMock(return_value=False)
-    with ExitStack() as stack:
-        stack.enter_context(patch("backend.app.services.print_scheduler.async_session", return_value=session))
-        stack.enter_context(patch.object(scheduler, "_claim_for_dispatch", AsyncMock(return_value=True)))
-        stack.enter_context(patch.object(scheduler, "_start_print", side_effect=start_print))
-        stack.enter_context(patch.object(scheduler, "_clear_dispatch_claim", AsyncMock()))
-        if fails:
-            stack.enter_context(pytest.raises(RuntimeError))
-        await scheduler._dispatch_one(597)
+    archive_print.assert_not_called()
+    assert (first.archive_id, second.archive_id) == (existing, existing)
 
-    assert scheduler._archive_claims == {300: 600}
+
+@pytest.mark.asyncio
+async def test_while_it_prints_elsewhere_its_plate_and_cost_centre_stay_that_prints(case):
+    """A print without a queue item falls back to the archive's plate and cost
+    centre at its end; the new dispatch's run has its own."""
+    from backend.app.models.print_log import RUN_OPEN, PrintLogEntry
+
+    existing = await case.archive(cost_center_id=5, plate_id=1, status="printing")
+    async with case.session_maker() as db:
+        db.add(PrintLogEntry(archive_id=existing, printer_id=case.printer_id, status=RUN_OPEN, plate_id=1))
+        await db.commit()
+
+    item, archive = await _start(case, await case.item(plate_id=2), AsyncMock())
+
+    assert item.archive_id == existing
+    assert (archive.plate_id, archive.cost_center_id) == (1, 5)

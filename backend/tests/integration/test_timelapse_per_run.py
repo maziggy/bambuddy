@@ -162,6 +162,46 @@ class TestAttach:
         first = await _row(db_session, PrintLogEntry, two_plates.first)
         assert first.timelapse_path == f"{ARCHIVE_DIR}/layer_timelapse_2.mp4"
 
+    async def test_a_plates_video_replaces_its_earlier_prints(self, db_session, two_plates):
+        """Plate 1 printed again on B while A's copy ran: once B's video is
+        in, A's goes (a plate keeps its latest print's)."""
+        (two_plates.files / ARCHIVE_DIR / "video_1.mp4").write_bytes(b"one")
+        await _set(db_session, PrintLogEntry, two_plates.first, timelapse_path=f"{ARCHIVE_DIR}/video_1.mp4")
+        later = PrintLogEntry(
+            archive_id=two_plates.archive,
+            printer_id=two_plates.b,
+            plate_id=1,
+            status="completed",
+            started_at=T2 + timedelta(hours=1),
+            photos=[],
+        )
+        db_session.add(later)
+        await db_session.commit()
+        later_id = later.id
+
+        assert await _attach(two_plates.archive, b"again", "video_3.mp4", plate_id=1, run_id=later_id)
+
+        assert (await _row(db_session, PrintLogEntry, two_plates.first)).timelapse_path is None
+        assert not (two_plates.files / ARCHIVE_DIR / "video_1.mp4").exists()
+        assert (await _row(db_session, PrintLogEntry, later_id)).timelapse_path == f"{ARCHIVE_DIR}/video_3.mp4"
+
+    async def test_an_earlier_prints_late_video_leaves_the_later_ones(self, db_session, two_plates):
+        later = PrintLogEntry(
+            archive_id=two_plates.archive,
+            printer_id=two_plates.b,
+            plate_id=1,
+            status="completed",
+            started_at=T2 + timedelta(hours=1),
+            timelapse_path=f"{ARCHIVE_DIR}/video_3.mp4",
+        )
+        (two_plates.files / ARCHIVE_DIR / "video_3.mp4").write_bytes(b"again")
+        db_session.add(later)
+        await db_session.commit()
+
+        assert await _attach(two_plates.archive, b"one", "video_1.mp4", plate_id=1, run_id=two_plates.first)
+
+        assert (two_plates.files / ARCHIVE_DIR / "video_3.mp4").exists()
+
 
 class TestConversion:
     async def _convert(self, archive_id, source):
@@ -297,25 +337,37 @@ class TestScan:
 
         assert (await _row(db_session, PrintLogEntry, two_plates.first)).timelapse_path == f"{ARCHIVE_DIR}/new.mp4"
 
-    async def _later_print(self, db_session, plates, *, printer_id, plate_id):
+    async def _later_print(self, db_session, plates, *, printer_id, plate_id, video=None):
         db_session.add(
             PrintLogEntry(
                 archive_id=plates.archive,
                 printer_id=printer_id,
                 plate_id=plate_id,
-                status=RUN_OPEN,
+                status=RUN_OPEN if video is None else "completed",
                 started_at=T2 + timedelta(hours=1),
+                timelapse_path=video,
             )
         )
         await db_session.commit()
 
-    async def test_a_reprint_of_its_plate_ends_it(self, db_session, two_plates):
+    async def test_a_reprint_of_its_plate_with_its_video_ends_it(self, db_session, two_plates):
         """The reprint's video is the plate's one (it replaces this one)."""
-        await self._later_print(db_session, two_plates, printer_id=two_plates.b, plate_id=1)
+        await self._later_print(
+            db_session, two_plates, printer_id=two_plates.b, plate_id=1, video=f"{ARCHIVE_DIR}/later.mp4"
+        )
 
         await self._scan(two_plates, [[_video("new.mp4")]], baseline=set())
 
         assert (await _row(db_session, PrintLogEntry, two_plates.first)).timelapse_path is None
+
+    async def test_a_reprint_of_its_plate_still_printing_elsewhere_does_not_end_it(self, db_session, two_plates):
+        """The same plate printing on two printers at once: until the later
+        print has a video, which it may never get, this one keeps its own."""
+        await self._later_print(db_session, two_plates, printer_id=two_plates.b, plate_id=1)
+
+        await self._scan(two_plates, [[_video("new.mp4")]], baseline=set())
+
+        assert (await _row(db_session, PrintLogEntry, two_plates.first)).timelapse_path == f"{ARCHIVE_DIR}/new.mp4"
 
     async def test_the_next_print_on_its_printer_ends_it(self, db_session, two_plates):
         """A video landing now can be that print's."""
@@ -406,7 +458,7 @@ class TestLayerTimelapse:
         assert not stitched.exists()
         assert (await _row(db_session, PrintArchive, two_plates.archive)).timelapse_path is None
 
-    async def test_a_reprint_of_its_plate_drops_it(self, db_session, two_plates):
+    async def test_a_reprint_of_its_plate_with_its_video_drops_it(self, db_session, two_plates):
         from backend.app.main import _attach_layer_timelapse
 
         db_session.add(
@@ -414,8 +466,9 @@ class TestLayerTimelapse:
                 archive_id=two_plates.archive,
                 printer_id=two_plates.b,
                 plate_id=1,
-                status=RUN_OPEN,
+                status="completed",
                 started_at=T2 + timedelta(hours=1),
+                timelapse_path=f"{ARCHIVE_DIR}/later.mp4",
             )
         )
         await db_session.commit()

@@ -15,6 +15,10 @@ Six fixed templates:
 - ``avery_5160`` — US Letter sheet, 25.4×66.7 mm × 30 per sheet.
 - ``avery_l7160`` — A4 sheet, 38.1×63.5 mm × 21 per sheet.
 
+Beyond these, a sheet of any grid can be described at run time as a
+``SheetLayout`` (#3296): page size, label size, columns and rows, margins and
+gaps. The built-in sheets are ``SheetLayout`` values too.
+
 The legacy ``ams_30x15`` preset (#809) was incorrect — the original 30×15 mm
 dimension didn't fit any documented variant of model 752566. Replaced by the
 two ``ams_holder_*`` presets above (#1426).
@@ -485,6 +489,82 @@ def _draw_label_roomy(
 
 # ── Template entry points ────────────────────────────────────────────────────
 
+PageSize = Literal["a4", "letter"]
+
+_PAGE_SIZES: dict[str, tuple[float, float]] = {"a4": A4, "letter": letter}
+# The same pages in millimetres, for the fit check. Written out rather than
+# derived from the points above so the dialog (labelSheetLayout.ts) can use the
+# very same numbers: letter[0] / mm is 215.8999…, not 215.9.
+PAGE_SIZES_MM: dict[str, tuple[float, float]] = {"a4": (210.0, 297.0), "letter": (215.9, 279.4)}
+
+# Bounds on a sheet layout (#3296). The minimum label is what the roomy layout
+# can fill: from 20 mm tall a label leaves the tight layout (which drops the QR
+# and most lines), and from 40 mm wide the text column beside the colour swatch
+# and the QR holds a four-digit spool ID at full size, at any height — the same
+# width as the smallest built-in label. The rest stops a typo asking for a
+# 10 000-label page.
+MIN_LABEL_W_MM = 40.0
+MIN_LABEL_H_MM = 20.0
+MAX_LENGTH_MM = 300.0
+MAX_COLS = 20
+MAX_ROWS = 40
+# Rounding slack when checking that the grid fits the page: a sheet measured in
+# inches converts to millimetres with a few hundredths to spare either way.
+_FIT_TOLERANCE_MM = 0.01
+
+
+@dataclass(frozen=True)
+class SheetLayout:
+    """A sheet of identical labels in a grid: the built-in Avery templates and
+    any custom sheet a user describes (#3296). Lengths are in millimetres."""
+
+    page: PageSize
+    label_w_mm: float
+    label_h_mm: float
+    cols: int
+    rows: int
+    top_mm: float
+    left_mm: float
+    col_gap_mm: float = 0.0
+    row_gap_mm: float = 0.0
+
+    @property
+    def capacity(self) -> int:
+        return self.cols * self.rows
+
+    @property
+    def page_size(self) -> tuple[float, float]:
+        """Page size in points, as ReportLab takes it."""
+        return _PAGE_SIZES[self.page]
+
+    def problem(self) -> str | None:
+        """Why this layout can't be printed, or ``None`` when it can."""
+        if self.page not in PAGE_SIZES_MM:
+            return f"Unknown page size: {self.page!r}"
+        if self.label_w_mm < MIN_LABEL_W_MM or self.label_h_mm < MIN_LABEL_H_MM:
+            return f"Labels must be at least {MIN_LABEL_W_MM:g} mm wide and {MIN_LABEL_H_MM:g} mm tall"
+        lengths = (self.label_w_mm, self.label_h_mm, self.top_mm, self.left_mm, self.col_gap_mm, self.row_gap_mm)
+        if max(lengths) > MAX_LENGTH_MM:
+            return f"Sizes, margins and gaps can be at most {MAX_LENGTH_MM:g} mm"
+        if not 1 <= self.cols <= MAX_COLS:
+            return f"Columns must be between 1 and {MAX_COLS}"
+        if not 1 <= self.rows <= MAX_ROWS:
+            return f"Rows must be between 1 and {MAX_ROWS}"
+        if min(self.top_mm, self.left_mm, self.col_gap_mm, self.row_gap_mm) < 0:
+            return "Margins and gaps must not be negative"
+        page_w_mm, page_h_mm = PAGE_SIZES_MM[self.page]
+        grid_w = self.left_mm + self.cols * self.label_w_mm + (self.cols - 1) * self.col_gap_mm
+        grid_h = self.top_mm + self.rows * self.label_h_mm + (self.rows - 1) * self.row_gap_mm
+        if grid_w > page_w_mm + _FIT_TOLERANCE_MM:
+            return f"The labels are {grid_w:.2f} mm wide with the left margin, but the page is {page_w_mm:.1f} mm"
+        if grid_h > page_h_mm + _FIT_TOLERANCE_MM:
+            return f"The labels are {grid_h:.2f} mm tall with the top margin, but the page is {page_h_mm:.1f} mm"
+        return None
+
+
+# A built-in template name, or a sheet layout supplied at run time.
+Template = TemplateName | SheetLayout
+
 # (label_w_mm, label_h_mm) for single-label-per-page templates.
 _SINGLE_LABEL_SIZES_MM: dict[str, tuple[float, float]] = {
     "ams_holder_74x33": (74.0, 33.0),
@@ -493,13 +573,20 @@ _SINGLE_LABEL_SIZES_MM: dict[str, tuple[float, float]] = {
     "box_62x29": (62.0, 29.0),
 }
 
-# Sheet template parameters: (page_size, label_w_mm, label_h_mm,
-#                              cols, rows, top_margin_mm, left_margin_mm,
-#                              col_gap_mm, row_gap_mm)
-_SHEET_TEMPLATES: dict[str, tuple] = {
-    "avery_5160": (letter, 66.675, 25.4, 3, 10, 12.7, 4.76, 3.175, 0.0),
-    "avery_l7160": (A4, 63.5, 38.1, 3, 7, 15.15, 7.0, 2.5, 0.0),
+_SHEET_TEMPLATES: dict[str, SheetLayout] = {
+    "avery_5160": SheetLayout("letter", 66.675, 25.4, 3, 10, top_mm=12.7, left_mm=4.76, col_gap_mm=3.175),
+    "avery_l7160": SheetLayout("a4", 63.5, 38.1, 3, 7, top_mm=15.15, left_mm=7.0, col_gap_mm=2.5),
 }
+
+
+def _sheet_layout(template: Template) -> SheetLayout | None:
+    if isinstance(template, SheetLayout):
+        return template
+    return _SHEET_TEMPLATES.get(template)
+
+
+def _template_title(template: Template) -> str:
+    return "custom sheet" if isinstance(template, SheetLayout) else template
 
 
 def _render_single_label_pdf(
@@ -523,48 +610,62 @@ def _render_single_label_pdf(
     return buf.getvalue()
 
 
-def label_size_mm(template: TemplateName) -> tuple[float, float]:
+def label_size_mm(template: Template) -> tuple[float, float]:
     """(width, height) of one label of ``template`` — a sheet's cell size."""
-    if template in _SINGLE_LABEL_SIZES_MM:
-        return _SINGLE_LABEL_SIZES_MM[template]
+    if isinstance(template, SheetLayout):
+        return template.label_w_mm, template.label_h_mm
     if template in _SHEET_TEMPLATES:
         layout = _SHEET_TEMPLATES[template]
-        return layout[1], layout[2]
+        return layout.label_w_mm, layout.label_h_mm
+    if template in _SINGLE_LABEL_SIZES_MM:
+        return _SINGLE_LABEL_SIZES_MM[template]
     raise ValueError(f"Unknown label template: {template!r}")
 
 
-def get_sheet_capacity(template: TemplateName) -> int | None:
+def get_sheet_capacity(template: Template) -> int | None:
     """Return the number of slots on a sheet template, or ``None`` for roll labels."""
-    layout = _SHEET_TEMPLATES.get(template)
-    if layout is None:
+    layout = _sheet_layout(template)
+    return None if layout is None else layout.capacity
+
+
+def sheet_page_count(template: Template, label_count: int, starting_position: int = 1) -> int | None:
+    """Pages a sheet template prints ``label_count`` labels on, or ``None`` for
+    roll labels (one label-sized page each)."""
+    capacity = get_sheet_capacity(template)
+    if capacity is None:
         return None
-    return layout[3] * layout[4]
+    return -(-(starting_position - 1 + label_count) // capacity)
 
 
 def _render_sheet_pdf(
-    template: TemplateName,
+    layout: SheetLayout,
+    title: str,
     data_list: list[LabelData],
     monochrome: bool,
     starting_position: int,
     fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
 ) -> bytes:
-    page_size, w_mm, h_mm, cols, rows, top_mm, left_mm, col_gap_mm, row_gap_mm = _SHEET_TEMPLATES[template]
+    problem = layout.problem()
+    if problem:
+        raise ValueError(problem)
+    page_size = layout.page_size
     page_w, page_h = page_size
+    cols = layout.cols
 
-    label_w = w_mm * mm
-    label_h = h_mm * mm
-    top_margin = top_mm * mm
-    left_margin = left_mm * mm
-    col_gap = col_gap_mm * mm
-    row_gap = row_gap_mm * mm
+    label_w = layout.label_w_mm * mm
+    label_h = layout.label_h_mm * mm
+    top_margin = layout.top_mm * mm
+    left_margin = layout.left_mm * mm
+    col_gap = layout.col_gap_mm * mm
+    row_gap = layout.row_gap_mm * mm
 
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=page_size)
-    c.setTitle(f"Bambuddy spool labels ({template})")
+    c.setTitle(f"Bambuddy spool labels ({title})")
 
-    per_page = cols * rows
+    per_page = layout.capacity
     if starting_position < 1 or starting_position > per_page:
-        raise ValueError(f"Starting position must be between 1 and {per_page} for {template}")
+        raise ValueError(f"Starting position must be between 1 and {per_page} for {title}")
 
     data_index = 0
     page_number = 0
@@ -588,14 +689,15 @@ def _render_sheet_pdf(
 
 
 def render_labels(
-    template: TemplateName,
+    template: Template,
     data_list: list[LabelData],
     *,
     monochrome: bool = False,
     starting_position: int = 1,
     fields: frozenset[LabelField] = DEFAULT_LABEL_FIELDS,
 ) -> bytes:
-    """Render ``data_list`` to a PDF using the named template. Returns bytes.
+    """Render ``data_list`` to a PDF using ``template``: a built-in template
+    name, or a ``SheetLayout`` for a custom sheet (#3296). Returns bytes.
 
     Empty ``data_list`` still produces a valid (empty) PDF — callers should
     short-circuit beforehand if that's not desired.
@@ -609,17 +711,19 @@ def render_labels(
 
     ``fields`` names the lines to print (#2981); see ``ALL_LABEL_FIELDS``.
     """
+    if isinstance(template, SheetLayout):
+        return _render_sheet_pdf(template, _template_title(template), data_list, monochrome, starting_position, fields)
+    if template in _SHEET_TEMPLATES:
+        return _render_sheet_pdf(_SHEET_TEMPLATES[template], template, data_list, monochrome, starting_position, fields)
     if template in _SINGLE_LABEL_SIZES_MM:
         if starting_position != 1:
             raise ValueError("Starting position is only supported for sheet label templates")
         return _render_single_label_pdf(template, data_list, monochrome, fields)
-    if template in _SHEET_TEMPLATES:
-        return _render_sheet_pdf(template, data_list, monochrome, starting_position, fields)
     raise ValueError(f"Unknown label template: {template!r}")
 
 
 def render_label_preview_pdf(
-    template: TemplateName,
+    template: Template,
     data: LabelData,
     *,
     monochrome: bool = False,
@@ -675,6 +779,10 @@ __all__ = [
     "DEFAULT_LABEL_FIELDS",
     "LabelData",
     "LabelField",
+    "PageSize",
+    "sheet_page_count",
+    "SheetLayout",
+    "Template",
     "TemplateName",
     "get_sheet_capacity",
     "label_size_mm",

@@ -574,3 +574,148 @@ class TestSpoolmanLabelParity:
     async def test_preview_refused_when_spoolman_is_off(self, async_client: AsyncClient):
         resp = await async_client.post("/api/v1/spoolman/labels/preview", json={"spool_id": 7, "template": "box_40x30"})
         assert resp.status_code == 400
+
+
+# ── Custom sheets (#3296) ────────────────────────────────────────────────────
+
+# A 3 × 8 sheet of 70 × 36 mm labels on A4, edge to edge (Avery 3490).
+CUSTOM_LAYOUT = {
+    "page": "a4",
+    "label_w_mm": 70.0,
+    "label_h_mm": 36.0,
+    "cols": 3,
+    "rows": 8,
+    "top_mm": 4.5,
+    "left_mm": 0.0,
+}
+
+
+class TestCustomSheet:
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_layout_reaches_the_renderer(self, async_client: AsyncClient, spool_factory):
+        from backend.app.services.label_renderer import SheetLayout
+
+        spool = await spool_factory()
+        captured: dict = {}
+
+        def _capture(template, data_list, **kwargs):
+            captured["template"] = template
+            captured.update(kwargs)
+            return b"%PDF-1.4\n%%EOF\n"
+
+        with patch("backend.app.api.routes.labels.render_labels", side_effect=_capture):
+            resp = await async_client.post(
+                "/api/v1/inventory/labels",
+                json={"spool_ids": [spool.id], "template": "custom", "layout": CUSTOM_LAYOUT, "starting_position": 24},
+            )
+        assert resp.status_code == 200, resp.text
+        assert captured["template"] == SheetLayout(**CUSTOM_LAYOUT)
+        assert captured["starting_position"] == 24
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_renders_a_pdf_and_page_pngs(self, async_client: AsyncClient, spool_factory):
+        import io
+        import zipfile
+
+        s1 = await spool_factory()
+        s2 = await spool_factory()
+        body = {"spool_ids": [s1.id, s2.id], "template": "custom", "layout": CUSTOM_LAYOUT}
+
+        pdf = await async_client.post("/api/v1/inventory/labels", json=body)
+        assert pdf.status_code == 200, pdf.text
+        assert pdf.content.startswith(b"%PDF")
+        assert "bambuddy-labels-custom.pdf" in pdf.headers["content-disposition"]
+
+        # 24 per page; starting at 24 puts the second label on page two.
+        pngs = await async_client.post(
+            "/api/v1/inventory/labels", json={**body, "format": "png", "starting_position": 24}
+        )
+        assert pngs.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(pngs.content)) as zf:
+            assert zf.namelist() == ["sheet-1.png", "sheet-2.png"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_preview_is_one_cell(self, async_client: AsyncClient, spool_factory):
+        spool = await spool_factory()
+        resp = await async_client.post(
+            "/api/v1/inventory/labels/preview",
+            json={"spool_id": spool.id, "template": "custom", "layout": CUSTOM_LAYOUT},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.content.startswith(b"\x89PNG")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_spoolman_spools_print_on_a_custom_sheet(self, async_client: AsyncClient, db_session: AsyncSession):
+        _spoolman_on(db_session)
+        await db_session.commit()
+        with patch(
+            "backend.app.api.routes.labels.get_spoolman_client",
+            AsyncMock(return_value=_spoolman_client([TestSpoolmanLabelParity.SPOOL])),
+        ):
+            resp = await async_client.post(
+                "/api/v1/spoolman/labels",
+                json={"spool_ids": [7], "template": "custom", "layout": CUSTOM_LAYOUT},
+            )
+        assert resp.status_code == 200, resp.text
+        assert resp.content.startswith(b"%PDF")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"template": "custom"},  # no layout
+            {"template": "avery_l7160", "layout": CUSTOM_LAYOUT},  # layout with a built-in
+            {"template": "custom", "layout": {**CUSTOM_LAYOUT, "left_mm": 1.0}},  # off the page
+            {"template": "custom", "layout": CUSTOM_LAYOUT, "starting_position": 25},  # past 3 × 8
+            {"template": "custom", "layout": {**CUSTOM_LAYOUT, "label_w_mm": 39.0}},  # too small for text
+        ],
+    )
+    async def test_invalid_custom_requests_are_refused(self, async_client: AsyncClient, spool_factory, body):
+        spool = await spool_factory()
+        resp = await async_client.post("/api/v1/inventory/labels", json={"spool_ids": [spool.id], **body})
+        assert resp.status_code == 422, resp.text
+
+
+class TestPngSheetCap:
+    """PNG export of sheets is capped at pages × dpi, so a one-label-per-page
+    custom sheet can't hold the PDFium lock for minutes."""
+
+    ONE_PER_PAGE = {**CUSTOM_LAYOUT, "label_w_mm": 70.0, "label_h_mm": 36.0, "cols": 1, "rows": 1}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_too_many_pages_at_the_resolution_is_refused(self, async_client: AsyncClient):
+        # 26 pages at 600 dpi is over the 25 allowed; no spool is looked up first.
+        resp = await async_client.post(
+            "/api/v1/inventory/labels",
+            json={
+                "spool_ids": list(range(1, 27)),
+                "template": "custom",
+                "layout": self.ONE_PER_PAGE,
+                "format": "png",
+                "dpi": 600,
+            },
+        )
+        assert resp.status_code == 422
+        assert "25 sheet pages at 600 dpi" in resp.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_same_pages_as_pdf_or_at_a_lower_resolution_are_allowed(self, async_client: AsyncClient):
+        from backend.app.api.routes.labels import LabelRequest
+
+        ids = list(range(1, 27))
+        LabelRequest(spool_ids=ids, template="custom", layout=self.ONE_PER_PAGE, format="pdf")
+        LabelRequest(spool_ids=ids, template="custom", layout=self.ONE_PER_PAGE, format="png", dpi=300)
+
+    def test_the_built_in_sheets_always_fit(self):
+        from backend.app.api.routes.labels import MAX_LABELS_PER_REQUEST, LabelRequest
+
+        ids = list(range(1, MAX_LABELS_PER_REQUEST + 1))
+        for template in ("avery_5160", "avery_l7160"):
+            LabelRequest(spool_ids=ids, template=template, format="png", dpi=600)

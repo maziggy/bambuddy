@@ -6,7 +6,8 @@ Two endpoints, one per inventory backend:
 - ``POST /spoolman/labels``   — Spoolman-backed spools
 
 Both accept ``{spool_ids: [int], template: str, starting_position: int}`` plus
-the lines to print (``fields``) and the output ``format``: a PDF, or PNGs for
+the lines to print (``fields``) and the output ``format``. ``template`` is a
+built-in name, or ``"custom"`` with the sheet itself in ``layout`` (#3296): a PDF, or PNGs for
 label-printer software that takes images — one PNG as is, several in a ZIP.
 Each has a ``/preview`` sibling that renders one label as a PNG for the
 picker (#2981).
@@ -37,16 +38,19 @@ from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.spool import Spool
 from backend.app.models.user import User
+from backend.app.schemas.label_template import SheetLayoutSpec
 from backend.app.services.label_renderer import (
     ALL_LABEL_FIELDS,
     DEFAULT_LABEL_FIELDS,
     LabelData,
     LabelField,
+    Template,
     TemplateName,
     get_sheet_capacity,
     pdf_to_pngs,
     render_label_preview_pdf,
     render_labels,
+    sheet_page_count,
 )
 from backend.app.services.spoolman import get_spoolman_client
 from backend.app.utils.http import build_content_disposition
@@ -59,6 +63,14 @@ router = APIRouter(tags=["labels"])
 # largest realistic batch (an Avery sheet at 30/page × ~10 pages).
 MAX_LABELS_PER_REQUEST = 500
 
+# PNG export of sheets: pages × dpi. A sheet page is a whole A4 or Letter
+# page, rasterised under the process-wide PDFium lock that PDF thumbnails also
+# wait on, so a custom one-label-per-page sheet of 500 spools at 600 dpi would
+# hold it for minutes. 15 000 is 25 pages at 600 dpi, 50 at 300 and 73 at 203;
+# the built-in sheets need at most 24 pages (500 spools on an L7160), so they
+# always fit. Mirrored in the dialog (labelSheetLayout.ts).
+MAX_PNG_SHEET_PAGES_X_DPI = 15_000
+
 # Preview resolution. High enough that the browser's downscale stays sharp on
 # a HiDPI screen; a label is a few centimetres, so the PNG stays small.
 PREVIEW_DPI = 300
@@ -69,15 +81,33 @@ SpoolId = Annotated[int, Field(gt=0)]
 
 
 class LabelOptions(BaseModel):
-    template: TemplateName
+    template: TemplateName | Literal["custom"]
+    # The sheet, when ``template`` is "custom" (#3296). A saved template is
+    # sent this way too: the dialog holds its layout, so printing never reads
+    # the saved-template table.
+    layout: SheetLayoutSpec | None = None
     # Black-and-white thermal printers: drop the colour swatch (prints as a
     # muddy grey block) and widen the text column instead (#1870).
     monochrome: bool = False
     # The lines to print (#2981). Omitted: what labels always carried.
     fields: list[LabelField] | None = Field(default=None, max_length=len(ALL_LABEL_FIELDS))
 
+    @model_validator(mode="after")
+    def layout_only_for_custom(self) -> LabelOptions:
+        if (self.template == "custom") != (self.layout is not None):
+            raise ValueError('layout is required for template "custom" and not allowed otherwise')
+        return self
+
     def field_set(self) -> frozenset[LabelField]:
         return DEFAULT_LABEL_FIELDS if self.fields is None else frozenset(self.fields)
+
+    def resolved_template(self) -> Template:
+        if self.layout is not None:
+            return self.layout.to_layout()
+        if self.template == "custom":
+            # layout_only_for_custom refuses this, so a validated request never gets here.
+            raise ValueError('layout is required for template "custom"')
+        return self.template
 
 
 class LabelRequest(LabelOptions):
@@ -90,13 +120,23 @@ class LabelRequest(LabelOptions):
 
     @model_validator(mode="after")
     def validate_starting_position(self) -> LabelRequest:
-        capacity = get_sheet_capacity(self.template)
+        if (self.template == "custom") != (self.layout is not None):
+            return self  # layout_only_for_custom reports this one
+        capacity = get_sheet_capacity(self.resolved_template())
         if capacity is None:
             if self.starting_position != 1:
                 raise ValueError("starting_position is only supported for sheet label templates")
             return self
         if self.starting_position > capacity:
             raise ValueError(f"starting_position must be between 1 and {capacity} for template {self.template}")
+        if self.format == "png":
+            pages = sheet_page_count(self.resolved_template(), len(self.spool_ids), self.starting_position) or 0
+            if pages * self.dpi > MAX_PNG_SHEET_PAGES_X_DPI:
+                max_pages = MAX_PNG_SHEET_PAGES_X_DPI // self.dpi
+                raise ValueError(
+                    f"PNG export is limited to {max_pages} sheet pages at {self.dpi} dpi, and this is {pages}. "
+                    "Use PDF, a lower resolution or fewer spools."
+                )
         return self
 
 
@@ -202,8 +242,9 @@ def _stream_pdf(pdf: bytes, filename: str) -> StreamingResponse:
 
 
 async def _render_response(body: LabelRequest, data_list: list[LabelData], filename_stem: str) -> Response:
+    template = body.resolved_template()
     pdf = render_labels(
-        body.template,
+        template,
         data_list,
         monochrome=body.monochrome,
         starting_position=body.starting_position,
@@ -226,7 +267,7 @@ async def _render_response(body: LabelRequest, data_list: list[LabelData], filen
 
     # A roll template has one page per spool, so its files are named after
     # the spool; a sheet's pages are numbered.
-    if get_sheet_capacity(body.template) is None:
+    if get_sheet_capacity(template) is None:
         names = [f"label-{d.spool_id}.png" for d in data_list]
     else:
         names = [f"sheet-{n}.png" for n in range(1, len(pngs) + 1)]
@@ -246,7 +287,7 @@ async def _render_response(body: LabelRequest, data_list: list[LabelData], filen
 
 
 async def _render_preview(body: LabelPreviewRequest, data: LabelData) -> Response:
-    pdf = render_label_preview_pdf(body.template, data, monochrome=body.monochrome, fields=body.field_set())
+    pdf = render_label_preview_pdf(body.resolved_template(), data, monochrome=body.monochrome, fields=body.field_set())
     pngs = await asyncio.to_thread(pdf_to_pngs, pdf, PREVIEW_DPI)
     return Response(content=pngs[0], media_type="image/png", headers={"Cache-Control": "no-store"})
 

@@ -15,6 +15,7 @@ from backend.app.models.filament_profile_default import (
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
 from backend.app.models.group import Group, group_locations, group_printers, user_groups
 from backend.app.models.kprofile_note import KProfileNote
+from backend.app.models.label_template import LabelTemplate
 from backend.app.models.library import FileVariantGroup, LibraryFile, LibraryFolder
 from backend.app.models.local_preset import LocalPreset
 from backend.app.models.location import Location
@@ -83,6 +84,7 @@ __all__ = [
     "LibraryFolder",
     "LibraryFile",
     "FileVariantGroup",
+    "LabelTemplate",
     "Location",
     "User",
     "Group",

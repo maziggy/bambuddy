@@ -43,7 +43,7 @@ from backend.app.models.user import User
 from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate
 from backend.app.schemas.print_log import PrintLogResponse
 from backend.app.schemas.slicer import SliceRequest
-from backend.app.services.archive import ArchiveService
+from backend.app.services.archive import ArchiveService, printed_on_clause
 from backend.app.services.archive_scope import (
     ScopedView,
     ensure_whole_archive_in_scope,
@@ -366,7 +366,7 @@ def compute_time_accuracy(archive: PrintArchive, run_aggregate: dict | None = No
 
 
 async def _load_run_aggregates(
-    db: AsyncSession, archive_ids: list[int], printer_scope: PrinterScope | None = None
+    db: AsyncSession, archive_ids: list[int], printer_scope: PrinterScope | None = None, printer_id: int | None = None
 ) -> dict[int, dict]:
     """Batch-load per-archive run aggregates from PrintLogEntry.
 
@@ -375,7 +375,9 @@ async def _load_run_aggregates(
     absent from the map; callers should treat that as zero/none.
 
     With ``printer_scope``, only the runs on its printers count: a caller
-    limited to some printers sees only their prints (archive redesign).
+    limited to some printers sees only their prints (archive redesign). With
+    ``printer_id`` (the list's printer filter) the counts are of the prints
+    on that printer; ``latest_run_id`` stays the archive's latest.
     """
     from backend.app.models.print_log import PrintLogEntry
 
@@ -388,7 +390,7 @@ async def _load_run_aggregates(
             func.max(PrintLogEntry.started_at).label("last_run_at"),
             func.coalesce(func.sum(PrintLogEntry.filament_used_grams), 0).label("total_filament"),
             func.sum(case((PrintLogEntry.status == "completed", 1), else_=0)).label("successful"),
-            func.sum(case((PrintLogEntry.status == "failed", 1), else_=0)).label("failed"),
+            func.sum(case((PrintLogEntry.status.in_(("failed", "aborted")), 1), else_=0)).label("failed"),
             func.sum(case((PrintLogEntry.duration_unmeasured.is_(True), 1), else_=0)).label("estimated"),
         )
         .where(
@@ -398,6 +400,7 @@ async def _load_run_aggregates(
                 if printer_scope is not None and (clause := printer_scope.where(PrintLogEntry.printer_id)) is not None
                 else []
             ),
+            *([PrintLogEntry.printer_id == printer_id] if printer_id is not None else []),
         )
         .group_by(PrintLogEntry.archive_id)
     )
@@ -690,7 +693,7 @@ async def list_archives(
             for sequence, (archive_id, _) in enumerate(group):
                 duplicate_meta_by_archive_id.setdefault(archive_id, (sequence, original_id, duplicate_count))
 
-    run_aggregates = await _load_run_aggregates(db, [a.id for a in archives], printer_scope)
+    run_aggregates = await _load_run_aggregates(db, [a.id for a in archives], printer_scope, printer_id)
     views = await scoped_views(db, archives, printer_scope)
 
     # Build response with duplicate sequence and original archive ID pre-computed
@@ -1129,6 +1132,57 @@ async def list_archives_slim(
     ]
 
 
+@router.get("/prints", response_model=PrintLogResponse)
+async def list_archive_prints(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    tz: str | None = Query(
+        None, max_length=64, description="IANA zone the dates are calendar days in; the server's when omitted"
+    ),
+    printer_id: int | None = None,
+    limit: int = Query(default=500, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+):
+    """The prints of the archives the caller sees that ended in a date range
+    (archive redesign P4): the archives calendar. Visibility as the archive
+    list: archives they own (or all, with read-all), and of those only the
+    prints on their printers. Ordered by id, so a print logged while the
+    pages are read lands on the last one instead of shifting the others.
+    """
+    user, can_read_all = auth_result
+    if printer_id is not None and not printer_scope.allows(printer_id):
+        return PrintLogResponse(items=[], total=0)
+    zone = day_zone(tz)
+    ended = func.coalesce(PrintLogEntry.completed_at, PrintLogEntry.created_at)
+    visible = select(PrintArchive.id).where(
+        PrintArchive.deleted_at.is_(None), *_visible_archive_clauses(user, can_read_all, printer_scope)
+    )
+    conditions = [
+        PrintLogEntry.archive_id.in_(visible),
+        ended >= local_date_start(date_from, zone),
+        ended <= local_date_end(date_to, zone),
+    ]
+    if (clause := printer_scope.where(PrintLogEntry.printer_id)) is not None:
+        conditions.append(clause)
+    if printer_id is not None:
+        conditions.append(PrintLogEntry.printer_id == printer_id)
+    total = await db.scalar(select(func.count(PrintLogEntry.id)).where(*conditions)) or 0
+    rows = await db.scalars(
+        select(PrintLogEntry).where(*conditions).order_by(PrintLogEntry.id).offset(offset).limit(limit)
+    )
+    from backend.app.schemas.print_log import PrintLogEntrySchema
+
+    return PrintLogResponse(items=[PrintLogEntrySchema.model_validate(r) for r in rows.all()], total=total)
+
+
 @router.get("/search", response_model=list[ArchiveResponse])
 async def search_archives(
     q: str = Query(..., min_length=2, description="Search query"),
@@ -1159,6 +1213,9 @@ async def search_archives(
     user, can_read_all = auth_result
     own_only = user is not None and not can_read_all
     search_term = q.strip()
+    # A printer outside the caller's scope finds nothing, as in the list.
+    if printer_id is not None and not printer_scope.allows(printer_id):
+        return []
 
     # Build dialect-specific full-text search query
     if is_sqlite():
@@ -1213,7 +1270,7 @@ async def search_archives(
         )
 
         if printer_id:
-            query = query.where(PrintArchive.printer_id == printer_id)
+            query = query.where(printed_on_clause(printer_id))
         if project_id:
             query = query.where(PrintArchive.project_id == project_id)
         if status:
@@ -1228,7 +1285,7 @@ async def search_archives(
         archives = result.scalars().all()
         # Load run aggregates so multi-run archives' time/accuracy badge is
         # suppressed consistently with the main list endpoint (#1608).
-        run_aggregates = await _load_run_aggregates(db, [a.id for a in archives], printer_scope)
+        run_aggregates = await _load_run_aggregates(db, [a.id for a in archives], printer_scope, printer_id)
         views = await scoped_views(db, archives, printer_scope)
         return [
             _scoped(archive_to_response(a, run_aggregate=run_aggregates.get(a.id)), views.get(a.id)) for a in archives
@@ -1250,7 +1307,7 @@ async def search_archives(
 
     # Apply additional filters
     if printer_id:
-        query = query.where(PrintArchive.printer_id == printer_id)
+        query = query.where(printed_on_clause(printer_id))
     if project_id:
         query = query.where(PrintArchive.project_id == project_id)
     if status:
@@ -1265,7 +1322,7 @@ async def search_archives(
 
     # Load run aggregates so multi-run archives' time/accuracy badge is
     # suppressed consistently with the main list endpoint (#1608).
-    run_aggregates = await _load_run_aggregates(db, [a.id for a in paginated], printer_scope)
+    run_aggregates = await _load_run_aggregates(db, [a.id for a in paginated], printer_scope, printer_id)
     views = await scoped_views(db, paginated, printer_scope)
     return [_scoped(archive_to_response(a, run_aggregate=run_aggregates.get(a.id)), views.get(a.id)) for a in paginated]
 
@@ -2188,7 +2245,7 @@ async def list_archive_runs(
     from backend.app.schemas.print_log import PrintLogEntrySchema
 
     user, can_read_all = auth_result
-    await _ensure_archive_visible(await db.get(PrintArchive, archive_id), user, can_read_all, printer_scope)
+    archive = await _ensure_archive_visible(await db.get(PrintArchive, archive_id), user, can_read_all, printer_scope)
 
     # Only the prints on the caller's printers (#1727), as the print log.
     scope_clause = printer_scope.where(PrintLogEntry.printer_id)
@@ -2199,7 +2256,57 @@ async def list_archive_runs(
     )
     entries = list(rows.scalars().all())
     items = [PrintLogEntrySchema.model_validate(e, from_attributes=True) for e in entries]
+    # A print's photos as the archive's photo route serves them: one removed
+    # from the archive is gone, whatever a run still lists.
+    archive_photos = set(archive.photos or [])
+    for item in items:
+        if item.photos is not None:
+            item.photos = [p for p in item.photos if p in archive_photos] or None
     return PrintLogResponse(items=items, total=len(items))
+
+
+@router.get("/{archive_id}/runs/{run_id}/timelapse")
+async def get_run_timelapse(
+    archive_id: int,
+    run_id: int,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
+        require_media_token_ownership(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
+    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
+):
+    """One print's timelapse video (archive redesign): plates of one archive
+    each keep their own, while the archive's timelapse route serves only the
+    latest print's. 404 for a print on a printer outside the caller's scope.
+    """
+    from backend.app.models.print_log import PrintLogEntry
+
+    user, can_read_all = auth_result
+    archive = await _ensure_archive_visible(await db.get(PrintArchive, archive_id), user, can_read_all, printer_scope)
+    run = await db.get(PrintLogEntry, run_id)
+    if run is None or run.archive_id != archive.id or not printer_scope.allows(run.printer_id):
+        raise HTTPException(404, "Run not found")
+    if not run.timelapse_path:
+        raise HTTPException(404, "Timelapse not found")
+
+    base = settings.base_dir.resolve()
+    timelapse_path = (settings.base_dir / run.timelapse_path).resolve()
+    if not timelapse_path.is_relative_to(base) or not timelapse_path.is_file():
+        raise HTTPException(404, "Timelapse file not found")
+
+    mtime = int(timelapse_path.stat().st_mtime)
+    suffix = timelapse_path.suffix.lower()
+    media_type = {".mp4": "video/mp4", ".avi": "video/x-msvideo", ".mkv": "video/x-matroska"}.get(suffix, "video/mp4")
+    ext = suffix if suffix in (".mp4", ".avi", ".mkv") else ".mp4"
+    return FileResponse(
+        path=timelapse_path,
+        media_type=media_type,
+        filename=f"{archive.print_name or 'timelapse'}{ext}",
+        headers={"Cache-Control": "no-cache, must-revalidate", "ETag": f'"{mtime}"'},
+    )
 
 
 @router.get("/{archive_id}/similar")

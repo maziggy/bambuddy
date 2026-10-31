@@ -19,6 +19,7 @@ import { lazyPage } from './utils/lazyPage';
 // Every page loads as its own file when first opened (#3175).
 const PrintersPage = lazyPage(() => import('./pages/PrintersPage'), 'PrintersPage');
 const ArchivesPage = lazyPage(() => import('./pages/ArchivesPage'), 'ArchivesPage');
+const ArchiveDetailPage = lazyPage(() => import('./pages/ArchiveDetailPage'), 'ArchiveDetailPage');
 const QueuePage = lazyPage(() => import('./pages/QueuePage'), 'QueuePage');
 const StatsPage = lazyPage(() => import('./pages/StatsPage'), 'StatsPage');
 const SettingsPage = lazyPage(() => import('./pages/SettingsPage'), 'SettingsPage');
@@ -233,6 +234,7 @@ function App() {
                 <Route element={<ProtectedRoute><WebSocketProvider><EmbeddedCameraProvider><Layout /></EmbeddedCameraProvider></WebSocketProvider></ProtectedRoute>}>
                   <Route index element={<PrintersPage />} />
                   <Route path="archives" element={<ArchivesPage />} />
+                  <Route path="archives/:id" element={<ArchiveDetailPage />} />
                   <Route path="queue" element={<QueuePage />} />
                   {/* Slicer Pipelines (#1425) — Pipelines tab lives on the
                       Print Queue page (Queue + History + Timeline +

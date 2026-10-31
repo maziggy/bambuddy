@@ -1271,6 +1271,16 @@ export default {
         skipped: '건너뜀'
       }
     },
+    calendar: {
+      today: '오늘',
+      previousMonth: '이전 달',
+      nextMonth: '다음 달',
+      printsThisMonth: '이번 달 인쇄',
+      successful: '성공',
+      failed: '실패',
+      noPrints: '이 날에는 인쇄가 없습니다',
+      selectDay: '날짜를 선택하면 인쇄가 표시됩니다',
+    },
     runLog: {
       title: '인쇄 기록',
       modalTitle: '인쇄 기록 — {{name}}',
@@ -1290,7 +1300,8 @@ export default {
         cancelled: '취소됨',
         stopped: '중지됨',
         skipped: '건너뜀',
-        printing: '인쇄 중'
+        printing: '인쇄 중',
+        aborted: '중단됨',
       }
     }
   },
@@ -5723,6 +5734,43 @@ export default {
     upload: '업로드',
     uploadFailed: '업로드 실패'
   },
+  archivePage: {
+    loadFailed: '아카이브를 불러올 수 없습니다.',
+    retry: '다시 시도',
+    printedBeforeLog: 'Bambuddy가 인쇄별로 기록하기 전에 인쇄됨: {{status}}.',
+    notFound: '이 아카이브가 없거나 볼 수 있는 권한이 없습니다.',
+    back: '아카이브로 돌아가기',
+    estimatedTime: '예상 시간',
+    estimatedFilament: '예상 필라멘트',
+    layers: '레이어',
+    prints: '인쇄',
+    printsValue: '{{count}} (양호 {{successful}}, 실패 {{failed}})',
+    archivedAt: '보관됨 {{date}}',
+    reprint: '다시 인쇄',
+    edit: '편집',
+    preview: '3D 미리보기',
+    download: '다운로드',
+    downloadFailed: '다운로드 실패',
+    video: '동영상',
+    allPhotos: '모든 사진 ({{count}})',
+    photos: '사진 ({{count}})',
+    delete: '삭제',
+    plates: '플레이트',
+    platePrinted: '인쇄 횟수: {{count}}',
+    printsTitle: '인쇄',
+    noPrints: '이 파일은 아직 인쇄되지 않았습니다.',
+    changeOutcome: '결과 변경',
+    setOutcome: '결과 설정',
+    noPrinter: '프린터 삭제됨',
+    startedBy: '{{name}} 님',
+    printNote: '이 인쇄에 대한 메모',
+    notePlaceholder: '이 인쇄에서 특별했던 점은?',
+    noteSaved: '메모를 저장했습니다',
+    noteFailed: '메모를 저장할 수 없습니다',
+    editNote: '메모 편집',
+    addNote: '메모 추가',
+  },
+
   confirmOutcome: {
     title: '인쇄 결과가 어땠나요?',
     good: '양품',

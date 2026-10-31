@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { render } from '../utils';
 import { ArchivesPage } from '../../pages/ArchivesPage';
 import { http, HttpResponse } from 'msw';
@@ -600,12 +600,49 @@ describe('ArchivesPage', () => {
     });
   });
 
+  // Archive redesign P4: a card opens its archive's page; the controls on it
+  // do what they say and leave the page where it is.
+  describe('opening an archive', () => {
+    beforeEach(() => {
+      window.localStorage.removeItem('archiveCollection');
+      window.history.pushState({}, '', '/archives');
+      server.use(http.get('/api/v1/archives/', () => HttpResponse.json(mockArchives)));
+    });
+
+    it('opens the archive page from a click on its card', async () => {
+      render(<ArchivesPage />);
+      fireEvent.click(await screen.findByText('#2'));
+
+      await waitFor(() => expect(window.location.pathname).toBe('/archives/2'));
+    });
+
+    it('leaves the page alone for a click on a control in the card', async () => {
+      render(<ArchivesPage />);
+      await screen.findByText('#2');
+      fireEvent.click(screen.getAllByTitle(/favorites/i)[0]);
+
+      expect(window.location.pathname).toBe('/archives');
+    });
+
+    it('leaves the page alone for a click in a dialog the card opened', async () => {
+      render(<ArchivesPage />);
+      await screen.findByText('#2');
+      // The card's own Edit button; its dialog renders inside the card.
+      const card = screen.getByText('#2').closest('[data-archive-id]') as HTMLElement;
+      fireEvent.click(within(card).getByTitle('Edit'));
+      fireEvent.click(await screen.findByText('Edit Archive'));
+
+      expect(window.location.pathname).toBe('/archives');
+    });
+  });
+
   describe('Not Printed / Printed collections', () => {
     const mixedStatusArchives = [
       { ...mockArchives[0], id: 100, print_name: 'NeverPrinted', status: 'archived', started_at: null, completed_at: null },
       { ...mockArchives[0], id: 101, print_name: 'WasPrinted', status: 'completed' },
       { ...mockArchives[0], id: 102, print_name: 'WasFailed', status: 'failed' },
       { ...mockArchives[0], id: 103, print_name: 'WasCancelled', status: 'cancelled' },
+      { ...mockArchives[0], id: 104, print_name: 'FailedBefore', status: 'completed', run_count: 2, failed_run_count: 1 },
     ];
 
     beforeEach(() => {
@@ -649,6 +686,20 @@ describe('ArchivesPage', () => {
         expect(screen.getByText('WasPrinted')).toBeInTheDocument();
         expect(screen.getByText('WasFailed')).toBeInTheDocument();
         expect(screen.getByText('WasCancelled')).toBeInTheDocument();
+      });
+    });
+
+    // Archive redesign P4: an archive is a file printed maybe several times.
+    it('"Failed Prints" finds archives one print of which failed, not only the latest', async () => {
+      render(<ArchivesPage />);
+      await screen.findByText('FailedBefore');
+
+      fireEvent.change(screen.getByDisplayValue('All Archives'), { target: { value: 'failed' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('WasFailed')).toBeInTheDocument();
+        expect(screen.getByText('FailedBefore')).toBeInTheDocument();
+        expect(screen.queryByText('WasPrinted')).not.toBeInTheDocument();
       });
     });
   });

@@ -33,6 +33,15 @@ class PrintLogEntrySchema(BaseModel):
     wear_cost: float | None = None  # #694
     failure_reason: str | None = None
     user_verdict: str | None = None  # Post-print quality verdict (#1898)
+    user_verdict_source: str | None = None
+    confirm_requested: bool | None = None
+    duration_unmeasured: bool | None = None
+    quantity: int | None = None
+    # This print's own (archive redesign): its note, its finish photos (served
+    # by the archive's photo route) and its video (the run's timelapse route).
+    notes: str | None = None
+    photos: list[str] | None = None
+    timelapse_path: str | None = None
     thumbnail_path: str | None = None
     created_by_id: int | None = None
     created_by_username: str | None = None
@@ -42,6 +51,9 @@ class PrintLogEntrySchema(BaseModel):
 class PrintLogResponse(BaseModel):
     items: list[PrintLogEntrySchema]
     total: int
+    # The print log only: archives of these prints that were deleted, whose
+    # prints stay logged (#1343) but have no archive page to open.
+    deleted_archive_ids: list[int] = []
 
 
 class PrintLogEntryUpdate(IgnoresNullForRequiredColumns):
@@ -57,3 +69,5 @@ class PrintLogEntryUpdate(IgnoresNullForRequiredColumns):
 
     failure_reason: str | None = None
     status: str | None = None
+    # The print's own note, beside the archive's (the file's) note.
+    notes: str | None = None

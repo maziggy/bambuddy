@@ -239,6 +239,15 @@ function saveLogColumnConfig(config: Array<{ id: string; visible: boolean }>) {
  * metadata — a .3mf with total_layers or print_time is sliced (contains gcode),
  * while a raw source .3mf (CAD export) has neither.
  */
+// A click on an archive's card or row itself, not on a control in it or a
+// dialog it opened: that opens the archive's page (archive redesign P4).
+function isOwnClick(e: React.MouseEvent<Element>): boolean {
+  const target = e.target as HTMLElement;
+  if (!e.currentTarget.contains(target)) return false;
+  if (target.closest('button, a, input, select, textarea, label, video, .fixed')) return false;
+  return !window.getSelection()?.toString();
+}
+
 function isSlicedFile(archive: { filename?: string | null; total_layers?: number | null; print_time_seconds?: number | null }): boolean {
   const filename = archive.filename;
   if (filename) {
@@ -891,13 +900,30 @@ function ArchiveCard({
     },
   ];
 
+  // Only a plate past the first says anything. The queue records a plate
+  // for single-plate files too -- the print dialog auto-selects the only
+  // plate there is -- so an ungated label reads "Plate 1" on ordinary
+  // prints, and eats room from the truncated name (#2796). The plate
+  // carousel is the one place a multi-plate archive printed from plate 1
+  // still identifies itself; it already gates on is_multi_plate, which this
+  // title cannot read without waiting for the hover-lazy plates request.
+  const cardTitle = `${archive.print_name || archive.filename}${
+    archive.plate_id != null && archive.plate_id > 1 ? ` — ${t('printers.plateNumber', { number: archive.plate_id })}` : ''
+  }`;
+
   return (
     <Card
       data-archive-id={archive.id}
-      className={`relative flex flex-col group ${isSelected ? 'ring-2 ring-bambu-green' : ''} ${selectionMode ? 'cursor-pointer' : ''}`}
+      className={`relative flex flex-col group cursor-pointer ${isSelected ? 'ring-2 ring-bambu-green' : ''}`}
       style={isHighlighted ? { outline: '4px solid #facc15', outlineOffset: '2px' } : undefined}
       onContextMenu={handleContextMenu}
-      onClick={selectionMode ? () => onSelect(archive.id) : undefined}
+      onClick={
+        selectionMode
+          ? () => onSelect(archive.id)
+          : (e) => {
+              if (!contextMenu && isOwnClick(e)) navigate(`/archives/${archive.id}`);
+            }
+      }
     >
       {/* Selection checkbox */}
       {selectionMode && (
@@ -1193,16 +1219,13 @@ function ArchiveCard({
         {/* Title */}
         <div className="flex items-center justify-between gap-2 mb-1">
           <h3 className="min-w-0 font-medium text-white truncate">
-            {archive.print_name || archive.filename}
-            {/* Only a plate past the first says anything. The queue records a
-                plate for single-plate files too -- the print dialog auto-selects
-                the only plate there is -- so an ungated label reads "Plate 1" on
-                ordinary prints, and eats room from the truncated name (#2796).
-                The plate carousel is the one place a multi-plate archive printed
-                from plate 1 still identifies itself; it already gates on
-                is_multi_plate, which this title cannot read without waiting for
-                the hover-lazy plates request. */}
-            {archive.plate_id != null && archive.plate_id > 1 && ` — ${t('printers.plateNumber', { number: archive.plate_id })}`}
+            {selectionMode ? (
+              cardTitle
+            ) : (
+              <Link to={`/archives/${archive.id}`} className="hover:underline">
+                {cardTitle}
+              </Link>
+            )}
           </h3>
           <Button
             variant="ghost"
@@ -1264,7 +1287,7 @@ function ArchiveCard({
               className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-bambu-orange/20 text-bambu-orange hover:bg-bambu-orange/30 transition-colors cursor-pointer"
               onClick={(e) => {
                 e.stopPropagation();
-                setShowPrintLog(true);
+                navigate(`/archives/${archive.id}`);
               }}
               title={t('archives.card.runsBadgeTitle', {
                 count: archive.run_count,
@@ -2424,11 +2447,18 @@ function ArchiveListRow({
     <>
       <div
         data-archive-id={archive.id}
-        className={`grid grid-cols-12 gap-4 px-4 py-3 items-center hover:bg-bambu-dark-tertiary/30 ${
+        className={`grid grid-cols-12 gap-4 px-4 py-3 items-center cursor-pointer hover:bg-bambu-dark-tertiary/30 ${
           isSelected ? 'bg-bambu-green/10' : ''
         }`}
         style={isHighlighted ? { outline: '4px solid #facc15', outlineOffset: '-4px' } : undefined}
         onContextMenu={handleContextMenu}
+        onClick={
+          selectionMode
+            ? undefined
+            : (e) => {
+                if (!contextMenu && isOwnClick(e)) navigate(`/archives/${archive.id}`);
+              }
+        }
       >
         <div className="col-span-1 flex items-center gap-2">
           {selectionMode && (
@@ -2455,7 +2485,15 @@ function ArchiveListRow({
         </div>
         <div className="col-span-4">
           <div className="flex items-center gap-2">
-            <p className="text-white text-sm truncate">{archive.print_name || archive.filename}</p>
+            <p className="text-white text-sm truncate">
+              {selectionMode ? (
+                archive.print_name || archive.filename
+              ) : (
+                <Link to={`/archives/${archive.id}`} className="hover:underline">
+                  {archive.print_name || archive.filename}
+                </Link>
+              )}
+            </p>
             {(archive.status === 'failed' || archive.status === 'aborted') && (
               <span className="px-1.5 py-0.5 rounded text-[10px] leading-tight bg-status-error/80 text-white flex-shrink-0">
                 {archive.status === 'aborted' ? t('archives.card.aborted') : t('archives.card.failed')}
@@ -3019,6 +3057,7 @@ const collections: { id: Collection; label: string; icon: React.ReactNode }[] = 
 
 export function ArchivesPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission, hasAnyPermission } = useAuth();
@@ -3393,6 +3432,10 @@ export function ArchivesPage() {
     [],
   );
 
+  const deletedLogArchives = useMemo(
+    () => new Set(printLogData?.deleted_archive_ids ?? []),
+    [printLogData],
+  );
   const renderLogCell = useCallback(
     (colId: string, entry: PrintLogEntry) => {
       switch (colId) {
@@ -3419,9 +3462,20 @@ export function ArchivesPage() {
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                 />
               )}
-              <span className="text-white break-words" title={entry.print_name || ''}>
-                {entry.print_name || '—'}
-              </span>
+              {entry.archive_id != null && !deletedLogArchives.has(entry.archive_id) ? (
+                // Its archive's page, at this print (archive redesign P4)
+                <Link
+                  to={`/archives/${entry.archive_id}?run=${entry.id}`}
+                  className="text-white break-words hover:underline"
+                  title={entry.print_name || ''}
+                >
+                  {entry.print_name || '—'}
+                </Link>
+              ) : (
+                <span className="text-white break-words" title={entry.print_name || ''}>
+                  {entry.print_name || '—'}
+                </span>
+              )}
             </div>
           );
         case 'printer':
@@ -3517,7 +3571,7 @@ export function ArchivesPage() {
           return null;
       }
     },
-    [currency, t, timeFormat],
+    [currency, deletedLogArchives, t, timeFormat],
   );
 
   const bulkDeleteMutation = useMutation({
@@ -3539,6 +3593,8 @@ export function ArchivesPage() {
     mutationFn: () => api.clearPrintLog(),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['print-log'] });
+      queryClient.invalidateQueries({ queryKey: ['calendar-runs'] });
+      queryClient.invalidateQueries({ queryKey: ['archive-runs'] });
       setLogOffset(0);
       showToast(t('archives.log.cleared', { count: data.deleted }));
     },
@@ -3551,6 +3607,8 @@ export function ArchivesPage() {
     mutationFn: (id: number) => api.deletePrintLogEntry(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['print-log'] });
+      queryClient.invalidateQueries({ queryKey: ['calendar-runs'] });
+      queryClient.invalidateQueries({ queryKey: ['archive-runs'] });
       queryClient.invalidateQueries({ queryKey: ['archives-stats'] });
       showToast(t('archives.log.entryDeleted'));
     },
@@ -3564,6 +3622,8 @@ export function ArchivesPage() {
       api.updatePrintLogEntry(id, body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['print-log'] });
+      queryClient.invalidateQueries({ queryKey: ['calendar-runs'] });
+      queryClient.invalidateQueries({ queryKey: ['archive-runs'] });
       // Also invalidate /archives/stats — the Failure Analysis widget there
       // groups by PrintLogEntry.failure_reason, so a re-classification needs
       // to flow through (#1687 part 4).
@@ -3738,7 +3798,9 @@ export function ArchivesPage() {
           matchesCollection = (PRINTED_STATUSES as readonly string[]).includes(a.status);
           break;
         case 'failed':
-          matchesCollection = a.status === 'failed' || a.status === 'aborted';
+          // Any print of it failed, not only the latest; one from before
+          // prints were logged by its own status.
+          matchesCollection = a.status === 'failed' || a.status === 'aborted' || a.failed_run_count > 0;
           break;
         case 'duplicates':
           matchesCollection = a.duplicate_count > 0;
@@ -4515,12 +4577,8 @@ export function ArchivesPage() {
         <Card className="p-6">
           <CalendarView
             archives={filteredArchives || []}
-            onArchiveClick={(archive) => {
-              // Switch to grid view and highlight the archive
-              setSearch(''); // Clear search to show all archives
-              setViewMode('grid');
-              setHighlightedArchiveId(archive.id);
-            }}
+            printerId={filterPrinter}
+            onPrintClick={(archiveId, runId) => navigate(`/archives/${archiveId}${runId != null ? `?run=${runId}` : ''}`)}
             highlightedArchiveId={highlightedArchiveId}
           />
         </Card>

@@ -50,6 +50,8 @@ export function ConfirmOutcomeDialog({ archiveId, runId, onClose }: ConfirmOutco
       queryClient.invalidateQueries({ queryKey: ['archives'] });
       queryClient.invalidateQueries({ queryKey: ['archive', archiveId] });
       queryClient.invalidateQueries({ queryKey: ['archive', targetId] });
+      // The archive page lists each print with its verdict.
+      queryClient.invalidateQueries({ queryKey: ['archive-runs', targetId] });
       showToast(
         variables.user_verdict === 'good'
           ? t('confirmOutcome.savedGood')

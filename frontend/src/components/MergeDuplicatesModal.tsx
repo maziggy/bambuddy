@@ -53,7 +53,7 @@ export function MergeDuplicatesModal({ onClose }: MergeDuplicatesModalProps) {
       const merged = result.merged.length;
       const left = result.skipped.length;
       // Runs moved between archives: every list of archives and runs.
-      for (const key of ['archives', 'archive', 'archiveStats', 'archives-stats', 'print-log', 'archive-runs']) {
+      for (const key of ['archives', 'archive', 'archiveStats', 'archives-stats', 'print-log', 'archive-runs', 'archive-merge-count']) {
         queryClient.invalidateQueries({ queryKey: [key] });
       }
       if (left === 0) {

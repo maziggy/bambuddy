@@ -3146,6 +3146,33 @@ export function ArchivesPage() {
   const [showMergeModal, setShowMergeModal] = useState(false);
   // What the merge API asks for: it changes and removes whole archives.
   const canMergeDuplicates = hasPermission('archives:update_all') && hasPermission('archives:delete_all');
+  // Offered while archives of one file exist more than once: after an
+  // update, or a restore of an old backup. Dismissed until the count changes.
+  const { data: mergeCount } = useQuery({
+    queryKey: ['archive-merge-count'],
+    queryFn: () => api.getArchiveMergeCount(),
+    enabled: canMergeDuplicates,
+  });
+  const [mergeBannerDismissedAt, setMergeBannerDismissedAt] = useState<number | null>(() => {
+    try {
+      const stored = localStorage.getItem('archiveMergeBannerDismissed');
+      return stored ? Number(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+  const duplicateGroups = canMergeDuplicates ? (mergeCount?.groups ?? 0) : 0;
+  // Shown again only when there are more groups than when it was dismissed:
+  // merging some leaves the rest (some may never merge, their files differ).
+  const mergeBannerDismissed = mergeBannerDismissedAt !== null && duplicateGroups <= mergeBannerDismissedAt;
+  const dismissMergeBanner = () => {
+    setMergeBannerDismissedAt(duplicateGroups);
+    try {
+      localStorage.setItem('archiveMergeBannerDismissed', String(duplicateGroups));
+    } catch {
+      // Private window: dismissed for this visit only.
+    }
+  };
   const [highlightedArchiveId, setHighlightedArchiveId] = useState<number | null>(null);
   // An archive navigated to from elsewhere, and the warning shown when the
   // current filters hide it.
@@ -3243,6 +3270,12 @@ export function ArchivesPage() {
     setHighlightRequest({ archiveId, requestedAt: Date.now() });
     refetchArchives();
   }, [highlightParam, refetchArchives]);
+  // Archives deleted, uploaded or printed change the duplicates the banner counts.
+  useEffect(() => {
+    if (canMergeDuplicates && archivesUpdatedAt) {
+      queryClient.invalidateQueries({ queryKey: ['archive-merge-count'] });
+    }
+  }, [archivesUpdatedAt, canMergeDuplicates, queryClient]);
   useEffect(() => {
     if (!highlightRequest || !archives || archivesUpdatedAt < highlightRequest.requestedAt) return;
     setHighlightRequest(null);
@@ -3984,6 +4017,28 @@ export function ArchivesPage() {
             <Trash2 className="w-4 h-4" />
             Delete
           </Button>
+        </div>
+      )}
+
+      {collection !== 'duplicates' && duplicateGroups > 0 && !mergeBannerDismissed && (
+        <div
+          className="mb-6 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-3 flex items-center gap-3"
+          data-testid="merge-banner"
+        >
+          <Combine className="w-5 h-5 text-bambu-green flex-shrink-0" />
+          <div className="flex-1 min-w-0 text-sm text-bambu-gray-light">
+            {t('archiveMerge.bannerText', { count: duplicateGroups })}
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => setShowMergeModal(true)}>
+            {t('archiveMerge.headerButton')}
+          </Button>
+          <button
+            onClick={dismissMergeBanner}
+            className="text-bambu-gray hover:text-white"
+            aria-label={t('archiveMerge.dismiss')}
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 

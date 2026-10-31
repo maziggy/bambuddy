@@ -602,3 +602,28 @@ async def test_an_avi_conversion_holds_its_archive_from_the_spawn(db_session, fi
     assert archive_work.is_held(dupes.x)
     for coro in spawned:
         coro.close()
+
+
+async def test_the_count_offers_every_group(async_client, db_session, dupes):
+    """Also one at work: the count only offers the merge."""
+    db_session.add(PrintLogEntry(archive_id=dupes.y, printer_id=dupes.printer, status=RUN_OPEN, started_at=T1))
+    other = [
+        PrintArchive(filename="o.3mf", file_path=f"archive/1/o{i}/f.3mf", file_size=1, content_hash="c" * 64)
+        for i in range(2)
+    ]
+    db_session.add_all(other)
+    await db_session.commit()
+
+    response = await async_client.get("/api/v1/archives/merge-count")
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"groups": 2}
+
+
+async def test_the_count_needs_delete_all(async_client, dupes):
+    from backend.tests.integration.test_archives_last_per_printer import _admin_token, _auth, _user
+
+    admin = await _admin_token(async_client)
+    jwt, _ = await _user(async_client, admin, "counter", ["archives:read_all", "archives:update_all"])
+
+    assert (await async_client.get("/api/v1/archives/merge-count", headers=_auth(jwt))).status_code == 403

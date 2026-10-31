@@ -279,6 +279,93 @@ describe('GitHubRestoreModal', () => {
     expect(screen.queryByText('raw server English, should not be rendered')).not.toBeInTheDocument();
   });
 
+  describe('after restoring archives (archive redesign P2)', () => {
+    const restoreArchives = async (groups: number, category = 'archives') => {
+      server.use(
+        http.post('/api/v1/github-backup/restore', () =>
+          HttpResponse.json({
+            success: true,
+            message: 'Restored 30 item(s) from aaa1111',
+            log_id: 3,
+            ref: mockPreview.ref,
+            results: { [category]: { restored: 30, skipped: 0, failed: 0, notes: [] } },
+          })
+        ),
+        http.get('*/api/v1/archives/merge-count', () => HttpResponse.json({ groups })),
+        http.get('*/api/v1/archives/merge-preview', () => HttpResponse.json({ groups: [] })),
+      );
+      render(<GitHubRestoreModal onClose={vi.fn()} />);
+      const checkboxes = await waitFor(() => screen.getAllByRole('checkbox') as HTMLInputElement[]);
+      await userEvent.click(checkboxes[0]);
+      await userEvent.click(screen.getByRole('button', { name: /Restore$/ }));
+      await waitFor(() => screen.getByText('Restore from backup?'));
+      const confirmButtons = screen.getAllByRole('button', { name: /Restore$/ });
+      await userEvent.click(confirmButtons[confirmButtons.length - 1]);
+      await screen.findByText('Restored 30 item(s) from aaa1111');
+    };
+
+    it('offers to merge the duplicate archives it brought back', async () => {
+      await restoreArchives(2);
+
+      const offer = await screen.findByTestId('restore-merge-offer');
+      expect(offer).toHaveTextContent('2 group(s) of duplicate archives were found.');
+      await userEvent.click(screen.getByRole('button', { name: 'Merge duplicates…' }));
+      expect(await screen.findByText('No duplicates to merge.')).toBeInTheDocument();
+    });
+
+    it('counts again: the duplicates are not what was cached before it', async () => {
+      const invalidate = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+      await restoreArchives(2);
+
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['archive-merge-count'] });
+      invalidate.mockRestore();
+    });
+
+    it('leaves Escape in the merge dialog to that dialog', async () => {
+      const onClose = vi.fn();
+      server.use(
+        http.post('/api/v1/github-backup/restore', () =>
+          HttpResponse.json({
+            success: true,
+            message: 'Restored 30 item(s) from aaa1111',
+            log_id: 3,
+            ref: mockPreview.ref,
+            results: { archives: { restored: 30, skipped: 0, failed: 0, notes: [] } },
+          })
+        ),
+        http.get('*/api/v1/archives/merge-count', () => HttpResponse.json({ groups: 2 })),
+        http.get('*/api/v1/archives/merge-preview', () => HttpResponse.json({ groups: [] })),
+      );
+      render(<GitHubRestoreModal onClose={onClose} />);
+      const checkboxes = await waitFor(() => screen.getAllByRole('checkbox') as HTMLInputElement[]);
+      await userEvent.click(checkboxes[0]);
+      await userEvent.click(screen.getByRole('button', { name: /Restore$/ }));
+      await waitFor(() => screen.getByText('Restore from backup?'));
+      const confirmButtons = screen.getAllByRole('button', { name: /Restore$/ });
+      await userEvent.click(confirmButtons[confirmButtons.length - 1]);
+      await userEvent.click(await screen.findByRole('button', { name: 'Merge duplicates…' }));
+      await screen.findByText('No duplicates to merge.');
+
+      await userEvent.keyboard('{Escape}');
+
+      await waitFor(() => expect(screen.queryByText('No duplicates to merge.')).toBeNull());
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByText('Restored 30 item(s) from aaa1111')).toBeInTheDocument();
+    });
+
+    it('offers nothing after a restore without archives', async () => {
+      await restoreArchives(2, 'spools');
+
+      await waitFor(() => expect(screen.queryByTestId('restore-merge-offer')).toBeNull());
+    });
+
+    it('offers nothing without duplicates', async () => {
+      await restoreArchives(0);
+
+      await waitFor(() => expect(screen.queryByTestId('restore-merge-offer')).toBeNull());
+    });
+  });
+
   it('drops the selection while a newly-picked commit is still being inspected', async () => {
     // Switching commits keeps `selected` (it is only pruned once the new preview
     // lands), so the footer must not keep counting it: the categories belong to

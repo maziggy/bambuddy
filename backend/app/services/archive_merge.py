@@ -79,16 +79,25 @@ def _key(archive: PrintArchive) -> tuple:
     return (archive.content_hash, archive.created_by_id, archive.project_id)
 
 
-async def find_groups(db: AsyncSession, visible: list) -> list[MergeGroup]:
-    """The duplicate groups among the archives ``visible`` (WHERE clauses)
-    admits, oldest first, each with why it is left out (``skipped``)."""
-    keys = (
+def _group_keys(visible: list):
+    return (
         select(PrintArchive.content_hash, PrintArchive.created_by_id, PrintArchive.project_id)
         .where(PrintArchive.content_hash.is_not(None), PrintArchive.deleted_at.is_(None), *visible)
         .group_by(PrintArchive.content_hash, PrintArchive.created_by_id, PrintArchive.project_id)
         .having(func.count(PrintArchive.id) > 1)
     )
-    hashes = {row.content_hash for row in (await db.execute(keys)).all()}
+
+
+async def count_groups(db: AsyncSession, visible: list) -> int:
+    """How many duplicate groups there are, whether or not one can merge now:
+    cheap, for offering the merge (no files read, no work checked)."""
+    return await db.scalar(select(func.count()).select_from(_group_keys(visible).subquery())) or 0
+
+
+async def find_groups(db: AsyncSession, visible: list) -> list[MergeGroup]:
+    """The duplicate groups among the archives ``visible`` (WHERE clauses)
+    admits, oldest first, each with why it is left out (``skipped``)."""
+    hashes = {row.content_hash for row in (await db.execute(_group_keys(visible))).all()}
     if not hashes:
         return []
     archives = (

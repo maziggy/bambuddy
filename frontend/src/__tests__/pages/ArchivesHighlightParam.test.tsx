@@ -99,6 +99,8 @@ describe('ArchivesPage ?highlight=', () => {
   });
 
   it('warns when the linked archive is not in the list', async () => {
+    // Not merged into another either: its own lookup finds nothing.
+    server.use(http.get('/api/v1/archives/99', () => HttpResponse.json({ detail: 'Archive not found' }, { status: 404 })));
     window.history.pushState({}, '', '/archives?highlight=99');
     render(<ArchivesPage />);
 

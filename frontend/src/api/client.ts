@@ -5749,6 +5749,8 @@ export const api = {
     }),
   // Archives of one file merge into the oldest (archive redesign P2).
   previewArchiveMerge: () => request<ArchiveMergePreview>('/archives/merge-preview'),
+  /** How many duplicate groups there are; cheap, for offering the merge. */
+  getArchiveMergeCount: () => request<{ groups: number }>('/archives/merge-count'),
   mergeArchives: (survivorIds: number[]) =>
     request<ArchiveMergeResult>('/archives/merge', {
       method: 'POST',

@@ -703,6 +703,20 @@ async def list_archives(
     return result
 
 
+@router.get("/merge-count")
+async def count_archive_merge_groups(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL, Permission.ARCHIVES_DELETE_ALL),
+    printer_scope: PrinterScope = RequestPrinterScope,
+):
+    """How many groups of duplicate archives there are (archive redesign P2):
+    what the archives page and a restore offer to merge. Cheap: it reads no
+    files and does not check which group can merge now (``/merge-preview``)."""
+    from backend.app.services.archive_merge import count_groups, merge_scope_clauses
+
+    return {"groups": await count_groups(db, merge_scope_clauses(printer_scope))}
+
+
 @router.get("/merge-preview")
 async def preview_archive_merge(
     db: AsyncSession = Depends(get_db, scope="function"),

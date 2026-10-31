@@ -643,6 +643,74 @@ class MQTTRelayService:
         )
 
     # =========================================================================
+    # Run Events (archive redesign: each print of an archive is a run)
+    # =========================================================================
+
+    @staticmethod
+    def _run_payload(run, archive, printer_name: str | None) -> dict:
+        def iso(moment):
+            # Stored as naive UTC: say so.
+            if moment is None:
+                return None
+            return (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).isoformat()
+
+        return {
+            "run_id": run.id,
+            "archive_id": run.archive_id,
+            "print_name": run.print_name or (archive.print_name if archive is not None else None),
+            "printer_id": run.printer_id,
+            "printer_name": printer_name or run.printer_name,
+            "plate_id": run.plate_id,
+            "status": run.status,
+            "started_at": iso(run.started_at),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    async def on_run_started(self, run, archive, printer_serial: str, printer_name: str | None):
+        """Publish a print's run opened at its start: the print of an archive,
+        which the print and archive events above do not name yet."""
+        if not self.enabled or not self.connected:
+            return
+        self._publish(
+            f"{self.topic_prefix}/printers/{printer_serial}/run/started",
+            self._run_payload(run, archive, printer_name),
+        )
+
+    async def on_run_completed(self, run, archive, printer_serial: str, printer_name: str | None):
+        """Publish a print's run as its end wrote it: outcome and figures."""
+        if not self.enabled or not self.connected:
+            return
+        payload = self._run_payload(run, archive, printer_name)
+        completed_at = run.completed_at
+        if completed_at is not None and completed_at.tzinfo is None:
+            completed_at = completed_at.replace(tzinfo=timezone.utc)
+        payload.update(
+            {
+                "completed_at": completed_at.isoformat() if completed_at is not None else None,
+                "duration_seconds": run.duration_seconds,
+                # Not measured: an end found at a reconnect, its time the
+                # estimate or nothing (0).
+                "duration_unmeasured": bool(run.duration_unmeasured),
+                "failure_reason": run.failure_reason,
+                "filament_used_grams": run.filament_used_grams,
+                "cost": run.cost,
+                "energy_kwh": run.energy_kwh,
+            }
+        )
+        self._publish(f"{self.topic_prefix}/printers/{printer_serial}/run/completed", payload)
+
+    async def on_run_discarded(self, run, printer_serial: str, printer_name: str | None):
+        """Publish a run dropped without an end: its print ended unseen (a new
+        print started on the printer) or its archive was deleted. Its id is
+        gone after this."""
+        if not self.enabled or not self.connected:
+            return
+        self._publish(
+            f"{self.topic_prefix}/printers/{printer_serial}/run/discarded",
+            self._run_payload(run, None, printer_name),
+        )
+
+    # =========================================================================
     # Filament/Spoolman Events
     # =========================================================================
 

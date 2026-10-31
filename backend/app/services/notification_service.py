@@ -1915,6 +1915,11 @@ class NotificationService:
                 variables["reason"] = archive_data["failure_reason"]
             if archive_data.get("finish_photo_url"):
                 variables["finish_photo_url"] = archive_data["finish_photo_url"]
+            # The archive (file) and run (this print) it was, for links and
+            # webhooks (archive redesign).
+            for key in ("archive_id", "run_id"):
+                if archive_data.get(key) is not None:
+                    variables[key] = str(archive_data[key])
 
             # Build per-slot breakdown string with AMS info when available
             if archive_data.get("usage_results"):

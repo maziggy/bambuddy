@@ -988,6 +988,47 @@ async def _archive_of_open_run(printer_id: int, subtask_id: str | None = None) -
         return None
 
 
+async def _announce_discarded_runs(discarded, printer_id: int) -> None:
+    """Publish the runs ``discard_open_runs`` dropped (archive redesign):
+    each announced by run/started, now gone without an end."""
+    if not discarded:
+        return
+    try:
+        from backend.app.models.printer import Printer
+
+        async with async_session() as db:
+            printer = (
+                await db.execute(select(Printer.name, Printer.serial_number).where(Printer.id == printer_id))
+            ).first()
+        if printer is not None:
+            for run in discarded:
+                await mqtt_relay.on_run_discarded(run, printer.serial_number, printer.name)
+    except Exception as e:
+        logging.getLogger(__name__).debug("[RUN] Could not announce discarded runs on printer %s: %s", printer_id, e)
+
+
+async def _publish_run_completed(run_id: int | None, printer_id: int) -> None:
+    """Publish the run a print's end just wrote on the MQTT relay (archive
+    redesign); nothing without one. Never in the way of the completion."""
+    if run_id is None:
+        return
+    try:
+        from backend.app.models.archive import PrintArchive
+        from backend.app.models.print_log import PrintLogEntry
+        from backend.app.models.printer import Printer
+
+        async with async_session() as db:
+            run = await db.get(PrintLogEntry, run_id)
+            printer = (
+                await db.execute(select(Printer.name, Printer.serial_number).where(Printer.id == printer_id))
+            ).first()
+            archive = await db.get(PrintArchive, run.archive_id) if run is not None and run.archive_id else None
+        if run is not None and printer is not None:
+            await mqtt_relay.on_run_completed(run, archive, printer.serial_number, printer.name)
+    except Exception as e:
+        logging.getLogger(__name__).debug("[RUN] Could not publish the end of run %s: %s", run_id, e)
+
+
 async def _open_run_for(archive_id: int, printer_id: int, subtask_id: str | None = None) -> None:
     """Write the run of the print that just started on the archive (archive
     redesign). In a session of its own and never in the way of the print
@@ -997,14 +1038,19 @@ async def _open_run_for(archive_id: int, printer_id: int, subtask_id: str | None
     try:
         from backend.app.models.archive import PrintArchive
         from backend.app.models.printer import Printer
-        from backend.app.services.print_log import open_run
+        from backend.app.services.print_log import open_run, open_run_on_printer, run_snapshot
 
         async with async_session() as db:
             archive = await db.get(PrintArchive, archive_id)
             if archive is None:
                 return
-            printer_name = await db.scalar(select(Printer.name).where(Printer.id == printer_id))
-            await open_run(
+            printer = (
+                await db.execute(select(Printer.name, Printer.serial_number).where(Printer.id == printer_id))
+            ).first()
+            printer_name = printer.name if printer is not None else None
+            already = await open_run_on_printer(db, printer_id)
+            before = run_snapshot(already) if already is not None else None
+            run = await open_run(
                 db,
                 archive,
                 printer_id=printer_id,
@@ -1013,6 +1059,21 @@ async def _open_run_for(archive_id: int, printer_id: int, subtask_id: str | None
                 subtask_id=subtask_id,
             )
             await db.commit()
+        # Once per print: a resume or a repeated start finds the run it opened.
+        # A new one replaced the run still open there (open_run): that one's
+        # print ended unseen.
+        # Compared by start too: SQLite can give the new run the id of the one
+        # it replaced.
+        replaced = (
+            run is not None and before is not None and (before.id != run.id or before.started_at != run.started_at)
+        )
+        if run is not None and printer is not None and (before is None or replaced):
+            if replaced:
+                await _announce_discarded_runs([before], printer_id)
+            try:
+                await mqtt_relay.on_run_started(run, archive, printer.serial_number, printer_name)
+            except Exception:
+                pass  # Don't fail the print start if MQTT fails
     except Exception as e:
         logging.getLogger(__name__).warning("[RUN] Could not open the run of archive %s: %s", archive_id, e)
 
@@ -1202,12 +1263,18 @@ async def _send_kill_switch_provider_notification(
     logger = logging.getLogger(__name__)
     try:
         async with async_session() as db:
+            from backend.app.services.print_log import open_run_on_printer
+
+            # The print it stopped, for {archive_id} / {run_id}: the completion
+            # that would name them skips its notification after this one.
+            run = await open_run_on_printer(db, printer_id)
             await notification_service.on_print_complete(
                 printer_id,
                 printer_name,
                 "stopped",
                 data,
                 db,
+                archive_data={"archive_id": run.archive_id, "run_id": run.id} if run is not None else None,
             )
         return True
     except Exception as e:
@@ -5572,8 +5639,9 @@ async def on_print_start(printer_id: int, data: dict):
                 # unseen. Left open, the next reconnect would close it again.
                 from backend.app.services.print_log import discard_open_runs
 
-                await discard_open_runs(db, printer_id)
+                discarded = await discard_open_runs(db, printer_id)
                 await db.commit()
+                await _announce_discarded_runs(discarded, printer_id)
                 # Its print keys go with it; the new archive registers its own.
                 for _key in [k for k, v in _active_prints.items() if v == existing_archive.id and k[0] == printer_id]:
                     del _active_prints[_key]
@@ -9726,8 +9794,9 @@ async def _close_out_print(printer_id: int, data: dict):
         archive = await db.get(PrintArchive, archive_id)
         if archive is None:
             # Deleted while it printed: its run has nothing left to end on.
-            await discard_open_runs(db, printer_id)
+            discarded = await discard_open_runs(db, printer_id)
             await db.commit()
+            await _announce_discarded_runs(discarded, printer_id)
         if archive:
             # Back-fill created_by_id on reprint (#730): reprint reuses the
             # source archive row rather than creating a new one, so an
@@ -9829,6 +9898,7 @@ async def _close_out_print(printer_id: int, data: dict):
         await run_with_retry(_write_run, label="print log entry")
     except Exception as e:
         logger.warning("[PRINT_LOG] Failed to write log entry for archive %s: %s", archive_id, e)
+    await _publish_run_completed(completed_run_id, printer_id)
 
     log_timing("Print log entry")
 
@@ -10321,6 +10391,9 @@ async def _close_out_print(printer_id: int, data: dict):
                         # Pass usage tracker results for AMS slot info in notifications
                         if usage_results:
                             archive_data["usage_results"] = usage_results
+                        # Which archive and print it was (archive redesign).
+                        archive_data["archive_id"] = archive_id
+                        archive_data["run_id"] = completed_run_id
                         # Add finish photo URL and image bytes if available
                         if finish_photo_filename:
                             photo_url, photo_bytes = await _finish_photo_for_notification(

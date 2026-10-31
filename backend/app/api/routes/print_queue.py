@@ -2975,6 +2975,13 @@ async def stop_queue_item(
     await refresh_batches_after([item.id])
     if closed_archive_id is not None:
         await ws_manager.send_archive_updated({"id": closed_archive_id, "status": "cancelled"})
+    if closed_archive_id is not None and printer_id is not None:
+        # Its run ended here, not at a print's end (archive redesign).
+        from backend.app.main import _publish_run_completed
+        from backend.app.services.print_log import run_being_ended
+
+        ended = await run_being_ended(db, closed_archive_id, printer_id, None)
+        await _publish_run_completed(ended.id if ended is not None else None, printer_id)
 
     logger.info("Stopped printing queue item %s (stop command sent: %s)", item_id, stop_sent)
 

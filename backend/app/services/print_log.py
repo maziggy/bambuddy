@@ -377,15 +377,39 @@ async def open_run_on_printer(
     )
 
 
-async def discard_open_runs(db: AsyncSession, printer_id: int) -> None:
+async def discard_open_runs(db: AsyncSession, printer_id: int) -> list[SimpleNamespace]:
     """Drop the runs left open on the printer by prints that ended without
     their end reaching a run: cancelled at the next start as stale, or whose
     archive was deleted. As before runs were opened at the start, such a
-    print leaves no run. Does not commit."""
+    print leaves no run. Returns what they were, for announcing them gone.
+    Does not commit."""
+    discarded = [
+        run_snapshot(run)
+        for run in await db.scalars(
+            select(PrintLogEntry)
+            .where(PrintLogEntry.printer_id == printer_id, PrintLogEntry.status == RUN_OPEN)
+            .execution_options(**{INCLUDE_OPEN_RUNS: True})
+        )
+    ]
     await db.execute(
         delete(PrintLogEntry)
         .where(PrintLogEntry.printer_id == printer_id, PrintLogEntry.status == RUN_OPEN)
         .execution_options(**{INCLUDE_OPEN_RUNS: True})
+    )
+    return discarded
+
+
+def run_snapshot(run: PrintLogEntry) -> SimpleNamespace:
+    """What a run was, kept past its row (``discard_open_runs``)."""
+    return SimpleNamespace(
+        id=run.id,
+        archive_id=run.archive_id,
+        printer_id=run.printer_id,
+        printer_name=run.printer_name,
+        plate_id=run.plate_id,
+        print_name=run.print_name,
+        status=run.status,
+        started_at=run.started_at,
     )
 
 

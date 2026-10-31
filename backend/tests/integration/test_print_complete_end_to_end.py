@@ -602,3 +602,15 @@ async def test_the_completions_media_work_holds_the_archive(test_engine, db_sess
     }
     assert sum(1 for archive_id, _ in held if archive_id == queued_print["archive"]) >= 3
     assert not archive_work.is_held(queued_print["archive"])
+
+
+async def test_the_print_end_announces_the_run_it_wrote(test_engine, db_session, queued_print):
+    """On MQTT, and in the notification's variables (archive redesign P3)."""
+    publish = AsyncMock()
+    with patch("backend.app.main._publish_run_completed", publish):
+        notif = await _complete(test_engine, queued_print["printer"], "completed")
+
+    _archive, _item, logs, _charges = await _rows(db_session, queued_print["archive"], queued_print["item"])
+    publish.assert_awaited_once_with(logs[0].id, queued_print["printer"])
+    archive_data = notif.on_print_complete.await_args.kwargs["archive_data"]
+    assert (archive_data["archive_id"], archive_data["run_id"]) == (queued_print["archive"], logs[0].id)

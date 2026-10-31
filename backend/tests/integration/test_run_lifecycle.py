@@ -1167,7 +1167,11 @@ async def test_a_stale_archive_cancelled_at_the_next_start_leaves_no_run_open(te
     )
     await db_session.commit()
 
-    with patch("backend.app.main._open_run_for", AsyncMock()):
+    announce = AsyncMock()
+    with (
+        patch("backend.app.main._open_run_for", AsyncMock()),
+        patch("backend.app.main._announce_discarded_runs", announce),
+    ):
         await _drive_print_start(
             test_engine, SimpleNamespace(id=farm.printer), download_ok=False, state_fields={"progress": 0.2}
         )
@@ -1176,6 +1180,9 @@ async def test_a_stale_archive_cancelled_at_the_next_start_leaves_no_run_open(te
     archive = await db_session.get(PrintArchive, farm.archive)
     assert archive.status == "cancelled"
     assert await _all_runs(db_session, farm.archive) == []
+    # Announced gone on MQTT (archive redesign P3): run/started named it.
+    [(discarded, printer_id)] = [c.args for c in announce.await_args_list]
+    assert ([r.archive_id for r in discarded], printer_id) == ([farm.archive], farm.printer)
 
 
 async def _charges(db_session) -> list[WalletTransaction]:

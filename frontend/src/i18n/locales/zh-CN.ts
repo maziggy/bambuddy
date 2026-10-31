@@ -5798,6 +5798,7 @@ export default {
         settingsNotRestorableWillSkip: '{{count}} 项设置将被跳过 - 设置不会接受的值，或备份不恢复的键',
         spoolsUsageCount: '其中含 {{count}} 条使用记录',
         archivesMetadataOnly: '仅元数据 - 3MF 文件和缩略图不在 Git 备份中',
+        archivesRunsCount: '其中含 {{count}} 次打印 - 仅元数据，3MF 文件和缩略图不在 Git 备份中',
         kprofilesPrinterCount: '涉及 {{count}} 台打印机',
       },
       notes: {
@@ -5811,6 +5812,10 @@ export default {
         archivesOwnerUnknown: '部分归档在恢复时没有归属 - 此备份未记录归属，因此在管理员指派之前，只有拥有 archives:read_all 权限的用户才能看到它们',
         archivesUndeleted: '备份之后被删除的归档重新可见 - 当时启用了覆盖',
         archivesMetadataOnly: '恢复的归档仅含元数据 - 3MF 文件和缩略图不在 Git 备份中',
+        archivesMergedFollowed: '已合并到其他归档的归档不会作为单独的行恢复 - 指向它们的内容会转到合并后的归档',
+        runsArchiveMissing: '部分打印已跳过 - 其归档不在本次恢复中',
+        runsNumbersDropped: '部分打印的克数、成本、能耗或时长不是有效数字 - 已留空',
+        runsPrinterMissing: '部分打印引用的打印机已不存在 - 已清除链接，保留打印机名称',
         spoolUsageUnresolved: '已跳过 {{count}} 条使用记录 - 其耗材卷不在此备份的耗材列表中，没有可挂接的对象。',
         spoolUsageUnlinked: '已恢复 {{count}} 条使用记录，但缺少打印历史关联 - 请同时选择“打印归档”和“耗材库存”以保留该关联。',
         spoolTagKept: '{{count}} 个耗材标签保持原样 - 按备份内容会清除此后扫描过的标签，或把它挪到另一卷耗材上。',

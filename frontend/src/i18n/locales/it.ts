@@ -5798,6 +5798,7 @@ export default {
         settingsNotRestorableWillSkip: '{{count}} impostazione/i verranno saltate - valori che le Impostazioni non accetterebbero o chiavi che un backup non ripristina',
         spoolsUsageCount: 'inclusi {{count}} record di consumo',
         archivesMetadataOnly: 'Solo metadati - i file 3MF e le miniature non sono in un backup Git',
+        archivesRunsCount: 'incluse {{count}} stampe - solo metadati, i file 3MF e le miniature non sono in un backup Git',
         kprofilesPrinterCount: 'su {{count}} stampanti',
       },
       notes: {
@@ -5811,6 +5812,10 @@ export default {
         archivesOwnerUnknown: 'Alcuni archivi sono stati ripristinati senza proprietario - questo backup non ne registra alcuno, quindi sono visibili solo agli utenti con il permesso archives:read_all finché un amministratore non li riassegna',
         archivesUndeleted: 'Gli archivi eliminati dopo il backup sono di nuovo visibili - la sovrascrittura era attiva',
         archivesMetadataOnly: 'Gli archivi ripristinati contengono solo metadati - i file 3MF e le miniature non sono in un backup Git',
+        archivesMergedFollowed: 'Gli archivi uniti a un altro non vengono ripristinati come righe proprie - ciò che puntava a loro passa all\'archivio in cui sono stati uniti',
+        runsArchiveMissing: 'Alcune stampe sono state saltate - il loro archivio non fa parte di questo ripristino',
+        runsNumbersDropped: 'Alcune stampe avevano grammi, costi, energia o durate che non sono numeri validi - lasciati vuoti',
+        runsPrinterMissing: 'Alcune stampe facevano riferimento a stampanti che non esistono più - collegamento rimosso, nome della stampante mantenuto',
         spoolUsageUnresolved: '{{count}} record di consumo saltati - la loro bobina non è nell\'elenco bobine di questo backup, quindi non c\'è nulla a cui collegarli.',
         spoolUsageUnlinked: '{{count}} record di consumo ripristinati senza il collegamento alla cronologia di stampa - seleziona Archivi di stampa insieme a Inventario bobine per mantenerlo.',
         spoolTagKept: '{{count}} tag bobina lasciati invariati - il backup avrebbe cancellato un tag nel frattempo scansionato, oppure lo avrebbe spostato su una seconda bobina.',

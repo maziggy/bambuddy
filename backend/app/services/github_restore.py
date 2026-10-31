@@ -37,6 +37,7 @@ import logging
 import math
 import os
 import re
+from collections.abc import Iterable
 from contextvars import ContextVar
 from dataclasses import dataclass, field as dataclasses_field
 from datetime import datetime, timezone
@@ -50,7 +51,9 @@ from backend.app.api.routes._spoolman_helpers import assert_safe_spoolman_url
 from backend.app.core.database import async_session
 from backend.app.core.printer_scope import drop_printers_from_obico
 from backend.app.models.archive import PrintArchive
+from backend.app.models.archive_alias import ArchiveAlias
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
+from backend.app.models.print_log import INCLUDE_OPEN_RUNS, RUN_OPEN, PrintLogEntry
 from backend.app.models.printer import Printer
 from backend.app.models.project import Project
 from backend.app.models.settings import Settings
@@ -72,6 +75,10 @@ SETTINGS_PATH = "settings/app_settings.json"
 SPOOLS_PATH = "spools/inventory.json"
 SPOOL_USAGE_PATH = "spools/usage_history.json"
 ARCHIVES_PATH = "archives/print_history.json"
+# Each print of an archive and which archive went into which (archive
+# redesign P3). Backups written before carry neither.
+RUNS_PATH = "archives/print_runs.json"
+ALIASES_PATH = "archives/aliases.json"
 
 # kprofiles/{printer_serial}/{nozzle_diameter}.json
 _KPROFILE_PATH_RE = re.compile(r"^kprofiles/([^/]+)/([^/]+)\.json$")
@@ -520,6 +527,29 @@ def _restored_number(value, *, maximum: float | None = None, integer: bool = Fal
         return None
 
 
+def _runs_of(payload) -> list:
+    """The prints in a backup's print_runs.json, or none."""
+    runs = payload.get("runs") if isinstance(payload, dict) else None
+    return runs if isinstance(runs, list) else []
+
+
+def _aliases_of(payload) -> dict[int, int]:
+    """merged archive id -> the archive it went into, from aliases.json."""
+    aliases = payload.get("aliases") if isinstance(payload, dict) else None
+    found: dict[int, int] = {}
+    for alias in aliases if isinstance(aliases, list) else []:
+        if not isinstance(alias, dict):
+            continue
+        merged, into = alias.get("merged_archive_id"), alias.get("archive_id")
+        if isinstance(merged, int) and isinstance(into, int) and merged != into:
+            found[merged] = into
+    return found
+
+
+# A print's outcome verdict, as the confirm flow writes it.
+_RUN_VERDICTS = ("good", "reject")
+
+
 class _CategoryTally:
     """Mutable accumulator matching ``GitHubRestoreCategoryResult``."""
 
@@ -643,7 +673,7 @@ class GitHubRestoreService:
         if category == RestoreCategory.SPOOLS:
             return [p for p in (SPOOLS_PATH, SPOOL_USAGE_PATH) if p in available]
         if category == RestoreCategory.ARCHIVES:
-            return [p for p in (ARCHIVES_PATH,) if p in available]
+            return [p for p in (ARCHIVES_PATH, RUNS_PATH, ALIASES_PATH) if p in available]
         if category == RestoreCategory.KPROFILES:
             return sorted(p for p in available if _KPROFILE_PATH_RE.match(p))
         return []
@@ -1022,6 +1052,14 @@ class GitHubRestoreService:
             payload = parsed.get(ARCHIVES_PATH)
             archives = payload.get("archives") if isinstance(payload, dict) else None
             count = len(archives) if isinstance(archives, list) else 0
+            # Prints are tallied with the archives, so counted here too.
+            runs = _runs_of(parsed.get(RUNS_PATH))
+            if runs:
+                return count + len(runs), _Detail(
+                    "archivesRunsCount",
+                    f"including {len(runs)} print(s) - metadata only, 3MF files and thumbnails are not in a Git backup",
+                    {"count": len(runs)},
+                )
             return count, _Detail(
                 "archivesMetadataOnly", "Metadata only — 3MF files and thumbnails are not in a Git backup"
             )
@@ -1267,7 +1305,16 @@ class GitHubRestoreService:
         if RestoreCategory.ARCHIVES in categories:
             self._progress = "Restoring print archives..."
             tally = _CategoryTally()
-            await self._restore_archives(db, payload.get(ARCHIVES_PATH), overwrite, tally, archive_id_map)
+            await self._restore_archives(
+                db,
+                payload.get(ARCHIVES_PATH),
+                overwrite,
+                tally,
+                archive_id_map,
+                runs_payload=payload.get(RUNS_PATH),
+                aliases_payload=payload.get(ALIASES_PATH),
+            )
+            await self._restore_runs(db, payload.get(RUNS_PATH), overwrite, tally, archive_id_map)
             await db.commit()
             results[RestoreCategory.ARCHIVES.value] = tally
 
@@ -1351,11 +1398,29 @@ class GitHubRestoreService:
         overwrite: bool,
         tally: _CategoryTally,
         id_map: dict[int, int],
+        *,
+        runs_payload=None,
+        aliases_payload=None,
     ) -> None:
         archives = payload.get("archives") if isinstance(payload, dict) else None
         if not isinstance(archives, list):
             tally.note("noData", "No data of this kind in this backup")
             return
+
+        # An archive merged into another is not restored as a row of its own:
+        # what pointed at it (its prints, spool usage) goes to the archive it
+        # went into, as the merge moved them.
+        aliases = _aliases_of(aliases_payload)
+        # Local archives an entry of this restore already went to.
+        claimed: set[int] = set()
+        # Its prints' starts recognise an archive printed again since the
+        # backup: the archive's own start is its latest print's.
+        run_starts: dict[int, set[datetime]] = {}
+        for run in _runs_of(runs_payload):
+            if isinstance(run, dict) and isinstance(run.get("archive_id"), int):
+                started = _parse_dt(run.get("started_at"))
+                if started is not None:
+                    run_starts.setdefault(run["archive_id"], set()).add(started)
 
         valid_printers = set((await db.execute(select(Printer.id))).scalars().all())
         valid_projects = set((await db.execute(select(Project.id))).scalars().all())
@@ -1387,8 +1452,40 @@ class GitHubRestoreService:
                 continue
 
             old_id = entry.get("id") if isinstance(entry.get("id"), int) else None
+            if old_id in aliases:
+                tally.skipped += 1
+                tally.note(
+                    "archivesMergedFollowed",
+                    "Archives merged into another are not restored as rows of their own - what pointed at them "
+                    "goes to the archive they were merged into",
+                )
+                continue
             started_at = _parse_dt(entry.get("started_at"))
-            existing = await self._find_archive(db, entry, started_at)
+            existing = await self._find_archive(
+                db, entry, started_at, run_starts.get(old_id, set()) if old_id is not None else ()
+            )
+            # Merged here since the backup: its prints went into the archive
+            # it went into, and so does everything else of this entry. That
+            # archive is not overwritten with this one's fields, nor with a
+            # second entry's: it holds what the merge joined.
+            followed = False
+            if existing is not None:
+                into = await db.scalar(
+                    select(ArchiveAlias.archive_id).where(ArchiveAlias.merged_archive_id == existing.id)
+                )
+                if into is not None:
+                    existing = await db.get(PrintArchive, into)
+                    followed = True
+            if existing is not None and (followed or existing.id in claimed):
+                if old_id is not None:
+                    id_map[old_id] = existing.id
+                tally.skipped += 1
+                tally.note(
+                    "archivesMergedFollowed",
+                    "Archives merged into another are not restored as rows of their own - what pointed at them "
+                    "goes to the archive they were merged into",
+                )
+                continue
 
             numbers = {
                 "print_time_seconds": _restored_number(entry.get("print_time_seconds"), integer=True),
@@ -1531,6 +1628,7 @@ class GitHubRestoreService:
                 fields["deleted_at"] = _parse_dt(entry.get("deleted_at"))
 
             if existing is not None:
+                claimed.add(existing.id)
                 if old_id is not None:
                     id_map[old_id] = existing.id
                 if not overwrite:
@@ -1595,11 +1693,18 @@ class GitHubRestoreService:
                 row.created_at = created_at
             db.add(row)
             await db.flush()
+            claimed.add(row.id)
             if old_id is not None:
                 id_map[old_id] = row.id
             tally.restored += 1
 
-    async def _find_archive(self, db: AsyncSession, entry: dict, started_at: datetime | None) -> PrintArchive | None:
+        for merged, into in aliases.items():
+            if into in id_map:
+                id_map[merged] = id_map[into]
+
+    async def _find_archive(
+        self, db: AsyncSession, entry: dict, started_at: datetime | None, run_starts: Iterable[datetime] = ()
+    ) -> PrintArchive | None:
         """Match a backed-up archive to a local row by natural key.
 
         ``started_at`` is nullable and genuinely NULL for a whole class of rows —
@@ -1620,22 +1725,221 @@ class GitHubRestoreService:
         filter here because the row still exists, and matching it is what stops a
         restore inserting a live duplicate of an archive the user has deleted.
         """
-        started_predicate = PrintArchive.started_at == started_at if started_at else PrintArchive.started_at.is_(None)
+        created_at = _parse_dt(entry.get("created_at"))
+        # A print of it starting then, here or in the backup: printed again
+        # since, the archive's own start is a later print's (archive redesign
+        # P3).
+        starts = set(run_starts) | ({started_at} if started_at else set())
+
+        async def best(where, *, own_start: bool) -> PrintArchive | None:
+            rows = (await db.execute(select(PrintArchive).where(where).order_by(PrintArchive.id))).scalars().all()
+            if not rows:
+                return None
+            # Its own row first, by its own start: one merged since is then
+            # followed by the caller rather than taken for its survivor.
+            if own_start:
+                for row in rows:
+                    if row.started_at == started_at:
+                        return row
+            if starts:
+                # Core table, so a print running now counts too.
+                runs = PrintLogEntry.__table__.c
+                printed = set(
+                    (
+                        await db.execute(
+                            select(runs.archive_id).where(
+                                runs.archive_id.in_([row.id for row in rows]), runs.started_at.in_(starts)
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                for row in rows:
+                    if row.id in printed:
+                        return row
+            # When it was archived, which no print changes: an archive printed
+            # since, without a start or print in the backup to go by.
+            return next((row for row in rows if _created_at_matches(row, created_at)), None)
 
         content_hash = entry.get("content_hash")
         if content_hash:
-            result = await db.execute(
-                select(PrintArchive).where(PrintArchive.content_hash == content_hash, started_predicate)
-            )
-            row = result.scalars().first()
+            row = await best(PrintArchive.content_hash == content_hash, own_start=True)
             if row is not None:
                 return row
 
         filename = entry.get("filename")
-        if filename and started_at:
-            result = await db.execute(select(PrintArchive).where(PrintArchive.filename == filename, started_predicate))
-            return result.scalars().first()
+        if filename:
+            return await best(PrintArchive.filename == filename, own_start=started_at is not None)
         return None
+
+    async def _restore_runs(
+        self,
+        db: AsyncSession,
+        payload,
+        overwrite: bool,
+        tally: _CategoryTally,
+        id_map: dict[int, int],
+    ) -> None:
+        """Each print of the restored archives (archive redesign P3).
+
+        After the archives, through their ``old_id -> new_id`` map. A print
+        already here is the same archive's at the same start on the same
+        plate; it is left alone, or made to match the backup with overwrite.
+        Each archive that gained or changed a print then takes its latest
+        print's outcome, as everywhere else. A backup written before prints
+        were backed up has none, and its archives restore as before.
+        """
+        from backend.app.services.print_log import mirror_latest_run
+
+        runs = _runs_of(payload)
+        if not runs:
+            return
+
+        valid_printers = set((await db.execute(select(Printer.id))).scalars().all())
+        users_by_name = {name: user_id for user_id, name in (await db.execute(select(User.id, User.username))).all()}
+        touched: set[int] = set()
+
+        for entry in runs:
+            if not isinstance(entry, dict):
+                tally.failed += 1
+                continue
+            backup_archive = entry.get("archive_id")
+            archive_id = None
+            if backup_archive is not None:
+                archive_id = id_map.get(backup_archive) if isinstance(backup_archive, int) else None
+                if archive_id is None:
+                    # Its archive is not in this restore (it failed, or the
+                    # backup is damaged): there is nothing to attach it to.
+                    tally.skipped += 1
+                    tally.note("runsArchiveMissing", "Some prints were skipped - their archive is not in this restore")
+                    continue
+
+            started_at = _parse_dt(entry.get("started_at"))
+            created_at = _parse_dt(entry.get("created_at"))
+            plate_id = entry.get("plate_id") if isinstance(entry.get("plate_id"), int) else None
+            existing = await self._find_run(db, archive_id, started_at, plate_id, created_at, entry)
+
+            numbers = {
+                "duration_seconds": _restored_number(entry.get("duration_seconds"), integer=True),
+                "filament_used_grams": _restored_number(entry.get("filament_used_grams"), maximum=_MAX_RESTORED_GRAMS),
+                "cost": _restored_number(entry.get("cost")),
+                "energy_kwh": _restored_number(entry.get("energy_kwh")),
+                "energy_cost": _restored_number(entry.get("energy_cost")),
+                "wear_cost": _restored_number(entry.get("wear_cost")),
+                "quantity": _restored_number(entry.get("quantity"), maximum=10_000, integer=True),
+            }
+            if any(entry.get(key) is not None and value is None for key, value in numbers.items()):
+                tally.note(
+                    "runsNumbersDropped",
+                    "Some prints had grams, costs, energy or durations that are not valid numbers - left empty",
+                )
+            # A print running when the backup was made is long over: closed
+            # as its archive is (see _restore_archives).
+            status = entry.get("status") if isinstance(entry.get("status"), str) else "completed"
+            failure_reason = entry.get("failure_reason")
+            in_flight = status in (RUN_OPEN, "paused")
+            if in_flight:
+                status, failure_reason = "cancelled", "noStatusUpdate"
+            verdict = entry.get("user_verdict") if entry.get("user_verdict") in _RUN_VERDICTS else None
+
+            printer_id = entry.get("printer_id")
+            if printer_id is not None and printer_id not in valid_printers:
+                tally.note(
+                    "runsPrinterMissing",
+                    "Some prints referenced printers that no longer exist - link cleared, their printer name kept",
+                )
+                printer_id = None
+            username = entry.get("created_by_username")
+            owner_name = entry.get("owner_username")
+            fields = {
+                "archive_id": archive_id,
+                "print_name": entry.get("print_name"),
+                "plate_id": plate_id,
+                "printer_id": printer_id,
+                "printer_name": entry.get("printer_name"),
+                "status": status,
+                "started_at": started_at,
+                "completed_at": _parse_dt(entry.get("completed_at")),
+                "duration_unmeasured": entry.get("duration_unmeasured"),
+                "ended_offline": entry.get("ended_offline"),
+                "filament_type": entry.get("filament_type"),
+                "filament_color": entry.get("filament_color"),
+                "failure_reason": failure_reason,
+                "user_verdict": verdict,
+                "user_verdict_source": entry.get("user_verdict_source") if verdict else None,
+                "user_verdict_at": _parse_dt(entry.get("user_verdict_at")) if verdict else None,
+                "notes": entry.get("notes"),
+                "created_by_username": username if isinstance(username, str) else None,
+                **numbers,
+            }
+            # By name, never the backup's id, and only the owner's: the
+            # recorded name stays when its user is deleted, and may be someone
+            # else's by now. A name this instance does not have is left out,
+            # as for archives: a local print keeps its owner, a new one has
+            # none and keeps the name.
+            owner = users_by_name.get(owner_name) if isinstance(owner_name, str) else None
+            if owner is not None or not isinstance(owner_name, str):
+                fields["created_by_id"] = owner
+
+            if existing is not None:
+                # The local print knows more than the backup's snapshot of it
+                # mid-way (its figures came at its end), and one printing now
+                # is still being written by its print.
+                if not overwrite or in_flight or existing.status == RUN_OPEN:
+                    tally.skipped += 1
+                    continue
+                for key, value in fields.items():
+                    setattr(existing, key, value)
+                tally.restored += 1
+            else:
+                row = PrintLogEntry(**fields)
+                if created_at is not None:
+                    # Statistics date a print by it.
+                    row.created_at = created_at
+                db.add(row)
+                await db.flush()
+                tally.restored += 1
+            if archive_id is not None:
+                touched.add(archive_id)
+
+        for archive_id in touched:
+            await mirror_latest_run(db, archive_id)
+
+    async def _find_run(
+        self,
+        db: AsyncSession,
+        archive_id: int | None,
+        started_at: datetime | None,
+        plate_id: int | None,
+        created_at: datetime | None,
+        entry: dict,
+    ) -> PrintLogEntry | None:
+        """The same print already here: its archive's, started then, on that
+        plate. Without a start, by when it was logged (compared in Python, see
+        _created_at_matches); one without an archive by its printer and name
+        too. A print running now counts."""
+        query = (
+            select(PrintLogEntry)
+            .where(
+                PrintLogEntry.archive_id == archive_id
+                if archive_id is not None
+                else PrintLogEntry.archive_id.is_(None),
+                PrintLogEntry.plate_id == plate_id if plate_id is not None else PrintLogEntry.plate_id.is_(None),
+                PrintLogEntry.started_at == started_at if started_at else PrintLogEntry.started_at.is_(None),
+            )
+            .order_by(PrintLogEntry.id)
+            .execution_options(**{INCLUDE_OPEN_RUNS: True})
+        )
+        if archive_id is None:
+            query = query.where(
+                PrintLogEntry.printer_name == entry.get("printer_name"),
+                PrintLogEntry.print_name == entry.get("print_name"),
+            )
+        candidates = (await db.execute(query)).scalars().all()
+        if started_at:
+            return candidates[0] if candidates else None
+        return next((row for row in candidates if _created_at_matches(row, created_at)), None)
 
     async def _restore_spools(
         self,

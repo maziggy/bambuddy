@@ -5799,6 +5799,7 @@ export default {
         settingsNotRestorableWillSkip: '{{count}} paramètre(s) seront ignorés - des valeurs que les Paramètres n\'accepteraient pas, ou des clés qu\'une sauvegarde ne restaure pas',
         spoolsUsageCount: 'dont {{count}} enregistrements de consommation',
         archivesMetadataOnly: 'Métadonnées uniquement - les fichiers 3MF et les miniatures ne sont pas dans une sauvegarde Git',
+        archivesRunsCount: 'dont {{count}} impression(s) - métadonnées uniquement, les fichiers 3MF et les miniatures ne sont pas dans une sauvegarde Git',
         kprofilesPrinterCount: 'sur {{count}} imprimantes',
       },
       notes: {
@@ -5812,6 +5813,10 @@ export default {
         archivesOwnerUnknown: 'Certaines archives ont été restaurées sans propriétaire - cette sauvegarde n\'en enregistre aucun, elles ne sont donc visibles que par les utilisateurs disposant de la permission archives:read_all jusqu\'à ce qu\'un administrateur les réattribue',
         archivesUndeleted: 'Les archives supprimées depuis la sauvegarde sont de nouveau visibles - l\'écrasement était activé',
         archivesMetadataOnly: 'Les archives restaurées ne contiennent que des métadonnées - les fichiers 3MF et les miniatures ne sont pas dans une sauvegarde Git',
+        archivesMergedFollowed: 'Les archives fusionnées dans une autre ne sont pas restaurées comme lignes propres - ce qui pointait vers elles va à l\'archive dans laquelle elles ont été fusionnées',
+        runsArchiveMissing: 'Certaines impressions ont été ignorées - leur archive ne fait pas partie de cette restauration',
+        runsNumbersDropped: 'Certaines impressions avaient des grammes, coûts, énergies ou durées qui ne sont pas des nombres valides - laissés vides',
+        runsPrinterMissing: 'Certaines impressions faisaient référence à des imprimantes qui n\'existent plus - lien supprimé, nom de l\'imprimante conservé',
         spoolUsageUnresolved: '{{count}} enregistrements de consommation ignorés - leur bobine ne figure pas dans la liste des bobines de cette sauvegarde, il n\'y a donc rien à quoi les rattacher.',
         spoolUsageUnlinked: '{{count}} enregistrements de consommation restaurés sans leur lien vers l\'historique d\'impression - sélectionnez Archives d\'impression en même temps que l\'Inventaire des bobines pour le conserver.',
         spoolTagKept: '{{count}} étiquettes de bobine laissées telles quelles - la sauvegarde aurait effacé une étiquette scannée depuis, ou l\'aurait déplacée sur une seconde bobine.',

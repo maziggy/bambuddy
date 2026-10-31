@@ -14,7 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.database import async_session
 from backend.app.core.logging_filters import URL_CREDENTIALS_PATTERN, redact_refused_headers
 from backend.app.models.archive import PrintArchive
+from backend.app.models.archive_alias import ArchiveAlias
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
+from backend.app.models.print_log import INCLUDE_OPEN_RUNS, PrintLogEntry
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.spool import Spool
@@ -873,6 +875,12 @@ class GitHubBackupService:
         result = await db.execute(select(PrintArchive))
         archives = result.scalars().all()
 
+        # Its prints and merges, written whenever archives are: a push keeps
+        # the files a backup leaves out, so skipping an empty list would leave
+        # an earlier backup's beside these archives.
+        await self._collect_print_runs(db, files)
+        await self._collect_archive_aliases(db, files)
+
         if not archives:
             return
 
@@ -948,6 +956,68 @@ class GitHubBackupService:
         }
 
         logger.info("Collected %d print archives", len(archive_list))
+
+    async def _collect_print_runs(self, db: AsyncSession, files: dict) -> None:
+        """Each print of an archive (archive redesign P3): statistics and the
+        print log count these, not archives.
+
+        Left out: the one-tap confirm token (a credential), photo, timelapse
+        and thumbnail paths (their files are not in a Git backup), the energy
+        meter reading at the start (only needed while it prints), and the
+        wallet, cost centre and queue links, none of which are backed up.
+        """
+        runs = (await db.execute(select(PrintLogEntry).execution_options(**{INCLUDE_OPEN_RUNS: True}))).scalars().all()
+        user_names = dict((await db.execute(select(User.id, User.username))).all())
+        files["archives/print_runs.json"] = {
+            "version": "1.0",
+            "runs": [
+                {
+                    "id": r.id,
+                    "archive_id": r.archive_id,
+                    "print_name": r.print_name,
+                    "plate_id": r.plate_id,
+                    "printer_id": r.printer_id,
+                    "printer_name": r.printer_name,
+                    "status": r.status,
+                    "started_at": str(r.started_at) if r.started_at else None,
+                    "completed_at": str(r.completed_at) if r.completed_at else None,
+                    "duration_seconds": r.duration_seconds,
+                    "duration_unmeasured": r.duration_unmeasured,
+                    "ended_offline": r.ended_offline,
+                    "filament_type": r.filament_type,
+                    "filament_color": r.filament_color,
+                    "filament_used_grams": r.filament_used_grams,
+                    "cost": r.cost,
+                    "energy_kwh": r.energy_kwh,
+                    "energy_cost": r.energy_cost,
+                    "wear_cost": r.wear_cost,
+                    "failure_reason": r.failure_reason,
+                    "user_verdict": r.user_verdict,
+                    "user_verdict_source": r.user_verdict_source,
+                    "user_verdict_at": str(r.user_verdict_at) if r.user_verdict_at else None,
+                    "quantity": r.quantity,
+                    "notes": r.notes,
+                    # Who started it, as the print log shows it.
+                    "created_by_username": r.created_by_username,
+                    # Its owner, by name as for archives (ids renumber on a
+                    # rebuilt instance), and only one that still exists: a
+                    # deleted user's name may be someone else's on restore.
+                    "owner_username": user_names.get(r.created_by_id) if r.created_by_id is not None else None,
+                    "created_at": str(r.created_at) if r.created_at else None,
+                }
+                for r in runs
+            ],
+        }
+        logger.info("Collected %d prints", len(runs))
+
+    async def _collect_archive_aliases(self, db: AsyncSession, files: dict) -> None:
+        """Which archive went into which (archive redesign P2), so a restore
+        follows a merged archive to the one it went into."""
+        aliases = (await db.execute(select(ArchiveAlias.merged_archive_id, ArchiveAlias.archive_id))).all()
+        files["archives/aliases.json"] = {
+            "version": "1.0",
+            "aliases": [{"merged_archive_id": merged, "archive_id": into} for merged, into in aliases],
+        }
 
     async def _push_to_provider(self, config: GitHubBackupConfig, files: dict) -> dict:
         """Push files to the configured Git provider."""

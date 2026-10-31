@@ -5798,6 +5798,7 @@ export default {
         settingsNotRestorableWillSkip: '{{count}} 項設定將被略過 - 設定不會接受的值，或備份不還原的鍵',
         spoolsUsageCount: '其中含 {{count}} 筆使用紀錄',
         archivesMetadataOnly: '僅中繼資料 - 3MF 檔案與縮圖不在 Git 備份中',
+        archivesRunsCount: '其中含 {{count}} 次列印 - 僅中繼資料，3MF 檔案和縮圖不在 Git 備份中',
         kprofilesPrinterCount: '涵蓋 {{count}} 台印表機',
       },
       notes: {
@@ -5811,6 +5812,10 @@ export default {
         archivesOwnerUnknown: '部分封存還原時沒有擁有者 - 此備份未記錄擁有者，因此在管理員指派之前，只有具備 archives:read_all 權限的使用者才看得到',
         archivesUndeleted: '備份之後刪除的封存重新可見 - 當時啟用了覆寫',
         archivesMetadataOnly: '還原的封存僅含中繼資料 - 3MF 檔案與縮圖不在 Git 備份中',
+        archivesMergedFollowed: '已合併到其他封存的封存不會作為單獨的列還原 - 指向它們的內容會轉到合併後的封存',
+        runsArchiveMissing: '部分列印已略過 - 其封存不在本次還原中',
+        runsNumbersDropped: '部分列印的克數、成本、能耗或時長不是有效數字 - 已留空',
+        runsPrinterMissing: '部分列印引用的印表機已不存在 - 已清除連結，保留印表機名稱',
         spoolUsageUnresolved: '已略過 {{count}} 筆使用紀錄 - 其耗材捲不在此備份的耗材清單中，沒有可掛接的對象。',
         spoolUsageUnlinked: '已還原 {{count}} 筆使用紀錄，但缺少列印歷史連結 - 請同時選擇「列印封存」與「耗材庫存」以保留該連結。',
         spoolTagKept: '{{count}} 個耗材標籤維持原樣 - 依備份內容會清除此後掃描過的標籤，或把它移到另一捲耗材上。',

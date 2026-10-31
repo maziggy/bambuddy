@@ -5788,6 +5788,7 @@ export default {
         settingsNotRestorableWillSkip: "{{count}} ayar atlanacak - Ayarlar'ın kabul etmeyeceği değerler veya bir yedeğin geri yüklemediği anahtarlar",
         spoolsUsageCount: '{{count}} kullanım kaydı dahil',
         archivesMetadataOnly: 'Yalnızca üst veri - 3MF dosyaları ve küçük resimler Git yedeğinde yer almaz',
+        archivesRunsCount: '{{count}} baskı dahil - yalnızca meta veriler, 3MF dosyaları ve küçük resimler Git yedeğinde yok',
         kprofilesPrinterCount: '{{count}} yazıcı genelinde',
       },
       notes: {
@@ -5801,6 +5802,10 @@ export default {
         archivesOwnerUnknown: 'Bazı arşivler sahipsiz geri yüklendi - bu yedek sahip bilgisi içermiyor, bu yüzden bir yönetici atama yapana kadar yalnızca archives:read_all iznine sahip kullanıcılara görünürler',
         archivesUndeleted: 'Yedekten sonra silinen arşivler yeniden görünür oldu - üzerine yazma açıktı',
         archivesMetadataOnly: 'Geri yüklenen arşivler yalnızca üst veri içerir - 3MF dosyaları ve küçük resimler Git yedeğinde yer almaz',
+        archivesMergedFollowed: 'Başka bir arşivle birleştirilen arşivler ayrı satır olarak geri yüklenmez - onlara işaret eden her şey birleştirildikleri arşive gider',
+        runsArchiveMissing: 'Bazı baskılar atlandı - arşivleri bu geri yüklemede yok',
+        runsNumbersDropped: 'Bazı baskıların gram, maliyet, enerji veya süre değerleri geçerli sayı değil - boş bırakıldı',
+        runsPrinterMissing: 'Bazı baskılar artık var olmayan yazıcılara başvuruyordu - bağlantı kaldırıldı, yazıcı adı korundu',
         spoolUsageUnresolved: '{{count}} kullanım kaydı atlandı - makaraları bu yedeğin makara listesinde olmadığı için bağlanacak bir şey yok.',
         spoolUsageUnlinked: '{{count}} kullanım kaydı baskı geçmişi bağlantısı olmadan geri yüklendi - bağlantıyı korumak için Baskı arşivlerini Makara envanteriyle birlikte seçin.',
         spoolTagKept: '{{count}} makara etiketi olduğu gibi bırakıldı - yedek, o zamandan beri okutulmuş bir etiketi silecek ya da ikinci bir makaraya taşıyacaktı.',

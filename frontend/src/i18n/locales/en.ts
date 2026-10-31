@@ -5861,6 +5861,7 @@ export default {
         settingsNotRestorableWillSkip: '{{count}} setting(s) will be skipped - values Settings would not accept, or keys a backup does not restore',
         spoolsUsageCount: 'including {{count}} usage record(s)',
         archivesMetadataOnly: 'Metadata only - 3MF files and thumbnails are not in a Git backup',
+        archivesRunsCount: 'including {{count}} print(s) - metadata only, 3MF files and thumbnails are not in a Git backup',
         kprofilesPrinterCount: 'across {{count}} printer(s)',
       },
       // Tally notes, same contract. noData is shared by all four categories:
@@ -5877,6 +5878,10 @@ export default {
         archivesOwnerUnknown: 'Some archives were restored without an owner - this backup does not record one, so they are visible only to users with the archives:read_all permission until an admin reassigns them',
         archivesUndeleted: 'Archive(s) deleted since the backup are visible again - overwrite was on',
         archivesMetadataOnly: 'Restored archives carry metadata only - the 3MF and thumbnail files are not in a Git backup',
+        archivesMergedFollowed: 'Archives merged into another are not restored as rows of their own - what pointed at them goes to the archive they were merged into',
+        runsArchiveMissing: 'Some prints were skipped - their archive is not in this restore',
+        runsNumbersDropped: 'Some prints had grams, costs, energy or durations that are not valid numbers - left empty',
+        runsPrinterMissing: 'Some prints referenced printers that no longer exist - link cleared, their printer name kept',
         spoolUsageUnresolved: '{{count}} usage record(s) skipped - their spool is not in this backup\'s spool list, so there is nothing to attach them to.',
         spoolUsageUnlinked: '{{count}} usage record(s) restored without their print-history link - select Print archives alongside Spool inventory to keep it.',
         spoolTagKept: '{{count}} spool tag(s) left as they are - the backup would have cleared a tag that has since been scanned, or moved one onto a second spool.',

@@ -5812,6 +5812,7 @@ export default {
         settingsNotRestorableWillSkip: '{{count}} 件の設定はスキップされます - 設定画面が受け付けない値、またはバックアップから復元しないキーです',
         spoolsUsageCount: '使用履歴 {{count}} 件を含む',
         archivesMetadataOnly: 'メタデータのみ - 3MF ファイルとサムネイルは Git バックアップに含まれません',
+        archivesRunsCount: '{{count}} 件の印刷を含む - メタデータのみ、3MF ファイルとサムネイルは Git バックアップに含まれません',
         kprofilesPrinterCount: 'プリンター {{count}} 台分',
       },
       notes: {
@@ -5825,6 +5826,10 @@ export default {
         archivesOwnerUnknown: '一部のアーカイブは所有者なしで復元されました - このバックアップに所有者が記録されていないため、管理者が割り当てるまで archives:read_all 権限を持つユーザーにしか表示されません',
         archivesUndeleted: 'バックアップ後に削除されたアーカイブが再び表示されます - 上書きが有効でした',
         archivesMetadataOnly: '復元されたアーカイブはメタデータのみです - 3MF ファイルとサムネイルは Git バックアップに含まれません',
+        archivesMergedFollowed: '別のアーカイブに統合されたアーカイブは独立した行として復元されません - それらを参照していたものは統合先のアーカイブに移ります',
+        runsArchiveMissing: '一部の印刷がスキップされました - そのアーカイブはこの復元に含まれていません',
+        runsNumbersDropped: '一部の印刷のグラム数、コスト、電力量、所要時間が有効な数値ではありません - 空のままにしました',
+        runsPrinterMissing: '一部の印刷が存在しなくなったプリンターを参照していました - リンクを解除し、プリンター名は保持しました',
         spoolUsageUnresolved: '使用履歴 {{count}} 件をスキップしました - 対応するスプールがこのバックアップのスプール一覧にないため、紐付ける先がありません。',
         spoolUsageUnlinked: '使用履歴 {{count}} 件を印刷履歴へのリンクなしで復元しました - リンクを保持するにはスプール在庫と一緒に印刷アーカイブも選択してください。',
         spoolTagKept: 'スプールタグ {{count}} 件をそのままにしました - バックアップの内容ではその後スキャンされたタグが消えるか、別のスプールに移ってしまうためです。',

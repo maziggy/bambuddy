@@ -5819,6 +5819,7 @@ export default {
         settingsNotRestorableWillSkip: '{{count}} ajuste(s) se omitirán - valores que Ajustes no aceptaría o claves que una copia de seguridad no restaura',
         spoolsUsageCount: 'incluidos {{count}} registros de consumo',
         archivesMetadataOnly: 'Solo metadatos - los archivos 3MF y las miniaturas no están en una copia de Git',
+        archivesRunsCount: 'incluidas {{count}} impresiones - solo metadatos, los archivos 3MF y las miniaturas no están en una copia de Git',
         kprofilesPrinterCount: 'en {{count}} impresoras',
       },
       notes: {
@@ -5832,6 +5833,10 @@ export default {
         archivesOwnerUnknown: 'Algunos archivos se restauraron sin propietario - esta copia de seguridad no registra ninguno, por lo que solo son visibles para usuarios con el permiso archives:read_all hasta que un administrador los reasigne',
         archivesUndeleted: 'Los archivos eliminados desde la copia vuelven a estar visibles - la sobrescritura estaba activada',
         archivesMetadataOnly: 'Los archivos restaurados solo contienen metadatos - los ficheros 3MF y las miniaturas no están en una copia de Git',
+        archivesMergedFollowed: 'Los archivos fusionados en otro no se restauran como filas propias - lo que apuntaba a ellos pasa al archivo en el que se fusionaron',
+        runsArchiveMissing: 'Se omitieron algunas impresiones - su archivo no forma parte de esta restauración',
+        runsNumbersDropped: 'Algunas impresiones tenían gramos, costes, energía o duraciones que no son números válidos - se dejaron vacíos',
+        runsPrinterMissing: 'Algunas impresiones hacían referencia a impresoras que ya no existen - enlace eliminado, se conserva el nombre de la impresora',
         spoolUsageUnresolved: '{{count}} registros de consumo omitidos - su bobina no está en la lista de bobinas de esta copia, así que no hay nada a lo que asociarlos.',
         spoolUsageUnlinked: '{{count}} registros de consumo restaurados sin su enlace al historial de impresión - selecciona Archivos de impresión junto con Inventario de bobinas para conservarlo.',
         spoolTagKept: '{{count}} etiquetas de bobina se han dejado como estaban - la copia habría borrado una etiqueta escaneada desde entonces, o la habría movido a una segunda bobina.',

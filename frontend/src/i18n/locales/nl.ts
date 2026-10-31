@@ -5859,6 +5859,7 @@ export default {
         settingsNotRestorableWillSkip: '{{count}} instelling(en) worden overgeslagen - waarden die Instellingen niet zou accepteren, of sleutels die een back-up niet herstelt',
         spoolsUsageCount: 'inclusief {{count}} verbruiksrecord(s)',
         archivesMetadataOnly: 'Alleen metadata - 3MF-bestanden en miniaturen zitten niet in een Git-back-up',
+        archivesRunsCount: 'inclusief {{count}} print(s) - alleen metadata, 3MF-bestanden en miniaturen zitten niet in een Git-back-up',
         kprofilesPrinterCount: 'over {{count}} printer(s)',
       },
       // Tally notes, same contract. noData is shared by all four categories:
@@ -5875,6 +5876,10 @@ export default {
         archivesOwnerUnknown: 'Sommige archieven zijn zonder eigenaar hersteld - deze back-up registreert er geen, waardoor ze alleen zichtbaar zijn voor gebruikers met de machtiging archives:read_all totdat een beheerder ze opnieuw toewijst',
         archivesUndeleted: 'Archief/archieven die sinds de back-up waren verwijderd zijn weer zichtbaar - overschrijven stond aan',
         archivesMetadataOnly: 'Herstelde archieven bevatten alleen metadata - de 3MF- en miniatuurbestanden zitten niet in een Git-back-up',
+        archivesMergedFollowed: 'Archieven die in een ander zijn samengevoegd worden niet als eigen rijen hersteld - wat naar hen verwees gaat naar het archief waarin ze zijn samengevoegd',
+        runsArchiveMissing: 'Sommige prints zijn overgeslagen - hun archief maakt geen deel uit van dit herstel',
+        runsNumbersDropped: 'Sommige prints hadden grammen, kosten, energie of duur die geen geldige getallen zijn - leeg gelaten',
+        runsPrinterMissing: 'Sommige prints verwezen naar printers die niet meer bestaan - koppeling verwijderd, printernaam behouden',
         spoolUsageUnresolved: '{{count}} verbruiksrecord(s) overgeslagen - hun spoel staat niet in de spoellijst van deze back-up, dus er is niets om ze aan te koppelen.',
         spoolUsageUnlinked: '{{count}} verbruiksrecord(s) hersteld zonder koppeling met afdrukgeschiedenis - selecteer Afdrukarchieven samen met Spoelvoorraad om deze te behouden.',
         spoolTagKept: '{{count}} spoeltag(s) gelaten zoals ze zijn - de back-up zou een tag hebben gewist die sindsdien is gescand, of een tag naar een tweede spoel hebben verplaatst.',

@@ -5812,6 +5812,7 @@ export default {
         settingsNotRestorableWillSkip: '{{count}} Einstellung(en) werden übersprungen - Werte, die die Einstellungen nicht annehmen würden, oder Schlüssel, die ein Backup nicht wiederherstellt',
         spoolsUsageCount: 'davon {{count}} Verbrauchseinträge',
         archivesMetadataOnly: 'Nur Metadaten - 3MF-Dateien und Vorschaubilder sind nicht im Git-Backup enthalten',
+        archivesRunsCount: 'einschließlich {{count}} Druck(e) - nur Metadaten, 3MF-Dateien und Vorschaubilder sind nicht im Git-Backup enthalten',
         kprofilesPrinterCount: 'über {{count}} Drucker',
       },
       notes: {
@@ -5825,6 +5826,10 @@ export default {
         archivesOwnerUnknown: 'Einige Archive wurden ohne Eigentümer wiederhergestellt - diese Sicherung enthält keinen, daher sind sie nur für Benutzer mit der Berechtigung archives:read_all sichtbar, bis ein Administrator sie neu zuweist',
         archivesUndeleted: 'Seit dem Backup gelöschte Archive sind wieder sichtbar - Überschreiben war aktiv',
         archivesMetadataOnly: 'Wiederhergestellte Archive enthalten nur Metadaten - die 3MF- und Vorschaudateien sind nicht im Git-Backup enthalten',
+        archivesMergedFollowed: 'In ein anderes Archiv zusammengeführte Archive werden nicht als eigene Einträge wiederhergestellt - was auf sie verwies, geht an das Archiv, in das sie zusammengeführt wurden',
+        runsArchiveMissing: 'Einige Drucke wurden übersprungen - ihr Archiv ist nicht Teil dieser Wiederherstellung',
+        runsNumbersDropped: 'Einige Drucke hatten Gramm, Kosten, Energie oder Dauern, die keine gültigen Zahlen sind - leer gelassen',
+        runsPrinterMissing: 'Einige Drucke verwiesen auf Drucker, die nicht mehr existieren - Verknüpfung entfernt, Druckername behalten',
         spoolUsageUnresolved: '{{count}} Verbrauchseinträge übersprungen - ihre Spule ist nicht in der Spulenliste dieses Backups, es gibt also nichts, woran sie hängen könnten.',
         spoolUsageUnlinked: '{{count}} Verbrauchseinträge ohne Verknüpfung zum Druckverlauf wiederhergestellt - wählen Sie Druckarchive zusammen mit dem Spulenbestand, um sie zu behalten.',
         spoolTagKept: '{{count}} Spulen-Tags unverändert gelassen - das Backup hätte einen inzwischen gescannten Tag gelöscht oder ihn auf eine zweite Spule verschoben.',

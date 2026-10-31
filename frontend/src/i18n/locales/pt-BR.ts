@@ -5798,6 +5798,7 @@ export default {
         settingsNotRestorableWillSkip: '{{count}} configuração(ões) serão ignoradas - valores que as Configurações não aceitariam ou chaves que um backup não restaura',
         spoolsUsageCount: 'incluindo {{count}} registros de consumo',
         archivesMetadataOnly: 'Somente metadados - arquivos 3MF e miniaturas não ficam em um backup Git',
+        archivesRunsCount: 'incluindo {{count}} impressão(ões) - somente metadados, arquivos 3MF e miniaturas não estão em um backup Git',
         kprofilesPrinterCount: 'em {{count}} impressoras',
       },
       notes: {
@@ -5811,6 +5812,10 @@ export default {
         archivesOwnerUnknown: 'Alguns arquivos foram restaurados sem proprietário - este backup não registra nenhum, então eles só ficam visíveis para usuários com a permissão archives:read_all até que um administrador os atribua',
         archivesUndeleted: 'Arquivos excluídos desde o backup voltaram a ficar visíveis - a sobrescrita estava ligada',
         archivesMetadataOnly: 'Os arquivos restaurados contêm apenas metadados - os arquivos 3MF e as miniaturas não ficam em um backup Git',
+        archivesMergedFollowed: 'Arquivos mesclados em outro não são restaurados como linhas próprias - o que apontava para eles vai para o arquivo em que foram mesclados',
+        runsArchiveMissing: 'Algumas impressões foram ignoradas - o arquivo delas não faz parte desta restauração',
+        runsNumbersDropped: 'Algumas impressões tinham gramas, custos, energia ou durações que não são números válidos - deixados vazios',
+        runsPrinterMissing: 'Algumas impressões referenciavam impressoras que não existem mais - vínculo removido, nome da impressora mantido',
         spoolUsageUnresolved: '{{count}} registros de consumo ignorados - o carretel deles não está na lista de carretéis deste backup, então não há a que vinculá-los.',
         spoolUsageUnlinked: '{{count}} registros de consumo restaurados sem o vínculo com o histórico de impressão - selecione Arquivos de impressão junto com Inventário de carretéis para mantê-lo.',
         spoolTagKept: '{{count}} etiquetas de carretel foram mantidas como estavam - o backup teria apagado uma etiqueta lida desde então, ou a teria movido para um segundo carretel.',

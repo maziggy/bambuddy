@@ -5575,6 +5575,7 @@ export default {
         settingsNotRestorableWillSkip: '설정 {{count}}개를 건너뜁니다 - 설정 화면이 받아들이지 않는 값이거나 백업에서 복원하지 않는 키입니다',
         spoolsUsageCount: '사용 기록 {{count}}건 포함',
         archivesMetadataOnly: '메타데이터만 - 3MF 파일과 썸네일은 Git 백업에 포함되지 않습니다',
+        archivesRunsCount: '인쇄 {{count}}건 포함 - 메타데이터만, 3MF 파일과 썸네일은 Git 백업에 없습니다',
         kprofilesPrinterCount: '프린터 {{count}}대 분량',
       },
       notes: {
@@ -5588,6 +5589,10 @@ export default {
         archivesOwnerUnknown: '일부 아카이브가 소유자 없이 복원되었습니다 - 이 백업에 소유자가 기록되어 있지 않으므로 관리자가 지정하기 전까지 archives:read_all 권한이 있는 사용자에게만 보입니다',
         archivesUndeleted: '백업 이후 삭제된 아카이브가 다시 표시됩니다 - 덮어쓰기가 켜져 있었습니다',
         archivesMetadataOnly: '복원된 아카이브에는 메타데이터만 있습니다 - 3MF 파일과 썸네일은 Git 백업에 포함되지 않습니다',
+        archivesMergedFollowed: '다른 아카이브로 병합된 아카이브는 별도 행으로 복원되지 않습니다 - 이를 가리키던 항목은 병합된 아카이브로 이동합니다',
+        runsArchiveMissing: '일부 인쇄를 건너뛰었습니다 - 해당 아카이브가 이 복원에 포함되어 있지 않습니다',
+        runsNumbersDropped: '일부 인쇄의 그램, 비용, 에너지 또는 소요 시간이 유효한 숫자가 아닙니다 - 비워 두었습니다',
+        runsPrinterMissing: '일부 인쇄가 더 이상 존재하지 않는 프린터를 참조했습니다 - 연결을 해제하고 프린터 이름은 유지했습니다',
         spoolUsageUnresolved: '사용 기록 {{count}}건을 건너뛰었습니다 - 해당 스풀이 이 백업의 스풀 목록에 없어 연결할 대상이 없습니다.',
         spoolUsageUnlinked: '사용 기록 {{count}}건을 출력 기록 연결 없이 복원했습니다 - 연결을 유지하려면 스풀 재고와 함께 출력 아카이브도 선택하세요.',
         spoolTagKept: '스풀 태그 {{count}}개를 그대로 두었습니다 - 백업대로라면 그 사이 스캔된 태그가 지워지거나 다른 스풀로 옮겨졌을 것입니다.',

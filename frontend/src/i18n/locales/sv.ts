@@ -5857,6 +5857,7 @@ errors: {
         settingsNotRestorableWillSkip: '{{count}} inställning(ar) hoppas över - värden som Inställningar inte skulle godta, eller nycklar som en säkerhetskopia inte återställer',
         spoolsUsageCount: 'inklusive {{count}} användningspost(er)',
         archivesMetadataOnly: 'Endast metadata — 3MF-filer och minibilder finns inte i en Git-säkerhetskopia',
+        archivesRunsCount: 'inklusive {{count}} utskrift(er) - endast metadata, 3MF-filer och miniatyrbilder finns inte i en Git-säkerhetskopia',
         kprofilesPrinterCount: 'över {{count}} skrivare',
       },
       // Tally notes, same contract. noData is shared by all four categories:
@@ -5873,6 +5874,10 @@ errors: {
         archivesOwnerUnknown: 'Vissa arkiv återställdes utan en ägare — denna säkerhetskopia registrerar ingen, så de är synliga endast för användare med behörigheten archives:read_all tills en admin tilldelar dem på nytt',
         archivesUndeleted: 'Arkiv som tagits bort sedan säkerhetskopian är synliga igen — skriv över var aktiverad',
         archivesMetadataOnly: 'Återställda arkiv innehåller endast metadata — 3MF- och minibildfiler finns inte i en Git-säkerhetskopia',
+        archivesMergedFollowed: 'Arkiv som slagits ihop med ett annat återställs inte som egna rader - det som pekade på dem går till arkivet de slogs ihop med',
+        runsArchiveMissing: 'Vissa utskrifter hoppades över - deras arkiv ingår inte i den här återställningen',
+        runsNumbersDropped: 'Vissa utskrifter hade gram, kostnader, energi eller varaktigheter som inte är giltiga tal - lämnade tomma',
+        runsPrinterMissing: 'Vissa utskrifter hänvisade till skrivare som inte längre finns - länken togs bort, skrivarnamnet behölls',
         spoolUsageUnresolved: '{{count}} användningspost(er) hoppade över — deras rulle finns inte i denna säkerhetskopias rulllista, så det finns inget att koppla dem till.',
         spoolUsageUnlinked: '{{count}} användningspost(er) återställda utan sin utskriftshistorik-länk — välj Utskriftsarkiv tillsammans med Rullinventering för att behålla den.',
         spoolTagKept: '{{count}} rulletagg(ar) lämnade som de är — säkerhetskopian skulle ha rensat en tagg som sedan dess skannats, eller flyttat en till en andra rulle.',

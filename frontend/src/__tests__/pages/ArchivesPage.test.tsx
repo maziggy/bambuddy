@@ -2,7 +2,7 @@
  * Tests for the ArchivesPage component.
  */
 
-import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
 import { render } from '../utils';
 import { ArchivesPage } from '../../pages/ArchivesPage';
@@ -655,17 +655,34 @@ describe('ArchivesPage', () => {
 
   // Archive redesign P2: merging changes and removes whole archives, so the
   // button is there only for those the merge API lets through.
-  describe('merge duplicates button', () => {
-    // jsdom has no scrolling, and following an archive link scrolls to its
-    // card, later than the test that followed it may run.
-    const scrollIntoView = Element.prototype.scrollIntoView;
-    beforeAll(() => {
-      Element.prototype.scrollIntoView = vi.fn();
-    });
-    afterAll(() => {
-      Element.prototype.scrollIntoView = scrollIntoView;
-    });
+  // Archive redesign P3: the Failed collection shows failed and aborted
+  // prints, and its export has both.
+  it('exports what the Failed collection shows', async () => {
+    let exported: string | null = null;
+    server.use(
+      http.get('*/api/v1/archives/export', ({ request }) => {
+        exported = new URL(request.url).searchParams.get('status');
+        return new HttpResponse('ID\n', { headers: { 'Content-Type': 'text/csv' } });
+      }),
+    );
+    const createObjectURL = URL.createObjectURL;
+    const revokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = () => 'blob:export';
+    URL.revokeObjectURL = () => {};
+    try {
+      render(<ArchivesPage />);
+      fireEvent.change(await screen.findByDisplayValue('All Archives'), { target: { value: 'failed' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+      fireEvent.click(await screen.findByText('Export as CSV'));
 
+      await waitFor(() => expect(exported).toBe('failed,aborted'));
+    } finally {
+      URL.createObjectURL = createObjectURL;
+      URL.revokeObjectURL = revokeObjectURL;
+    }
+  });
+
+  describe('merge duplicates button', () => {
     const signInWith = (permissions: string[]) => {
       setAuthToken('merge-token', 'session');
       server.use(

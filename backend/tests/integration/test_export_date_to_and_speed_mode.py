@@ -14,6 +14,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+
+from backend.app.models.print_log import PrintLogEntry
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
@@ -36,6 +39,9 @@ async def three_days(archive_factory, printer_factory, db_session):
     ]:
         archive = await archive_factory(printer.id, print_name=name)
         archive.created_at = when
+        # The export picks prints by when they started (archive redesign).
+        run = await db_session.scalar(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        run.started_at = when
     await db_session.commit()
 
 

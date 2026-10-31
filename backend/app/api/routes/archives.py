@@ -1467,7 +1467,9 @@ async def export_archives(
     # Parse fields
     field_list = None
     if fields:
-        field_list = [f.strip() for f in fields.split(",")]
+        field_list = [f.strip() for f in fields.split(",") if f.strip()]
+        if unknown := ExportService.unknown_fields(field_list):
+            raise HTTPException(400, f"Unknown export fields: {', '.join(unknown)}")
 
     # Parse dates
     date_from_dt = None

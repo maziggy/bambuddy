@@ -4146,7 +4146,8 @@ export function ArchivesPage() {
                       const { blob, filename } = await api.exportArchives({
                         format: 'csv',
                         printerId: filterPrinter || undefined,
-                        status: collection === 'failed' ? 'failed' : undefined,
+                        // As the Failed collection shows them.
+                        status: collection === 'failed' ? 'failed,aborted' : undefined,
                         search: search || undefined,
                       });
                       const url = URL.createObjectURL(blob);
@@ -4175,7 +4176,8 @@ export function ArchivesPage() {
                       const { blob, filename } = await api.exportArchives({
                         format: 'xlsx',
                         printerId: filterPrinter || undefined,
-                        status: collection === 'failed' ? 'failed' : undefined,
+                        // As the Failed collection shows them.
+                        status: collection === 'failed' ? 'failed,aborted' : undefined,
                         search: search || undefined,
                       });
                       const url = URL.createObjectURL(blob);

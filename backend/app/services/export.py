@@ -9,6 +9,30 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.archive import PrintArchive
+from backend.app.models.print_log import INCLUDE_OPEN_RUNS, PrintLogEntry
+
+# What one print of an archive has of its own (archive redesign): in the
+# export, its run's. Everything else is the file's, the archive's.
+_PER_PRINT_FIELDS = frozenset(
+    {
+        "status",
+        "quantity",
+        "printer_id",
+        "printer_name",
+        "plate_id",
+        "filament_type",
+        "filament_used_grams",
+        "cost",
+        "energy_kwh",
+        "energy_cost",
+        "wear_cost",
+        "failure_reason",
+        "user_verdict",
+        "duration_seconds",
+        "started_at",
+        "completed_at",
+    }
+)
 
 
 class ExportService:
@@ -17,11 +41,14 @@ class ExportService:
     # Default fields to export
     DEFAULT_FIELDS = [
         "id",
+        "run_id",
         "print_name",
         "filename",
         "status",
         "quantity",
         "printer_id",
+        "printer_name",
+        "plate_id",
         "project_name",
         "filament_type",
         "filament_used_grams",
@@ -36,6 +63,8 @@ class ExportService:
         "tags",
         "notes",
         "failure_reason",
+        "user_verdict",
+        "duration_seconds",
         "started_at",
         "completed_at",
         "created_at",
@@ -44,6 +73,12 @@ class ExportService:
     # Field labels for headers
     FIELD_LABELS = {
         "id": "ID",
+        "run_id": "Print ID",
+        "printer_name": "Printer",
+        "plate_id": "Plate",
+        "user_verdict": "Outcome",
+        "duration_seconds": "Duration (s)",
+        "energy_kwh": "Energy (kWh)",
         "print_name": "Print Name",
         "filename": "Filename",
         "status": "Status",
@@ -70,6 +105,13 @@ class ExportService:
         "created_at": "Created At",
     }
 
+    @classmethod
+    def unknown_fields(cls, fields: list[str]) -> list[str]:
+        """The requested columns the export does not have: only its own
+        columns are exported, never other attributes of an archive (its
+        one-tap confirm token is a credential)."""
+        return [f for f in fields if f not in cls.FIELD_LABELS]
+
     def __init__(self, db: AsyncSession):
         self.db = db
 
@@ -86,45 +128,33 @@ class ExportService:
         visible_to_user_id: int | None = None,
         printer_scope: PrinterScope | None = None,
     ) -> tuple[bytes, str, str]:
-        """Export archives to CSV or Excel format.
+        """Export archives to CSV or Excel format, one row per print.
 
-        Args:
-            format: Export format ('csv' or 'xlsx')
-            fields: List of fields to include (None = all default fields)
-            printer_id: Filter by printer
-            project_id: Filter by project
-            status: Filter by status
-            date_from: Filter by start date
-            date_to: Filter by end date
-            search: Search filter
-            visible_to_user_id: Scope rows to those owned by this user (used
-                when the caller has ARCHIVES_READ_OWN but not _ALL).
+        An archive is a file, each print of it a run (archive redesign): a row
+        has the archive's file columns and one run's own (``_PER_PRINT_FIELDS``).
+        An archive printed before runs were logged is one row of its own
+        fields; one never printed, one row with empty print columns.
+
+        ``printer_id``, ``status`` and the dates pick prints (a run's start,
+        an archive without runs by when it was created); ``project_id``,
+        ``search`` and ``visible_to_user_id`` pick archives. A caller limited
+        to some printers gets only the prints on theirs.
 
         Returns:
             Tuple of (file_bytes, filename, content_type)
         """
-        # Build query. Soft-deleted archives (#1343) are excluded: this export
-        # is the list the user is looking at, saved to a file, and that list
-        # hides them — an export that silently contains rows the UI says are
-        # gone is worse than useless for reconciling anything (#2731).
+        # Soft-deleted archives (#1343) are excluded: this export is the list
+        # the user is looking at, saved to a file, and that list hides them —
+        # an export that silently contains rows the UI says are gone is worse
+        # than useless for reconciling anything (#2731).
         query = (
             select(PrintArchive)
-            .options(selectinload(PrintArchive.project))
+            .options(selectinload(PrintArchive.project), selectinload(PrintArchive.printer))
             .where(PrintArchive.deleted_at.is_(None))
             .order_by(PrintArchive.created_at.desc())
         )
-
-        # Apply filters
-        if printer_id:
-            query = query.where(PrintArchive.printer_id == printer_id)
         if project_id:
             query = query.where(PrintArchive.project_id == project_id)
-        if status:
-            query = query.where(PrintArchive.status == status)
-        if date_from:
-            query = query.where(PrintArchive.created_at >= date_from)
-        if date_to:
-            query = query.where(PrintArchive.created_at <= date_to)
         if visible_to_user_id is not None:
             query = query.where(PrintArchive.created_by_id == visible_to_user_id)
         from backend.app.core.row_visibility import archive_scope_clause
@@ -140,19 +170,55 @@ class ExportService:
                 | (PrintArchive.notes.ilike(like_pattern))
                 | (PrintArchive.designer.ilike(like_pattern))
             )
+        archives = list((await self.db.execute(query)).scalars().all())
 
-        # Execute query
-        result = await self.db.execute(query)
-        archives = list(result.scalars().all())
+        # Every archive's runs, a print running now included; the caller's
+        # only, when limited. By the archive query itself, not a list of its
+        # ids: a farm's archives outnumber what one statement may bind.
+        printed: set[int] = set()
+        runs: dict[int, list[PrintLogEntry]] = {}
+        if archives:
+            archive_ids = query.with_only_columns(PrintArchive.id).order_by(None)
+            all_runs = (
+                await self.db.scalars(
+                    select(PrintLogEntry)
+                    .where(PrintLogEntry.archive_id.in_(archive_ids))
+                    .order_by(PrintLogEntry.started_at.desc().nulls_last(), PrintLogEntry.id.desc())
+                    .execution_options(**{INCLUDE_OPEN_RUNS: True})
+                )
+            ).all()
+            for run in all_runs:
+                if run.archive_id is None:
+                    continue
+                printed.add(run.archive_id)
+                if printer_scope is None or printer_scope.allows(run.printer_id):
+                    runs.setdefault(run.archive_id, []).append(run)
 
-        # Determine fields to export
+        statuses = {s.strip() for s in status.split(",") if s.strip()} if status else set()
+
+        def picked(printer: int | None, row_status: str | None, when: datetime | None) -> bool:
+            if printer_id and printer != printer_id:
+                return False
+            if statuses and row_status not in statuses:
+                return False
+            if date_from and (when is None or when < date_from):
+                return False
+            return not (date_to and (when is None or when > date_to))
+
         export_fields = fields if fields else self.DEFAULT_FIELDS
-
-        # Convert to rows
         rows = []
         for archive in archives:
-            row = self._archive_to_row(archive, export_fields)
-            rows.append(row)
+            if archive.id in runs:
+                for run in runs[archive.id]:
+                    if picked(run.printer_id, run.status, run.started_at or run.created_at):
+                        rows.append(self._archive_to_row(archive, export_fields, run))
+            elif archive.id not in printed:
+                # Printed before runs were logged, or never: the archive's own.
+                if picked(archive.printer_id, archive.status, archive.created_at):
+                    rows.append(self._archive_to_row(archive, export_fields))
+            elif not (printer_id or status or date_from or date_to):
+                # Printed only on printers outside the caller's scope: the file.
+                rows.append(self._archive_to_row(archive, export_fields, hide_prints=True))
 
         # Generate headers
         headers = [self.FIELD_LABELS.get(f, f) for f in export_fields]
@@ -257,18 +323,43 @@ class ExportService:
 
         return file_bytes, filename, content_type
 
-    def _archive_to_row(self, archive: PrintArchive, fields: list[str]) -> list[Any]:
-        """Convert an archive to a row of values."""
+    def _archive_to_row(
+        self,
+        archive: PrintArchive,
+        fields: list[str],
+        run: PrintLogEntry | None = None,
+        *,
+        hide_prints: bool = False,
+    ) -> list[Any]:
+        """One row: the archive's file columns, and ``run``'s own (without a
+        run, the archive's, as it kept its print before runs; empty with
+        ``hide_prints``)."""
         row = []
         for field in fields:
             if field == "project_name":
                 value = archive.project.name if archive.project else None
-            elif field in ("started_at", "completed_at", "created_at"):
-                value = getattr(archive, field)
-                if value:
-                    value = value.isoformat()
+            elif field == "run_id":
+                value = run.id if run is not None else None
+            elif field in _PER_PRINT_FIELDS and hide_prints:
+                value = None
+            elif field in _PER_PRINT_FIELDS and run is not None:
+                value = getattr(run, field, None)
+                # Runs logged before they kept these share their archive's.
+                if field in ("filament_type", "quantity") and value is None:
+                    value = getattr(archive, field)
+            elif field == "printer_name":
+                value = archive.printer.name if archive.printer is not None else None
+            elif field == "duration_seconds":
+                started, completed = archive.started_at, archive.completed_at
+                value = (
+                    int((completed - started).total_seconds())
+                    if started and completed and completed > started
+                    else None
+                )
             else:
                 value = getattr(archive, field, None)
+            if isinstance(value, datetime):
+                value = value.isoformat()
             row.append(value)
         return row
 

@@ -132,7 +132,7 @@ async def webhook_add_to_queue(
     if not archive:
         raise HTTPException(status_code=404, detail="Archive not found")
     actor = await _key_actor(db, api_key)
-    _assert_can_queue_archive(archive, actor, await api_key_printer_scope(db, api_key))
+    await _assert_can_queue_archive(archive, actor, await api_key_printer_scope(db, api_key))
 
     # Verify printer exists
     result = await db.execute(select(Printer).where(Printer.id == data.printer_id))

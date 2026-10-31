@@ -312,9 +312,10 @@ async def test_a_run_on_a_printer_outside_the_callers_scope_is_not_theirs(async_
     assert [(c["printer_id"], c["run_id"]) for c in cards] == [(two_plates.b, two_plates.second)]
 
 
-async def test_a_card_is_not_shown_for_an_archive_outside_the_callers_scope(async_client, db_session, two_plates):
+async def test_a_card_is_shown_for_the_plate_printed_on_the_callers_printer(async_client, db_session, two_plates):
     """Scoped to printer A, whose plate it printed, while the archive names
-    B: as before runs, the archive is not theirs to see."""
+    B: the archive is theirs to see by that plate (archive redesign), and the
+    card is that plate's."""
     from backend.tests.integration.test_archives_last_per_printer import _admin_token, _auth, _user
 
     admin = await _admin_token(async_client)
@@ -323,4 +324,6 @@ async def test_a_card_is_not_shown_for_an_archive_outside_the_callers_scope(asyn
     )
 
     cards = (await async_client.get("/api/v1/archives/last-per-printer", headers=_auth(jwt))).json()
-    assert cards == []
+    assert [(c["id"], c["run_id"], c["printer_id"]) for c in cards] == [
+        (two_plates.archive, two_plates.first, two_plates.a)
+    ]

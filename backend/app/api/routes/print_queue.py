@@ -178,7 +178,7 @@ def _extract_filament_types_from_3mf(file_path: Path, plate_id: int | None = Non
 _extract_print_time_from_3mf = extract_print_time_from_3mf
 
 
-def _assert_can_queue_archive(
+async def _assert_can_queue_archive(
     archive: PrintArchive, current_user: User | ApiKeyActor | None, printer_scope: PrinterScope
 ) -> None:
     """Gate turning *archive* into a print. Raises rather than returning a verdict.
@@ -189,8 +189,9 @@ def _assert_can_queue_archive(
 
     Three checks:
 
-    * The archive must not be deleted, and its printer must be one the caller
-      may use; otherwise it reads as missing, as the archive routes answer.
+    * The archive must not be deleted, and one the caller sees: on a printer
+      they may use, or printed on one (archive redesign); otherwise it reads
+      as missing, as the archive routes answer.
     * IDOR fix (maziggy/bambuddy-security #2): without this, a caller with
       QUEUE_CREATE could queue any user's archive even without ARCHIVES_READ on
       it — Landon's PoC enumerated this on admin's archives as operator1. Gate
@@ -206,8 +207,15 @@ def _assert_can_queue_archive(
     """
     # A deleted archive, or one from a printer the caller can't use, reads as
     # missing, like the archive routes answer for it.
-    if archive.deleted_at is not None or not printer_scope.allows(archive.printer_id):
+    if archive.deleted_at is not None:
         raise HTTPException(404, "Archive not found")
+    if not printer_scope.allows(archive.printer_id):
+        from backend.app.core import database
+        from backend.app.services.archive_scope import printed_in_scope
+
+        async with database.async_session() as db:
+            if not await printed_in_scope(db, archive, printer_scope):
+                raise HTTPException(404, "Archive not found")
     # None is auth off (for an API key too).
     if current_user is None:
         return
@@ -350,7 +358,7 @@ async def _assert_can_dispatch_batch_sources(
         archive = (await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))).scalar_one_or_none()
         # A deleted source can't be printed; dispatch will fail on it anyway.
         if archive is not None:
-            _assert_can_queue_archive(archive, current_user, printer_scope)
+            await _assert_can_queue_archive(archive, current_user, printer_scope)
 
     for library_file_id in library_file_ids:
         library_file = (
@@ -1232,7 +1240,7 @@ async def add_to_queue(
         # Missing answers like hidden (404 from the gate below).
         if not archive:
             raise HTTPException(404, "Archive not found")
-        _assert_can_queue_archive(archive, actor, printer_scope)
+        await _assert_can_queue_archive(archive, actor, printer_scope)
 
     # Validate library file exists (if provided) and get it for filament extraction
     library_file = None
@@ -1834,7 +1842,7 @@ async def create_batch(
         batch_archive = await db.get(PrintArchive, data.archive_id)
         if batch_archive is None:
             raise HTTPException(404, "Archive not found")
-        _assert_can_queue_archive(batch_archive, actor, printer_scope)
+        await _assert_can_queue_archive(batch_archive, actor, printer_scope)
     if data.library_file_id is not None:
         batch_file = (
             await db.execute(LibraryFile.active().where(LibraryFile.id == data.library_file_id))

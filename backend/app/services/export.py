@@ -127,7 +127,9 @@ class ExportService:
             query = query.where(PrintArchive.created_at <= date_to)
         if visible_to_user_id is not None:
             query = query.where(PrintArchive.created_by_id == visible_to_user_id)
-        if printer_scope is not None and (clause := printer_scope.where(PrintArchive.printer_id)) is not None:
+        from backend.app.core.row_visibility import archive_scope_clause
+
+        if printer_scope is not None and (clause := archive_scope_clause(printer_scope)) is not None:
             query = query.where(clause)
         if search:
             like_pattern = f"%{search}%"

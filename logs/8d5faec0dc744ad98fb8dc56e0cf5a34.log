@@ -1,0 +1,200 @@
+2026-10-31 10:24:29,166 INFO [backend.app.main] [-] [TIMING] Finance charge update: 3.037s elapsed
+2026-10-31 10:24:29,176 INFO [backend.app.main] [-] [PRINT_LOG] Log entry written for archive 7
+2026-10-31 10:24:29,176 INFO [backend.app.main] [-] [TIMING] Print log entry: 3.047s elapsed
+2026-10-31 10:24:29,176 INFO [backend.app.main] [-] [TIMING] Background tasks scheduled (energy, photo): 3.047s elapsed
+2026-10-31 10:24:29,177 INFO [backend.app.main] [-] [TIMING] All background tasks scheduled: 3.047s elapsed
+2026-10-31 10:24:29,177 INFO [backend.app.main] [-] [CALLBACK] on_print_complete finished for printer 2, archive 7
+2026-10-31 10:24:29,177 INFO [backend.app.main] [-] [ENERGY-BG] Starting energy calculation for archive 7
+2026-10-31 10:24:29,178 INFO [backend.app.main] [-] [PHOTO-BG] Starting finish photo capture for archive 7
+2026-10-31 10:24:29,179 INFO [backend.app.main] [-] [AUTO-OFF-BG] Starting smart plug automation for printer 2
+2026-10-31 10:24:29,179 INFO [backend.app.main] [-] [MAINT-BG] Starting maintenance check for printer 2
+2026-10-31 10:24:29,180 INFO [backend.app.main] [-] [LAYER-TL] Stitching layer timelapse for printer 2
+2026-10-31 10:24:29,183 INFO [backend.app.main] [-] [ENERGY-BG] No start kWh recorded for archive 7
+2026-10-31 10:24:29,185 INFO [backend.app.main] [-] [AUTO-OFF-BG] Completed
+2026-10-31 10:24:29,207 INFO [backend.app.main] [-] [MAINT-BG] Completed (no items need attention)
+2026-10-31 10:24:31,071 INFO [backend.app.main] [-] [FINISH-PHOTO-MOMENT] captured RTSP frame (163304 bytes)
+2026-10-31 10:24:31,073 INFO [backend.app.main] [-] [PHOTO-BG] Saved stage-22 pre-captured frame: finish_20261031_102431_f3424ba8.jpg (163304 bytes)
+2026-10-31 10:24:31,083 INFO [backend.app.main] [-] [PHOTO-BG] Saved: finish_20261031_102431_f3424ba8.jpg
+2026-10-31 10:24:31,083 INFO [backend.app.main] [-] [PHOTO-NOTIFY] Photo task returned: finish_20261031_102431_f3424ba8.jpg
+2026-10-31 10:24:31,083 INFO [backend.app.main] [-] [NOTIFY-BG] Starting notifications for printer 2, photo=finish_20261031_102431_f3424ba8.jpg
+2026-10-31 10:24:31,092 INFO [backend.app.main] [-] [NOTIFY-BG] Loaded finish photo bytes: 163304 bytes
+2026-10-31 10:24:31,092 INFO [backend.app.services.notification_service] [-] on_print_complete called for printer 2 (HomeLab), status=completed
+2026-10-31 10:24:31,095 INFO [backend.app.services.notification_service] [-] No notification providers configured for on_print_complete event on printer 2
+2026-10-31 10:24:31,097 INFO [backend.app.main] [-] [NOTIFY-BG] Completed
+2026-10-31 10:24:31,163 INFO [backend.app.services.bambu_ftp] [-] Successfully downloaded /caliper_case-Body.gcode.3mf to /opt/[user]/data/archive/temp/cover_2_caliper_case-Body.gcode.3mf (329810 bytes)
+2026-10-31 10:24:31,173 INFO [backend.app.api.routes.printers] [2cfd40c1] Downloaded file size: 329810 bytes
+2026-10-31 10:24:31,174 INFO [backend.app.api.routes.printers] [2cfd40c1] Cover: detected plate 1 from 3MF contents
+2026-10-31 10:24:38,491 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-10-31 11:25:32,458 INFO [uvicorn.access] [-] [IP]:56724 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-10-31 11:25:32,507 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-10-31 11:25:32,512 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-10-31 11:25:32,512 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 3655.7s, forcing reconnect
+2026-10-31 11:25:32,523 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-10-31 11:25:32,523 INFO [backend.app.main] [-] [#1752] Printer 2 connected→disconnected edge; scheduling offline notification in 60s
+2026-10-31 11:25:38,706 INFO [uvicorn.access] [-] [IP]:45924 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-10-31 11:25:38,772 INFO [uvicorn.access] [-] [IP]:45912 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-10-31 11:25:39,087 INFO [backend.app.api.routes.cloud] [7dc09f31] get_filament_info called with 2 IDs: ['GFA00', 'GFL99']
+2026-10-31 11:25:39,094 INFO [uvicorn.access] [-] [IP]:45916 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-10-31 11:25:58,081 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-10-31 11:33:31,492 INFO [uvicorn.access] [-] [IP]:46550 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-10-31 11:33:31,501 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-10-31 11:33:31,507 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-10-31 11:33:31,508 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-10-31 11:33:37,990 INFO [backend.app.api.routes.cloud] [97a9fdb3] get_filament_info called with 2 IDs: ['GFA00', 'GFL99']
+2026-10-31 11:33:38,000 INFO [uvicorn.access] [-] [IP]:35462 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-10-31 11:33:39,351 ERROR [backend.app.services.firmware_check] [87182ebb] curl_cffi error fetching https://bambulab.com/en/support/firmware-download/all: Failed to perform, curl: (28) Operation timed out after 30000 milliseconds with 0 bytes received. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
+2026-10-31 11:33:39,372 ERROR [backend.app.services.firmware_check] [5a7caa7a] curl_cffi error fetching https://bambulab.com/en/support/firmware-download/all: Failed to perform, curl: (28) Operation timed out after 30002 milliseconds with 0 bytes received. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
+2026-10-31 11:33:57,175 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-10-31 11:44:09,052 INFO [backend.app.main] [-] [#1752] Printer 2 offline debounce elapsed: still_offline=True
+2026-10-31 11:44:09,058 INFO [backend.app.main] [-] [#1752] Dispatching on_printer_offline for printer 2 (HomeLab)
+2026-10-31 11:44:09,450 INFO [uvicorn.access] [-] [IP]:53198 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-10-31 11:44:09,463 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-10-31 11:44:09,466 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-10-31 11:44:09,467 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-10-31 11:44:15,699 INFO [backend.app.api.routes.cloud] [447c5eef] get_filament_info called with 2 IDs: ['GFA00', 'GFL99']
+2026-10-31 11:44:15,708 INFO [uvicorn.access] [-] [IP]:57004 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-10-31 11:44:18,780 ERROR [backend.app.services.firmware_check] [87182ebb] curl_cffi error fetching https://bambulab.com/_next/data/YNVP7zsQwbz0M6VWhNI0g/en/support/firmware-download/a1-mini.json: Failed to perform, curl: (28) Operation timed out after 30000 milliseconds with 0 bytes received. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
+2026-10-31 11:44:18,802 ERROR [backend.app.services.firmware_check] [5a7caa7a] curl_cffi error fetching https://bambulab.com/_next/data/YNVP7zsQwbz0M6VWhNI0g/en/support/firmware-download/a1.json: Failed to perform, curl: (28) Operation timed out after 30002 milliseconds with 0 bytes received. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
+2026-10-31 11:44:35,107 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-10-31 11:58:51,462 INFO [uvicorn.access] [-] [IP]:42536 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-10-31 11:58:51,482 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-10-31 11:58:51,488 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-10-31 11:58:51,489 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-10-31 11:58:58,731 INFO [backend.app.api.routes.cloud] [4b988e79] get_filament_info called with 2 IDs: ['GFA00', 'GFL99']
+2026-10-31 11:58:58,739 INFO [uvicorn.access] [-] [IP]:50884 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-10-31 12:13:16,912 INFO [backend.app.api.routes.cloud] [e0073bda] get_filament_info called with 2 IDs: ['GFA00', 'GFL99']
+2026-10-31 12:13:16,919 INFO [uvicorn.access] [-] [IP]:55494 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-10-31 12:15:47,539 INFO [uvicorn.access] [-] [IP]:51332 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-10-31 12:15:47,577 INFO [uvicorn.access] [-] [IP]:51316 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-10-31 12:18:38,279 INFO [backend.app.api.routes.cloud] [525c5e39] get_filament_info called with 2 IDs: ['GFA00', 'GFL99']
+2026-10-31 12:18:38,300 INFO [uvicorn.access] [-] [IP]:60420 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-10-31 12:25:17,515 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-10-31 12:25:21,099 INFO [uvicorn.access] [-] [IP]:59018 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-10-31 12:25:21,111 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-10-31 12:25:21,116 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-10-31 12:25:21,117 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-10-31 12:32:50,827 INFO [backend.app.api.routes.cloud] [96cb5dbe] get_filament_info called with 2 IDs: ['GFA00', 'GFL99']
+2026-10-31 12:32:50,834 INFO [uvicorn.access] [-] [IP]:38482 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-10-31 14:17:57,316 INFO [uvicorn.access] [-] [IP]:55016 - "POST /api/v1/auth/login HTTP/1.1" 200
+2026-10-31 14:17:57,481 INFO [uvicorn.access] [-] [IP]:55036 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-10-31 14:17:57,515 INFO [uvicorn.access] [-] [IP]:55016 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-10-31 14:17:57,637 INFO [uvicorn.access] [-] [IP]:55016 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-10-31 14:17:57,669 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-10-31 14:17:57,683 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-10-31 14:17:57,685 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-10-31 14:17:58,142 INFO [backend.app.api.routes.cloud] [1b22023d] get_filament_info called with 2 IDs: ['GFA00', 'GFL99']
+2026-10-31 14:17:58,150 INFO [uvicorn.access] [-] [IP]:55050 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-10-31 14:20:57,673 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-10-31 14:20:58,119 INFO [uvicorn.access] [-] [IP]:33456 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-10-31 14:20:58,133 INFO [uvicorn.access] [-] [IP]:42058 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-10-31 14:20:58,200 INFO [uvicorn.access] [-] [IP]:33456 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-10-31 14:20:58,235 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-10-31 14:20:58,247 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-10-31 14:20:58,248 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-10-31 14:20:58,736 INFO [backend.app.api.routes.cloud] [26261779] get_filament_info called with 2 IDs: ['GFA00', 'GFL99']
+2026-10-31 14:20:58,738 INFO [uvicorn.access] [-] [IP]:33456 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-10-31 15:10:58,159 INFO [uvicorn.access] [-] [IP]:50106 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-10-31 15:10:58,165 INFO [uvicorn.access] [-] [IP]:50090 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-10-31 16:00:58,197 INFO [uvicorn.access] [-] [IP]:56664 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-10-31 16:00:58,201 INFO [uvicorn.access] [-] [IP]:56648 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-10-31 16:27:53,664 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-10-31 16:27:54,102 INFO [uvicorn.access] [-] [IP]:40200 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-10-31 16:27:54,111 INFO [uvicorn.access] [-] [IP]:51632 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-10-31 16:27:54,186 INFO [uvicorn.access] [-] [IP]:40214 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-10-31 16:27:54,219 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-10-31 16:27:54,232 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-10-31 16:27:54,232 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-10-31 16:27:54,778 INFO [backend.app.api.routes.cloud] [e4eb36de] get_filament_info called with 2 IDs: ['GFA00', 'GFL99']
+2026-10-31 16:27:54,783 INFO [uvicorn.access] [-] [IP]:40208 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-10-31 16:28:05,704 INFO [uvicorn.access] [-] [IP]:52848 - "POST /api/v1/printers/1/connect HTTP/1.1" 200
+2026-10-31 16:28:14,569 INFO [uvicorn.access] [-] [IP]:58200 - "DELETE /api/v1/printers/1?delete_archives=true HTTP/1.1" 200
+2026-10-31 16:28:24,505 INFO [backend.app.services.discovery] [b95caaf8] Starting SSDP discovery on port 2021 for Bambu Lab printers...
+2026-10-31 16:28:24,506 INFO [uvicorn.access] [-] [IP]:58200 - "POST /api/v1/discovery/start?duration=10 HTTP/1.1" 200
+2026-10-31 16:28:34,533 INFO [uvicorn.access] [-] [IP]:58200 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-10-31 16:28:41,312 INFO [backend.app.services.discovery] [aa2aa02c] Starting SSDP discovery on port 2021 for Bambu Lab printers...
+2026-10-31 16:28:41,313 INFO [uvicorn.access] [-] [IP]:55998 - "POST /api/v1/discovery/start?duration=10 HTTP/1.1" 200
+2026-10-31 16:28:51,353 INFO [uvicorn.access] [-] [IP]:54812 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-10-31 16:29:23,746 INFO [backend.app.services.discovery] [c09b70de] Starting SSDP discovery on port 2021 for Bambu Lab printers...
+2026-10-31 16:29:23,746 INFO [uvicorn.access] [-] [IP]:46510 - "POST /api/v1/discovery/start?duration=10 HTTP/1.1" 200
+2026-10-31 16:29:33,789 INFO [uvicorn.access] [-] [IP]:48984 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-10-31 16:29:45,884 INFO [uvicorn.access] [-] [IP]:48984 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-10-31 16:29:45,885 INFO [uvicorn.access] [-] [IP]:43880 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-10-31 16:30:10,257 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-10-31 16:30:10,617 INFO [uvicorn.access] [-] [IP]:50352 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-10-31 16:30:10,637 INFO [uvicorn.access] [-] [IP]:50356 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-10-31 16:30:10,646 INFO [uvicorn.access] [-] [IP]:50372 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-10-31 16:30:10,668 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-10-31 16:30:10,676 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-10-31 16:30:10,677 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-10-31 16:30:10,953 INFO [backend.app.api.routes.cloud] [540b0f76] get_filament_info called with 2 IDs: ['GFA00', 'GFL99']
+2026-10-31 16:30:10,954 INFO [uvicorn.access] [-] [IP]:50372 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-10-31 16:30:19,961 INFO [uvicorn.access] [-] [IP]:50348 - "DELETE /api/v1/printers/2?delete_archives=true HTTP/1.1" 200
+2026-10-31 16:30:23,187 INFO [backend.app.services.discovery] [ae30fbff] Starting SSDP discovery on port 2021 for Bambu Lab printers...
+2026-10-31 16:30:23,188 INFO [uvicorn.access] [-] [IP]:50348 - "POST /api/v1/discovery/start?duration=10 HTTP/1.1" 200
+2026-10-31 16:30:33,244 INFO [uvicorn.access] [-] [IP]:35494 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-10-31 16:31:03,990 INFO [backend.app.services.discovery] [95e8bd81] Starting SSDP discovery on port 2021 for Bambu Lab printers...
+2026-10-31 16:31:03,991 INFO [uvicorn.access] [-] [IP]:56328 - "POST /api/v1/discovery/start?duration=10 HTTP/1.1" 200
+2026-10-31 16:31:14,027 INFO [uvicorn.access] [-] [IP]:39744 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-10-31 16:31:15,173 INFO [uvicorn.access] [-] [IP]:34668 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-10-31 16:31:15,175 INFO [uvicorn.access] [-] [IP]:39744 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-10-31 16:31:41,290 INFO [backend.app.api.routes.support] [37904618] Log level changed to DEBUG
+2026-10-31 16:31:41,290 INFO [backend.app.api.routes.bug_report] [37904618] Bug report: enabled debug logging
+2026-10-31 16:31:41,291 INFO [uvicorn.access] [-] [IP]:53358 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-10-31 16:31:48,080 INFO [backend.app.services.discovery] [3a6b569c] Starting SSDP discovery on port 2021 for Bambu Lab printers...
+2026-10-31 16:31:48,081 DEBUG [backend.app.services.discovery] [3a6b569c] Received from [IP]: M-SEARCH * HTTP/1.1
+HOST: [IP]:2021
+MAN: "ssdp:discover"
+MX: 3
+ST: urn:bambulab-com:d...
+2026-10-31 16:31:48,081 DEBUG [backend.app.services.discovery] [3a6b569c] No USN found in response from [IP]
+2026-10-31 16:31:48,081 INFO [uvicorn.access] [-] [IP]:47586 - "POST /api/v1/discovery/start?duration=10 HTTP/1.1" 200
+2026-10-31 16:31:51,200 DEBUG [backend.app.services.discovery] [3a6b569c] Received from [IP]: M-SEARCH * HTTP/1.1
+HOST: [IP]:2021
+MAN: "ssdp:discover"
+MX: 3
+ST: urn:bambulab-com:d...
+2026-10-31 16:31:51,200 DEBUG [backend.app.services.discovery] [3a6b569c] No USN found in response from [IP]
+2026-10-31 16:31:54,222 DEBUG [backend.app.services.discovery] [3a6b569c] Received from [IP]: M-SEARCH * HTTP/1.1
+HOST: [IP]:2021
+MAN: "ssdp:discover"
+MX: 3
+ST: urn:bambulab-com:d...
+2026-10-31 16:31:54,222 DEBUG [backend.app.services.discovery] [3a6b569c] No USN found in response from [IP]
+2026-10-31 16:31:57,244 DEBUG [backend.app.services.discovery] [3a6b569c] Received from [IP]: M-SEARCH * HTTP/1.1
+HOST: [IP]:2021
+MAN: "ssdp:discover"
+MX: 3
+ST: urn:bambulab-com:d...
+2026-10-31 16:31:57,244 DEBUG [backend.app.services.discovery] [3a6b569c] No USN found in response from [IP]
+2026-10-31 16:31:58,114 INFO [uvicorn.access] [-] [IP]:44208 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-10-31 16:32:02,374 INFO [uvicorn.access] [-] [IP]:37490 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-10-31 16:32:02,403 INFO [uvicorn.access] [-] [IP]:37494 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-10-31 16:32:02,870 INFO [backend.app.api.routes.cloud] [fc2ad5dc] get_filament_info called with 2 IDs: ['GFA00', 'GFL99']
+2026-10-31 16:32:02,873 INFO [uvicorn.access] [-] [IP]:37486 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-10-31 16:32:20,557 INFO [backend.app.services.discovery] [e460bb27] Starting SSDP discovery on port 2021 for Bambu Lab printers...
+2026-10-31 16:32:20,557 DEBUG [backend.app.services.discovery] [e460bb27] Received from [IP]: M-SEARCH * HTTP/1.1
+HOST: [IP]:2021
+MAN: "ssdp:discover"
+MX: 3
+ST: urn:bambulab-com:d...
+2026-10-31 16:32:20,558 DEBUG [backend.app.services.discovery] [e460bb27] No USN found in response from [IP]
+2026-10-31 16:32:20,558 INFO [uvicorn.access] [-] [IP]:32918 - "POST /api/v1/discovery/start?duration=10 HTTP/1.1" 200
+2026-10-31 16:32:23,684 DEBUG [backend.app.services.discovery] [e460bb27] Received from [IP]: M-SEARCH * HTTP/1.1
+HOST: [IP]:2021
+MAN: "ssdp:discover"
+MX: 3
+ST: urn:bambulab-com:d...
+2026-10-31 16:32:23,684 DEBUG [backend.app.services.discovery] [e460bb27] No USN found in response from [IP]
+2026-10-31 16:32:26,705 DEBUG [backend.app.services.discovery] [e460bb27] Received from [IP]: M-SEARCH * HTTP/1.1
+HOST: [IP]:2021
+MAN: "ssdp:discover"
+MX: 3
+ST: urn:bambulab-com:d...
+2026-10-31 16:32:26,705 DEBUG [backend.app.services.discovery] [e460bb27] No USN found in response from [IP]
+2026-10-31 16:32:29,725 DEBUG [backend.app.services.discovery] [e460bb27] Received from [IP]: M-SEARCH * HTTP/1.1
+HOST: [IP]:2021
+MAN: "ssdp:discover"
+MX: 3
+ST: urn:bambulab-com:d...
+2026-10-31 16:32:29,725 DEBUG [backend.app.services.discovery] [e460bb27] No USN found in response from [IP]
+2026-10-31 16:32:30,591 INFO [uvicorn.access] [-] [IP]:32932 - "POST /api/v1/discovery/stop HTTP/1.1" 200

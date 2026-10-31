@@ -192,6 +192,14 @@ async def mirror_latest_run(db: AsyncSession, archive_id: int) -> None:
         setattr(archive, name, getattr(latest, name))
     if latest.plate_id is not None:
         archive.plate_id = latest.plate_id
+    # And its printer: after a merge, or a run deleted, the archive's would
+    # still be another print's. Not a printer since deleted: the print log
+    # keeps those ids as history, the archive's is a key.
+    if latest.printer_id is not None and latest.printer_id != archive.printer_id:
+        from backend.app.models.printer import Printer
+
+        if await db.scalar(select(Printer.id).where(Printer.id == latest.printer_id)) is not None:
+            archive.printer_id = latest.printer_id
     # Its outcome verdict too (#1898), once the run holds its own: it has one,
     # or was opened at its start with its opt-in. A run logged before then
     # may never have been given the archive's, which stays. Runs logged

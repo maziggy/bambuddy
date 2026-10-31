@@ -371,7 +371,7 @@ async def _load_run_aggregates(
     """Batch-load per-archive run aggregates from PrintLogEntry.
 
     Returns ``{archive_id: {run_count, last_run_at, total_filament_actual_grams,
-    successful_run_count, failed_run_count, unmeasured_run_count}}``. Archives with no logged runs are
+    successful_run_count, failed_run_count, unmeasured_run_count, latest_run_id}}``. Archives with no logged runs are
     absent from the map; callers should treat that as zero/none.
 
     With ``printer_scope``, only the runs on its printers count: a caller
@@ -411,6 +411,28 @@ async def _load_run_aggregates(
             "failed_run_count": int(failed or 0),
             "unmeasured_run_count": int(estimated or 0),
         }
+    # The latest print of each (by start), which the archive shows: a print
+    # running now included, as the archive shows it while it runs.
+    scope = printer_scope.where(PrintLogEntry.printer_id) if printer_scope is not None else None
+    ranked = (
+        select(
+            PrintLogEntry.archive_id,
+            PrintLogEntry.id,
+            func.row_number()
+            .over(
+                partition_by=PrintLogEntry.archive_id,
+                order_by=(PrintLogEntry.started_at.desc().nulls_last(), PrintLogEntry.id.desc()),
+            )
+            .label("rn"),
+        )
+        .where(PrintLogEntry.archive_id.in_(archive_ids), *([scope] if scope is not None else []))
+        .subquery()
+    )
+    latest = await db.execute(
+        select(ranked.c.archive_id, ranked.c.id).where(ranked.c.rn == 1).execution_options(**{INCLUDE_OPEN_RUNS: True})
+    )
+    for archive_id, run_id in latest.all():
+        aggregates.setdefault(archive_id, {})["latest_run_id"] = run_id
     return aggregates
 
 
@@ -558,6 +580,7 @@ def archive_to_response(
         data["total_filament_actual_grams"] = run_aggregate.get("total_filament_actual_grams")
         data["successful_run_count"] = run_aggregate.get("successful_run_count", 0)
         data["failed_run_count"] = run_aggregate.get("failed_run_count", 0)
+        data["latest_run_id"] = run_aggregate.get("latest_run_id")
 
     return data
 
@@ -2428,9 +2451,8 @@ async def toggle_favorite(
     await db.commit()
     await db.refresh(archive)
     view = await scoped_view(db, archive, printer_scope)
-    if view is None:
-        return archive
-    # As the list shows it to a caller limited to some printers.
+    # As the list shows it (its run figures; to a caller limited to some
+    # printers, their view of it).
     from sqlalchemy.orm import selectinload
 
     loaded = await db.scalar(

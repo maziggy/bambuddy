@@ -425,3 +425,84 @@ async def test_the_project_list_shows_their_plate(async_client, db_session, plat
     assert [(a["id"], a["printer_id"], a["photos"]) for a in response.json()] == [
         (plates.archive, plates.a, ["finish_a.jpg"])
     ]
+
+
+class TestLatestRun:
+    """The run the archive's per-print fields come from (archive redesign P3)."""
+
+    async def test_is_the_latest_print(self, async_client, plates):
+        listed = (await async_client.get("/api/v1/archives/", headers=plates.admin)).json()
+        detail = (await async_client.get(_url(plates), headers=plates.admin)).json()
+
+        assert [a["latest_run_id"] for a in listed] == [plates.second]
+        assert detail["latest_run_id"] == plates.second
+
+    async def test_is_the_callers_latest_print(self, async_client, plates):
+        detail = (await async_client.get(_url(plates), headers=plates.of_a)).json()
+
+        assert (detail["latest_run_id"], detail["run_id"]) == (plates.first, plates.first)
+
+
+async def test_the_per_print_fields_are_flagged_deprecated(async_client):
+    schema = (await async_client.get("/openapi.json")).json()["components"]["schemas"]["ArchiveResponse"]["properties"]
+
+    deprecated = {name for name, field in schema.items() if field.get("deprecated")}
+    assert {"status", "started_at", "completed_at", "failure_reason", "user_verdict", "printer_id"} <= deprecated
+    assert not {"filename", "print_name", "notes", "tags", "latest_run_id", "run_count"} & deprecated
+
+
+class TestLatestRunFollowsTheShownPrint:
+    async def test_a_print_running_now_is_the_latest(self, async_client, db_session, plates):
+        running = PrintLogEntry(
+            archive_id=plates.archive, printer_id=plates.b, status=RUN_OPEN, started_at=T2 + timedelta(hours=1)
+        )
+        db_session.add(running)
+        await db_session.commit()
+        running_id = running.id
+
+        detail = (await async_client.get(_url(plates), headers=plates.admin)).json()
+
+        assert detail["latest_run_id"] == running_id
+
+    async def test_their_print_when_the_latest_is_not_theirs(self, async_client, db_session, plates):
+        """The archive names A (as after a merge) but its latest print ran on B."""
+        archive = await _row(db_session, PrintArchive, plates.archive)
+        archive.printer_id = plates.a
+        await db_session.commit()
+
+        body = (await async_client.get(_url(plates), headers=plates.of_a)).json()
+
+        assert (body["run_id"], body["status"], body["latest_run_id"]) == (plates.first, "completed", plates.first)
+        assert body["failure_reason"] is None
+
+    async def test_the_favourite_toggle_answers_with_the_latest_print(self, async_client, plates):
+        response = await async_client.post(_url(plates, "/favorite"), headers=plates.admin)
+
+        assert response.status_code == 200, response.text
+        assert response.json()["latest_run_id"] == plates.second
+
+
+class TestTheArchivesPrinterFollowsItsLatestPrint:
+    async def test_after_its_latest_print_moves(self, db_session, plates):
+        from backend.app.services.print_log import mirror_latest_run
+
+        archive = await _row(db_session, PrintArchive, plates.archive)
+        archive.printer_id = plates.a
+        await db_session.commit()
+
+        await mirror_latest_run(db_session, plates.archive)
+        await db_session.commit()
+
+        assert (await _row(db_session, PrintArchive, plates.archive)).printer_id == plates.b
+
+    async def test_not_to_a_printer_since_deleted(self, db_session, plates):
+        from backend.app.services.print_log import mirror_latest_run
+
+        run = await _row(db_session, PrintLogEntry, plates.second)
+        run.printer_id = 999999
+        await db_session.commit()
+
+        await mirror_latest_run(db_session, plates.archive)
+        await db_session.commit()
+
+        assert (await _row(db_session, PrintArchive, plates.archive)).printer_id == plates.b

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, BeforeValidator, Field, model_validator
 
@@ -65,9 +65,25 @@ class ArchiveDuplicate(BaseModel):
     match_type: str  # "exact" (hash match) or "similar" (name match)
 
 
+# Archive redesign: an archive is a file, each print of it a run. The fields
+# so marked describe one print, the latest (for a caller limited to some
+# printers, their latest): read them from GET /archives/{id}/runs, or with
+# ?run_id=, instead. Kept on the archive for one more release, flagged in the
+# OpenAPI schema only: a Pydantic deprecation would warn on every read inside
+# Bambuddy too.
+_PER_PRINT = (
+    "Deprecated: the latest print's (latest_run_id). Read it from the archive's runs (GET /archives/{id}/runs)."
+)
+_FIRST_PRINT = "Deprecated: the first print's. Read it from the archive's runs (GET /archives/{id}/runs)."
+
+
+def _per_print(default: Any = ..., description: str = _PER_PRINT) -> Any:
+    return Field(default, description=description, json_schema_extra={"deprecated": True})
+
+
 class ArchiveResponse(BaseModel):
     id: int
-    printer_id: int | None
+    printer_id: int | None = _per_print()
     project_id: int | None = None
     project_name: str | None = None  # Included for convenience
     filename: str
@@ -75,7 +91,7 @@ class ArchiveResponse(BaseModel):
     file_size: int
     content_hash: str | None
     thumbnail_path: str | None
-    timelapse_path: str | None
+    timelapse_path: str | None = _per_print()
     source_3mf_path: str | None = None  # Original project 3MF from slicer
     f3d_path: str | None = None  # Fusion 360 design file
 
@@ -89,11 +105,11 @@ class ArchiveResponse(BaseModel):
     object_count: int | None = None
 
     print_name: str | None
-    plate_id: int | None = None  # Selected plate of a multi-plate 3MF (#2603)
+    plate_id: int | None = _per_print(None)  # Selected plate of a multi-plate 3MF (#2603)
     print_time_seconds: int | None  # Estimated time from slicer
-    actual_time_seconds: int | None = None  # Computed from started_at/completed_at
+    actual_time_seconds: int | None = _per_print(None)  # Computed from started_at/completed_at
     # Percentage: 100 = perfect, >100 = faster than estimated
-    time_accuracy: float | None = None
+    time_accuracy: float | None = _per_print(None)
     filament_used_grams: float | None
     filament_type: str | None
     filament_color: str | None
@@ -106,9 +122,9 @@ class ArchiveResponse(BaseModel):
 
     sliced_for_model: str | None = None  # Printer model this file was sliced for
 
-    status: str
-    started_at: datetime | None
-    completed_at: datetime | None
+    status: str = _per_print()
+    started_at: datetime | None = _per_print()
+    completed_at: datetime | None = _per_print()
 
     extra_data: dict | None
 
@@ -121,23 +137,28 @@ class ArchiveResponse(BaseModel):
     tags: str | None
     notes: str | None
     cost: float | None
-    photos: list | None
-    failure_reason: str | None
+    photos: list | None = _per_print(
+        description="Every print's finish photos and the ones uploaded by hand; a print's own are on its run."
+    )
+    failure_reason: str | None = _per_print()
     quantity: int = 1  # Number of items printed
 
     # Post-print outcome confirmation (#1898)
-    user_verdict: str | None = None
-    user_verdict_source: str | None = None
-    user_verdict_at: datetime | None = None
+    user_verdict: str | None = _per_print(None)
+    user_verdict_source: str | None = _per_print(None)
+    user_verdict_at: datetime | None = _per_print(None)
     confirm_requested: bool = False
     # The run (print log entry) whose outcome this response shows, when it
     # shows one run of the archive rather than its latest (#1898).
     run_id: int | None = None
+    # The latest print of the archive (by start, among those the caller may
+    # see): the run the per-print fields are taken from.
+    latest_run_id: int | None = None
 
     # Energy tracking
-    energy_kwh: float | None = None
-    energy_cost: float | None = None
-    wear_cost: float | None = None  # Printer wear, #694
+    energy_kwh: float | None = _per_print(None, _FIRST_PRINT)
+    energy_cost: float | None = _per_print(None, _FIRST_PRINT)
+    wear_cost: float | None = _per_print(None, _FIRST_PRINT)  # Printer wear, #694
 
     created_at: datetime | None
 

@@ -923,6 +923,9 @@ export interface Archive {
   // The run whose outcome this shows, when it shows one run of the archive
   // (a plate printed on its own) rather than its latest (#1898).
   run_id?: number | null;
+  // The latest print of the archive (among those the caller may see), whose
+  // figures the per-print fields show (archive redesign).
+  latest_run_id?: number | null;
   quantity: number;
   energy_kwh: number | null;
   energy_cost: number | null;

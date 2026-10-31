@@ -92,11 +92,15 @@ def view_of(archive, runs: list[PrintLogEntry], scope: PrinterScope) -> ScopedVi
         return max(of, key=lambda r: (r.started_at is not None, r.started_at or r.created_at or datetime.min, r.id))
 
     run = shown = None
-    if not archive_inside:
+    newest = latest(runs) if runs else None
+    # Their latest print, when the one the archive shows is not theirs: its
+    # printer is outside their scope, or its latest print is (after a merge,
+    # say, the archive's printer and its latest print can differ).
+    if not archive_inside or (newest is not None and not scope.allows(newest.printer_id)):
         theirs = [r for r in runs if _on_printer_in(scope, r)]
         if theirs:
             run = shown = latest(theirs)
-    elif runs and scope.allows((newest := latest(runs)).printer_id):
+    elif newest is not None:
         shown = newest
     return ScopedView(run=run, shown=shown, hidden_photos=frozenset(hidden), hidden_timelapse=hidden_timelapse)
 

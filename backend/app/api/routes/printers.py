@@ -5,6 +5,7 @@ import secrets
 import zipfile
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import delete, func, select
@@ -50,6 +51,10 @@ from backend.app.schemas.printer import (
     PrinterStatus,
     PrinterUpdate,
     PrintOptionsResponse,
+    WLEDConnectionInfo,
+    WLEDPreset,
+    WLEDPresetListRequest,
+    WLEDPresetTestRequest,
     hms_error_responses,
 )
 from backend.app.services import camera_light as camera_light_service, drying_preflight, kprofile_drift
@@ -102,6 +107,7 @@ from backend.app.services.printer_media import (
 )
 from backend.app.services.slicer_filament_resolver import _ORCA_PROFILE_ID, lookup_orca_filament_id
 from backend.app.services.slot_nozzle import reports_two_nozzles, resolve_slot_nozzle
+from backend.app.services.wled import WLEDResponseError, wled_manager
 from backend.app.utils.filament_finish import different_finish, finish_generic_id
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
@@ -226,11 +232,64 @@ async def create_printer(
     if await location_grantees(db, [printer.location]):
         await ws_manager.refresh_printer_scopes()
 
+    wled_manager.configure_printer(printer.id, printer.wled_config)
+
     # Connect to the printer
     if printer.is_active:
         await printer_manager.connect_printer(printer)
 
     return printer
+
+
+@router.post("/{printer_id}/wled/presets", response_model=list[WLEDPreset])
+async def list_wled_presets(
+    printer_id: int,
+    request: WLEDPresetListRequest,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
+    db: AsyncSession = Depends(get_db),
+):
+    """Read existing presets from WLED without changing its configuration."""
+    if not await db.scalar(select(Printer.id).where(Printer.id == printer_id)):
+        raise HTTPException(404, "Printer not found")
+    try:
+        return await wled_manager.list_presets(request.base_url)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(502, f"WLED returned HTTP {exc.response.status_code}") from exc
+    except (httpx.HTTPError, WLEDResponseError) as exc:
+        raise HTTPException(502, "Could not load WLED presets") from exc
+
+
+@router.post("/{printer_id}/wled/test-connection", response_model=WLEDConnectionInfo)
+async def test_wled_connection(
+    printer_id: int,
+    request: WLEDPresetListRequest,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
+    db: AsyncSession = Depends(get_db),
+):
+    """Check WLED connectivity and return its optional identity."""
+    if not await db.scalar(select(Printer.id).where(Printer.id == printer_id)):
+        raise HTTPException(404, "Printer not found")
+    try:
+        return await wled_manager.get_info(request.base_url)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(502, f"WLED returned HTTP {exc.response.status_code}") from exc
+    except (httpx.HTTPError, WLEDResponseError) as exc:
+        raise HTTPException(502, "Could not connect to WLED") from exc
+
+
+@router.post("/{printer_id}/wled/test-preset")
+async def test_wled_preset(
+    printer_id: int,
+    request: WLEDPresetTestRequest,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
+    db: AsyncSession = Depends(get_db),
+):
+    """Activate one validated preset without changing stored configuration."""
+    if not await db.scalar(select(Printer.id).where(Printer.id == printer_id)):
+        raise HTTPException(404, "Printer not found")
+    if not await wled_manager.send_preset(printer_id, request.base_url, request.preset_id):
+        raise HTTPException(502, "Could not activate WLED preset")
+    return {"success": True}
 
 
 @router.get("/usb-cameras")
@@ -468,6 +527,16 @@ async def update_printer(
         except Exception as e:
             logger.error("Failed to sync virtual printers after printer IP change: %s", e)
 
+    if "wled_config" in update_data:
+        wled_manager.configure_printer(printer_id, printer.wled_config)
+        state = printer_manager.get_status(printer_id)
+        if state:
+            wled_manager.handle_status(
+                printer_id,
+                state,
+                awaiting_plate_clear=printer_manager.is_awaiting_plate_clear(printer_id),
+            )
+
     # Reconnect if connection settings changed
     if any(k in update_data for k in ["ip_address", "access_code", "is_active"]):
         printer_manager.disconnect_printer(printer_id)
@@ -539,6 +608,7 @@ async def delete_printer(
         notify = await delete_provider(db, provider) or notify
 
     printer_manager.disconnect_printer(printer_id)
+    wled_manager.remove_printer(printer_id)
 
     # Locked from the archive sweep to the commit (PostgreSQL; SQLite's single
     # writer serialises this anyway). A print start adopting or writing an

@@ -17,6 +17,7 @@ export type SettingsSearchTab =
   | 'filament'
   | 'camera'
   | 'network'
+  | 'wled'
   | 'apikeys'
   | 'virtual-printer'
   | 'spoolbuddy'

@@ -92,6 +92,67 @@ async def _listed_ids(async_client: AsyncClient, headers: dict[str, str]) -> set
     return {p["id"] for p in response.json()}
 
 
+@pytest.mark.parametrize(
+    ("endpoint", "method", "result"),
+    [
+        ("presets", "list_presets", [{"id": 3, "name": "Printing"}]),
+        ("test-connection", "get_info", {"name": "WLED", "version": "16.0.0"}),
+        ("test-preset", "send_preset", True),
+    ],
+)
+class TestWLEDPrinterScope:
+    async def test_auth_disabled_allows_wled(self, async_client, printer_factory, endpoint, method, result):
+        printer = await printer_factory(name="WLED")
+        with patch(
+            f"backend.app.api.routes.printers.wled_manager.{method}", new=AsyncMock(return_value=result)
+        ) as call:
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/wled/{endpoint}",
+                json={"base_url": "http://wled.local", "preset_id": 3},
+            )
+        assert response.status_code == 200, response.text
+        call.assert_awaited_once()
+
+    async def test_auth_enabled_requires_printers_update(self, async_client, printer_factory, endpoint, method, result):
+        printer = await printer_factory(name="WLED")
+        admin = await _admin_token(async_client)
+        readers = await _group(async_client, admin, "readers", permissions=["printers:read"], printer_ids=[printer.id])
+        jwt, _ = await _user(async_client, admin, "reader", [readers])
+        url = f"/api/v1/printers/{printer.id}/wled/{endpoint}"
+        body = {"base_url": "http://wled.local", "preset_id": 3}
+        with patch(
+            f"backend.app.api.routes.printers.wled_manager.{method}", new=AsyncMock(return_value=result)
+        ) as call:
+            assert (await async_client.post(url, json=body)).status_code == 401
+            response = await async_client.post(url, headers=_auth(jwt), json=body)
+            assert response.status_code == 403, response.text
+            call.assert_not_awaited()
+
+    async def test_update_permission_is_limited_to_the_groups_printers(
+        self, async_client, printer_factory, endpoint, method, result
+    ):
+        allowed = await printer_factory(name="Allowed")
+        hidden = await printer_factory(name="Hidden")
+        admin = await _admin_token(async_client)
+        permissions = await _group(async_client, admin, "editors", permissions=["printers:update"])
+        team = await _group(async_client, admin, "team", printer_ids=[allowed.id])
+        jwt, _ = await _user(async_client, admin, "editor", [permissions, team])
+        body = {"base_url": "http://wled.local", "preset_id": 3}
+        with patch(
+            f"backend.app.api.routes.printers.wled_manager.{method}", new=AsyncMock(return_value=result)
+        ) as call:
+            denied = await async_client.post(
+                f"/api/v1/printers/{hidden.id}/wled/{endpoint}", headers=_auth(jwt), json=body
+            )
+            assert denied.status_code == 404, denied.text
+            call.assert_not_awaited()
+            response = await async_client.post(
+                f"/api/v1/printers/{allowed.id}/wled/{endpoint}", headers=_auth(jwt), json=body
+            )
+            assert response.status_code == 200, response.text
+            call.assert_awaited_once()
+
+
 class TestVisibility:
     async def test_user_in_no_restricted_group_sees_every_printer(self, async_client, printer_factory):
         a, b = await printer_factory(name="A"), await printer_factory(name="B")

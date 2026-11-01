@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -68,8 +68,9 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { SliceModal } from '../components/SliceModal';
+import { ArchiveDetailModal } from '../components/ArchiveDetailModal';
 import { RunWithPipelineModal } from '../components/RunWithPipelineModal';
-import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
+import { isSlicedFile, openInSlicerWithToken, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDuration } from '../utils/date';
 import { getCurrencySymbol } from '../utils/currency';
 import { getBedTypeInfo } from '../utils/bedType';
@@ -233,12 +234,6 @@ function saveLogColumnConfig(config: Array<{ id: string; visible: boolean }>) {
   }
 }
 
-/**
- * Check if an archive represents a sliced/printable file.
- * Uses filename (.gcode, .gcode.3mf) as primary check, then falls back to
- * metadata — a .3mf with total_layers or print_time is sliced (contains gcode),
- * while a raw source .3mf (CAD export) has neither.
- */
 // A click on an archive's card or row itself, not on a control in it or a
 // dialog it opened: that opens the archive's page (archive redesign P4).
 function isOwnClick(e: React.MouseEvent<Element>): boolean {
@@ -248,48 +243,7 @@ function isOwnClick(e: React.MouseEvent<Element>): boolean {
   return !window.getSelection()?.toString();
 }
 
-function isSlicedFile(archive: { filename?: string | null; total_layers?: number | null; print_time_seconds?: number | null }): boolean {
-  const filename = archive.filename;
-  if (filename) {
-    const lower = filename.toLowerCase();
-    if (lower.endsWith('.gcode') || lower.includes('.gcode.')) return true;
-  }
-  // .3mf can be either sliced or source — check for gcode metadata
-  if (archive.total_layers || archive.print_time_seconds) return true;
-  return false;
-}
-
 // formatDate imported from '../utils/date' - handles UTC conversion
-
-/**
- * Open an archive file in the slicer.
- * Fetches a short-lived download token, then builds a token-authenticated URL
- * that bypasses auth middleware (slicer protocol handlers can't send auth headers).
- */
-async function openInSlicerWithToken(
-  archiveId: number,
-  filename: string,
-  resourceType: 'file' | 'source',
-  slicer: SlicerType,
-): Promise<void> {
-  try {
-    if (resourceType === 'source') {
-      const { token } = await api.createSourceSlicerToken(archiveId);
-      const path = api.getSourceSlicerDownloadUrl(archiveId, token, filename);
-      openInSlicer(`${window.location.origin}${path}`, slicer);
-    } else {
-      const { token } = await api.createArchiveSlicerToken(archiveId);
-      const path = api.getArchiveSlicerDownloadUrl(archiveId, token, filename);
-      openInSlicer(`${window.location.origin}${path}`, slicer);
-    }
-  } catch {
-    // Fallback to direct URL (works when auth is disabled)
-    const path = resourceType === 'source'
-      ? api.getSource3mfForSlicer(archiveId, filename)
-      : api.getArchiveForSlicer(archiveId, filename);
-    openInSlicer(`${window.location.origin}${path}`, slicer);
-  }
-}
 
 // Ended without finishing: the archive's grams and cost stay one full print of
 // the file (COST-3), not what this run used.
@@ -3058,6 +3012,8 @@ const collections: { id: Collection; label: string; icon: React.ReactNode }[] = 
 export function ArchivesPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  // /archives/<id> opens that archive over the list.
+  const { id: openArchiveId } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission, hasAnyPermission } = useAuth();
@@ -3952,7 +3908,9 @@ export function ArchivesPage() {
   // so drags into the modal's own drop zone don't bubble up and flash the page
   // overlay behind it.
   const { isDraggingOver, dragHandlers } = usePageFileDrop({
-    disabled: showUpload,
+    // Nor while an archive is open over the list: its upload dialog would
+    // open underneath it.
+    disabled: showUpload || !!openArchiveId,
     extensions: ['.3mf'],
     onFiles: (files) => {
       setUploadFiles(files);
@@ -3963,6 +3921,8 @@ export function ArchivesPage() {
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // An archive open over the list has the keyboard.
+    if (openArchiveId) return;
     const target = e.target as HTMLElement;
     // Ignore if typing in an input/textarea
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
@@ -3990,7 +3950,7 @@ export function ArchivesPage() {
         }
         break;
     }
-  }, [selectionMode]);
+  }, [selectionMode, openArchiveId]);
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);
@@ -5107,6 +5067,13 @@ export function ArchivesPage() {
             </div>
           </div>
         </div>
+      )}
+      {openArchiveId && (
+        <ArchiveDetailModal
+          key={openArchiveId}
+          archiveId={Number(openArchiveId)}
+          onClose={() => navigate('/archives')}
+        />
       )}
     </div>
   );

@@ -2284,11 +2284,13 @@ async def list_archive_runs(
     entries = list(rows.scalars().all())
     items = [PrintLogEntrySchema.model_validate(e, from_attributes=True) for e in entries]
     # A print's photos as the archive's photo route serves them: one removed
-    # from the archive is gone, whatever a run still lists.
+    # from the archive is gone, whatever a run still lists. A print's own list
+    # stays a list, also when empty: null is a print logged before prints kept
+    # their own, which shares the archive's.
     archive_photos = set(archive.photos or [])
     for item in items:
         if item.photos is not None:
-            item.photos = [p for p in item.photos if p in archive_photos] or None
+            item.photos = [p for p in item.photos if p in archive_photos]
         # What the slicer gave the plate it printed (#3375); the file's
         # figures only for its one print when its plates are not known.
         estimate = run_estimate(archive, item.plate_id)

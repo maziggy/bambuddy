@@ -45,8 +45,23 @@ async def test_a_photo_removed_from_the_archive_is_no_prints_any_more(async_clie
 
     runs = await _runs(async_client, plates, plates.admin)
 
-    assert runs[plates.first]["photos"] is None
+    assert runs[plates.first]["photos"] == []
     assert runs[plates.second]["photos"] == ["finish_b.jpg"]
+
+
+async def test_a_print_without_a_photo_list_of_its_own_says_so(async_client, db_session, plates):
+    # Logged before prints kept their own: null, so the page shows the
+    # archive's photos for it; a print with an empty list of its own: [].
+    first = await db_session.get(PrintLogEntry, plates.first)
+    first.photos = None
+    second = await db_session.get(PrintLogEntry, plates.second)
+    second.photos = []
+    await db_session.commit()
+
+    runs = await _runs(async_client, plates, plates.admin)
+
+    assert runs[plates.first]["photos"] is None
+    assert runs[plates.second]["photos"] == []
 
 
 async def test_each_print_plays_its_own_video(async_client, files, plates):

@@ -449,6 +449,7 @@ const UK_COGNATES = [
 // are used untranslated by Dutch slicer users. Each entry below was
 // checked individually against the Dutch translation in #2891.
 const NL_COGNATES = [
+  'Project:',  // archive page label
   'Apps',  // notifications badge for messages from connected apps — same word
   '1 printer', '{{n}} printers',
   '1 week', '(25%, 50%, 75%)', 'Accent', 'AMS Filament Backup',

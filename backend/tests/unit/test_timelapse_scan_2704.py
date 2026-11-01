@@ -17,6 +17,7 @@ These tests pin the parts that make the diff dependable:
 """
 
 import logging
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -393,15 +394,16 @@ class TestManualScanUsesTheBaseline:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock()
         session.execute = AsyncMock(
-            return_value=MagicMock(
-                scalar_one_or_none=MagicMock(return_value=_printer()),
-                # Videos other archives of this printer hold
-                scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=list(claimed)))),
-            )
+            return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=_printer())),
         )
 
         with (
             patch("backend.app.core.database.async_session", return_value=session),
+            # Videos other prints of this printer hold
+            patch(
+                "backend.app.api.routes.archives._claimed_timelapse_stems",
+                AsyncMock(return_value={Path(p).stem for p in claimed}),
+            ),
             patch("backend.app.api.routes.archives.ArchiveService", return_value=service),
             patch("backend.app.services.bambu_ftp.list_files_async", AsyncMock(return_value=listing)),
             patch(

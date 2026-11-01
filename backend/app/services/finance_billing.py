@@ -224,7 +224,10 @@ async def apply_print_charge_for_archive(
             actual_user_id = archive.created_by_id
         if cost_center_id is not None:
             actual_cost_center_id = cost_center_id
-        elif run is not None and run.cost_center_id is not None:
+        elif run is not None and (run.cost_center_id is not None or run.queue_item_id is not None):
+            # A queued print's is its queue item's, none included: the
+            # archive's is another print's when the same file prints on
+            # several printers at once (archive redesign).
             actual_cost_center_id = run.cost_center_id
         else:
             actual_cost_center_id = archive.cost_center_id

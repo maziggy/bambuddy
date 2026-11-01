@@ -136,9 +136,22 @@ async def get_print_log(
     # It lost failure_reason that way (#1687 part 4), then cost / energy_kwh /
     # energy_cost, which were written to the table but never sent — so the
     # Print Log's cost and energy columns read empty for every run (#2636).
+    # Archives of these prints that were deleted (soft, #1343: their prints
+    # stay logged), so the log doesn't link to an archive page that is gone.
+    from backend.app.models.archive import PrintArchive
+
+    archive_ids = {e.archive_id for e in entries if e.archive_id is not None}
+    deleted = (
+        await db.scalars(
+            select(PrintArchive.id).where(PrintArchive.id.in_(archive_ids), PrintArchive.deleted_at.is_not(None))
+        )
+        if archive_ids
+        else None
+    )
     return PrintLogResponse(
         items=[PrintLogEntrySchema.model_validate(e) for e in entries],
         total=total,
+        deleted_archive_ids=sorted(deleted.all()) if deleted is not None else [],
     )
 
 
@@ -336,6 +349,9 @@ async def update_print_log_entry(
         if new_status not in _STATUS_KEYS:
             raise HTTPException(400, f"Unknown status: {new_status!r}")
         entry.status = new_status
+
+    if "notes" in payload:
+        entry.notes = (payload["notes"] or "").strip() or None
 
     if entry.archive_id is not None:
         from backend.app.services.print_log import mirror_latest_run

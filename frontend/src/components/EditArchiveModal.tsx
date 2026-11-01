@@ -202,13 +202,13 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
     onSuccess: () => {
       // This form can change the archive's project, so the project detail
       // views need refreshing too — not just the overview cards (#2731).
+      // That includes ['archive-runs']: some of what this form writes is
+      // mirrored onto the archive's most recent run — status and failure
+      // reason since #1444, filament grams since #1820 — and the Print Log
+      // this modal renders at its top reads the runs through their own
+      // query. Without it the cached pre-edit row stays, so the correction
+      // looks like it did not take.
       invalidateArchiveAndProjectViews(queryClient);
-      // Some of what this form writes is mirrored onto the archive's most
-      // recent run — status and failure reason since #1444, filament grams
-      // since #1820 — and the Print Log this modal renders at its top reads
-      // the runs through their own query. Without this it serves the cached
-      // pre-edit row, so the correction looks like it did not take.
-      queryClient.invalidateQueries({ queryKey: ['archive-runs', archive.id] });
       onClose();
     },
   });

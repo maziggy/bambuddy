@@ -401,13 +401,17 @@ export function useWebSocket() {
         // The printer_status websocket messages will naturally update the status
         debouncedInvalidate('archives');
         debouncedInvalidate('archiveStats');
+        // A print ended: the archive page's prints and the calendar's.
+        debouncedInvalidate('archive');
+        debouncedInvalidate('archive-runs');
+        debouncedInvalidate('calendar-runs');
         break;
 
       case 'print_confirm_request': {
         // #1898: a completed print asked for its outcome verdict. Handed to
         // the globally mounted ConfirmOutcomeDialog in Layout via the same
         // CustomEvent relay plate_not_empty uses.
-        const detail = (message as unknown as { data?: { archive_id?: number; print_name?: string } }).data;
+        const detail = (message as unknown as { data?: { archive_id?: number; run_id?: number | null; print_name?: string } }).data;
         if (detail?.archive_id != null) {
           window.dispatchEvent(new CustomEvent('print-confirm-request', { detail }));
         }
@@ -435,6 +439,8 @@ export function useWebSocket() {
 
       case 'archive_updated':
         debouncedInvalidate('archives');
+        debouncedInvalidate('archive');
+        debouncedInvalidate('archive-runs');
         break;
 
       case 'pong':

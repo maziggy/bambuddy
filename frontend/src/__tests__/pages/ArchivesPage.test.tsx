@@ -3,12 +3,13 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { render } from '../utils';
 import { ArchivesPage } from '../../pages/ArchivesPage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { setAuthToken } from '../../api/client';
+import { useNavigate } from 'react-router-dom';
 
 const mockArchives = [
   {
@@ -134,6 +135,20 @@ describe('ArchivesPage', () => {
       await waitFor(() => {
         expect(screen.getByText('1h 0m')).toBeInTheDocument();
       });
+    });
+
+    it("compares the latest print with its plate's estimate", async () => {
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([
+            { ...mockArchives[1], run_count: 2, actual_time_seconds: 2000, time_estimate_seconds: 1800, time_accuracy: 90 },
+          ])
+        )
+      );
+      render(<ArchivesPage />);
+
+      const time = (await screen.findByText('-10%')).parentElement!;
+      expect(time.getAttribute('title')).toContain('Estimated: 30m');
     });
 
     it('shows printer name', async () => {
@@ -599,12 +614,49 @@ describe('ArchivesPage', () => {
     });
   });
 
+  // Archive redesign P4: a card opens its archive's page; the controls on it
+  // do what they say and leave the page where it is.
+  describe('opening an archive', () => {
+    beforeEach(() => {
+      window.localStorage.removeItem('archiveCollection');
+      window.history.pushState({}, '', '/archives');
+      server.use(http.get('/api/v1/archives/', () => HttpResponse.json(mockArchives)));
+    });
+
+    it('opens the archive page from a click on its card', async () => {
+      render(<ArchivesPage />);
+      fireEvent.click(await screen.findByText('#2'));
+
+      await waitFor(() => expect(window.location.pathname).toBe('/archives/2'));
+    });
+
+    it('leaves the page alone for a click on a control in the card', async () => {
+      render(<ArchivesPage />);
+      await screen.findByText('#2');
+      fireEvent.click(screen.getAllByTitle(/favorites/i)[0]);
+
+      expect(window.location.pathname).toBe('/archives');
+    });
+
+    it('leaves the page alone for a click in a dialog the card opened', async () => {
+      render(<ArchivesPage />);
+      await screen.findByText('#2');
+      // The card's own Edit button; its dialog renders inside the card.
+      const card = screen.getByText('#2').closest('[data-archive-id]') as HTMLElement;
+      fireEvent.click(within(card).getByTitle('Edit'));
+      fireEvent.click(await screen.findByText('Edit Archive'));
+
+      expect(window.location.pathname).toBe('/archives');
+    });
+  });
+
   describe('Not Printed / Printed collections', () => {
     const mixedStatusArchives = [
       { ...mockArchives[0], id: 100, print_name: 'NeverPrinted', status: 'archived', started_at: null, completed_at: null },
       { ...mockArchives[0], id: 101, print_name: 'WasPrinted', status: 'completed' },
       { ...mockArchives[0], id: 102, print_name: 'WasFailed', status: 'failed' },
       { ...mockArchives[0], id: 103, print_name: 'WasCancelled', status: 'cancelled' },
+      { ...mockArchives[0], id: 104, print_name: 'FailedBefore', status: 'completed', run_count: 2, failed_run_count: 1 },
     ];
 
     beforeEach(() => {
@@ -649,6 +701,177 @@ describe('ArchivesPage', () => {
         expect(screen.getByText('WasFailed')).toBeInTheDocument();
         expect(screen.getByText('WasCancelled')).toBeInTheDocument();
       });
+    });
+
+    // Archive redesign P4: an archive is a file printed maybe several times.
+    it('"Failed Prints" finds archives one print of which failed, not only the latest', async () => {
+      render(<ArchivesPage />);
+      await screen.findByText('FailedBefore');
+
+      fireEvent.change(screen.getByDisplayValue('All Archives'), { target: { value: 'failed' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('WasFailed')).toBeInTheDocument();
+        expect(screen.getByText('FailedBefore')).toBeInTheDocument();
+        expect(screen.queryByText('WasPrinted')).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  // Archive redesign P2: merging changes and removes whole archives, so the
+  // button is there only for those the merge API lets through.
+  // Archive redesign P3: the Failed collection shows failed and aborted
+  // prints, and its export has both.
+  it('exports what the Failed collection shows', async () => {
+    let exported: string | null = null;
+    server.use(
+      http.get('*/api/v1/archives/export', ({ request }) => {
+        exported = new URL(request.url).searchParams.get('status');
+        return new HttpResponse('ID\n', { headers: { 'Content-Type': 'text/csv' } });
+      }),
+    );
+    const createObjectURL = URL.createObjectURL;
+    const revokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = () => 'blob:export';
+    URL.revokeObjectURL = () => {};
+    try {
+      render(<ArchivesPage />);
+      fireEvent.change(await screen.findByDisplayValue('All Archives'), { target: { value: 'failed' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+      fireEvent.click(await screen.findByText('Export as CSV'));
+
+      await waitFor(() => expect(exported).toBe('failed,aborted'));
+    } finally {
+      URL.createObjectURL = createObjectURL;
+      URL.revokeObjectURL = revokeObjectURL;
+    }
+  });
+
+  describe('merge duplicates button', () => {
+    const signInWith = (permissions: string[]) => {
+      setAuthToken('merge-token', 'session');
+      server.use(
+        http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('/api/v1/auth/me', () => HttpResponse.json({
+          id: 7,
+          username: 'operator',
+          is_active: true,
+          is_admin: false,
+          groups: [],
+          permissions,
+          created_at: '2026-08-18T00:00:00Z',
+        })),
+        http.get('*/api/v1/archives/merge-preview', () => HttpResponse.json({ groups: [] })),
+      );
+    };
+
+    it('opens the merge dialog for a user who may update and delete all archives', async () => {
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      render(<ArchivesPage />);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Merge duplicates' }));
+      expect(await screen.findByText('No duplicates to merge.')).toBeInTheDocument();
+    });
+
+    it('offers the merge while duplicates exist, until dismissed', async () => {
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      server.use(http.get('*/api/v1/archives/merge-count', () => HttpResponse.json({ groups: 3 })));
+      render(<ArchivesPage />);
+
+      const banner = await screen.findByTestId('merge-banner');
+      expect(banner).toHaveTextContent('3 group(s) of archives hold the same file');
+      fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+      await waitFor(() => expect(screen.queryByTestId('merge-banner')).toBeNull());
+      expect(window.localStorage.setItem).toHaveBeenCalledWith('archiveMergeBannerDismissed', '3');
+    });
+
+    it('offers it again once the count has changed since it was dismissed', async () => {
+      vi.mocked(window.localStorage.getItem).mockImplementation((key: string) =>
+        key === 'archiveMergeBannerDismissed' ? '3' : null,
+      );
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      server.use(http.get('*/api/v1/archives/merge-count', () => HttpResponse.json({ groups: 4 })));
+      render(<ArchivesPage />);
+
+      expect(await screen.findByTestId('merge-banner')).toBeInTheDocument();
+      vi.mocked(window.localStorage.getItem).mockReset();
+    });
+
+    it('counts again when the archives change', async () => {
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      let groups = 1;
+      server.use(http.get('*/api/v1/archives/merge-count', () => HttpResponse.json({ groups })));
+      // Following an archive link reloads the list, as a delete or a new print does.
+      function GoTo() {
+        const navigate = useNavigate();
+        return <button onClick={() => navigate('/archives?highlight=1')}>go</button>;
+      }
+      render(<><ArchivesPage /><GoTo /></>);
+      await screen.findByTestId('merge-banner');
+
+      groups = 0;
+      fireEvent.click(screen.getByText('go'));
+
+      await waitFor(() => expect(screen.queryByTestId('merge-banner')).toBeNull());
+    });
+
+    it('stays dismissed when merging some left fewer', async () => {
+      vi.mocked(window.localStorage.getItem).mockImplementation((key: string) =>
+        key === 'archiveMergeBannerDismissed' ? '3' : null,
+      );
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      let counted = false;
+      server.use(
+        http.get('*/api/v1/archives/merge-count', () => {
+          counted = true;
+          return HttpResponse.json({ groups: 2 });
+        }),
+      );
+      render(<ArchivesPage />);
+
+      await waitFor(() => expect(counted).toBe(true));
+      await screen.findByRole('button', { name: 'Merge duplicates' });
+      expect(screen.queryByTestId('merge-banner')).toBeNull();
+      vi.mocked(window.localStorage.getItem).mockReset();
+    });
+
+    it('stays dismissed while the count is the same', async () => {
+      vi.mocked(window.localStorage.getItem).mockImplementation((key: string) =>
+        key === 'archiveMergeBannerDismissed' ? '3' : null,
+      );
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      let counted = false;
+      server.use(
+        http.get('*/api/v1/archives/merge-count', () => {
+          counted = true;
+          return HttpResponse.json({ groups: 3 });
+        }),
+      );
+      render(<ArchivesPage />);
+
+      await waitFor(() => expect(counted).toBe(true));
+      await screen.findByRole('button', { name: 'Merge duplicates' });
+      expect(screen.queryByTestId('merge-banner')).toBeNull();
+      vi.mocked(window.localStorage.getItem).mockReset();
+    });
+
+    it('is offered in the Duplicates collection', async () => {
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_all']);
+      render(<ArchivesPage />);
+
+      await screen.findByRole('button', { name: 'Merge duplicates' });
+      expect(screen.queryByText(/can be merged into one, with every print of them/)).toBeNull();
+      fireEvent.change(screen.getByDisplayValue('All Archives'), { target: { value: 'duplicates' } });
+      expect(await screen.findByText(/can be merged into one, with every print of them/)).toBeInTheDocument();
+    });
+
+    it('is not there for a user who may only update all archives', async () => {
+      signInWith(['archives:read_all', 'archives:update_all', 'archives:delete_own']);
+      render(<ArchivesPage />);
+
+      await screen.findByText('Archives');
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Merge duplicates' })).toBeNull());
     });
   });
 

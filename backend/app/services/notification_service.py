@@ -878,6 +878,8 @@ class NotificationService:
         image_data: bytes | None,
         buttons: list[dict] | None,
         archive_id: int | None,
+        *,
+        run_id: int | None = None,
     ) -> tuple[bool, str]:
         """Deliver the outcome prompt the way the provider's verdict mode asks (#3046).
 
@@ -918,8 +920,20 @@ class NotificationService:
             # dispatch_outcome_confirmation mints a live token right before
             # sending. Without one the prompt's links are dead too, and a
             # reaction must not outlive them, so there is nothing to remember.
+            # The run's token when the prompt is for a run, the archive's when
+            # it was sent the way it was before runs had their own.
             archive = await db.get(PrintArchive, archive_id)
-            if archive is None or not archive.confirm_token or archive.confirm_token_used_at is not None:
+            holder = archive
+            if run_id is not None:
+                from backend.app.models.print_log import PrintLogEntry
+
+                holder = await db.get(PrintLogEntry, run_id)
+            if (
+                archive is None
+                or holder is None
+                or not holder.confirm_token
+                or holder.confirm_token_used_at is not None
+            ):
                 logger.warning("Outcome prompt for archive %s went out without a live confirm token", archive_id)
                 return ok, status
             db.add(
@@ -928,7 +942,7 @@ class NotificationService:
                     chat_id=str(((sent or {}).get("chat") or {}).get("id") or config.get("chat_id", "")).strip(),
                     message_id=message_id,
                     archive_id=archive_id,
-                    confirm_token=archive.confirm_token,
+                    confirm_token=holder.confirm_token,
                     has_caption=image_data is not None,
                     message_text=message,
                 )
@@ -1473,6 +1487,7 @@ class NotificationService:
                     # the message, or both. The link preview is off in all of
                     # them (see _send_telegram_confirm_request).
                     _archive_id = (variables or {}).get("archive_id")
+                    _run_id = (variables or {}).get("run_id")
                     return await self._send_telegram_confirm_request(
                         provider,
                         config,
@@ -1481,6 +1496,7 @@ class NotificationService:
                         image_data,
                         tg_buttons,
                         _archive_id if isinstance(_archive_id, int) else None,
+                        run_id=_run_id if isinstance(_run_id, int) else None,
                     )
                 # Every other event keeps Telegram's link preview, for the same
                 # reason as the Slack unfurl in _send_webhook: when the finish
@@ -1899,6 +1915,11 @@ class NotificationService:
                 variables["reason"] = archive_data["failure_reason"]
             if archive_data.get("finish_photo_url"):
                 variables["finish_photo_url"] = archive_data["finish_photo_url"]
+            # The archive (file) and run (this print) it was, for links and
+            # webhooks (archive redesign).
+            for key in ("archive_id", "run_id"):
+                if archive_data.get(key) is not None:
+                    variables[key] = str(archive_data[key])
 
             # Build per-slot breakdown string with AMS info when available
             if archive_data.get("usage_results"):
@@ -1956,6 +1977,7 @@ class NotificationService:
         reject_url: str | None = None,
         confirm_url: str | None = None,
         archive_id: int | None = None,
+        run_id: int | None = None,
     ):
         """Ask for a post-print outcome verdict (#1898).
 
@@ -1964,7 +1986,8 @@ class NotificationService:
         feature. good_url / reject_url are the one-tap capability links
         (rendered as ntfy action buttons), confirm_url deep-links into the
         archive's confirmation dialog in the web UI. archive_id lets a Telegram
-        provider in reaction mode (#3046) tie the sent message to the archive.
+        provider in reaction mode (#3046) tie the sent message to the archive,
+        and run_id to the run whose token the links carry.
         """
         providers = await self._get_providers_for_event(db, "on_print_confirm_request", printer_id)
         if not providers:
@@ -1985,6 +2008,8 @@ class NotificationService:
             variables["confirm_url"] = confirm_url
         if archive_id is not None:
             variables["archive_id"] = archive_id
+        if run_id is not None:
+            variables["run_id"] = run_id
 
         image_data = None
         if archive_data:

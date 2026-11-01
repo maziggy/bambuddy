@@ -290,6 +290,8 @@ class TestScanForTimelapseWithRetries:
                 scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[]))),
             )
         )
+        # The claimed-videos lookup reads runs and archives with scalars().
+        mock_session.scalars = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[])))
         return mock_session
 
     @pytest.mark.asyncio
@@ -638,6 +640,7 @@ class TestListTimelapseVideosAvi:
                 scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[]))),
             )
         )
+        mock_session.scalars = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[])))
 
         with (
             patch("backend.app.main.async_session", return_value=mock_session),

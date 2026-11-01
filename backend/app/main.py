@@ -569,35 +569,6 @@ _timelapse_baselines: dict[int, set[str]] = {}
 # so it is empty without the card being empty (#3412).
 _timelapse_baselines_unread: set[int] = set()
 
-# Archives whose last run still has work after it completed: the timelapse
-# scan and the layer timelapse stitch. Both tell their run from a later one by
-# the archive's start time, so a queue dispatch of the same file must not start
-# a new run on the archive until they end (_claim_reusable_archive in the
-# scheduler). archive_id -> number of such tasks.
-_archive_runs_finishing: dict[int, int] = {}
-
-
-async def _while_run_finishes(archive_id: int, work):
-    """Run ``work`` with the archive marked as still finishing its last run.
-    Marked by the caller's spawn already: see ``_mark_run_finishing``."""
-    try:
-        return await work
-    finally:
-        left = _archive_runs_finishing.get(archive_id, 0) - 1
-        if left > 0:
-            _archive_runs_finishing[archive_id] = left
-        else:
-            _archive_runs_finishing.pop(archive_id, None)
-
-
-def _mark_run_finishing(archive_id: int, work):
-    """``work`` wrapped to keep the archive marked until it ends. Marked now,
-    before the task starts, so no dispatch between the spawn and its first
-    step can take the archive."""
-    _archive_runs_finishing[archive_id] = _archive_runs_finishing.get(archive_id, 0) + 1
-    return _while_run_finishes(archive_id, work)
-
-
 # Track printers waiting for bed to cool after print completion.
 # Event-driven: fires when bed_temper arrives via MQTT below threshold.
 # {printer_id: {"threshold": float, "filename": str, "registered_at": float}}
@@ -1018,6 +989,47 @@ async def _archive_of_open_run(printer_id: int, subtask_id: str | None = None) -
         return None
 
 
+async def _announce_discarded_runs(discarded, printer_id: int) -> None:
+    """Publish the runs ``discard_open_runs`` dropped (archive redesign):
+    each announced by run/started, now gone without an end."""
+    if not discarded:
+        return
+    try:
+        from backend.app.models.printer import Printer
+
+        async with async_session() as db:
+            printer = (
+                await db.execute(select(Printer.name, Printer.serial_number).where(Printer.id == printer_id))
+            ).first()
+        if printer is not None:
+            for run in discarded:
+                await mqtt_relay.on_run_discarded(run, printer.serial_number, printer.name)
+    except Exception as e:
+        logging.getLogger(__name__).debug("[RUN] Could not announce discarded runs on printer %s: %s", printer_id, e)
+
+
+async def _publish_run_completed(run_id: int | None, printer_id: int) -> None:
+    """Publish the run a print's end just wrote on the MQTT relay (archive
+    redesign); nothing without one. Never in the way of the completion."""
+    if run_id is None:
+        return
+    try:
+        from backend.app.models.archive import PrintArchive
+        from backend.app.models.print_log import PrintLogEntry
+        from backend.app.models.printer import Printer
+
+        async with async_session() as db:
+            run = await db.get(PrintLogEntry, run_id)
+            printer = (
+                await db.execute(select(Printer.name, Printer.serial_number).where(Printer.id == printer_id))
+            ).first()
+            archive = await db.get(PrintArchive, run.archive_id) if run is not None and run.archive_id else None
+        if run is not None and printer is not None:
+            await mqtt_relay.on_run_completed(run, archive, printer.serial_number, printer.name)
+    except Exception as e:
+        logging.getLogger(__name__).debug("[RUN] Could not publish the end of run %s: %s", run_id, e)
+
+
 async def _open_run_for(archive_id: int, printer_id: int, subtask_id: str | None = None) -> None:
     """Write the run of the print that just started on the archive (archive
     redesign). In a session of its own and never in the way of the print
@@ -1027,14 +1039,19 @@ async def _open_run_for(archive_id: int, printer_id: int, subtask_id: str | None
     try:
         from backend.app.models.archive import PrintArchive
         from backend.app.models.printer import Printer
-        from backend.app.services.print_log import open_run
+        from backend.app.services.print_log import open_run, open_run_on_printer, run_snapshot
 
         async with async_session() as db:
             archive = await db.get(PrintArchive, archive_id)
             if archive is None:
                 return
-            printer_name = await db.scalar(select(Printer.name).where(Printer.id == printer_id))
-            await open_run(
+            printer = (
+                await db.execute(select(Printer.name, Printer.serial_number).where(Printer.id == printer_id))
+            ).first()
+            printer_name = printer.name if printer is not None else None
+            already = await open_run_on_printer(db, printer_id)
+            before = run_snapshot(already) if already is not None else None
+            run = await open_run(
                 db,
                 archive,
                 printer_id=printer_id,
@@ -1043,8 +1060,59 @@ async def _open_run_for(archive_id: int, printer_id: int, subtask_id: str | None
                 subtask_id=subtask_id,
             )
             await db.commit()
+        # Once per print: a resume or a repeated start finds the run it opened.
+        # A new one replaced the run still open there (open_run): that one's
+        # print ended unseen.
+        # Compared by start too: SQLite can give the new run the id of the one
+        # it replaced.
+        replaced = (
+            run is not None and before is not None and (before.id != run.id or before.started_at != run.started_at)
+        )
+        if run is not None and printer is not None and (before is None or replaced):
+            if replaced:
+                await _announce_discarded_runs([before], printer_id)
+            try:
+                await mqtt_relay.on_run_started(run, archive, printer.serial_number, printer_name)
+            except Exception:
+                pass  # Don't fail the print start if MQTT fails
     except Exception as e:
         logging.getLogger(__name__).warning("[RUN] Could not open the run of archive %s: %s", archive_id, e)
+
+
+async def _drop_replaced_plate_videos(
+    db, archive_id: int, plate_id: int | None, stale_relpath: str | None, logger: logging.Logger
+) -> None:
+    """Delete the videos a reprint of a plate replaces: ``stale_relpath``, the
+    one the archive showed (when print start judged it this plate's), and
+    those of the archive's earlier runs of the same plate. A plate keeps one
+    video, as when the archive held the only one; another plate's stays. The
+    runs that held them lose them. Commits."""
+    from backend.app.models.print_log import INCLUDE_OPEN_RUNS, PrintLogEntry
+    from backend.app.utils.safe_path import PathTraversalError, safe_join_under
+
+    runs = select(PrintLogEntry).where(
+        PrintLogEntry.archive_id == archive_id, PrintLogEntry.timelapse_path.is_not(None)
+    )
+    with_video = list(await db.scalars(runs.execution_options(**{INCLUDE_OPEN_RUNS: True})))
+    paths = {stale_relpath} if stale_relpath else set()
+    if plate_id is not None:
+        paths |= {r.timelapse_path for r in with_video if r.plate_id == plate_id}
+        # A video another plate's run holds is that plate's.
+        paths -= {r.timelapse_path for r in with_video if r.plate_id is not None and r.plate_id != plate_id}
+    if not paths:
+        return
+    for run in with_video:
+        if run.timelapse_path in paths:
+            run.timelapse_path = None
+    await db.commit()
+    for relpath in sorted(p for p in paths if p):
+        try:
+            stale_path = safe_join_under(app_settings.base_dir, relpath, http=False)
+            if stale_path.is_file():
+                stale_path.unlink()
+                logger.info("Deleted stale timelapse %s on reprint of archive %s", relpath, archive_id)
+        except (OSError, PathTraversalError) as e:
+            logger.warning("Failed to delete stale timelapse %s on reprint: %s", relpath, e)
 
 
 def _mark_owned_if_dispatched(archive) -> None:
@@ -1196,12 +1264,18 @@ async def _send_kill_switch_provider_notification(
     logger = logging.getLogger(__name__)
     try:
         async with async_session() as db:
+            from backend.app.services.print_log import open_run_on_printer
+
+            # The print it stopped, for {archive_id} / {run_id}: the completion
+            # that would name them skips its notification after this one.
+            run = await open_run_on_printer(db, printer_id)
             await notification_service.on_print_complete(
                 printer_id,
                 printer_name,
                 "stopped",
                 data,
                 db,
+                archive_data={"archive_id": run.archive_id, "run_id": run.id} if run is not None else None,
             )
         return True
     except Exception as e:
@@ -1578,6 +1652,37 @@ def _get_start_plate_id(printer_id: int, archive_id: int | None) -> int | None:
     if archive_id is None:
         return None
     return _print_plate_ids.get((printer_id, archive_id))
+
+
+def _run_print_time_seconds(archive, printer_id: int) -> int | None:
+    """The slicer's time for the plate this print prints, for its start
+    notification (#3375): ``archive.print_time_seconds`` adds every plate of
+    the file up (#1593). The plate is the dispatch's, else the archive's. The
+    whole file's time when its plates are not known; None for a plate not
+    known of several, and the notification takes the printer's remaining
+    time."""
+    from backend.app.services.print_cost_estimate import run_estimate
+
+    plate_id = _print_plate_ids.get((printer_id, archive.id), archive.plate_id)
+    estimate = run_estimate(archive, plate_id)
+    return estimate.seconds if estimate is not None else None
+
+
+_plate_estimates_task: asyncio.Task | None = None
+
+
+async def _fill_plate_estimates() -> None:
+    from backend.app.services.print_cost_estimate import fill_plate_estimates
+
+    try:
+        filled = await fill_plate_estimates(async_session)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logging.getLogger(__name__).warning("[ARCHIVE] Reading plate estimates failed: %s", exc)
+        return
+    if filled:
+        logging.getLogger(__name__).info("[ARCHIVE] Read the plate estimates of %d archive(s)", filled)
 
 
 def _partial_progress_scale(progress: int | float | None) -> float:
@@ -4508,6 +4613,7 @@ async def _dispatch_outcome_confirmation_safely(
     data: dict,
     archive_id: int,
     archive_data: dict | None = None,
+    run_id: int | None = None,
 ) -> None:
     """``dispatch_outcome_confirmation`` for a caller that has more to do on ``db``.
 
@@ -4518,7 +4624,7 @@ async def _dispatch_outcome_confirmation_safely(
     the reason the email never goes out.
     """
     try:
-        await dispatch_outcome_confirmation(db, printer_id, printer_name, data, archive_id, archive_data)
+        await dispatch_outcome_confirmation(db, printer_id, printer_name, data, archive_id, archive_data, run_id=run_id)
     except Exception as e:
         logging.getLogger(__name__).error("[NOTIFY-BG] Outcome-confirmation dispatch failed: %s", e, exc_info=True)
         try:
@@ -4550,14 +4656,18 @@ async def dispatch_outcome_confirmation(
     data: dict,
     archive_id: int,
     archive_data: dict | None = None,
+    *,
+    run_id: int | None = None,
 ) -> bool:
-    """Emit the post-print outcome prompt for a completed archive (#1898).
+    """Emit the post-print outcome prompt for a completed print (#1898).
 
-    Gated on the archive itself: ``confirm_requested`` is the opt-in (from the
-    queue item, or from ``confirm_outcome_external_prints`` for a print
-    Bambuddy did not start) and ``user_verdict`` being unset is what makes the
-    question still open. Mints the per-archive capability token the one-tap
-    verdict links carry.
+    Gated on the run that ended (``run_id``): ``confirm_requested`` is the
+    opt-in (from the queue item, or from ``confirm_outcome_external_prints``
+    for a print Bambuddy did not start, copied onto the run at its start) and
+    ``user_verdict`` being unset is what makes the question still open. Mints
+    the run's capability token the one-tap verdict links carry: plates of one
+    archive each have their own question. Without a run, the archive's, as
+    before runs.
 
     Lives here rather than inline in ``on_print_complete``'s notification task
     because that task swallows every exception: extracted, the gate and the two
@@ -4568,9 +4678,19 @@ async def dispatch_outcome_confirmation(
     """
     logger = logging.getLogger(__name__)
     from backend.app.models.archive import PrintArchive
+    from backend.app.models.print_log import PrintLogEntry
 
     confirm_archive = (await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))).scalar_one_or_none()
-    if not (confirm_archive and confirm_archive.confirm_requested and confirm_archive.user_verdict is None):
+    if confirm_archive is None:
+        return False
+    run = await db.get(PrintLogEntry, run_id) if run_id is not None else None
+    if run is not None and run.archive_id != archive_id:
+        run = None
+    # The run carries the opt-in from its start; one logged before it did
+    # (None) asks as its archive does.
+    asks = confirm_archive if run is None or run.confirm_requested is None else run
+    holder = run if run is not None else confirm_archive
+    if not (asks.confirm_requested and holder.user_verdict is None):
         return False
 
     import secrets as _secrets
@@ -4579,9 +4699,9 @@ async def dispatch_outcome_confirmation(
     # "has a token" no longer means "answerable". A prompt going out now needs a
     # live one: mint a new token whenever the stored one is already spent, or
     # every button in the new message would land on the already-answered page.
-    if not confirm_archive.confirm_token or confirm_archive.confirm_token_used_at is not None:
-        confirm_archive.confirm_token = _secrets.token_urlsafe(32)
-        confirm_archive.confirm_token_used_at = None
+    if not holder.confirm_token or holder.confirm_token_used_at is not None:
+        holder.confirm_token = _secrets.token_urlsafe(32)
+        holder.confirm_token_used_at = None
         await db.commit()
 
     from backend.app.api.routes.settings import get_external_base_url, get_setting
@@ -4598,15 +4718,16 @@ async def dispatch_outcome_confirmation(
             "Set Settings → External URL so they resolve away from this host.",
             base,
         )
-    token = confirm_archive.confirm_token
+    token = holder.confirm_token
     good_url = f"{base}/api/v1/archives/confirm/{token}/good"
     reject_url = f"{base}/api/v1/archives/confirm/{token}/reject"
-    confirm_url = f"{base}/archives?confirm={archive_id}"
+    confirm_url = f"{base}/archives?confirm={archive_id}" + (f"&run={run.id}" if run is not None else "")
 
     await ws_manager.send_print_confirm_request(
         printer_id,
         {
             "archive_id": archive_id,
+            "run_id": run.id if run is not None else None,
             "print_name": confirm_archive.print_name or confirm_archive.filename,
         },
         user_ids=await _outcome_answerers(db, confirm_archive.created_by_id),
@@ -4621,6 +4742,7 @@ async def dispatch_outcome_confirmation(
         reject_url=reject_url,
         confirm_url=confirm_url,
         archive_id=archive_id,
+        run_id=run.id if run is not None else None,
     )
     return True
 
@@ -5285,22 +5407,13 @@ async def on_print_start(printer_id: int, data: dict):
                     await forget_printer(printer_id)
                     return
 
-                if delete_stale_video and stale_timelapse_relpath:
-                    try:
-                        stale_path = app_settings.base_dir / stale_timelapse_relpath
-                        if stale_path.is_file():
-                            stale_path.unlink()
-                            logger.info(
-                                "Deleted stale timelapse %s on reprint of archive %s",
-                                stale_timelapse_relpath,
-                                expected_archive_id,
-                            )
-                    except OSError as e:
-                        logger.warning(
-                            "Failed to delete stale timelapse %s on reprint: %s",
-                            stale_timelapse_relpath,
-                            e,
-                        )
+                await _drop_replaced_plate_videos(
+                    db,
+                    archive.id,
+                    starting_plate_id,
+                    stale_timelapse_relpath if delete_stale_video else None,
+                    logger,
+                )
 
                 # Track as active print
                 _bind_active_print(printer_id, archive.id, archive.filename, filename, subtask_name)
@@ -5350,7 +5463,7 @@ async def on_print_start(printer_id: int, data: dict):
                     # register_expected_print (handles library-file-based queue items where
                     # the freshly-created archive has no created_by_id yet), taken above.
                     archive_data = {
-                        "print_time_seconds": archive.print_time_seconds,
+                        "print_time_seconds": _run_print_time_seconds(archive, printer_id),
                         "created_by_id": archive.created_by_id or fallback_creator,
                     }
                     await _send_print_start_notification(printer_id, data, archive_data, logger)
@@ -5483,7 +5596,7 @@ async def on_print_start(printer_id: int, data: dict):
                     await _record_energy_start(existing_archive, printer_id, db, context="subtask-resume")
                 if not notification_sent:
                     archive_data = {
-                        "print_time_seconds": existing_archive.print_time_seconds,
+                        "print_time_seconds": _run_print_time_seconds(existing_archive, printer_id),
                         "created_by_id": existing_archive.created_by_id,
                     }
                     await _send_print_start_notification(printer_id, data, archive_data, logger)
@@ -5558,8 +5671,9 @@ async def on_print_start(printer_id: int, data: dict):
                 # unseen. Left open, the next reconnect would close it again.
                 from backend.app.services.print_log import discard_open_runs
 
-                await discard_open_runs(db, printer_id)
+                discarded = await discard_open_runs(db, printer_id)
                 await db.commit()
+                await _announce_discarded_runs(discarded, printer_id)
                 # Its print keys go with it; the new archive registers its own.
                 for _key in [k for k, v in _active_prints.items() if v == existing_archive.id and k[0] == printer_id]:
                     del _active_prints[_key]
@@ -5585,7 +5699,7 @@ async def on_print_start(printer_id: int, data: dict):
                 # Send notification with archive data (existing archive)
                 if not notification_sent:
                     archive_data = {
-                        "print_time_seconds": existing_archive.print_time_seconds,
+                        "print_time_seconds": _run_print_time_seconds(existing_archive, printer_id),
                         "created_by_id": existing_archive.created_by_id,
                     }
                     await _send_print_start_notification(printer_id, data, archive_data, logger)
@@ -6428,7 +6542,7 @@ async def on_print_start(printer_id: int, data: dict):
                 # Send notification with archive data (new archive created)
                 if not notification_sent:
                     archive_data = {
-                        "print_time_seconds": archive.print_time_seconds,
+                        "print_time_seconds": _run_print_time_seconds(archive, printer_id),
                         "created_by_id": archive.created_by_id,
                     }
                     await _send_print_start_notification(printer_id, data, archive_data, logger)
@@ -6544,32 +6658,6 @@ def _timelapse_scan_max_attempts() -> int:
         # the round count the production interval would have given.
         return 32
     return max(1, int(_TIMELAPSE_SCAN_TIMEOUT_SECONDS // _TIMELAPSE_SCAN_POLL_INTERVAL_SECONDS) + 1)
-
-
-async def _claimed_timelapse_names(db, printer_id: int, exclude_archive_id: int) -> set[str]:
-    """Video filenames already attached to some other archive of this printer.
-
-    Used to disambiguate when more than one file is new since the baseline —
-    which happens when a previous print's video landed after this print's
-    baseline was taken. Ordering the candidates would be the obvious fix and is
-    the wrong one: it can only be done on mtime or on the filename timestamp,
-    both of which come from the printer's own clock, and a LAN-only printer
-    can't reach Bambu's NTP server. Exclusion needs no clock at all.
-
-    ``attach_timelapse`` saves the video into the archive directory under the
-    printer's original filename, and the later MP4 conversion keeps the stem,
-    so the stem of ``timelapse_path`` recovers what was claimed.
-    """
-    from backend.app.models.archive import PrintArchive
-
-    rows = await db.execute(
-        select(PrintArchive.timelapse_path).where(
-            PrintArchive.printer_id == printer_id,
-            PrintArchive.id != exclude_archive_id,
-            PrintArchive.timelapse_path.is_not(None),
-        )
-    )
-    return {Path(p).stem for p in rows.scalars().all() if p}
 
 
 async def _read_timelapse_baseline(printer) -> tuple[set[str], bool]:
@@ -6725,10 +6813,12 @@ async def _capture_timelapse_baseline_at_start(
         logger.warning("[TIMELAPSE] Failed to capture baseline at print start: %s", e)
 
     run_started_at: datetime | None = None
+    run_id: int | None = None
     if archive_id is not None:
         try:
             async with async_session() as db:
                 from backend.app.models.archive import PrintArchive
+                from backend.app.services.print_log import open_run_on_printer
 
                 archive = await db.get(PrintArchive, archive_id)
                 if archive is not None:
@@ -6738,9 +6828,18 @@ async def _capture_timelapse_baseline_at_start(
                     # against the state of the printer before the *last* one —
                     # and a stale baseline reads as authoritative, where NULL
                     # correctly falls back to a fresh snapshot.
-                    archive.timelapse_baseline = sorted(names) if names is not None else None
+                    baseline = sorted(names) if names is not None else None
+                    archive.timelapse_baseline = baseline
                     archive.timelapse_baseline_unread = unread
                     run_started_at = archive.started_at
+                    # And on the run this print opened, whose scan reads it:
+                    # the archive's is its latest start's, which another plate
+                    # of it on another printer can take over.
+                    run = await open_run_on_printer(db, printer_id)
+                    if run is not None and run.archive_id == archive_id:
+                        run.timelapse_baseline = baseline
+                        run.timelapse_baseline_unread = unread
+                        run_id = run.id
                     await db.commit()
         except Exception as e:
             # In-memory baseline still covers the normal completion path.
@@ -6748,7 +6847,7 @@ async def _capture_timelapse_baseline_at_start(
 
     if unread and names is not None:
         spawn_background_task(
-            _reread_unread_timelapse_baseline(printer_id, names, archive_id, run_started_at),
+            _reread_unread_timelapse_baseline(printer_id, names, archive_id, run_started_at, run_id),
             name=f"reread-timelapse-baseline-{printer_id}",
         )
 
@@ -6758,17 +6857,26 @@ async def _capture_timelapse_baseline_at_start(
 _BASELINE_REREAD_STATES = _ACTIVE_PRINT_STATES | {"PREPARE", "SLICING"}
 
 
-def _schedule_timelapse_scan(archive_id: int, printer_id: int, *, plate_id: int | None) -> None:
+def _schedule_timelapse_scan(
+    archive_id: int, printer_id: int, *, plate_id: int | None, run_id: int | None = None
+) -> None:
     """Start the completion scan with the print-start baseline: the names, and
     whether they were taken off a card that could not be read. Taking them
-    ends any re-read still running for it."""
+    ends any re-read still running for it. ``run_id`` is the print that
+    ended, whose video it looks for."""
     unread = printer_id in _timelapse_baselines_unread
     _timelapse_baselines_unread.discard(printer_id)
     baseline = _timelapse_baselines.pop(printer_id, None)
+    from backend.app.services import archive_work
+
+    # Held while it looks: it finds its print by the archive's id, which a
+    # merge would move away (archive redesign P2).
     spawn_background_task(
-        _mark_run_finishing(
+        archive_work.held_while(
             archive_id,
-            _scan_for_timelapse_with_retries(archive_id, baseline, plate_id=plate_id, baseline_unread=unread),
+            _scan_for_timelapse_with_retries(
+                archive_id, baseline, plate_id=plate_id, baseline_unread=unread, run_id=run_id
+            ),
         ),
         name=f"scan-timelapse-{archive_id}",
     )
@@ -6794,7 +6902,11 @@ def _unread_baseline_round(printer_id: int, names: set[str]) -> bool | None:
 
 
 async def _reread_unread_timelapse_baseline(
-    printer_id: int, names: set[str], archive_id: int | None, run_started_at: datetime | None
+    printer_id: int,
+    names: set[str],
+    archive_id: int | None,
+    run_started_at: datetime | None,
+    run_id: int | None = None,
 ) -> None:
     """Read again a print-start baseline the card could not give (#3412).
 
@@ -6806,6 +6918,7 @@ async def _reread_unread_timelapse_baseline(
     """
     from backend.app.models.archive import PrintArchive
     from backend.app.models.printer import Printer
+    from backend.app.services.print_log import run_of
 
     logger = logging.getLogger(__name__)
     for _ in range(_TIMELAPSE_BASELINE_REREAD_MAX_ATTEMPTS):
@@ -6852,12 +6965,29 @@ async def _reread_unread_timelapse_baseline(
                 if archive is not None and archive.started_at == run_started_at and archive.timelapse_baseline_unread:
                     archive.timelapse_baseline = sorted(names)
                     archive.timelapse_baseline_unread = False
-                    await db.commit()
+                run = await run_of(db, archive_id, run_id) if run_id is not None else None
+                if run is not None and run.timelapse_baseline_unread:
+                    run.timelapse_baseline = sorted(names)
+                    run.timelapse_baseline_unread = False
+                await db.commit()
         except Exception as e:
             # The in-memory baseline is read now, which covers completion
             # unless Bambuddy restarts first.
             logger.warning("[TIMELAPSE] Failed to persist the re-read baseline for archive %s: %s", archive_id, e)
         return
+
+
+async def _timelapse_still_wanted(db, archive, run_id: int | None, run_started_at: datetime | None) -> bool:
+    """Whether the print a timelapse is for still has none: its run, by id,
+    exists without a video and no later print took over (``superseded``).
+    Without a run, the archive is still on that print's start (a newer run's
+    video is its own) and has none."""
+    from backend.app.services.print_log import run_of, superseded
+
+    if run_id is not None:
+        run = await run_of(db, archive.id, run_id)
+        return run is not None and run.timelapse_path is None and not await superseded(db, run)
+    return archive.timelapse_path is None and archive.started_at == run_started_at
 
 
 async def _scan_for_timelapse_with_retries(
@@ -6866,6 +6996,7 @@ async def _scan_for_timelapse_with_retries(
     *,
     plate_id: int | None = None,
     baseline_unread: bool = False,
+    run_id: int | None = None,
 ):
     """Poll the printer for this print's timelapse and attach it.
 
@@ -6887,7 +7018,14 @@ async def _scan_for_timelapse_with_retries(
 
     ``baseline_unread`` marks the caller's baseline as taken off a card that
     could not be read; a stored one carries the same mark on the archive.
+
+    ``run_id`` is the print that ended (archive redesign): the video is that
+    run's, the stored baseline is the run's own, and the poll ends once the
+    run has a video or is gone. Without it (no run was written), the run is
+    whichever the archive is on when the scan starts.
     """
+    from backend.app.services.print_log import run_of
+
     logger = logging.getLogger(__name__)
 
     # Cleared when the baseline was taken off a card we could not read, so the
@@ -6905,27 +7043,36 @@ async def _scan_for_timelapse_with_retries(
             if not archive:
                 logger.warning("[TIMELAPSE] Archive %s not found, aborting", archive_id)
                 return
-            if archive.timelapse_path:
+            run = await run_of(db, archive_id, run_id) if run_id is not None else None
+            if run_id is not None and run is None:
+                logger.info("[TIMELAPSE] Run %s of archive %s is gone, aborting", run_id, archive_id)
+                return
+            if run.timelapse_path if run is not None else archive.timelapse_path:
                 logger.info("[TIMELAPSE] Archive %s already has timelapse attached", archive_id)
                 return
-            if not archive.printer_id:
+            # The printer the print ran on: plates of one archive can print on
+            # two printers, and the archive's is the one that started last.
+            scan_printer_id = run.printer_id if run is not None and run.printer_id else archive.printer_id
+            if not scan_printer_id:
                 logger.warning("[TIMELAPSE] Archive %s has no printer, aborting", archive_id)
                 return
             # The run this scan is for. The archive row passes to a newer run
             # when it prints again (the next plate, a reprint), and that run's
             # video is its own.
-            run_started_at = archive.started_at
+            run_started_at = run.started_at if run is not None else archive.started_at
+            # The baseline stored for it: the run's own, else the archive's
+            # while that is still this run's start's.
+            stored_baseline, stored_unread = None, False
+            if run is not None and run.timelapse_baseline is not None:
+                stored_baseline, stored_unread = run.timelapse_baseline, bool(run.timelapse_baseline_unread)
+            elif archive.started_at == run_started_at:
+                stored_baseline, stored_unread = archive.timelapse_baseline, archive.timelapse_baseline_unread
 
-            if (
-                baseline_names is not None
-                and baseline_unread
-                and archive.timelapse_baseline is not None
-                and not archive.timelapse_baseline_unread
-            ):
+            if baseline_names is not None and baseline_unread and stored_baseline is not None and not stored_unread:
                 # The card was read at print start, and the in-memory copy is
                 # one Bambuddy took after a restart off a card it could not
                 # read: the stored one is this run's and is evidence.
-                baseline_names = set(archive.timelapse_baseline)
+                baseline_names = set(stored_baseline)
                 logger.info(
                     "[TIMELAPSE] Using stored baseline over an unread one: %s existing video files for archive %s",
                     len(baseline_names),
@@ -6938,17 +7085,17 @@ async def _scan_for_timelapse_with_retries(
                     len(baseline_names),
                     archive_id,
                 )
-            elif archive.timelapse_baseline is not None:
+            elif stored_baseline is not None:
                 # Persisted at print start — survives a restart mid-print.
-                baseline_names = set(archive.timelapse_baseline)
-                baseline_trusted = not archive.timelapse_baseline_unread
+                baseline_names = set(stored_baseline)
+                baseline_trusted = not stored_unread
                 logger.info(
                     "[TIMELAPSE] Using stored baseline: %s existing video files for archive %s",
                     len(baseline_names),
                     archive_id,
                 )
             else:
-                result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
+                result = await db.execute(select(Printer).where(Printer.id == scan_printer_id))
                 printer = result.scalar_one_or_none()
                 if not printer:
                     logger.warning("[TIMELAPSE] Printer not found for archive %s, aborting", archive_id)
@@ -6968,7 +7115,7 @@ async def _scan_for_timelapse_with_retries(
                         "read. A single new video still resolves; several will not be guessed between — "
                         "use Scan for Timelapse to pick one by hand",
                         archive_id,
-                        archive.printer_id,
+                        scan_printer_id,
                     )
                 logger.info(
                     "[TIMELAPSE] Baseline snapshot (fallback): %s existing video files for archive %s",
@@ -7000,28 +7147,28 @@ async def _scan_for_timelapse_with_retries(
             # across the FTP round-trips left one connection idle-in-transaction per
             # in-flight scan (issue #2572).
             async with async_session() as db:
+                from backend.app.services.print_log import claimed_timelapse_stems
+
                 service = ArchiveService(db)
                 archive = await service.get_archive(archive_id)
 
                 if not archive:
                     logger.warning("[TIMELAPSE] Archive %s not found, stopping poll", archive_id)
                     return
-                if archive.timelapse_path:
-                    logger.info("[TIMELAPSE] Archive %s already has timelapse attached, stopping poll", archive_id)
-                    return
-                if archive.started_at != run_started_at:
+                if not await _timelapse_still_wanted(db, archive, run_id, run_started_at):
                     logger.info(
-                        "[TIMELAPSE] Archive %s is printing again, stopping the previous run's poll", archive_id
+                        "[TIMELAPSE] Archive %s has its video or is printing again, stopping the run's poll",
+                        archive_id,
                     )
                     return
 
-                result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
+                result = await db.execute(select(Printer).where(Printer.id == scan_printer_id))
                 printer = result.scalar_one_or_none()
                 if not printer:
                     logger.warning("[TIMELAPSE] Printer not found for archive %s, stopping poll", archive_id)
                     return
 
-                claimed = await _claimed_timelapse_names(db, archive.printer_id, archive_id)
+                claimed = await claimed_timelapse_stems(db, scan_printer_id, archive_id=archive_id, run_id=run_id)
 
             # I/O phase (no DB connection held): FTP list + download.
             video_files, found_path = await _list_timelapse_videos(printer)
@@ -7052,6 +7199,7 @@ async def _scan_for_timelapse_with_retries(
                     require_unambiguous=not baseline_trusted,
                     plate_id=plate_id,
                     run_started_at=run_started_at,
+                    run_id=run_id,
                 )
                 if attached:
                     return
@@ -7076,7 +7224,11 @@ async def _scan_for_timelapse_with_retries(
 
 
 async def _attach_layer_timelapse(
-    archive_id: int, timelapse_path: Path, plate_id: int | None, run_started_at: datetime | None
+    archive_id: int,
+    timelapse_path: Path,
+    plate_id: int | None,
+    run_started_at: datetime | None,
+    run_id: int | None = None,
 ) -> None:
     """Attach the external camera's stitched timelapse to the archive.
 
@@ -7087,7 +7239,12 @@ async def _attach_layer_timelapse(
     the run the frames were taken for: when the archive is printing again by
     the time the stitch is done, the video is not the new run's and is
     dropped. The stitched file is a temporary either way.
+
+    ``run_id`` is the print that ended (archive redesign): the video is that
+    run's and replaces that run's printer video; the poll by start above is
+    for a print without a run.
     """
+    from backend.app.services.print_log import run_of, superseded
     from backend.app.utils.safe_path import PathTraversalError, safe_join_under
 
     logger = logging.getLogger(__name__)
@@ -7097,17 +7254,31 @@ async def _attach_layer_timelapse(
             archive = await service.get_archive(archive_id)
             if archive is None:
                 return
-            if archive.started_at != run_started_at:
+            run = await run_of(db, archive_id, run_id) if run_id is not None else None
+            if run_id is not None and run is None:
+                logger.info("[LAYER-TL] Run %s of archive %s is gone; dropping its layer timelapse", run_id, archive_id)
+                return
+            if run is not None and await superseded(db, run):
+                logger.info(
+                    "[LAYER-TL] A later print took over run %s of archive %s; dropping its layer timelapse",
+                    run_id,
+                    archive_id,
+                )
+                return
+            if run is None and archive.started_at != run_started_at:
                 logger.info(
                     "[LAYER-TL] Archive %s is printing again; dropping the previous run's layer timelapse", archive_id
                 )
                 return
-            replaced = archive.timelapse_path
+            holder = run if run is not None else archive
+            replaced = holder.timelapse_path
             logger.info("[LAYER-TL] Attaching timelapse %s to archive %s", timelapse_path, archive_id)
             timelapse_data = await asyncio.to_thread(timelapse_path.read_bytes)
-            if not await service.attach_timelapse(archive_id, timelapse_data, "layer_timelapse.mp4", plate_id=plate_id):
+            if not await service.attach_timelapse(
+                archive_id, timelapse_data, "layer_timelapse.mp4", plate_id=plate_id, run_id=run_id
+            ):
                 return
-            attached = archive.timelapse_path
+            attached = holder.timelapse_path
         logger.info("[LAYER-TL] Layer timelapse attached successfully")
         if replaced and replaced != attached:
             try:
@@ -7137,6 +7308,7 @@ async def _attach_first_unclaimed_timelapse(
     require_unambiguous: bool = False,
     plate_id: int | None = None,
     run_started_at: datetime | None | object = _ANY_RUN,
+    run_id: int | None = None,
 ) -> bool:
     """Download and attach the one video that belongs to this print.
 
@@ -7250,9 +7422,10 @@ async def _attach_first_unclaimed_timelapse(
     # and the poll ends (True).
     async with async_session() as db:
         service = ArchiveService(db)
-        if run_started_at is not _ANY_RUN:
+        if run_id is not None or run_started_at is not _ANY_RUN:
             current = await service.get_archive(archive_id)
-            if current is None or current.timelapse_path or current.started_at != run_started_at:
+            started = None if run_started_at is _ANY_RUN else cast("datetime | None", run_started_at)
+            if current is None or not await _timelapse_still_wanted(db, current, run_id, started):
                 logger.info(
                     "[TIMELAPSE] Archive %s moved on during the download (video attached or printing again); "
                     "%s stays on the printer",
@@ -7260,7 +7433,9 @@ async def _attach_first_unclaimed_timelapse(
                     file_name,
                 )
                 return True
-        success = await service.attach_timelapse(archive_id, timelapse_data, file_name, plate_id=plate_id)
+        success = await service.attach_timelapse(
+            archive_id, timelapse_data, file_name, plate_id=plate_id, run_id=run_id
+        )
     if not success:
         logger.warning("[TIMELAPSE] Failed to attach timelapse to archive %s", archive_id)
         return False
@@ -7302,6 +7477,7 @@ async def _capture_finish_photo_from_timelapse(
     archive_dir: Path,
     timeout: float | None = None,
     rotation: int = 0,
+    run_id: int | None = None,
 ) -> tuple[str | None, bool]:
     """Wait for the per-print timelapse to land on the archive and extract its
     last frame as the finish photo (#1397).
@@ -7326,11 +7502,15 @@ async def _capture_finish_photo_from_timelapse(
     still (#2708) so this source agrees with every other finish-photo source.
     The archived video itself is the printer's own file and is left alone —
     rotating it would mean re-encoding it.
+
+    ``run_id`` is the print that ended: its own video is the one waited for,
+    not the archive's, which can be another plate's.
     """
     import uuid
 
     from backend.app.models.archive import PrintArchive
     from backend.app.services.camera import apply_camera_rotation_to_file, extract_video_last_frame
+    from backend.app.services.print_log import run_of
 
     logger = logging.getLogger(__name__)
 
@@ -7340,9 +7520,13 @@ async def _capture_finish_photo_from_timelapse(
 
     while True:
         async with async_session() as db:
-            result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-            archive = result.scalar_one_or_none()
-            timelapse_relpath = archive.timelapse_path if archive else None
+            if run_id is not None:
+                run = await run_of(db, archive_id, run_id)
+                timelapse_relpath = run.timelapse_path if run else None
+            else:
+                result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+                archive = result.scalar_one_or_none()
+                timelapse_relpath = archive.timelapse_path if archive else None
 
         if timelapse_relpath:
             video_path = app_settings.base_dir / timelapse_relpath
@@ -7378,7 +7562,9 @@ async def _capture_finish_photo_from_timelapse(
         await asyncio.sleep(poll_interval)
 
 
-async def _upgrade_finish_photo_from_timelapse(archive_id: int, archive_dir: Path, rotation: int = 0) -> None:
+async def _upgrade_finish_photo_from_timelapse(
+    archive_id: int, archive_dir: Path, rotation: int = 0, run_id: int | None = None
+) -> None:
     """Add the timelapse's last frame to an archive after the fact (#2704).
 
     The print-complete notification waits only ~60s for the video, because
@@ -7392,12 +7578,15 @@ async def _upgrade_finish_photo_from_timelapse(archive_id: int, archive_dir: Pat
     the frame and puts it *first* in the archive's photo list, so opening the
     gallery shows it. The live grab is deliberately kept: the notification that
     already went out links to that exact file, and deleting it would leave a
-    broken image in Discord or Telegram.
+    broken image in Discord or Telegram. ``run_id`` is the print it is for,
+    whose list leads with it too.
     """
+    from backend.app.services.print_log import add_run_photo, run_of
+
     logger = logging.getLogger(__name__)
 
     filename, _ = await _capture_finish_photo_from_timelapse(
-        archive_id, archive_dir, timeout=_FINISH_PHOTO_UPGRADE_TIMEOUT_SECONDS, rotation=rotation
+        archive_id, archive_dir, timeout=_FINISH_PHOTO_UPGRADE_TIMEOUT_SECONDS, rotation=rotation, run_id=run_id
     )
     if not filename:
         logger.info("[PHOTO-UPGRADE] No timelapse frame for archive %s; keeping the live grab", archive_id)
@@ -7415,6 +7604,7 @@ async def _upgrade_finish_photo_from_timelapse(archive_id: int, archive_dir: Pat
                 return
             # Front of the list: PhotoGalleryModal opens at index 0.
             archive.photos = [filename, *photos]
+            add_run_photo(await run_of(db, archive_id, run_id) if run_id is not None else None, filename, first=True)
             await db.commit()
     except Exception as e:
         logger.warning("[PHOTO-UPGRADE] Failed to attach upgraded photo to archive %s: %s", archive_id, e)
@@ -9636,8 +9826,9 @@ async def _close_out_print(printer_id: int, data: dict):
         archive = await db.get(PrintArchive, archive_id)
         if archive is None:
             # Deleted while it printed: its run has nothing left to end on.
-            await discard_open_runs(db, printer_id)
+            discarded = await discard_open_runs(db, printer_id)
             await db.commit()
+            await _announce_discarded_runs(discarded, printer_id)
         if archive:
             # Back-fill created_by_id on reprint (#730): reprint reuses the
             # source archive row rather than creating a new one, so an
@@ -9739,6 +9930,7 @@ async def _close_out_print(printer_id: int, data: dict):
         await run_with_retry(_write_run, label="print log entry")
     except Exception as e:
         logger.warning("[PRINT_LOG] Failed to write log entry for archive %s: %s", archive_id, e)
+    await _publish_run_completed(completed_run_id, printer_id)
 
     log_timing("Print log entry")
 
@@ -9915,6 +10107,7 @@ async def _close_out_print(printer_id: int, data: dict):
                     archive_id=archive_id,
                     archive_dir=archive_dir,
                     rotation=getattr(printer, "camera_rotation", 0),
+                    run_id=completed_run_id,
                 )
 
             # #1721: replacement framing path — on_finish_photo_moment
@@ -10065,12 +10258,17 @@ async def _close_out_print(printer_id: int, data: dict):
             if photo_filename:
                 async with async_session() as db:
                     from backend.app.models.archive import PrintArchive
+                    from backend.app.services.print_log import add_run_photo, run_of
 
                     arch = await db.get(PrintArchive, archive_id)
+                    # The ended print's own list takes it too: the archive's
+                    # holds every print's.
+                    run = await run_of(db, archive_id, completed_run_id) if completed_run_id is not None else None
                     if arch is not None:
                         photos = arch.photos or []
                         photos.append(photo_filename)
                         arch.photos = photos
+                        add_run_photo(run, photo_filename)
                         await db.commit()
                 logger.info("[PHOTO-BG] Saved: %s", photo_filename)
 
@@ -10089,9 +10287,17 @@ async def _close_out_print(printer_id: int, data: dict):
             # silently drops the other's entry, leaving a JPEG on disk that the
             # gallery never lists.
             if timelapse_still_pending:
+                from backend.app.services import archive_work
+
                 spawn_background_task(
-                    _upgrade_finish_photo_from_timelapse(
-                        archive_id, archive_dir, rotation=getattr(printer, "camera_rotation", 0)
+                    archive_work.held_while(
+                        archive_id,
+                        _upgrade_finish_photo_from_timelapse(
+                            archive_id,
+                            archive_dir,
+                            rotation=getattr(printer, "camera_rotation", 0),
+                            run_id=completed_run_id,
+                        ),
                     ),
                     name=f"finish-photo-upgrade-{archive_id}",
                 )
@@ -10217,6 +10423,9 @@ async def _close_out_print(printer_id: int, data: dict):
                         # Pass usage tracker results for AMS slot info in notifications
                         if usage_results:
                             archive_data["usage_results"] = usage_results
+                        # Which archive and print it was (archive redesign).
+                        archive_data["archive_id"] = archive_id
+                        archive_data["run_id"] = completed_run_id
                         # Add finish photo URL and image bytes if available
                         if finish_photo_filename:
                             photo_url, photo_bytes = await _finish_photo_for_notification(
@@ -10239,7 +10448,7 @@ async def _close_out_print(printer_id: int, data: dict):
                 # along with the prompt.
                 if print_status == "completed" and archive_id:
                     await _dispatch_outcome_confirmation_safely(
-                        db, printer_id, printer_name, data, archive_id, archive_data
+                        db, printer_id, printer_name, data, archive_id, archive_data, run_id=completed_run_id
                     )
 
                 # Send user-specific email notification
@@ -10371,7 +10580,9 @@ async def _close_out_print(printer_id: int, data: dict):
                         run_started_at = run_archive.started_at if run_archive else None
                 timelapse_path = await tl_complete(printer_id)
                 if timelapse_path and archive_id:
-                    await _attach_layer_timelapse(archive_id, timelapse_path, notify_plate_id, run_started_at)
+                    await _attach_layer_timelapse(
+                        archive_id, timelapse_path, notify_plate_id, run_started_at, run_id=completed_run_id
+                    )
                 elif timelapse_path:
                     # Timelapse created but no archive - just clean up
                     await asyncio.to_thread(timelapse_path.unlink, missing_ok=True)
@@ -10392,9 +10603,13 @@ async def _close_out_print(printer_id: int, data: dict):
                 except Exception:
                     pass  # Best-effort timelapse session cancellation on error
 
+    from backend.app.services import archive_work
+
+    # Held through the stitch, which can take longer than a merge waits after
+    # a print (archive redesign P2).
     layer_timelapse = _background_layer_timelapse()
-    if archive_id and print_status == "completed":
-        layer_timelapse = _mark_run_finishing(archive_id, layer_timelapse)
+    if archive_id:
+        layer_timelapse = archive_work.held_while(archive_id, layer_timelapse)
     spawn_background_task(layer_timelapse, name="background-layer-timelapse")
 
     log_timing("All background tasks scheduled")
@@ -10404,7 +10619,7 @@ async def _close_out_print(printer_id: int, data: dict):
         logger.info("[TIMELAPSE] Timelapse was active during print, scheduling auto-scan for archive %s", archive_id)
         # Schedule timelapse scan as background task with retries
         # The printer needs time to encode the video after print completion
-        _schedule_timelapse_scan(archive_id, printer_id, plate_id=notify_plate_id)
+        _schedule_timelapse_scan(archive_id, printer_id, plate_id=notify_plate_id, run_id=completed_run_id)
         log_timing("Timelapse scan scheduled")
 
     logger.info("[CALLBACK] on_print_complete finished for printer %s, archive %s", printer_id, archive_id)
@@ -11598,6 +11813,12 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logging.warning("[BATCH] Startup status backfill failed: %s", exc)
 
+    # Each plate's estimate of archives made before they were kept (#3375),
+    # read from their 3MFs in the background: the readers use the whole
+    # file's figures until then.
+    global _plate_estimates_task
+    _plate_estimates_task = asyncio.create_task(_fill_plate_estimates())
+
     # Register an app-scoped httpx client for Bambu Cloud services so
     # per-request BambuCloudService instances reuse the same connection pool
     # (important for routes like /cloud/filament-info that chain many
@@ -12081,6 +12302,8 @@ async def lifespan(app: FastAPI):
         logging.warning("Failed to shut down camera broadcasters: %s", e)
     stop_expected_prints_cleanup()
     stop_auth_cleanup()
+    if _plate_estimates_task is not None and not _plate_estimates_task.done():
+        _plate_estimates_task.cancel()
     from backend.app.services import announcements as announcements_service
 
     announcements_service.stop()

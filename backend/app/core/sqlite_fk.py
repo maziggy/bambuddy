@@ -42,6 +42,7 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
     {
         # print_archives
         ("active_print_spoolman", "archive_id"),
+        ("archive_aliases", "archive_id"),
         ("budget_reservations", "print_archive_id"),
         ("library_folders", "archive_id"),
         ("pending_uploads", "archived_id"),

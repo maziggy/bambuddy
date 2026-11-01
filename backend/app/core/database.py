@@ -359,6 +359,9 @@ NON_FK_ID_REFERENCES: dict[str, tuple[tuple[str, str], ...]] = {
         ("notification_lock_screen_widgets", "printer_id"),
     ),
     "api_keys": (("auth_ephemeral_tokens", "api_key_id"),),
+    # A merged archive's id keeps finding the archive it went into after its
+    # soft-deleted row is purged (archive redesign P2).
+    "print_archives": (("archive_aliases", "merged_archive_id"),),
 }
 
 
@@ -5949,6 +5952,11 @@ async def _run_migrations(conn):
         conn,
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_print_log_entries_confirm_token ON print_log_entries (confirm_token)",
     )
+
+    # Migration: each plate's estimate on the archive (#3375). Nullable, no
+    # default; filled from the archived 3MF after startup
+    # (``print_cost_estimate.fill_plate_estimates``).
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN plate_estimates JSON")
 
     await _migrate_auth_datetimes_to_timestamp(conn)
     await _migrate_add_missing_set_null_fks(conn)

@@ -104,6 +104,20 @@ describe('PrintersPage — verdict on the card', () => {
     expect(await screen.findByText('Marked as good part')).toBeInTheDocument();
   });
 
+  it('answers its own print when the archive printed on more printers', async () => {
+    // Plates of one archive are runs of their own; the card's row names its run.
+    const user = userEvent.setup();
+    server.use(
+      http.get('/api/v1/archives/last-per-printer', () => HttpResponse.json([{ ...finishedPrint, run_id: 7 }])),
+    );
+    render(<PrintersPage />);
+
+    await user.click(await screen.findByTitle('Good'));
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(patched[0].run_id).toBe(7);
+  });
+
   // The card reads its row out of one page-wide answer; another printer's
   // archive must not stand in for its own.
   it('ignores the last print of another printer', async () => {

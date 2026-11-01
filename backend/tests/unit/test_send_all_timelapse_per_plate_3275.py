@@ -119,6 +119,8 @@ def _service(tmp_path: Path, monkeypatch, current: str | None):
 
     db = MagicMock()
     db.commit = AsyncMock()
+    # No run logged: a video attached by hand to an archive printed before runs.
+    db.scalar = AsyncMock(return_value=None)
     service = ArchiveService(db)
     archive = MagicMock()
     archive.file_path = "archive/1/20260101_plates/Plates.3mf"

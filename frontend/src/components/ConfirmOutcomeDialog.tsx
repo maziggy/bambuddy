@@ -10,6 +10,9 @@ import { useToast } from '../contexts/ToastContext';
 
 interface ConfirmOutcomeDialogProps {
   archiveId: number;
+  // The run asked about: plates of one archive each have their own question.
+  // Omitted (an archive card's menu, an older link) means its latest run.
+  runId?: number | null;
   onClose: () => void;
 }
 
@@ -20,7 +23,7 @@ interface ConfirmOutcomeDialogProps {
  * ?confirm=<id> deep link a push notification carries. Rejecting offers an
  * optional reason and a one-click reprint through the regular PrintModal.
  */
-export function ConfirmOutcomeDialog({ archiveId, onClose }: ConfirmOutcomeDialogProps) {
+export function ConfirmOutcomeDialog({ archiveId, runId, onClose }: ConfirmOutcomeDialogProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -29,16 +32,26 @@ export function ConfirmOutcomeDialog({ archiveId, onClose }: ConfirmOutcomeDialo
   const [showReprint, setShowReprint] = useState(false);
 
   const { data: archive } = useQuery({
-    queryKey: ['archive', archiveId],
-    queryFn: () => api.getArchive(archiveId),
+    queryKey: ['archive', archiveId, runId ?? null],
+    queryFn: () => api.getArchive(archiveId, runId),
   });
+  // The archive the answer goes to: a link to one merged into another
+  // (archive redesign P2) loads that one, and the merged id writes nothing.
+  const targetId = archive?.id ?? archiveId;
 
   const verdictMutation = useMutation({
     mutationFn: (data: { user_verdict: 'good' | 'reject'; failure_reason?: string }) =>
-      api.updateArchive(archiveId, { ...data, user_verdict_source: 'dialog' }),
+      api.updateArchive(targetId, {
+        ...data,
+        user_verdict_source: 'dialog',
+        ...(runId != null ? { run_id: runId } : {}),
+      }),
     onSuccess: (_updated, variables) => {
       queryClient.invalidateQueries({ queryKey: ['archives'] });
       queryClient.invalidateQueries({ queryKey: ['archive', archiveId] });
+      queryClient.invalidateQueries({ queryKey: ['archive', targetId] });
+      // The archive page lists each print with its verdict.
+      queryClient.invalidateQueries({ queryKey: ['archive-runs', targetId] });
       showToast(
         variables.user_verdict === 'good'
           ? t('confirmOutcome.savedGood')
@@ -56,7 +69,7 @@ export function ConfirmOutcomeDialog({ archiveId, onClose }: ConfirmOutcomeDialo
   // The finish photo is prepended to archive.photos at print end (#1397);
   // fall back to the thumbnail when no camera shot exists.
   const photoFilename = archive?.photos?.[0] ?? null;
-  const photoUrl = photoFilename ? api.getArchivePhotoUrl(archiveId, photoFilename) : null;
+  const photoUrl = photoFilename ? api.getArchivePhotoUrl(targetId, photoFilename) : null;
   const alreadyDecided = archive?.user_verdict != null;
   // Why this print already has a verdict — the plate-clear default answers
   // prompts on its own, and without this the answer looks like it appeared

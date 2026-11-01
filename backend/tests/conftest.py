@@ -214,6 +214,21 @@ def mfa_encryption_isolation(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def reset_archive_work():
+    """Drop archives held or being merged between tests (services/archive_work).
+
+    Every test database hands out the same archive ids, and a dispatch driven
+    without ``_dispatch_one`` never releases its hold."""
+    from backend.app.services import archive_work
+
+    archive_work._held.clear()
+    archive_work._merging.clear()
+    yield
+    archive_work._held.clear()
+    archive_work._merging.clear()
+
+
+@pytest.fixture(autouse=True)
 def reset_printer_file_cache():
     """A fresh file-browser preview cache per test.
 

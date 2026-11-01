@@ -26,7 +26,6 @@ NOT_FORGOTTEN = {
     "_print_cost_center_ids": "keyed by (printer, archive); checked below",
     "_print_plate_ids": "keyed by (printer, archive); checked below",
     "_owned_print_archive_ids": "keyed by archive (dropped with the printer's expected/active prints)",
-    "_archive_runs_finishing": "keyed by archive, cleared by the task it counts when that task ends",
     "_ams_assignment_locks": "a lock carries nothing over; popping one a task holds would let a second be made",
     "_fallback_recovery_locks": "a lock carries nothing over (see its comment on popping)",
     "_HMS_FAILURE_REASONS": "constant",

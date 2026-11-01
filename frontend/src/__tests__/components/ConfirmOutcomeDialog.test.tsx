@@ -101,6 +101,27 @@ describe('ConfirmOutcomeDialog', () => {
     });
   });
 
+  it('answers the archive a merged one went into (archive redesign P2)', async () => {
+    const user = userEvent.setup();
+    let merged: Record<string, unknown> | null = null;
+    server.use(
+      // The merged id's lookup returns the archive it went into.
+      http.get('/api/v1/archives/31', () => HttpResponse.json(baseArchive)),
+      http.patch('/api/v1/archives/31', async ({ request }) => {
+        merged = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(baseArchive);
+      }),
+    );
+    render(<ConfirmOutcomeDialog archiveId={31} onClose={vi.fn()} />);
+
+    await screen.findByText('Bracket');
+    expect(screen.getByAltText('Bracket')).toHaveAttribute('src', expect.stringContaining('/archives/42/photos/'));
+    await user.click(screen.getByText('Good'));
+
+    await waitFor(() => expect(patchPayload).toEqual({ user_verdict: 'good', user_verdict_source: 'dialog' }));
+    expect(merged).toBeNull();
+  });
+
   it('records a reject with an optional reason', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
@@ -188,5 +209,30 @@ describe('ConfirmOutcomeDialog', () => {
     expect(screen.getByTestId('verdict-source-hint')).toHaveTextContent(
       'Recorded when the plate was cleared.'
     );
+  });
+
+  it('asks about the plate it was opened for and answers that one', async () => {
+    // Plates of one archive each have their own question: the dialog reads
+    // and answers its run, not the archive's latest.
+    const user = userEvent.setup();
+    let requestedRun: string | null = null;
+    server.use(
+      http.get('/api/v1/archives/42', ({ request }) => {
+        requestedRun = new URL(request.url).searchParams.get('run_id');
+        return HttpResponse.json({ ...baseArchive, run_id: 7 });
+      }),
+    );
+    render(<ConfirmOutcomeDialog archiveId={42} runId={7} onClose={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Bracket')).toBeInTheDocument();
+    });
+    expect(requestedRun).toBe('7');
+
+    await user.click(screen.getByText('Good'));
+
+    await waitFor(() => {
+      expect(patchPayload).toEqual({ user_verdict: 'good', user_verdict_source: 'dialog', run_id: 7 });
+    });
   });
 });

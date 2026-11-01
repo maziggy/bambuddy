@@ -7,9 +7,10 @@ import logging
 import uuid
 from collections.abc import Set as AbstractSet
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.print_log import INCLUDE_OPEN_RUNS, RUN_OPEN, PrintLogEntry
@@ -161,7 +162,7 @@ _MIRRORED_FROM_RUN = ("status", "started_at", "completed_at", "failure_reason")
 
 async def mirror_latest_run(db: AsyncSession, archive_id: int) -> None:
     """Give the archive its latest run's outcome, by start: status, times,
-    failure reason and plate. Only once none of its runs is printing: until
+    failure reason, plate and verdict. Only once none of its runs is printing: until
     the print's start, end, reconcile and timelapse look their print up by
     its run, they still go by the archive's printer, status and start, which
     a print running elsewhere must not move under them. While one prints,
@@ -191,6 +192,24 @@ async def mirror_latest_run(db: AsyncSession, archive_id: int) -> None:
         setattr(archive, name, getattr(latest, name))
     if latest.plate_id is not None:
         archive.plate_id = latest.plate_id
+    # And its printer: after a merge, or a run deleted, the archive's would
+    # still be another print's. Not a printer since deleted: the print log
+    # keeps those ids as history, the archive's is a key.
+    if latest.printer_id is not None and latest.printer_id != archive.printer_id:
+        from backend.app.models.printer import Printer
+
+        if await db.scalar(select(Printer.id).where(Printer.id == latest.printer_id)) is not None:
+            archive.printer_id = latest.printer_id
+    # Its outcome verdict too (#1898), once the run holds its own: it has one,
+    # or was opened at its start with its opt-in. A run logged before then
+    # may never have been given the archive's, which stays. Runs logged
+    # before they kept the verdict's provenance have only its value: the
+    # archive's own provenance stays with that same verdict.
+    owns_verdict = latest.user_verdict is not None or latest.confirm_requested is not None
+    if owns_verdict and (latest.user_verdict != archive.user_verdict or latest.user_verdict_source is not None):
+        archive.user_verdict = latest.user_verdict
+        archive.user_verdict_source = latest.user_verdict_source
+        archive.user_verdict_at = latest.user_verdict_at
 
 
 async def mirror_archive_cost(
@@ -358,15 +377,39 @@ async def open_run_on_printer(
     )
 
 
-async def discard_open_runs(db: AsyncSession, printer_id: int) -> None:
+async def discard_open_runs(db: AsyncSession, printer_id: int) -> list[SimpleNamespace]:
     """Drop the runs left open on the printer by prints that ended without
     their end reaching a run: cancelled at the next start as stale, or whose
     archive was deleted. As before runs were opened at the start, such a
-    print leaves no run. Does not commit."""
+    print leaves no run. Returns what they were, for announcing them gone.
+    Does not commit."""
+    discarded = [
+        run_snapshot(run)
+        for run in await db.scalars(
+            select(PrintLogEntry)
+            .where(PrintLogEntry.printer_id == printer_id, PrintLogEntry.status == RUN_OPEN)
+            .execution_options(**{INCLUDE_OPEN_RUNS: True})
+        )
+    ]
     await db.execute(
         delete(PrintLogEntry)
         .where(PrintLogEntry.printer_id == printer_id, PrintLogEntry.status == RUN_OPEN)
         .execution_options(**{INCLUDE_OPEN_RUNS: True})
+    )
+    return discarded
+
+
+def run_snapshot(run: PrintLogEntry) -> SimpleNamespace:
+    """What a run was, kept past its row (``discard_open_runs``)."""
+    return SimpleNamespace(
+        id=run.id,
+        archive_id=run.archive_id,
+        printer_id=run.printer_id,
+        printer_name=run.printer_name,
+        plate_id=run.plate_id,
+        print_name=run.print_name,
+        status=run.status,
+        started_at=run.started_at,
     )
 
 
@@ -436,9 +479,13 @@ async def open_run(
         # Not the archive's: that is the latest dispatch's, or the id an
         # earlier print of the archive was charged under.
         billing_run_id=(item.billing_run_id if item is not None else None) or str(uuid.uuid4()),
-        cost_center_id=(item.cost_center_id if item is not None else None) or archive.cost_center_id,
+        # The queue item's, none included: the archive's is another print's
+        # when the same file prints on several printers at once.
+        cost_center_id=item.cost_center_id if item is not None else archive.cost_center_id,
         confirm_requested=archive.confirm_requested,
         quantity=archive.quantity,
+        # Its own finish photos from here on (``owns_media``).
+        photos=[],
     )
     db.add(entry)
     await db.flush()
@@ -522,3 +569,163 @@ async def record_archive_wear(db: AsyncSession, archive, entry: PrintLogEntry) -
     runs = await db.scalar(select(func.count(PrintLogEntry.id)).where(PrintLogEntry.archive_id == archive.id))
     if (runs or 0) <= 1:
         archive.wear_cost = entry.wear_cost
+
+
+async def run_of(db: AsyncSession, archive_id: int, run_id: int) -> PrintLogEntry | None:
+    """The archive's run ``run_id``, open or not; None when it is not one."""
+    return await db.scalar(
+        select(PrintLogEntry)
+        .where(PrintLogEntry.id == run_id, PrintLogEntry.archive_id == archive_id)
+        .execution_options(**{INCLUDE_OPEN_RUNS: True})
+    )
+
+
+async def newest_run(db: AsyncSession, archive_id: int) -> PrintLogEntry | None:
+    """The archive's run started last, a printing one included: whose
+    timelapse and photos the archive shows. A print starting clears the
+    archive's video, so an earlier run's that lands after must not take it."""
+    return await db.scalar(
+        select(PrintLogEntry)
+        .where(PrintLogEntry.archive_id == archive_id)
+        .order_by(PrintLogEntry.started_at.desc().nulls_last(), PrintLogEntry.id.desc())
+        .limit(1)
+        .execution_options(**{INCLUDE_OPEN_RUNS: True})
+    )
+
+
+async def is_newest_run(db: AsyncSession, run: PrintLogEntry) -> bool:
+    """Whether the archive shows ``run``'s timelapse and photos."""
+    if run.archive_id is None:
+        return False
+    newest = await newest_run(db, run.archive_id)
+    return newest is not None and newest.id == run.id
+
+
+async def runs_with_timelapse(db: AsyncSession, archive_id: int, relpath: str) -> list[PrintLogEntry]:
+    """The archive's runs whose video is the file at ``relpath``."""
+    return list(
+        await db.scalars(
+            select(PrintLogEntry)
+            .where(PrintLogEntry.archive_id == archive_id, PrintLogEntry.timelapse_path == relpath)
+            .execution_options(**{INCLUDE_OPEN_RUNS: True})
+        )
+    )
+
+
+async def claimed_timelapse_stems(
+    db: AsyncSession, printer_id: int | None, *, archive_id: int, run_id: int | None
+) -> set[str]:
+    """Video filenames already attached to another print of this printer (#2704).
+
+    Lets the baseline diff drop a previous print's late-landing video from the
+    candidate list without ordering the candidates: ordering could only be
+    done on mtime or the filename timestamp, and both come from a clock the
+    printer can't sync in LAN-only mode. ``attach_timelapse`` stores the video
+    under the printer's own filename and the MP4 conversion keeps the stem, so
+    the stem of a ``timelapse_path`` is what was claimed.
+
+    Another print is another archive, or another run, also of this archive
+    (another plate of it): ``run_id`` is the print looking. Without one, every
+    run of the archive is its own.
+    """
+    from backend.app.models.archive import PrintArchive
+
+    if printer_id is None:
+        return set()
+    archives = await db.scalars(
+        select(PrintArchive.timelapse_path).where(
+            PrintArchive.printer_id == printer_id,
+            PrintArchive.id != archive_id,
+            PrintArchive.timelapse_path.is_not(None),
+        )
+    )
+    runs = select(PrintLogEntry.timelapse_path).where(
+        PrintLogEntry.printer_id == printer_id, PrintLogEntry.timelapse_path.is_not(None)
+    )
+    if run_id is not None:
+        runs = runs.where(PrintLogEntry.id != run_id)
+    else:
+        runs = runs.where(or_(PrintLogEntry.archive_id.is_(None), PrintLogEntry.archive_id != archive_id))
+    run_paths = await db.scalars(runs.execution_options(**{INCLUDE_OPEN_RUNS: True}))
+    return {Path(p).stem for p in [*archives.all(), *run_paths.all()] if p}
+
+
+def owns_media(run: PrintLogEntry) -> bool:
+    """Whether ``run`` keeps its own timelapse: opened at its start with a
+    photo list, or given a video or baseline of its own. A run logged before
+    runs kept them shares the archive's. Its photos are its own only once it
+    has a list (``run.photos`` not None)."""
+    return run.photos is not None or run.timelapse_path is not None or run.timelapse_baseline is not None
+
+
+async def superseded(db: AsyncSession, run: PrintLogEntry) -> bool:
+    """Whether a later print of the run's archive took over its video: one
+    started on its printer, whose video a video landing now may be, or one of
+    its plate that has its video already: a plate keeps one video, its latest
+    print's (a reprint replaces it, ``drop_earlier_plate_videos``). A later
+    print of the plate still running on another printer leaves the run its
+    video until it has one of its own, which it may never get."""
+    if run.archive_id is None or run.started_at is None:
+        return False
+    same = [PrintLogEntry.printer_id == run.printer_id] if run.printer_id is not None else []
+    if run.plate_id is not None:
+        same.append(and_(PrintLogEntry.plate_id == run.plate_id, PrintLogEntry.timelapse_path.is_not(None)))
+    if not same:
+        return False
+    later = await db.scalar(
+        select(PrintLogEntry.id)
+        .where(
+            PrintLogEntry.archive_id == run.archive_id,
+            PrintLogEntry.id != run.id,
+            PrintLogEntry.started_at > run.started_at,
+            or_(*same),
+        )
+        .limit(1)
+        .execution_options(**{INCLUDE_OPEN_RUNS: True})
+    )
+    return later is not None
+
+
+async def drop_earlier_plate_videos(db: AsyncSession, run: PrintLogEntry) -> list[str]:
+    """Take the videos of the archive's earlier prints of ``run``'s plate off
+    their runs, now that ``run`` has its own: a plate keeps one video, its
+    latest print's. The one the archive shows too, when it is one of them.
+    Returns their paths, for the caller to delete once committed; a path
+    another run (of another plate) still holds is left. Does not commit."""
+    from backend.app.models.archive import PrintArchive
+
+    if run.archive_id is None or run.plate_id is None or run.started_at is None:
+        return []
+    runs = list(
+        await db.scalars(
+            select(PrintLogEntry)
+            .where(PrintLogEntry.archive_id == run.archive_id, PrintLogEntry.timelapse_path.is_not(None))
+            .execution_options(**{INCLUDE_OPEN_RUNS: True})
+        )
+    )
+    earlier = [
+        r
+        for r in runs
+        if r.id != run.id
+        and r.plate_id == run.plate_id
+        and r.started_at is not None
+        and r.started_at < run.started_at
+        and r.timelapse_path != run.timelapse_path
+    ]
+    kept = {r.timelapse_path for r in runs if r not in earlier}
+    paths = {r.timelapse_path for r in earlier} - kept
+    for r in earlier:
+        r.timelapse_path = None
+    archive = await db.get(PrintArchive, run.archive_id)
+    if archive is not None and archive.timelapse_path in paths:
+        archive.timelapse_path = None
+        archive.timelapse_plate_id = None
+    return sorted(p for p in paths if p)
+
+
+def add_run_photo(run: PrintLogEntry | None, filename: str, *, first: bool = False) -> None:
+    """Put a finish photo on its run's list too: last, or ``first``."""
+    if run is None:
+        return
+    photos = [p for p in (run.photos or []) if p != filename]
+    run.photos = [filename, *photos] if first else [*photos, filename]

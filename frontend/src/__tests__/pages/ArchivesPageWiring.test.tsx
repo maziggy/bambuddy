@@ -14,6 +14,7 @@ import { render } from '../utils';
 import { server } from '../mocks/server';
 import { ArchivesPage } from '../../pages/ArchivesPage';
 import { setAuthToken } from '../../api/client';
+import { Route, Routes } from 'react-router-dom';
 
 const archive = (over: Record<string, unknown>) => ({
   id: 1,
@@ -545,5 +546,40 @@ describe('ArchivesPage wiring: reprint opens on the archive plate (#3395)', () =
     await waitFor(() => {
       expect(screen.getByTestId('selected-plates-summary')).toHaveTextContent(/^Plate 3$/);
     });
+  });
+});
+
+describe('ArchivesPage wiring: an archive opens over the list', () => {
+  it('a card click opens the archive at /archives/<id>; Escape closes it back to the list', async () => {
+    server.use(
+      http.get('*/api/v1/archives/:id', ({ params }) => HttpResponse.json(ARCHIVES.find((a) => a.id === Number(params.id)))),
+      http.get('*/api/v1/archives/:id/runs', () => HttpResponse.json({ items: [], total: 0 })),
+      http.get('*/api/v1/archives/:id/plates', () => HttpResponse.json({ archive_id: 1, filename: 'a.gcode.3mf', plates: [], is_multi_plate: false })),
+    );
+    window.history.pushState({}, '', '/archives');
+    render(
+      <Routes>
+        <Route path="/archives" element={<ArchivesPage />} />
+        <Route path="/archives/:id" element={<ArchivesPage />} />
+      </Routes>,
+    );
+
+    fireEvent.click(await cardFor(1));
+
+    expect(await screen.findByRole('dialog', { name: 'Benchy' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/archives/1');
+    // The list's shortcuts stay off while the archive is open: no upload
+    // dialog underneath it.
+    fireEvent.keyDown(document, { key: 'u' });
+    fireEvent.drop(screen.getByRole('dialog', { name: 'Benchy' }), {
+      dataTransfer: { files: [new File(['x'], 'part.3mf')], types: ['Files'] },
+    });
+    expect(screen.queryByText('Upload 3MF Files')).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Benchy' })).toBeNull());
+    expect(window.location.pathname).toBe('/archives');
+    expect(screen.getByText('Bracket')).toBeInTheDocument();
+    window.history.pushState({}, '', '/');
   });
 });

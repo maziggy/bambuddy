@@ -890,6 +890,7 @@ export interface Archive {
   print_time_seconds: number | null;
   actual_time_seconds: number | null;  // Computed from started_at/completed_at
   time_accuracy: number | null;  // Percentage: 100 = perfect, >100 = faster than estimated
+  time_estimate_seconds?: number | null;  // The latest print's plate estimate, what time_accuracy compares with
   filament_used_grams: number | null;
   filament_type: string | null;
   filament_color: string | null;
@@ -920,6 +921,12 @@ export interface Archive {
   user_verdict_source: VerdictSource | null;
   user_verdict_at: string | null;
   confirm_requested: boolean;
+  // The run whose outcome this shows, when it shows one run of the archive
+  // (a plate printed on its own) rather than its latest (#1898).
+  run_id?: number | null;
+  // The latest print of the archive (among those the caller may see), whose
+  // figures the per-print fields show (archive redesign).
+  latest_run_id?: number | null;
   quantity: number;
   energy_kwh: number | null;
   energy_cost: number | null;
@@ -974,6 +981,18 @@ export interface PrintLogEntry {
   energy_cost: number | null;
   wear_cost: number | null;  // Printer wear (#694)
   failure_reason: string | null;
+  user_verdict?: 'good' | 'reject' | null;
+  user_verdict_source?: string | null;
+  confirm_requested?: boolean | null;
+  duration_unmeasured?: boolean | null;
+  quantity?: number | null;
+  // This print's own (archive redesign): note, finish photos, video.
+  notes?: string | null;
+  photos?: string[] | null;
+  timelapse_path?: string | null;
+  // The slicer's estimate for the plate it printed; in an archive's runs list.
+  estimate_seconds?: number | null;
+  estimate_grams?: number | null;
   thumbnail_path: string | null;
   created_by_id: number | null;
   created_by_username: string | null;
@@ -983,6 +1002,8 @@ export interface PrintLogEntry {
 export interface PrintLogResponse {
   items: PrintLogEntry[];
   total: number;
+  // The print log only: archives of its prints that were deleted.
+  deleted_archive_ids?: number[];
 }
 
 export interface ArchiveStats {
@@ -5700,8 +5721,19 @@ export const api = {
     const qs = params.toString();
     return request<ArchiveSlim[]>(`/archives/slim${qs ? `?${qs}` : ''}`);
   },
-  getArchive: (id: number) => request<Archive>(`/archives/${id}`),
+  getArchive: (id: number, runId?: number | null) =>
+    request<Archive>(`/archives/${id}${runId != null ? `?run_id=${runId}` : ''}`),
   getArchiveRuns: (id: number) => request<PrintLogResponse>(`/archives/${id}/runs`),
+  // The prints of the archives the caller sees that ended between two days
+  // (archive redesign P4: the calendar), in id order.
+  getArchivePrints: (params: { dateFrom: string; dateTo: string; printerId?: number; limit?: number; offset?: number }) => {
+    const search = new URLSearchParams({ date_from: params.dateFrom, date_to: params.dateTo });
+    if (params.printerId) search.set('printer_id', String(params.printerId));
+    if (params.limit) search.set('limit', String(params.limit));
+    if (params.offset) search.set('offset', String(params.offset));
+    addDayZone(search);
+    return request<PrintLogResponse>(`/archives/prints?${search}`);
+  },
   /**
    * Pre-flight for the delete-confirm modal (#1734). Returns the number of
    * related queue items that will be removed along with the archive AND how
@@ -5742,6 +5774,8 @@ export const api = {
     // Which surface answered. The backend only accepts the sources a client
     // can honestly claim and defaults to 'api' when none is given.
     user_verdict_source?: 'dialog' | 'printer_card';
+    // The run the verdict / outcome is for; omitted means the latest run.
+    run_id?: number;
   }) =>
     request<Archive>(`/archives/${id}`, {
       method: 'PATCH',
@@ -5769,6 +5803,15 @@ export const api = {
     request<{ deleted: number; purge_stats: boolean }>('/archives/purge', {
       method: 'POST',
       body: JSON.stringify({ older_than_days: olderThanDays, purge_stats: purgeStats }),
+    }),
+  // Archives of one file merge into the oldest (archive redesign P2).
+  previewArchiveMerge: () => request<ArchiveMergePreview>('/archives/merge-preview'),
+  /** How many duplicate groups there are; cheap, for offering the merge. */
+  getArchiveMergeCount: () => request<{ groups: number }>('/archives/merge-count'),
+  mergeArchives: (survivorIds: number[]) =>
+    request<ArchiveMergeResult>('/archives/merge', {
+      method: 'POST',
+      body: JSON.stringify({ survivor_ids: survivorIds }),
     }),
   getArchivePurgeSettings: () =>
     request<ArchivePurgeSettings>('/archives/purge/settings'),
@@ -5923,6 +5966,8 @@ export const api = {
   },
   getArchiveGcode: (id: number) => `${API_BASE}/archives/${id}/gcode`,
   getArchiveTimelapse: (id: number) => withMediaToken(`${API_BASE}/archives/${id}/timelapse?v=${Date.now()}`),
+  getArchiveRunTimelapse: (id: number, runId: number) =>
+    withMediaToken(`${API_BASE}/archives/${id}/runs/${runId}/timelapse?v=${Date.now()}`),
   downloadArchiveTimelapse: async (id: number, filename: string): Promise<void> => {
     const prepared = await request<{ token: string; filename: string }>(
       `/archives/${id}/media-download-token`,
@@ -6323,7 +6368,7 @@ export const api = {
   // archive to reach through and this is the only path to classify them.
   updatePrintLogEntry: (
     id: number,
-    body: { failure_reason?: string | null; status?: string },
+    body: { failure_reason?: string | null; status?: string; notes?: string | null },
   ) =>
     request<PrintLogEntry>(`/print-log/${id}`, {
       method: 'PATCH',
@@ -8873,6 +8918,32 @@ export interface ArchivePurgePreview {
   total_bytes: number;
   sample_filenames: string[];
   older_than_days: number;
+}
+
+export interface ArchiveMergeMember {
+  id: number;
+  print_name: string | null;
+  filename: string;
+  created_at: string | null;
+  run_count: number;
+}
+
+/** Why a group is left out: at work now, or holding files only one can keep. */
+export type ArchiveMergeSkip = 'busy' | 'conflicting_files' | 'failed' | 'not_a_group';
+
+export interface ArchiveMergeGroup {
+  survivor: ArchiveMergeMember;
+  merged: ArchiveMergeMember[];
+  skipped: ArchiveMergeSkip | null;
+}
+
+export interface ArchiveMergePreview {
+  groups: ArchiveMergeGroup[];
+}
+
+export interface ArchiveMergeResult {
+  merged: { survivor_id: number; merged_ids: number[] }[];
+  skipped: { survivor_id: number; reason: ArchiveMergeSkip }[];
 }
 
 export interface ArchivePurgeSettings {

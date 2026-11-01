@@ -459,6 +459,7 @@ const UK_COGNATES = [
 const NL_COGNATES = [
   '{{page}} · {{width}} × {{height}} mm · {{capacity}} labels ({{cols}} × {{rows}})',  // #3296 custom sheet summary — "labels" is the Dutch word too
   'A4 (210 × 297 mm)',  // #3296 page size name in the custom label sheet form — ISO name and metric size, written the same
+  'Project:',  // archive page label
   'Apps',  // notifications badge for messages from connected apps — same word
   '1 printer', '{{n}} printers',
   '1 week', '(25%, 50%, 75%)', 'Accent', 'AMS Filament Backup',

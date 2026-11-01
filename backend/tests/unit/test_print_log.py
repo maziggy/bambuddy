@@ -181,6 +181,13 @@ class TestSchemaValidatesFromOrmRow:
         # nothing falls back to its default.
         row.failure_reason = "warping"
         row.user_verdict = "good"
+        row.user_verdict_source = "dialog"
+        row.confirm_requested = True
+        row.duration_unmeasured = False
+        row.quantity = 1
+        row.notes = "brim lifted"
+        row.photos = ["finish_1.jpg"]
+        row.timelapse_path = "archives/1/x/video.mp4"
         row.thumbnail_path = "archives/1/x/thumbnail.png"
         row.created_by_id = 2
         row.created_by_username = "martin"

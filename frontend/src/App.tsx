@@ -233,6 +233,8 @@ function App() {
                 <Route element={<ProtectedRoute><WebSocketProvider><EmbeddedCameraProvider><Layout /></EmbeddedCameraProvider></WebSocketProvider></ProtectedRoute>}>
                   <Route index element={<PrintersPage />} />
                   <Route path="archives" element={<ArchivesPage />} />
+                  {/* An archive opens over the list (archive redesign P4). */}
+                  <Route path="archives/:id" element={<ArchivesPage />} />
                   <Route path="queue" element={<QueuePage />} />
                   {/* Slicer Pipelines (#1425) — Pipelines tab lives on the
                       Print Queue page (Queue + History + Timeline +

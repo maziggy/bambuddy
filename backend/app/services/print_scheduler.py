@@ -1378,12 +1378,10 @@ class PrintScheduler:
         # event-loop thread, so this dict needs no lock.
         # item_id -> (task, printer_id)
         self._inflight: dict[int, tuple[asyncio.Task, int | None]] = {}
-        # Archives a library dispatch still in flight is adding its run to:
-        # archive_id -> item_id. Uploads run in parallel, and an archive holds
-        # one active run, so a second dispatch of the same file must not take
-        # it before the first one's print shows as running. Released by
-        # `_dispatch_one` when the dispatch ends; same threading as above.
-        self._archive_claims: dict[int, int] = {}
+        # The archive each dispatch in flight prints into, held in
+        # services/archive_work so a merge leaves it alone until the dispatch
+        # ends: item_id -> archive_id. Same threading as above.
+        self._held_archives: dict[int, int] = {}
         # Expected prints registered by `_start_print` that have not yet had a
         # print command sent. Populated at registration, dropped once
         # `start_print()` succeeds, and rolled back by `_dispatch_one` on every
@@ -2853,9 +2851,8 @@ class PrintScheduler:
                 # Likewise the print user it set: the printer's next print is
                 # not this item's.
                 self._rollback_unconfirmed_print_user(item_id)
-                # A sent print now shows as running on its archive; an unsent
-                # one leaves it free again.
-                self._release_archive_claims(item_id)
+                # Its archive is no longer held for it (archive_work).
+                self._release_held_archive(item_id)
                 # Mirror the pre-#1625 background-dispatch lifecycle: a
                 # reservation survives only after start_print() accepted the
                 # command. Failure, cancellation, deferral, and exceptions all
@@ -8063,24 +8060,47 @@ class PrintScheduler:
 
         return prev_item.status in ("completed", "cancelled")
 
-    def _release_archive_claims(self, item_id: int) -> None:
-        for archive_id in [a for a, owner in self._archive_claims.items() if owner == item_id]:
-            del self._archive_claims[archive_id]
+    def _hold_archive(self, item_id: int, archive_id: int) -> None:
+        """Hold the archive a dispatch prints into until it ends (archive_work)."""
+        from backend.app.services import archive_work
+
+        self._release_held_archive(item_id)
+        archive_work.hold(archive_id)
+        self._held_archives[item_id] = archive_id
+
+    def _release_held_archive(self, item_id: int) -> None:
+        from backend.app.services import archive_work
+
+        if (archive_id := self._held_archives.pop(item_id, None)) is not None:
+            archive_work.release(archive_id)
+
+    @staticmethod
+    async def _printing_elsewhere(db: AsyncSession, archive_id: int) -> bool:
+        """Whether a print of the archive is running (its run open)."""
+        from backend.app.models.print_log import INCLUDE_OPEN_RUNS, RUN_OPEN, PrintLogEntry
+
+        return (
+            await db.scalar(
+                select(PrintLogEntry.id)
+                .where(PrintLogEntry.archive_id == archive_id, PrintLogEntry.status == RUN_OPEN)
+                .limit(1)
+                .execution_options(**{INCLUDE_OPEN_RUNS: True})
+            )
+            is not None
+        )
 
     async def _claim_reusable_archive(
         self, db: AsyncSession, item: PrintQueueItem, file_path: Path
     ) -> PrintArchive | None:
-        """The archive a library dispatch adds its run to, claimed for it, or
-        None for a new one.
+        """The archive a library dispatch adds its run to, or None for a new one.
 
         The same file of the same owner, in the same project, archived from
         this library file or from none (one since deleted, or a print started
-        elsewhere), with its copy of the file still on disk. Only an idle
-        archive: it holds one active run, so while one of its prints is
-        queued, being sent, running, or still finishing (its timelapse),
-        another print of the file gets an archive of its own, as before.
+        elsewhere), with its copy of the file still on disk. Also while it is
+        printing, queued or finishing elsewhere: each print of an archive is
+        its own run, with its own start, end, charge, energy, outcome,
+        timelapse and photos (archive redesign), as for the copies of a batch.
         """
-        from backend.app.main import _active_prints, _archive_runs_finishing
         from backend.app.services.archive import ArchiveService
 
         # Off the file as it is now: the stored hash is not refreshed when the
@@ -8103,42 +8123,20 @@ class PrintScheduler:
                     project,
                     or_(PrintArchive.library_file_id == item.library_file_id, PrintArchive.library_file_id.is_(None)),
                     PrintArchive.deleted_at.is_(None),
-                    PrintArchive.status != "printing",
                 )
                 .order_by(PrintArchive.id.desc())
             )
         ).all()
-        if not candidates:
-            return None
-        # A dispatch sets the item's archive while the item is still pending
-        # and keeps it through printing, so this also covers a print being
-        # sent or waiting to start. (The expected-print table can't say that:
-        # a print start leaves one of its names there for two hours.)
-        queued = set(
-            (
-                await db.scalars(
-                    select(PrintQueueItem.archive_id).where(
-                        PrintQueueItem.archive_id.in_([c.id for c in candidates]),
-                        PrintQueueItem.status.in_(("pending", "printing")),
-                        PrintQueueItem.id != item.id,
-                    )
-                )
-            ).all()
-        )
+        from backend.app.services import archive_work
+
         for candidate in candidates:
-            if not candidate.file_path or not (settings.base_dir / candidate.file_path).is_file():
+            # Not one a merge is moving into another archive right now; held
+            # from here, with no await between, until the dispatch ends.
+            if archive_work.is_merging(candidate.id):
                 continue
-            # No await from here to the claim: two parallel dispatches of the
-            # file cannot both take it.
-            if (
-                candidate.id in queued
-                or candidate.id in self._archive_claims
-                or candidate.id in _active_prints.values()
-                or candidate.id in _archive_runs_finishing
-            ):
-                continue
-            self._archive_claims[candidate.id] = item.id
-            return candidate
+            if candidate.file_path and (settings.base_dir / candidate.file_path).is_file():
+                self._hold_archive(item.id, candidate.id)
+                return candidate
         return None
 
     async def _repoint_siblings_at_archive(
@@ -9021,6 +9019,15 @@ class PrintScheduler:
             # Print from archive
             result = await db.execute(select(PrintArchive).where(PrintArchive.id == item.archive_id))
             archive = result.scalar_one_or_none()
+            if archive is not None and archive.deleted_at is not None:
+                # Merged into another archive since it was queued (archive
+                # redesign P2): print that one, whose file it now holds.
+                from backend.app.services.archive_merge import resolve_alias
+
+                if (into := await resolve_alias(db, archive.id)) is not None:
+                    archive = await db.get(PrintArchive, into)
+                    if archive is not None:
+                        item.archive_id = archive.id
             if not archive:
                 if not await self._fail_dispatch(db, item, "Archive not found"):
                     return
@@ -9099,11 +9106,16 @@ class PrintScheduler:
                     if archive.library_file_id is None:
                         archive.library_file_id = item.library_file_id
                     # This run's, as a new archive would have them: the
-                    # archive shows its latest run's plate, and billing falls
-                    # back to the archive's cost centre.
-                    if item.plate_id is not None:
-                        archive.plate_id = item.plate_id
-                    archive.cost_center_id = item.cost_center_id
+                    # archive shows its latest run's plate, and a print
+                    # without a queue item falls back to the archive's plate
+                    # and cost centre. Not while another print of it runs: they
+                    # are that print's (this one's run has its own, from the
+                    # dispatch), and the archive takes the latest run's plate
+                    # once none prints (print_log.mirror_latest_run).
+                    if not await self._printing_elsewhere(db, archive.id):
+                        if item.plate_id is not None:
+                            archive.plate_id = item.plate_id
+                        archive.cost_center_id = item.cost_center_id
                 else:
                     archive_service = ArchiveService(db)
                     archive = await archive_service.archive_print(
@@ -9117,6 +9129,7 @@ class PrintScheduler:
                         plate_id=item.plate_id,  # selected plate → Print History (#2603)
                     )
                 if archive:
+                    self._hold_archive(item.id, archive.id)
                     item.archive_id = archive.id
                     if item.confirm_outcome:
                         archive.confirm_requested = True  # ask-for-outcome opt-in (#1898)
@@ -10013,11 +10026,13 @@ class PrintScheduler:
             #
             # The queue item caches the print time at creation ("Cached from
             # archive/library"), which is the value this was reaching for.
+            # The item's is its plate's; the archive's adds every plate of the
+            # file up (#3375).
             estimated_time = None
-            if archive and archive.print_time_seconds:
-                estimated_time = archive.print_time_seconds
-            elif item.print_time_seconds:
+            if item.print_time_seconds:
                 estimated_time = item.print_time_seconds
+            elif archive and archive.print_time_seconds:
+                estimated_time = archive.print_time_seconds
 
             # Send job started notification
             await notification_service.on_queue_job_started(

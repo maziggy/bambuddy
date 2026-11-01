@@ -2847,6 +2847,9 @@ function PrinterCard({
       api.updateArchive(pendingConfirmArchive!.id, {
         user_verdict: verdict,
         user_verdict_source: 'printer_card',
+        // The card's own print: a plate of the archive on another printer is
+        // that printer's card's question.
+        ...(pendingConfirmArchive!.run_id != null ? { run_id: pendingConfirmArchive!.run_id } : {}),
       }),
     onSuccess: () => {
       showToast(t('confirmOutcome.savedGood'), 'success');
@@ -2905,6 +2908,7 @@ function PrinterCard({
       {showConfirmOutcome && pendingConfirmArchive && (
         <ConfirmOutcomeDialog
           archiveId={pendingConfirmArchive.id}
+          runId={pendingConfirmArchive.run_id}
           onClose={() => setShowConfirmOutcome(false)}
         />
       )}

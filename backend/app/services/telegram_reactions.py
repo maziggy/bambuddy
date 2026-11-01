@@ -25,8 +25,9 @@ from sqlalchemy import delete, select
 
 from backend.app.models.archive import PrintArchive
 from backend.app.models.notification import NotificationProvider, TelegramPendingVerdict
+from backend.app.models.print_log import PrintLogEntry
 from backend.app.services.notification_service import _USER_AGENT, telegram_markdown_escape
-from backend.app.services.print_confirmation import apply_outcome_verdict
+from backend.app.services.print_confirmation import apply_outcome_verdict, confirm_token_holder
 from backend.app.utils.local_time import utcnow_naive
 
 logger = logging.getLogger(__name__)
@@ -78,18 +79,19 @@ def _bot_label(bot_token: str) -> str:
     return f"bot {bot_token.split(':', 1)[0]}"
 
 
-def prompt_is_live(pending: TelegramPendingVerdict, archive: PrintArchive) -> bool:
+def prompt_is_live(pending: TelegramPendingVerdict, holder: PrintArchive | PrintLogEntry) -> bool:
     """Whether a reaction on this prompt may still record a verdict.
 
     Exactly as long as the prompt's one-tap links would: the token the
-    message went out with is still the archive's token and nothing has spent
-    it. A reprint clears the token and the next completion mints a new one,
-    so a reaction on an earlier run's message never answers a later run.
+    message went out with is still its holder's -- the run it asked about, or
+    the archive for a prompt sent before runs had their own -- and nothing has
+    spent it. A reprint is a run of its own with its own token, so a reaction
+    on an earlier run's message never answers a later run.
     """
     return (
         bool(pending.confirm_token)
-        and pending.confirm_token == archive.confirm_token
-        and archive.confirm_token_used_at is None
+        and pending.confirm_token == holder.confirm_token
+        and holder.confirm_token_used_at is None
     )
 
 
@@ -313,10 +315,11 @@ class TelegramReactionPoller:
             if pending is None:
                 return
 
-            archive = await db.get(PrintArchive, pending.archive_id)
-            if archive is None or not prompt_is_live(pending, archive):
+            found = await confirm_token_holder(db, pending.confirm_token or "")
+            archive, run = found if found is not None else (None, None)
+            if archive is None or archive.id != pending.archive_id or not prompt_is_live(pending, run or archive):
                 ignored = "the prompt belongs to an earlier run or was answered elsewhere"
-            elif not await apply_outcome_verdict(db, archive, verdict, source="reaction"):
+            elif not await apply_outcome_verdict(db, archive, verdict, source="reaction", run=run):
                 ignored = "verdict already recorded"
             else:
                 ignored = None

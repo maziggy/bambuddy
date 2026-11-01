@@ -1096,6 +1096,41 @@ def extract_plate_metadata_from_3mf(file_path: Path, plate_id: int | None = None
     return metadata
 
 
+def extract_plate_estimates_from_3mf(file_path: Path) -> dict[str, dict] | None:
+    """The slicer's estimate for each plate of a sliced 3MF, by plate index:
+    ``{"2": {"seconds": 5400, "grams": 41.2}}``. ``seconds`` is None when the
+    plate carries no prediction. Empty for a file without slice info (not
+    sliced); None when the file cannot be read, so a caller can try again."""
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            if "Metadata/slice_info.config" not in zf.namelist():
+                return {}
+            root = ET.fromstring(zf.read("Metadata/slice_info.config").decode())
+    except Exception as e:
+        logger.warning("Failed to read plate estimates from %s: %s", file_path, e)
+        return None
+
+    estimates: dict[str, dict] = {}
+    for plate in root.findall(".//plate"):
+        meta = {m.get("key"): m.get("value") for m in plate.findall("metadata")}
+        try:
+            index = int(meta.get("index") or "")
+        except ValueError:
+            continue
+        try:
+            seconds = int(meta.get("prediction") or "") or None
+        except ValueError:
+            seconds = None
+        grams = 0.0
+        for f in plate.findall("filament"):
+            try:
+                grams += float(f.get("used_g", "0"))
+            except (ValueError, TypeError):
+                continue
+        estimates[str(index)] = {"seconds": seconds, "grams": round(grams, 2)}
+    return estimates
+
+
 def extract_filament_usage_from_3mf(file_path: Path, plate_id: int | None = None) -> list[dict]:
     """Extract per-filament total usage from 3MF slice_info.config.
 

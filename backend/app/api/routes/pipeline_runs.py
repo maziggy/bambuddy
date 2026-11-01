@@ -466,12 +466,12 @@ async def _resolve_source(
     assert archive_id is not None
     arc = (await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))).scalar_one_or_none()
     can_read_all = user is None or user.has_permission(Permission.ARCHIVES_READ_ALL.value)
-    arc = _ensure_archive_visible(arc, user, can_read_all, printer_scope)
+    arc = await _ensure_archive_visible(arc, user, can_read_all, printer_scope)
     # Running a pipeline on an archive prints it again: the same rules as
     # queueing it, including the right to reprint it.
     from backend.app.api.routes.print_queue import _assert_can_queue_archive
 
-    _assert_can_queue_archive(arc, user, printer_scope)
+    await _assert_can_queue_archive(arc, user, printer_scope)
     rel = arc.source_3mf_path or arc.file_path
     if not rel:
         raise HTTPException(400, "Archive has no source file to slice")

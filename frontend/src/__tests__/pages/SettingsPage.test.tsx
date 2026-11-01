@@ -116,6 +116,53 @@ describe('SettingsPage', () => {
     });
   });
 
+  describe('filament card appearance', () => {
+    it('offers detailed cards under Appearance and saves the choice in this browser', async () => {
+      render(<SettingsPage />);
+      const style = await screen.findByLabelText('Filament card style');
+      const appearance = document.getElementById('card-appearance')!;
+      expect(appearance).toContainElement(style);
+      expect(style).toHaveValue('classic');
+
+      await userEvent.selectOptions(style, 'detailed');
+
+      expect(style).toHaveValue('detailed');
+      expect(localStorage.setItem).toHaveBeenCalledWith('filament-card-style', 'detailed');
+    });
+
+    it('lets the border be switched off independently of the card style', async () => {
+      render(<SettingsPage />);
+      const border = await screen.findByLabelText('Low filament red border');
+      const threshold = screen.getByLabelText('Low filament threshold');
+      expect(border).toBeChecked();
+      expect(threshold).toHaveValue(15);
+      expect(threshold).toBeEnabled();
+
+      await userEvent.click(border);
+
+      expect(threshold).toBeDisabled();
+      expect(screen.getByLabelText('Filament card style')).toHaveValue('classic');
+      expect(localStorage.setItem).toHaveBeenCalledWith('low-filament-border-enabled', 'false');
+    });
+
+    it('allows the threshold to be cleared and retyped, then clamps it on blur', async () => {
+      render(<SettingsPage />);
+      const threshold = await screen.findByLabelText('Low filament threshold');
+      const user = userEvent.setup();
+      await user.clear(threshold);
+      await user.type(threshold, '25');
+      expect(threshold).toHaveValue(25);
+      expect(localStorage.setItem).toHaveBeenCalledWith('low-filament-threshold', '25');
+
+      await user.clear(threshold);
+      await user.type(threshold, '125');
+      await user.tab();
+
+      expect(threshold).toHaveValue(100);
+      expect(localStorage.setItem).toHaveBeenCalledWith('low-filament-threshold', '100');
+    });
+  });
+
   describe('finish photo plate restore (#2547)', () => {
     const restoreLabel = 'Restore plate for finish photo';
 

@@ -63,7 +63,7 @@ import { virtualPrinterApi, spoolbuddyApi } from '../api/client';
 import { defaultNavItems, getDefaultView, setDefaultView } from '../components/Layout';
 import { availableLanguages } from '../i18n';
 import { useToast } from '../contexts/ToastContext';
-import { useTheme, type ThemeStyle, type DarkBackground, type LightBackground, type ThemeAccent } from '../contexts/ThemeContext';
+import { useTheme, type ThemeStyle, type DarkBackground, type LightBackground, type ThemeAccent, type FilamentCardStyle } from '../contexts/ThemeContext';
 import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from 'react';
 import { Gauge, Link2, Palette, type LucideIcon } from 'lucide-react';
 import { registerSettingsSearch, getSettingsSearchEntries } from '../lib/settingsSearch';
@@ -81,7 +81,7 @@ interface SettingsTabEntry { tab: TabType; icon: LucideIcon; label: string; extr
 // Adding a new settings card? Register it here (or, if the card lives in its
 // own component file, call registerSettingsSearch at that file's module scope).
 registerSettingsSearch({ labelKey: 'settings.general', tab: 'general', keywords: 'language date time format printer model printers cards', anchor: 'card-general' });
-registerSettingsSearch({ labelKey: 'settings.appearance', tab: 'general', keywords: 'theme dark light mode colors', anchor: 'card-appearance' });
+registerSettingsSearch({ labelKey: 'settings.appearance', tab: 'general', keywords: 'theme dark light mode colors filament AMS external spool cards detailed low border threshold remaining', anchor: 'card-appearance' });
 registerSettingsSearch({ labelKey: 'settings.archiveSettings', tab: 'general', keywords: 'archive auto save thumbnails captures', anchor: 'card-archive' });
 registerSettingsSearch({ labelKey: 'settings.camera', tab: 'camera', keywords: 'camera external video stream rtsp mjpeg usb snapshot rotation chamber light led lamp', anchor: 'card-camera' });
 registerSettingsSearch({ labelKey: 'settings.costTracking', tab: 'general', keywords: 'currency filament cost energy kwh price', anchor: 'card-cost' });
@@ -273,6 +273,9 @@ export function SettingsPage() {
     setDarkStyle, setDarkBackground, setDarkAccent,
     setLightStyle, setLightBackground, setLightAccent,
     progressInTitle, setProgressInTitle, tabDisplay, setTabDisplay,
+    filamentCardStyle, setFilamentCardStyle,
+    lowFilamentBorderEnabled, setLowFilamentBorderEnabled,
+    lowFilamentThreshold, setLowFilamentThreshold,
   } = useTheme();
   const [localSettings, setLocalSettings] = useState<AppSettings | null>(null);
   // Transient typed strings for the per-filament humidity threshold inputs
@@ -2085,6 +2088,64 @@ export function SettingsPage() {
               <p className="text-xs text-bambu-gray">
                 {t('settings.themeToggleHint')}
               </p>
+
+              <div className="space-y-3 pt-3 border-t border-bambu-dark-tertiary">
+                <div>
+                  <label htmlFor="filament-card-style" className="block text-sm text-white mb-1">
+                    {t('settings.filamentCardStyle')}
+                  </label>
+                  <p id="filament-card-description" className="text-xs text-bambu-gray mb-2">
+                    {t('settings.filamentCardDescription')}
+                  </p>
+                  <select
+                    id="filament-card-style"
+                    aria-describedby="filament-card-description"
+                    value={filamentCardStyle}
+                    onChange={(e) => { setFilamentCardStyle(e.target.value as FilamentCardStyle); showToast(t('settings.toast.settingsSaved'), 'success'); }}
+                    className="w-full px-2 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                  >
+                    <option value="classic">{t('settings.filamentCardClassic')}</option>
+                    <option value="detailed">{t('settings.filamentCardDetailed')}</option>
+                  </select>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <label htmlFor="low-filament-border" className="text-sm text-white">
+                      {t('settings.lowFilamentBorder')}
+                    </label>
+                    <p id="low-filament-border-description" className="text-xs text-bambu-gray">
+                      {t('settings.lowFilamentBorderDescription')}
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      id="low-filament-border"
+                      type="checkbox"
+                      aria-describedby="low-filament-border-description"
+                      checked={lowFilamentBorderEnabled}
+                      onChange={(e) => { setLowFilamentBorderEnabled(e.target.checked); showToast(t('settings.toast.settingsSaved'), 'success'); }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-bambu-green rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label htmlFor="low-filament-threshold" className="text-sm text-bambu-gray">
+                    {t('settings.lowFilamentThreshold')}
+                  </label>
+                  <NumberInput
+                    id="low-filament-threshold"
+                    value={lowFilamentThreshold}
+                    onChange={setLowFilamentThreshold}
+                    min={1}
+                    max={100}
+                    fallback={15}
+                    disabled={!lowFilamentBorderEnabled}
+                    className="w-20 px-2 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none disabled:opacity-50"
+                  />
+                  <span className="text-sm text-bambu-gray">%</span>
+                </div>
+              </div>
 
               <div className="flex items-center justify-between pt-2 border-t border-bambu-dark-tertiary">
                 <div>

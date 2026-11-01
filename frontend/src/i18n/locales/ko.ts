@@ -2097,6 +2097,13 @@ export default {
       }
     },
     appearance: '모양',
+    filamentCardStyle: "필라멘트 카드 스타일",
+    filamentCardDescription: "AMS 및 외부 스풀 카드에 필라멘트 색상과 세부 정보를 표시하는 방식을 선택합니다. 이 브라우저에 저장됩니다.",
+    filamentCardClassic: "기존 색상 원",
+    filamentCardDetailed: "색상 머리글과 세부 정보",
+    lowFilamentBorder: "필라멘트 부족 시 빨간 테두리",
+    lowFilamentBorderDescription: "잔량이 알려진 장착 슬롯에서 잔량이 임계값 이하이면 빨간 테두리를 표시합니다.",
+    lowFilamentThreshold: "필라멘트 부족 임계값",
     notifications: '알림',
     smartPlugs: '스마트 플러그',
     spoolman: 'Spoolman',

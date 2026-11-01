@@ -7,6 +7,7 @@ type ThemeStyle = 'classic' | 'glow' | 'vibrant';
 type DarkBackground = 'neutral' | 'warm' | 'cool' | 'oled' | 'slate' | 'forest';
 type LightBackground = 'neutral' | 'warm' | 'cool';
 type ThemeAccent = 'green' | 'teal' | 'blue' | 'orange' | 'purple' | 'red';
+type FilamentCardStyle = 'classic' | 'detailed';
 
 interface ThemeContextType {
   mode: ThemeMode;
@@ -24,6 +25,12 @@ interface ThemeContextType {
   setProgressInTitle: (v: boolean) => void;
   tabDisplay: 'percentage' | 'time';
   setTabDisplay: (v: 'percentage' | 'time') => void;
+  filamentCardStyle: FilamentCardStyle;
+  setFilamentCardStyle: (v: FilamentCardStyle) => void;
+  lowFilamentBorderEnabled: boolean;
+  setLowFilamentBorderEnabled: (v: boolean) => void;
+  lowFilamentThreshold: number;
+  setLowFilamentThreshold: (v: number) => void;
   // Actions
   toggleMode: () => void;
   setMode: (mode: ThemeMode) => void;
@@ -110,6 +117,31 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const setTabDisplay = (v: 'percentage' | 'time') => {
     setTabDisplayState(v);
     localStorage.setItem('tab-display', v);
+  };
+
+  // Filament card presentation belongs to this browser, like the tab display.
+  const [filamentCardStyle, setFilamentCardStyleState] = useState<FilamentCardStyle>(() =>
+    localStorage.getItem('filament-card-style') === 'detailed' ? 'detailed' : 'classic'
+  );
+  const setFilamentCardStyle = (v: FilamentCardStyle) => {
+    setFilamentCardStyleState(v);
+    localStorage.setItem('filament-card-style', v);
+  };
+  const [lowFilamentBorderEnabled, setLowFilamentBorderEnabledState] = useState(() =>
+    localStorage.getItem('low-filament-border-enabled') !== 'false'
+  );
+  const setLowFilamentBorderEnabled = (v: boolean) => {
+    setLowFilamentBorderEnabledState(v);
+    localStorage.setItem('low-filament-border-enabled', String(v));
+  };
+  const [lowFilamentThreshold, setLowFilamentThresholdState] = useState(() => {
+    const stored = Number(localStorage.getItem('low-filament-threshold'));
+    return Number.isInteger(stored) && stored >= 1 && stored <= 100 ? stored : 15;
+  });
+  const setLowFilamentThreshold = (v: number) => {
+    const threshold = Number.isFinite(v) ? Math.min(100, Math.max(1, Math.round(v))) : 15;
+    setLowFilamentThresholdState(threshold);
+    localStorage.setItem('low-filament-threshold', String(threshold));
   };
 
   // Sync from API once auth state is known. Same gate shape as
@@ -229,6 +261,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       darkStyle, darkBackground, darkAccent,
       lightStyle, lightBackground, lightAccent,
       progressInTitle, setProgressInTitle, tabDisplay, setTabDisplay,
+      filamentCardStyle, setFilamentCardStyle,
+      lowFilamentBorderEnabled, setLowFilamentBorderEnabled,
+      lowFilamentThreshold, setLowFilamentThreshold,
       toggleMode, setMode,
       setDarkStyle, setDarkBackground, setDarkAccent,
       setLightStyle, setLightBackground, setLightAccent,
@@ -244,4 +279,4 @@ export function useTheme() {
   return context;
 }
 
-export type { ThemeMode, ThemeStyle, DarkBackground, LightBackground, ThemeAccent };
+export type { ThemeMode, ThemeStyle, DarkBackground, LightBackground, ThemeAccent, FilamentCardStyle };

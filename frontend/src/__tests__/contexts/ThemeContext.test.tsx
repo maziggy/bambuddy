@@ -97,6 +97,60 @@ describe('ThemeContext', () => {
     });
   });
 
+  describe('filament card appearance preferences', () => {
+    it('defaults to classic cards with a 15% warning border', () => {
+      mockMatchMedia(false);
+      const { result } = renderHook(() => useTheme(), { wrapper });
+
+      expect(result.current.filamentCardStyle).toBe('classic');
+      expect(result.current.lowFilamentBorderEnabled).toBe(true);
+      expect(result.current.lowFilamentThreshold).toBe(15);
+    });
+
+    it('persists the selected style and warning options across mounts', () => {
+      mockMatchMedia(false);
+      const first = renderHook(() => useTheme(), { wrapper });
+      act(() => {
+        first.result.current.setFilamentCardStyle('detailed');
+        first.result.current.setLowFilamentBorderEnabled(false);
+        first.result.current.setLowFilamentThreshold(25);
+      });
+      first.unmount();
+
+      const second = renderHook(() => useTheme(), { wrapper });
+      expect(second.result.current.filamentCardStyle).toBe('detailed');
+      expect(second.result.current.lowFilamentBorderEnabled).toBe(false);
+      expect(second.result.current.lowFilamentThreshold).toBe(25);
+      expect(localStorage.getItem('filament-card-style')).toBe('detailed');
+      expect(localStorage.getItem('low-filament-border-enabled')).toBe('false');
+      expect(localStorage.getItem('low-filament-threshold')).toBe('25');
+    });
+
+    it.each(['invalid', '', 'NaN', 'Infinity', '-1', '0', '101', '14.5'])(
+      'falls back from malformed or out-of-range stored values: %s',
+      (stored) => {
+        mockMatchMedia(false);
+        localStorage.setItem('filament-card-style', 'invalid');
+        localStorage.setItem('low-filament-threshold', stored);
+        const { result } = renderHook(() => useTheme(), { wrapper });
+
+        expect(result.current.filamentCardStyle).toBe('classic');
+        expect(result.current.lowFilamentThreshold).toBe(15);
+      },
+    );
+
+    it.each([
+      [-5, 1], [0, 1], [101, 100], [25.8, 26], [NaN, 15], [Infinity, 15],
+    ])('clamps and persists threshold %s as %s', (input, expected) => {
+      mockMatchMedia(false);
+      const { result } = renderHook(() => useTheme(), { wrapper });
+      act(() => result.current.setLowFilamentThreshold(input));
+
+      expect(result.current.lowFilamentThreshold).toBe(expected);
+      expect(localStorage.getItem('low-filament-threshold')).toBe(String(expected));
+    });
+  });
+
   describe('systemPreference initialization', () => {
     it('initializes systemPreference as dark when OS prefers dark', () => {
       mockMatchMedia(true);

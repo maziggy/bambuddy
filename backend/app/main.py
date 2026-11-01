@@ -13010,8 +13010,10 @@ async def health_check():
 # GET + HEAD on the three PWA bootstrap routes (#1460). Scanners and a plain
 # `curl -I` use HEAD; FastAPI's @app.get only registers GET, so HEAD answers
 # with 405 Method Not Allowed and shows up as a "broken manifest" red herring
-# in deployment debugging.
-@app.api_route("/manifest.json", methods=["GET", "HEAD"])
+# in deployment debugging. One decorator per method, not api_route(methods=
+# [...]): api_route gives both methods the same OpenAPI operation id.
+@app.get("/manifest.json")
+@app.head("/manifest.json")
 async def serve_manifest():
     """Serve PWA manifest."""
     manifest_file = app_settings.static_dir / "manifest.json"
@@ -13020,7 +13022,8 @@ async def serve_manifest():
     return {"error": "Manifest not found"}
 
 
-@app.api_route("/sw.js", methods=["GET", "HEAD"])
+@app.get("/sw.js")
+@app.head("/sw.js")
 async def serve_service_worker():
     """Serve service worker."""
     sw_file = app_settings.static_dir / "sw.js"
@@ -13033,7 +13036,8 @@ async def serve_service_worker():
     return {"error": "Service worker not found"}
 
 
-@app.api_route("/sw-register.js", methods=["GET", "HEAD"])
+@app.get("/sw-register.js")
+@app.head("/sw-register.js")
 async def serve_sw_register():
     """Serve the service-worker registration bootstrap script.
 

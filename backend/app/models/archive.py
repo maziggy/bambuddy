@@ -100,6 +100,14 @@ class PrintArchive(Base):
     # Plate 1. NULL for archives with no specific selected plate.
     plate_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # The slicer's estimate for each plate of the file, by plate index
+    # (``threemf_tools.extract_plate_estimates_from_3mf``): what one print of
+    # a plate is measured against (#3375). The whole-file columns add the
+    # plates up. NULL until the file has been read; ``{}`` for a file
+    # without slice info. None is stored as SQL NULL, not JSON null, so the
+    # fill finds an archive unread again after a restore of its columns.
+    plate_estimates: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+
     # Extended metadata (JSON blob for flexibility)
     extra_data: Mapped[dict | None] = mapped_column(JSON)
 

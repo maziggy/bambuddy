@@ -6065,6 +6065,7 @@ errors: {
     noteFailed: 'Anteckningen kunde inte sparas',
     editNote: 'Redigera anteckning',
     addNote: 'Lägg till anteckning',
+    withEstimate: '{{value}} (beräknat {{estimate}})',
   },
 
   confirmOutcome: {

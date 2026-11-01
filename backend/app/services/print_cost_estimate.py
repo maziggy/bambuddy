@@ -1,11 +1,14 @@
 """Trusted server-side cost estimates for queued prints."""
 
+import asyncio
 import json
 import logging
+from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,6 +21,94 @@ from backend.app.utils import threemf_tools
 from backend.app.utils.safe_path import safe_join_under
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class RunEstimate:
+    """The slicer's estimate for one print of an archive (#3375).
+
+    ``per_plate`` is False when the archive's plates are not known (the file
+    not read, not sliced, or gone): the figures are then the whole file's,
+    which describe a print only of a single-plate file.
+    """
+
+    seconds: int | None
+    grams: float | None
+    per_plate: bool
+
+
+def run_estimate(archive: Any, plate_id: int | None) -> RunEstimate | None:
+    """What one print of plate ``plate_id`` of ``archive`` was estimated at:
+    that plate's figures, or the only plate's. None for a print of a
+    multi-plate file whose plate is not known. ``archive`` is an archive, or
+    a row with its ``plate_estimates``, ``print_time_seconds`` and
+    ``filament_used_grams``."""
+    plates = archive.plate_estimates
+    if not plates:
+        return RunEstimate(archive.print_time_seconds, archive.filament_used_grams, per_plate=False)
+    if plate_id is not None and str(plate_id) in plates:
+        plate = plates[str(plate_id)]
+    elif len(plates) == 1:
+        plate = next(iter(plates.values()))
+    else:
+        return None
+    return RunEstimate(plate.get("seconds") or None, plate.get("grams") or None, per_plate=True)
+
+
+def read_plate_estimates(archive: Any) -> dict | None:
+    """The plate estimates of the archive's 3MF on disk. ``{}`` for a file that
+    is not a 3MF; None when there is no file to read or it cannot be read."""
+    if not archive.file_path:
+        return None
+    path = settings.base_dir / archive.file_path  # SEC-PATH-OK: archive.file_path is DB-stored, internally generated
+    if not path.is_file():
+        return None
+    if path.suffix.lower() != ".3mf":
+        return {}
+    return threemf_tools.extract_plate_estimates_from_3mf(path)
+
+
+def refresh_plate_estimates(archive: PrintArchive) -> None:
+    """Read the plate estimates of the archive's file into it: when the
+    archive is made, or given a file. Does not commit."""
+    estimates = read_plate_estimates(archive)
+    if estimates is not None:
+        archive.plate_estimates = estimates
+
+
+async def fill_plate_estimates(session_factory, batch: int = 100) -> int:
+    """Give every archive not yet read its plate estimates, from its 3MF.
+    An archive whose file is missing or unreadable gets ``{}``: it is read
+    once, its figures stay the whole file's. Returns how many were read.
+
+    Each is written only while it is still unread: an archive given its 3MF
+    meanwhile (``refresh_plate_estimates``) keeps what that read, and one
+    deleted meanwhile is skipped."""
+    filled = 0
+    last_id = 0
+    while True:
+        async with session_factory() as db:
+            rows = (
+                await db.execute(
+                    select(PrintArchive.id, PrintArchive.file_path)
+                    .where(PrintArchive.plate_estimates.is_(None), PrintArchive.id > last_id)
+                    .order_by(PrintArchive.id)
+                    .limit(batch)
+                )
+            ).all()
+            if not rows:
+                return filled
+            for row in rows:
+                estimates = await asyncio.to_thread(read_plate_estimates, row)
+                written = await db.execute(
+                    update(PrintArchive)
+                    .where(PrintArchive.id == row.id, PrintArchive.plate_estimates.is_(None))
+                    .values(plate_estimates=estimates if estimates is not None else {})
+                    .execution_options(synchronize_session=False)
+                )
+                filled += written.rowcount or 0
+            last_id = rows[-1].id
+            await db.commit()
 
 
 def plate_scoped_run_estimate(

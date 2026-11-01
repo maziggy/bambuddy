@@ -137,6 +137,20 @@ describe('ArchivesPage', () => {
       });
     });
 
+    it("compares the latest print with its plate's estimate", async () => {
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([
+            { ...mockArchives[1], run_count: 2, actual_time_seconds: 2000, time_estimate_seconds: 1800, time_accuracy: 90 },
+          ])
+        )
+      );
+      render(<ArchivesPage />);
+
+      const time = (await screen.findByText('-10%')).parentElement!;
+      expect(time.getAttribute('title')).toContain('Estimated: 30m');
+    });
+
     it('shows printer name', async () => {
       render(<ArchivesPage />);
 

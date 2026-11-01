@@ -79,7 +79,7 @@ const run = (overrides: Record<string, unknown>) => ({
 
 const runs = [
   run({ id: 12, plate_id: 2, printer_name: 'B', status: 'failed', failure_reason: 'spaghetti', started_at: '2026-10-20T09:00:00Z', timelapse_path: 'archives/p/b.mp4', photos: ['finish_b.jpg'] }),
-  run({ id: 11, plate_id: 1, user_verdict: 'good', notes: 'brim lifted', timelapse_path: 'archives/p/a.mp4', photos: ['finish_a.jpg'] }),
+  run({ id: 11, plate_id: 1, user_verdict: 'good', notes: 'brim lifted', timelapse_path: 'archives/p/a.mp4', photos: ['finish_a.jpg'], estimate_seconds: 3300, estimate_grams: 42 }),
 ];
 
 describe('ArchiveDetailPage', () => {
@@ -111,6 +111,16 @@ describe('ArchiveDetailPage', () => {
     expect(within(items[0]).getByText('B')).toBeInTheDocument();
     expect(within(items[1]).getByText('brim lifted')).toBeInTheDocument();
     expect(within(items[1]).getByText('good')).toBeInTheDocument();
+  });
+
+  it("puts each print's figures next to its plate's estimate", async () => {
+    render(<ArchiveDetailPage />);
+    const first = await screen.findByTestId('archive-run-11');
+
+    expect(within(first).getByText('1h 0m (est. 55m)')).toBeInTheDocument();
+    expect(within(first).getByText('40.0 g (est. 42.0 g)')).toBeInTheDocument();
+    // A print without one shows its own figures alone.
+    expect(within(screen.getByTestId('archive-run-12')).getByText('40.0 g')).toBeInTheDocument();
   });
 
   it("plays each print's own video", async () => {

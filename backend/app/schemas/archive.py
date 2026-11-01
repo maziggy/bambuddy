@@ -110,6 +110,9 @@ class ArchiveResponse(BaseModel):
     actual_time_seconds: int | None = _per_print(None)  # Computed from started_at/completed_at
     # Percentage: 100 = perfect, >100 = faster than estimated
     time_accuracy: float | None = _per_print(None)
+    # The slicer's time for the plate the latest print printed (#3375), what
+    # time_accuracy compares with; print_time_seconds adds every plate up.
+    time_estimate_seconds: int | None = _per_print(None)
     filament_used_grams: float | None
     filament_type: str | None
     filament_color: str | None

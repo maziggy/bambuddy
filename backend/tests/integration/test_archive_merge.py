@@ -567,6 +567,22 @@ async def test_the_survivors_lost_file_comes_from_a_duplicate(async_client, db_s
     assert (files / archive.file_path).read_bytes() == b"3mf"
 
 
+async def test_the_survivor_reads_its_plates_from_the_file_it_takes_over(async_client, db_session, files, dupes):
+    from backend.tests.integration.test_plate_estimates_3375 import PLATES, _three_mf
+
+    (dupes.x_dir / "file.3mf").unlink()
+    for folder in (dupes.y_dir, dupes.z_dir):
+        _three_mf(folder / "file.3mf")
+    survivor = await db_session.get(PrintArchive, dupes.x)
+    survivor.plate_estimates = {}  # read while its file was missing
+    await db_session.commit()
+
+    await async_client.post("/api/v1/archives/merge", json={"survivor_ids": [dupes.x]})
+
+    archive = await _row(db_session, PrintArchive, dupes.x)
+    assert archive.plate_estimates == PLATES
+
+
 async def test_a_copy_that_fails_leaves_no_partial_file(files):
     from backend.app.services.archive_merge import _Files
 

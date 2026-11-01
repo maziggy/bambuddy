@@ -42,6 +42,10 @@ class PrintLogEntrySchema(BaseModel):
     notes: str | None = None
     photos: list[str] | None = None
     timelapse_path: str | None = None
+    # The slicer's estimate for the plate it printed (#3375); only in an
+    # archive's runs list (GET /archives/{id}/runs).
+    estimate_seconds: int | None = None
+    estimate_grams: float | None = None
     thumbnail_path: str | None = None
     created_by_id: int | None = None
     created_by_username: str | None = None

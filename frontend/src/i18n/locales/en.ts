@@ -6069,6 +6069,7 @@ export default {
     noteFailed: 'Could not save the note',
     editNote: 'Edit note',
     addNote: 'Add note',
+    withEstimate: '{{value}} (est. {{estimate}})',
   },
 
   confirmOutcome: {

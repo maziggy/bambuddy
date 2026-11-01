@@ -1562,6 +1562,9 @@ class ArchiveService:
                 existing.plate_id = plate_id
             if library_file_id is not None:
                 existing.library_file_id = library_file_id
+            from backend.app.services.print_cost_estimate import refresh_plate_estimates
+
+            refresh_plate_estimates(existing)
             await self.db.commit()
             await self.db.refresh(existing)
             return existing
@@ -1611,6 +1614,9 @@ class ArchiveService:
             subtask_id=subtask_id,
             plate_id=plate_id,
         )
+        from backend.app.services.print_cost_estimate import refresh_plate_estimates
+
+        refresh_plate_estimates(archive)
 
         self.db.add(archive)
         try:

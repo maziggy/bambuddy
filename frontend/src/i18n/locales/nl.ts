@@ -6066,6 +6066,7 @@ export default {
     noteFailed: 'Notitie kon niet worden opgeslagen',
     editNote: 'Notitie bewerken',
     addNote: 'Notitie toevoegen',
+    withEstimate: '{{value}} (geschat {{estimate}})',
   },
 
   confirmOutcome: {

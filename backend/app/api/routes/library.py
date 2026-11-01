@@ -5266,6 +5266,9 @@ async def slice_and_persist_as_archive(
         extra_data=metadata,
         created_by_id=current_user_id,
     )
+    from backend.app.services.print_cost_estimate import refresh_plate_estimates
+
+    refresh_plate_estimates(new_archive)
     db.add(new_archive)
     await db.commit()
     await db.refresh(new_archive)

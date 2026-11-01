@@ -6016,6 +6016,7 @@ export default {
     noteFailed: 'メモを保存できませんでした',
     editNote: 'メモを編集',
     addNote: 'メモを追加',
+    withEstimate: '{{value}}（予測 {{estimate}}）',
   },
 
   confirmOutcome: {

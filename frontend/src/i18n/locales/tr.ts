@@ -5990,6 +5990,7 @@ export default {
     noteFailed: 'Not kaydedilemedi',
     editNote: 'Notu düzenle',
     addNote: 'Not ekle',
+    withEstimate: '{{value}} (tahmini {{estimate}})',
   },
 
   confirmOutcome: {

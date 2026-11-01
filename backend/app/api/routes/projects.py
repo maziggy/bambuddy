@@ -1000,8 +1000,8 @@ async def list_project_archives(
     from backend.app.api.routes.archives import _load_run_aggregates, _scoped, archive_to_response
     from backend.app.services.archive_scope import scoped_views
 
-    # Load run aggregates so multi-run archives' time/accuracy badge is
-    # suppressed consistently with the main archives list endpoint (#1608).
+    # Load run aggregates so the time/accuracy badge reads each archive's
+    # latest print, as the main archives list does (#3375).
     run_aggregates = await _load_run_aggregates(db, [a.id for a in archives], printer_scope)
     # As the archives list shows them to a caller limited to some printers.
     views = await scoped_views(db, archives, printer_scope)

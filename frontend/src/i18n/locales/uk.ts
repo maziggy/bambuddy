@@ -6056,6 +6056,7 @@ export default {
     noteFailed: 'Не вдалося зберегти нотатку',
     editNote: 'Редагувати нотатку',
     addNote: 'Додати нотатку',
+    withEstimate: '{{value}} (оцінка {{estimate}})',
   },
 
   confirmOutcome: {

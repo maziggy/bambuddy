@@ -6023,6 +6023,7 @@ export default {
     noteFailed: 'No se pudo guardar la nota',
     editNote: 'Editar nota',
     addNote: 'Añadir nota',
+    withEstimate: '{{value}} (estimado {{estimate}})',
   },
 
   confirmOutcome: {

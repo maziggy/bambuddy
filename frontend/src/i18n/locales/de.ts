@@ -6016,6 +6016,7 @@ export default {
     noteFailed: 'Notiz konnte nicht gespeichert werden',
     editNote: 'Notiz bearbeiten',
     addNote: 'Notiz hinzufügen',
+    withEstimate: '{{value}} (geschätzt {{estimate}})',
   },
 
   confirmOutcome: {

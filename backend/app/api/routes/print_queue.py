@@ -1398,25 +1398,7 @@ async def add_to_queue(
         start_position = await max_queue_position(db) + 1
 
     # Resolve print_time_seconds for SJF scheduling (cache on item at creation)
-    cached_print_time = None
-    if archive:
-        cached_print_time = archive.print_time_seconds
-        if data.plate_id:
-            archive_path = settings.base_dir / archive.file_path
-            if archive_path.exists():
-                plate_time = _extract_print_time_from_3mf(archive_path, data.plate_id)
-                if plate_time is not None:
-                    cached_print_time = plate_time
-    elif library_file:
-        if library_file.file_metadata:
-            cached_print_time = library_file.file_metadata.get("print_time_seconds")
-        if data.plate_id:
-            lib_path = Path(library_file.file_path)
-            library_file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
-            if library_file_path.exists():
-                plate_time = _extract_print_time_from_3mf(library_file_path, data.plate_id)
-                if plate_time is not None:
-                    cached_print_time = plate_time
+    cached_print_time = _cached_print_time(archive, library_file, data.plate_id)
 
     # Validate project exists before insert so a bogus ID yields 404, not an FK-constraint 500
     if data.project_id is not None:
@@ -2568,6 +2550,15 @@ async def update_queue_item(
         exclude_queue_item_id=item.id,
     )
 
+    # Another plate takes another time: shortest-job-first orders by it (#3375).
+    # An item with alternatives keeps theirs, the shortest (create).
+    if "plate_id" in update_data and update_data["plate_id"] != item.plate_id and not item.variants:
+        update_data["print_time_seconds"] = _cached_print_time(
+            await db.get(PrintArchive, item.archive_id) if item.archive_id else None,
+            await db.get(LibraryFile, item.library_file_id) if item.library_file_id else None,
+            update_data["plate_id"],
+        )
+
     # Re-check the dispatch claim right before mutating (#2615). Several awaited
     # validations ran since the guard above, and a scheduler worker may have
     # claimed the row in that gap. A fresh read (item isn't dirty yet, so no
@@ -2586,6 +2577,33 @@ async def update_queue_item(
 
     logger.info("Updated queue item %s", item_id)
     return _enrich_response(item)
+
+
+def _cached_print_time(
+    archive: PrintArchive | None, library_file: LibraryFile | None, plate_id: int | None
+) -> int | None:
+    """The slicer's time for the plate a queue item prints, cached on it for
+    shortest-job-first: the plate's own from the 3MF, else the whole file's."""
+    cached_print_time = None
+    if archive:
+        cached_print_time = archive.print_time_seconds
+        if plate_id:
+            archive_path = settings.base_dir / archive.file_path
+            if archive_path.exists():
+                plate_time = _extract_print_time_from_3mf(archive_path, plate_id)
+                if plate_time is not None:
+                    cached_print_time = plate_time
+    elif library_file:
+        if library_file.file_metadata:
+            cached_print_time = library_file.file_metadata.get("print_time_seconds")
+        if plate_id:
+            lib_path = Path(library_file.file_path)
+            library_file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+            if library_file_path.exists():
+                plate_time = _extract_print_time_from_3mf(library_file_path, plate_id)
+                if plate_time is not None:
+                    cached_print_time = plate_time
+    return cached_print_time
 
 
 async def _remove_queue_item(db: AsyncSession, item: PrintQueueItem) -> bool:

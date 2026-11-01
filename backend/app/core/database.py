@@ -5953,6 +5953,11 @@ async def _run_migrations(conn):
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_print_log_entries_confirm_token ON print_log_entries (confirm_token)",
     )
 
+    # Migration: each plate's estimate on the archive (#3375). Nullable, no
+    # default; filled from the archived 3MF after startup
+    # (``print_cost_estimate.fill_plate_estimates``).
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN plate_estimates JSON")
+
     await _migrate_auth_datetimes_to_timestamp(conn)
     await _migrate_add_missing_set_null_fks(conn)
     await _migrate_wallet_transactions_keep_deleted_users(conn)

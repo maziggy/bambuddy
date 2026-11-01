@@ -548,9 +548,28 @@ function RunItem({
   });
 
   const verdictHint = verdictSourceKey(run.user_verdict_source);
+  // Next to the slicer's figures for the plate it printed (#3375).
+  const withEstimate = (value: string, estimate: string | null) =>
+    estimate ? t('archivePage.withEstimate', { value, estimate }) : value;
   const figures = [
-    run.duration_seconds ? { icon: Clock, text: `${run.duration_unmeasured ? '~' : ''}${formatDuration(run.duration_seconds)}` } : null,
-    run.filament_used_grams != null ? { icon: Package, text: `${run.filament_used_grams.toFixed(1)} g` } : null,
+    run.duration_seconds
+      ? {
+          icon: Clock,
+          text: withEstimate(
+            `${run.duration_unmeasured ? '~' : ''}${formatDuration(run.duration_seconds)}`,
+            run.estimate_seconds ? formatDuration(run.estimate_seconds) : null,
+          ),
+        }
+      : null,
+    run.filament_used_grams != null
+      ? {
+          icon: Package,
+          text: withEstimate(
+            `${run.filament_used_grams.toFixed(1)} g`,
+            run.estimate_grams ? `${run.estimate_grams.toFixed(1)} g` : null,
+          ),
+        }
+      : null,
     run.cost != null ? { icon: Coins, text: `${currency}${run.cost.toFixed(2)}` } : null,
     run.energy_kwh != null ? { icon: Zap, text: `${run.energy_kwh.toFixed(2)} kWh` } : null,
   ].filter((f): f is { icon: typeof Clock; text: string } => f !== null);

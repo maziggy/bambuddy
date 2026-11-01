@@ -10026,11 +10026,13 @@ class PrintScheduler:
             #
             # The queue item caches the print time at creation ("Cached from
             # archive/library"), which is the value this was reaching for.
+            # The item's is its plate's; the archive's adds every plate of the
+            # file up (#3375).
             estimated_time = None
-            if archive and archive.print_time_seconds:
-                estimated_time = archive.print_time_seconds
-            elif item.print_time_seconds:
+            if item.print_time_seconds:
                 estimated_time = item.print_time_seconds
+            elif archive and archive.print_time_seconds:
+                estimated_time = archive.print_time_seconds
 
             # Send job started notification
             await notification_service.on_queue_job_started(

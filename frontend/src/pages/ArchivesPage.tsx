@@ -1305,7 +1305,7 @@ function ArchiveCard({
           {(archive.print_time_seconds || archive.actual_time_seconds) && (
             <div className="flex items-center gap-1.5 text-bambu-gray" title={
               archive.time_accuracy
-                ? `Estimated: ${formatDuration(archive.print_time_seconds || 0)}\nActual: ${formatDuration(archive.actual_time_seconds || 0)}\nAccuracy: ${archive.time_accuracy.toFixed(0)}%`
+                ? `Estimated: ${formatDuration(archive.time_estimate_seconds || archive.print_time_seconds || 0)}\nActual: ${formatDuration(archive.actual_time_seconds || 0)}\nAccuracy: ${archive.time_accuracy.toFixed(0)}%`
                 : archive.actual_time_seconds
                   ? `Actual: ${formatDuration(archive.actual_time_seconds)}`
                   : `Estimated: ${formatDuration(archive.print_time_seconds || 0)}`

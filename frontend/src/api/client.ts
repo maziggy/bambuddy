@@ -890,6 +890,7 @@ export interface Archive {
   print_time_seconds: number | null;
   actual_time_seconds: number | null;  // Computed from started_at/completed_at
   time_accuracy: number | null;  // Percentage: 100 = perfect, >100 = faster than estimated
+  time_estimate_seconds?: number | null;  // The latest print's plate estimate, what time_accuracy compares with
   filament_used_grams: number | null;
   filament_type: string | null;
   filament_color: string | null;
@@ -989,6 +990,9 @@ export interface PrintLogEntry {
   notes?: string | null;
   photos?: string[] | null;
   timelapse_path?: string | null;
+  // The slicer's estimate for the plate it printed; in an archive's runs list.
+  estimate_seconds?: number | null;
+  estimate_grams?: number | null;
   thumbnail_path: string | null;
   created_by_id: number | null;
   created_by_username: string | null;

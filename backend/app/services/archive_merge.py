@@ -42,6 +42,7 @@ from backend.app.models.archive_alias import ArchiveAlias
 from backend.app.models.print_log import INCLUDE_OPEN_RUNS, RUN_OPEN, PrintLogEntry
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.services import archive_work
+from backend.app.services.print_cost_estimate import refresh_plate_estimates
 from backend.app.utils.archive_paths import archive_dir, archive_photos_dir, find_archive_photo
 from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.safe_path import PathTraversalError, safe_join_under
@@ -537,6 +538,10 @@ async def _merge(
                 survivor_photos.append(photos[name])
         for attr, relpath in extras.items():
             setattr(survivor, attr, relpath)
+        if "file_path" in extras:
+            # The same file (one hash), but the survivor's was missing: its
+            # plates are read from the one it takes over (#3375).
+            refresh_plate_estimates(survivor)
         for run in runs[archive.id]:
             if run.photos:
                 run.photos = [photos[p] for p in run.photos if p in photos]

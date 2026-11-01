@@ -5757,6 +5757,7 @@ export default {
     noteFailed: 'Не удалось сохранить заметку',
     editNote: 'Изменить заметку',
     addNote: 'Добавить заметку',
+    withEstimate: '{{value}} (оценка {{estimate}})',
   },
 
   confirmOutcome: {

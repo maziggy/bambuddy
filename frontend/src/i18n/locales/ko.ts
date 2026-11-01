@@ -5769,6 +5769,7 @@ export default {
     noteFailed: '메모를 저장할 수 없습니다',
     editNote: '메모 편집',
     addNote: '메모 추가',
+    withEstimate: '{{value}} (예상 {{estimate}})',
   },
 
   confirmOutcome: {

@@ -6002,6 +6002,7 @@ export default {
     noteFailed: '无法保存备注',
     editNote: '编辑备注',
     addNote: '添加备注',
+    withEstimate: '{{value}}（预计 {{estimate}}）',
   },
 
   confirmOutcome: {

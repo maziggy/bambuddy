@@ -1,5 +1,6 @@
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocation } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from './AuthContext';
 import { listenForCameraPopIn, registerCameraTab } from '../utils/camera';
@@ -7,11 +8,14 @@ import { recoverFromMissingChunk } from '../utils/lazyPage';
 import type { EmbeddedCameraViewerProps } from '../components/EmbeddedCameraViewer';
 
 /**
- * The floating camera overlays, open on every page of the app (#2737).
+ * The floating camera overlays (#2737).
  *
- * They lived in the Printers page, so they vanished on any other page and
- * only came back on returning to it. Persisted under the same key as then,
- * so overlays left open before the update are still open after it.
+ * One opened from the sidebar's camera button is shown on every page. One
+ * opened from a printer card or the camera wall belongs to the Printers page:
+ * it is hidden on the other pages, still open, and back on returning there.
+ * Persisted under the same key as before #2737, so overlays left open before
+ * an update are still open after it; an entry without a scope is one from
+ * before the scope existed, and stays on every page as it was.
  */
 const STORAGE_KEY = 'openEmbeddedCameras';
 
@@ -31,14 +35,20 @@ const EmbeddedCameraViewer = lazy(async (): Promise<{ default: ComponentType<Emb
   }
 });
 
+/** Where an overlay is shown: every page, or the Printers page only. */
+export type CameraScope = 'app' | 'printers';
+
 export interface OpenCamera {
   id: number;
   name: string;
+  scope: CameraScope;
 }
 
 interface EmbeddedCameraContextType {
   openCameras: OpenCamera[];
-  openEmbeddedCamera: (id: number, name: string) => void;
+  /** Opening one already open for every page keeps it there; opening a
+   *  Printers-page one for every page moves it to every page. */
+  openEmbeddedCamera: (id: number, name: string, scope: CameraScope) => void;
   closeEmbeddedCamera: (id: number) => void;
 }
 
@@ -52,7 +62,7 @@ function readStored(): OpenCamera[] {
       if (Array.isArray(cameras)) {
         return cameras
           .filter(c => c && Number.isInteger(c.id) && c.id > 0)
-          .map(c => ({ id: c.id, name: String(c.name ?? '') }));
+          .map(c => ({ id: c.id, name: String(c.name ?? ''), scope: c.scope === 'printers' ? 'printers' : 'app' }));
       }
     }
   } catch {
@@ -89,9 +99,19 @@ export function EmbeddedCameraProvider({ children }: { children: ReactNode }) {
     () => new Map(readStored().map(c => [c.id, c])),
   );
 
-  const openEmbeddedCamera = useCallback((id: number, name: string) => {
-    setCameras(prev => (prev.has(id) ? prev : new Map(prev).set(id, { id, name })));
-    updateStored(list => (list.some(c => c.id === id) ? list : [...list, { id, name }]));
+  const openEmbeddedCamera = useCallback((id: number, name: string, scope: CameraScope) => {
+    // The wider of the two scopes wins, so a card can't pull a camera the
+    // sidebar put on every page back onto one.
+    const merge = (current: OpenCamera | undefined): OpenCamera =>
+      current ? { ...current, scope: current.scope === 'app' || scope === 'app' ? 'app' : 'printers' } : { id, name, scope };
+    setCameras(prev => {
+      const next = merge(prev.get(id));
+      const current = prev.get(id);
+      return current && current.scope === next.scope ? prev : new Map(prev).set(id, next);
+    });
+    updateStored(list =>
+      list.some(c => c.id === id) ? list.map(c => (c.id === id ? merge(c) : c)) : [...list, { id, name, scope }],
+    );
   }, []);
 
   const closeEmbeddedCamera = useCallback((id: number) => {
@@ -137,10 +157,16 @@ export function EmbeddedCameraProvider({ children }: { children: ReactNode }) {
       const list = await queryClient.fetchQuery({ queryKey: ['printers'], queryFn: api.getPrinters, staleTime: 0 });
       return list.some(p => p.id === printerId);
     };
-    return listenForCameraPopIn(registerCameraTab(), openEmbeddedCamera, canShow);
+    // Brought back into this tab, so onto whichever page it is on.
+    return listenForCameraPopIn(registerCameraTab(), (id, name) => openEmbeddedCamera(id, name, 'app'), canShow);
   }, [canView, openEmbeddedCamera, queryClient]);
 
   const openCameras = useMemo(() => Array.from(cameras.values()), [cameras]);
+  const onPrintersPage = useLocation().pathname === '/';
+  const shownCameras = useMemo(
+    () => openCameras.filter(c => c.scope === 'app' || onPrintersPage),
+    [openCameras, onPrintersPage],
+  );
   const value = useMemo(
     () => ({ openCameras, openEmbeddedCamera, closeEmbeddedCamera }),
     [openCameras, openEmbeddedCamera, closeEmbeddedCamera],
@@ -150,9 +176,9 @@ export function EmbeddedCameraProvider({ children }: { children: ReactNode }) {
     <EmbeddedCameraContext.Provider value={value}>
       {children}
       {/* Several can be open at once; each offsets itself by its index. */}
-      {canView && listChecked && openCameras.length > 0 && (
+      {canView && listChecked && shownCameras.length > 0 && (
         <Suspense fallback={null}>
-          {openCameras.map((camera, index) => (
+          {shownCameras.map((camera, index) => (
             <EmbeddedCameraViewer
               key={camera.id}
               printerId={camera.id}

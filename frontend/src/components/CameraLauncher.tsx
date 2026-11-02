@@ -169,7 +169,7 @@ export function CameraLauncher({
                       if (isOpen) {
                         closeEmbeddedCamera(printer.id);
                       } else {
-                        openEmbeddedCamera(printer.id, printer.name);
+                        openEmbeddedCamera(printer.id, printer.name, 'app');
                         setOpen(false);
                       }
                     }}

@@ -493,14 +493,19 @@ class TestFilamentDeficitBackupAware:
         backup_on: bool,
         ams_extruder_map: dict | None = None,
         model: str | None = None,
+        raw_data: dict | None = None,
     ):
-        """Patch ``printer_manager.get_status`` + ``get_model`` for the test."""
+        """Patch ``printer_manager.get_status`` + ``get_model`` for the test.
+
+        ``raw_data`` is the printer's own tray report; without it every slot is
+        keyed on its bound spool."""
         from types import SimpleNamespace
         from unittest.mock import patch as _patch
 
         fake_state = SimpleNamespace(
             ams_filament_backup=backup_on if backup_on is not None else None,
             ams_extruder_map=ams_extruder_map or {},
+            raw_data=raw_data,
         )
 
         return [
@@ -1352,3 +1357,178 @@ class TestSlotSpoolIdentity:
         assert slots[0].remaining_grams == 500.0
         assert slots[0].spool is None
         assert slots[0].to_dict()["spool"] is None
+
+
+def _tray(tray_id: int, *, preset: str = "GFA10", color: str = "AFB1AEFF", tray_type: str = "PLA") -> dict:
+    return {"id": str(tray_id), "tray_type": tray_type, "tray_info_idx": preset, "tray_color": color}
+
+
+class TestBackupPoolKeys:
+    """#1824: two PLA Tough+ Gray spools, B3 with 142 g and A4 with 1000 g, a
+    194 g print, AMS Filament Backup ON — and Start refused with "Insufficient
+    filament for the assigned spool" while the printer itself listed both for
+    Auto Refill. A4 was created from its RFID tag ("GFA10"); B3 had been set up
+    another way, and the pool compared the two spool rows' preset text."""
+
+    REPORTER_RAW = {"ams": [{"id": "0", "tray": [_tray(3)]}, {"id": "1", "tray": [_tray(2)]}]}
+
+    async def _reporter_setup(self, db_session, printer_factory, tmp_path, *, b3_preset: str):
+        printer = await printer_factory(model="X1C")
+        archive = await _setup_archive_3mf(
+            db_session,
+            tmp_path,
+            [{"id": "1", "type": "PLA", "color": "#AFB1AE", "used_g": "194.0"}],
+        )
+        b3 = await _spool(db_session, label_weight=1000, weight_used=857.52, color="#AFB1AE", slicer_filament=b3_preset)
+        a4 = await _spool(db_session, label_weight=1000, weight_used=0.0, color="AFB1AEFF", slicer_filament="GFA10")
+        await _assign(db_session, printer_id=printer.id, spool_id=b3.id, ams_id=1, tray_id=2)
+        await _assign(db_session, printer_id=printer.id, spool_id=a4.id, ams_id=0, tray_id=3)
+        # Prefer-lowest picked B3 (global tray 6), as in the reporter's log.
+        item = await _queue_item(db_session, printer_id=printer.id, archive=archive, ams_mapping=[6])
+        return printer, item
+
+    async def _deficit(self, db_session, printer, item, raw_data):
+        patches = TestFilamentDeficitBackupAware._patch_status(
+            printer_id=printer.id, backup_on=True, model="X1C", raw_data=raw_data
+        )
+        with patch("backend.app.services.filament_deficit.app_settings.base_dir", Path("/")):
+            for p in patches:
+                p.start()
+            try:
+                return await compute_deficit_for_queue_item(db_session, item)
+            finally:
+                for p in patches:
+                    p.stop()
+
+    async def _slots(self, db_session, printer, raw_data, model="X1C"):
+        from backend.app.services.filament_deficit import build_slot_materials
+
+        patches = TestFilamentDeficitBackupAware._patch_status(
+            printer_id=printer.id, backup_on=True, model=model, raw_data=raw_data
+        )
+        for p in patches:
+            p.start()
+        try:
+            return {s.global_tray_id: s for s in await build_slot_materials(db_session, printer.id)}
+        finally:
+            for p in patches:
+                p.stop()
+
+    @pytest.mark.asyncio
+    async def test_pools_on_what_the_printer_reports(self, db_session, printer_factory, tmp_path):
+        """B3 bound to a user preset, A4 to the RFID id: the printer reports both
+        trays as GFA10 in the same grey, so they pool and 1142 g covers 194 g."""
+        printer, item = await self._reporter_setup(
+            db_session, printer_factory, tmp_path, b3_preset="PFUSaae244ee3ae94c"
+        )
+        assert await self._deficit(db_session, printer, item, self.REPORTER_RAW) == []
+
+    @pytest.mark.asyncio
+    async def test_picker_and_rfid_presets_pool_without_a_report(self, db_session, printer_factory, tmp_path):
+        """Where the printer reports no trays, the bound spools decide: the picker's
+        setting_id and the tag's filament_id name the same filament."""
+        printer, item = await self._reporter_setup(db_session, printer_factory, tmp_path, b3_preset="GFSA10_02")
+        assert await self._deficit(db_session, printer, item, None) == []
+
+    @pytest.mark.asyncio
+    async def test_reported_colours_that_differ_do_not_pool(self, db_session, printer_factory, tmp_path):
+        """The printer is the judge both ways: spool rows that agree do not pool
+        trays it reports in different colours."""
+        printer, item = await self._reporter_setup(db_session, printer_factory, tmp_path, b3_preset="GFA10")
+        raw = {"ams": [{"id": "0", "tray": [_tray(3, color="000000FF")]}, {"id": "1", "tray": [_tray(2)]}]}
+        deficit = await self._deficit(db_session, printer, item, raw)
+        assert [(d.ams_id, d.tray_id) for d in deficit] == [(1, 2)]
+
+    @pytest.mark.asyncio
+    async def test_reported_tray_without_a_preset_does_not_pool(self, db_session, printer_factory, tmp_path):
+        printer, item = await self._reporter_setup(db_session, printer_factory, tmp_path, b3_preset="GFA10")
+        raw = {"ams": [{"id": "0", "tray": [_tray(3, preset="")]}, {"id": "1", "tray": [_tray(2, preset="")]}]}
+        deficit = await self._deficit(db_session, printer, item, raw)
+        assert [(d.ams_id, d.tray_id) for d in deficit] == [(1, 2)]
+
+    @pytest.mark.asyncio
+    async def test_reported_empty_tray_does_not_pool(self, db_session, printer_factory, tmp_path):
+        """A spool still bound to a slot the printer reports empty is not loaded."""
+        printer, item = await self._reporter_setup(db_session, printer_factory, tmp_path, b3_preset="GFA10")
+        raw = {"ams": [{"id": "0", "tray": [_tray(3, tray_type="")]}, {"id": "1", "tray": [_tray(2)]}]}
+        deficit = await self._deficit(db_session, printer, item, raw)
+        assert [(d.ams_id, d.tray_id) for d in deficit] == [(1, 2)]
+
+    @pytest.mark.asyncio
+    async def test_print_dialog_pool_uses_the_same_keys(self, db_session, printer_factory, tmp_path):
+        """``inventory-remain`` hands the Print dialog these keys; they must pool
+        the same two slots the dispatcher does."""
+        printer, _ = await self._reporter_setup(db_session, printer_factory, tmp_path, b3_preset="PFUSaae244ee3ae94c")
+        slots = await self._slots(db_session, printer, self.REPORTER_RAW)
+        assert slots[3].material_key == slots[6].material_key
+
+    @pytest.mark.asyncio
+    async def test_external_tray_reported_as_a_dict(self, db_session, printer_factory):
+        """Some firmware sends ``vt_tray`` as one object rather than a list."""
+        printer = await printer_factory(model="X1C")
+        ext = await _spool(db_session, label_weight=1000, weight_used=0.0, color="#AFB1AE", slicer_filament="PFUS1")
+        ams = await _spool(db_session, label_weight=1000, weight_used=0.0, color="#AFB1AE", slicer_filament="GFA10")
+        await _assign(db_session, printer_id=printer.id, spool_id=ext.id, ams_id=255, tray_id=0)
+        await _assign(db_session, printer_id=printer.id, spool_id=ams.id, ams_id=0, tray_id=0)
+        raw = {"ams": [{"id": "0", "tray": [_tray(0)]}], "vt_tray": {"id": "254", **_tray(254)}}
+        slots = await self._slots(db_session, printer, raw)
+        assert slots[254].material_key == slots[0].material_key
+
+    @pytest.mark.asyncio
+    async def test_malformed_report_falls_back_to_the_spools(self, db_session, printer_factory):
+        printer = await printer_factory(model="X1C")
+        # A colour no tray reports, so a key read off the report would show.
+        a = await _spool(db_session, label_weight=1000, weight_used=0.0, color="#123456", slicer_filament="GFA10")
+        b = await _spool(db_session, label_weight=1000, weight_used=0.0, color="#123456", slicer_filament="PFUS1")
+        await _assign(db_session, printer_id=printer.id, spool_id=a.id, ams_id=0, tray_id=0)
+        await _assign(db_session, printer_id=printer.id, spool_id=b.id, ams_id=0, tray_id=1)
+        # Each unusable entry would key tray 0 or 1 alike if it were read.
+        raw = {
+            "ams": [
+                "junk",
+                {"id": None, "tray": [_tray(0), _tray(1)]},
+                {"id": "0", "tray": [None, {**_tray(0), "id": "x"}]},
+            ]
+        }
+        slots = await self._slots(db_session, printer, raw)
+        assert slots[0].material_key == "preset:GFA10|color:123456"
+        assert slots[1].material_key == "preset:PFUS1|color:123456"
+
+    @pytest.mark.asyncio
+    async def test_spoolman_mode_pools_on_what_the_printer_reports(self, db_session, printer_factory):
+        """Parity: two Spoolman catalogue entries for the same filament pool when
+        the printer reports the trays alike."""
+        from unittest.mock import AsyncMock
+
+        from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+        printer = await printer_factory(model="X1C")
+        db_session.add(Settings(key="spoolman_enabled", value="true"))
+        for (ams_id, tray_id), spool_id in (((1, 2), 68), ((0, 3), 69)):
+            db_session.add(
+                SpoolmanSlotAssignment(
+                    printer_id=printer.id, ams_id=ams_id, tray_id=tray_id, spoolman_spool_id=spool_id
+                )
+            )
+        await db_session.commit()
+        spools = {
+            68: {"id": 68, "remaining_weight": 142.0, "filament": {"id": 7, "color_hex": "AFB1AE"}},
+            69: {"id": 69, "remaining_weight": 1000.0, "filament": {"id": 8, "color_hex": "AFB1AE"}},
+        }
+        client = AsyncMock()
+        client.get_spool = AsyncMock(side_effect=lambda sid: spools[sid])
+        with patch("backend.app.services.spoolman.get_spoolman_client", AsyncMock(return_value=client)):
+            slots = await self._slots(db_session, printer, self.REPORTER_RAW)
+            without_report = await self._slots(db_session, printer, None)
+        assert slots[3].material_key == slots[6].material_key
+        # Without a report the catalogue entries decide, as before.
+        assert without_report[3].material_key != without_report[6].material_key
+
+    @pytest.mark.asyncio
+    async def test_demand_and_pool_share_one_read_of_the_report(self, db_session, printer_factory, tmp_path):
+        """A status push between keying the demand and building the pool must not
+        put a slot's demand in a pool its own grams are missing from."""
+        printer, item = await self._reporter_setup(db_session, printer_factory, tmp_path, b3_preset="GFA10")
+        reads = iter([{6: "first", 3: "first"}, {6: "second", 3: "second"}])
+        with patch("backend.app.services.filament_deficit._live_tray_keys", lambda pid: next(reads)):
+            assert await self._deficit(db_session, printer, item, None) == []

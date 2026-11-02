@@ -5417,7 +5417,8 @@ export default {
     remainingUnit: '남음',
     slotEmpty: '비어 있음',
     slotUnconfigured: '?',
-    emptySlotReset: '필라멘트가 할당되지 않음'
+    emptySlotReset: '필라멘트가 할당되지 않음',
+    assignedNotConfigured: 'Bambuddy에서 할당됨, 프린터에는 아직 설정되지 않음. 출력이 끝나 슬롯이 비면 프린터에 설정됩니다.'
   },
   printModal: {
     variants: {

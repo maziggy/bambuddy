@@ -44,6 +44,7 @@ from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.services.filament_requirements import extract_filament_requirements
+from backend.app.utils.filament_ids import normalize_slicer_filament
 
 logger = logging.getLogger(__name__)
 
@@ -217,8 +218,12 @@ def _material_identity_internal(spool) -> str:
     """
     preset = (spool.slicer_filament or "").strip() if spool else ""
     if preset:
+        # The field holds a filament_id from an RFID scan ("GFA10") or a
+        # setting_id from the preset picker ("GFSA10_02"); both name the same
+        # filament, so compare the filament_id (#1824).
+        filament_id = normalize_slicer_filament(preset)[0] or preset
         color = _normalize_color_for_id(spool.rgba if spool else None)
-        return f"preset:{preset}|color:{color}"
+        return f"preset:{filament_id}|color:{color}"
     # Unique-per-spool key prevents grouping. Use the spool's primary key so
     # the same spool always resolves to the same key within a request.
     spool_id = getattr(spool, "id", None) if spool else None
@@ -253,6 +258,65 @@ def _material_identity_spoolman(spool: dict | None) -> str:
         return f"filament:{fil_id}|color:{color}"
     spool_id = spool.get("id")
     return f"unmatched:{spool_id}"
+
+
+def _live_tray_keys(printer_id: int) -> dict[int, str]:
+    """Pooling key per ``global_tray_id``, from what the printer reports per tray.
+
+    AMS Filament Backup is the firmware's decision, and it makes it on the
+    tray's own ``tray_info_idx`` and colour. The spool rows bound to two slots
+    can disagree about that while the printer does not: an RFID-created spool
+    stores "GFA10", one set up from a user preset "PFUS..." (#1824). So a slot
+    the printer reports is keyed on the report, in the same format
+    ``_material_identity_internal`` uses; a tray with nothing in it or no
+    preset gets a key of its own, so it never pairs. Slots missing from the
+    report fall back to the bound spool.
+    """
+    try:
+        from backend.app.services.printer_manager import printer_manager
+    except ImportError:
+        return {}
+    state = printer_manager.get_status(printer_id)
+    raw = getattr(state, "raw_data", None) if state is not None else None
+    if not isinstance(raw, dict):
+        return {}
+
+    keys: dict[int, str] = {}
+
+    def _add(global_tray_id: int, tray: dict) -> None:
+        preset = tray.get("tray_info_idx")
+        preset = preset.strip() if isinstance(preset, str) else ""
+        if tray.get("tray_type") and preset:
+            keys[global_tray_id] = f"preset:{preset}|color:{_normalize_color_for_id(tray.get('tray_color'))}"
+        else:
+            keys[global_tray_id] = f"unmatched:tray:{global_tray_id}"
+
+    # Free-form MQTT payload on the dispatch path: a malformed unit or tray
+    # costs that slot its live key, never the check.
+    units = raw.get("ams") or []
+    if isinstance(units, dict):  # also stored as the push's {"ams": [...]}
+        units = units.get("ams") or []
+    for unit in units:
+        if not isinstance(unit, dict):
+            continue
+        for tray in unit.get("tray") or []:
+            if not isinstance(tray, dict):
+                continue
+            try:
+                ams_id, tray_id = int(unit.get("id", "")), int(tray.get("id", ""))
+            except (TypeError, ValueError):
+                continue
+            _add(_ams_key_to_global(ams_id, tray_id), tray)
+    vt_trays = raw.get("vt_tray") or []
+    for tray in [vt_trays] if isinstance(vt_trays, dict) else vt_trays:
+        if not isinstance(tray, dict):
+            continue
+        try:
+            global_tray_id = int(tray.get("id", 254))
+        except (TypeError, ValueError):
+            continue
+        _add(global_tray_id, tray)
+    return keys
 
 
 def _extruder_side_for_ams(
@@ -433,7 +497,7 @@ class SlotMaterial:
     global_tray_id: int
     # Opaque grouping key. Two slots pool for AMS Filament Backup only when
     # their keys AND extruder sides match. Never parse it — the format is an
-    # implementation detail of ``_material_identity_*``.
+    # implementation detail of ``_live_tray_keys`` / ``_material_identity_*``.
     material_key: str
     remaining_grams: float
     extruder: int
@@ -458,7 +522,12 @@ class SlotMaterial:
         }
 
 
-async def build_slot_materials(db: AsyncSession, printer_id: int) -> list[SlotMaterial]:
+async def build_slot_materials(
+    db: AsyncSession,
+    printer_id: int,
+    *,
+    live_keys: dict[int, str] | None = None,
+) -> list[SlotMaterial]:
     """Every inventory-bound slot on ``printer_id``, with identity and remaining grams.
 
     Mode-agnostic: internal inventory resolves via ``SpoolAssignment`` joined to
@@ -474,6 +543,10 @@ async def build_slot_materials(db: AsyncSession, printer_id: int) -> list[SlotMa
     warning and the dispatcher's 409 can't disagree about what backs what up.
     """
     _, ams_extruder_map, is_dual = await _get_printer_backup_context(printer_id)
+    # ``live_keys``: a caller that has keyed its own slots passes the same read,
+    # so a status push in between cannot put them in different pools.
+    if live_keys is None:
+        live_keys = _live_tray_keys(printer_id)
     materials: list[SlotMaterial] = []
 
     def _append(
@@ -484,12 +557,13 @@ async def build_slot_materials(db: AsyncSession, printer_id: int) -> list[SlotMa
         spool: SlotSpoolIdentity | None = None,
         cost_per_kg: float | None = None,
     ) -> None:
+        global_tray_id = _ams_key_to_global(ams_id, tray_id)
         materials.append(
             SlotMaterial(
                 ams_id=ams_id,
                 tray_id=tray_id,
-                global_tray_id=_ams_key_to_global(ams_id, tray_id),
-                material_key=material_key,
+                global_tray_id=global_tray_id,
+                material_key=live_keys.get(global_tray_id, material_key),
                 remaining_grams=remaining,
                 extruder=_extruder_side_for_ams(ams_id, ams_extruder_map, is_dual),
                 spool=spool,
@@ -658,10 +732,12 @@ async def compute_deficit_for_queue_item(
 
     spoolman_mode = await _is_spoolman_mode(db)
     backup_on, ams_extruder_map, is_dual = await _get_printer_backup_context(printer_id)
+    live_keys = _live_tray_keys(printer_id) if backup_on else {}
 
     # ------------------------------------------------------------------ phase 1
     # Resolve each requirement to (ams_id, tray_id, identity, remaining_grams).
-    # Slot identity is the identity of the spool *assigned to that slot*. A
+    # Slot identity is what the printer reports for the tray, else the spool
+    # *assigned to that slot* (see ``_live_tray_keys``). A
     # ``None`` remaining means "couldn't determine" — treated as "no deficit"
     # below (preserved from pre-#1762 behaviour for non-backup paths too).
     @dataclass
@@ -786,7 +862,9 @@ async def compute_deficit_for_queue_item(
                 tray_id=tray_id,
                 global_tray_id=global_tray_id,
                 required=float(used_grams),
-                identity=identity,
+                # Must key the same way as ``build_slot_materials``, or the
+                # slot's demand lands in a pool its own grams are not in.
+                identity=live_keys.get(global_tray_id, identity),
                 remaining=remaining,
                 filament_type=str(req.get("type", "")),
                 extruder=_extruder_side_for_ams(ams_id, ams_extruder_map, is_dual),
@@ -821,7 +899,7 @@ async def compute_deficit_for_queue_item(
     pool_by_key: dict[tuple[str, int], float] = defaultdict(float)
     required_by_key: dict[tuple[str, int], float] = defaultdict(float)
 
-    for slot in await build_slot_materials(db, printer_id):
+    for slot in await build_slot_materials(db, printer_id, live_keys=live_keys):
         pool_by_key[(slot.material_key, slot.extruder)] += slot.remaining_grams
 
     for row in resolved:

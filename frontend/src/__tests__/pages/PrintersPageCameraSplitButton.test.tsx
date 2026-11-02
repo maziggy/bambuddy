@@ -184,6 +184,16 @@ describe('PrintersPage — camera split button', () => {
     expect(openSpy).not.toHaveBeenCalled();
   });
 
+  it('an overlay opened from the card belongs to the Printers page', async () => {
+    renderPage('window');
+    await openModeMenu();
+    fireEvent.click(await screen.findByText(/Embedded Overlay/));
+    expect(await screen.findByTitle('Refresh stream')).toBeInTheDocument();
+    expect(JSON.parse(storage.get('openEmbeddedCameras')!)).toEqual([
+      expect.objectContaining({ scope: 'printers' }),
+    ]);
+  });
+
   it('remembers the picked mode for the next visit', async () => {
     renderPage('window');
     await openModeMenu();

@@ -369,6 +369,8 @@ class TestSpoolmanClient:
         with (
             patch.object(client, "find_spool_by_tag", AsyncMock(return_value=existing_spool)),
             patch.object(client, "update_spool", AsyncMock(return_value={"id": 42})),
+            # The tray's preset is filled in on the spool (#3433); that read is not the hint's.
+            patch.object(client, "merge_spool_extra", AsyncMock(return_value={})),
             patch.object(client, "get_spool", AsyncMock()) as mock_get_spool,
         ):
             result = await client.sync_ams_tray(

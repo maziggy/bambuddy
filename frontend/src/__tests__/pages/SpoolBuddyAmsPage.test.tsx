@@ -207,6 +207,29 @@ describe('SpoolBuddyAmsPage Phase 13', () => {
     mockShowToast.mockClear();
   });
 
+  describe('fill levels by inventory mode (#3430)', () => {
+    // Slot 1 (tray 0) reports 80 %; a built-in row for it says 10 % is left.
+    async function slotOneWidths() {
+      apiResponses.getAssignments = [
+        { id: 1, spool_id: 2, printer_id: 1, ams_id: 0, tray_id: 0, spool: { label_weight: 1000, weight_used: 900 } },
+      ];
+      renderPage();
+      const slot = await findAmsSlot(1);
+      await waitFor(() => expect(apiCallCounts.getAssignments).toBeGreaterThan(0));
+      await new Promise((r) => setTimeout(r, 30));
+      return [...slot.querySelectorAll<HTMLElement>('[style*="width"]')].map((el) => el.style.width);
+    }
+
+    it('built-in mode fills the slot from its assignment', async () => {
+      expect(await slotOneWidths()).toContain('10%');
+    });
+
+    it('Spoolman mode, even while Spoolman is down, ignores a kept built-in row', async () => {
+      spoolmanStatusValue = { enabled: true, connected: false };
+      expect(await slotOneWidths()).toContain('80%');
+    });
+  });
+
   describe('P13-4 — AssignSpoolModal receives spoolmanEnabled prop', () => {
     it('passes spoolmanEnabled=false in local mode', async () => {
       spoolmanStatusValue = { enabled: false, connected: false };

@@ -5615,6 +5615,7 @@ export default {
     slotEmpty: '空',
     slotUnconfigured: '?',
     emptySlotReset: '未分配料盘',
+    assignedNotConfigured: '已在 Bambuddy 中分配，打印机上尚未设置。打印结束、料槽空闲后打印机会接收该设置。',
     unknown: '未知',
     humidity: '湿度',
     temperature: '温度',

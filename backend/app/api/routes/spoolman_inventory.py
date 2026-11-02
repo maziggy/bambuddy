@@ -65,7 +65,7 @@ from backend.app.services.location_service import (
     resolve_spoolman_location_string,
 )
 from backend.app.services.printer_manager import PrinterManager, printer_manager
-from backend.app.services.slicer_filament_resolver import resolve_slicer_filament
+from backend.app.services.slicer_filament_resolver import resolve_slicer_filament, reusable_slot_filament_id
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_filament_preset import forget_spoolman_spool_own_preset, resolve_spoolman_preset
 from backend.app.services.spoolman import (
@@ -1875,6 +1875,28 @@ async def sync_spoolman_ams_weights(
     return {"synced": synced, "skipped": skipped, "printing": printing}
 
 
+def _live_slot_tray(state, ams_id: int, tray_id: int) -> dict:
+    """The tray the printer reports for a slot right now, or {} (external: vt_tray 254/255)."""
+    raw = getattr(state, "raw_data", None) if state is not None else None
+    if not isinstance(raw, dict):
+        return {}
+    if ams_id == 255:
+        vt_trays = raw.get("vt_tray") or []
+        for vt in [vt_trays] if isinstance(vt_trays, dict) else vt_trays:
+            if isinstance(vt, dict) and str(vt.get("id", 254)) == str(254 + tray_id):
+                return vt
+        return {}
+    units = raw.get("ams") or []
+    if isinstance(units, dict):
+        units = units.get("ams") or []
+    for unit in units if isinstance(units, list) else []:
+        if isinstance(unit, dict) and str(unit.get("id")) == str(ams_id):
+            for tray in unit.get("tray") or []:
+                if isinstance(tray, dict) and str(tray.get("id")) == str(tray_id):
+                    return tray
+    return {}
+
+
 @router.post("/slot-assignments")
 async def assign_spoolman_slot(
     body: SpoolSlotAssignmentRequest,
@@ -2081,6 +2103,17 @@ async def assign_spoolman_slot(
                 tray_type = printer_filament_type(type_override)
 
             material_upper = material.upper().strip()
+            # Without a preset, the slot's own filament id where it fits, as in
+            # internal mode, before any generic one (#3433).
+            if not tray_info_idx:
+                current_tray = _live_slot_tray(state, body.ams_id, body.tray_id)
+                tray_info_idx = reusable_slot_filament_id(
+                    current_tray.get("tray_info_idx"),
+                    current_tray.get("tray_type"),
+                    current_tray.get("tray_sub_brands"),
+                    tray_type,
+                    f"{material} {subtype}",
+                )
             # Fall back to generic-material id when slicer_filament is empty
             # or the resolver discarded an unresolvable value. Matches the
             # internal-mode tail in inventory.py:_apply_spool_to_slot_inner,

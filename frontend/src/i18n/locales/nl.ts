@@ -5674,6 +5674,7 @@ export default {
     slotEmpty: 'Leeg',
     slotUnconfigured: '?',
     emptySlotReset: 'Geen filament toegewezen',
+    assignedNotConfigured: 'Toegewezen in Bambuddy, nog niet ingesteld op de printer. De printer neemt de instelling over zodra het slot vrij is, na de print.',
     unknown: 'Onbekend',
     humidity: 'Luchtvochtigheid',
     temperature: 'Temperatuur',

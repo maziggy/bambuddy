@@ -83,7 +83,7 @@ from backend.app.services.location_service import (
     rename_location as rename_location_record,
 )
 from backend.app.services.material_number import apply_material_number_inheritance
-from backend.app.services.slicer_filament_resolver import resolve_slicer_filament
+from backend.app.services.slicer_filament_resolver import resolve_slicer_filament, reusable_slot_filament_id
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_csv import (
     MAX_CSV_IMPORT_BYTES,
@@ -96,14 +96,13 @@ from backend.app.services.spool_filament_preset import resolve_spool_preset
 from backend.app.services.spoolman import SpoolmanClient, get_spoolman_client, init_spoolman_client
 from backend.app.services.supplier_links import apply_supplier_inheritance, apply_supplier_inheritance_to_batch
 from backend.app.services.tag_conflict import tag_already_linked
-from backend.app.utils.filament_finish import different_finish, finish_generic_id
+from backend.app.utils.filament_finish import finish_generic_id
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
-    GENERIC_IDS_REPLACED_ON_REUSE,
     filament_id_to_setting_id,
     normalize_slicer_filament,
 )
-from backend.app.utils.filament_types import is_material_name, nozzle_temp_range, printer_filament_type
+from backend.app.utils.filament_types import nozzle_temp_range, printer_filament_type
 from backend.app.utils.local_time import day_zone, local_date_end, local_date_start
 from backend.app.utils.natural_sort import natural_sort_key
 from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
@@ -179,8 +178,6 @@ async def apply_spool_to_slot_via_mqtt(
     tray_sub_brands = " ".join(p for p in (spool.brand, spool.material, spool.subtype) if p) or spool.material
     tray_color = spool.rgba or "FFFFFFFF"
 
-    _generic_id_values = GENERIC_IDS_REPLACED_ON_REUSE
-
     # Which nozzle this slot feeds, and how wide it is. One resolution shared
     # with every other path that configures a slot (see services.slot_nozzle),
     # and used twice below -- for the spool's per-model preset override and for
@@ -224,23 +221,15 @@ async def apply_spool_to_slot_via_mqtt(
         tray_type = printer_filament_type(type_override)
 
     if not tray_info_idx:
-        if (
-            current_tray_info_idx
-            and current_tray_info_idx not in _generic_id_values
-            and not current_tray_info_idx.startswith("PFUS")
-            and not current_tray_info_idx.startswith("PFCN")
-            # Shares the resolver's reading of what counts as a material
-            # name, product lines included: a slot written by a Bambuddy from
-            # before #2902 can be holding "PLA+" in this field, and reusing
-            # that would carry the bad id forward instead of replacing it.
-            and not is_material_name(current_tray_info_idx)
-            and current_tray_type
-            and current_tray_type.upper() == tray_type.upper()
-            # The same type in another finish is another preset: a Silk spool
-            # does not take the slot's Matte id. Only when both name a finish.
-            and not different_finish(f"{spool.material or ''} {spool.subtype or ''}", current_tray_sub_brands)
-        ):
-            tray_info_idx = current_tray_info_idx
+        reused = reusable_slot_filament_id(
+            current_tray_info_idx,
+            current_tray_type,
+            current_tray_sub_brands,
+            tray_type,
+            f"{spool.material or ''} {spool.subtype or ''}",
+        )
+        if reused:
+            tray_info_idx = reused
         elif tray_type:
             # The spool's own wording is tried first and the reduced type only
             # as a further fallback, so a material that already resolves keeps

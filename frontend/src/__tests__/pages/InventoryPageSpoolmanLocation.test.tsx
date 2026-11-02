@@ -13,6 +13,8 @@ import { render } from '../utils';
 import InventoryPageRouter from '../../pages/InventoryPage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../../api/client';
 
 // Full settings shape — pattern matches InventoryPageLowStock.test.tsx.
 const mockSettings = {
@@ -202,6 +204,56 @@ describe('InventoryPage - LOCATION column (Spoolman mode)', () => {
     expect(slotEndpointCalled).toBe(false);
   });
 
+  it('built-in rows another page put in the shared cache stay off a Spoolman spool (#3430)', async () => {
+    // The printer page fetches ['spool-assignments'] in either mode; a
+    // disabled query still hands out what is cached under its key.
+    function OtherPage() {
+      useQuery({ queryKey: ['spool-assignments'], queryFn: () => api.getAssignments() });
+      return null;
+    }
+    server.use(
+      http.get('/api/v1/settings/spoolman', () =>
+        HttpResponse.json({ spoolman_enabled: 'true', spoolman_url: 'http://localhost:7912' })
+      ),
+      http.get('/api/v1/spoolman/inventory/spools', () => HttpResponse.json([mockSpoolmanSpool])),
+      http.get('/api/v1/spoolman/inventory/slot-assignments/all', () => HttpResponse.json([])),
+      http.get('/api/v1/inventory/assignments', () =>
+        HttpResponse.json([
+          { id: 99, spool_id: 216, printer_id: 7, printer_name: 'LocalPrinter', ams_id: 0, tray_id: 0, ams_label: null, created_at: '2025-01-01T00:00:00Z' },
+        ])
+      ),
+    );
+
+    const { container } = render(
+      <>
+        <OtherPage />
+        <InventoryPageRouter />
+      </>
+    );
+    await waitFor(() => expect(container.textContent).toContain('Bambu Lab'));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(container.textContent).not.toContain('LocalPrinter');
+  });
+
+  it('does not fetch built-in assignments in Spoolman mode', async () => {
+    let builtInFetched = false;
+    server.use(
+      http.get('/api/v1/settings/spoolman', () =>
+        HttpResponse.json({ spoolman_enabled: 'true', spoolman_url: 'http://localhost:7912' })
+      ),
+      http.get('/api/v1/spoolman/inventory/spools', () => HttpResponse.json([mockSpoolmanSpool])),
+      http.get('/api/v1/spoolman/inventory/slot-assignments/all', () => HttpResponse.json([])),
+      http.get('/api/v1/inventory/assignments', () => {
+        builtInFetched = true;
+        return HttpResponse.json([]);
+      }),
+    );
+
+    const { container } = render(<InventoryPageRouter />);
+    await waitFor(() => expect(container.textContent).toContain('Bambu Lab'));
+    expect(builtInFetched).toBe(false);
+  });
+
   it('counts spoolman slot assignments in the IN PRINTER stat card', async () => {
     server.use(
       http.get('/api/v1/settings/spoolman', () =>
@@ -240,11 +292,10 @@ describe('InventoryPage - LOCATION column (Spoolman mode)', () => {
     });
   });
 
-  it('local SpoolAssignment wins over Spoolman slot assignment on id collision', async () => {
-    // Both endpoints return an entry with the same numeric id (216). The local
-    // /inventory/assignments source must win — printer_name "LocalPrinter" and
-    // slot "B1" (formatSlotLabel(1, 0, false, false)) — and the Spoolman entry
-    // ("SpoolmanPrinter" / "C4") must NOT appear.
+  it('a built-in assignment kept from built-in mode is not shown on a Spoolman spool (#3430)', async () => {
+    // Since #2812 built-in rows survive a switch to Spoolman. Their spool_id is
+    // a built-in id, so built-in spool 216 in "LocalPrinter" B1 must not label
+    // Spoolman spool 216, which Spoolman has in "SpoolmanPrinter" C4.
     server.use(
       http.get('/api/v1/settings/spoolman', () =>
         HttpResponse.json({
@@ -286,12 +337,50 @@ describe('InventoryPage - LOCATION column (Spoolman mode)', () => {
     const { container } = render(<InventoryPageRouter />);
 
     await waitFor(() => {
-      // Local printer wins
-      expect(container.textContent).toContain('LocalPrinter');
-      expect(container.textContent).toContain('B1');
+      expect(container.textContent).toContain('SpoolmanPrinter');
+      expect(container.textContent).toContain('C4');
     });
-    expect(container.textContent).not.toContain('SpoolmanPrinter');
-    expect(container.textContent).not.toContain('C4');
+    expect(container.textContent).not.toContain('LocalPrinter');
+  });
+
+  it('a spool Spoolman has in no slot shows no slot, whatever the built-in table holds (#3430)', async () => {
+    // The reporter's case: the spool was taken out and Spoolman's row removed,
+    // but a kept built-in row with the same number still named a slot.
+    server.use(
+      http.get('/api/v1/settings/spoolman', () =>
+        HttpResponse.json({
+          spoolman_enabled: 'true',
+          spoolman_url: 'http://localhost:7912',
+        })
+      ),
+      http.get('/api/v1/spoolman/inventory/spools', () =>
+        HttpResponse.json([mockSpoolmanSpool])
+      ),
+      http.get('/api/v1/inventory/assignments', () =>
+        HttpResponse.json([
+          {
+            id: 99,
+            spool_id: 216,
+            printer_id: 7,
+            printer_name: 'LocalPrinter',
+            ams_id: 0,
+            tray_id: 0,
+            ams_label: null,
+            created_at: '2025-01-01T00:00:00Z',
+          },
+        ])
+      ),
+      http.get('/api/v1/spoolman/inventory/slot-assignments/all', () => HttpResponse.json([])),
+    );
+
+    const { container } = render(<InventoryPageRouter />);
+
+    await waitFor(() => expect(container.textContent).toContain('Bambu Lab'));
+    expect(container.textContent).not.toContain('LocalPrinter');
+    // Nor counted as in a printer.
+    const label = screen.getByText(/^in printer$/i);
+    const card = label.closest('div.bg-bambu-dark-secondary');
+    expect(within(card as HTMLElement).getByText('0')).toBeInTheDocument();
   });
 });
 

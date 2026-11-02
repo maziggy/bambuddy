@@ -141,6 +141,10 @@ _PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/manifest.json"),
         ("GET", "/sw-register.js"),
         ("GET", "/sw.js"),
+        # HEAD twins of the three PWA files (#1460), one route per method
+        ("HEAD", "/manifest.json"),
+        ("HEAD", "/sw-register.js"),
+        ("HEAD", "/sw.js"),
         # SPA catch-all — serves index.html for client-side routing. No backend data path.
         ("GET", "/{full_path:path}"),
         # ---- WebSocket routes ----

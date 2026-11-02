@@ -43,8 +43,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
+from backend.app.utils.filament_finish import different_finish
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
+    GENERIC_IDS_REPLACED_ON_REUSE,
     filament_id_to_setting_id,
     normalize_slicer_filament,
     orca_to_bambu_filament_id,
@@ -251,6 +253,41 @@ def _preset_filament_type(raw: object) -> str | None:
     exists to keep out of an AMS slot.
     """
     return first_slicer_string(raw)
+
+
+def reusable_slot_filament_id(
+    current_tray_info_idx: str | None,
+    current_tray_type: str | None,
+    current_tray_sub_brands: str | None,
+    tray_type: str,
+    spool_text: str,
+) -> str:
+    """The slot's own filament id, when a spool without a preset may keep it.
+
+    A spool whose preset is empty or unresolvable would otherwise get the
+    generic id for its material, which turns a genuine Bambu PLA Basic into
+    Generic PLA. When the slot already holds a specific filament id of the same
+    type, keeping it is closer. Shared by both inventory modes (#3433): the
+    Spoolman route went straight to the generic id.
+
+    Not kept: a generic id, a cloud user preset (PFUS/PFCN), a material name
+    left in that field by a Bambuddy from before #2902, another type, and
+    another finish when both name one (a Silk spool does not take a Matte id).
+    ``spool_text`` is the spool's material and subtype.
+    """
+    current = (current_tray_info_idx or "").strip()
+    if (
+        current
+        and current not in GENERIC_IDS_REPLACED_ON_REUSE
+        and not current.startswith("PFUS")
+        and not current.startswith("PFCN")
+        and not is_material_name(current)
+        and current_tray_type
+        and current_tray_type.upper() == tray_type.upper()
+        and not different_finish(spool_text, current_tray_sub_brands)
+    ):
+        return current
+    return ""
 
 
 async def resolve_slicer_filament(

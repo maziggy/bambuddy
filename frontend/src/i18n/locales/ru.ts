@@ -5390,6 +5390,7 @@ export default {
     slotEmpty: "Пусто",
     slotUnconfigured: "?",
     emptySlotReset: "Филамент не назначен",
+    assignedNotConfigured: "Назначено в Bambuddy, на принтере ещё не настроено. Принтер примет настройку, когда слот освободится, после печати.",
     unknown: "Неизвестно",
     humidity: "Влажность",
     temperature: "Температура",

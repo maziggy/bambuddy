@@ -2732,6 +2732,28 @@ async def on_fts_inlet_change(printer_id: int, ams_id: int, inlet: str):
         logger.warning("[Printer %s] Could not re-apply K-profiles after inlet move: %s", printer_id, e)
 
 
+def _slot_feeds_print(printer_id: int, ams_id: int, tray_id: int) -> bool:
+    """Is this slot the one feeding the printer right now?
+
+    ``tray_now`` names one slot for the whole printer, so on a dual-nozzle
+    machine each extruder's own fed slot is asked as well. Only meaningful
+    while a print runs; the caller checks that.
+    """
+    status = printer_manager.get_status(printer_id)
+    if status is None:
+        return False
+    if ams_id == 255:
+        global_id = 254 + tray_id
+    elif ams_id >= 128:
+        global_id = ams_id
+    else:
+        global_id = ams_id * 4 + tray_id
+    if getattr(status, "tray_now", None) == global_id:
+        return True
+    slots = getattr(status, "extruder_slots", None) or {}
+    return any(slot.has_filament and slot.holds(ams_id, tray_id) for slot in slots.values())
+
+
 async def _unlink_stale_assignments(printer_id: int, ams_data: list, printing_now: bool) -> None:
     """Unlink built-in inventory assignments whose slot no longer holds their spool.
 
@@ -2898,6 +2920,25 @@ async def _unlink_stale_assignments(printer_id: int, ams_data: list, printing_no
                     loaded = spool_present(current_tray) is True or (
                         cur_state == 11 or (cur_state not in (9, 10) and cur_type.strip())
                     )
+                    # Not into the slot feeding a running print: the printer refuses
+                    # the setting for it (``ams_filament_setting refused``), and a
+                    # spool swapped in after a runout sat through one refused send
+                    # per AMS change. Held, it fires on the first change once the
+                    # print is over (#3434).
+                    if (
+                        not fp_type.strip()
+                        and loaded
+                        and assignment.spool
+                        and printing_now
+                        and _slot_feeds_print(printer_id, assignment.ams_id, assignment.tray_id)
+                    ):
+                        logger.debug(
+                            "Pre-config held for spool %d AMS%d-T%d: the slot is feeding the print",
+                            assignment.spool_id,
+                            assignment.ams_id,
+                            assignment.tray_id,
+                        )
+                        continue
                     if not fp_type.strip() and loaded and assignment.spool:
                         # The fingerprint ends this replay. Not recorded when nothing
                         # could be sent (no MQTT client while the printer reconnects),

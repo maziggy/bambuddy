@@ -5580,6 +5580,7 @@ export default {
     slotEmpty: 'Leer',
     slotUnconfigured: '?',
     emptySlotReset: 'Keine Spule zugewiesen',
+    assignedNotConfigured: 'In Bambuddy zugewiesen, am Drucker noch nicht eingerichtet. Der Drucker übernimmt die Einstellung, sobald der Slot frei ist, nach dem Druck.',
     unknown: 'Unbekannt',
     humidity: 'Luftfeuchtigkeit',
     temperature: 'Temperatur',

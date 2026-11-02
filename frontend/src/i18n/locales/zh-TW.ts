@@ -5566,6 +5566,7 @@ export default {
     slotEmpty: '空',
     slotUnconfigured: '?',
     emptySlotReset: '未指派線材',
+    assignedNotConfigured: '已在 Bambuddy 中指派，印表機上尚未設定。列印結束、槽位空出後印表機會接收該設定。',
     unknown: '未知',
     humidity: '濕度',
     temperature: '溫度',

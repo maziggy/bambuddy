@@ -5566,6 +5566,7 @@ export default {
     slotEmpty: 'Vuoto',
     slotUnconfigured: '?',
     emptySlotReset: 'Nessuna bobina assegnata',
+    assignedNotConfigured: 'Assegnata in Bambuddy, non ancora configurata sulla stampante. La stampante accetta l\'impostazione quando lo slot è libero, dopo la stampa.',
     unknown: 'Sconosciuto',
     humidity: 'Umidità',
     temperature: 'Temperatura',

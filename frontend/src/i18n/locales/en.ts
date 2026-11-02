@@ -5627,6 +5627,7 @@ export default {
     slotEmpty: 'Empty',
     slotUnconfigured: '?',
     emptySlotReset: 'No filament assigned',
+    assignedNotConfigured: 'Assigned in Bambuddy, not configured on the printer yet. The printer takes the setting once the slot is free, after the print.',
     unknown: 'Unknown',
     humidity: 'Humidity',
     temperature: 'Temperature',

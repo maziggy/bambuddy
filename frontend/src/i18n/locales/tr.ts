@@ -5556,6 +5556,7 @@ export default {
     slotEmpty: 'Boş',
     slotUnconfigured: '?',
     emptySlotReset: 'Atanmış filament yok',
+    assignedNotConfigured: 'Bambuddy\'de atandı, yazıcıda henüz ayarlanmadı. Yazıcı, baskıdan sonra yuva boşaldığında ayarı alır.',
     unknown: 'Bilinmiyor',
     humidity: 'Nem',
     temperature: 'Sıcaklık',

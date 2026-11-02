@@ -513,3 +513,73 @@ describe('AMS slot: Configure dialog', () => {
     else expect(reset).toBeEnabled();
   });
 });
+
+describe('A spool on a slot the printer reports loaded but blank (#3434)', () => {
+  beforeEach(() => {
+    permissions.denied = new Set();
+  });
+
+  // Slot 1 is loaded (presence bit) but blank: a spool swapped in mid-print,
+  // which the printer takes no configuration for until the print is over.
+  const blank = { ...baseTray, tray_type: '', tray_color: '', tray_sub_brands: '', tray_info_idx: '', state: 9, exists: true };
+  async function emptySlots() {
+    await waitFor(() => expect(screen.getAllByTestId('empty-slot').length).toBeGreaterThan(0));
+    return screen.getAllByTestId('empty-slot');
+  }
+  const withBlankSlots = (slot2: Record<string, unknown> = blank) =>
+    statusWith([amsUnit({ tray: [{ id: 0, ...baseTray }, { id: 1, ...blank }, { id: 2, ...slot2 }, { id: 3, ...baseTray }] })]);
+
+  it('built-in: the card shows the assigned spool in its colour, and unassigns it', async () => {
+    const user = userEvent.setup();
+    const sent = setup({ status: withBlankSlots() });
+    const slot = (await emptySlots())[0];
+
+    expect(slot.querySelector('[data-pending-config="true"]')).not.toBeNull();
+    expect(slot.textContent).toContain('PLA');
+
+    await user.click(await hover(slot, 'Unassign'));
+    expect(screen.queryByText('Generic PLA Basic (Red)')).toBeNull(); // the card closed on click
+    await waitFor(() =>
+      expect(sent).toEqual([
+        { method: 'DELETE', path: `/api/v1/inventory/assignments/${PRINTER_ID}/0/1`, search: '', body: null },
+      ])
+    );
+  });
+
+  it('names the spool and says the printer has not taken it yet', async () => {
+    setup({ status: withBlankSlots() });
+    await hover((await emptySlots())[0], 'Unassign');
+    expect(screen.getByText('Generic PLA Basic (Red)')).toBeInTheDocument();
+    expect(screen.getByText(/not configured on the printer yet/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Assign Spool/ })).toBeNull();
+  });
+
+  it('Spoolman mode: the Spoolman spool, unassigned by its id', async () => {
+    const user = userEvent.setup();
+    const sent = setup({ status: withBlankSlots(), spoolman: true });
+    const slot = (await emptySlots())[0];
+    await user.click(await hover(slot, 'Unassign'));
+    await waitFor(() =>
+      expect(sent).toEqual([
+        { method: 'DELETE', path: '/api/v1/spoolman/inventory/slot-assignments/55', search: '', body: null },
+      ])
+    );
+  });
+
+  it('a blank slot without an assignment still says no filament is assigned', async () => {
+    setup({ status: withBlankSlots() });
+    const slot = (await emptySlots())[1];
+    expect(slot.querySelector('[data-pending-config="true"]')).toBeNull();
+    await hover(slot, 'Assign Spool');
+    expect(screen.getByText('No filament assigned')).toBeInTheDocument();
+  });
+
+  it('a slot the printer reports empty shows no spool, assignment or not', async () => {
+    // The row is on slot 1; reported physically empty there, nothing is in it.
+    setup({
+      status: statusWith([amsUnit({ tray: [{ id: 0, ...baseTray }, { id: 1, ...blank, exists: false }, { id: 2, ...baseTray }, { id: 3, ...baseTray }] })]),
+    });
+    const slot = (await emptySlots())[0];
+    expect(slot.querySelector('[data-pending-config="true"]')).toBeNull();
+  });
+});

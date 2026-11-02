@@ -5566,6 +5566,7 @@ export default {
     slotEmpty: 'Vazio',
     slotUnconfigured: '?',
     emptySlotReset: 'Nenhum carretel atribuído',
+    assignedNotConfigured: 'Atribuído no Bambuddy, ainda não configurado na impressora. A impressora aceita a configuração quando o slot fica livre, após a impressão.',
     unknown: 'Desconhecido',
     humidity: 'Umidade',
     temperature: 'Temperatura',

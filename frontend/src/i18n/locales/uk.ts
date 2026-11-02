@@ -5620,6 +5620,7 @@ export default {
     slotEmpty: "Порожній",
     slotUnconfigured: "?",
     emptySlotReset: "Філамент не призначено",
+    assignedNotConfigured: "Призначено в Bambuddy, на принтері ще не налаштовано. Принтер прийме налаштування, коли слот звільниться, після друку.",
     unknown: "Невідомий",
     humidity: "Вологість",
     temperature: "температура",

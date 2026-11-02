@@ -66,6 +66,30 @@ class SpoolmanClientError(Exception):
         self.response_text = response_text
 
 
+def _tray_preset_extra(tray: AMSTray) -> dict:
+    """The tray's filament preset as Spoolman spool ``extra`` fields, or {}.
+
+    Same values an internal RFID spool gets (``spool_tag_matcher``): the
+    tray's filament id, named from the built-in table, else by the tray's
+    sub-brand.
+    """
+    preset = (tray.tray_info_idx or "").strip()
+    if not preset:
+        return {}
+    name = None
+    try:
+        from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
+
+        name = _BUILTIN_FILAMENT_NAMES.get(preset)
+    except Exception:  # noqa: BLE001 - a display name; the preset is what counts
+        name = None
+    name = name or (tray.tray_sub_brands or "").strip() or None
+    fields = {"bambu_slicer_filament": json.dumps(preset)}
+    if name:
+        fields["bambu_slicer_filament_name"] = json.dumps(name)
+    return fields
+
+
 def _filament_subtype_part(name: str, material: str) -> str:
     """Return the subtype portion of a filament name, lowercased.
 
@@ -779,6 +803,30 @@ class SpoolmanClient:
             self._extra_locks[spool_id] = lock
         return lock
 
+    async def _fill_missing_tray_preset(self, spool: dict, tray: AMSTray) -> None:
+        """Give a tag-matched Bambu spool the tray's preset when it has none (#3433).
+
+        Spools the AMS sync created before it stored the preset have none, as do
+        ones linked to a tag some other way. As an internal spool gets one when
+        its tag is linked. A preset already set, by hand or otherwise, stays.
+        Best effort: the sync goes on without it.
+        """
+        fields = _tray_preset_extra(tray)
+        if not fields:
+            return
+        extra = spool.get("extra") or {}
+        current = extra.get("bambu_slicer_filament") if isinstance(extra, dict) else None
+        try:
+            if isinstance(current, str) and json.loads(current):
+                return
+        except (ValueError, TypeError):
+            return  # something is there; not ours to replace
+        try:
+            await self.merge_spool_extra(spool["id"], fields)
+            logger.info("Stored the tray's preset %s on Spoolman spool %s", tray.tray_info_idx, spool["id"])
+        except (SpoolmanNotFoundError, SpoolmanUnavailableError, SpoolmanClientError) as e:
+            logger.warning("Could not store the tray's preset on Spoolman spool %s: %s", spool["id"], e)
+
     async def merge_spool_extra(self, spool_id: int, new_fields: dict) -> dict:
         """Fetch the spool's extra dict, merge new_fields into it, then PATCH back — serialised per spool."""
         async with self.extra_lock(spool_id):
@@ -1387,6 +1435,8 @@ class SpoolmanClient:
                 # Native tags collect what the AMS reads: the tray UUID, and the chip
                 # UID of whichever side faces the reader, so both sides end up linked.
                 await self.add_native_tags(existing, [tray.tray_uuid, chip_uid], tag_format)
+                if is_bambu:
+                    await self._fill_missing_tray_preset(existing, tray)
                 return await self.update_spool(
                     spool_id=existing["id"],
                     remaining_weight=None if disable_weight_sync else remaining,
@@ -1438,6 +1488,12 @@ class SpoolmanClient:
             # _ensure_extra_fields registers the key from the payload (#2903).
             if catalog_color is not None:
                 extra["bambu_color_name"] = json.dumps(catalog_color.name)
+            # The tag's filament preset, as an internal RFID spool keeps it as
+            # slicer_filament (#3433). Without it a slot this spool is later
+            # assigned to -- the external one has no reader -- got the generic
+            # preset for its material.
+            if self.is_bambu_lab_spool(tray.tray_uuid, tray.tag_uid, tray.tray_info_idx):
+                extra.update(_tray_preset_extra(tray))
             created = await self.create_spool(
                 filament_id=filament_id,
                 remaining_weight=remaining,

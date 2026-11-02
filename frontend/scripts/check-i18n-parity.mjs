@@ -525,6 +525,7 @@ const PL_COGNATES = [
   'CallMeBot/WhatsApp', 'ntfy', 'Pushover', 'Telegram', 'Discord', 'Webhook', 'Bark', 'Gotify', 'Start',
   'Test', 'Hex: #{{hex}}', 'BamBuddy', '-', 'Tag', 'Host', 'Manyfold', 'http://192.168.1.10:3214',
   'Skirt / brim', 'Folder', 'SKU', 'Trend', 'ROP', 'SS', '{{count}} alert', 'CSV',
+  'A4 (210 × 297 mm)', 'Letter',  // paper formats, as Polish names them
 ];
 
 const IDENTICAL_TO_EN_ALLOWED = {

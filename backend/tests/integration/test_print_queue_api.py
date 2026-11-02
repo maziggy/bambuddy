@@ -3818,6 +3818,10 @@ class TestForceColorOverridesAreScopedToThePlate:
         file_path = tmp_path / "three_plates.gcode.3mf"
         with zipfile.ZipFile(file_path, "w") as zf:
             zf.writestr("Metadata/slice_info.config", self.THREE_PLATES)
+            # Sliced, or the queue refuses it (#3435). One plate's G-code only:
+            # with more, a job naming no plate would print the default one
+            # rather than the whole file these tests queue.
+            zf.writestr("Metadata/plate_1.gcode", "; plate 1")
 
         archive = PrintArchive(
             filename="three_plates.gcode.3mf",
@@ -3950,6 +3954,7 @@ class TestForceColorOverridesAreScopedToThePlate:
         file_path = tmp_path / "mixed_types.gcode.3mf"
         with zipfile.ZipFile(file_path, "w") as zf:
             zf.writestr("Metadata/slice_info.config", xml)
+            zf.writestr("Metadata/plate_1.gcode", "; plate 1")  # sliced (#3435)
         archive = PrintArchive(
             filename="mixed_types.gcode.3mf",
             print_name="Mixed",

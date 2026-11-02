@@ -1460,6 +1460,21 @@ def carries_gcode(file_path: Path | str) -> bool:
         return False
 
 
+def is_unsliced_3mf(file_path: Path | str) -> bool:
+    """A readable 3MF that carries no G-code: a project, whatever its name says.
+
+    The strict counterpart of ``carries_gcode``, which reads an unreadable file
+    as "no G-code". Here only a zip that opens and holds no plate G-code counts,
+    so a file that is missing or not a zip is never called unsliced -- the
+    callers re-type rows and refuse jobs on this answer (#3435).
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            return not names_carry_gcode(zf.namelist())
+    except (OSError, zipfile.BadZipFile):
+        return False
+
+
 def default_plate_number(names: list[str]) -> int | None:
     """The plate index to dispatch when the caller didn't ask for one.
 

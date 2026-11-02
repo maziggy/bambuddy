@@ -24,7 +24,11 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
 from backend.app.api.routes.library_variants import normalize_model_name, resolve_variant_model
-from backend.app.api.routes.print_queue import _extract_filament_types_from_3mf, printed_plate_of_multi_plate_file
+from backend.app.api.routes.print_queue import (
+    _extract_filament_types_from_3mf,
+    printed_plate_of_multi_plate_file,
+    unsliced_file_message,
+)
 from backend.app.core.auth import (
     ApiKeyActor,
     QueueReviewRequired,
@@ -126,6 +130,7 @@ from backend.app.utils.threemf_tools import (
     extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
+    is_unsliced_3mf,
     sanitize_project_settings_sentinels,
     select_plate_gcode_name,
     supports_enabled_in_config,
@@ -259,12 +264,17 @@ def classify_file_type(filename: str, file_path: Path | str | None = None) -> st
     rather than on its name (#2993). The name is not evidence: a plate exported
     from Studio or a print dispatched through the cloud reaches the archive as
     ``Foo.3mf``, G-code and all, and downloading that and re-importing it used
-    to land a fully printable file in the library as a source-only project. The
-    file is not opened when the name already settles it, so the common case
-    still costs nothing.
+    to land a fully printable file in the library as a source-only project.
+    A ``.gcode.3mf`` is checked as well, and one holding no G-code is a ``3mf``
+    (#3435). Only the zip's file list is read, so it stays cheap.
     """
     lower = filename.lower()
     if lower.endswith(".gcode.3mf"):
+        # The other way round as well (#3435): Studio saves an unsliced
+        # project under whatever name it is given, and one called
+        # ``Foo.gcode.3mf`` was offered Print, then refused at the queue.
+        if file_path is not None and is_unsliced_3mf(file_path):
+            return "3mf"
         return "gcode.3mf"
     ext = os.path.splitext(lower)[1]
     file_type = ext[1:] if ext else "unknown"
@@ -3325,8 +3335,10 @@ async def add_files_to_queue(
             errors.append(AddToQueueError(file_id=file_id, filename="(not found)", error="File not found"))
             continue
 
-        # Validate file is sliced
-        if not is_sliced_file(lib_file.filename):
+        # A 3MF is judged by its content below, once it is known to be there;
+        # anything else by its name, as before.
+        lower_name = lib_file.filename.lower()
+        if not lower_name.endswith(".3mf") and not is_sliced_file(lib_file.filename):
             errors.append(
                 AddToQueueError(
                     file_id=file_id,
@@ -3343,6 +3355,27 @@ async def add_files_to_queue(
             if not file_path.exists():
                 errors.append(
                     AddToQueueError(file_id=file_id, filename=lib_file.filename, error="File not found on disk")
+                )
+                continue
+
+            # Sliced is what the file holds, not what it is called (#3435): a
+            # project saved as "Foo.gcode.3mf" holds no G-code, and a sliced
+            # plate exported as "Foo.3mf" does (#2993).
+            if lower_name.endswith(".3mf") and is_unsliced_3mf(file_path):
+                errors.append(
+                    AddToQueueError(
+                        file_id=file_id, filename=lib_file.filename, error=unsliced_file_message(lib_file.filename)
+                    )
+                )
+                continue
+            # A zip that cannot be read has said nothing; its name decides, as before.
+            if lower_name.endswith(".3mf") and not carries_gcode(file_path) and not is_sliced_file(lib_file.filename):
+                errors.append(
+                    AddToQueueError(
+                        file_id=file_id,
+                        filename=lib_file.filename,
+                        error="Not a sliced file. Only .gcode or .gcode.3mf files can be printed.",
+                    )
                 )
                 continue
 

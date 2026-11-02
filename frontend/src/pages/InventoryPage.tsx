@@ -866,11 +866,18 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     t,
   ]);
 
-  const { data: assignments } = useQuery({
+  // Built-in slot assignments, in built-in mode only. Since #2812 they are kept
+  // through a switch to Spoolman, and their spool ids are built-in ids: merged
+  // into the Spoolman view they put a badge on whichever Spoolman spool shares
+  // the number, with nothing there to clear it (#3430). The cache is shared
+  // with pages that fetch it regardless, so the data is dropped here as well.
+  const { data: builtInAssignments } = useQuery({
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
     refetchInterval: 30000,
+    enabled: spoolmanModeReady && !spoolmanMode,
   });
+  const assignments = spoolmanMode ? undefined : builtInAssignments;
 
   // Spoolman-mode slot assignments. spool.id IS the spoolman_spool_id, so this
   // feeds into the same assignmentMap that the LOCATION column reads.
@@ -1215,11 +1222,10 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
 
   const currencySymbol = getCurrencySymbol(settings?.currency || 'USD');
 
-  // Map spool_id -> location display data for the LOCATION column.
-  // Local SpoolAssignment entries first, then Spoolman SlotAssignment fills in
-  // remaining IDs. Local wins on collision (defensive — modes are exclusive in
-  // practice, but a stray pair with the same numeric id would otherwise be
-  // unpredictable). spool.id IS the spoolman_spool_id in Spoolman mode.
+  // Map spool_id -> location display data for the LOCATION column. Only one
+  // source is ever filled: built-in assignments in built-in mode, Spoolman's
+  // slot assignments in Spoolman mode, where spool.id IS the spoolman_spool_id
+  // (see `assignments` above, #3430).
   const assignmentMap = useMemo<Record<number, LocationDisplay>>(() => {
     const map: Record<number, LocationDisplay> = {};
     for (const a of assignments || []) {

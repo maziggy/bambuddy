@@ -139,9 +139,13 @@ interface SetupOptions {
   status: JsonBodyType;
   spoolman?: boolean;
   amsLabels?: Record<number, string>;
+  /** Spoolman enabled but not answering. */
+  spoolmanDown?: boolean;
+  /** A built-in row kept from built-in mode (#2812), served in Spoolman mode too. */
+  keptBuiltIn?: boolean;
 }
 
-function setup({ status, spoolman = false, amsLabels = {} }: SetupOptions) {
+function setup({ status, spoolman = false, amsLabels = {}, spoolmanDown = false, keptBuiltIn = false }: SetupOptions) {
   const sent: Sent[] = [];
   const record =
     (response: JsonBodyType = { success: true, message: 'ok', status: 'ok' }) =>
@@ -157,12 +161,12 @@ function setup({ status, spoolman = false, amsLabels = {} }: SetupOptions) {
     http.get('/api/v1/printers/:id/status', () => HttpResponse.json(status)),
     http.get('/api/v1/printers/:id/ams-labels', () => HttpResponse.json(amsLabels)),
     http.get('/api/v1/spoolman/status', () =>
-      HttpResponse.json({ enabled: spoolman, connected: spoolman, url: spoolman ? 'http://spoolman' : null })
+      HttpResponse.json({ enabled: spoolman, connected: spoolman && !spoolmanDown, url: spoolman ? 'http://spoolman' : null })
     ),
     // Built-in inventory: slot 1 of AMS 0 holds spool 77.
     http.get('/api/v1/inventory/assignments', () =>
       HttpResponse.json(
-        spoolman
+        spoolman && !keptBuiltIn
           ? []
           : [
               {
@@ -305,6 +309,51 @@ describe('AMS slot: Unassign routes by inventory mode', () => {
         { method: 'DELETE', path: '/api/v1/spoolman/inventory/slot-assignments/55', search: '', body: null },
       ])
     );
+  });
+
+  it('Spoolman mode with Spoolman down: the built-in table is offered neither way (#3430)', async () => {
+    // Before, the card fell back to the built-in table whenever Spoolman was
+    // not connected: it offered to unassign a row of the other mode, and to
+    // assign, which wrote one.
+    setup({ status: statusWith([amsUnit()]), spoolman: true, spoolmanDown: true, keptBuiltIn: true });
+    for (const slot of [1, 2]) {
+      await hover((await slots())[slot], 'Re-read RFID');
+      await settle();
+      expect(screen.queryByRole('button', { name: 'Unassign' })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Assign Spool/ })).toBeNull();
+      fireEvent.mouseLeave((await slots())[slot]);
+    }
+  });
+
+  it('Spoolman down: no built-in Assign on an AMS-HT slot either (#3430)', async () => {
+    setup({ status: statusWith([htUnit]), spoolman: true, spoolmanDown: true });
+    const [ht] = await slots();
+    await hover(ht, 'Re-read RFID');
+    await settle();
+    expect(screen.queryByRole('button', { name: /Assign Spool/ })).toBeNull();
+  });
+
+  it('Spoolman down: no built-in Assign on the external slot either (#3430)', async () => {
+    setup({
+      status: statusWith([], { vt_tray: [{ id: 254, ...baseTray, tray_color: 'FFFFFFFF' }] }),
+      spoolman: true,
+      spoolmanDown: true,
+    });
+    const [ext] = await slots();
+    await hover(ext, 'Load');
+    await settle();
+    expect(screen.queryByRole('button', { name: /Assign Spool/ })).toBeNull();
+  });
+
+  it('built-in mode offers Assign on the external slot', async () => {
+    setup({ status: statusWith([], { vt_tray: [{ id: 254, ...baseTray, tray_color: 'FFFFFFFF' }] }) });
+    const [ext] = await slots();
+    expect(await hover(ext, 'Assign Spool')).toBeInTheDocument();
+  });
+
+  it('built-in mode still offers Assign on an empty slot', async () => {
+    setup({ status: statusWith([amsUnit()]) });
+    expect(await hover((await slots())[2], 'Assign Spool')).toBeEnabled();
   });
 
   it('an unassigned slot offers no Unassign', async () => {

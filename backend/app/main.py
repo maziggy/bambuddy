@@ -3273,6 +3273,10 @@ async def on_ams_change(printer_id: int, ams_data: list):
 
     await _unlink_stale_assignments(printer_id, ams_data, printing_now)
 
+    # Spools whose tag this pass assigned to a slot; their other slots are
+    # released below, once this printer's lock is let go (#3427).
+    rfid_assigned: list[tuple[int, tuple[int, int, int]]] = []
+
     # Auto-manage inventory spools from AMS tray data (skip if Spoolman manages AMS).
     # Serialised per-printer via services/ams_assignment_lock: MQTT bursts can deliver
     # two AMS pushes ~30 ms apart, and without the lock both callbacks read
@@ -3385,6 +3389,10 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         if is_bambu_tag(tag_uid, tray_uuid, tray_info_idx):
                             # BL spool with RFID tag: auto-match → inventory match → auto-create
                             spool = await get_spool_by_tag(db, tag_uid, tray_uuid)
+                            # Only a spool already known by this tag is proven to be
+                            # here; a material/colour match or a new spool is not
+                            # grounds to take it out of other slots (#3427).
+                            known_by_tag = spool is not None
                             if not spool and await tag_belongs_to_archived_spool(db, tag_uid, tray_uuid):
                                 # An archived spool still in the AMS: the slot
                                 # stays free rather than adopting its tag.
@@ -3425,6 +3433,8 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 tray_info_idx=tray_info_idx,
                             )
                             await db.commit()
+                            if known_by_tag:
+                                rfid_assigned.append((spool.id, (printer_id, ams_id, tray_id)))
                             await ws_manager.broadcast(
                                 {
                                     "type": "spool_auto_assigned",
@@ -3462,6 +3472,15 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         # ghost spools with empty tags on every confirm.
     except Exception as e:
         logger.warning("RFID spool auto-assign failed: %s", e, exc_info=True)
+
+    if rfid_assigned:
+        from backend.app.services.spool_relocation import INTERNAL, release_other_slots
+
+        for spool_id, slot in rfid_assigned:
+            try:
+                await release_other_slots(INTERNAL, spool_id, slot)
+            except Exception as e:
+                logger.warning("Releasing spool %s from its other slots failed: %s", spool_id, e, exc_info=True)
 
     try:
         async with async_session() as db:

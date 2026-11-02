@@ -1532,3 +1532,12 @@ class TestBackupPoolKeys:
         reads = iter([{6: "first", 3: "first"}, {6: "second", 3: "second"}])
         with patch("backend.app.services.filament_deficit._live_tray_keys", lambda pid: next(reads)):
             assert await self._deficit(db_session, printer, item, None) == []
+
+    @pytest.mark.asyncio
+    async def test_report_stored_as_the_push_wrapper(self, db_session, printer_factory, tmp_path):
+        """``raw_data["ams"]`` may also hold the push's ``{"ams": [...]}``."""
+        printer, item = await self._reporter_setup(
+            db_session, printer_factory, tmp_path, b3_preset="PFUSaae244ee3ae94c"
+        )
+        wrapped = {"ams": {"ams": self.REPORTER_RAW["ams"]}}
+        assert await self._deficit(db_session, printer, item, wrapped) == []

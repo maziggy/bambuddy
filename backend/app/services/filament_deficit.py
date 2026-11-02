@@ -293,7 +293,10 @@ def _live_tray_keys(printer_id: int) -> dict[int, str]:
 
     # Free-form MQTT payload on the dispatch path: a malformed unit or tray
     # costs that slot its live key, never the check.
-    for unit in raw.get("ams") or []:
+    units = raw.get("ams") or []
+    if isinstance(units, dict):  # also stored as the push's {"ams": [...]}
+        units = units.get("ams") or []
+    for unit in units:
         if not isinstance(unit, dict):
             continue
         for tray in unit.get("tray") or []:

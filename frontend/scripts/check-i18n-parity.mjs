@@ -485,6 +485,38 @@ const NL_COGNATES = [
   'Warm', '{{weight}}g', 'Workflow',
 ];
 
+// Polish cognates — brand names, acronyms, format strings and the technical
+// words Polish UIs use verbatim. Checked against pl.ts entry by entry.
+const PL_COGNATES = [
+  'MakerWorld: {{designer}}',
+  '{{printer}}: {{error}}',
+  'Bambu Cloud', 'Orca Cloud',
+  'Sport (124%)', 'Ludicrous (166%)',
+  'email',
+  '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
+  'EC984C,#6CD4BC,A66EB9,D87694',
+  '({{count}}/8)',
+  '(25%, 50%, 75%)',
+
+  // Loanwords, brands, Bambu's own plate/finish names, acronyms, placeholders:
+  'Filament', 'MakerWorld', 'System', 'Status', 'Model', 'Offline', 'Problem', 'Firmware',
+  '{{filament}} @ {{temp}}°C', 'L', '{{ams}} · Slot {{slot}}', 'GCODE', '{{weight}}g',
+  '{{name}} - Timelapse', 'SJF', 'G-code', 'Timelapse', 'SpoolBuddy', 'LDAP', 'SSO / OIDC', 'Online', 'NFC',
+  'Spoolman', 'Auto', 'Slicer', 'Hex', 'ISO (YYYY-MM-DD)', 'Bambu Studio', 'OrcaSlicer',
+  'http://192.168.1.61:1984/api/frame.jpeg?src=printer', 'Home Assistant', 'Port', 'OK', 'Client ID',
+  'Client Secret', 'Filament {{n}}', '{{shown}} / {{total}}', '000000', 'XXXXXXXX', 'user@example.com',
+  'Branding', 'Pressure Advance', 'Region', 'README', 'https://printables.com/model/...', 'URL',
+  'https://makerworld.com/...', 'Filament {{index}} ({{type}})', 'Cool Plate', 'Cool Plate SuperTack',
+  'Engineering Plate', 'Smooth PEI Plate / High Temp Plate', 'Textured PEI Plate', '(Spoolman)', 'Slot',
+  'Jade White, Fire Red...', 'Galaxy', 'Gradient', 'AMS', '?', 'K', 'https://github.com/username/repo-name',
+  'https://gitea.example.com/username/repo-name', 'https://forgejo.example.com/username/repo-name',
+  'https://gitlab.com/username/repo-name', 'GitHub', 'GitLab', 'Gitea', 'Forgejo', 'Commit', '0.020',
+  'Proxy', 'SHA-256', '{{count}} filament', 'ON, true, 1', 'Live Activities (iOS)', 'Notify!',
+  'CallMeBot/WhatsApp', 'ntfy', 'Pushover', 'Telegram', 'Discord', 'Webhook', 'Bark', 'Gotify', 'Start',
+  'Test', 'Hex: #{{hex}}', 'BamBuddy', '-', 'Tag', 'Host', 'Manyfold', 'http://192.168.1.10:3214',
+  'Skirt / brim', 'Folder', 'SKU', 'Trend', 'ROP', 'SS', '{{count}} alert', 'CSV',
+];
+
 const IDENTICAL_TO_EN_ALLOWED = {
   de: new Set(DE_COGNATES),
   fr: new Set(FR_COGNATES),
@@ -500,6 +532,7 @@ const IDENTICAL_TO_EN_ALLOWED = {
   ru: new Set(RU_COGNATES),
   uk: new Set(UK_COGNATES),
   nl: new Set(NL_COGNATES),
+  pl: new Set(PL_COGNATES),
 };
 
 // Pure comparison logic, exported so tests can verify each failure mode

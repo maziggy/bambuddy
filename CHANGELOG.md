@@ -5,6 +5,7 @@ All notable changes to Bambuddy will be documented in this file.
 ## [1.3.1b1] - Unreleased
 
 ### Added
+- **Polish (#3303, requested by @lukg20)** — The interface is available in Polish (Polski), chosen in **Settings > General > Language**. Counts are written in forms that read correctly for any number, since the interface can't tell Polish's three plural forms apart.
 - **Each archive opens with all its prints** — An archive is one file, but everything about its prints sat on one card: its latest print's outcome, one video, one note. A click on a card (or its name in the list) now opens the archive over the list, at `/archives/<id>` so a link to it works; Escape or a click outside it closes it:
   - **The file:** thumbnail (larger on hover), what it was sliced for (printer, nozzle, bed type), its project, how often it was printed (good and failed) and the slicer's estimate for the whole file, the archive's note, and **Print** (a sliced file; a source file offers **Slice** only), **Slice**, **Edit** and a menu with **3D preview**, **Download**, **All photos** and **Delete**. A **File** section below lists layer height, nozzle, bed type, layers, size, when it was archived, its MakerWorld source and tags.
   - **Plates:** each plate of a multi-plate file with its objects, estimate, filaments, how often it printed good and failed and how far its last print ran from the estimate, its prints' finish photos and newest timelapse video, with **Print this plate** and **Show its prints**.

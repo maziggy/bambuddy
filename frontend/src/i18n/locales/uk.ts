@@ -1823,6 +1823,7 @@ export default {
       startPrint: "Розпочати друк",
       stopPrint: "Зупинити друк",
       requeue: "Поставити в чергу знову",
+      duplicate: 'Дублювати (додати ще одну копію до черги)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1851,6 +1852,8 @@ export default {
       selected: "Вибрано: {{count}}",
       editSelected: "Редагувати вибране",
       cancelSelected: "Скасувати вибране",
+      duplicateSelected: 'Дублювати',
+      duplicateNone: 'Жодне з вибраних завдань не можна дублювати',
     },
     // Confirmations
     confirm: {
@@ -1888,6 +1891,10 @@ export default {
       bulkUpdatedNone: 'Жодне завдання не оновлено',
       bulkCancelled: "Скасовано елементів: {{count}}",
       bulkCancelFailed: "Не вдалося скасувати елементи",
+      duplicated: 'Додано завдань у кінець черги: {{count}}',
+      duplicateFailed: 'Не вдалося дублювати елементи',
+      duplicatePartial: 'Додано {{added}} з {{total}} завдань; решту не вдалося дублювати',
+      duplicateSkipped: 'Додано завдань: {{count}}; пропущено {{skipped}}, які не можна дублювати',
       batchCreated: "Партію «{{name}}» створено",
       batchCreateFailed: "Не вдалося створити партію",
       batchUngrouped: "Розгруповано елементів: {{count}}",

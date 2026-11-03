@@ -1651,6 +1651,7 @@ export default {
       startPrint: 'Avvia Stampa',
       stopPrint: 'Ferma Stampa',
       requeue: 'Rimetti in coda',
+      duplicate: 'Duplica (aggiungi un\'altra copia alla coda)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1679,6 +1680,8 @@ export default {
       selected: '{{count}} selezionati',
       editSelected: 'Modifica selezionati',
       cancelSelected: 'Annulla selezionati',
+      duplicateSelected: 'Duplica',
+      duplicateNone: 'Nessuno dei lavori selezionati può essere duplicato',
     },
     // Confirmations
     confirm: {
@@ -1716,6 +1719,10 @@ export default {
       bulkUpdatedNone: 'Nessun lavoro aggiornato',
       bulkCancelled: 'Annullati {{count}} elementi',
       bulkCancelFailed: 'Annullamento elementi non riuscito',
+      duplicated: 'Aggiunti {{count}} lavori in fondo alla coda',
+      duplicateFailed: 'Impossibile duplicare gli elementi',
+      duplicatePartial: 'Aggiunti {{added}} lavori su {{total}}; gli altri non sono stati duplicati',
+      duplicateSkipped: 'Aggiunti {{count}} lavori; saltati {{skipped}} non duplicabili',
       batchCreated: 'Lotto «{{name}}» creato',
       batchCreateFailed: 'Creazione lotto non riuscita',
       batchUngrouped: '{{count}} elemento/i separato/i',

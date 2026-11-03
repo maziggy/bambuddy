@@ -1669,6 +1669,7 @@ export default {
       startPrint: 'Rozpocznij druk',
       stopPrint: 'Zatrzymaj druk',
       requeue: 'Dodaj ponownie do kolejki',
+      duplicate: 'Duplikuj (dodaj kolejną kopię do kolejki)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1697,6 +1698,8 @@ export default {
       selected: 'Zaznaczone: {{count}}',
       editSelected: 'Edytuj zaznaczone',
       cancelSelected: 'Anuluj zaznaczone',
+      duplicateSelected: 'Duplikuj',
+      duplicateNone: 'Żadnego z zaznaczonych zadań nie można zduplikować',
     },
     // Confirmations
     confirm: {
@@ -1734,6 +1737,10 @@ export default {
       bulkUpdatedNone: 'Nie zaktualizowano żadnych zadań',
       bulkCancelled: 'Anulowane elementy: {{count}}',
       bulkCancelFailed: 'Nie udało się anulować elementów',
+      duplicated: 'Dodano zadania na koniec kolejki: {{count}}',
+      duplicateFailed: 'Nie udało się zduplikować elementów',
+      duplicatePartial: 'Dodano {{added}} z {{total}} zadań; pozostałych nie udało się zduplikować',
+      duplicateSkipped: 'Dodano zadania: {{count}}; pominięto {{skipped}}, których nie można zduplikować',
       batchCreated: 'Utworzono serię "{{name}}"',
       batchCreateFailed: 'Nie udało się utworzyć serii',
       batchUngrouped: 'Rozgrupowane elementy: {{count}}',

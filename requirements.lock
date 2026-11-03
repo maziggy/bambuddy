@@ -153,8 +153,10 @@ propcache==0.5.4
     #   yarl
 psutil==7.2.2
     # via -r requirements.txt
-pyasn1==0.6.4
-    # via ldap3
+pyasn1==0.6.5
+    # via
+    #   -r requirements.txt
+    #   ldap3
 pyasynchat==1.0.5 ; python_full_version >= '3.12'
     # via pyftpdlib
 pyasyncore==1.0.5 ; python_full_version >= '3.12'

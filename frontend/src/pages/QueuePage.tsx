@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, createContext, useContext } from 'react';
 import { bulkUpdateToast } from '../utils/queueBulkUpdate';
 import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -39,6 +39,7 @@ import {
   StopCircle,
   Pencil,
   RefreshCw,
+  Copy,
   Timer,
   ListOrdered,
   Layers,
@@ -72,7 +73,7 @@ import { type TimeFormat, formatETA, formatDuration, formatRelativeTime, parseUT
 import { getBedTypeInfo } from '../utils/bedType';
 import { getColorName } from '../utils/colors';
 import { productLineOf, useFilamentNameByIdx } from '../components/PrintModal/useFilamentLabels';
-import type { PrintQueueItem, PrintQueueBulkUpdate, Permission, CalibrationMode, PrinterStatus, SlotSpoolIdentity } from '../api/client';
+import type { PrintQueueItem, PrintQueueItemCreate, PrintQueueBulkUpdate, Permission, CalibrationMode, PrinterStatus, SlotSpoolIdentity } from '../api/client';
 import { formatSlotLabel, getEmptySlotKind } from '../utils/amsHelpers';
 import type { PlateMetadata } from '../types/plates';
 import { Card } from '../components/Card';
@@ -556,6 +557,25 @@ function CalibrationModeToggle({
 }
 
 // Sortable queue item for drag and drop
+// Duplicate: copy queued or printing jobs back onto the end of the queue. The page provides the
+// handler through context so every row can offer it without threading another prop through the
+// pending/batch/printing lists.
+const QueueDuplicateContext = createContext<((items: PrintQueueItem[]) => void) | null>(null);
+
+/** A new queue entry with the same file, plate, target and print options as `item`. */
+function queueItemCopyPayload(item: PrintQueueItem): PrintQueueItemCreate {
+  const src = item as unknown as Record<string, unknown>;
+  const keys = ['target_model', 'target_location', 'required_filament_types', 'filament_overrides', 'archive_id', 'library_file_id',
+    'require_previous_success', 'auto_off_after', 'manual_start', 'skip_filament_check', 'plate_id', 'bed_levelling', 'flow_cali',
+    'vibration_cali', 'layer_inspect', 'timelapse', 'use_ams', 'nozzle_offset_cali', 'confirm_outcome', 'preheat_override',
+    'preheat_chamber_target_override', 'gcode_injection', 'project_id', 'cost_center_id', 'estimated_cost'];
+  const out: Record<string, unknown> = {};
+  for (const k of keys) if (src[k] !== null && src[k] !== undefined) out[k] = src[k];
+  // A job aimed at "any printer of a model" stays that way; one for a specific printer stays on it.
+  if (!item.target_model) out.printer_id = item.printer_id;
+  return out as unknown as PrintQueueItemCreate;
+}
+
 function SortableQueueItem({
   item,
   position,
@@ -695,6 +715,7 @@ function SortableQueueItem({
   const isPrinting = item.status === 'printing';
   const isPending = item.status === 'pending';
   const isHistory = ['completed', 'failed', 'skipped', 'cancelled'].includes(item.status);
+  const duplicate = useContext(QueueDuplicateContext);
 
   // This is an "if started now" estimate, not a cumulative queue forecast, so
   // it is only shown for items the page determined could actually start now
@@ -1115,6 +1136,21 @@ function SortableQueueItem({
           <StatusBadge status={item.status} waitingReason={item.waiting_reason} printerState={printerState} t={t} />
 
           <div className="flex items-center gap-0.5 sm:gap-1">
+            {duplicate && (isPrinting || isPending) && !(item.variants && item.variants.length)
+              // A printer-card upload's temporary library file is deleted when the original dispatches (#2819).
+              && !(item.cleanup_library_after_dispatch && !item.archive_id) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => duplicate([item])}
+                disabled={!hasPermission('queue:create')}
+                title={!hasPermission('queue:create') ? t('queue.permissions.noRequeue') : t('queue.actions.duplicate')}
+                aria-label={t('queue.actions.duplicate')}
+                className="p-1.5 sm:p-2"
+              >
+                <Copy className="w-4 h-4" />
+              </Button>
+            )}
             {isPrinting && (
               <Button
                 variant="ghost"
@@ -2070,6 +2106,20 @@ export function QueuePage() {
     onError: () => showToast(t('queue.toast.bulkCancelFailed'), 'error'),
   });
 
+  const duplicateMutation = useMutation({
+    mutationFn: async (items: PrintQueueItem[]) => {
+      for (const item of items) await api.addToQueue(queueItemCopyPayload(item));
+      return items.length;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      setSelectedItems([]);
+      showToast(t('queue.toast.duplicated', { count }));
+    },
+    onError: () => showToast(t('queue.toast.duplicateFailed'), 'error'),
+  });
+  const duplicateItems = useCallback((items: PrintQueueItem[]) => duplicateMutation.mutate(items), [duplicateMutation]);
+
   const resumeAfterFailureMutation = useMutation({
     mutationFn: (printerId: number) => api.resumeQueueAfterFailure(printerId),
     onSuccess: (result) => {
@@ -2697,6 +2747,7 @@ export function QueuePage() {
   };
 
   return (
+    <QueueDuplicateContext.Provider value={duplicateItems}>
     <div className="p-4 md:p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -3087,6 +3138,18 @@ export function QueuePage() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      onClick={() => duplicateItems((queue || []).filter((q) => selectedItems.includes(q.id)
+                        && !(q.variants && q.variants.length) && !(q.cleanup_library_after_dispatch && !q.archive_id)))}
+                      className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm"
+                      disabled={duplicateMutation.isPending || !hasPermission('queue:create')}
+                      title={t('queue.bulkEdit.duplicateSelected')}
+                    >
+                      <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">{t('queue.bulkEdit.duplicateSelected')}</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => setShowBulkEditModal(true)}
                       className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-bambu-green hover:text-bambu-green-light"
                       disabled={!hasAnyPermission('queue:update_own', 'queue:update_all')}
@@ -3422,6 +3485,7 @@ export function QueuePage() {
         />
       )}
     </div>
+    </QueueDuplicateContext.Provider>
   );
 }
 

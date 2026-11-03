@@ -1639,6 +1639,7 @@ export default {
       startPrint: 'Druck starten',
       stopPrint: 'Druck stoppen',
       requeue: 'Erneut einreihen',
+      duplicate: 'Duplizieren (weitere Kopie zur Warteschlange hinzufügen)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1667,6 +1668,7 @@ export default {
       selected: '{{count}} ausgewählt',
       editSelected: 'Ausgewählte bearbeiten',
       cancelSelected: 'Ausgewählte abbrechen',
+      duplicateSelected: 'Duplizieren',
     },
     // Confirmations
     confirm: {
@@ -1704,6 +1706,8 @@ export default {
       bulkUpdatedNone: 'Keine Aufträge aktualisiert',
       bulkCancelled: '{{count}} Element(e) abgebrochen',
       bulkCancelFailed: 'Elemente konnten nicht abgebrochen werden',
+      duplicated: '{{count}} Auftrag/Aufträge am Ende der Warteschlange hinzugefügt',
+      duplicateFailed: 'Duplizieren fehlgeschlagen',
       batchCreated: 'Stapel „{{name}}“ erstellt',
       batchCreateFailed: 'Stapel konnte nicht erstellt werden',
       batchUngrouped: '{{count}} Eintrag/Einträge aus Stapel gelöst',

@@ -1638,6 +1638,7 @@ export default {
       startPrint: '印刷を開始',
       stopPrint: '印刷を停止',
       requeue: '再キュー',
+      duplicate: '複製（キューにもう1件追加）',
     },
     // Bulk edit
     bulkEdit: {
@@ -1666,6 +1667,7 @@ export default {
       selected: '{{count}}件選択中',
       editSelected: '選択を編集',
       cancelSelected: '選択をキャンセル',
+      duplicateSelected: '複製',
     },
     // Confirmations
     confirm: {
@@ -1703,6 +1705,8 @@ export default {
       bulkUpdatedNone: '更新されたジョブはありません',
       bulkCancelled: '{{count}}件のアイテムをキャンセルしました',
       bulkCancelFailed: 'アイテムのキャンセルに失敗しました',
+      duplicated: 'キューの末尾に{{count}}件追加しました',
+      duplicateFailed: '複製に失敗しました',
       batchCreated: 'バッチ「{{name}}」を作成しました',
       batchCreateFailed: 'バッチの作成に失敗しました',
       batchUngrouped: '{{count}}件のグループを解除しました',

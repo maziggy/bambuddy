@@ -1639,6 +1639,7 @@ export default {
       startPrint: 'Iniciar Impressão',
       stopPrint: 'Parar Impressão',
       requeue: 'Reenfileirar',
+      duplicate: 'Duplicar (adicionar outra cópia à fila)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1667,6 +1668,7 @@ export default {
       selected: '{{count}} selecionado(s)',
       editSelected: 'Editar Selecionados',
       cancelSelected: 'Cancelar Selecionados',
+      duplicateSelected: 'Duplicar',
     },
     // Confirmations
     confirm: {
@@ -1704,6 +1706,8 @@ export default {
       bulkUpdatedNone: 'Nenhum trabalho atualizado',
       bulkCancelled: 'Cancelado {{count}} item(s)',
       bulkCancelFailed: 'Falha ao cancelar itens',
+      duplicated: '{{count}} trabalho(s) adicionado(s) ao fim da fila',
+      duplicateFailed: 'Falha ao duplicar os itens',
       batchCreated: 'Lote "{{name}}" criado',
       batchCreateFailed: 'Falha ao criar o lote',
       batchUngrouped: '{{count}} item(ns) desagrupado(s)',

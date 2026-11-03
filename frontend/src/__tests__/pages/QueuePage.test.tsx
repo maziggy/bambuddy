@@ -2327,3 +2327,57 @@ describe('QueuePage: jobs held by failed prints on every printer of their model'
     await waitFor(() => expect(resumed).toBe('X1C'));
   });
 });
+
+describe('QueuePage duplicate', () => {
+  let posted: Record<string, unknown>[];
+
+  beforeEach(() => {
+    vi.mocked(localStorage.getItem).mockImplementation((key: string) => {
+      if (key === 'queue.historyCollapsed') return 'false';
+      if (key === 'queue.viewMode') return 'list';
+      return null;
+    });
+    posted = [];
+    server.use(
+      ...serveQueue(mockQueueItems),
+      http.get('/api/v1/printers/', () => HttpResponse.json(mockPrinters)),
+      http.post('/api/v1/queue/', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        posted.push(body);
+        return HttpResponse.json({ ...mockQueueItems[0], ...body, id: 100 + posted.length, status: 'pending' });
+      })
+    );
+  });
+
+  it('offers Duplicate on queued and printing jobs, not on history', async () => {
+    render(<QueuePage />);
+    await waitFor(() => expect(screen.getByText('Test Print 1')).toBeInTheDocument());
+    // one pending + one printing in the mock data
+    expect(screen.getAllByRole('button', { name: 'Duplicate (add another copy to the queue)' })).toHaveLength(2);
+  });
+
+  it('does not offer Duplicate for a printer-card upload whose file is deleted on dispatch (#2819)', async () => {
+    server.use(
+      ...serveQueue([{ ...mockQueueItems[0], archive_id: null, library_file_id: 7, cleanup_library_after_dispatch: true }])
+    );
+    render(<QueuePage />);
+    await waitFor(() => expect(screen.getByText('Test Print 1')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Duplicate (add another copy to the queue)' })).not.toBeInTheDocument();
+  });
+
+  it('adds a copy of each job with the same file and options', async () => {
+    const user = userEvent.setup();
+    render(<QueuePage />);
+    await waitFor(() => expect(screen.getByText('Test Print 1')).toBeInTheDocument());
+    for (const btn of screen.getAllByRole('button', { name: 'Duplicate (add another copy to the queue)' })) await user.click(btn);
+    await waitFor(() => expect(posted).toHaveLength(2));
+    const byArchive = Object.fromEntries(posted.map((p) => [p.archive_id, p]));
+    expect(byArchive[1]).toMatchObject({ printer_id: 1, use_ams: true, vibration_cali: true, auto_off_after: false });
+    expect(byArchive[2]).toMatchObject({ printer_id: 1, auto_off_after: true });
+    for (const p of posted) {
+      expect(p).not.toHaveProperty('id');
+      expect(p).not.toHaveProperty('status');
+    }
+  });
+
+});

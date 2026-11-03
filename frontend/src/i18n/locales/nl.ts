@@ -1655,6 +1655,7 @@ export default {
       startPrint: 'Afdruk starten',
       stopPrint: 'Afdruk stoppen',
       requeue: 'Opnieuw in wachtrij plaatsen',
+      duplicate: 'Dupliceren (nog een kopie aan de wachtrij toevoegen)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1683,6 +1684,7 @@ export default {
       selected: '{{count}} geselecteerd',
       editSelected: 'Geselecteerde bewerken',
       cancelSelected: 'Geselecteerde annuleren',
+      duplicateSelected: 'Dupliceren',
     },
     // Confirmations
     confirm: {
@@ -1720,6 +1722,8 @@ export default {
       bulkUpdatedNone: 'Geen taken bijgewerkt',
       bulkCancelled: '{{count}} item(s) geannuleerd',
       bulkCancelFailed: 'Items annuleren mislukt',
+      duplicated: '{{count}} taak/taken achteraan de wachtrij toegevoegd',
+      duplicateFailed: 'Dupliceren van items mislukt',
       batchCreated: 'Batch "{{name}}" gemaakt',
       batchCreateFailed: 'Batch maken mislukt',
       batchUngrouped: 'Groepering van {{count}} item(s) opgeheven',

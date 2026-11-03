@@ -1558,7 +1558,8 @@ export default {
     actions: {
       startPrint: '인쇄 시작',
       stopPrint: '인쇄 정지',
-      requeue: '재대기'
+      requeue: '재대기',
+      duplicate: '복제 (대기열에 사본 하나 더 추가)',
     },
     bulkEdit: {
       title: '{{count}}개 항목 편집',
@@ -1585,7 +1586,8 @@ export default {
       deselectAll: '전체 해제',
       selected: '{{count}}개 선택됨',
       editSelected: '선택 항목 편집',
-      cancelSelected: '선택 항목 취소'
+      cancelSelected: '선택 항목 취소',
+      duplicateSelected: '복제',
     },
     confirm: {
       cancelTitle: '예약된 인쇄 취소',
@@ -1621,6 +1623,8 @@ export default {
       bulkUpdatedNone: '업데이트된 작업이 없습니다',
       bulkCancelled: '{{count}}개 항목이 취소되었습니다',
       bulkCancelFailed: '항목 취소 실패',
+      duplicated: '대기열 끝에 작업 {{count}}개를 추가했습니다',
+      duplicateFailed: '항목을 복제하지 못했습니다',
       batchCreated: '"{{name}}" 배치를 만들었습니다',
       batchCreateFailed: '배치 만들기에 실패했습니다',
       batchUngrouped: '{{count}}개 항목의 그룹을 해제했습니다',

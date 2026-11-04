@@ -1,0 +1,200 @@
+2026-11-04 13:22:14,335 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:62856
+2026-11-04 13:22:15,086 INFO [uvicorn.access] [-] [IP]:46720 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:22:15,101 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:22:17,366 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-11-04 13:22:17,366 INFO [uvicorn.error] [-] [IP]:42658 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-04 13:22:17,366 INFO [uvicorn.error] [-] connection open
+2026-11-04 13:22:17,370 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-04 13:22:17,370 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-04 13:22:17,578 INFO [backend.app.api.routes.printers] [7d6c18a5] Cover: resolved plate 3 before download (subtask=Samsung_Washer_Drain_System_plate_3)
+2026-11-04 13:22:17,666 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-04 13:22:17,745 INFO [backend.app.api.routes.printers] [7bee84bb] Cover: resolved plate 3 before download (subtask=Samsung_Washer_Drain_System_plate_3)
+2026-11-04 13:22:19,067 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-04 13:22:19,295 INFO [uvicorn.access] [-] [IP]:42710 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:22:19,321 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-11-04 13:22:19,321 INFO [uvicorn.error] [-] [IP]:42716 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-04 13:22:19,321 INFO [uvicorn.error] [-] connection open
+2026-11-04 13:22:19,322 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-04 13:22:19,322 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-04 13:22:19,350 INFO [uvicorn.access] [-] [IP]:42710 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-04 13:22:19,363 INFO [backend.app.api.routes.printers] [17a5bf45] Cover: resolved plate 3 before download (subtask=Samsung_Washer_Drain_System_plate_3)
+2026-11-04 13:22:21,674 INFO [uvicorn.access] [-] [IP]:35424 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:22:21,686 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:22:28,677 INFO [backend.app.api.routes.printers] [90a73ad0] Cover: resolved plate 3 before download (subtask=Samsung_Washer_Drain_System_plate_3)
+2026-11-04 13:22:29,236 INFO [backend.app.api.routes.cloud] [6bc6d283] get_filament_info called with 1 IDs: ['GFA00']
+2026-11-04 13:22:29,552 INFO [uvicorn.access] [-] [IP]:35440 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-04 13:22:46,087 INFO [uvicorn.access] [-] [IP]:59760 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:22:46,106 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:22:51,711 INFO [uvicorn.access] [-] [IP]:47490 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:22:51,735 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:23:14,410 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:62856
+2026-11-04 13:23:17,081 INFO [uvicorn.access] [-] [IP]:43298 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:23:17,095 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:23:21,754 INFO [uvicorn.access] [-] [IP]:45124 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:23:21,765 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:23:48,088 INFO [uvicorn.access] [-] [IP]:34562 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:23:48,106 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:23:52,090 INFO [uvicorn.access] [-] [IP]:53106 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:23:52,107 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:24:14,485 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:62856
+2026-11-04 13:24:19,081 INFO [uvicorn.access] [-] [IP]:59742 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:24:19,095 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:24:22,124 INFO [uvicorn.access] [-] [IP]:59734 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:24:22,137 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:24:38,317 INFO [backend.app.api.routes.camera] [409a540e] Using RTSP protocol for X2D
+2026-11-04 13:24:38,318 INFO [backend.app.api.routes.camera] [409a540e] Camera viewer attached to printer-1 (subscribers=3)
+2026-11-04 13:24:38,320 INFO [backend.app.api.routes.printers] [56dfda3e] Cover: resolved plate 3 before download (subtask=Samsung_Washer_Drain_System_plate_3)
+2026-11-04 13:24:38,393 INFO [backend.app.api.routes.cloud] [9dd07ef2] get_filament_info called with 1 IDs: ['GFA00']
+2026-11-04 13:24:38,395 INFO [uvicorn.access] [-] [IP]:60470 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-04 13:24:49,116 INFO [uvicorn.access] [-] [IP]:60536 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:24:49,152 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:24:53,081 INFO [uvicorn.access] [-] [IP]:56314 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:24:53,094 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:25:09,509 INFO [uvicorn.access] [-] [IP]:36680 - "POST /api/v1/announcements/fa743f82fa157873/read HTTP/1.1" 204
+2026-11-04 13:25:14,566 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:62856
+2026-11-04 13:25:15,877 INFO [backend.app.api.routes.camera] [409a540e] Camera viewer detached from printer-1 (subscribers=2)
+2026-11-04 13:25:15,900 INFO [backend.app.api.routes.camera] [665b957e] Skipping force-shutdown for printer 1: 2 subscriber(s) still attached; natural cleanup will tear down when last viewer disconnects
+2026-11-04 13:25:15,900 INFO [uvicorn.access] [-] [IP]:43654 - "POST /api/v1/printers/1/camera/stop?viewer=vx8b1skq7xl HTTP/1.1" 200
+2026-11-04 13:25:15,909 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] MQTT publish to device/20P90A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20014","version":1}}...
+2026-11-04 13:25:15,909 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] MQTT pushing command: pushall
+2026-11-04 13:25:15,909 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] Sending status report in response to pushall
+2026-11-04 13:25:19,167 INFO [uvicorn.access] [-] [IP]:36680 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:25:19,180 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:25:24,076 INFO [uvicorn.access] [-] [IP]:43650 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:25:24,090 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:25:28,557 INFO [backend.app.api.routes.printers] [6a3cf74f] Cover: resolved plate 3 before download (subtask=Samsung_Washer_Drain_System_plate_3)
+2026-11-04 13:25:28,563 INFO [backend.app.api.routes.camera] [7a095db8] Using RTSP protocol for X2D
+2026-11-04 13:25:28,563 INFO [backend.app.api.routes.camera] [7a095db8] Camera viewer attached to printer-1 (subscribers=3)
+2026-11-04 13:25:39,371 INFO [backend.app.api.routes.printers] [563234f9] Cover: resolved plate 3 before download (subtask=Samsung_Washer_Drain_System_plate_3)
+2026-11-04 13:25:40,222 INFO [backend.app.api.routes.camera] [7a095db8] Camera viewer detached from printer-1 (subscribers=2)
+2026-11-04 13:25:40,236 INFO [backend.app.api.routes.camera] [284ae6cc] Skipping force-shutdown for printer 1: 2 subscriber(s) still attached; natural cleanup will tear down when last viewer disconnects
+2026-11-04 13:25:40,237 INFO [uvicorn.access] [-] [IP]:43664 - "POST /api/v1/printers/1/camera/stop?viewer=vy48q9miyt5 HTTP/1.1" 200
+2026-11-04 13:25:47,519 INFO [backend.app.api.routes.printers] [47a2f2c4] Cover: resolved plate 3 before download (subtask=Samsung_Washer_Drain_System_plate_3)
+2026-11-04 13:25:47,521 INFO [backend.app.api.routes.camera] [14500d09] Using RTSP protocol for X2D
+2026-11-04 13:25:47,521 INFO [backend.app.api.routes.camera] [14500d09] Camera viewer attached to printer-1 (subscribers=3)
+2026-11-04 13:25:49,200 INFO [uvicorn.access] [-] [IP]:37270 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:25:49,231 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:25:54,123 INFO [uvicorn.access] [-] [IP]:37332 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:25:54,161 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:26:14,651 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:62856
+2026-11-04 13:26:19,262 INFO [uvicorn.access] [-] [IP]:37332 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:26:19,294 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:26:25,081 INFO [uvicorn.access] [-] [IP]:34856 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:26:25,094 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:26:49,318 INFO [uvicorn.access] [-] [IP]:34856 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:26:49,362 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:26:56,085 INFO [uvicorn.access] [-] [IP]:43622 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:26:56,097 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:27:06,010 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-04 13:27:14,726 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:62856
+2026-11-04 13:27:19,385 INFO [uvicorn.access] [-] [IP]:33512 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:27:19,424 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:27:27,081 INFO [uvicorn.access] [-] [IP]:33548 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:27:27,100 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:27:31,242 INFO [backend.app.api.routes.cloud] [ba8d8819] get_filament_info called with 1 IDs: ['GFA00']
+2026-11-04 13:27:31,609 INFO [uvicorn.access] [-] [IP]:33244 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-04 13:27:35,001 INFO [backend.app.api.routes.camera] [14500d09] Camera viewer detached from printer-1 (subscribers=2)
+2026-11-04 13:27:35,063 INFO [backend.app.api.routes.camera] [86e5e99f] Skipping force-shutdown for printer 1: 2 subscriber(s) still attached; natural cleanup will tear down when last viewer disconnects
+2026-11-04 13:27:35,067 INFO [uvicorn.access] [-] [IP]:33218 - "POST /api/v1/printers/1/camera/stop?viewer=v1w5k41hogq HTTP/1.1" 200
+2026-11-04 13:27:45,856 INFO [backend.app.api.routes.printers] [f2769357] Cover: resolved plate 3 before download (subtask=Samsung_Washer_Drain_System_plate_3)
+2026-11-04 13:27:45,857 INFO [backend.app.api.routes.camera] [bd074888] Using RTSP protocol for X2D
+2026-11-04 13:27:45,858 INFO [backend.app.api.routes.camera] [bd074888] Camera viewer attached to printer-1 (subscribers=3)
+2026-11-04 13:27:49,451 INFO [uvicorn.access] [-] [IP]:37394 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:27:49,504 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:27:57,124 INFO [uvicorn.access] [-] [IP]:33278 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:27:57,156 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:28:14,800 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:62856
+2026-11-04 13:28:19,549 INFO [uvicorn.access] [-] [IP]:37368 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:28:19,564 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:28:28,073 INFO [uvicorn.access] [-] [IP]:46130 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:28:28,096 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:28:37,797 INFO [uvicorn.error] [-] [IP]:51774 - "WebSocket /ws" 403
+2026-11-04 13:28:37,797 INFO [uvicorn.error] [-] connection rejected (403 Forbidden)
+2026-11-04 13:28:50,084 INFO [uvicorn.access] [-] [IP]:50324 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:28:50,101 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:28:59,086 INFO [uvicorn.access] [-] [IP]:50324 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:28:59,101 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:29:10,752 INFO [backend.app.api.routes.camera] [bd074888] Camera viewer detached from printer-1 (subscribers=2)
+2026-11-04 13:29:10,773 INFO [backend.app.api.routes.camera] [2248ba0e] Skipping force-shutdown for printer 1: 2 subscriber(s) still attached; natural cleanup will tear down when last viewer disconnects
+2026-11-04 13:29:10,774 INFO [uvicorn.access] [-] [IP]:45798 - "POST /api/v1/printers/1/camera/stop?viewer=v58awi5437n HTTP/1.1" 200
+2026-11-04 13:29:12,859 INFO [backend.app.api.routes.printers] [4b69d7de] Cover: resolved plate 3 before download (subtask=Samsung_Washer_Drain_System_plate_3)
+2026-11-04 13:29:12,879 INFO [backend.app.api.routes.camera] [f9781748] Using RTSP protocol for X2D
+2026-11-04 13:29:12,879 INFO [backend.app.api.routes.camera] [f9781748] Camera viewer attached to printer-1 (subscribers=3)
+2026-11-04 13:29:14,886 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:62856
+2026-11-04 13:29:19,099 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-11-04 13:29:19,099 INFO [uvicorn.error] [-] [IP]:54782 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-04 13:29:19,099 INFO [uvicorn.error] [-] connection open
+2026-11-04 13:29:19,101 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-04 13:29:19,101 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-04 13:29:20,121 INFO [uvicorn.access] [-] [IP]:42218 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:29:20,163 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:29:29,093 INFO [backend.app.api.routes.printers] [f0a694f9] Cover: resolved plate 3 before download (subtask=Samsung_Washer_Drain_System_plate_3)
+2026-11-04 13:29:29,117 INFO [uvicorn.access] [-] [IP]:45938 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:29:29,150 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:29:51,074 INFO [uvicorn.access] [-] [IP]:40944 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:29:51,099 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:29:54,606 INFO [backend.app.api.routes.cloud] [5af22510] get_filament_info called with 1 IDs: ['GFA00']
+2026-11-04 13:29:54,607 INFO [uvicorn.access] [-] [IP]:40958 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-04 13:29:59,101 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-04 13:29:59,178 INFO [uvicorn.access] [-] [IP]:41018 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:29:59,189 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:30:14,971 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:62856
+2026-11-04 13:30:16,905 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] MQTT publish to device/20P90A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20015","version":1}}...
+2026-11-04 13:30:16,905 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] MQTT pushing command: pushall
+2026-11-04 13:30:16,905 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] Sending status report in response to pushall
+2026-11-04 13:30:21,126 INFO [uvicorn.access] [-] [IP]:36420 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:30:21,174 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:30:29,242 INFO [uvicorn.access] [-] [IP]:38462 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:30:29,261 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:30:40,936 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:30:51,189 INFO [uvicorn.access] [-] [IP]:53380 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:30:51,226 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:30:59,320 INFO [uvicorn.access] [-] [IP]:51468 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:30:59,359 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:31:05,329 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-11-04 13:31:05,329 INFO [uvicorn.error] [-] [IP]:35450 - "WebSocket /api/v1/ws?token=[REDACTED]" [accepted]
+2026-11-04 13:31:05,330 INFO [uvicorn.error] [-] connection open
+2026-11-04 13:31:05,330 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-04 13:31:05,331 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-04 13:31:15,057 INFO [backend.app.services.virtual_printer.mqtt_server] [42839c54] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:62856
+2026-11-04 13:31:21,244 INFO [uvicorn.access] [-] [IP]:41006 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:31:21,267 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:31:29,375 INFO [uvicorn.access] [-] [IP]:41008 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 13:31:29,391 INFO [uvicorn.error] [-] connection rejected (426 Upgrade Required)
+2026-11-04 13:31:34,905 INFO [backend.app.api.routes.support] [44056754] Log level changed to DEBUG
+2026-11-04 13:31:34,905 INFO [backend.app.api.routes.bug_report] [44056754] Bug report: enabled debug logging
+2026-11-04 13:31:34,905 DEBUG [backend.app.services.bambu_mqtt] [44056754] [[SERIAL]] Requesting status update (pushall)
+2026-11-04 13:31:34,906 INFO [uvicorn.access] [-] [IP]:59626 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-04 13:31:36,061 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-11-04 13:31:36,061 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: PAUSE, gcode_file: /data/Metadata/plate_3.gcode, subtask_name: Samsung_Washer_Drain_System_plate_3
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'cfs': [2, 3, 4], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '0', 'tray_is_bbl_bits': 'f', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 151}
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x11001103 -> extruder 1
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1}
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=274 (switch_state bits 12-14: 0)
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 26°C (heater OFF)
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=26.0, heating=False, respect_local=False
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 26.0, target: 0.0, heating: False
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_external_free_kb': 48669184, 'tl_external_total_kb': 60077952, 'tl_internal_free_kb': 950929, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-11-04 13:31:36,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-11-04 13:31:36,063 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [2]
+2026-11-04 13:31:36,063 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: PAUSE -> PAUSE, file: /data/Metadata/plate_3.gcode, subtask: Samsung_Washer_Drain_System_plate_3
+2026-11-04 13:31:37,098 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-11-04 13:31:37,098 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-11-04 13:31:37,098 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-11-04 13:31:37,098 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: PAUSE, gcode_file: /data/Metadata/plate_3.gcode, subtask_name: Samsung_Washer_Drain_System_plate_3
+2026-11-04 13:31:37,099 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1}
+2026-11-04 13:31:37,099 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-04 13:31:37,099 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-04 13:31:37,099 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_external_free_kb': 48667904, 'tl_external_total_kb': 60077952, 'tl_internal_free_kb': 950929, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-11-04 13:31:37,099 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-11-04 13:31:37,099 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [2]
+2026-11-04 13:31:37,099 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: PAUSE -> PAUSE, file: /data/Metadata/plate_3.gcode, subtask: Samsung_Washer_Drain_System_plate_3

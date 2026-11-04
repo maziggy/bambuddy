@@ -1,0 +1,200 @@
+2026-11-04 10:45:38,173 INFO [uvicorn.access] [-] [IP]:53918 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-11-04 10:45:38,176 INFO [uvicorn.access] [-] [IP]:60650 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-11-04 10:45:38,420 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS Filament Backup: ON
+2026-11-04 10:45:38,421 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Detected dual-nozzle printer from device.extruder.info
+2026-11-04 10:45:38,421 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Device identification: no known id fields; device.keys=['airduct', 'bed', 'bed_temp', 'cam', 'ctc', 'ext_tool', 'extruder', 'fan', 'fila_switch', 'fourth_axis', 'holder', 'laser', 'nozzle', 'plate', 'screen', 'type']
+2026-11-04 10:45:38,431 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-11-04 10:45:38,432 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-11-04 10:45:38,433 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/2, seq_id=3)
+2026-11-04 10:45:38,439 INFO [backend.app.main] [-] Auto-detected dual-nozzle printer 1, updated nozzle_count=2
+2026-11-04 10:45:38,456 INFO [backend.app.services.spool_tag_matcher] [-] Color resolve: tray_id_name='A00-K0' rgba='000000FF' → resolved='Black'
+2026-11-04 10:45:38,463 INFO [backend.app.services.spool_tag_matcher] [-] Auto-created spool 1 from AMS tray data: PLA Basic Black (tag=2E8A4E9700000100 uuid=AA787818626C499FAC9BC1D460918E45)
+2026-11-04 10:45:38,465 INFO [backend.app.services.spool_tag_matcher] [-] Auto-assigned spool 1 to printer 1 AMS0-T0 (RFID match)
+2026-11-04 10:45:38,470 INFO [backend.app.main] [-] RFID auto-assigned spool 1 to printer 1 AMS0-T0
+2026-11-04 10:45:38,477 INFO [uvicorn.access] [-] [IP]:53918 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-11-04 10:45:38,493 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=3, 0 profiles, matched=True
+2026-11-04 10:45:38,495 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-11-04 10:45:38,495 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-11-04 10:45:38,495 INFO [backend.app.main] [-] [Printer 1] Primed K-profile table for nozzle 0.4: 0 profiles
+2026-11-04 10:45:38,501 INFO [backend.app.services.spool_tag_matcher] [-] Color resolve: tray_id_name='A00-D0' rgba='8E9089FF' → resolved='Gray'
+2026-11-04 10:45:38,509 INFO [backend.app.services.spool_tag_matcher] [-] Auto-created spool 2 from AMS tray data: PLA Basic Gray (tag=EE8B8F9600000100 uuid=1ABB47518D744AB8975BBD26985CF8FB)
+2026-11-04 10:45:38,510 INFO [backend.app.services.spool_tag_matcher] [-] Auto-assigned spool 2 to printer 1 AMS0-T1 (RFID match)
+2026-11-04 10:45:38,512 INFO [backend.app.main] [-] RFID auto-assigned spool 2 to printer 1 AMS0-T1
+2026-11-04 10:45:38,517 INFO [backend.app.services.spool_tag_matcher] [-] Color resolve: tray_id_name='A00-W1' rgba='FFFFFFFF' → resolved='Jade White'
+2026-11-04 10:45:38,527 INFO [backend.app.services.spool_tag_matcher] [-] Auto-created spool 3 from AMS tray data: PLA Basic Jade White (tag=5ECF18B400000100 uuid=4DD4919A907A4A5382174C590EAD4FCE)
+2026-11-04 10:45:38,537 INFO [backend.app.services.spool_tag_matcher] [-] Auto-assigned spool 3 to printer 1 AMS0-T2 (RFID match)
+2026-11-04 10:45:38,540 INFO [backend.app.main] [-] RFID auto-assigned spool 3 to printer 1 AMS0-T2
+2026-11-04 10:45:38,546 INFO [backend.app.services.spool_tag_matcher] [-] Color resolve: tray_id_name='A00-G6' rgba='00AE42FF' → resolved='Bambu Green'
+2026-11-04 10:45:38,549 INFO [backend.app.services.spool_tag_matcher] [-] Auto-created spool 4 from AMS tray data: PLA Basic Bambu Green (tag=6E8CCDB400000100 uuid=6B6976DB1D50438EB71DFF441358A2E0)
+2026-11-04 10:45:38,554 INFO [backend.app.services.spool_tag_matcher] [-] Auto-assigned spool 4 to printer 1 AMS0-T3 (RFID match)
+2026-11-04 10:45:38,561 INFO [backend.app.api.routes.cloud] [715b6aae] get_filament_info called with 1 IDs: ['GFA00']
+2026-11-04 10:45:38,563 INFO [backend.app.main] [-] RFID auto-assigned spool 4 to printer 1 AMS0-T3
+2026-11-04 10:45:38,568 INFO [uvicorn.access] [-] [IP]:60650 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-04 10:45:39,226 INFO [backend.app.services.firmware_check] [be0c444a] Got Bambu Lab build ID: -4flGW-BFrCPQUXeNhLc8
+2026-11-04 10:45:49,366 INFO [uvicorn.access] [-] [IP]:63185 - "POST /api/v1/announcements/84104c2aceeda039/read HTTP/1.1" 204
+2026-11-04 10:46:23,117 INFO [backend.app.services.camera] [146ee5a4] Found ffmpeg at: /usr/bin/ffmpeg
+2026-11-04 10:46:23,705 INFO [backend.app.services.mqtt_relay] [93e761b2] MQTT relay disabled
+2026-11-04 10:46:23,707 INFO [uvicorn.access] [-] [IP]:52846 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-11-04 10:46:27,055 INFO [uvicorn.access] [-] [IP]:52846 - "PATCH /api/v1/printers/1 HTTP/1.1" 200
+2026-11-04 10:46:35,743 INFO [uvicorn.access] [-] [IP]:52846 - "PATCH /api/v1/printers/1 HTTP/1.1" 200
+2026-11-04 10:46:39,289 INFO [backend.app.services.mqtt_relay] [489d6db5] MQTT relay disabled
+2026-11-04 10:46:39,292 INFO [uvicorn.access] [-] [IP]:54200 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-11-04 10:46:46,658 INFO [backend.app.services.mqtt_relay] [d9a7b822] MQTT relay disabled
+2026-11-04 10:46:46,660 INFO [uvicorn.access] [-] [IP]:54200 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-11-04 10:46:50,357 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-04 10:47:01,154 INFO [backend.app.services.mqtt_relay] [214ac717] MQTT relay disabled
+2026-11-04 10:47:01,157 INFO [uvicorn.access] [-] [IP]:51677 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-11-04 10:47:42,052 INFO [backend.app.services.mqtt_relay] [5c691502] MQTT relay disabled
+2026-11-04 10:47:42,055 INFO [uvicorn.access] [-] [IP]:64062 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-11-04 10:47:47,195 INFO [backend.app.services.mqtt_relay] [e4f68ce0] MQTT relay disabled
+2026-11-04 10:47:47,198 INFO [uvicorn.access] [-] [IP]:64062 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-11-04 10:47:52,157 INFO [backend.app.services.mqtt_relay] [d130a495] MQTT relay disabled
+2026-11-04 10:47:52,159 INFO [uvicorn.access] [-] [IP]:53350 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-11-04 10:48:25,343 INFO [backend.app.api.routes.inventory] [7f6d50c3] AMS weight sync: found 4 assignments
+2026-11-04 10:48:25,343 INFO [uvicorn.access] [-] [IP]:55994 - "POST /api/v1/inventory/sync-ams-weights HTTP/1.1" 200
+2026-11-04 10:48:48,742 INFO [backend.app.services.virtual_printer.certificate] [a291b111] Generating new Virtual Printer CA certificate...
+2026-11-04 10:48:48,879 INFO [backend.app.services.virtual_printer.certificate] [a291b111] Saved new CA certificate
+2026-11-04 10:49:04,494 INFO [uvicorn.access] [-] [IP]:59959 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-11-04 10:49:05,379 INFO [uvicorn.access] [-] [IP]:59959 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-11-04 10:49:37,989 INFO [backend.app.services.camera] [3c25f6df] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-04 10:49:40,691 INFO [backend.app.services.camera] [3c25f6df] Successfully captured camera frame bytes: 300591 bytes
+2026-11-04 10:49:40,692 INFO [backend.app.services.camera] [3c25f6df] Saved camera frame to: /tmp/tmp5jqghtyg.jpg
+2026-11-04 10:49:50,124 INFO [backend.app.services.camera] [222fa97b] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-04 10:49:51,790 INFO [backend.app.services.camera] [222fa97b] Successfully captured camera frame bytes: 281925 bytes
+2026-11-04 10:49:51,790 INFO [backend.app.services.camera] [222fa97b] Saved camera frame to: /tmp/tmpc78phoyt.jpg
+2026-11-04 10:49:51,804 INFO [backend.app.services.plate_detection] [222fa97b] Saved reference image: /opt/[user]/data/plate_calibration/printer_1_ref_0.jpg (444664 bytes)
+2026-11-04 10:49:51,805 INFO [backend.app.services.plate_detection] [222fa97b] Saved plate calibration reference 1/5 for printer 1
+2026-11-04 10:49:51,805 INFO [uvicorn.access] [-] [IP]:61280 - "POST /api/v1/printers/1/camera/plate-detection/calibrate HTTP/1.1" 200
+2026-11-04 10:49:51,825 INFO [backend.app.services.camera] [26de96b7] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-04 10:49:53,476 INFO [backend.app.services.camera] [26de96b7] Successfully captured camera frame bytes: 267608 bytes
+2026-11-04 10:49:53,477 INFO [backend.app.services.camera] [26de96b7] Saved camera frame to: /tmp/tmptf_iot3h.jpg
+2026-11-04 10:50:04,881 INFO [backend.app.services.camera] [9fec271f] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-04 10:50:06,548 INFO [backend.app.services.camera] [9fec271f] Successfully captured camera frame bytes: 279477 bytes
+2026-11-04 10:50:06,548 INFO [backend.app.services.camera] [9fec271f] Saved camera frame to: /tmp/tmp68xybq0c.jpg
+2026-11-04 10:50:06,560 INFO [backend.app.services.plate_detection] [9fec271f] Saved reference image: /opt/[user]/data/plate_calibration/printer_1_ref_1.jpg (440604 bytes)
+2026-11-04 10:50:06,560 INFO [backend.app.services.plate_detection] [9fec271f] Saved plate calibration reference 2/5 for printer 1
+2026-11-04 10:50:06,561 INFO [uvicorn.access] [-] [IP]:55206 - "POST /api/v1/printers/1/camera/plate-detection/calibrate HTTP/1.1" 200
+2026-11-04 10:50:06,581 INFO [backend.app.services.camera] [f89fe5f5] Capturing camera frame bytes from [IP] using RTSP (model: X2D)
+2026-11-04 10:50:08,284 INFO [backend.app.services.camera] [f89fe5f5] Successfully captured camera frame bytes: 271813 bytes
+2026-11-04 10:50:08,284 INFO [backend.app.services.camera] [f89fe5f5] Saved camera frame to: /tmp/tmpkazgpy92.jpg
+2026-11-04 10:50:12,031 INFO [uvicorn.access] [-] [IP]:59038 - "PATCH /api/v1/printers/1 HTTP/1.1" 200
+2026-11-04 10:51:50,361 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-04 10:56:34,971 INFO [uvicorn.access] [-] [IP]:54015 - "POST /api/v1/cloud/login HTTP/1.1" 200
+2026-11-04 10:56:50,366 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-04 10:56:50,829 INFO [uvicorn.access] [-] [IP]:61443 - "POST /api/v1/cloud/verify HTTP/1.1" 200
+2026-11-04 10:57:00,083 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-04 10:57:00,348 INFO [uvicorn.access] [-] [IP]:60902 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-04 10:57:00,349 INFO [uvicorn.access] [-] [IP]:53173 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-04 10:57:00,352 INFO [uvicorn.access] [-] [IP]:54091 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 10:57:00,367 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-11-04 10:57:00,367 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-04 10:57:00,367 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-04 10:57:01,329 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-04 10:57:01,538 INFO [uvicorn.access] [-] [IP]:60902 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-04 10:57:01,543 INFO [uvicorn.access] [-] [IP]:63588 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-04 10:57:01,545 INFO [uvicorn.access] [-] [IP]:62955 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 10:57:01,560 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-11-04 10:57:01,560 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-04 10:57:01,560 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-04 10:57:36,326 INFO [backend.app.api.routes.cloud] [26f6e564] get_filament_info called with 1 IDs: ['GFA00']
+2026-11-04 10:57:36,561 INFO [uvicorn.access] [-] [IP]:62850 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-04 11:01:21,449 INFO [uvicorn.access] [-] [IP]:55598 - "POST /api/v1/makerworld/resolve HTTP/1.1" 200
+2026-11-04 11:01:35,145 INFO [uvicorn.access] [-] [IP]:63414 - "POST /api/v1/makerworld/import HTTP/1.1" 502
+2026-11-04 11:01:50,370 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-04 11:02:32,982 INFO [uvicorn.access] [-] [IP]:62769 - "POST /api/v1/makerworld/import HTTP/1.1" 502
+2026-11-04 11:02:35,916 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-04 11:02:36,160 INFO [uvicorn.access] [-] [IP]:62349 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-04 11:02:36,164 INFO [uvicorn.access] [-] [IP]:65018 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 11:02:36,173 INFO [uvicorn.access] [-] [IP]:53591 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-04 11:02:36,180 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-11-04 11:02:36,180 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-04 11:02:36,180 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-04 11:02:39,374 INFO [uvicorn.access] [-] [IP]:62769 - "POST /api/v1/makerworld/resolve HTTP/1.1" 200
+2026-11-04 11:02:41,111 INFO [uvicorn.access] [-] [IP]:62769 - "POST /api/v1/makerworld/import HTTP/1.1" 502
+2026-11-04 11:02:52,025 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-04 11:02:52,199 INFO [uvicorn.access] [-] [IP]:54615 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-04 11:02:52,206 INFO [uvicorn.access] [-] [IP]:62094 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 11:02:52,216 INFO [uvicorn.access] [-] [IP]:50160 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-04 11:02:52,225 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-11-04 11:02:52,226 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-04 11:02:52,226 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-04 11:02:54,650 INFO [uvicorn.access] [-] [IP]:52582 - "POST /api/v1/makerworld/resolve HTTP/1.1" 200
+2026-11-04 11:02:56,323 INFO [uvicorn.access] [-] [IP]:52582 - "POST /api/v1/makerworld/import HTTP/1.1" 502
+2026-11-04 11:03:07,077 INFO [uvicorn.access] [-] [IP]:52582 - "POST /api/v1/makerworld/import HTTP/1.1" 502
+2026-11-04 11:03:13,616 INFO [backend.app.api.routes.support] [0a01c09b] Log level changed to DEBUG
+2026-11-04 11:03:13,616 INFO [backend.app.api.routes.bug_report] [0a01c09b] Bug report: enabled debug logging
+2026-11-04 11:03:13,616 DEBUG [backend.app.services.bambu_mqtt] [0a01c09b] [[SERIAL]] Requesting status update (pushall)
+2026-11-04 11:03:13,616 INFO [uvicorn.access] [-] [IP]:59669 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-04 11:03:14,855 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-11-04 11:03:14,855 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-11-04 11:03:14,855 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-11-04 11:03:14,856 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-11-04 11:03:14,856 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'cfs': [], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '0', 'tray_is_bbl_bits': 'f', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 17}
+2026-11-04 11:03:14,856 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-11-04 11:03:14,856 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-04 11:03:14,856 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x11001103 -> extruder 1
+2026-11-04 11:03:14,856 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1}
+2026-11-04 11:03:14,856 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-11-04 11:03:14,856 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-04 11:03:14,856 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=274 (switch_state bits 12-14: 0)
+2026-11-04 11:03:14,856 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 22°C (heater OFF)
+2026-11-04 11:03:14,856 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-11-04 11:03:14,856 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=22.0, heating=False, respect_local=False
+2026-11-04 11:03:14,856 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 22.0, target: 0.0, heating: False
+2026-11-04 11:03:14,857 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-04 11:03:14,857 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_external_free_kb': 51688448, 'tl_external_total_kb': 60077952, 'tl_internal_free_kb': 950929, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-11-04 11:03:14,857 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -58dBm
+2026-11-04 11:03:14,857 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-11-04 11:03:14,857 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-11-04 11:03:14,857 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-11-04 11:03:15,905 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-11-04 11:03:15,905 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-11-04 11:03:15,905 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-11-04 11:03:15,905 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-11-04 11:03:15,905 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1}
+2026-11-04 11:03:15,905 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-04 11:03:15,906 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-04 11:03:15,906 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-11-04 11:03:15,906 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-11-04 11:03:15,906 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-11-04 11:03:17,188 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-11-04 11:03:17,189 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-11-04 11:03:17,189 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-11-04 11:03:17,189 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-11-04 11:03:17,189 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1}
+2026-11-04 11:03:17,189 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-04 11:03:17,189 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-04 11:03:17,189 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-11-04 11:03:17,190 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-11-04 11:03:17,190 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-11-04 11:03:17,209 INFO [uvicorn.access] [-] [IP]:59669 - "POST /api/v1/makerworld/import HTTP/1.1" 502
+2026-11-04 11:03:18,250 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-11-04 11:03:18,250 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-11-04 11:03:18,251 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-11-04 11:03:18,251 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-11-04 11:03:18,251 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1}
+2026-11-04 11:03:18,251 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-04 11:03:18,251 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-04 11:03:18,251 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-11-04 11:03:18,251 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-11-04 11:03:18,252 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-11-04 11:03:19,535 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-11-04 11:03:19,535 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-11-04 11:03:19,535 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-11-04 11:03:19,535 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-11-04 11:03:19,535 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1}
+2026-11-04 11:03:19,536 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-04 11:03:19,536 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-04 11:03:19,536 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-11-04 11:03:19,536 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-11-04 11:03:19,536 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-11-04 11:03:20,584 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 8089015, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-11-04 11:03:20,584 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-11-04 11:03:20,584 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8089015 (binary: 0b11110110110110110110111)
+2026-11-04 11:03:20,584 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-11-04 11:03:20,585 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1}
+2026-11-04 11:03:20,585 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-04 11:03:20,585 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-04 11:03:20,585 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-11-04 11:03:20,585 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-11-04 11:03:20,585 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 

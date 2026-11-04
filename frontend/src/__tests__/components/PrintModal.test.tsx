@@ -3226,7 +3226,10 @@ describe('PrintModal default printer', () => {
 describe('PrintModal — "Force color match" on a specific printer is saved (#3445)', () => {
   const mockOnClose = vi.fn();
 
-  const PRINTERS = [{ id: 1, name: 'Printer 01', model: 'P1S', ip_address: '192.168.1.101', enabled: true, is_active: true }];
+  const PRINTERS = [
+    { id: 1, name: 'Printer 01', model: 'P1S', ip_address: '192.168.1.101', enabled: true, is_active: true },
+    { id: 2, name: 'Printer 02', model: 'P1S', ip_address: '192.168.1.102', enabled: true, is_active: true },
+  ];
   // Sliced in white; the printer holds green (tray 0) and black (tray 1), no white.
   const SLOT_1_WHITE = { slot_id: 1, type: 'PLA', color: '#CBC6B8', tray_info_idx: 'GFA01', used_grams: 50 };
 
@@ -3392,6 +3395,38 @@ describe('PrintModal — "Force color match" on a specific printer is saved (#34
     expect(patched[0].filament_overrides).toEqual([
       expect.objectContaining({ slot_id: 1, color: '#68724D', force_color_match: true }),
     ]);
+  });
+
+  it("does not force a slot whose chosen tray can't be read", async () => {
+    // The printer is off: no trays to say what the slot is set to.
+    server.use(
+      http.get('/api/v1/printers/:id/status', () =>
+        HttpResponse.json({ connected: false, state: 'OFFLINE', ams: [], vt_tray: [] }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={printer01Item()} onClose={mockOnClose} />);
+
+    await user.click(await openMapping(user));
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    // Not "wait for white": that would hold the job off the black tray picked for it.
+    expect(patched[0].filament_overrides ?? null).toBeNull();
+  });
+
+  it('does not save a tick whose box went away when a second printer was added', async () => {
+    const user = userEvent.setup();
+    render(<PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={printer01Item()} onClose={mockOnClose} />);
+
+    await user.click(await openMapping(user));
+    await user.click(screen.getByText('Printer 02'));
+    await waitFor(() => expect(screen.queryByRole('checkbox', { name: /force color match/i })).not.toBeInTheDocument());
+    await submit(user);
+
+    // The edited job stays on printer 01, a copy goes to printer 02.
+    await waitFor(() => expect(patched.length + posted.length).toBe(2));
+    for (const job of [...patched, ...posted]) expect(job.filament_overrides ?? null).toBeNull();
   });
 
   it('waits for the sliced colour when the box is ticked on a tray the dialog matched itself', async () => {

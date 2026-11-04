@@ -1308,20 +1308,29 @@ export function PrintModal({
     };
     const printerOverridesForPlate = (printerId: number | null, plateId: number | null) => {
       const loaded = printerId != null ? buildLoadedFilaments(statusForPrinter(printerId)) : [];
+      // The box is only on screen with one printer selected; a tick left over
+      // from before more were added is not saved.
+      const ticksShown = selectedPrinters.length === 1;
       const entries = overridesForPlate(plateId)
-        ?.filter((o) => filamentOverrides[o.slot_id] || o.force_color_match)
-        .map((o) => {
+        ?.flatMap((o) => {
+          const changed = !!filamentOverrides[o.slot_id];
+          if (!changed && !(o.force_color_match && ticksShown)) return [];
           const tray = o.force_color_match && printerId != null ? chosenTray(printerId, plateId, o.slot_id) : undefined;
-          const filament = tray != null ? loaded.find((f) => f.globalTrayId === tray) : undefined;
-          if (!filament) return o;
-          return {
+          if (tray == null) return [o];
+          const filament = loaded.find((f) => f.globalTrayId === tray);
+          // A chosen tray that can't be read now (printer off, tray emptied)
+          // says nothing about the filament wanted: asking for the sliced one
+          // would hold the job against the user's own pick. Saved unforced,
+          // as before #3445.
+          if (!filament) return changed ? [{ ...o, force_color_match: false }] : [];
+          return [{
             slot_id: o.slot_id,
             type: filament.type,
             color: filament.color,
             color_name: filament.colorName,
             ...(filament.trayInfoIdx ? { tray_info_idx: filament.trayInfoIdx } : {}),
             force_color_match: true,
-          };
+          }];
         });
       return entries && entries.length > 0 ? entries : undefined;
     };

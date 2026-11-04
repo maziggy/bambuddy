@@ -1,0 +1,200 @@
+2026-11-04 16:14:34,028 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-11-04 16:14:34,028 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnected shortly after request topic subscription (1/2). Retrying it on the next connection before giving up.
+2026-11-04 16:14:34,029 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-04 16:14:34,219 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-11-04 16:14:34,219 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-11-04 16:14:34,219 INFO [backend.app.services.ha_sensor_manager] [-] Home Assistant sensor poller started
+2026-11-04 16:14:34,220 INFO [backend.app.services.location_ha_sensor_manager] [-] Home Assistant location-sensor poller started
+2026-11-04 16:14:34,236 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-11-04 16:14:34,248 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-11-04 16:14:34,249 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-11-04 16:14:34,249 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-11-04 16:14:34,256 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-11-04 16:14:34,257 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-11-04 16:14:34,257 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-11-04 16:14:34,257 INFO [backend.app.main] [-] AMS history recording started
+2026-11-04 16:14:34,258 INFO [backend.app.main] [-] Printer sensor history recording started
+2026-11-04 16:14:34,258 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-11-04 16:14:34,258 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-11-04 16:14:34,258 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-11-04 16:14:34,258 INFO [backend.app.main] [-] Printer connection watchdog started
+2026-11-04 16:14:34,371 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-11-04 16:14:34,371 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-11-04 16:14:34,372 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-11-04 16:14:34,378 INFO [root] [-] Virtual printer manager synced from database
+2026-11-04 16:14:34,481 INFO [backend.app.services.print_scheduler] [-] Print scheduler stopped
+2026-11-04 16:14:34,482 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler stopped
+2026-11-04 16:14:34,482 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop stopped
+2026-11-04 16:14:34,482 INFO [backend.app.services.ha_sensor_manager] [-] Home Assistant sensor poller stopped
+2026-11-04 16:14:34,482 INFO [backend.app.services.location_ha_sensor_manager] [-] Home Assistant location-sensor poller stopped
+2026-11-04 16:14:34,482 INFO [backend.app.services.notification_service] [-] Notification digest scheduler stopped
+2026-11-04 16:14:34,483 INFO [backend.app.services.github_backup] [-] Stopped GitHub backup scheduler
+2026-11-04 16:14:34,483 INFO [backend.app.services.local_backup] [-] Stopped local backup scheduler
+2026-11-04 16:14:34,483 INFO [backend.app.services.library_trash] [-] Stopped library trash sweeper
+2026-11-04 16:14:34,483 INFO [backend.app.services.archive_purge] [-] Stopped archive auto-purge sweeper
+2026-11-04 16:14:34,483 INFO [backend.app.services.obico_detection] [-] Stopped Obico detection service
+2026-11-04 16:14:34,483 INFO [backend.app.main] [-] AMS history recording stopped
+2026-11-04 16:14:34,484 INFO [backend.app.main] [-] Printer sensor history recording stopped
+2026-11-04 16:14:34,484 INFO [backend.app.main] [-] Printer runtime tracking stopped
+2026-11-04 16:14:34,484 INFO [backend.app.main] [-] SpoolBuddy watchdog stopped
+2026-11-04 16:14:34,484 INFO [backend.app.main] [-] Camera stream cleanup stopped
+2026-11-04 16:14:34,484 INFO [backend.app.main] [-] Printer connection watchdog stopped
+2026-11-04 16:14:34,485 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog stopped
+2026-11-04 16:14:34,485 INFO [backend.app.main] [-] Expected prints cleanup stopped
+2026-11-04 16:14:34,485 INFO [backend.app.main] [-] Auth periodic cleanup stopped
+2026-11-04 16:14:34,487 INFO [backend.app.services.virtual_printer.manager] [-] Stopping all virtual printer services...
+2026-11-04 16:14:34,487 INFO [backend.app.services.virtual_printer.manager] [-] All virtual printer services stopped
+2026-11-04 16:14:34,534 INFO [root] [-] WAL checkpoint completed
+2026-11-04 16:14:41,361 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-11-04 16:14:41,362 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-11-04 16:14:44,609 INFO [backend.app.services.mqtt_relay] [-] MQTT relay disabled
+2026-11-04 16:14:45,413 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-11-04 16:14:45,414 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnected shortly after request topic subscription (1/2). Retrying it on the next connection before giving up.
+2026-11-04 16:14:45,414 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-04 16:14:45,631 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-11-04 16:14:45,632 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-11-04 16:14:45,632 INFO [backend.app.services.ha_sensor_manager] [-] Home Assistant sensor poller started
+2026-11-04 16:14:45,632 INFO [backend.app.services.location_ha_sensor_manager] [-] Home Assistant location-sensor poller started
+2026-11-04 16:14:45,647 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-11-04 16:14:45,657 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-11-04 16:14:45,671 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-11-04 16:14:45,671 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-11-04 16:14:45,680 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-11-04 16:14:45,680 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-11-04 16:14:45,680 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-11-04 16:14:45,680 INFO [backend.app.main] [-] AMS history recording started
+2026-11-04 16:14:45,680 INFO [backend.app.main] [-] Printer sensor history recording started
+2026-11-04 16:14:45,680 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-11-04 16:14:45,680 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-11-04 16:14:45,681 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-11-04 16:14:45,681 INFO [backend.app.main] [-] Printer connection watchdog started
+2026-11-04 16:14:45,763 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-11-04 16:14:45,763 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-11-04 16:14:45,764 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-11-04 16:14:45,776 INFO [root] [-] Virtual printer manager synced from database
+2026-11-04 16:14:47,215 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-11-04 16:14:47,224 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-11-04 16:14:47,224 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnected shortly after request topic subscription 2 times. Disabling request topic for this printer — ams_mapping capture from slicer-initiated prints is unavailable, and their filament will be attributed from the printer's own tray reporting instead.
+2026-11-04 16:14:47,225 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-04 16:14:48,789 INFO [uvicorn.access] [-] [IP]:56522 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 16:14:48,961 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-04 16:14:48,963 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-04 16:14:48,963 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-04 16:14:49,001 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-11-04 16:14:49,045 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Firmware version: 01.08.01.00
+2026-11-04 16:14:49,892 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-11-04 16:14:49,894 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-11-04 16:14:49,913 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/2, seq_id=7)
+2026-11-04 16:14:49,956 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=7, 0 profiles, matched=True
+2026-11-04 16:14:49,956 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-11-04 16:14:49,956 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-11-04 16:14:49,956 INFO [backend.app.main] [-] [Printer 1] Primed K-profile table for nozzle 0.4: 0 profiles
+2026-11-04 16:14:55,954 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=8)
+2026-11-04 16:14:55,964 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Developer mode probe: ENABLED (result='success')
+2026-11-04 16:15:15,708 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-11-04 16:15:32,864 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-04 16:15:34,702 INFO [uvicorn.access] [-] [IP]:44932 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-04 16:15:34,734 INFO [uvicorn.access] [-] [IP]:44914 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-04 16:15:34,840 INFO [uvicorn.access] [-] [IP]:44996 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 16:15:35,228 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-04 16:15:35,238 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-04 16:15:35,239 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-04 16:15:37,288 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-04 16:15:38,072 INFO [uvicorn.access] [-] [IP]:45340 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-04 16:15:38,115 INFO [uvicorn.access] [-] [IP]:45324 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-04 16:15:38,155 INFO [uvicorn.access] [-] [IP]:45428 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-04 16:15:38,498 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-04 16:15:38,514 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-04 16:15:38,514 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-04 16:15:46,016 INFO [backend.app.services.announcements] [-] Announcements feed #18: 2 for this install
+2026-11-04 16:26:48,125 INFO [uvicorn.access] [-] [IP]:54228 - "POST /api/v1/announcements/84104c2aceeda039/read HTTP/1.1" 204
+2026-11-04 16:31:43,025 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-11-04 16:31:43,026 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnected shortly after request topic subscription (1/2). Retrying it on the next connection before giving up.
+2026-11-04 16:31:44,819 INFO [uvicorn.access] [-] [IP]:55578 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-11-04 16:31:45,765 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-11-04 16:31:45,765 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnected shortly after request topic subscription 2 times. Disabling request topic for this printer — ams_mapping capture from slicer-initiated prints is unavailable, and their filament will be attributed from the printer's own tray reporting instead.
+2026-11-04 16:31:47,695 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Firmware version: 01.08.01.00
+2026-11-04 16:31:47,695 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS unit 0: serial number not available in version info
+2026-11-04 16:31:47,695 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS unit 0: firmware version not available in version info
+2026-11-04 16:31:48,654 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Firmware version: 01.08.01.00
+2026-11-04 16:31:48,729 INFO [backend.app.main] [-] [Printer 2] Broadcasting AMS change via WebSocket
+2026-11-04 16:31:48,732 INFO [backend.app.main] [-] [Printer 2] Broadcasting AMS change via WebSocket
+2026-11-04 16:31:48,736 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/2, seq_id=3)
+2026-11-04 16:31:48,770 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=3, 0 profiles, matched=True
+2026-11-04 16:31:48,771 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-11-04 16:31:48,772 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-11-04 16:31:48,772 INFO [backend.app.main] [-] [Printer 2] Primed K-profile table for nozzle 0.4: 0 profiles
+2026-11-04 16:31:48,807 INFO [uvicorn.access] [-] [IP]:37786 - "POST /api/v1/printers/ HTTP/1.1" 200
+2026-11-04 16:31:48,815 INFO [backend.app.services.spool_tag_matcher] [-] Color resolve: tray_id_name='A01-K1' rgba='000000FF' → resolved='Charcoal'
+2026-11-04 16:31:48,824 INFO [backend.app.services.spool_tag_matcher] [-] Auto-created spool 28 from AMS tray data: PLA Matte Charcoal (tag=55EF1A0400000100 uuid=0D890B56EC0343D48DC5D76405FEFAE9)
+2026-11-04 16:31:48,828 INFO [backend.app.services.spool_tag_matcher] [-] Auto-assigned spool 28 to printer 2 AMS0-T2 (RFID match)
+2026-11-04 16:31:48,834 INFO [backend.app.main] [-] RFID auto-assigned spool 28 to printer 2 AMS0-T2
+2026-11-04 16:31:48,891 INFO [uvicorn.access] [-] [IP]:37838 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-11-04 16:31:48,895 INFO [uvicorn.access] [-] [IP]:37850 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-11-04 16:31:49,071 INFO [backend.app.api.routes.cloud] [c7e67956] get_filament_info called with 2 IDs: ['GFL03', 'GFA01']
+2026-11-04 16:31:49,088 INFO [uvicorn.access] [-] [IP]:37876 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-04 16:31:54,812 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=4)
+2026-11-04 16:31:54,825 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Developer mode probe: ENABLED (result='success')
+2026-11-04 16:32:50,536 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-11-04 16:32:50,562 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-11-04 16:34:50,508 INFO [backend.app.services.camera] [4f691320] Found ffmpeg at: /usr/bin/ffmpeg
+2026-11-04 16:34:55,888 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-04 16:35:03,658 INFO [backend.app.services.homeassistant] [0aede7f6] Turned OFF HA entity 'Bambu Lab A1 Mini Presa' (switch.bambu_lab_socket_1)
+2026-11-04 16:35:03,659 INFO [backend.app.services.printer_manager] [0aede7f6] Marking printer 1 as offline (smart plug power off)
+2026-11-04 16:35:03,682 INFO [backend.app.main] [0aede7f6] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-04 16:35:03,695 INFO [uvicorn.access] [-] [IP]:45752 - "POST /api/v1/smart-plugs/1/control HTTP/1.1" 200
+2026-11-04 16:35:04,650 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Printer still responding after presumed power-off — restoring state IDLE
+2026-11-04 16:35:04,651 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-11-04 16:35:04,654 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/2, seq_id=9)
+2026-11-04 16:35:04,694 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=9, 0 profiles, matched=True
+2026-11-04 16:35:04,694 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-11-04 16:35:04,695 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-11-04 16:35:04,695 INFO [backend.app.main] [-] [Printer 1] Primed K-profile table for nozzle 0.4: 0 profiles
+2026-11-04 16:36:01,754 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-11-04 16:36:01,755 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-11-04 16:36:01,756 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-04 16:36:54,696 INFO [backend.app.api.routes.smart_plugs] [86493955] Created Home Assistant plug 'Bambu Lab A1 Presa' (switch.a1_socket_1)
+2026-11-04 16:36:54,696 INFO [uvicorn.access] [-] [IP]:58548 - "POST /api/v1/smart-plugs/ HTTP/1.1" 200
+2026-11-04 16:37:01,758 INFO [backend.app.main] [-] [#1752] Printer 1 offline debounce elapsed: still_offline=True
+2026-11-04 16:37:01,760 INFO [backend.app.main] [-] [#1752] Dispatching on_printer_offline for printer 1 ([PRINTER])
+2026-11-04 16:37:56,979 INFO [backend.app.services.mqtt_relay] [24e49ca4] MQTT relay disabled
+2026-11-04 16:37:56,984 INFO [uvicorn.access] [-] [IP]:47882 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-11-04 16:38:24,720 INFO [backend.app.services.mqtt_relay] [1f402513] MQTT relay disabled
+2026-11-04 16:38:24,724 INFO [uvicorn.access] [-] [IP]:60510 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-11-04 16:38:25,794 INFO [backend.app.services.mqtt_relay] [d5133bee] MQTT relay disabled
+2026-11-04 16:38:25,797 INFO [uvicorn.access] [-] [IP]:60550 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-11-04 16:39:18,237 INFO [backend.app.services.mqtt_relay] [2023c7bb] MQTT relay disabled
+2026-11-04 16:39:18,241 INFO [uvicorn.access] [-] [IP]:46820 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-11-04 16:39:21,927 INFO [backend.app.services.mqtt_relay] [4fa3a546] MQTT relay disabled
+2026-11-04 16:39:21,931 INFO [uvicorn.access] [-] [IP]:46846 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-11-04 16:39:23,736 INFO [backend.app.services.mqtt_relay] [eb1d1b1d] MQTT relay disabled
+2026-11-04 16:39:23,740 INFO [uvicorn.access] [-] [IP]:59898 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-11-04 16:39:55,898 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-04 16:40:35,787 INFO [backend.app.api.routes.support] [19f9d62a] Log level changed to DEBUG
+2026-11-04 16:40:35,787 INFO [backend.app.api.routes.bug_report] [19f9d62a] Bug report: enabled debug logging
+2026-11-04 16:40:35,788 WARNING [backend.app.services.bambu_mqtt] [19f9d62a] [[SERIAL]] request_status_update: not connected
+2026-11-04 16:40:35,788 DEBUG [backend.app.services.bambu_mqtt] [19f9d62a] [[SERIAL]] Requesting status update (pushall)
+2026-11-04 16:40:35,790 INFO [uvicorn.access] [-] [IP]:51158 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-04 16:40:35,822 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-11-04 16:40:35,822 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-11-04 16:40:35,823 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-11-04 16:40:35,823 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'd', 'tray_is_bbl_bits': 'd', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'd', 'tray_reading_bits': '0', 'version': 6, 'insert_flag': True, 'power_on_flag': False}
+2026-11-04 16:40:35,823 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-11-04 16:40:35,823 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-04 16:40:35,824 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-11-04 16:40:35,824 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-11-04 16:40:35,824 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-11-04 16:40:35,824 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-04 16:40:35,825 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-11-04 16:40:35,825 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-11-04 16:40:35,825 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-11-04 16:40:35,826 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-11-04 16:40:35,826 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-04 16:40:35,827 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-11-04 16:40:35,827 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -68dBm
+2026-11-04 16:40:35,827 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-11-04 16:40:35,828 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-11-04 16:40:37,858 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-04 16:40:37,858 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -70dBm
+2026-11-04 16:40:39,872 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-04 16:40:39,872 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -69dBm

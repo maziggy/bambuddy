@@ -26,7 +26,7 @@ from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled, is_auth_enabled
+from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled, is_request_auth_enabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope, location_grantees
@@ -86,7 +86,7 @@ async def _ensure_all_in_scope(db: AsyncSession, scope: PrinterScope, names: set
 
 async def _ensure_admin_for_access_change(db: AsyncSession, user: User | None, grantees: list[str]) -> None:
     """Moving printers into or out of a granted location changes who reaches them (#1727)."""
-    if grantees and await is_auth_enabled(db) and not (user is not None and user.is_admin):
+    if grantees and await is_request_auth_enabled(db) and not (user is not None and user.is_admin):
         raise HTTPException(
             status_code=403,
             detail=(

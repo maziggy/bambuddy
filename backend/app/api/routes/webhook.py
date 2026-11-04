@@ -12,7 +12,7 @@ from backend.app.core.auth import (
     check_webhook_permission,
     ensure_api_key_printer_access,
     get_api_key,
-    is_auth_enabled,
+    is_request_auth_enabled,
     queue_review_required_for,
     resolve_apikey_owner,
 )
@@ -109,7 +109,7 @@ def _job_id(subtask_id) -> str | None:
 async def _key_actor(db: AsyncSession, api_key: APIKey) -> ApiKeyActor | None:
     """The key acting for its owner; None with auth off, where there is no owner
     to act for (as on POST /queue/) and the key's printers still apply."""
-    return ApiKeyActor(api_key, await resolve_apikey_owner(db, api_key)) if await is_auth_enabled(db) else None
+    return ApiKeyActor(api_key, await resolve_apikey_owner(db, api_key)) if await is_request_auth_enabled(db) else None
 
 
 @router.post("/queue/add", response_model=QueueAddResponse)
@@ -172,7 +172,8 @@ async def webhook_add_to_queue(
         # have no `user_id`, and those rows stay ownerless.
         created_by_id=api_key.user_id,
         # Waits for someone to start it unless the owner may print without review (#1620)
-        manual_start=await is_auth_enabled(db) and queue_review_required_for(await resolve_apikey_owner(db, api_key)),
+        manual_start=await is_request_auth_enabled(db)
+        and queue_review_required_for(await resolve_apikey_owner(db, api_key)),
         # No print options in the request: the install's defaults.
         **await default_print_options(db),
         # The slicer's slots, as a reprint from the UI reuses them
@@ -253,7 +254,7 @@ async def webhook_start_print(
     # needs review for their own jobs can't make one for anybody's
     if (
         queue_item.manual_start
-        and await is_auth_enabled(db)
+        and await is_request_auth_enabled(db)
         and queue_review_required_for(await resolve_apikey_owner(db, api_key))
     ):
         raise HTTPException(

@@ -30,7 +30,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.orca_cloud import _build_authenticated_service as _build_orca_service
-from backend.app.core.auth import is_auth_enabled
+from backend.app.core.auth import is_request_auth_enabled
 from backend.app.core.permissions import Permission
 from backend.app.models.local_preset import LocalPreset
 from backend.app.models.user import User
@@ -135,7 +135,7 @@ async def _resolve_cloud(db: AsyncSession, user: User | None, ref: PresetRef, sl
             status_code=403,
             detail=f"Cloud presets require the cloud:auth permission ({slot})",
         )
-    if user is None and await is_auth_enabled(db):
+    if user is None and await is_request_auth_enabled(db):
         raise HTTPException(status_code=403, detail=_NO_CLOUD_IDENTITY.format(cloud="Bambu Cloud", slot=slot))
 
     token, _email, region = await get_stored_token(db, user)
@@ -214,7 +214,7 @@ async def _resolve_orca_cloud(db: AsyncSession, user: User | None, ref: PresetRe
             status_code=403,
             detail=f"Orca Cloud presets require the orca_cloud:auth permission ({slot})",
         )
-    if user is None and await is_auth_enabled(db):
+    if user is None and await is_request_auth_enabled(db):
         raise HTTPException(status_code=403, detail=_NO_CLOUD_IDENTITY.format(cloud="Orca Cloud", slot=slot))
 
     try:

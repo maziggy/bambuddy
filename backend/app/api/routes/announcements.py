@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import is_auth_enabled, require_auth_if_enabled
+from backend.app.core.auth import is_request_auth_enabled, require_auth_if_enabled
 from backend.app.core.database import get_db
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/announcements", tags=["announcements"])
 async def _may_see(db: AsyncSession, user: User | None) -> bool:
     if not await service.is_enabled(db):
         return False
-    if not await is_auth_enabled(db):
+    if not await is_request_auth_enabled(db):
         return True
     # Authenticated by API key: a script, not a person with an inbox.
     if user is None:

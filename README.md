@@ -384,6 +384,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
   - Per-user ownership — each key acts on behalf of its creator
   - QR code with server URL and key when you create a key
   - Optional **cloud-access scope** — opt in to let an API key read its owner's Bambu Cloud + Orca Cloud presets / filament catalogue / device list (off by default)
+  - With `API_KEY_AUTH_WHEN_AUTH_DISABLED=true`, supplied API keys are validated and scoped even when native user authentication is off. Keyless requests are still open in that mode; use a trusted network or reverse proxy to protect them.
 - Interactive API browser with live testing
 
 ### 🖨️ Virtual Printer & Remote Printing

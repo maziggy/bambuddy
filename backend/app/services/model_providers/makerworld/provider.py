@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from backend.app.core.auth import is_auth_enabled
+from backend.app.core.auth import is_request_auth_enabled
 from backend.app.core.permissions import Permission
 from backend.app.services.model_providers.base import (
     ModelProvider,
@@ -81,7 +81,7 @@ class MakerWorldProvider(ModelProvider):
         identity = user if user is not None else api_key_owner
         # Without an identity, the stored sign-in is the auth-off install's.
         # With auth on (an API key without Allow Cloud Access) there is none.
-        if identity is None and await is_auth_enabled(db):
+        if identity is None and await is_request_auth_enabled(db):
             token = None
         else:
             token, _email, _region = await get_stored_token(db, identity)

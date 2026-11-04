@@ -113,6 +113,9 @@ class Settings(BaseSettings):
 
     # API
     api_prefix: str = "/api/v1"
+    # Opt in to treating a supplied API key as a scoped principal even when
+    # native user authentication is disabled. Keyless requests are unchanged.
+    api_key_auth_when_auth_disabled: bool = False
 
     # Slicer API sidecars. Defaults match the docker-compose.yml ports in the
     # orca-slicer-api fork (https://github.com/maziggy/orca-slicer-api):

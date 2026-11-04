@@ -31,7 +31,7 @@ from backend.app.core.auth import (
     ApiKeyActor,
     RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
-    is_auth_enabled,
+    is_request_auth_enabled,
     require_ownership_permission,
 )
 from backend.app.core.config import settings as app_settings
@@ -142,7 +142,7 @@ async def _fetch_cloud_presets(
         return _empty_slots(), "not_authenticated"
     # The sign-in stored without a user is the auth-off install's, not one for
     # a caller who has none while auth is on.
-    if user is None and await is_auth_enabled(db):
+    if user is None and await is_request_auth_enabled(db):
         return _empty_slots(), "not_authenticated"
 
     token, _email, region = await get_stored_token(db, user)
@@ -225,7 +225,7 @@ async def _fetch_orca_cloud_presets(
     """
     if user is not None and not user.has_permission(Permission.ORCA_CLOUD_AUTH.value):
         return _empty_slots(), "not_authenticated"
-    if user is None and await is_auth_enabled(db):
+    if user is None and await is_request_auth_enabled(db):
         return _empty_slots(), "not_authenticated"
 
     creds = await _load_orca_credentials(db, user)

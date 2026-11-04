@@ -12894,6 +12894,64 @@ async def auth_middleware(request, call_next):
 
 
 @app.middleware("http")
+async def scoped_api_key_middleware(request, call_next):
+    """Opt in to treating supplied API keys as scoped principals with auth off.
+
+    Keyless requests keep the installation's existing authentication behavior.
+    The check runs before public-route exemptions, and an unclassified route is
+    not made reachable merely because a caller holds a valid key.
+    """
+    if not app_settings.api_key_auth_when_auth_disabled or not request.url.path.startswith("/api/"):
+        return await call_next(request)
+
+    key_headers = request.headers.getlist("X-API-Key")
+    auth_headers = request.headers.getlist("Authorization")
+    bearer_values = [value.split() for value in auth_headers]
+    has_bearer_key = any(
+        len(parts) >= 2 and parts[0].lower() == "bearer" and parts[1].startswith("bb_") for parts in bearer_values
+    )
+    if not key_headers and not has_bearer_key:
+        return await call_next(request)
+
+    # A second credential must not let an invalid or low-scope key fall back
+    # to a more privileged JWT. Duplicate headers are ambiguous to proxies and
+    # downstream ASGI servers and are rejected for the same reason.
+    if (
+        (key_headers and (len(key_headers) != 1 or not key_headers[0] or auth_headers))
+        or len(auth_headers) > 1
+        or (not key_headers and len(bearer_values[0]) != 2)
+    ):
+        return JSONResponse(status_code=401, content={"detail": "Invalid API key"})
+    key_value = key_headers[0] if key_headers else bearer_values[0][1]
+
+    from fastapi import HTTPException
+
+    from backend.app.core.api_key_routes import api_key_route_allowed
+    from backend.app.core.auth import _enforced_api_key_request, _validate_api_key, resolve_apikey_owner
+
+    try:
+        async with async_session() as db:
+            api_key = await _validate_api_key(db, key_value)
+            if api_key is None:
+                return JSONResponse(status_code=401, content={"detail": "Invalid API key"})
+            await resolve_apikey_owner(db, api_key)
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers)
+    except Exception:
+        logging.getLogger(__name__).exception("API key authentication is unavailable")
+        return JSONResponse(status_code=503, content={"detail": "Authentication service temporarily unavailable"})
+
+    if not api_key_route_allowed(app.routes, request.scope):
+        return JSONResponse(status_code=403, content={"detail": "This endpoint is not available to API keys"})
+
+    principal = _enforced_api_key_request.set(True)
+    try:
+        return await call_next(request)
+    finally:
+        _enforced_api_key_request.reset(principal)
+
+
+@app.middleware("http")
 async def trace_id_middleware(request, call_next):
     """Stamp every HTTP request with a trace ID and echo it back.
 

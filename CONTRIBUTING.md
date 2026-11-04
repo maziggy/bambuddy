@@ -299,11 +299,21 @@ Bambuddy has an optional authentication system. When auth is enabled, API endpoi
 
 ### How It Works
 
-Authentication is **opt-in** — when disabled, all endpoints are open. The system uses `RequirePermissionIfAuthEnabled` which:
+User authentication is **opt-in**. By default, when disabled, endpoints using
+`RequirePermissionIfAuthEnabled` are open. With
+`API_KEY_AUTH_WHEN_AUTH_DISABLED=true`, a request that supplies an API key is
+validated and authorized with its key scopes even when user login is off.
+Keyless requests retain the existing auth-disabled behavior. The dependency:
 
-- Checks if auth is enabled in settings
-- If disabled: allows the request through (no-op)
-- If enabled: validates JWT token/API key and checks the user has the required permission
+- Checks whether user authentication or the request's opt-in API-key principal is active
+- If neither is active: allows the request through (no-op)
+- Otherwise: validates the JWT token or API key and checks the required permission
+
+`is_auth_enabled()` remains the actual installation-wide user-login setting;
+request authorization uses `is_request_auth_enabled()`. API-key requests to
+routes without an authorization dependency fail closed except for the explicitly
+safe public reads in `core/api_key_routes.py`. Do not treat that list as a proxy
+for endpoint permission checks.
 
 ### Adding Auth to New Endpoints
 

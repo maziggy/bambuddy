@@ -17,7 +17,8 @@ from backend.app.core.auth import (
     RequireOverlayTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
     RequirePrinterPermissionIfAuthEnabled,
-    is_auth_enabled,
+    api_key_request_is_enforced,
+    is_request_auth_enabled,
     require_media_token_printer_permission,
 )
 from backend.app.core.config import settings
@@ -138,7 +139,9 @@ async def _caller_can_view_printer_secrets(user: User | None, db: AsyncSession) 
       API keys) → False. PRINTERS_UPDATE is admin-only and absent from
       ``_APIKEY_SCOPE_BY_PERMISSION``, so no API key can hold it.
     """
-    if not await is_auth_enabled(db):
+    if api_key_request_is_enforced():
+        return False
+    if not await is_request_auth_enabled(db):
         return True
     if user is None:
         return False
@@ -426,7 +429,7 @@ async def update_printer(
     access_moved = False
     if "location" in update_data and update_data["location"] != printer.location:
         access_moved = bool(await location_grantees(db, [printer.location, update_data["location"]]))
-        if access_moved and await is_auth_enabled(db) and not (user is not None and user.is_admin):
+        if access_moved and await is_request_auth_enabled(db) and not (user is not None and user.is_admin):
             raise HTTPException(
                 403,
                 "Moving this printer to another location changes which groups can access it. Only an admin can do that.",

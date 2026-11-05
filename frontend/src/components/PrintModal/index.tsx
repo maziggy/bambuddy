@@ -511,6 +511,10 @@ export function PrintModal({
   // carries target_location, and no control in that mode shows it.
   const handleMultiFileModeChange = (next: MultiFileMode) => {
     if (next === multiFileMode) return;
+    // Not while the files are being queued: a refusal mid-run hides the
+    // toggle, and the rest would then be queued in a mode nobody chose for it.
+    // The toggle is disabled meanwhile; this keeps the mode in step with it.
+    if (isSubmitting) return;
     // Two files for one model can't be alternatives; the toggle disables the
     // choice, and this keeps the mode from ever disagreeing with it.
     if (next === 'alternatives' && duplicateModel(candidates) != null) return;
@@ -1535,7 +1539,15 @@ export function PrintModal({
         });
 
         if (outcome.failure) {
-          const queued = candidates.filter((c) => outcome.queuedFileIds.includes(c.id)).map((c) => c.filename);
+          // What is in the queue from this run: the files queued on every
+          // printer, and the refused file itself when a printer before the
+          // refusing one took it. Files run outside and printers inside, so
+          // any items beyond the finished files' are the refused file's.
+          const refusedFileQueued = outcome.itemsCreated > outcome.queuedFileIds.length * printerIds.length;
+          const queuedIds = refusedFileQueued
+            ? [...outcome.queuedFileIds, outcome.failure.file.id]
+            : outcome.queuedFileIds;
+          const queued = candidates.filter((c) => queuedIds.includes(c.id)).map((c) => c.filename);
           showToast(
             t('printModal.multiFile.failed', {
               filename: outcome.failure.file.filename,
@@ -1544,8 +1556,12 @@ export function PrintModal({
             }),
             'error',
           );
+          // Only files queued on every printer leave the list; the refused one
+          // stays, even if a printer before the refusal took it.
           setCandidates((prev) => prev.filter((c) => !outcome.queuedFileIds.includes(c.id)));
-          if (outcome.queuedFileIds.length > 0) setPartlyQueued(true);
+          // Any item in the queue makes this run partly queued, also one of
+          // the refused file on an earlier printer.
+          if (outcome.itemsCreated > 0) setPartlyQueued(true);
           queryClient.invalidateQueries({ queryKey: ['queue'] });
           return;
         }
@@ -1830,6 +1846,15 @@ export function PrintModal({
 
   const isPending = isSubmitting || updateQueueMutation.isPending;
 
+  // A single-printer AMS job must wait for the printer's live status before it
+  // can resolve the filament mapping. Submitting mid-load matched against zero
+  // known trays and serialized an all-[-1] mapping, which dispatched the print
+  // to the empty external feed (#2589). Separate jobs send no mapping at all
+  // (the scheduler maps each against its own file at dispatch), so they have
+  // nothing to wait for.
+  const waitingForAmsStatus =
+    !isSeparateJobs && assignmentMode === 'printer' && selectedPrinters.length === 1 && printerStatusLoading;
+
   const canSubmit = useMemo(() => {
     if (isPending) return false;
 
@@ -1857,11 +1882,8 @@ export function PrintModal({
     // the rest — the banner above says which state we are in.
     if (perPlateReqsPending || perPlateReqsFailed) return false;
 
-    // A single-printer AMS job must wait for the printer's live status before it
-    // can resolve the filament mapping. Submitting mid-load matched against zero
-    // known trays and serialized an all-[-1] mapping, which dispatched the print
-    // to the empty external feed (#2589).
-    if (assignmentMode === 'printer' && selectedPrinters.length === 1 && printerStatusLoading) return false;
+    // The printer's live status first (#2589, see waitingForAmsStatus).
+    if (waitingForAmsStatus) return false;
 
     return true;
   }, [
@@ -1874,7 +1896,7 @@ export function PrintModal({
     isPending,
     perPlateReqsPending,
     perPlateReqsFailed,
-    printerStatusLoading,
+    waitingForAmsStatus,
     isCrossModel,
     isMultiFile,
     isSeparateJobs,
@@ -2107,6 +2129,7 @@ export function PrintModal({
                 value={multiFileMode}
                 onChange={handleMultiFileModeChange}
                 blockedModel={duplicateModel(candidates)}
+                disabled={isPending}
               />
             )}
 
@@ -2243,22 +2266,34 @@ export function PrintModal({
             })()}
 
             {/* The same warning for separate jobs, naming each file that was
-                sliced for another model. A warning, not a block, as for one file. */}
-            {isSeparateJobs && assignmentMode === 'printer' && selectedPrinters.length === 1 && (() => {
-              const printerModel = printers?.find((p) => p.id === selectedPrinters[0])?.model ?? null;
-              const mismatched = filesNotSlicedFor(candidates, printerModel);
-              if (mismatched.length === 0) return null;
-              return (
-                <div className="p-3 mb-2 bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/30 rounded-lg flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
-                  <span className="text-sm text-yellow-700 dark:text-yellow-400">
-                    {t('printModal.multiFile.notSlicedFor', {
-                      model: printerModel,
-                      files: mismatched.map((f) => f.filename).join(', '),
-                    })}
-                  </span>
-                </div>
+                sliced for another model. Every selected printer gets every
+                file, so there is one line per model among them; with mixed
+                files the picker shows all printers unfiltered. A warning, not
+                a block, as for one file. */}
+            {isSeparateJobs && assignmentMode === 'printer' && (() => {
+              const printerModels = new Set(
+                selectedPrinters
+                  .map((id) => printers?.find((p) => p.id === id)?.model)
+                  .filter((model): model is string => !!model),
               );
+              return [...printerModels].map((printerModel) => {
+                const mismatched = filesNotSlicedFor(candidates, printerModel);
+                if (mismatched.length === 0) return null;
+                return (
+                  <div
+                    key={printerModel}
+                    className="p-3 mb-2 bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/30 rounded-lg flex items-center gap-2"
+                  >
+                    <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
+                    <span className="text-sm text-yellow-700 dark:text-yellow-400">
+                      {t('printModal.multiFile.notSlicedFor', {
+                        model: printerModel,
+                        files: mismatched.map((f) => f.filename).join(', '),
+                      })}
+                    </span>
+                  </div>
+                );
+              });
             })()}
 
             {/* Warning when archive data couldn't be loaded */}
@@ -2398,7 +2433,10 @@ export function PrintModal({
                 />
                 {quantity > 1 && (
                   <span className="text-xs text-bambu-gray">
-                    {t('queue.quantityHint', 'Creates {{count}} queue items', { count: quantity })}
+                    {/* Separate jobs post the quantity once per listed file. */}
+                    {t('queue.quantityHint', 'Creates {{count}} queue items', {
+                      count: isSeparateJobs ? quantity * candidates.length : quantity,
+                    })}
                   </span>
                 )}
               </div>
@@ -2444,7 +2482,7 @@ export function PrintModal({
 
             {/* Waiting for the printer's AMS status: submitting now would map
                 against zero known trays and dispatch to the empty external feed (#2589). */}
-            {assignmentMode === 'printer' && selectedPrinters.length === 1 && printerStatusLoading && (
+            {waitingForAmsStatus && (
               <div className="mb-4 p-3 bg-blue-100 dark:bg-blue-500/20 border border-blue-500/50 rounded-lg text-sm text-blue-700 dark:text-blue-400 flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 {t('printModal.waitingForAmsStatus', {

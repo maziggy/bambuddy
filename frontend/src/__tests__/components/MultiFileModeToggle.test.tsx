@@ -33,6 +33,19 @@ describe('MultiFileModeToggle', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it('offers neither mode while disabled', async () => {
+    // The dialog disables it while the files are being queued.
+    const onChange = vi.fn();
+    render(<MultiFileModeToggle value="separate" onChange={onChange} blockedModel={null} disabled />);
+    const alt = screen.getByRole('radio', { name: 'Alternatives' });
+    expect(alt).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'Separate jobs' })).toBeDisabled();
+    await userEvent.click(alt);
+    expect(onChange).not.toHaveBeenCalled();
+    // The hint stays: it still says what is being queued.
+    expect(screen.getByText(/One queue item per file/)).toBeInTheDocument();
+  });
+
   it('shows the hint of the selected mode when not blocked', () => {
     const { rerender } = render(<MultiFileModeToggle value="alternatives" onChange={() => {}} blockedModel={null} />);
     expect(screen.getByText(/The first matching printer to free up/)).toBeInTheDocument();

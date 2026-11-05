@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { render } from '../utils';
 import { server } from '../mocks/server';
 import { PrintModal } from '../../components/PrintModal';
@@ -169,7 +169,111 @@ describe('PrintModal with several selected files (#3462)', () => {
       // Each file's own 3MF decides its trays at dispatch.
       expect(body.ams_mapping).toBeUndefined();
       expect(body.filament_overrides).toBeUndefined();
+      // Nothing that belongs to the first file alone, nor a batch tying the
+      // files together: the server prices and batches each file on its own.
+      expect(body).not.toHaveProperty('estimated_cost');
+      expect(body).not.toHaveProperty('skip_filament_check');
+      expect(body).not.toHaveProperty('nozzle_rack_choice');
+      expect(body).not.toHaveProperty('batch_id');
     }
+  });
+
+  it('counts the items of every listed file in the quantity hint', async () => {
+    // Each file is posted with the quantity, so 2 files x 2 make 4 items.
+    renderModal([PART_A, PART_B], { separateJobsAllowed: true });
+
+    await screen.findByRole('radio', { name: 'Separate jobs' });
+    fireEvent.change(screen.getByLabelText('Quantity'), { target: { value: '2' } });
+
+    expect(await screen.findByText('Creates 4 queue items')).toBeInTheDocument();
+  });
+
+  it('warns per printer model about the files sliced for another model', async () => {
+    // Every selected printer gets every file, so each printer's model is
+    // checked against all of them. A warning, not a block, as for one file.
+    const user = userEvent.setup();
+    renderModal([PART_A, PART_C], { separateJobsAllowed: true });
+
+    await user.click(await screen.findByRole('radio', { name: 'Separate jobs' }));
+    await pickPrinterAndWait(user, 'A1 Test');
+    expect(screen.getByText('Not sliced for A1: part-c.gcode.3mf')).toBeInTheDocument();
+    expect(screen.queryByText(/Not sliced for P1S/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByText('P1S Test'));
+    expect(await screen.findByText('Not sliced for P1S: part-a.gcode.3mf')).toBeInTheDocument();
+    expect(screen.getByText('Not sliced for A1: part-c.gcode.3mf')).toBeInTheDocument();
+    expect(printButton()).toBeEnabled();
+  });
+
+  describe('while the printer status is still loading', () => {
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', async () => {
+          await delay('infinite');
+          return HttpResponse.json({});
+        }),
+      );
+    });
+
+    it('lets separate jobs be queued, which send no AMS mapping to wait for', async () => {
+      const user = userEvent.setup();
+      renderModal([PART_A, PART_B], { separateJobsAllowed: true });
+
+      await user.click(await screen.findByText('A1 Test'));
+
+      await waitFor(() => expect(printButton()).toBeEnabled());
+      expect(screen.queryByText(/Waiting for AMS status/)).not.toBeInTheDocument();
+    });
+
+    it('still holds a single file until the AMS status is in (#2589)', async () => {
+      const user = userEvent.setup();
+      renderModal([PART_A]);
+
+      await user.click(await screen.findByText('A1 Test'));
+
+      expect(await screen.findByText('Waiting for AMS status from A1 Test…')).toBeInTheDocument();
+      expect(printButton()).toBeDisabled();
+    });
+  });
+
+  it('keeps the mode while the files are being queued', async () => {
+    // A switch mid-run could leave the rest of a partly queued run as
+    // alternatives, with the toggle already gone.
+    respond = () => new Promise<Response>(() => {});
+    const user = userEvent.setup();
+    renderModal([PART_A, PART_C], { separateJobsAllowed: true });
+
+    await user.click(await screen.findByRole('radio', { name: 'Separate jobs' }));
+    await pickPrinterAndWait(user, 'A1 Test');
+    await user.click(printButton());
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(screen.getByRole('radio', { name: 'Alternatives' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'Separate jobs' })).toBeDisabled();
+  });
+
+  it('treats a file queued on one of two printers as partly queued', async () => {
+    // part-a goes onto the A1 and is refused by the P1S: one item is in the
+    // queue, although no file went through on every printer.
+    respond = (_body, index) =>
+      index === 0
+        ? HttpResponse.json({ id: 1, status: 'pending' })
+        : HttpResponse.json({ detail: 'refused' }, { status: 400 });
+    const user = userEvent.setup();
+    renderModal([PART_A, PART_C], { separateJobsAllowed: true });
+
+    await user.click(await screen.findByRole('radio', { name: 'Separate jobs' }));
+    await user.click(await screen.findByText('A1 Test'));
+    await pickPrinterAndWait(user, 'P1S Test');
+    await user.click(printButton());
+
+    const message = await screen.findByText(/Not queued: part-a\.gcode\.3mf \(refused\)/);
+    expect(posted).toHaveLength(2);
+    expect(message).toHaveTextContent('Queued before it: part-a.gcode.3mf.');
+    expect(message).not.toHaveTextContent('None');
+    await waitFor(() =>
+      expect(screen.queryByRole('radiogroup', { name: 'What the selected files become' })).not.toBeInTheDocument(),
+    );
   });
 
   it('follows the reordered list', async () => {

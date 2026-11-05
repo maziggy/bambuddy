@@ -65,6 +65,9 @@ async def _setup(db_session, printer_factory, archive_factory, *, spoolman=False
         status="printing",
         cost=14.18,
         with_run=with_run,
+        # An earlier run of the archive, ended; a run still printing is open
+        # and counts as none.
+        run_status="completed" if with_run else None,
         file_path="archive/print.3mf",
         filament_used_grams=grams,
         filament_type="PLA",

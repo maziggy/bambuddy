@@ -20,6 +20,7 @@ class EventType(StrEnum):
     BILLING_CHARGE_FAILED = "billing_charge_failed"
     PRINTER_OFFLINE = "printer_offline"
     PRINTER_ERROR = "printer_error"
+    AI_FAILURE_DETECTION = "ai_failure_detection"
     FILAMENT_LOW = "filament_low"
     MAINTENANCE_DUE = "maintenance_due"
     AMS_HUMIDITY_HIGH = "ams_humidity_high"
@@ -52,6 +53,8 @@ EVENT_VARIABLES: dict[str, list[str]] = {
         "duration",
         "filament_grams",
         "filament_details",
+        "archive_id",
+        "run_id",
         "finish_photo_url",
         "timestamp",
         "app_name",
@@ -64,6 +67,8 @@ EVENT_VARIABLES: dict[str, list[str]] = {
         "filament_details",
         "progress",
         "reason",
+        "archive_id",
+        "run_id",
         "finish_photo_url",
         "timestamp",
         "app_name",
@@ -75,6 +80,8 @@ EVENT_VARIABLES: dict[str, list[str]] = {
         "filament_grams",
         "filament_details",
         "progress",
+        "archive_id",
+        "run_id",
         "finish_photo_url",
         "timestamp",
         "app_name",
@@ -90,7 +97,16 @@ EVENT_VARIABLES: dict[str, list[str]] = {
     "billing_charge_failed": ["printer", "filename", "archive_id", "error", "timestamp", "app_name"],
     "printer_offline": ["printer", "timestamp", "app_name"],
     "printer_error": ["printer", "error_type", "error_detail", "timestamp", "app_name"],
-    "ai_failure_detection": ["printer", "task_name", "confidence", "action", "timestamp", "app_name"],
+    "ai_failure_detection": [
+        "printer",
+        "task_name",
+        "provider",
+        "confidence",
+        "print_quality",
+        "action",
+        "timestamp",
+        "app_name",
+    ],
     "plate_not_empty": ["printer", "difference_percent", "timestamp", "app_name"],
     "plate_clear_required": ["printer", "timestamp", "app_name"],
     "filament_low": ["printer", "slot", "remaining_percent", "color", "timestamp", "app_name"],
@@ -198,6 +214,8 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "filament_grams": "15.2",
         "filament_details": "AMS-A T1 PLA: 12.4g | AMS-A T3 PETG: 2.8g",
         "finish_photo_url": "/api/v1/archives/123/photos/finish_20240115_154800_abc12345.jpg",
+        "archive_id": "123",
+        "run_id": "456",
         "timestamp": "2024-01-15 15:48",
         "app_name": "Bambuddy",
     },
@@ -210,6 +228,8 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "progress": "50",
         "reason": "Filament runout",
         "finish_photo_url": "/api/v1/archives/123/photos/finish_20240115_151500_def67890.jpg",
+        "archive_id": "123",
+        "run_id": "456",
         "timestamp": "2024-01-15 15:15",
         "app_name": "Bambuddy",
     },
@@ -221,6 +241,8 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
         "filament_details": "AMS-A T2 PLA: 4.6g",
         "progress": "30",
         "finish_photo_url": "/api/v1/archives/123/photos/finish_20240115_150000_ghi11223.jpg",
+        "archive_id": "123",
+        "run_id": "456",
         "timestamp": "2024-01-15 15:00",
         "app_name": "Bambuddy",
     },
@@ -263,9 +285,11 @@ SAMPLE_DATA: dict[str, dict[str, str]] = {
     "ai_failure_detection": {
         "printer": "Bambu X1C",
         "task_name": "Benchy.3mf",
-        "confidence": "0.87",
+        "provider": "OctoEverywhere",
+        "confidence": "N/A",
+        "print_quality": "2/10",
         "action": "pause",
-        "timestamp": "2024-01-15 15:10",
+        "timestamp": "2024-01-15 14:30",
         "app_name": "Bambuddy",
     },
     "print_confirm_request": {

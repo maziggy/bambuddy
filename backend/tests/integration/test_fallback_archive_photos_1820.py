@@ -58,6 +58,9 @@ class TestReadingACapturedPhoto:
 
         assert response.status_code == 200
         assert response.content == JPEG
+        # A late timelapse frame is written over the live finish photo under
+        # its name (#2547): the browser must revalidate, not keep the old one.
+        assert response.headers["cache-control"] == "no-cache"
 
     async def test_a_photo_in_the_old_shared_location_is_still_served(
         self, async_client: AsyncClient, archive_factory, printer_factory, base_dir

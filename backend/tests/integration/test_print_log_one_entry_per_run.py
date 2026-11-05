@@ -133,3 +133,19 @@ class TestOtherRunsOf:
         await db_session.commit()
 
         assert await other_runs_of(db_session, rows["archive"]) == 1
+
+
+async def test_the_runs_plate_stays_when_the_real_end_does_not_name_it(db_session, rows):
+    """An offline stop logged the queue item's plate; the end the printer
+    reported after all comes without one."""
+    await write_log_entry(
+        db_session,
+        status="cancelled",
+        archive_id=rows["archive"].id,
+        printer_id=rows["printer"],
+        started_at=START,
+        plate_id=2,
+    )
+    await _write(db_session, rows, status="completed")
+
+    assert list(await db_session.scalars(select(PrintLogEntry.plate_id))) == [2]

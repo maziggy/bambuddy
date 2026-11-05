@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.app.core.printer_scope import ALL_PRINTERS
+from backend.app.services.bambu_ftp import FileListResult
 
 # Patch paths for lazy imports inside functions
 _FTP_MODULE = "backend.app.services.bambu_ftp"
@@ -289,6 +290,8 @@ class TestScanForTimelapseWithRetries:
                 scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[]))),
             )
         )
+        # The claimed-videos lookup reads runs and archives with scalars().
+        mock_session.scalars = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[])))
         return mock_session
 
     @pytest.mark.asyncio
@@ -320,6 +323,7 @@ class TestScanForTimelapseWithRetries:
         with (
             patch("backend.app.main.async_session", return_value=mock_session),
             patch("backend.app.main._list_timelapse_videos", side_effect=mock_list_mp4s),
+            patch(f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult([], True))),
             patch("backend.app.main.ws_manager") as mock_ws,
             patch("backend.app.main.asyncio.sleep", new_callable=AsyncMock),
             patch("backend.app.main.ArchiveService", return_value=mock_service),
@@ -365,6 +369,7 @@ class TestScanForTimelapseWithRetries:
         with (
             patch("backend.app.main.async_session", return_value=mock_session),
             patch("backend.app.main._list_timelapse_videos", side_effect=mock_list_mp4s),
+            patch(f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult([], True))),
             patch("backend.app.main.ws_manager") as mock_ws,
             patch("backend.app.main.asyncio.sleep", new_callable=AsyncMock),
             patch("backend.app.main.ArchiveService", return_value=mock_service),
@@ -417,6 +422,7 @@ class TestScanForTimelapseWithRetries:
         with (
             patch("backend.app.main.async_session", return_value=mock_session),
             patch("backend.app.main._list_timelapse_videos", side_effect=mock_list_mp4s),
+            patch(f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult([], True))),
             patch("backend.app.main.ws_manager") as mock_ws,
             patch("backend.app.main.asyncio.sleep", new_callable=AsyncMock),
             patch("backend.app.main.ArchiveService", return_value=mock_service),
@@ -509,6 +515,7 @@ class TestScanForTimelapseWithRetries:
         with (
             patch("backend.app.main.async_session", return_value=mock_session),
             patch("backend.app.main._list_timelapse_videos", side_effect=mock_list_mp4s),
+            patch(f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult([], True))),
             patch("backend.app.main.ws_manager") as mock_ws,
             patch("backend.app.main.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
             patch("backend.app.main.ArchiveService", return_value=mock_service),
@@ -633,10 +640,12 @@ class TestListTimelapseVideosAvi:
                 scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[]))),
             )
         )
+        mock_session.scalars = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[])))
 
         with (
             patch("backend.app.main.async_session", return_value=mock_session),
             patch("backend.app.main._list_timelapse_videos", side_effect=mock_list_videos),
+            patch(f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult([], True))),
             patch("backend.app.main.ws_manager") as mock_ws,
             patch("backend.app.main.asyncio.sleep", new_callable=AsyncMock),
             patch("backend.app.main.ArchiveService", return_value=mock_service),

@@ -1,5 +1,6 @@
 import json
 import logging
+from contextlib import AsyncExitStack
 from datetime import date, datetime, timezone
 
 import httpx
@@ -69,7 +70,7 @@ from backend.app.schemas.supplier import (
     SupplierUpdate,
 )
 from backend.app.services import filament_profile_default as profile_defaults, slot_unlink_grace, spool_swaps
-from backend.app.services.ams_assignment_lock import get_ams_assignment_lock
+from backend.app.services.ams_assignment_lock import get_ams_assignment_lock, get_spool_move_lock
 from backend.app.services.ams_slot_presence import spool_present
 from backend.app.services.location_service import (
     DUPLICATE_LOCATION_NAME,
@@ -82,7 +83,7 @@ from backend.app.services.location_service import (
     rename_location as rename_location_record,
 )
 from backend.app.services.material_number import apply_material_number_inheritance
-from backend.app.services.slicer_filament_resolver import resolve_slicer_filament
+from backend.app.services.slicer_filament_resolver import resolve_slicer_filament, reusable_slot_filament_id
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_csv import (
     MAX_CSV_IMPORT_BYTES,
@@ -95,14 +96,13 @@ from backend.app.services.spool_filament_preset import resolve_spool_preset
 from backend.app.services.spoolman import SpoolmanClient, get_spoolman_client, init_spoolman_client
 from backend.app.services.supplier_links import apply_supplier_inheritance, apply_supplier_inheritance_to_batch
 from backend.app.services.tag_conflict import tag_already_linked
-from backend.app.utils.filament_finish import different_finish, finish_generic_id
+from backend.app.utils.filament_finish import finish_generic_id
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
-    GENERIC_IDS_REPLACED_ON_REUSE,
     filament_id_to_setting_id,
     normalize_slicer_filament,
 )
-from backend.app.utils.filament_types import is_material_name, nozzle_temp_range, printer_filament_type
+from backend.app.utils.filament_types import nozzle_temp_range, printer_filament_type
 from backend.app.utils.local_time import day_zone, local_date_end, local_date_start
 from backend.app.utils.natural_sort import natural_sort_key
 from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
@@ -178,8 +178,6 @@ async def apply_spool_to_slot_via_mqtt(
     tray_sub_brands = " ".join(p for p in (spool.brand, spool.material, spool.subtype) if p) or spool.material
     tray_color = spool.rgba or "FFFFFFFF"
 
-    _generic_id_values = GENERIC_IDS_REPLACED_ON_REUSE
-
     # Which nozzle this slot feeds, and how wide it is. One resolution shared
     # with every other path that configures a slot (see services.slot_nozzle),
     # and used twice below -- for the spool's per-model preset override and for
@@ -223,23 +221,15 @@ async def apply_spool_to_slot_via_mqtt(
         tray_type = printer_filament_type(type_override)
 
     if not tray_info_idx:
-        if (
-            current_tray_info_idx
-            and current_tray_info_idx not in _generic_id_values
-            and not current_tray_info_idx.startswith("PFUS")
-            and not current_tray_info_idx.startswith("PFCN")
-            # Shares the resolver's reading of what counts as a material
-            # name, product lines included: a slot written by a Bambuddy from
-            # before #2902 can be holding "PLA+" in this field, and reusing
-            # that would carry the bad id forward instead of replacing it.
-            and not is_material_name(current_tray_info_idx)
-            and current_tray_type
-            and current_tray_type.upper() == tray_type.upper()
-            # The same type in another finish is another preset: a Silk spool
-            # does not take the slot's Matte id. Only when both name a finish.
-            and not different_finish(f"{spool.material or ''} {spool.subtype or ''}", current_tray_sub_brands)
-        ):
-            tray_info_idx = current_tray_info_idx
+        reused = reusable_slot_filament_id(
+            current_tray_info_idx,
+            current_tray_type,
+            current_tray_sub_brands,
+            tray_type,
+            f"{spool.material or ''} {spool.subtype or ''}",
+        )
+        if reused:
+            tray_info_idx = reused
         elif tray_type:
             # The spool's own wording is tried first and the reduced type only
             # as a further fallback, so a material that already resolves keeps
@@ -2424,6 +2414,12 @@ async def list_assignments(
     return responses
 
 
+async def _printers_holding_spool(db: AsyncSession, spool_id: int, printer_scope: PrinterScope) -> set[int]:
+    """The printers in the caller's scope with a slot assigned to the spool."""
+    held = await db.execute(select(SpoolAssignment.printer_id).where(SpoolAssignment.spool_id == spool_id).distinct())
+    return {pid for pid in held.scalars() if printer_scope.allows(pid)}
+
+
 @router.post("/assignments", response_model=SpoolAssignmentResponse)
 async def assign_spool(
     data: SpoolAssignmentCreate,
@@ -2502,34 +2498,80 @@ async def assign_spool(
 
     # 3. Upsert assignment (replace if same printer+ams+tray), under the lock
     # the AMS change handler writes the printer's slots with.
-    async with get_ams_assignment_lock(data.printer_id):
-        existing = await db.execute(
-            select(SpoolAssignment).where(
-                SpoolAssignment.printer_id == data.printer_id,
-                SpoolAssignment.ams_id == data.ams_id,
-                SpoolAssignment.tray_id == data.tray_id,
+    #
+    # A move (#1574) also takes the spool out of every other slot it holds, in
+    # the same commit, so a failed move leaves it where it was instead of in no
+    # slot. Moves of one spool take turns (get_spool_move_lock): two at once
+    # would each read where the spool is before the other committed, and both
+    # assign it. The slots' printers are locked as well, in id order so two
+    # moves can't take the same two locks the other way round. Which printers
+    # those are is read again once the locks are held: a move served first, a
+    # plain assign or an AMS change may have put the spool on one more, and
+    # then this one lets go and locks the larger set. A slot on a printer
+    # outside the caller's scope stays assigned, as unassigning leaves it
+    # (#1727).
+    locked_printer_ids = {data.printer_id}
+    if data.move:
+        locked_printer_ids |= await _printers_holding_spool(db, data.spool_id, printer_scope)
+    vacated: list[tuple[int, int, int]] = []
+    while True:
+        async with AsyncExitStack() as locks:
+            if data.move:
+                await locks.enter_async_context(get_spool_move_lock("inventory", data.spool_id))
+            for pid in sorted(locked_printer_ids):
+                await locks.enter_async_context(get_ams_assignment_lock(pid))
+            if data.move:
+                holding = await _printers_holding_spool(db, data.spool_id, printer_scope)
+                if not holding <= locked_printer_ids:
+                    locked_printer_ids |= holding
+                    continue
+                others = await db.execute(
+                    select(SpoolAssignment).where(
+                        SpoolAssignment.spool_id == data.spool_id,
+                        SpoolAssignment.printer_id.in_(locked_printer_ids),
+                    )
+                )
+                for row in others.scalars().all():
+                    if (row.printer_id, row.ams_id, row.tray_id) != (data.printer_id, data.ams_id, data.tray_id):
+                        vacated.append((row.printer_id, row.ams_id, row.tray_id))
+                        await db.delete(row)
+            existing = await db.execute(
+                select(SpoolAssignment).where(
+                    SpoolAssignment.printer_id == data.printer_id,
+                    SpoolAssignment.ams_id == data.ams_id,
+                    SpoolAssignment.tray_id == data.tray_id,
+                )
             )
-        )
-        old = existing.scalar_one_or_none()
-        if old:
-            await db.delete(old)
-            await db.flush()
+            old = existing.scalar_one_or_none()
+            if old:
+                await db.delete(old)
+                await db.flush()
 
-        assignment = SpoolAssignment(
-            spool_id=data.spool_id,
-            printer_id=data.printer_id,
-            ams_id=data.ams_id,
-            tray_id=data.tray_id,
-            fingerprint_color=fingerprint_color,
-            fingerprint_type=fingerprint_type,
-        )
-        db.add(assignment)
-        await spool_swaps.record_assignment(
-            db, data.printer_id, data.ams_id, data.tray_id, data.spool_id, spool_swaps.INVENTORY
-        )
-        await db.commit()
+            assignment = SpoolAssignment(
+                spool_id=data.spool_id,
+                printer_id=data.printer_id,
+                ams_id=data.ams_id,
+                tray_id=data.tray_id,
+                fingerprint_color=fingerprint_color,
+                fingerprint_type=fingerprint_type,
+            )
+            db.add(assignment)
+            await spool_swaps.record_assignment(
+                db, data.printer_id, data.ams_id, data.tray_id, data.spool_id, spool_swaps.INVENTORY
+            )
+            await db.commit()
+        break
     await db.refresh(assignment)
     slot_unlink_grace.forget_slot(data.printer_id, data.ams_id, data.tray_id)
+    if vacated:
+        logger.info(
+            "Moved spool %d to printer %d AMS%d-T%d from %s",
+            spool.id,
+            data.printer_id,
+            data.ams_id,
+            data.tray_id,
+            ", ".join(f"printer {p} AMS{a}-T{t}" for p, a, t in vacated),
+        )
 
     # 4. Auto-configure AMS slot via MQTT.
     #
@@ -2645,14 +2687,15 @@ async def assign_spool(
             data.tray_id,
         )
 
-    await ws_manager.broadcast(
-        {
-            "type": "spool_assignment_changed",
-            "printer_id": data.printer_id,
-            "ams_id": data.ams_id,
-            "tray_id": data.tray_id,
-        }
-    )
+    for printer_id, ams_id, tray_id in [*vacated, (data.printer_id, data.ams_id, data.tray_id)]:
+        await ws_manager.broadcast(
+            {
+                "type": "spool_assignment_changed",
+                "printer_id": printer_id,
+                "ams_id": ams_id,
+                "tray_id": tray_id,
+            }
+        )
 
     return response
 
@@ -3025,14 +3068,28 @@ async def get_material_number_stats(
 async def get_all_usage_history(
     limit: int = 100,
     printer_id: int | None = None,
+    spoolman: bool = False,
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
     printer_scope: PrinterScope = RequestPrinterScope,
 ):
-    """Get global usage history, optionally filtered by printer."""
+    """Get global usage history, optionally filtered by printer.
+
+    One inventory's at a time: ``spoolman`` for the Spoolman spools'
+    (#3407), otherwise the built-in ones'. Each keys its spools by its own ids.
+    """
     from backend.app.models.spool_usage_history import SpoolUsageHistory
 
-    query = select(SpoolUsageHistory).order_by(SpoolUsageHistory.created_at.desc()).limit(limit)
+    query = (
+        select(SpoolUsageHistory)
+        .where(
+            SpoolUsageHistory.spoolman_spool_id.is_not(None)
+            if spoolman
+            else SpoolUsageHistory.spoolman_spool_id.is_(None)
+        )
+        .order_by(SpoolUsageHistory.created_at.desc())
+        .limit(limit)
+    )
     if printer_id is not None:
         query = query.where(SpoolUsageHistory.printer_id == printer_id)
     if (clause := printer_scope.where(SpoolUsageHistory.printer_id)) is not None:

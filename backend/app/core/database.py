@@ -40,7 +40,8 @@ def _resolve_pool_kwargs() -> dict:
 
     Dialect-aware defaults, each overridable via env (``DB_POOL_SIZE`` etc.):
       - PostgreSQL: pool_size 20 + max_overflow 60, ``pool_pre_ping`` (recover
-        server-dropped connections instead of erroring the request) and
+        server-dropped connections instead of erroring the request;
+        ``DB_POOL_PRE_PING=false`` turns it off) and
         ``pool_recycle`` 1800s. The old hard-coded 10 + 20 exhausted on large
         farms while printer callbacks held connections. The 80-connection
         ceiling fits a stock server (max_connections 100, 3 reserved for
@@ -86,7 +87,7 @@ def _resolve_pool_kwargs() -> dict:
         kwargs = {
             "pool_size": pool_size,
             "max_overflow": max_overflow,
-            "pool_pre_ping": True,
+            "pool_pre_ping": settings.db_pool_pre_ping if settings.db_pool_pre_ping is not None else True,
             "pool_recycle": settings.db_pool_recycle if settings.db_pool_recycle is not None else 1800,
             # LIFO checkout keeps a bursty farm on a small hot connection set and
             # lets overflow connections recycle out during quiet spells (#2572).
@@ -358,6 +359,9 @@ NON_FK_ID_REFERENCES: dict[str, tuple[tuple[str, str], ...]] = {
         ("notification_lock_screen_widgets", "printer_id"),
     ),
     "api_keys": (("auth_ephemeral_tokens", "api_key_id"),),
+    # A merged archive's id keeps finding the archive it went into after its
+    # soft-deleted row is purged (archive redesign P2).
+    "print_archives": (("archive_aliases", "merged_archive_id"),),
 }
 
 
@@ -1339,6 +1343,72 @@ async def _reclassify_sliced_3mf_library_files(conn) -> None:
         if reclassified:
             logger.info(
                 "[#2993] Re-typed %d library file(s) from source 3MF to sliced -- they carry G-code",
+                reclassified,
+            )
+
+        # Marked done even when nothing matched, so the scan never repeats.
+        await conn.execute(
+            text('INSERT INTO settings ("key", value) VALUES (:k, :v)'),
+            {"k": flag, "v": "true"},
+        )
+
+
+async def _reclassify_unsliced_gcode_3mf_library_files(conn) -> None:
+    """Re-type library rows named ``.gcode.3mf`` that hold no G-code (#3435).
+
+    The reverse of #2993's pass: ``file_type`` trusted a ``.gcode.3mf`` name,
+    and Studio saves an unsliced project under whatever name it is given. Such
+    a file was offered Print and then refused at the queue, with a cost centre
+    as "Estimated cost is required for cost center prints". The forward fix
+    classifies on content; this pass reaches the rows already stored.
+
+    One-shot and local files only, for the same reasons as #2993's pass. Only
+    a zip that opens and holds no G-code is re-typed: a missing file is left
+    as it is.
+    """
+    from pathlib import Path
+
+    from sqlalchemy import text
+
+    from backend.app.utils.threemf_tools import is_unsliced_3mf
+
+    flag = "_backfill_3435_unsliced_gcode_3mf_type_done"
+
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+
+        rows = (
+            await conn.execute(
+                text(
+                    "SELECT id, file_path FROM library_files "
+                    "WHERE file_type = 'gcode.3mf' AND deleted_at IS NULL "
+                    "AND file_path IS NOT NULL AND file_path <> '' "
+                    "AND (is_external IS NULL OR is_external = :false_val)"
+                ),
+                {"false_val": False},
+            )
+        ).fetchall()
+
+        reclassified = 0
+        for row in rows:
+            path = Path(row.file_path)
+            if not path.is_absolute():
+                path = settings.base_dir / row.file_path
+            if not is_unsliced_3mf(path):
+                continue
+            await conn.execute(
+                text("UPDATE library_files SET file_type = '3mf' WHERE id = :id"),
+                {"id": row.id},
+            )
+            reclassified += 1
+
+        if reclassified:
+            logger.info(
+                "[#3435] Re-typed %d library file(s) named .gcode.3mf to source 3MF -- they hold no G-code",
                 reclassified,
             )
 
@@ -3993,15 +4063,23 @@ async def _run_migrations(conn):
     # family was split between two values depending on how it was ingested.
     # Going forward `classify_file_type()` is canonical; this backfill flips
     # existing legacy `3mf` rows whose filename ends in `.gcode.3mf` to the
-    # canonical compound name. Idempotent (post-update rows no longer match
-    # `file_type = '3mf'`) and dialect-neutral (`LOWER` + `LIKE` work the
+    # canonical compound name. Dialect-neutral (`LOWER` + `LIKE` work the
     # same under SQLite and Postgres).
-    await conn.execute(
-        text(
-            "UPDATE library_files SET file_type = 'gcode.3mf' "
-            "WHERE file_type = '3mf' AND LOWER(filename) LIKE '%.gcode.3mf'"
+    #
+    # One-shot since #3435: a `.gcode.3mf` holding no G-code is now a `3mf`
+    # on purpose (an unsliced project under that name), and re-running this
+    # on every boot turned those rows back into printable files.
+    _flag_1600 = "_backfill_1600_gcode_3mf_type_done"
+    if not (
+        await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": _flag_1600})
+    ).scalar_one_or_none():
+        await conn.execute(
+            text(
+                "UPDATE library_files SET file_type = 'gcode.3mf' "
+                "WHERE file_type = '3mf' AND LOWER(filename) LIKE '%.gcode.3mf'"
+            )
         )
-    )
+        await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": _flag_1600, "v": "true"})
 
     # Migration: Add per-user Bambu Cloud credential columns
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_token VARCHAR(500)")
@@ -5462,6 +5540,7 @@ async def _run_migrations(conn):
     # named `Foo.3mf` filed as a source-only project (#2993). Re-reads the zip
     # already on disk. One-shot, internal rows only; see the function.
     await _reclassify_sliced_3mf_library_files(conn)
+    await _reclassify_unsliced_gcode_3mf_library_files(conn)
 
     # Migration: Add controls_printer_power to smart_plugs (#2629). Marks
     # whether a plug actually feeds the printer's own power — only then may an
@@ -5703,6 +5782,10 @@ async def _run_migrations(conn):
     # alone (a {password} in it renders as nothing).
     await _migrate_welcome_template_without_password(conn)
 
+    # Migration: use the same AI detection template for either provider (#3236).
+    # Seeding only inserts missing templates; preserve any customized wording.
+    await _migrate_ai_failure_detection_template(conn)
+
     # Migration: supplier master list + spool assignments (#2988).
     # create_all() covers fresh installs; this covers upgrades.
     await _migrate_create_supplier_tables(conn)
@@ -5895,6 +5978,67 @@ async def _run_migrations(conn):
             {"off": False},
         )
 
+    # Migration: per-print usage of Spoolman spools (#3407), so Spoolman mode
+    # has the usage history the built-in inventory has.
+    await _safe_execute(conn, "ALTER TABLE spool_usage_history ADD COLUMN spoolman_spool_id INTEGER")
+
+    # Migration: mark a timelapse baseline taken off an unreadable card
+    # (#3412). Off for every existing row, which is what they were treated as.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN timelapse_baseline_unread BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE print_archives ADD COLUMN timelapse_baseline_unread BOOLEAN DEFAULT FALSE"
+        )
+
+    # Migration: the plate each print log run printed. A library file printed
+    # again now adds its run to the file's archive, whose plate_id is only the
+    # latest run's. Nullable, no default -- identical DDL on SQLite and
+    # Postgres. Backfilled below.
+    await _safe_execute(conn, "ALTER TABLE print_log_entries ADD COLUMN plate_id INTEGER")
+    await _backfill_print_log_plate_ids(conn)
+
+    # Migration: what describes one print, on the run (archive redesign P1).
+    # Written alongside the archive's columns, so no backfill. Nullable, no
+    # default; the types are the ones each dialect gives the model's columns.
+    double = "REAL" if is_sqlite() else "DOUBLE PRECISION"
+    stamp = "DATETIME" if is_sqlite() else "TIMESTAMP"
+    for column, kind in (
+        ("subtask_id", "VARCHAR(64)"),
+        ("billing_run_id", "VARCHAR(36)"),
+        ("cost_center_id", "INTEGER"),
+        ("wallet_charge_skipped", "BOOLEAN"),
+        ("energy_start_kwh", double),
+        ("energy_start_at", stamp),
+        ("energy_start_plug_id", "INTEGER"),
+        ("energy_start_price", double),
+        ("user_verdict_source", "VARCHAR(16)"),
+        ("user_verdict_at", stamp),
+        ("confirm_requested", "BOOLEAN"),
+        ("confirm_token", "VARCHAR(64)"),
+        ("confirm_token_used_at", stamp),
+        ("photos", "JSON"),
+        ("timelapse_path", "VARCHAR(500)"),
+        ("timelapse_baseline", "JSON"),
+        ("timelapse_baseline_unread", "BOOLEAN"),
+        ("bambuddy_forced_timelapse", "BOOLEAN"),
+        ("notes", "TEXT"),
+        ("quantity", "INTEGER"),
+        ("ended_offline", "BOOLEAN"),
+    ):
+        await _safe_execute(conn, f"ALTER TABLE print_log_entries ADD COLUMN {column} {kind}")
+    await _safe_execute(
+        conn,
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_print_log_entries_confirm_token ON print_log_entries (confirm_token)",
+    )
+
+    # Migration: each plate's estimate on the archive (#3375). Nullable, no
+    # default; filled from the archived 3MF after startup
+    # (``print_cost_estimate.fill_plate_estimates``).
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN plate_estimates JSON")
+
+    await _backfill_archive_run_photos(conn)
+
     await _migrate_auth_datetimes_to_timestamp(conn)
     await _migrate_add_missing_set_null_fks(conn)
     await _migrate_wallet_transactions_keep_deleted_users(conn)
@@ -5906,6 +6050,110 @@ async def _run_migrations(conn):
     await _release_slots_of_archived_spools(conn)
     await _migrate_pg_column_types(conn)
     await _migrate_pg_columns_to_model(conn)
+
+
+async def _backfill_print_log_plate_ids(conn) -> None:
+    """Give older print log runs their plate where it is known: the plate of
+    the queue item that ran it, else the archive's when the run is the
+    archive's only one. A run of a reprinted archive without a queue item is
+    left NULL: the archive's plate need not be the one that run printed.
+
+    Once only, gated by a settings flag: runs are written with their plate
+    from now on, and a later dispatch moves the archive's plate to its own
+    run's before that run is logged, which a second pass would read as the
+    old run's."""
+    from sqlalchemy import text
+
+    flag = "_backfill_print_log_plate_ids_done"
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already is not None:
+            return
+        await conn.execute(
+            text(
+                "UPDATE print_log_entries SET plate_id = ("
+                "SELECT q.plate_id FROM print_queue q WHERE q.id = print_log_entries.queue_item_id"
+                ") WHERE plate_id IS NULL AND queue_item_id IS NOT NULL"
+            )
+        )
+        await conn.execute(
+            text(
+                "UPDATE print_log_entries SET plate_id = ("
+                "SELECT a.plate_id FROM print_archives a WHERE a.id = print_log_entries.archive_id"
+                ") WHERE plate_id IS NULL AND queue_item_id IS NULL AND archive_id IS NOT NULL"
+                " AND (SELECT COUNT(*) FROM print_log_entries e"
+                " WHERE e.archive_id = print_log_entries.archive_id) = 1"
+            )
+        )
+        await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": flag, "v": "true"})
+
+
+async def _backfill_archive_run_photos(conn) -> None:
+    """Put back on its archive a finish photo only its run kept.
+
+    The finish photo of a later print on an archive was appended to the
+    archive's list in place, which the ORM does not see as a change, so only
+    the run's list was saved. The archive serves and shows photos from its own
+    list, so that print looked like it had none. Each photo a run lists, that
+    its archive does not and that is on disk, is appended to the archive's
+    list in run order. A photo whose file is gone stays off.
+
+    Once only, gated by a settings flag: a photo deleted from an archive is
+    also removed from its run, but a second pass must never be what decides
+    that."""
+    from types import SimpleNamespace
+
+    from sqlalchemy import JSON, bindparam, text
+
+    from backend.app.utils.archive_paths import find_archive_photo
+
+    flag = "_backfill_archive_run_photos_done"
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already is not None:
+            return
+        rows = (
+            await conn.execute(
+                text(
+                    "SELECT a.id, a.file_path, a.photos, e.photos AS run_photos FROM print_archives a "
+                    "JOIN print_log_entries e ON e.archive_id = a.id WHERE e.photos IS NOT NULL "
+                    "ORDER BY a.id, CASE WHEN e.started_at IS NULL THEN 1 ELSE 0 END, e.started_at, e.id"
+                ).columns(photos=JSON, run_photos=JSON)
+            )
+        ).fetchall()
+        archives: dict[int, tuple[SimpleNamespace, list, list]] = {}
+        for row in rows:
+            archive, _, photos = archives.setdefault(
+                row.id,
+                (SimpleNamespace(id=row.id, file_path=row.file_path), list(row.photos or []), list(row.photos or [])),
+            )
+            for name in row.run_photos or []:
+                if not isinstance(name, str) or name in photos:
+                    continue
+                # Per photo, and broad: one unreadable path must not cost the
+                # user their boot.
+                try:
+                    found = find_archive_photo(archive, name) is not None
+                except Exception as exc:
+                    logger.warning("Could not look for photo %s of archive %s: %s", name, row.id, exc)
+                    continue
+                if found:
+                    photos.append(name)
+        update = text("UPDATE print_archives SET photos = :photos WHERE id = :id").bindparams(
+            bindparam("photos", type_=JSON)
+        )
+        restored = 0
+        for archive_id, (_, before, photos) in archives.items():
+            if photos != before:
+                await conn.execute(update, {"photos": photos, "id": archive_id})
+                restored += 1
+        if restored:
+            logger.info("Restored finish photos kept only by their print on %d archive(s)", restored)
+        await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": flag, "v": "true"})
 
 
 async def _release_slots_of_archived_spools(conn) -> None:
@@ -5956,6 +6204,7 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("oidc_providers", "is_autologin"),
     ("oidc_providers", "is_env_managed"),
     ("print_archives", "bambuddy_forced_timelapse"),
+    ("print_archives", "timelapse_baseline_unread"),
     ("print_archives", "wallet_charge_skipped"),
     ("print_queue", "bed_levelling"),
     ("print_queue", "cleanup_library_after_dispatch"),
@@ -6909,6 +7158,23 @@ async def _migrate_welcome_template_without_password(conn) -> None:
     await conn.execute(
         text("UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"),
         {"new": new, "et": "user_created", "old": old},
+    )
+
+
+async def _migrate_ai_failure_detection_template(conn) -> None:
+    """Replace the legacy confidence-only AI body while preserving custom text."""
+    from sqlalchemy import text
+
+    from backend.app.models.notification_template import DEFAULT_TEMPLATES
+
+    default = next(t for t in DEFAULT_TEMPLATES if t["event_type"] == "ai_failure_detection")
+    await conn.execute(
+        text("UPDATE notification_templates SET body_template = :new WHERE event_type = :et AND body_template = :old"),
+        {
+            "new": default["body_template"],
+            "et": "ai_failure_detection",
+            "old": "{printer}: {task_name}\nConfidence: {confidence}\nAction taken: {action}",
+        },
     )
 
 

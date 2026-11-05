@@ -6,8 +6,9 @@
  * print, class-colored (safe/warning/failure) during one.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { act, screen, waitFor } from '@testing-library/react';
+import { useQueryClient } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { PrintersPage } from '../../pages/PrintersPage';
@@ -63,6 +64,15 @@ const mockPrinterStatus = {
   vt_tray: [],
 };
 
+function RefreshOctoEverywhereStatus() {
+  const queryClient = useQueryClient();
+  return (
+    <button onClick={() => queryClient.invalidateQueries({ queryKey: ['octoeverywhere-printer-status'] })}>
+      Refresh detection status
+    </button>
+  );
+}
+
 describe('PrintersPage AI detection badge (#1546)', () => {
   beforeEach(() => {
     localStorage.removeItem('printerCardSize');
@@ -80,6 +90,65 @@ describe('PrintersPage AI detection badge (#1546)', () => {
       ),
       http.get('/api/v1/queue/', () => HttpResponse.json([]))
     );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('discovers disabled OctoEverywhere once without continuing to poll', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    let requests = 0;
+    server.use(
+      http.get('/api/v1/octoeverywhere/printer-status', () => {
+        requests++;
+        return HttpResponse.json({ enabled: false, monitored_printers: null, per_printer: {}, last_error: null });
+      }),
+    );
+
+    render(<PrintersPage />);
+    await screen.findByText('X1 Carbon');
+    await waitFor(() => expect(requests).toBe(1));
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(requests).toBe(1);
+  });
+
+  it('starts polling when settings invalidate enabled detection and stops again when disabled', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    let enabled = false;
+    let requests = 0;
+    server.use(
+      http.get('/api/v1/octoeverywhere/printer-status', () => {
+        requests++;
+        return HttpResponse.json({ enabled, monitored_printers: [1], per_printer: {}, last_error: null });
+      }),
+    );
+
+    render(<><PrintersPage /><RefreshOctoEverywhereStatus /></>);
+    await screen.findByText('X1 Carbon');
+    await waitFor(() => expect(requests).toBe(1));
+
+    enabled = true;
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh detection status' }));
+    expect(await screen.findByText('Idle')).toBeInTheDocument();
+    expect(requests).toBe(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    await waitFor(() => expect(requests).toBe(3));
+
+    enabled = false;
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    await waitFor(() => expect(screen.queryByText('Idle')).not.toBeInTheDocument());
+    expect(requests).toBe(4);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(requests).toBe(4);
+
+    enabled = true;
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh detection status' }));
+    expect(await screen.findByText('Idle')).toBeInTheDocument();
+    expect(requests).toBe(5);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    await waitFor(() => expect(requests).toBe(6));
   });
 
   it('shows the live class for a monitored print and Idle for other monitored printers', async () => {
@@ -126,6 +195,91 @@ describe('PrintersPage AI detection badge (#1546)', () => {
 
     // Printer 2 gets the Idle badge; printer 1 (not monitored) gets none
     expect(await screen.findAllByText('Idle')).toHaveLength(1);
+  });
+
+  it('shows OctoEverywhere quality in the badge and detail modal for monitored printers', async () => {
+    server.use(
+      http.get('/api/v1/octoeverywhere/printer-status', () =>
+        HttpResponse.json({
+          enabled: true,
+          monitored_printers: [1],
+          per_printer: { '1': { class: 'warning', frame_count: 12, print_quality: 5, error: null } },
+          last_error: null,
+        })
+      )
+    );
+    render(<PrintersPage />);
+
+    const badge = await screen.findByText('Warning');
+    expect(badge.closest('button')).toHaveAttribute(
+      'title',
+      'AI Failure Detection: Warning (print quality 5/10) - click for details'
+    );
+    expect(screen.queryByText('Idle')).not.toBeInTheDocument();
+    await userEvent.click(badge);
+    expect(await screen.findByText('Print quality')).toBeInTheDocument();
+    expect(screen.getByText('5/10')).toBeInTheDocument();
+    expect(screen.queryByText('Score')).not.toBeInTheDocument();
+  });
+
+  it('shows an OctoEverywhere camera error without a made-up quality value', async () => {
+    server.use(
+      http.get('/api/v1/octoeverywhere/printer-status', () =>
+        HttpResponse.json({
+          enabled: true,
+          monitored_printers: [1],
+          per_printer: { '1': { class: 'error', frame_count: 0, print_quality: null, error: 'Camera unavailable' } },
+          last_error: null,
+        })
+      )
+    );
+    render(<PrintersPage />);
+
+    await userEvent.click(await screen.findByText('Not checking'));
+    expect(await screen.findByText('Camera unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('Print quality')).not.toBeInTheDocument();
+    expect(screen.queryByText('Safe')).not.toBeInTheDocument();
+  });
+
+  it('localizes an OctoEverywhere usage-limit code in the badge and opens its billing setup link', async () => {
+    server.use(
+      http.get('/api/v1/octoeverywhere/printer-status', () => HttpResponse.json({
+        enabled: true,
+        monitored_printers: [1],
+        per_printer: {
+          '1': { class: 'error', frame_count: 0, print_quality: null, error: 'Remote quota text', error_code: 'OE_FREE_USAGE_LIMIT_REACHED' },
+        },
+        last_error: 'Remote quota text',
+        last_error_code: 'OE_FREE_USAGE_LIMIT_REACHED',
+      })),
+    );
+    render(<PrintersPage />);
+
+    const badge = await screen.findByText('Not checking');
+    expect(badge.closest('button')?.getAttribute('title')).toContain('Usage limit reached.');
+    expect(badge.closest('button')?.getAttribute('title')).not.toContain('Remote quota text');
+    await userEvent.click(badge);
+    expect(await screen.findByRole('link', { name: 'Set up billing to continue' })).toHaveAttribute('href', 'https://octoeverywhere.com/gadgetapi');
+    expect(screen.queryByText('Remote quota text')).not.toBeInTheDocument();
+  });
+
+  it('keeps a redacted OctoEverywhere error generic without exposing a quota link', async () => {
+    server.use(
+      http.get('/api/v1/octoeverywhere/printer-status', () => HttpResponse.json({
+        enabled: true,
+        monitored_printers: [1],
+        per_printer: {
+          '1': { class: 'error', frame_count: 0, print_quality: null, error: null, error_code: null },
+        },
+        last_error: null,
+        last_error_code: null,
+      })),
+    );
+    render(<PrintersPage />);
+
+    await userEvent.click(await screen.findByText('Not checking'));
+    expect(screen.queryByText('Usage limit reached.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /set up billing/i })).not.toBeInTheDocument();
   });
 
   it('clicking the badge opens a modal with live status and the last error', async () => {

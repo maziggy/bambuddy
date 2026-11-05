@@ -401,13 +401,17 @@ export function useWebSocket() {
         // The printer_status websocket messages will naturally update the status
         debouncedInvalidate('archives');
         debouncedInvalidate('archiveStats');
+        // A print ended: the archive page's prints and the calendar's.
+        debouncedInvalidate('archive');
+        debouncedInvalidate('archive-runs');
+        debouncedInvalidate('calendar-runs');
         break;
 
       case 'print_confirm_request': {
         // #1898: a completed print asked for its outcome verdict. Handed to
         // the globally mounted ConfirmOutcomeDialog in Layout via the same
         // CustomEvent relay plate_not_empty uses.
-        const detail = (message as unknown as { data?: { archive_id?: number; print_name?: string } }).data;
+        const detail = (message as unknown as { data?: { archive_id?: number; run_id?: number | null; print_name?: string } }).data;
         if (detail?.archive_id != null) {
           window.dispatchEvent(new CustomEvent('print-confirm-request', { detail }));
         }
@@ -435,6 +439,8 @@ export function useWebSocket() {
 
       case 'archive_updated':
         debouncedInvalidate('archives');
+        debouncedInvalidate('archive');
+        debouncedInvalidate('archive-runs');
         break;
 
       case 'pong':
@@ -488,6 +494,9 @@ export function useWebSocket() {
         debouncedInvalidate('material-number-stats');
         // Printer cards and slot views read a spool's weight from the slot rows.
         debouncedInvalidate('spool-assignments');
+        // A Spoolman spool's tag is spool data too, and the slot cards find a
+        // spool by its tag (#3402).
+        debouncedInvalidate('linked-spools');
         break;
 
       case 'spool_assignment_changed':
@@ -495,6 +504,11 @@ export function useWebSocket() {
         // Both inventory modes: the Spoolman AMS sync raises this event too, and
         // its slot rows live under their own query keys.
         invalidateSlotQueries();
+        // A Spoolman move clears the spool's fallback tag for the slot it left
+        // (#1574). The slot cards fall back to the tag -> spool map once the
+        // slot row is gone, so a cached map kept the spool on its old slot in
+        // every tab but the one that moved it. Fetched in Spoolman mode only.
+        queryClient.invalidateQueries({ queryKey: ['linked-spools'] });
         break;
 
       case 'spool_assignment_verified': {

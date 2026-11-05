@@ -45,6 +45,25 @@ export function storeCameraViewMode(mode: CameraViewMode): void {
 }
 
 /**
+ * True in a web app started from the iOS home screen ("Add to Home Screen").
+ *
+ * There is no second window to open there: iOS loads a `window.open` URL into
+ * the app itself, full screen, and the camera page it showed had no way back
+ * to the rest of Bambuddy (#3419). Cameras open as the overlay instead.
+ *
+ * iOS only, deliberately not `display-mode: standalone`: Bambuddy installed as
+ * an app on a desktop opens a real popup window, and Android a closable
+ * in-app browser, so their window mode works and stays.
+ */
+export function isStandaloneWebApp(): boolean {
+  try {
+    return (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Open a printer's camera in its own browser window, reusing whatever size and
  * position the user last left one at.
  *

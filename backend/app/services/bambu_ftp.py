@@ -286,6 +286,9 @@ class FileListResult:
     # The printer did not answer within the wait: slow, not necessarily gone
     # (a large /ipcam on a slow card), so not reported as unavailable (TO-C13).
     timed_out: bool = False
+    # The printer answered that the directory does not exist (550). Still not
+    # ``available``, but an answer about the card, not a failure to reach it.
+    missing: bool = False
 
 
 # Listings still running, by printer and folder: a refresh joins the one in
@@ -1288,7 +1291,8 @@ class BambuFTPClient:
             # 452 is "insufficient storage" -- a 4xx, so ftplib raises it as
             # error_temp rather than error_perm, but it is the printer talking
             # about its card just as 552/553 are. As NETWORK it would read as a
-            # connection problem, and the queue would retry it forever (#3210).
+            # connection problem, and the queue would say it retries by itself
+            # instead of asking for the card to be checked (#3210, #3409).
             is_storage = isinstance(e, ftplib.Error) and code == "452"
             kind = FtpFailureKind.STORAGE if is_storage else FtpFailureKind.NETWORK
             self.last_failure = FtpFailure(kind, str(e), code)
@@ -1450,7 +1454,7 @@ def describe_upload_failure(failure: FtpFailure | None) -> str:
     if failure.kind is FtpFailureKind.STORAGE:
         return (
             f"The printer refused to store the file ({failure.code or 'storage error'}). Check that its SD card "
-            "is inserted, has space free, and is formatted FAT32 or exFAT."
+            "or USB drive is inserted, has space free, and is formatted FAT32 or exFAT."
         )
     if failure.kind is FtpFailureKind.HANDSHAKE:
         return (
@@ -2179,6 +2183,8 @@ async def list_files_result_async(
             connected.set()
             try:
                 return FileListResult(files=client.list_files(path, raise_on_error=True), available=True)
+            except ftplib.error_perm as e:
+                return FileListResult(files=[], available=False, missing=str(e).startswith("550"))
             except (OSError, ftplib.Error):
                 return FileListResult(files=[], available=False)
             finally:
@@ -2202,7 +2208,7 @@ async def list_files_result_async(
         logger.warning("FTP list_files timed out after %ss for %s", timeout, path)
         return FileListResult(files=[], available=False, timed_out=connected.is_set())
     # Joined callers share the listing; each gets entries of its own to edit.
-    return FileListResult(files=[dict(f) for f in result.files], available=result.available)
+    return FileListResult(files=[dict(f) for f in result.files], available=result.available, missing=result.missing)
 
 
 async def find_remote_file_async(

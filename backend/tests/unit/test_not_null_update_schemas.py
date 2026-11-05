@@ -20,6 +20,7 @@ NOT_A_ROW_UPDATE = {
     "ManyfoldConfigUpdate": "stored as settings",
     "CostCenterBudgetUpdateRequest": "replaces the budget rows as a whole",
     "AmsLabelBody": "upserts a label, every field required",
+    "LabelTemplateIn": "replaces a saved label template as a whole, every field required",
     "LinkTagRequest": "links a tag through its own rules",
     "ShoppingListItemStatusUpdate": "one required field",
     "ExternalLinkReorder": "a list of ids",

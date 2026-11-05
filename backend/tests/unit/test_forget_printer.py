@@ -22,9 +22,9 @@ GONE, KEPT = 5, 6
 # Module-level maps in main.py that are not keyed by a printer, or are kept on
 # purpose. Anything else main.py adds must be forgotten with the printer.
 NOT_FORGOTTEN = {
-    "_print_ams_mappings": "keyed by archive (dropped with the printer's expected/active prints)",
-    "_print_cost_center_ids": "keyed by archive (dropped with the printer's expected/active prints)",
-    "_print_plate_ids": "keyed by archive (dropped with the printer's expected/active prints)",
+    "_print_ams_mappings": "keyed by (printer, archive); checked below",
+    "_print_cost_center_ids": "keyed by (printer, archive); checked below",
+    "_print_plate_ids": "keyed by (printer, archive); checked below",
     "_owned_print_archive_ids": "keyed by archive (dropped with the printer's expected/active prints)",
     "_ams_assignment_locks": "a lock carries nothing over; popping one a task holds would let a second be made",
     "_fallback_recovery_locks": "a lock carries nothing over (see its comment on popping)",
@@ -76,6 +76,7 @@ def _entries(printer_id: int) -> dict[str, tuple]:
         "_hms_print_state": (printer_id, "RUNNING"),
         "_hms_forget_when_gone": (printer_id, {"0300_0001"}),
         "_timelapse_baselines": (printer_id, {"video.mp4"}),
+        "_timelapse_baselines_unread": (printer_id, None),
         "_bed_cool_waiters": (printer_id, {"threshold": 35.0, "filename": "cube", "registered_at": 1.0}),
         "_user_stopped_printers": (printer_id, None),
         "_kill_switch_stopped": (printer_id, None),
@@ -118,9 +119,11 @@ async def test_forget_printer_clears_main_and_keeps_other_printers():
     for name in gone:
         _put(name, *gone[name])
         _put(name, *kept[name])
-    main._print_ams_mappings[100 + GONE] = [0]
-    main._print_cost_center_ids[200 + GONE] = 1
-    main._print_plate_ids[200 + GONE] = 2
+    main._print_ams_mappings[(GONE, 100)] = [0]
+    main._print_cost_center_ids[(GONE, 200)] = 1
+    main._print_plate_ids[(GONE, 200)] = 2
+    # Another printer's print of the same archive keeps what it registered.
+    main._print_plate_ids[(KEPT, 200)] = 3
     pending = {name: gone[name][1] for name in ("_printer_offline_notify_tasks", "_fallback_3mf_retry_tasks")}
     try:
         await main.forget_printer(GONE)
@@ -129,12 +132,14 @@ async def test_forget_printer_clears_main_and_keeps_other_printers():
         assert left == []
         lost = [name for name in kept if not _has(name, kept[name][0])]
         assert lost == []
-        assert 100 + GONE not in main._print_ams_mappings
-        assert 200 + GONE not in main._print_cost_center_ids
-        assert 200 + GONE not in main._print_plate_ids
+        assert (GONE, 100) not in main._print_ams_mappings
+        assert (GONE, 200) not in main._print_cost_center_ids
+        assert (GONE, 200) not in main._print_plate_ids
+        assert main._print_plate_ids.get((KEPT, 200)) == 3
         await asyncio.sleep(0)
         assert all(task.cancelled() for task in pending.values())
     finally:
+        main._print_plate_ids.pop((KEPT, 200), None)
         for entries in (gone, kept):
             for name, (key, value) in entries.items():
                 target = getattr(main, name)
@@ -206,6 +211,32 @@ async def test_forget_printer_clears_the_services():
     assert not [key for key in printer_file_cache._entries if key[0] == GONE]
 
 
+async def test_forget_printer_cancels_octoeverywhere_detection(monkeypatch):
+    from backend.app.services.octoeverywhere_detection import OctoEverywhereDetectionService, _PrintState
+
+    detector = OctoEverywhereDetectionService()
+    detector._states = {GONE: _PrintState(), KEPT: _PrintState()}
+    detector._settings = {"enabled_printers": {GONE, KEPT}}
+    gone_check, kept_check = _sleeper(), _sleeper()
+    detector._checks = {GONE: gone_check, KEPT: kept_check}
+    monkeypatch.setattr(main, "octoeverywhere_detection_service", detector)
+    try:
+        await main.forget_printer(GONE)
+        await asyncio.sleep(0)
+
+        assert GONE not in detector._states
+        assert GONE not in detector._checks
+        assert gone_check.cancelled()
+        assert KEPT in detector._states
+        assert detector._checks[KEPT] is kept_check
+        assert not kept_check.done()
+        assert detector._settings is None
+    finally:
+        gone_check.cancel()
+        kept_check.cancel()
+        await asyncio.gather(gone_check, kept_check, return_exceptions=True)
+
+
 async def test_the_plate_references_of_a_printer_go(tmp_path, monkeypatch):
     from backend.app.services import plate_detection
 
@@ -224,12 +255,14 @@ async def test_the_plate_references_of_a_printer_go(tmp_path, monkeypatch):
 
 
 async def test_the_scheduler_and_live_activities_forget_it():
+    from backend.app.services.bambu_ftp import FtpFailureKind
     from backend.app.services.notify_live_activities import notify_live_activities
     from backend.app.services.print_scheduler import scheduler
 
     scheduler._upload_backoff[GONE] = 1e12
     scheduler._upload_refusals[GONE] = 6
-    scheduler._upload_refusal_notified.add(GONE)
+    scheduler._upload_refusal_notified[GONE] = "printer is not accepting files"
+    scheduler._upload_refusal_kind[GONE] = FtpFailureKind.STORAGE
     scheduler._wake_failures[GONE] = 1e12
     scheduler._dispatch_holds[GONE] = (1.0, "IDLE", None)
     scheduler._auto_dry_units[(GONE, 0)] = {}
@@ -242,6 +275,7 @@ async def test_the_scheduler_and_live_activities_forget_it():
     assert GONE not in scheduler._upload_backoff
     assert GONE not in scheduler._upload_refusals
     assert GONE not in scheduler._upload_refusal_notified
+    assert GONE not in scheduler._upload_refusal_kind
     assert GONE not in scheduler._wake_failures
     assert GONE not in scheduler._dispatch_holds
     assert (GONE, 0) not in scheduler._auto_dry_units

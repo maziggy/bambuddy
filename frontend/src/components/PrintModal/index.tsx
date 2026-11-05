@@ -1,5 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, AlertTriangle, Loader2, Pencil, Printer, ThumbsUp, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Layers, Loader2, Pencil, Printer, ThumbsUp, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { CostCenterSummary, PrintQueueItemCreate, PrintQueueItemUpdate, SlotMaterial } from '../../api/client';
@@ -92,6 +92,7 @@ export function PrintModal({
   archiveName,
   queueItem,
   initialSelectedPrinterIds,
+  preselectPlateId,
   onClose,
   onSuccess,
   projectId,
@@ -158,6 +159,9 @@ export function PrintModal({
   const [selectedPlates, setSelectedPlates] = useState<Set<number>>(() => {
     if (mode === 'edit-queue-item' && queueItem?.plate_id != null) {
       return new Set([queueItem.plate_id]);
+    }
+    if (mode === 'create' && !isCrossModel && preselectPlateId != null) {
+      return new Set([preselectPlateId]);
     }
     return new Set();
   });
@@ -740,11 +744,19 @@ export function PrintModal({
     sharedMappingPrinterId,
   );
 
-  // Auto-select first plate when plates load (single or multi-plate)
+  // Auto-select first plate when plates load (single or multi-plate). A plate
+  // chosen before the plates were known (a reprint's or a queue item's) that
+  // the file doesn't have, because the file changed since, is dropped: left
+  // selected, it would be printed or keep the selection from ever falling
+  // back to a plate the file has (#3395).
   useEffect(() => {
-    if (platesData?.plates && platesData.plates.length >= 1 && selectedPlates.size === 0) {
-      setSelectedPlates(new Set([platesData.plates[0].index]));
-    }
+    const list = platesData?.plates;
+    if (!list?.length) return;
+    setSelectedPlates((prev) => {
+      const kept = [...prev].filter((index) => list.some((p) => p.index === index));
+      if (kept.length > 0 && kept.length === prev.size) return prev;
+      return new Set(kept.length > 0 ? kept : [list[0].index]);
+    });
   }, [platesData, selectedPlates.size]);
 
   // Cross-model: the candidate list owns plate choice, and `platesData` is the
@@ -891,6 +903,19 @@ export function PrintModal({
 
   const isMultiPlate = platesData?.is_multi_plate ?? false;
   const plates = platesData?.plates ?? [];
+  // The plates that will print, beside the buttons: in a long plate list the
+  // selected card can be far out of view (#3395).
+  const selectedPlatesSummary =
+    !isCrossModel && isMultiPlate && plates.length > 1
+      ? plates
+          .filter((p) => selectedPlates.has(p.index))
+          .map((p) => {
+            const label = t('printModal.plateN', 'Plate {{n}}', { n: p.index });
+            const name = p.name?.trim();
+            return name && name !== label ? `${label} – ${name}` : label;
+          })
+          .join(', ')
+      : '';
 
   const filamentWarningMessage = useMemo(() => {
     if (!filamentWarningItems || filamentWarningItems.length === 0) return '';
@@ -990,6 +1015,11 @@ export function PrintModal({
     if (printerId !== queueItem.printer_id || plateId !== initialPlateId) return undefined;
     return queueItem.ams_mapping[slotId - 1];
   };
+  // The live status the mapping of this printer was matched against.
+  const statusForPrinter = (printerId: number) =>
+    selectedPrinters.length > 1
+      ? multiPrinterMapping.printerResults.find((result) => result.printerId === printerId)?.status
+      : printerStatus;
   const mappingSubstitutesMaterial = (
     printerId: number,
     plateId: number | null,
@@ -1000,10 +1030,7 @@ export function PrintModal({
       ? plateId != null ? mappingPerPlateReqs.get(plateId)?.filaments : undefined
       : mappingFilamentReqs?.filaments;
     if (!reqs) return false;
-    const status = selectedPrinters.length > 1
-      ? multiPrinterMapping.printerResults.find((result) => result.printerId === printerId)?.status
-      : printerStatus;
-    const loaded = buildLoadedFilaments(status);
+    const loaded = buildLoadedFilaments(statusForPrinter(printerId));
     return reqs.some((req) => {
       const slotId = req.slot_id ?? 0;
       const tray = slotId > 0 ? mapping[slotId - 1] : undefined;
@@ -1254,13 +1281,57 @@ export function PrintModal({
         ? buildFilamentOverridesArray(perPlateReqs.get(plateId))
         : filamentOverridesArray;
 
-    // A specific-printer job carries only the slots the user actually changed
+    // A specific-printer job carries the slots the user actually changed
     // (#3133): the tray mapping was matched against them, and they are what the
-    // scheduler needs if it has to recompute that mapping at dispatch. The
-    // force-colour flags on their own stay behind — printer mode never sent
-    // them, and changing that is not what this is for.
-    const printerOverridesForPlate = (plateId: number | null) => {
-      const entries = overridesForPlate(plateId)?.filter((o) => filamentOverrides[o.slot_id]);
+    // scheduler needs if it has to recompute that mapping at dispatch. And the
+    // slots ticked "Force color match" (#3445), which were dropped on save, so a
+    // recompute fell back to the sliced colour and took any spool of the type.
+    //
+    // A ticked slot set to a tray of the user's choosing asks for that tray's
+    // filament: it is the alternative picked for the slot. Only a tray chosen
+    // in this panel, or the one the job was saved with: one the dialog matched
+    // on its own may be a stand-in of another colour, and ticking the box there
+    // means wait for the colour asked for. A job opened with a forced entry
+    // keeps it while its slot stays on the tray it was saved with, whatever
+    // that tray holds now (it may have been reloaded since). Everything else
+    // keeps the filament the dialog asks for.
+    const chosenTray = (printerId: number, plateId: number | null, slotId: number): number | undefined => {
+      if (selectedPrinters.length !== 1) return undefined;
+      const picks = isMultiPlateSelection
+        ? plateId != null ? manualMappingsByPlate[plateId] : undefined
+        : sharedMappingPrinterId === null || sharedMappingPrinterId === printerId ? manualMappings : undefined;
+      const tray = picks?.[slotId];
+      if (tray == null) return undefined;
+      const keptForced =
+        storedOverrideBySlot.get(slotId)?.force_color_match === true && openedWithTray(printerId, plateId, slotId) === tray;
+      return keptForced ? undefined : tray;
+    };
+    const printerOverridesForPlate = (printerId: number | null, plateId: number | null) => {
+      const loaded = printerId != null ? buildLoadedFilaments(statusForPrinter(printerId)) : [];
+      // The box is only on screen with one printer selected; a tick left over
+      // from before more were added is not saved.
+      const ticksShown = selectedPrinters.length === 1;
+      const entries = overridesForPlate(plateId)
+        ?.flatMap((o) => {
+          const changed = !!filamentOverrides[o.slot_id];
+          if (!changed && !(o.force_color_match && ticksShown)) return [];
+          const tray = o.force_color_match && printerId != null ? chosenTray(printerId, plateId, o.slot_id) : undefined;
+          if (tray == null) return [o];
+          const filament = loaded.find((f) => f.globalTrayId === tray);
+          // A chosen tray that can't be read now (printer off, tray emptied)
+          // says nothing about the filament wanted: asking for the sliced one
+          // would hold the job against the user's own pick. Saved unforced,
+          // as before #3445.
+          if (!filament) return changed ? [{ ...o, force_color_match: false }] : [];
+          return [{
+            slot_id: o.slot_id,
+            type: filament.type,
+            color: filament.color,
+            color_name: filament.colorName,
+            ...(filament.trayInfoIdx ? { tray_info_idx: filament.trayInfoIdx } : {}),
+            force_color_match: true,
+          }];
+        });
       return entries && entries.length > 0 ? entries : undefined;
     };
 
@@ -1380,7 +1451,7 @@ export function PrintModal({
       printer_id: assignmentMode === 'printer' ? printerId : null,
       target_model: assignmentMode === 'model' ? targetModel : null,
       target_location: assignmentMode === 'model' ? targetLocation : null,
-      filament_overrides: assignmentMode === 'model' ? overridesForPlate(plateId) : printerOverridesForPlate(plateId),
+      filament_overrides: assignmentMode === 'model' ? overridesForPlate(plateId) : printerOverridesForPlate(printerId, plateId),
       // Use library_file_id for library files, archive_id for archives
       archive_id: isLibraryFile ? undefined : archiveId,
       library_file_id: isLibraryFile ? libraryFileId : undefined,
@@ -1492,7 +1563,7 @@ export function PrintModal({
                 // null, not undefined: omitting the field left a model job's
                 // overrides on the row after it moved to a printer, whatever the
                 // user did with them here (#3133).
-                filament_overrides: printerOverridesForPlate(plateId) ?? null,
+                filament_overrides: printerOverridesForPlate(printerId, plateId) ?? null,
                 require_previous_success: scheduleOptions.requirePreviousSuccess,
                 auto_off_after: scheduleOptions.autoOffAfter,
                 gcode_injection: scheduleOptions.gcodeInjection,
@@ -2145,6 +2216,17 @@ export function PrintModal({
                   printer: printers?.find((p) => p.id === effectivePrinterId)?.name ?? '',
                 })}
               </div>
+            )}
+
+            {selectedPlatesSummary && (
+              <p
+                className="flex items-center gap-1.5 text-sm text-bambu-gray min-w-0"
+                title={selectedPlatesSummary}
+                data-testid="selected-plates-summary"
+              >
+                <Layers className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{selectedPlatesSummary}</span>
+              </p>
             )}
 
             {/* Actions */}

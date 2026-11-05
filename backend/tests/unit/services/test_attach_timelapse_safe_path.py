@@ -103,6 +103,7 @@ async def test_attach_timelapse_accepts_legit_filename(tmp_path: Path, monkeypat
 
     db = MagicMock()
     db.commit = AsyncMock()
+    db.scalar = AsyncMock(return_value=None)  # no run logged
     service = ArchiveService(db)
 
     fake_archive = MagicMock()

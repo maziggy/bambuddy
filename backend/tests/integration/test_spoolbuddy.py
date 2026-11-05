@@ -647,12 +647,12 @@ class TestNfcEndpoints:
     # matches one by that exact UID saves the tray UUID read from the same tag.
     TRAY = "9E0B0717BEE94D7887EB1D8DFD1A14F3"
 
-    async def _scan(self, async_client: AsyncClient, tag_uid: str, tray_uuid: str | None):
+    async def _scan(self, async_client: AsyncClient, tag_uid: str, tray_uuid: str | None, sak: int | None = None):
         with patch("backend.app.api.routes.spoolbuddy.ws_manager") as mock_ws:
             mock_ws.broadcast = AsyncMock()
             resp = await async_client.post(
                 f"{API}/nfc/tag-scanned",
-                json={"device_id": "sb-1", "tag_uid": tag_uid, "tray_uuid": tray_uuid},
+                json={"device_id": "sb-1", "tag_uid": tag_uid, "tray_uuid": tray_uuid, "sak": sak},
             )
         assert resp.status_code == 200
         return resp.json()
@@ -709,6 +709,36 @@ class TestNfcEndpoints:
         await self._scan(async_client, "AABB1122", self.TRAY)
 
         assert await self._tray_uuid_of(db_session, spool.id) == other
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_full_uid_scan_saves_full_uid_over_cascade_level_1_link(
+        self, async_client: AsyncClient, spool_factory, db_session
+    ):
+        """A spool linked from a level-1 read (#3258) gets the full UID on its first full scan."""
+        from sqlalchemy import select
+
+        spool_id = (await spool_factory(tag_uid="8804ECE6")).id
+
+        data = await self._scan(async_client, "04ECE673D32A81", None)
+
+        assert data["spool_id"] == spool_id
+        db_session.expire_all()
+        stored = (await db_session.execute(select(Spool.tag_uid).where(Spool.id == spool_id))).scalar_one()
+        assert stored == "04ECE673D32A81"
+        # A daemon not updated yet still finds it.
+        assert (await self._scan(async_client, "8804ECE6", None))["spool_id"] == spool_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_complete_uid_beginning_with_88_is_no_cascade_level_1_read(
+        self, async_client: AsyncClient, spool_factory
+    ):
+        """An old daemon's level-1 read comes with SAK 0x04; a 4-byte clone card's 88 UID with 0x08 (#3258)."""
+        spool_id = (await spool_factory(tag_uid="04ECE673D32A81")).id
+
+        assert (await self._scan(async_client, "8804ECE6", None, sak=0x04))["spool_id"] == spool_id
+        assert (await self._scan(async_client, "8804ECE6", None, sak=0x08))["matched"] is False
 
     @pytest.mark.asyncio
     @pytest.mark.integration

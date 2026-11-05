@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, AlertTriangle, Camera, Maximize, Minimize, WifiOff, ZoomIn, ZoomOut, Stethoscope, PictureInPicture2 } from 'lucide-react';
+import { RefreshCw, AlertTriangle, ArrowLeft, Camera, Maximize, Minimize, WifiOff, ZoomIn, ZoomOut, Stethoscope, PictureInPicture2 } from 'lucide-react';
 import { api, getAuthToken, getStreamToken, withStreamToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -13,7 +13,7 @@ import { CameraDiagnoseModal } from '../components/CameraDiagnoseModal';
 import { useStreamImgRef } from '../hooks/useStreamImgRef';
 import { useCameraViewerId } from '../hooks/useCameraViewerId';
 import { isSideways, useSidewaysBox } from '../hooks/useSidewaysBox';
-import { readOpenerTabId, requestCameraPopIn } from '../utils/camera';
+import { isStandaloneWebApp, readOpenerTabId, requestCameraPopIn } from '../utils/camera';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
 // The server's Retry-After for a snapshot while a live view starts.
@@ -688,6 +688,25 @@ function CameraView({ onPoppedIn }: { onPoppedIn: () => void }) {
   // Read at load: the tab that opened this window is the one its
   // sessionStorage was copied from.
   const [openerTabId] = useState(readOpenerTabId);
+  // A window something opened can close itself. A page reached any other way
+  // -- a home-screen web app, which loads a popup's URL into the app itself
+  // (#3419), a bookmark, a link -- can't, so it gets a way back instead.
+  // A popup is known by its opener, or by the name openCameraWindow gives it
+  // when that tab has gone since. A web app counts as one whatever it reports.
+  const [openedAsWindow] = useState(() => {
+    try {
+      return (!!window.opener || window.name.startsWith('camera-')) && !isStandaloneWebApp();
+    } catch {
+      return false;
+    }
+  });
+  const navigate = useNavigate();
+  const location = useLocation();
+  // Back within Bambuddy only: the tab's history can start on another site.
+  const goBack = () => {
+    if (location.key !== 'default') navigate(-1);
+    else navigate('/', { replace: true });
+  };
   const [popInPending, setPopInPending] = useState(false);
   const popIn = async () => {
     setPopInPending(true);
@@ -698,7 +717,8 @@ function CameraView({ onPoppedIn }: { onPoppedIn: () => void }) {
       return;
     }
     onPoppedIn();
-    window.close();
+    if (openedAsWindow) window.close();
+    else goBack();
   };
 
   if (!id) {
@@ -715,6 +735,16 @@ function CameraView({ onPoppedIn }: { onPoppedIn: () => void }) {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary">
         <h1 className="text-sm font-medium text-white flex items-center gap-2">
+          {!openedAsWindow && (
+            <button
+              onClick={goBack}
+              className="p-1 -ml-1 hover:bg-bambu-dark-tertiary rounded"
+              title={t('common.back')}
+              aria-label={t('common.back')}
+            >
+              <ArrowLeft className="w-4 h-4 text-bambu-gray" />
+            </button>
+          )}
           <Camera className="w-4 h-4" />
           {printer?.name || `Printer ${id}`}
         </h1>
@@ -781,6 +811,8 @@ function CameraView({ onPoppedIn }: { onPoppedIn: () => void }) {
           >
             <Stethoscope className="w-4 h-4 text-bambu-gray" />
           </button>
+          {/* No other Bambuddy tab can take it in a home-screen web app. */}
+          {!isStandaloneWebApp() && (
           <button
             onClick={popIn}
             disabled={popInPending}
@@ -790,6 +822,7 @@ function CameraView({ onPoppedIn }: { onPoppedIn: () => void }) {
           >
             <PictureInPicture2 className="w-4 h-4 text-bambu-gray" />
           </button>
+          )}
           <button
             onClick={toggleFullscreen}
             className="p-1.5 hover:bg-bambu-dark-tertiary rounded"

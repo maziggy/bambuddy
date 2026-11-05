@@ -107,6 +107,7 @@ from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
     GENERIC_IDS_REPLACED_ON_REUSE,
     filament_id_to_setting_id,
+    setting_id_to_filament_id,
 )
 from backend.app.utils.filament_types import is_material_name, printer_filament_type
 from backend.app.utils.fts_routing import slot_extruder
@@ -2848,6 +2849,12 @@ def _orca_generic_filament_id(material: str) -> str:
     )
 
 
+def _as_filament_id(value: str) -> str:
+    """The filament id of an official Bambu setting id ("GFSL99_02" → "GFL99");
+    anything else unchanged (#3444)."""
+    return setting_id_to_filament_id(value) if value.startswith("GFS") else value
+
+
 @router.post("/{printer_id}/slots/{ams_id}/{tray_id}/configure")
 async def configure_ams_slot(
     printer_id: int,
@@ -2957,6 +2964,31 @@ async def configure_ams_slot(
         if not setting_id and (tray_info_idx.startswith("PFUS") or tray_info_idx.startswith("PFCN")):
             setting_id = tray_info_idx
         tray_info_idx = ""
+
+    # A Bambu setting id ("GFSL99", "GFSL99_02") where a filament id belongs
+    # (#3444). The printer knows filament ids ("GFL99") only: sent as it is,
+    # the slot came back blank and auto-unlink dropped the spool. A spool's
+    # slicer_filament can be either kind, and the assignment path converts it
+    # (normalize_slicer_filament); an API client passing it on to Configure
+    # did not get the same. Converted with the #3387 helper, never by dropping
+    # the "S": support ids ("GFS99") and SUNLU's ("GFSNL03") are filament ids
+    # already and come back unchanged. The setting id stays as setting_id,
+    # unless the client sent one.
+    converted = _as_filament_id(tray_info_idx)
+    if converted != tray_info_idx:
+        logger.info("[configure_ams_slot] tray_info_idx %r is a setting id → %r", tray_info_idx, converted)
+        setting_id = setting_id or tray_info_idx
+        tray_info_idx = converted
+    # The K profile's filament id: it becomes the slot's when they differ
+    # (the realignment below), and the printer's calibration table is keyed
+    # by filament ids as well.
+    converted = _as_filament_id(kprofile_filament_id)
+    if converted != kprofile_filament_id:
+        logger.info(
+            "[configure_ams_slot] kprofile_filament_id %r is a setting id → %r", kprofile_filament_id, converted
+        )
+        kprofile_setting_id = kprofile_setting_id or kprofile_filament_id
+        kprofile_filament_id = converted
 
     # An Orca Cloud profile: look up the filament id it puts in the slot. It is
     # the one value OrcaSlicer's "Sync filaments" matches a slot by, so a

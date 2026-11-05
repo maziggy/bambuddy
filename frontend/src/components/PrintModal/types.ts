@@ -31,6 +31,12 @@ export interface PrintModalProps {
   queueItem?: PrintQueueItem;
   /** Pre-select specific printers when opening the modal */
   initialSelectedPrinterIds?: number[];
+  /**
+   * Pre-select this plate when opening the modal (create mode): a reprint of
+   * an archive, or a re-queue, prints the plate that job printed, not plate 1.
+   * A plate the file no longer has falls back to the first plate.
+   */
+  preselectPlateId?: number | null;
   /** Handler for closing the modal */
   onClose: () => void;
   /** Handler for successful operation */

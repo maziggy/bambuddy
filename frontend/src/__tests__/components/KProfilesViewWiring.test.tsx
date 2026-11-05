@@ -383,3 +383,38 @@ describe('KProfilesView wiring: permissions', () => {
     expect(modalTrash()).toBeDisabled();
   });
 });
+
+describe('KProfilesView: a printer that did not answer (#3404)', () => {
+  it('a 504 says the read failed, not that there are no profiles', async () => {
+    let reads = 0;
+    server.use(
+      http.get('*/api/v1/printers/:id/kprofiles/', () => {
+        reads += 1;
+        return reads === 1
+          ? HttpResponse.json({ detail: 'The printer did not answer the K-profile request' }, { status: 504 })
+          : HttpResponse.json({ profiles: PROFILES, nozzle_diameter: '0.4' });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<KProfilesView />);
+
+    await waitFor(() => expect(screen.getByText("Couldn't read K-Profiles")).toBeInTheDocument());
+    expect(screen.getByText(/did not answer the K-profile request\. Its profiles may still be there/)).toBeInTheDocument();
+    expect(screen.queryByText('No K-Profiles')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create First Profile' })).not.toBeInTheDocument();
+
+    const card = screen.getByText("Couldn't read K-Profiles").parentElement!;
+    await user.click(within(card).getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(screen.getByText('S Bambu PLA Basic')).toBeInTheDocument());
+  });
+
+  it('an answered empty table still offers the first profile', async () => {
+    server.use(
+      http.get('*/api/v1/printers/:id/kprofiles/', () => HttpResponse.json({ profiles: [], nozzle_diameter: '0.4' })),
+    );
+    render(<KProfilesView />);
+
+    await waitFor(() => expect(screen.getByText('No K-Profiles')).toBeInTheDocument());
+    expect(screen.queryByText("Couldn't read K-Profiles")).not.toBeInTheDocument();
+  });
+});

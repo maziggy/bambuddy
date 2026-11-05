@@ -9,7 +9,9 @@ exactly once across the response.
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from backend.app.schemas.slicer import PresetRef
 
 CloudStatus = Literal["ok", "not_authenticated", "expired", "unreachable"]
 
@@ -46,6 +48,12 @@ class UnifiedPreset(BaseModel):
     ("Bambu Lab H2D 0.4 nozzle - Skew") is listed in no process's
     ``compatible_printers`` and its name says nothing reliable about the
     model, so the SliceModal matches against this parent as well (#3250).
+    OrcaSlicer Cloud filament presets carry it too: one saved with only the
+    keys the user changed takes its material from this parent (#3403).
+
+    ``stock`` marks a Bambu Cloud preset as one of Bambu's own (the cloud's
+    "public" list) rather than the user's. Internal only: the listing drops
+    the Standard presets of the same names (#3386).
     """
 
     id: str
@@ -55,6 +63,7 @@ class UnifiedPreset(BaseModel):
     filament_colour: str | None = None
     compatible_printers: list[str] | None = None
     inherits: str | None = None
+    stock: bool = Field(default=False, exclude=True)
 
 
 class UnifiedPresetsBySlot(BaseModel):
@@ -66,7 +75,8 @@ class UnifiedPresetsBySlot(BaseModel):
 
 
 class UnifiedPresetsResponse(BaseModel):
-    """Every tier carries its full preset list — no cross-tier dedup.
+    """Every tier carries its full preset list — no cross-tier dedup, except
+    that Bambu Cloud's stock presets are listed once, under Bambu Cloud (#3386).
 
     Priority order: ``local > orca_cloud > cloud > standard``. The order
     drives auto-pick (first non-empty tier wins, name-lookup walks tiers
@@ -79,6 +89,10 @@ class UnifiedPresetsResponse(BaseModel):
     explaining why a cloud tier is empty when the user expected to see it
     (signed out / token expired / network down). Each tier has its own
     status because they can fail independently.
+
+    ``stock_aliases`` maps each dropped Standard preset (``"standard:<id>"``)
+    to its Bambu Cloud stock twin, so a pipeline or AMS slot saved with the
+    Standard copy still finds it.
     """
 
     orca_cloud: UnifiedPresetsBySlot = UnifiedPresetsBySlot()
@@ -87,6 +101,7 @@ class UnifiedPresetsResponse(BaseModel):
     standard: UnifiedPresetsBySlot = UnifiedPresetsBySlot()
     cloud_status: CloudStatus = "ok"
     orca_cloud_status: CloudStatus = "ok"
+    stock_aliases: dict[str, PresetRef] = {}
 
 
 class LoadedSpoolPreset(BaseModel):

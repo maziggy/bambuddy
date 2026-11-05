@@ -45,6 +45,7 @@ async def write_slot_results(
     against, and every slot is written as it was before the compare existed. A
     swap and a removal must not be dropped for want of a snapshot.
     """
+    synced = list(synced)  # read again by _release_elsewhere
     if read is None:
         return await _write_unconditionally(db, synced, emptied)
     changed: list[Slot] = []
@@ -98,6 +99,7 @@ async def write_slot_results(
             changed.append(slot)
     await db.commit()
     await _announce(assigned, changed)
+    await _release_elsewhere(synced, assigned)
     return changed
 
 
@@ -131,7 +133,28 @@ async def _write_unconditionally(
     await db.commit()
     changed = assigned + removed
     await _announce(assigned, changed)
+    await _release_elsewhere(synced, assigned)
     return changed
+
+
+async def _release_elsewhere(synced: Iterable[tuple[int, int, int, int]], assigned: list[Slot]) -> None:
+    """Take each spool this write put in a slot out of its other slots (#3427).
+
+    Only where the slot reports a tag, which ``release_other_slots`` checks:
+    the sync also fills slots from what they held before, which proves
+    nothing about where the spool is. A failure leaves the assignment written.
+    """
+    from backend.app.services.spool_relocation import SPOOLMAN, release_other_slots
+
+    written = set(assigned)
+    for printer_id, ams_id, tray_id, spool_id in synced:
+        slot = (printer_id, ams_id, tray_id)
+        if slot not in written:
+            continue
+        try:
+            await release_other_slots(SPOOLMAN, spool_id, slot)
+        except Exception as e:
+            logger.warning("Releasing Spoolman spool %s from its other slots failed: %s", spool_id, e, exc_info=True)
 
 
 async def _announce(assigned: list[Slot], changed: list[Slot]) -> None:

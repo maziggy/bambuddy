@@ -34,6 +34,7 @@
     "dompurify": "^3.4.17",
     "i18next": "25.6.3",
     "i18next-browser-languagedetector": "^8.2.0",
+    "jsqr": "^1.4.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.555.0",
     "mdast-util-gfm-footnote": "^2.1.0",
@@ -59,7 +60,7 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "overrides": {
-    "minimatch": "^10.2.1",
+    "minimatch": "^11.0.4",
     "brace-expansion": "^5.0.12",
     "js-yaml": "^5.4.1",
     "nanoid": "^3.3.18",

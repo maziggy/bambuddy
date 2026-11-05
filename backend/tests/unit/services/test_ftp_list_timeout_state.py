@@ -7,6 +7,7 @@ started another one in the shared FTP pool.
 """
 
 import asyncio
+import ftplib
 import threading
 from unittest.mock import patch
 
@@ -95,3 +96,37 @@ async def test_a_printer_that_never_answered_is_unavailable_not_slow():
 
     assert result.available is False
     assert result.timed_out is False
+
+
+class Refuses:
+    """Connects, then refuses the directory with *reply*."""
+
+    reply = ""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def connect(self):
+        return True
+
+    def list_files(self, path, raise_on_error=False):
+        raise ftplib.error_perm(type(self).reply)
+
+    def disconnect(self):
+        pass
+
+
+@pytest.mark.parametrize(
+    ("reply", "missing"),
+    [("550 Failed to change directory.", True), ("530 Login incorrect.", False)],
+)
+async def test_a_directory_that_does_not_exist_is_an_answer_about_the_card(reply, missing):
+    """550 says the card has no such directory, which the timelapse baseline
+    counts as reading the card (#3412); any other refusal says nothing."""
+    bambu_ftp._inflight_listings.clear()
+    Refuses.reply = reply
+    with patch.object(bambu_ftp, "BambuFTPClient", Refuses):
+        result = await bambu_ftp.list_files_result_async("10.0.0.6", "code", "/record", timeout=2)
+
+    assert result.available is False
+    assert result.missing is missing

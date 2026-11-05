@@ -21,7 +21,7 @@ from backend.app.schemas.kprofile import (
     KProfileNoteResponse,
     KProfilesResponse,
 )
-from backend.app.services.bambu_mqtt import CALI_ACK_UNCONFIRMED
+from backend.app.services.bambu_mqtt import CALI_ACK_UNCONFIRMED, KProfileReadError
 from backend.app.services.printer_manager import printer_manager
 
 logger = logging.getLogger(__name__)
@@ -53,8 +53,12 @@ async def get_kprofiles(
     if not client or not client.state.connected:
         raise HTTPException(400, "Printer not connected")
 
-    # Request K-profiles from printer
-    profiles = await client.get_kprofiles(nozzle_diameter=nozzle_diameter)
+    # Request K-profiles from printer. No answer is an error, not an empty
+    # table: that one means the printer has none for this nozzle (#3404).
+    try:
+        profiles = await client.get_kprofiles(nozzle_diameter=nozzle_diameter)
+    except KProfileReadError as e:
+        raise HTTPException(504, "The printer did not answer the K-profile request") from e
 
     # Convert from MQTT dataclass to Pydantic schema
     return KProfilesResponse(
@@ -196,12 +200,16 @@ async def set_kprofile(
 
     if is_edit and not is_dual_nozzle:
         # The edit deleted the profile and added it again: read the table back
-        # to see the edited one landed. An empty table is also what a read that
-        # timed out returns, so only a table without it is proof. Same pause as
+        # to see the edited one landed. A read the printer did not answer
+        # leaves it to the acks: the write has gone out by then. Same pause as
         # before the add.
         await asyncio.sleep(0.5)
-        table = await client.get_kprofiles(nozzle_diameter=profile.nozzle_diameter)
-        if table:
+        try:
+            table = await client.get_kprofiles(nozzle_diameter=profile.nozzle_diameter)
+        except KProfileReadError as e:
+            logger.warning("[API] Edit: could not read the K-profile table back: %s", e)
+            table = None
+        if table is not None:
             if not any(_is_saved_profile(stored, profile) for stored in table):
                 raise HTTPException(
                     502,

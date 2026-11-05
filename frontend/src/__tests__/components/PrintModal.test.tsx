@@ -1167,6 +1167,88 @@ describe('PrintModal', () => {
       expect((queueRequests[1] as { plate_id: number }).plate_id).toBe(3);
     });
 
+    // #3395: a reprint opens on the plate the archive printed, not plate 1.
+    async function submitAndCollect(preselectPlateId: number | null) {
+      const queueRequests: { plate_id: number }[] = [];
+      server.use(
+        http.post('/api/v1/queue/', async ({ request }) => {
+          queueRequests.push((await request.json()) as { plate_id: number });
+          return HttpResponse.json({ id: queueRequests.length, status: 'pending' });
+        }),
+      );
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="create"
+          archiveId={1}
+          archiveName="MultiPlate.3mf"
+          preselectPlateId={preselectPlateId}
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+      await waitFor(() => {
+        expect(screen.getByText('Select All 3 Plates')).toBeInTheDocument();
+      });
+      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+      await waitFor(() => {
+        expect(queueRequests.length).toBe(1);
+      });
+      return queueRequests.map((r) => r.plate_id);
+    }
+
+    it('queues the pre-selected plate only', async () => {
+      expect(await submitAndCollect(3)).toEqual([3]);
+      expect(screen.getByTestId('selected-plates-summary')).toHaveTextContent('Plate 3');
+    });
+
+    it('falls back to the first plate when the file no longer has the pre-selected one', async () => {
+      expect(await submitAndCollect(9)).toEqual([1]);
+    });
+
+    it('names the selected plates beside the buttons, with their names', async () => {
+      server.use(
+        http.get('/api/v1/archives/:id/plates', () =>
+          HttpResponse.json({
+            ...multiPlateResponse,
+            plates: multiPlateResponse.plates.map((p) => (p.index === 2 ? { ...p, name: 'Lid' } : p)),
+          }),
+        ),
+      );
+      const user = userEvent.setup();
+      render(
+        <PrintModal mode="create" archiveId={1} archiveName="MultiPlate.3mf" preselectPlateId={2} onClose={mockOnClose} />
+      );
+      await waitFor(() => {
+        expect(screen.getByTestId('selected-plates-summary')).toHaveTextContent('Plate 2 – Lid');
+      });
+      await user.click(screen.getByText('Plate 3'));
+      expect(screen.getByTestId('selected-plates-summary')).toHaveTextContent('Plate 2 – Lid, Plate 3');
+    });
+
+    it('scrolls the pre-selected plate into view', async () => {
+      const scrolled: string[] = [];
+      const original = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = function (this: Element) {
+        scrolled.push(this.textContent ?? '');
+      };
+      try {
+        render(
+          <PrintModal mode="create" archiveId={1} archiveName="MultiPlate.3mf" preselectPlateId={3} onClose={mockOnClose} />
+        );
+        await waitFor(() => {
+          expect(scrolled.length).toBe(1);
+        });
+        expect(scrolled[0]).toContain('Part C');
+        // Once: picking another plate doesn't move the list again.
+        await userEvent.setup().click(screen.getByText('Plate 1'));
+        expect(scrolled.length).toBe(1);
+      } finally {
+        Element.prototype.scrollIntoView = original;
+      }
+    });
+
     it('creates one queue item per plate when submitting with select-all', async () => {
       const queueRequests: unknown[] = [];
       server.use(
@@ -3138,5 +3220,260 @@ describe('PrintModal default printer', () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
 
     expect(screen.getByText('P1S').closest('button')).not.toHaveClass('border-bambu-green');
+  });
+});
+
+describe('PrintModal — "Force color match" on a specific printer is saved (#3445)', () => {
+  const mockOnClose = vi.fn();
+
+  const PRINTERS = [
+    { id: 1, name: 'Printer 01', model: 'P1S', ip_address: '192.168.1.101', enabled: true, is_active: true },
+    { id: 2, name: 'Printer 02', model: 'P1S', ip_address: '192.168.1.102', enabled: true, is_active: true },
+  ];
+  // Sliced in white; the printer holds green (tray 0) and black (tray 1), no white.
+  const SLOT_1_WHITE = { slot_id: 1, type: 'PLA', color: '#CBC6B8', tray_info_idx: 'GFA01', used_grams: 50 };
+
+  type Override = { slot_id: number; type: string; color: string; tray_info_idx?: string; force_color_match: boolean };
+  type Sent = { printer_id?: number | null; ams_mapping?: number[] | null; filament_overrides?: Override[] | null };
+  let patched: Sent[];
+  let posted: Sent[];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    patched = [];
+    posted = [];
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json(PRINTERS)),
+      http.get('/api/v1/archives/:id/plates', () => HttpResponse.json({ is_multi_plate: false, plates: [] })),
+      http.get('/api/v1/archives/:id/filament-requirements', () => HttpResponse.json({ filaments: [SLOT_1_WHITE] })),
+      http.get('/api/v1/printers/:id/status', () =>
+        HttpResponse.json({
+          connected: true,
+          state: 'IDLE',
+          ams: [
+            {
+              id: 0,
+              tray: [
+                { id: 0, tray_type: 'PLA', tray_color: '68724DFF', tray_info_idx: 'GFA01' },
+                { id: 1, tray_type: 'PLA', tray_color: '000000FF', tray_info_idx: 'GFA01' },
+              ],
+            },
+          ],
+          vt_tray: [],
+        }),
+      ),
+      http.get('/api/v1/printers/:id/assignments', () => HttpResponse.json([])),
+      http.patch('/api/v1/queue/:id', async ({ request }) => {
+        patched.push((await request.json()) as Sent);
+        return HttpResponse.json({ id: 1, status: 'pending' });
+      }),
+      http.post('/api/v1/queue/', async ({ request }) => {
+        posted.push((await request.json()) as Sent);
+        return HttpResponse.json({ id: 1, status: 'pending' });
+      }),
+    );
+  });
+
+  const printer01Item = (overrides: Partial<PrintQueueItem> = {}) =>
+    createMockQueueItem({ printer_id: 1, target_model: null, ams_mapping: [1], ...overrides } as Partial<PrintQueueItem>);
+
+  const BLACK_FORCED = { slot_id: 1, type: 'PLA', color: '#000000', tray_info_idx: 'GFA01', force_color_match: true };
+
+  const openMapping = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(await screen.findByText(/filament mapping/i));
+    return screen.findByRole('checkbox', { name: /force color match/i });
+  };
+
+  const submit = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+  };
+
+  it("saves a ticked slot with the filament of the tray it was mapped to, not the sliced one", async () => {
+    const user = userEvent.setup();
+    render(<PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={printer01Item()} onClose={mockOnClose} />);
+
+    await user.click(await openMapping(user));
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(patched[0].ams_mapping).toEqual([1]);
+    // Black, so a recompute at dispatch asks for black and never takes green.
+    expect(patched[0].filament_overrides).toEqual([expect.objectContaining(BLACK_FORCED)]);
+  });
+
+  it('shows the box ticked again when the job is reopened, and keeps it on save', async () => {
+    const user = userEvent.setup();
+    render(
+      <PrintModal
+        mode="edit-queue-item"
+        archiveId={1}
+        archiveName="Job"
+        queueItem={printer01Item({ filament_overrides: [{ ...BLACK_FORCED, color_name: 'Black' }] } as Partial<PrintQueueItem>)}
+        onClose={mockOnClose}
+      />,
+    );
+
+    expect(await openMapping(user)).toBeChecked();
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(patched[0].filament_overrides).toEqual([expect.objectContaining(BLACK_FORCED)]);
+  });
+
+  it('saves an untick', async () => {
+    const user = userEvent.setup();
+    render(
+      <PrintModal
+        mode="edit-queue-item"
+        archiveId={1}
+        archiveName="Job"
+        queueItem={printer01Item({ filament_overrides: [BLACK_FORCED] } as Partial<PrintQueueItem>)}
+        onClose={mockOnClose}
+      />,
+    );
+
+    await user.click(await openMapping(user));
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    // Black stays asked for, as picked; only no longer strictly.
+    expect(patched[0].filament_overrides).toEqual([
+      expect.objectContaining({ slot_id: 1, color: '#000000', force_color_match: false }),
+    ]);
+  });
+
+  it("keeps a reopened job's forced filament when its tray has been reloaded since", async () => {
+    // Tray 1 now holds a green third-party spool with no preset.
+    server.use(
+      http.get('/api/v1/printers/:id/status', () =>
+        HttpResponse.json({
+          connected: true,
+          state: 'IDLE',
+          ams: [{ id: 0, tray: [{ id: 1, tray_type: 'PLA', tray_color: '68724DFF', tray_info_idx: '' }] }],
+          vt_tray: [],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(
+      <PrintModal
+        mode="edit-queue-item"
+        archiveId={1}
+        archiveName="Job"
+        queueItem={printer01Item({ filament_overrides: [BLACK_FORCED] } as Partial<PrintQueueItem>)}
+        onClose={mockOnClose}
+      />,
+    );
+
+    expect(await openMapping(user)).toBeChecked();
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    // Still black, variant pin included: saving the schedule must not turn it green.
+    expect(patched[0].filament_overrides).toEqual([expect.objectContaining(BLACK_FORCED)]);
+  });
+
+  it("takes the new tray's filament when a reopened forced slot is moved to another tray", async () => {
+    const user = userEvent.setup();
+    render(
+      <PrintModal
+        mode="edit-queue-item"
+        archiveId={1}
+        archiveName="Job"
+        queueItem={printer01Item({ filament_overrides: [BLACK_FORCED] } as Partial<PrintQueueItem>)}
+        onClose={mockOnClose}
+      />,
+    );
+
+    await openMapping(user);
+    await user.click(await screen.findByRole('combobox', { name: /printer slot for/i }));
+    await user.click(within(await screen.findByRole('listbox')).getByRole('option', { name: /A1/ }));
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(patched[0].ams_mapping).toEqual([0]);
+    expect(patched[0].filament_overrides).toEqual([
+      expect.objectContaining({ slot_id: 1, color: '#68724D', force_color_match: true }),
+    ]);
+  });
+
+  it("does not force a slot whose chosen tray can't be read", async () => {
+    // The printer is off: no trays to say what the slot is set to.
+    server.use(
+      http.get('/api/v1/printers/:id/status', () =>
+        HttpResponse.json({ connected: false, state: 'OFFLINE', ams: [], vt_tray: [] }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={printer01Item()} onClose={mockOnClose} />);
+
+    await user.click(await openMapping(user));
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    // Not "wait for white": that would hold the job off the black tray picked for it.
+    expect(patched[0].filament_overrides ?? null).toBeNull();
+  });
+
+  it('does not save a tick whose box went away when a second printer was added', async () => {
+    const user = userEvent.setup();
+    render(<PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={printer01Item()} onClose={mockOnClose} />);
+
+    await user.click(await openMapping(user));
+    await user.click(screen.getByText('Printer 02'));
+    await waitFor(() => expect(screen.queryByRole('checkbox', { name: /force color match/i })).not.toBeInTheDocument());
+    await submit(user);
+
+    // The edited job stays on printer 01, a copy goes to printer 02.
+    await waitFor(() => expect(patched.length + posted.length).toBe(2));
+    for (const job of [...patched, ...posted]) expect(job.filament_overrides ?? null).toBeNull();
+  });
+
+  it('waits for the sliced colour when the box is ticked on a tray the dialog matched itself', async () => {
+    const user = userEvent.setup();
+    render(
+      <PrintModal mode="create" archiveId={1} archiveName="Job" initialSelectedPrinterIds={[1]} onClose={mockOnClose} />,
+    );
+
+    // No white loaded: the dialog stands in a PLA of another colour. The tick
+    // asks for white, not for that stand-in.
+    await user.click(await screen.findByRole('checkbox', { name: /force color match/i }));
+    await submit(user);
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0].filament_overrides).toEqual([
+      expect.objectContaining({ slot_id: 1, type: 'PLA', color: '#CBC6B8', force_color_match: true }),
+    ]);
+  });
+
+  it('sends nothing for a slot left unticked and unchanged', async () => {
+    const user = userEvent.setup();
+    render(<PrintModal mode="edit-queue-item" archiveId={1} archiveName="Job" queueItem={printer01Item()} onClose={mockOnClose} />);
+
+    await openMapping(user);
+    await submit(user);
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(patched[0].filament_overrides ?? null).toBeNull();
+  });
+
+  it('saves the tick on a new job queued for one printer', async () => {
+    const user = userEvent.setup();
+    render(
+      <PrintModal mode="create" archiveId={1} archiveName="Job" initialSelectedPrinterIds={[1]} onClose={mockOnClose} />,
+    );
+
+    // Pick black for the white slot, then tick it. A preselected printer opens
+    // the mapping panel expanded.
+    await user.click(await screen.findByRole('combobox', { name: /printer slot for/i }));
+    const listbox = await screen.findByRole('listbox');
+    await user.click(within(listbox).getByRole('option', { name: /A2/ }));
+    await user.click(screen.getByRole('checkbox', { name: /force color match/i }));
+    await submit(user);
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0].printer_id).toBe(1);
+    expect(posted[0].ams_mapping).toEqual([1]);
+    expect(posted[0].filament_overrides).toEqual([expect.objectContaining(BLACK_FORCED)]);
   });
 });

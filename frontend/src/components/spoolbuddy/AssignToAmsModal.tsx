@@ -226,10 +226,11 @@ export function AssignToAmsModal({
     ? spoolmanAssignments.find(a => a.spoolman_spool_id === spool.id)
     : undefined;
 
-  // Build fill-level override map from inventory assignments
+  // Build fill-level override map from inventory assignments, in built-in
+  // mode only: kept rows from it would fill Spoolman-mode slots (#3430).
   const fillOverrides = useMemo(() => {
     const map: Record<string, number> = {};
-    if (!assignments) return map;
+    if (!assignments || spoolmanMode) return map;
     for (const a of assignments) {
       const sp = a.spool;
       if (sp && sp.label_weight > 0 && sp.weight_used != null) {
@@ -238,7 +239,7 @@ export function AssignToAmsModal({
       }
     }
     return map;
-  }, [assignments]);
+  }, [assignments, spoolmanMode]);
 
   const amsThresholds: AmsThresholds | undefined = settings ? {
     humidityGood: Number(settings.ams_humidity_good) || 40,

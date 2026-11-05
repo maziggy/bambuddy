@@ -3818,6 +3818,10 @@ class TestForceColorOverridesAreScopedToThePlate:
         file_path = tmp_path / "three_plates.gcode.3mf"
         with zipfile.ZipFile(file_path, "w") as zf:
             zf.writestr("Metadata/slice_info.config", self.THREE_PLATES)
+            # Sliced, or the queue refuses it (#3435). One plate's G-code only:
+            # with more, a job naming no plate would print the default one
+            # rather than the whole file these tests queue.
+            zf.writestr("Metadata/plate_1.gcode", "; plate 1")
 
         archive = PrintArchive(
             filename="three_plates.gcode.3mf",
@@ -3950,6 +3954,7 @@ class TestForceColorOverridesAreScopedToThePlate:
         file_path = tmp_path / "mixed_types.gcode.3mf"
         with zipfile.ZipFile(file_path, "w") as zf:
             zf.writestr("Metadata/slice_info.config", xml)
+            zf.writestr("Metadata/plate_1.gcode", "; plate 1")  # sliced (#3435)
         archive = PrintArchive(
             filename="mixed_types.gcode.3mf",
             print_name="Mixed",
@@ -4071,6 +4076,38 @@ async def test_stop_offline_reconciles_linked_archive_status_2603(
     assert archive.completed_at is not None
     # A vocabulary key (#2974), not prose: the stop's detail is on the queue row.
     assert archive.failure_reason == "userCancelled"
+
+
+@pytest.mark.asyncio
+async def test_stop_offline_logs_the_run_with_the_items_plate(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    """The run's own plate is the queue item's: the archive's is only its
+    latest run's, and a reprint of another plate may not have changed it."""
+    from unittest.mock import MagicMock, patch
+
+    from sqlalchemy import select
+
+    from backend.app.models.print_log import PrintLogEntry
+    from backend.app.models.print_queue import PrintQueueItem
+
+    printer = await printer_factory(name="Offline printer")
+    archive = await archive_factory(printer.id, status="printing", plate_id=1, with_run=False)
+    item = PrintQueueItem(printer_id=printer.id, archive_id=archive.id, status="printing", plate_id=3)
+    db_session.add(item)
+    await db_session.commit()
+
+    with patch(
+        "backend.app.services.printer_manager.printer_manager.stop_print",
+        MagicMock(return_value=False),
+    ):
+        resp = await async_client.post(f"/api/v1/queue/{item.id}/stop")
+
+    assert resp.status_code == 200
+    plates = list(
+        await db_session.scalars(select(PrintLogEntry.plate_id).where(PrintLogEntry.archive_id == archive.id))
+    )
+    assert plates == [3]
 
 
 @pytest.mark.asyncio

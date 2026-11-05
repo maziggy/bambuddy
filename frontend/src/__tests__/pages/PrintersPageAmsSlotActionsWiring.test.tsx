@@ -139,9 +139,13 @@ interface SetupOptions {
   status: JsonBodyType;
   spoolman?: boolean;
   amsLabels?: Record<number, string>;
+  /** Spoolman enabled but not answering. */
+  spoolmanDown?: boolean;
+  /** A built-in row kept from built-in mode (#2812), served in Spoolman mode too. */
+  keptBuiltIn?: boolean;
 }
 
-function setup({ status, spoolman = false, amsLabels = {} }: SetupOptions) {
+function setup({ status, spoolman = false, amsLabels = {}, spoolmanDown = false, keptBuiltIn = false }: SetupOptions) {
   const sent: Sent[] = [];
   const record =
     (response: JsonBodyType = { success: true, message: 'ok', status: 'ok' }) =>
@@ -157,12 +161,12 @@ function setup({ status, spoolman = false, amsLabels = {} }: SetupOptions) {
     http.get('/api/v1/printers/:id/status', () => HttpResponse.json(status)),
     http.get('/api/v1/printers/:id/ams-labels', () => HttpResponse.json(amsLabels)),
     http.get('/api/v1/spoolman/status', () =>
-      HttpResponse.json({ enabled: spoolman, connected: spoolman, url: spoolman ? 'http://spoolman' : null })
+      HttpResponse.json({ enabled: spoolman, connected: spoolman && !spoolmanDown, url: spoolman ? 'http://spoolman' : null })
     ),
     // Built-in inventory: slot 1 of AMS 0 holds spool 77.
     http.get('/api/v1/inventory/assignments', () =>
       HttpResponse.json(
-        spoolman
+        spoolman && !keptBuiltIn
           ? []
           : [
               {
@@ -305,6 +309,51 @@ describe('AMS slot: Unassign routes by inventory mode', () => {
         { method: 'DELETE', path: '/api/v1/spoolman/inventory/slot-assignments/55', search: '', body: null },
       ])
     );
+  });
+
+  it('Spoolman mode with Spoolman down: the built-in table is offered neither way (#3430)', async () => {
+    // Before, the card fell back to the built-in table whenever Spoolman was
+    // not connected: it offered to unassign a row of the other mode, and to
+    // assign, which wrote one.
+    setup({ status: statusWith([amsUnit()]), spoolman: true, spoolmanDown: true, keptBuiltIn: true });
+    for (const slot of [1, 2]) {
+      await hover((await slots())[slot], 'Re-read RFID');
+      await settle();
+      expect(screen.queryByRole('button', { name: 'Unassign' })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Assign Spool/ })).toBeNull();
+      fireEvent.mouseLeave((await slots())[slot]);
+    }
+  });
+
+  it('Spoolman down: no built-in Assign on an AMS-HT slot either (#3430)', async () => {
+    setup({ status: statusWith([htUnit]), spoolman: true, spoolmanDown: true });
+    const [ht] = await slots();
+    await hover(ht, 'Re-read RFID');
+    await settle();
+    expect(screen.queryByRole('button', { name: /Assign Spool/ })).toBeNull();
+  });
+
+  it('Spoolman down: no built-in Assign on the external slot either (#3430)', async () => {
+    setup({
+      status: statusWith([], { vt_tray: [{ id: 254, ...baseTray, tray_color: 'FFFFFFFF' }] }),
+      spoolman: true,
+      spoolmanDown: true,
+    });
+    const [ext] = await slots();
+    await hover(ext, 'Load');
+    await settle();
+    expect(screen.queryByRole('button', { name: /Assign Spool/ })).toBeNull();
+  });
+
+  it('built-in mode offers Assign on the external slot', async () => {
+    setup({ status: statusWith([], { vt_tray: [{ id: 254, ...baseTray, tray_color: 'FFFFFFFF' }] }) });
+    const [ext] = await slots();
+    expect(await hover(ext, 'Assign Spool')).toBeInTheDocument();
+  });
+
+  it('built-in mode still offers Assign on an empty slot', async () => {
+    setup({ status: statusWith([amsUnit()]) });
+    expect(await hover((await slots())[2], 'Assign Spool')).toBeEnabled();
   });
 
   it('an unassigned slot offers no Unassign', async () => {
@@ -462,5 +511,75 @@ describe('AMS slot: Configure dialog', () => {
     const reset = await screen.findByRole('button', { name: /Reset Slot/ });
     if (disabled) expect(reset).toBeDisabled();
     else expect(reset).toBeEnabled();
+  });
+});
+
+describe('A spool on a slot the printer reports loaded but blank (#3434)', () => {
+  beforeEach(() => {
+    permissions.denied = new Set();
+  });
+
+  // Slot 1 is loaded (presence bit) but blank: a spool swapped in mid-print,
+  // which the printer takes no configuration for until the print is over.
+  const blank = { ...baseTray, tray_type: '', tray_color: '', tray_sub_brands: '', tray_info_idx: '', state: 9, exists: true };
+  async function emptySlots() {
+    await waitFor(() => expect(screen.getAllByTestId('empty-slot').length).toBeGreaterThan(0));
+    return screen.getAllByTestId('empty-slot');
+  }
+  const withBlankSlots = (slot2: Record<string, unknown> = blank) =>
+    statusWith([amsUnit({ tray: [{ id: 0, ...baseTray }, { id: 1, ...blank }, { id: 2, ...slot2 }, { id: 3, ...baseTray }] })]);
+
+  it('built-in: the card shows the assigned spool in its colour, and unassigns it', async () => {
+    const user = userEvent.setup();
+    const sent = setup({ status: withBlankSlots() });
+    const slot = (await emptySlots())[0];
+
+    expect(slot.querySelector('[data-pending-config="true"]')).not.toBeNull();
+    expect(slot.textContent).toContain('PLA');
+
+    await user.click(await hover(slot, 'Unassign'));
+    expect(screen.queryByText('Generic PLA Basic (Red)')).toBeNull(); // the card closed on click
+    await waitFor(() =>
+      expect(sent).toEqual([
+        { method: 'DELETE', path: `/api/v1/inventory/assignments/${PRINTER_ID}/0/1`, search: '', body: null },
+      ])
+    );
+  });
+
+  it('names the spool and says the printer has not taken it yet', async () => {
+    setup({ status: withBlankSlots() });
+    await hover((await emptySlots())[0], 'Unassign');
+    expect(screen.getByText('Generic PLA Basic (Red)')).toBeInTheDocument();
+    expect(screen.getByText(/not configured on the printer yet/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Assign Spool/ })).toBeNull();
+  });
+
+  it('Spoolman mode: the Spoolman spool, unassigned by its id', async () => {
+    const user = userEvent.setup();
+    const sent = setup({ status: withBlankSlots(), spoolman: true });
+    const slot = (await emptySlots())[0];
+    await user.click(await hover(slot, 'Unassign'));
+    await waitFor(() =>
+      expect(sent).toEqual([
+        { method: 'DELETE', path: '/api/v1/spoolman/inventory/slot-assignments/55', search: '', body: null },
+      ])
+    );
+  });
+
+  it('a blank slot without an assignment still says no filament is assigned', async () => {
+    setup({ status: withBlankSlots() });
+    const slot = (await emptySlots())[1];
+    expect(slot.querySelector('[data-pending-config="true"]')).toBeNull();
+    await hover(slot, 'Assign Spool');
+    expect(screen.getByText('No filament assigned')).toBeInTheDocument();
+  });
+
+  it('a slot the printer reports empty shows no spool, assignment or not', async () => {
+    // The row is on slot 1; reported physically empty there, nothing is in it.
+    setup({
+      status: statusWith([amsUnit({ tray: [{ id: 0, ...baseTray }, { id: 1, ...blank, exists: false }, { id: 2, ...baseTray }, { id: 3, ...baseTray }] })]),
+    });
+    const slot = (await emptySlots())[0];
+    expect(slot.querySelector('[data-pending-config="true"]')).toBeNull();
   });
 });

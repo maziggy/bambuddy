@@ -2,8 +2,8 @@
 
 ``spoolman_tracking`` prices an archive from the linked spools at completion.
 Both cost recalculations rebuild a print's cost from ``SpoolUsageHistory``, and
-Spoolman mode never writes rows there -- the built-in usage tracker is handed
-``spoolman_owns_usage`` at print start. Their catalogue-or-default fallback
+a Spoolman print from before #3407 has no rows there -- the built-in usage
+tracker is handed ``spoolman_owns_usage`` at print start. Their catalogue-or-default fallback
 would therefore overwrite the Spoolman figure with a default-rate one on the
 next bulk recalculate, silently undoing the fix, and the per-slot
 spool resolution it came from is transient and cannot be rebuilt from the

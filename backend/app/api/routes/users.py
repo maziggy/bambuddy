@@ -664,7 +664,13 @@ async def delete_user(
 
     # The print log keeps who started each run as long as the user exists, and
     # outlives them either way (ON DELETE SET NULL, which SQLite doesn't apply).
-    await db.execute(sql_update(PrintLogEntry).where(PrintLogEntry.created_by_id == user_id).values(created_by_id=None))
+    # Every run of theirs, the one printing now too.
+    await db.execute(
+        sql_update(PrintLogEntry)
+        .where(PrintLogEntry.created_by_id == user_id)
+        .values(created_by_id=None)
+        .execution_options(include_open_runs=True)
+    )
 
     # Drop API keys owned by this user. The model declares ON DELETE CASCADE
     # so Postgres handles this automatically, but SQLite ships with FK

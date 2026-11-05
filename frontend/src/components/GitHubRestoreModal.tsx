@@ -17,6 +17,8 @@ import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { Toggle } from './Toggle';
 import { ConfirmModal } from './ConfirmModal';
+import { MergeDuplicatesModal } from './MergeDuplicatesModal';
+import { useAuth } from '../contexts/AuthContext';
 import {
   api,
   type RestoreCategory,
@@ -171,6 +173,7 @@ export function GitHubRestoreModal({ onClose }: GitHubRestoreModalProps) {
         // field by field, so the restore no longer needs an exception.
         queryClient.invalidateQueries({ queryKey: ['spools'] });
         queryClient.invalidateQueries({ queryKey: ['archives'] });
+        queryClient.invalidateQueries({ queryKey: ['archive-merge-count'] });
         queryClient.invalidateQueries({ queryKey: ['settings'] });
       }
       // A failure that got as far as resolving the commit still writes a log row
@@ -182,6 +185,19 @@ export function GitHubRestoreModal({ onClose }: GitHubRestoreModalProps) {
   });
 
   const isRestoring = restoreMutation.isPending;
+
+  // An old backup brings back archives of one file that were merged since,
+  // or never were: offer the merge, never do it (archive redesign P2).
+  const { hasPermission } = useAuth();
+  const canMerge = hasPermission('archives:update_all') && hasPermission('archives:delete_all');
+  const archivesRestored = Boolean(result && 'archives' in result.results);
+  const mergeCountQuery = useQuery({
+    queryKey: ['archive-merge-count'],
+    queryFn: () => api.getArchiveMergeCount(),
+    enabled: archivesRestored && canMerge,
+  });
+  const duplicateGroups = archivesRestored && canMerge ? (mergeCountQuery.data?.groups ?? 0) : 0;
+  const [showMerge, setShowMerge] = useState(false);
 
   // A settings restore rewrites rows the whole app reads, and not all of them
   // through a query this modal can invalidate. The interface language is applied
@@ -198,14 +214,15 @@ export function GitHubRestoreModal({ onClose }: GitHubRestoreModalProps) {
     onClose();
   }, [settingsRestored, onClose]);
 
-  // Close on Escape, except while a restore is in flight.
+  // Close on Escape, except while a restore is in flight, or while the merge
+  // dialog is open on top: its Escape is its own.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isRestoring && !showConfirm) closeModal();
+      if (e.key === 'Escape' && !isRestoring && !showConfirm && !showMerge) closeModal();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [closeModal, isRestoring, showConfirm]);
+  }, [closeModal, isRestoring, showConfirm, showMerge]);
 
   // Interrupting a restore mid-flight can leave a partly-applied category.
   useEffect(() => {
@@ -336,6 +353,19 @@ export function GitHubRestoreModal({ onClose }: GitHubRestoreModalProps) {
                     )}
                   </div>
                 ))}
+                {duplicateGroups > 0 && (
+                  <div
+                    className="p-3 rounded-lg bg-bambu-dark border border-bambu-dark-tertiary flex items-center gap-3"
+                    data-testid="restore-merge-offer"
+                  >
+                    <span className="flex-1 text-sm text-white">
+                      {t('archiveMerge.found', { count: duplicateGroups })}
+                    </span>
+                    <Button variant="secondary" size="sm" onClick={() => setShowMerge(true)}>
+                      {t('archiveMerge.openCta')}
+                    </Button>
+                  </div>
+                )}
                 <div className="p-3 rounded-lg bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/30">
                   <p className="text-xs text-yellow-700 dark:text-yellow-200">
                     {t('backup.restoreFromGit.reloadHint')}
@@ -535,6 +565,14 @@ export function GitHubRestoreModal({ onClose }: GitHubRestoreModalProps) {
           loadingText={t('backup.restoreFromGit.restoring')}
           onConfirm={() => restoreMutation.mutate()}
           onCancel={() => setShowConfirm(false)}
+        />
+      )}
+      {showMerge && (
+        <MergeDuplicatesModal
+          onClose={() => {
+            setShowMerge(false);
+            mergeCountQuery.refetch();
+          }}
         />
       )}
     </>

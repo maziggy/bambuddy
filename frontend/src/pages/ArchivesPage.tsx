@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -17,6 +17,7 @@ import {
   Upload,
   ExternalLink,
   CheckSquare,
+  Combine,
   Square,
   X,
   Globe,
@@ -67,8 +68,9 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { SliceModal } from '../components/SliceModal';
+import { ArchiveDetailModal } from '../components/ArchiveDetailModal';
 import { RunWithPipelineModal } from '../components/RunWithPipelineModal';
-import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
+import { isSlicedFile, openInSlicerWithToken, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDuration } from '../utils/date';
 import { getCurrencySymbol } from '../utils/currency';
 import { getBedTypeInfo } from '../utils/bedType';
@@ -84,6 +86,7 @@ import { PrintModal } from '../components/PrintModal';
 import { ConfirmOutcomeDialog } from '../components/ConfirmOutcomeDialog';
 import { UploadModal } from '../components/UploadModal';
 import { PurgeArchivesModal } from '../components/PurgeArchivesModal';
+import { MergeDuplicatesModal } from '../components/MergeDuplicatesModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { EditArchiveModal, FAILURE_REASON_KEYS } from '../components/EditArchiveModal';
 import { PrintLogModal } from '../components/PrintLogModal';
@@ -231,53 +234,32 @@ function saveLogColumnConfig(config: Array<{ id: string; visible: boolean }>) {
   }
 }
 
-/**
- * Check if an archive represents a sliced/printable file.
- * Uses filename (.gcode, .gcode.3mf) as primary check, then falls back to
- * metadata — a .3mf with total_layers or print_time is sliced (contains gcode),
- * while a raw source .3mf (CAD export) has neither.
- */
-function isSlicedFile(archive: { filename?: string | null; total_layers?: number | null; print_time_seconds?: number | null }): boolean {
-  const filename = archive.filename;
-  if (filename) {
-    const lower = filename.toLowerCase();
-    if (lower.endsWith('.gcode') || lower.includes('.gcode.')) return true;
-  }
-  // .3mf can be either sliced or source — check for gcode metadata
-  if (archive.total_layers || archive.print_time_seconds) return true;
-  return false;
+// A click on an archive's card or row itself, not on a control in it or a
+// dialog it opened: that opens the archive's page (archive redesign P4).
+function isOwnClick(e: React.MouseEvent<Element>): boolean {
+  const target = e.target as HTMLElement;
+  if (!e.currentTarget.contains(target)) return false;
+  if (target.closest('button, a, input, select, textarea, label, video, .fixed')) return false;
+  return !window.getSelection()?.toString();
 }
 
 // formatDate imported from '../utils/date' - handles UTC conversion
 
-/**
- * Open an archive file in the slicer.
- * Fetches a short-lived download token, then builds a token-authenticated URL
- * that bypasses auth middleware (slicer protocol handlers can't send auth headers).
- */
-async function openInSlicerWithToken(
-  archiveId: number,
-  filename: string,
-  resourceType: 'file' | 'source',
-  slicer: SlicerType,
-): Promise<void> {
-  try {
-    if (resourceType === 'source') {
-      const { token } = await api.createSourceSlicerToken(archiveId);
-      const path = api.getSourceSlicerDownloadUrl(archiveId, token, filename);
-      openInSlicer(`${window.location.origin}${path}`, slicer);
-    } else {
-      const { token } = await api.createArchiveSlicerToken(archiveId);
-      const path = api.getArchiveSlicerDownloadUrl(archiveId, token, filename);
-      openInSlicer(`${window.location.origin}${path}`, slicer);
-    }
-  } catch {
-    // Fallback to direct URL (works when auth is disabled)
-    const path = resourceType === 'source'
-      ? api.getSource3mfForSlicer(archiveId, filename)
-      : api.getArchiveForSlicer(archiveId, filename);
-    openInSlicer(`${window.location.origin}${path}`, slicer);
-  }
+// Its videos: the archive's timelapse_path is its latest print's only, the
+// others are on their prints, which the archive window plays.
+function videoCount(archive: Archive): number {
+  return Math.max(archive.timelapse_count ?? 0, archive.timelapse_path ? 1 : 0);
+}
+
+// One video plays in place; more, or one only an earlier print has, open the
+// archive window, where each print's plays.
+function useArchiveVideos(archive: Archive, navigate: (to: string) => void, play: () => void) {
+  const videos = videoCount(archive);
+  const openTimelapse = () => {
+    if (videos > 1 || !archive.timelapse_path) navigate(`/archives/${archive.id}`);
+    else play();
+  };
+  return { videos, openTimelapse };
 }
 
 // Ended without finishing: the archive's grams and cost stay one full print of
@@ -322,6 +304,7 @@ function ArchiveCard({
   const { showToast } = useToast();
   const { hasPermission, canModify } = useAuth();
   const navigate = useNavigate();
+  const { videos, openTimelapse } = useArchiveVideos(archive, navigate, () => setShowTimelapse(true));
   // Name of the printer this archive's saved slicer AMS mapping was resolved
   // against, or undefined when there is none. Undefined also when the printer
   // has since been deleted — a mapping whose printer is gone can never be
@@ -654,8 +637,8 @@ function ArchiveCard({
     {
       label: t('archives.menu.viewTimelapse'),
       icon: <Film className="w-4 h-4" />,
-      onClick: () => setShowTimelapse(true),
-      disabled: !archive.timelapse_path,
+      onClick: openTimelapse,
+      disabled: videos === 0,
     },
     {
       label: t('archives.media.download'),
@@ -889,13 +872,30 @@ function ArchiveCard({
     },
   ];
 
+  // Only a plate past the first says anything. The queue records a plate
+  // for single-plate files too -- the print dialog auto-selects the only
+  // plate there is -- so an ungated label reads "Plate 1" on ordinary
+  // prints, and eats room from the truncated name (#2796). The plate
+  // carousel is the one place a multi-plate archive printed from plate 1
+  // still identifies itself; it already gates on is_multi_plate, which this
+  // title cannot read without waiting for the hover-lazy plates request.
+  const cardTitle = `${archive.print_name || archive.filename}${
+    archive.plate_id != null && archive.plate_id > 1 ? ` — ${t('printers.plateNumber', { number: archive.plate_id })}` : ''
+  }`;
+
   return (
     <Card
       data-archive-id={archive.id}
-      className={`relative flex flex-col group ${isSelected ? 'ring-2 ring-bambu-green' : ''} ${selectionMode ? 'cursor-pointer' : ''}`}
+      className={`relative flex flex-col group cursor-pointer ${isSelected ? 'ring-2 ring-bambu-green' : ''}`}
       style={isHighlighted ? { outline: '4px solid #facc15', outlineOffset: '2px' } : undefined}
       onContextMenu={handleContextMenu}
-      onClick={selectionMode ? () => onSelect(archive.id) : undefined}
+      onClick={
+        selectionMode
+          ? () => onSelect(archive.id)
+          : (e) => {
+              if (!contextMenu && isOwnClick(e)) navigate(`/archives/${archive.id}`);
+            }
+      }
     >
       {/* Selection checkbox */}
       {selectionMode && (
@@ -922,8 +922,19 @@ function ArchiveCard({
             src={
               currentPlateIndex !== null && plates.length > 0
                 ? api.getArchivePlateThumbnail(archive.id, plates[displayPlateIndex]?.index ?? 0)
-                : api.getArchiveThumbnail(archive.id)
+                : // The plate the title names: a file printed again shows its
+                  // latest run's plate, the stored picture is the first's.
+                  archive.plate_id != null && archive.plate_id > 1
+                  ? api.getArchivePlateThumbnail(archive.id, archive.plate_id)
+                  : api.getArchiveThumbnail(archive.id)
             }
+            onError={(e) => {
+              // A file without per-plate pictures: the stored one.
+              const img = e.currentTarget;
+              if (img.dataset.fellBack) return;
+              img.dataset.fellBack = '1';
+              img.src = api.getArchiveThumbnail(archive.id);
+            }}
             loading="lazy"
             alt={archive.print_name || archive.filename}
             className="w-full h-full object-cover"
@@ -1129,22 +1140,28 @@ function ArchiveCard({
           <Layers className="w-4 h-4 text-white" />
         </button>
         {/* Timelapse badge */}
-        {archive.timelapse_path && (
+        {videos > 0 && (
           <button
             className="absolute bottom-2 right-12 p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors"
             onClick={(e) => {
               e.stopPropagation();
-              setShowTimelapse(true);
+              openTimelapse();
             }}
-            title={t('archives.card.viewTimelapse')}
+            title={videos > 1 ? t('archives.card.viewTimelapses', { count: videos }) : t('archives.card.viewTimelapse')}
+            data-testid="archive-card-timelapse"
           >
             <Film className="w-4 h-4 text-bambu-green" />
+            {videos > 1 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-bambu-green rounded-full text-[10px] text-white flex items-center justify-center">
+                {videos}
+              </span>
+            )}
           </button>
         )}
         {/* Photos badge */}
         {archive.photos && archive.photos.length > 0 && (
           <button
-            className={`absolute bottom-2 ${archive.timelapse_path ? 'right-[5.5rem]' : 'right-12'} p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors`}
+            className={`absolute bottom-2 ${videos > 0 ? 'right-[5.5rem]' : 'right-12'} p-1.5 rounded bg-black/60 hover:bg-black/80 transition-colors`}
             onClick={(e) => {
               e.stopPropagation();
               setShowPhotos(true);
@@ -1180,16 +1197,13 @@ function ArchiveCard({
         {/* Title */}
         <div className="flex items-center justify-between gap-2 mb-1">
           <h3 className="min-w-0 font-medium text-white truncate">
-            {archive.print_name || archive.filename}
-            {/* Only a plate past the first says anything. The queue records a
-                plate for single-plate files too -- the print dialog auto-selects
-                the only plate there is -- so an ungated label reads "Plate 1" on
-                ordinary prints, and eats room from the truncated name (#2796).
-                The plate carousel is the one place a multi-plate archive printed
-                from plate 1 still identifies itself; it already gates on
-                is_multi_plate, which this title cannot read without waiting for
-                the hover-lazy plates request. */}
-            {archive.plate_id != null && archive.plate_id > 1 && ` — ${t('printers.plateNumber', { number: archive.plate_id })}`}
+            {selectionMode ? (
+              cardTitle
+            ) : (
+              <Link to={`/archives/${archive.id}`} className="hover:underline">
+                {cardTitle}
+              </Link>
+            )}
           </h3>
           <Button
             variant="ghost"
@@ -1251,7 +1265,7 @@ function ArchiveCard({
               className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-bambu-orange/20 text-bambu-orange hover:bg-bambu-orange/30 transition-colors cursor-pointer"
               onClick={(e) => {
                 e.stopPropagation();
-                setShowPrintLog(true);
+                navigate(`/archives/${archive.id}`);
               }}
               title={t('archives.card.runsBadgeTitle', {
                 count: archive.run_count,
@@ -1269,7 +1283,7 @@ function ArchiveCard({
           {(archive.print_time_seconds || archive.actual_time_seconds) && (
             <div className="flex items-center gap-1.5 text-bambu-gray" title={
               archive.time_accuracy
-                ? `Estimated: ${formatDuration(archive.print_time_seconds || 0)}\nActual: ${formatDuration(archive.actual_time_seconds || 0)}\nAccuracy: ${archive.time_accuracy.toFixed(0)}%`
+                ? `Estimated: ${formatDuration(archive.time_estimate_seconds || archive.print_time_seconds || 0)}\nActual: ${formatDuration(archive.actual_time_seconds || 0)}\nAccuracy: ${archive.time_accuracy.toFixed(0)}%`
                 : archive.actual_time_seconds
                   ? `Actual: ${formatDuration(archive.actual_time_seconds)}`
                   : `Estimated: ${formatDuration(archive.print_time_seconds || 0)}`
@@ -1567,6 +1581,7 @@ function ArchiveCard({
           mode="create"
           archiveId={archive.id}
           archiveName={archive.print_name || archive.filename}
+          preselectPlateId={archive.plate_id}
           onClose={() => setShowReprint(false)}
         />
       )}
@@ -1909,6 +1924,7 @@ function ArchiveListRow({
     staleTime: 0,
   });
   const navigate = useNavigate();
+  const { videos, openTimelapse } = useArchiveVideos(archive, navigate, () => setShowTimelapse(true));
   const [showReprint, setShowReprint] = useState(false);
   // Post-print outcome confirmation dialog (#1898)
   const [showConfirmOutcome, setShowConfirmOutcome] = useState(false);
@@ -2190,8 +2206,8 @@ function ArchiveListRow({
     {
       label: t('archives.menu.viewTimelapse'),
       icon: <Film className="w-4 h-4" />,
-      onClick: () => setShowTimelapse(true),
-      disabled: !archive.timelapse_path,
+      onClick: openTimelapse,
+      disabled: videos === 0,
     },
     {
       label: t('archives.menu.scanForTimelapse'),
@@ -2410,11 +2426,18 @@ function ArchiveListRow({
     <>
       <div
         data-archive-id={archive.id}
-        className={`grid grid-cols-12 gap-4 px-4 py-3 items-center hover:bg-bambu-dark-tertiary/30 ${
+        className={`grid grid-cols-12 gap-4 px-4 py-3 items-center cursor-pointer hover:bg-bambu-dark-tertiary/30 ${
           isSelected ? 'bg-bambu-green/10' : ''
         }`}
         style={isHighlighted ? { outline: '4px solid #facc15', outlineOffset: '-4px' } : undefined}
         onContextMenu={handleContextMenu}
+        onClick={
+          selectionMode
+            ? undefined
+            : (e) => {
+                if (!contextMenu && isOwnClick(e)) navigate(`/archives/${archive.id}`);
+              }
+        }
       >
         <div className="col-span-1 flex items-center gap-2">
           {selectionMode && (
@@ -2441,7 +2464,15 @@ function ArchiveListRow({
         </div>
         <div className="col-span-4">
           <div className="flex items-center gap-2">
-            <p className="text-white text-sm truncate">{archive.print_name || archive.filename}</p>
+            <p className="text-white text-sm truncate">
+              {selectionMode ? (
+                archive.print_name || archive.filename
+              ) : (
+                <Link to={`/archives/${archive.id}`} className="hover:underline">
+                  {archive.print_name || archive.filename}
+                </Link>
+              )}
+            </p>
             {(archive.status === 'failed' || archive.status === 'aborted') && (
               <span className="px-1.5 py-0.5 rounded text-[10px] leading-tight bg-status-error/80 text-white flex-shrink-0">
                 {archive.status === 'aborted' ? t('archives.card.aborted') : t('archives.card.failed')}
@@ -2504,8 +2535,8 @@ function ArchiveListRow({
                 +{archive.duplicate_count}
               </span>
             )}
-            {archive.timelapse_path && (
-              <span title={t('archives.list.hasTimelapse')}>
+            {videos > 0 && (
+              <span title={videos > 1 ? t('archives.card.viewTimelapses', { count: videos }) : t('archives.list.hasTimelapse')}>
                 <Film className="w-3.5 h-3.5 text-bambu-green flex-shrink-0" />
               </span>
             )}
@@ -2696,6 +2727,7 @@ function ArchiveListRow({
           mode="create"
           archiveId={archive.id}
           archiveName={archive.print_name || archive.filename}
+          preselectPlateId={archive.plate_id}
           onClose={() => setShowReprint(false)}
         />
       )}
@@ -3004,6 +3036,9 @@ const collections: { id: Collection; label: string; icon: React.ReactNode }[] = 
 
 export function ArchivesPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  // /archives/<id> opens that archive over the list.
+  const { id: openArchiveId } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission, hasAnyPermission } = useAuth();
@@ -3128,6 +3163,36 @@ export function ArchivesPage() {
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [showTagManagement, setShowTagManagement] = useState(false);
   const [showPurgeModal, setShowPurgeModal] = useState(false);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  // What the merge API asks for: it changes and removes whole archives.
+  const canMergeDuplicates = hasPermission('archives:update_all') && hasPermission('archives:delete_all');
+  // Offered while archives of one file exist more than once: after an
+  // update, or a restore of an old backup. Dismissed until the count changes.
+  const { data: mergeCount } = useQuery({
+    queryKey: ['archive-merge-count'],
+    queryFn: () => api.getArchiveMergeCount(),
+    enabled: canMergeDuplicates,
+  });
+  const [mergeBannerDismissedAt, setMergeBannerDismissedAt] = useState<number | null>(() => {
+    try {
+      const stored = localStorage.getItem('archiveMergeBannerDismissed');
+      return stored ? Number(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+  const duplicateGroups = canMergeDuplicates ? (mergeCount?.groups ?? 0) : 0;
+  // Shown again only when there are more groups than when it was dismissed:
+  // merging some leaves the rest (some may never merge, their files differ).
+  const mergeBannerDismissed = mergeBannerDismissedAt !== null && duplicateGroups <= mergeBannerDismissedAt;
+  const dismissMergeBanner = () => {
+    setMergeBannerDismissedAt(duplicateGroups);
+    try {
+      localStorage.setItem('archiveMergeBannerDismissed', String(duplicateGroups));
+    } catch {
+      // Private window: dismissed for this visit only.
+    }
+  };
   const [highlightedArchiveId, setHighlightedArchiveId] = useState<number | null>(null);
   // An archive navigated to from elsewhere, and the warning shown when the
   // current filters hide it.
@@ -3225,12 +3290,32 @@ export function ArchivesPage() {
     setHighlightRequest({ archiveId, requestedAt: Date.now() });
     refetchArchives();
   }, [highlightParam, refetchArchives]);
+  // Archives deleted, uploaded or printed change the duplicates the banner counts.
+  useEffect(() => {
+    if (canMergeDuplicates && archivesUpdatedAt) {
+      queryClient.invalidateQueries({ queryKey: ['archive-merge-count'] });
+    }
+  }, [archivesUpdatedAt, canMergeDuplicates, queryClient]);
   useEffect(() => {
     if (!highlightRequest || !archives || archivesUpdatedAt < highlightRequest.requestedAt) return;
     setHighlightRequest(null);
     if (viewMode === 'log' || viewMode === 'calendar') setViewMode('grid');
-    setPendingNavigation({ archiveId: highlightRequest.archiveId, notVisibleKey: 'archives.linkedArchiveNotVisible' });
-    setHighlightedArchiveId(highlightRequest.archiveId);
+    const highlight = (archiveId: number) => {
+      setPendingNavigation({ archiveId, notVisibleKey: 'archives.linkedArchiveNotVisible' });
+      setHighlightedArchiveId(archiveId);
+    };
+    if (archives.some((a) => a.id === highlightRequest.archiveId)) {
+      highlight(highlightRequest.archiveId);
+      return;
+    }
+    // Not listed: maybe merged into another archive (archive redesign P2),
+    // which the archive's own lookup answers with. Not cancelled when this
+    // effect re-runs: clearing the request above re-runs it.
+    const requested = highlightRequest.archiveId;
+    api
+      .getArchive(requested)
+      .then((found) => highlight(found.id))
+      .catch(() => highlight(requested));
   }, [highlightRequest, archives, archivesUpdatedAt, viewMode]);
 
   const { data: printers } = useQuery({
@@ -3328,6 +3413,10 @@ export function ArchivesPage() {
     [],
   );
 
+  const deletedLogArchives = useMemo(
+    () => new Set(printLogData?.deleted_archive_ids ?? []),
+    [printLogData],
+  );
   const renderLogCell = useCallback(
     (colId: string, entry: PrintLogEntry) => {
       switch (colId) {
@@ -3354,9 +3443,20 @@ export function ArchivesPage() {
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                 />
               )}
-              <span className="text-white break-words" title={entry.print_name || ''}>
-                {entry.print_name || '—'}
-              </span>
+              {entry.archive_id != null && !deletedLogArchives.has(entry.archive_id) ? (
+                // Its archive's page, at this print (archive redesign P4)
+                <Link
+                  to={`/archives/${entry.archive_id}?run=${entry.id}`}
+                  className="text-white break-words hover:underline"
+                  title={entry.print_name || ''}
+                >
+                  {entry.print_name || '—'}
+                </Link>
+              ) : (
+                <span className="text-white break-words" title={entry.print_name || ''}>
+                  {entry.print_name || '—'}
+                </span>
+              )}
             </div>
           );
         case 'printer':
@@ -3452,7 +3552,7 @@ export function ArchivesPage() {
           return null;
       }
     },
-    [currency, t, timeFormat],
+    [currency, deletedLogArchives, t, timeFormat],
   );
 
   const bulkDeleteMutation = useMutation({
@@ -3474,6 +3574,8 @@ export function ArchivesPage() {
     mutationFn: () => api.clearPrintLog(),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['print-log'] });
+      queryClient.invalidateQueries({ queryKey: ['calendar-runs'] });
+      queryClient.invalidateQueries({ queryKey: ['archive-runs'] });
       setLogOffset(0);
       showToast(t('archives.log.cleared', { count: data.deleted }));
     },
@@ -3486,6 +3588,8 @@ export function ArchivesPage() {
     mutationFn: (id: number) => api.deletePrintLogEntry(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['print-log'] });
+      queryClient.invalidateQueries({ queryKey: ['calendar-runs'] });
+      queryClient.invalidateQueries({ queryKey: ['archive-runs'] });
       queryClient.invalidateQueries({ queryKey: ['archives-stats'] });
       showToast(t('archives.log.entryDeleted'));
     },
@@ -3499,6 +3603,8 @@ export function ArchivesPage() {
       api.updatePrintLogEntry(id, body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['print-log'] });
+      queryClient.invalidateQueries({ queryKey: ['calendar-runs'] });
+      queryClient.invalidateQueries({ queryKey: ['archive-runs'] });
       // Also invalidate /archives/stats — the Failure Analysis widget there
       // groups by PrintLogEntry.failure_reason, so a re-classification needs
       // to flow through (#1687 part 4).
@@ -3673,7 +3779,9 @@ export function ArchivesPage() {
           matchesCollection = (PRINTED_STATUSES as readonly string[]).includes(a.status);
           break;
         case 'failed':
-          matchesCollection = a.status === 'failed' || a.status === 'aborted';
+          // Any print of it failed, not only the latest; one from before
+          // prints were logged by its own status.
+          matchesCollection = a.status === 'failed' || a.status === 'aborted' || a.failed_run_count > 0;
           break;
         case 'duplicates':
           matchesCollection = a.duplicate_count > 0;
@@ -3825,7 +3933,9 @@ export function ArchivesPage() {
   // so drags into the modal's own drop zone don't bubble up and flash the page
   // overlay behind it.
   const { isDraggingOver, dragHandlers } = usePageFileDrop({
-    disabled: showUpload,
+    // Nor while an archive is open over the list: its upload dialog would
+    // open underneath it.
+    disabled: showUpload || !!openArchiveId,
     extensions: ['.3mf'],
     onFiles: (files) => {
       setUploadFiles(files);
@@ -3836,6 +3946,8 @@ export function ArchivesPage() {
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // An archive open over the list has the keyboard.
+    if (openArchiveId) return;
     const target = e.target as HTMLElement;
     // Ignore if typing in an input/textarea
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
@@ -3863,7 +3975,7 @@ export function ArchivesPage() {
         }
         break;
     }
-  }, [selectionMode]);
+  }, [selectionMode, openArchiveId]);
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);
@@ -3951,6 +4063,38 @@ export function ArchivesPage() {
           >
             <Trash2 className="w-4 h-4" />
             Delete
+          </Button>
+        </div>
+      )}
+
+      {collection !== 'duplicates' && duplicateGroups > 0 && !mergeBannerDismissed && (
+        <div
+          className="mb-6 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-3 flex items-center gap-3"
+          data-testid="merge-banner"
+        >
+          <Combine className="w-5 h-5 text-bambu-green flex-shrink-0" />
+          <div className="flex-1 min-w-0 text-sm text-bambu-gray-light">
+            {t('archiveMerge.bannerText', { count: duplicateGroups })}
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => setShowMergeModal(true)}>
+            {t('archiveMerge.headerButton')}
+          </Button>
+          <button
+            onClick={dismissMergeBanner}
+            className="text-bambu-gray hover:text-white"
+            aria-label={t('archiveMerge.dismiss')}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {collection === 'duplicates' && canMergeDuplicates && (
+        <div className="mb-6 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-3 flex items-center gap-3">
+          <Combine className="w-5 h-5 text-bambu-green flex-shrink-0" />
+          <div className="flex-1 min-w-0 text-sm text-bambu-gray-light">{t('archiveMerge.duplicatesHint')}</div>
+          <Button variant="secondary" size="sm" onClick={() => setShowMergeModal(true)}>
+            {t('archiveMerge.headerButton')}
           </Button>
         </div>
       )}
@@ -4049,7 +4193,8 @@ export function ArchivesPage() {
                       const { blob, filename } = await api.exportArchives({
                         format: 'csv',
                         printerId: filterPrinter || undefined,
-                        status: collection === 'failed' ? 'failed' : undefined,
+                        // As the Failed collection shows them.
+                        status: collection === 'failed' ? 'failed,aborted' : undefined,
                         search: search || undefined,
                       });
                       const url = URL.createObjectURL(blob);
@@ -4078,7 +4223,8 @@ export function ArchivesPage() {
                       const { blob, filename } = await api.exportArchives({
                         format: 'xlsx',
                         printerId: filterPrinter || undefined,
-                        status: collection === 'failed' ? 'failed' : undefined,
+                        // As the Failed collection shows them.
+                        status: collection === 'failed' ? 'failed,aborted' : undefined,
                         search: search || undefined,
                       });
                       const url = URL.createObjectURL(blob);
@@ -4125,6 +4271,16 @@ export function ArchivesPage() {
             <Upload className="w-4 h-4" />
             Upload 3MF
           </Button>
+          {canMergeDuplicates && (
+            <Button
+              variant="secondary"
+              onClick={() => setShowMergeModal(true)}
+              title={t('archiveMerge.headerTooltip')}
+            >
+              <Combine className="w-4 h-4 mr-2" />
+              {t('archiveMerge.headerButton')}
+            </Button>
+          )}
           {hasPermission('archives:purge') && (
             <Button
               variant="secondary"
@@ -4406,12 +4562,8 @@ export function ArchivesPage() {
         <Card className="p-6">
           <CalendarView
             archives={filteredArchives || []}
-            onArchiveClick={(archive) => {
-              // Switch to grid view and highlight the archive
-              setSearch(''); // Clear search to show all archives
-              setViewMode('grid');
-              setHighlightedArchiveId(archive.id);
-            }}
+            printerId={filterPrinter}
+            onPrintClick={(archiveId, runId) => navigate(`/archives/${archiveId}${runId != null ? `?run=${runId}` : ''}`)}
             highlightedArchiveId={highlightedArchiveId}
           />
         </Card>
@@ -4755,6 +4907,9 @@ export function ArchivesPage() {
         />
       )}
 
+      {/* Merge duplicate archives (archive redesign P2) */}
+      {showMergeModal && <MergeDuplicatesModal onClose={() => setShowMergeModal(false)} />}
+
       {/* Archive bulk-purge modal (#1008 follow-up) */}
       {showPurgeModal && (
         <PurgeArchivesModal onClose={() => setShowPurgeModal(false)} />
@@ -4937,6 +5092,13 @@ export function ArchivesPage() {
             </div>
           </div>
         </div>
+      )}
+      {openArchiveId && (
+        <ArchiveDetailModal
+          key={openArchiveId}
+          archiveId={Number(openArchiveId)}
+          onClose={() => navigate('/archives')}
+        />
       )}
     </div>
   );

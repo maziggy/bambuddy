@@ -34,6 +34,7 @@ from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
+from backend.app.api.routes.slicer_presets import listed_ref, load_stock_aliases
 from backend.app.core.auth import (
     ApiKeyActor,
     QueueReviewRequired,
@@ -165,13 +166,19 @@ def _make_status_lookup():
     return _lookup
 
 
-def _slice_request_from_pipeline(pipeline: SlicerPipeline) -> SliceRequest:
+def _slice_request_from_pipeline(
+    pipeline: SlicerPipeline, stock_aliases: dict[str, PresetRef] | None = None
+) -> SliceRequest:
+    """``stock_aliases`` is the preset listing's map (``load_stock_aliases``):
+    a ref the listing hides behind its Bambu Cloud twin slices with that twin,
+    as it does from the Slice dialog (#3386)."""
+    aliases = stock_aliases or {}
     try:
         raw_filaments = json.loads(pipeline.filament_presets_json or "[]")
     except (json.JSONDecodeError, TypeError):
         raw_filaments = []
     filament_presets = [
-        PresetRef(source=r["source"], id=r["id"])
+        _stored_ref(aliases, r["source"], r["id"])
         for r in raw_filaments
         if isinstance(r, dict) and "source" in r and "id" in r
     ]
@@ -188,12 +195,28 @@ def _slice_request_from_pipeline(pipeline: SlicerPipeline) -> SliceRequest:
             ),
         ) from None
     return SliceRequest(
-        printer_preset=PresetRef(source=pipeline.printer_preset_source, id=pipeline.printer_preset_id),
-        process_preset=PresetRef(source=pipeline.process_preset_source, id=pipeline.process_preset_id),
+        printer_preset=_stored_ref(aliases, pipeline.printer_preset_source, pipeline.printer_preset_id),
+        process_preset=_stored_ref(aliases, pipeline.process_preset_source, pipeline.process_preset_id),
         filament_presets=filament_presets,
         bed_type=bed_type,
         export_3mf=True,
     )
+
+
+def _stored_ref(aliases: dict[str, PresetRef], source: str, preset_id: str) -> PresetRef:
+    """A ref as the pipeline row stores it, pointed at the twin the listing shows."""
+    return listed_ref(aliases, PresetRef.model_validate({"source": source, "id": preset_id}))
+
+
+async def _pipeline_slice_request(
+    db: AsyncSession, pipeline: SlicerPipeline, cloud_user_id: int | None
+) -> SliceRequest:
+    """The run's slice request, with the aliases of the user who resolves its
+    cloud presets (``current_user_id`` on ``slice_and_persist``), not the
+    run's owner: a key without the cloud scope resolves none, so a hidden
+    Standard ref mapped to its cloud twin would be refused (#3386)."""
+    cloud_user = await db.get(User, cloud_user_id) if cloud_user_id is not None else None
+    return _slice_request_from_pipeline(pipeline, await load_stock_aliases(db, cloud_user))
 
 
 def _compute_job_status(
@@ -443,12 +466,12 @@ async def _resolve_source(
     assert archive_id is not None
     arc = (await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))).scalar_one_or_none()
     can_read_all = user is None or user.has_permission(Permission.ARCHIVES_READ_ALL.value)
-    arc = _ensure_archive_visible(arc, user, can_read_all, printer_scope)
+    arc = await _ensure_archive_visible(arc, user, can_read_all, printer_scope)
     # Running a pipeline on an archive prints it again: the same rules as
     # queueing it, including the right to reprint it.
     from backend.app.api.routes.print_queue import _assert_can_queue_archive
 
-    _assert_can_queue_archive(arc, user, printer_scope)
+    await _assert_can_queue_archive(arc, user, printer_scope)
     rel = arc.source_3mf_path or arc.file_path
     if not rel:
         raise HTTPException(400, "Archive has no source file to slice")
@@ -566,7 +589,7 @@ def _make_orchestration_callable(
             try:
                 # Inside the try: a row with a bed type no slicer knows fails
                 # the run instead of leaving it in "slicing" (#3359).
-                slice_request = _slice_request_from_pipeline(pipeline)
+                slice_request = await _pipeline_slice_request(session, pipeline, creator_user_id)
                 slice_response = await slice_and_persist(
                     session,
                     model_bytes=model_bytes,

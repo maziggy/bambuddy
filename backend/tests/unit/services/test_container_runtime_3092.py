@@ -9,7 +9,9 @@ its network namespace is the host's.
 
 import builtins
 import io
+import json
 import os
+import subprocess
 from contextlib import contextmanager
 from unittest.mock import patch
 
@@ -173,9 +175,12 @@ def _sysfs(interfaces):
 
 
 @contextmanager
-def _netns(interfaces):
+def _netns(interfaces, links=None):
+    """``links`` is what ``ip -d -j link show`` reports; none of the
+    interfaces is a macvlan or ipvlan by default (#3417)."""
     path_patch, names_patch = _sysfs(interfaces)
-    with path_patch, names_patch:
+    ip = subprocess.CompletedProcess([], 0, stdout=json.dumps(links or []), stderr="")
+    with path_patch, names_patch, patch(f"{MOD}.subprocess.run", return_value=ip):
         yield
 
 

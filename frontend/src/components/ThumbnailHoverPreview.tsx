@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-const PREVIEW_SIZE = 256;
+const DEFAULT_SIZE = 256;
 const GAP = 8;
 const EDGE_MARGIN = 8;
 
@@ -10,6 +10,8 @@ interface ThumbnailHoverPreviewProps {
   src: string | null;
   children: ReactNode;
   className?: string;
+  /** Edge length of the square preview, in px. */
+  size?: number;
 }
 
 /**
@@ -19,7 +21,7 @@ interface ThumbnailHoverPreviewProps {
  * cannot clip it. It sits to the right of the thumbnail, or to the left when
  * there is no room, and is kept inside the viewport vertically.
  */
-export function ThumbnailHoverPreview({ src, children, className }: ThumbnailHoverPreviewProps) {
+export function ThumbnailHoverPreview({ src, children, className, size = DEFAULT_SIZE }: ThumbnailHoverPreviewProps) {
   const anchorRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
 
@@ -28,12 +30,12 @@ export function ThumbnailHoverPreview({ src, children, className }: ThumbnailHov
     const rect = anchorRef.current?.getBoundingClientRect();
     if (!rect) return;
     const rightOf = rect.right + GAP;
-    const left = rightOf + PREVIEW_SIZE + EDGE_MARGIN <= window.innerWidth
+    const left = rightOf + size + EDGE_MARGIN <= window.innerWidth
       ? rightOf
-      : Math.max(EDGE_MARGIN, rect.left - GAP - PREVIEW_SIZE);
-    const top = Math.max(EDGE_MARGIN, Math.min(rect.top, window.innerHeight - PREVIEW_SIZE - EDGE_MARGIN));
+      : Math.max(EDGE_MARGIN, rect.left - GAP - size);
+    const top = Math.max(EDGE_MARGIN, Math.min(rect.top, window.innerHeight - size - EDGE_MARGIN));
     setPosition({ left, top });
-  }, [src]);
+  }, [src, size]);
 
   const hide = useCallback(() => setPosition(null), []);
 
@@ -52,7 +54,7 @@ export function ThumbnailHoverPreview({ src, children, className }: ThumbnailHov
           src={src}
           alt=""
           data-testid="thumbnail-hover-preview"
-          style={{ left: position.left, top: position.top, width: PREVIEW_SIZE, height: PREVIEW_SIZE }}
+          style={{ left: position.left, top: position.top, width: size, height: size }}
           className="fixed z-[60] pointer-events-none object-cover rounded-lg shadow-2xl border-2 border-bambu-dark-tertiary bg-bambu-dark"
         />,
         document.body,

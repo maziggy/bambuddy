@@ -166,12 +166,11 @@ describe('AssignSpoolModal', () => {
 
     render(<AssignSpoolModal {...defaultProps} />);
 
+    // Spool 1 (assigned to current slot) should still be in the list for
+    // re-assignment — its card, not the "Assigned" line above the list.
     await waitFor(() => {
-      expect(screen.getByText(/Polymaker/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Polymaker/ })).toBeInTheDocument();
     });
-
-    // Spool 1 (assigned to current slot) should still be visible for re-assignment
-    expect(screen.getByText(/Polymaker/)).toBeInTheDocument();
   });
 
   // Empty-state premise reworked for #1133: BL spools no longer trigger

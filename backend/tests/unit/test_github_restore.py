@@ -19,6 +19,7 @@ from backend.app.models.spool import Spool
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
 from backend.app.schemas.github_backup import GitHubRestoreRequest, RestoreCategory
+from backend.app.services.bambu_mqtt import KProfileReadError
 from backend.app.services.github_restore import (
     _COMPANION_CREDENTIAL_ENV,
     _COMPANION_CREDENTIALS,
@@ -1796,7 +1797,7 @@ class TestRestoreKprofiles:
         # A refusal is now read and counted failed, so the caveat is narrowed to
         # what is genuinely left uncertain: a printer that never answers.
         assert any("verify the profiles on the printer" in note for note in _messages(tally))
-        assert any("does not answer still counts as restored" in note for note in _messages(tally))
+        assert any("does not confirm the write still counts as restored" in note for note in _messages(tally))
         assert not any("without acknowledgement" in note for note in _messages(tally))
         assert any("always overwrite" in note for note in _messages(tally))
 
@@ -1873,11 +1874,29 @@ class TestRestoreKprofiles:
         assert profiles[0]["cali_idx"] == -1
 
     @pytest.mark.asyncio
-    async def test_unreadable_live_index_degrades_to_adding(self, db_session, printer_factory):
-        # A failed read must not abort the restore.
+    async def test_unreadable_live_index_skips_the_nozzle(self, db_session, printer_factory):
+        # #3404: matching against an unread table sent every profile as a new
+        # one beside the originals. A failed read must not abort the restore
+        # either: the nozzle's profiles count failed and nothing is sent.
         await printer_factory(serial_number="00M09A123456789")
         client = self._client()
-        client.get_kprofiles = AsyncMock(side_effect=RuntimeError("mqtt timeout"))
+        client.get_kprofiles = AsyncMock(side_effect=KProfileReadError("no answer"))
+        tally = _CategoryTally()
+
+        with patch("backend.app.services.github_restore.printer_manager") as manager:
+            manager.get_client = MagicMock(return_value=client)
+            await _service()._restore_kprofiles(db_session, self._payload(), tally)
+
+        client.set_kprofiles_batch.assert_not_called()
+        assert (tally.restored, tally.failed) == (0, 1)
+        assert any(n["code"] == "kprofilesReadFailed" and n["params"]["nozzle"] == "0.4" for n in tally.notes)
+
+    @pytest.mark.asyncio
+    async def test_an_empty_live_table_still_adds(self, db_session, printer_factory):
+        """An answered read without profiles is a printer that has none: add them."""
+        await printer_factory(serial_number="00M09A123456789")
+        client = self._client()
+        client.get_kprofiles = AsyncMock(return_value=[])
         tally = _CategoryTally()
 
         with patch("backend.app.services.github_restore.printer_manager") as manager:
@@ -1886,7 +1905,6 @@ class TestRestoreKprofiles:
 
         profiles, _ = client.set_kprofiles_batch.call_args.args
         assert profiles[0]["cali_idx"] == -1
-        assert tally.restored == 1
 
     @pytest.mark.asyncio
     async def test_sole_profile_for_a_filament_matches_without_setting_id_or_name(self, db_session, printer_factory):

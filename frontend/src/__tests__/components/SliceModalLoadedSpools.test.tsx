@@ -225,6 +225,53 @@ describe('SliceModal — online printers and loaded spools (#3172)', () => {
     expect(labels).not.toContain('Generic PETG @BBL H2D');
   });
 
+  it('matches a slot saved with a hidden Standard profile to its Bambu Cloud twin (#3386)', async () => {
+    flags({ 'bambuddy.slice.onlyLoadedSpools': 'true' });
+    // The listing drops the Standard copy of a stock Bambu Cloud profile; the
+    // slot was saved with the bundled profile, which is stored by filament id
+    // and found by its name, now the cloud twin's.
+    mockApi.getSlicerPresets.mockResolvedValue({
+      ...PRESETS,
+      cloud: {
+        ...PRESETS.cloud,
+        filament: [{ id: 'GFSA01', name: 'Bambu PLA Matte @BBL H2D', source: 'cloud', filament_type: 'PLA' }],
+      },
+      standard: {
+        ...PRESETS.standard,
+        filament: PRESETS.standard.filament.filter((p) => p.id !== 'Bambu PLA Matte @BBL H2D'),
+      },
+      stock_aliases: { 'standard:Bambu PLA Matte @BBL H2D': { source: 'cloud', id: 'GFSA01' } },
+    });
+    const tray = LOADED.printers[0].ams[0].trays[0];
+    mockApi.getSlicerLoadedSpools.mockResolvedValue({
+      printers: [
+        {
+          ...LOADED.printers[0],
+          ams: [
+            {
+              ...LOADED.printers[0].ams[0],
+              trays: [
+                {
+                  ...tray,
+                  tray_sub_brands: null,
+                  saved_preset: {
+                    preset_id: 'builtin_GFA01',
+                    preset_name: 'Bambu PLA Matte @BBL H2D',
+                    preset_source: 'cloud',
+                    tray_info_idx: 'GFA01',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    renderModal();
+    await waitFor(() => expect(selectFor('Filament profile').value).toBe('cloud:GFSA01'));
+    expect(optionLabels(selectFor('Filament profile'))).not.toContain('Bambu PLA Basic @BBL H2D');
+  });
+
   it('never auto-picks a loaded spool of another material', async () => {
     flags({ 'bambuddy.slice.onlyLoadedSpools': 'true' });
     mockApi.getLibraryFileFilamentRequirements.mockResolvedValue({

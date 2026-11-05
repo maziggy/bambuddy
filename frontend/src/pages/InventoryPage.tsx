@@ -7,7 +7,7 @@ import {
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   TrendingDown, Layers, Printer, AlertTriangle, X, Clock, LayoutGrid, TableProperties, Columns,
   ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw, TrendingUp, Lock, Copy, Eraser, MapPin,
-  Upload, Download, Store,
+  Upload, Download, Store, QrCode,
 } from 'lucide-react';
 import { ForecastPanel } from '../components/ForecastPanel';
 import { api, spoolbuddyApi, ApiError } from '../api/client';
@@ -17,6 +17,7 @@ import { FilamentSwatch } from '../components/FilamentSwatch';
 import { describeHASensorReading, iconForHASensor } from '../utils/haSensorDisplay';
 import { buildFilamentBackground } from '../components/filamentSwatchHelpers';
 import {SpoolFormModal, type SpoolFormMode} from '../components/SpoolFormModal';
+import { QrAssignTargetModal } from '../components/QrAssignTargetModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
 import { LabelTemplatePickerModal } from '../components/LabelTemplatePickerModal';
@@ -666,6 +667,9 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   const [searchParams, setSearchParams] = useSearchParams();
   const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null; mode: SpoolFormMode } | null>(null);
   const deepLinkHandled = useRef(false);
+  // Scan-to-location (#1574): pick a target (AMS slot or storage), then scan a
+  // spool's QR with the in-page camera — handled entirely inside the modal.
+  const [qrTargetModalOpen, setQrTargetModalOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<
     | { type: 'delete' | 'archive' | 'reset-consumed-counter'; spoolId: number }
     | { type: 'reset-all-consumed-counters' }
@@ -862,11 +866,18 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     t,
   ]);
 
-  const { data: assignments } = useQuery({
+  // Built-in slot assignments, in built-in mode only. Since #2812 they are kept
+  // through a switch to Spoolman, and their spool ids are built-in ids: merged
+  // into the Spoolman view they put a badge on whichever Spoolman spool shares
+  // the number, with nothing there to clear it (#3430). The cache is shared
+  // with pages that fetch it regardless, so the data is dropped here as well.
+  const { data: builtInAssignments } = useQuery({
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
     refetchInterval: 30000,
+    enabled: spoolmanModeReady && !spoolmanMode,
   });
+  const assignments = spoolmanMode ? undefined : builtInAssignments;
 
   // Spoolman-mode slot assignments. spool.id IS the spoolman_spool_id, so this
   // feeds into the same assignmentMap that the LOCATION column reads.
@@ -1211,11 +1222,10 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
 
   const currencySymbol = getCurrencySymbol(settings?.currency || 'USD');
 
-  // Map spool_id -> location display data for the LOCATION column.
-  // Local SpoolAssignment entries first, then Spoolman SlotAssignment fills in
-  // remaining IDs. Local wins on collision (defensive — modes are exclusive in
-  // practice, but a stray pair with the same numeric id would otherwise be
-  // unpredictable). spool.id IS the spoolman_spool_id in Spoolman mode.
+  // Map spool_id -> location display data for the LOCATION column. Only one
+  // source is ever filled: built-in assignments in built-in mode, Spoolman's
+  // slot assignments in Spoolman mode, where spool.id IS the spoolman_spool_id
+  // (see `assignments` above, #3430).
   const assignmentMap = useMemo<Record<number, LocationDisplay>>(() => {
     const map: Record<number, LocationDisplay> = {};
     for (const a of assignments || []) {
@@ -1676,12 +1686,24 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
             <Printer className="w-4 h-4" />
             {t('inventory.labels.printLabels', 'Print labels…')}
           </Button>
+          <Button variant="secondary" onClick={() => setQrTargetModalOpen(true)}>
+            <QrCode className="w-4 h-4" />
+            {t('inventory.qrAssign.button')}
+          </Button>
           <Button onClick={() => setFormModal({ spool: null, mode: 'create' })}>
             <Plus className="w-4 h-4" />
             {t('inventory.addSpool')}
           </Button>
         </div>
       </div>
+
+      {qrTargetModalOpen && (
+        <QrAssignTargetModal
+          isOpen={qrTargetModalOpen}
+          onClose={() => setQrTargetModalOpen(false)}
+          spoolmanMode={spoolmanMode}
+        />
+      )}
 
       {/* Stats Bar */}
       {stats && !isLoading && (
@@ -2228,7 +2250,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         </div>
       ) : viewMode === 'forecast' ? (
         /* Forecast view */
-        <ForecastPanel spools={spools || []} />
+        <ForecastPanel spools={spools || []} spoolmanMode={spoolmanMode} />
       ) : viewMode === 'cards' ? (
         /* Cards view */
         pagedItems.length > 0 ? (

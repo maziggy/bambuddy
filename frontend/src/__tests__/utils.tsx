@@ -3,6 +3,7 @@
  */
 
 import React from 'react';
+import { vi } from 'vitest';
 import { render } from '@testing-library/react';
 import type { RenderOptions } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -79,3 +80,25 @@ export { createTestQueryClient };
  * Helper to wait for async operations.
  */
 export const waitForAsync = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/**
+ * The spool QR scanner's live camera, pointed at a label reading `rawValue` for
+ * as long as the test runs: a camera that opens, a video with frames, and the
+ * platform decoder reading that label off each one.
+ */
+export function stubLiveCamera(rawValue: string) {
+  const track = { stop: vi.fn(), applyConstraints: vi.fn().mockResolvedValue(undefined) };
+  const stream = { getTracks: () => [track], getVideoTracks: () => [track] };
+  vi.stubGlobal('navigator', { ...navigator, mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(stream) } });
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+  vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockReturnValue(4); // HAVE_ENOUGH_DATA
+  vi.stubGlobal(
+    'BarcodeDetector',
+    class {
+      detect = vi.fn().mockResolvedValue([{ rawValue }]);
+    },
+  );
+}
+
+/** Let the spool QR scanner's live loop (a decode every 200 ms) run a few more frames. */
+export const frames = (n: number) => new Promise((resolve) => setTimeout(resolve, 250 * n));

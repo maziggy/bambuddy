@@ -92,8 +92,8 @@ def test_archive_keyed_tables_survive_while_another_file_still_points_at_them(
 ):
     """Mirrors the TTL sweep's rule, which is the easy thing to get wrong.
 
-    ``_print_ams_mappings`` and ``_print_plate_ids`` are keyed by archive, not
-    by file. Two files can be registered against one archive, so dropping them
+    ``_print_ams_mappings`` and ``_print_plate_ids`` are keyed by printer and
+    archive, not by file. Two files can be registered against one archive, so dropping them
     on the first unregister would strip usage-tracking data from a print that is
     still expected.
     """
@@ -104,8 +104,8 @@ def test_archive_keyed_tables_survive_while_another_file_still_points_at_them(
 
     main.unregister_expected_print(1, "plate1.3mf", 298)
 
-    assert main._print_ams_mappings.get(298) == [3]
-    assert 298 in main._print_plate_ids
+    assert main._print_ams_mappings.get((1, 298)) == [3]
+    assert (1, 298) in main._print_plate_ids
 
 
 def test_unregistering_an_unknown_print_is_a_no_op(expected_print_tables):
@@ -150,7 +150,7 @@ def test_scheduler_rollback_is_a_no_op_after_a_confirmed_send(expected_print_tab
     sched._rollback_unconfirmed_expected_print(597)
 
     assert main._expected_prints[(1, "widget.3mf")] == 298
-    assert main._print_ams_mappings[298] == [3, 6]
+    assert main._print_ams_mappings[(1, 298)] == [3, 6]
 
 
 def test_scheduler_rollback_never_raises(expected_print_tables, monkeypatch):
@@ -248,7 +248,7 @@ async def test_dispatch_keeps_the_expectation_when_the_print_was_sent(expected_p
         await sched._dispatch_one(597)
 
     assert main._expected_prints[(1, "widget.3mf")] == 298
-    assert main._print_ams_mappings[298] == [3, 6]
+    assert main._print_ams_mappings[(1, 298)] == [3, 6]
 
 
 def test_rollback_entries_are_per_item(expected_print_tables):
@@ -269,7 +269,7 @@ def test_rollback_entries_are_per_item(expected_print_tables):
 
 
 # ---------------------------------------------------------------------------
-# The archive-keyed tables follow the newest dispatch of the archive
+# The dispatch tables follow the newest dispatch of the archive to the printer
 # ---------------------------------------------------------------------------
 
 
@@ -281,9 +281,9 @@ def test_a_fresh_dispatch_without_a_plate_drops_the_previous_plate(expected_prin
     main.register_expected_print(1, "widget.3mf", 298, ams_mapping=[3], plate_id=2, cost_center_id=5)
     main.register_expected_print(1, "widget.3mf", 298)
 
-    assert 298 not in main._print_plate_ids
-    assert 298 not in main._print_ams_mappings
-    assert 298 not in main._print_cost_center_ids
+    assert (1, 298) not in main._print_plate_ids
+    assert (1, 298) not in main._print_ams_mappings
+    assert (1, 298) not in main._print_cost_center_ids
 
 
 def test_but_not_while_a_plate_of_the_archive_is_printing(expected_print_tables):
@@ -292,10 +292,10 @@ def test_but_not_while_a_plate_of_the_archive_is_printing(expected_print_tables)
 
     main.register_expected_print(1, "widget.3mf", 298, ams_mapping=[3], plate_id=1)
     main._active_prints[(1, "widget.3mf")] = 298
-    main.register_expected_print(2, "widget.3mf", 298)
+    main.register_expected_print(1, "widget.3mf", 298)
 
-    assert main._print_plate_ids.get(298) == 1
-    assert main._print_ams_mappings.get(298) == [3]
+    assert main._print_plate_ids.get((1, 298)) == 1
+    assert main._print_ams_mappings.get((1, 298)) == [3]
 
 
 def test_a_failed_send_leaves_a_running_plate_s_entries(expected_print_tables):
@@ -311,6 +311,22 @@ def test_a_failed_send_leaves_a_running_plate_s_entries(expected_print_tables):
 
     main.unregister_expected_print(2, "plate2.3mf", 298)
 
-    assert main._print_ams_mappings.get(298) == [3]
-    assert main._print_plate_ids.get(298) == 1
-    assert main._print_cost_center_ids.get(298) == 5
+    assert main._print_ams_mappings.get((1, 298)) == [3]
+    assert main._print_plate_ids.get((1, 298)) == 1
+    assert main._print_cost_center_ids.get((1, 298)) == 5
+    assert (2, 298) not in main._print_plate_ids
+
+
+def test_plates_of_one_archive_on_two_printers_keep_their_own(expected_print_tables):
+    """Each printer's print of the archive is charged with its own trays,
+    plate and cost centre: the second dispatch does not take the first's."""
+    main = expected_print_tables
+
+    main.register_expected_print(1, "widget.3mf", 298, ams_mapping=[3], plate_id=1, cost_center_id=5)
+    main._active_prints[(1, "widget.3mf")] = 298
+    main.register_expected_print(2, "widget.3mf", 298, ams_mapping=[7], plate_id=2, cost_center_id=6)
+
+    assert main._print_ams_mappings == {(1, 298): [3], (2, 298): [7]}
+    assert main._print_plate_ids == {(1, 298): 1, (2, 298): 2}
+    assert main._print_cost_center_ids == {(1, 298): 5, (2, 298): 6}
+    assert main._get_start_plate_id(1, 298) == 1 and main._get_start_plate_id(2, 298) == 2

@@ -146,6 +146,26 @@ describe('PrintersPage — camera split button', () => {
     );
   });
 
+  it('opens the overlay and offers no window in a home-screen web app (#3419)', async () => {
+    // iOS loads a window.open URL into the app itself, with no way back.
+    storage.set('cameraViewMode', 'window');
+    Object.defineProperty(navigator, 'standalone', { value: true, configurable: true });
+    try {
+      renderPage('window');
+      await waitFor(() => expect(document.getElementById('printer-card-1')).not.toBeNull());
+      const icon = await screen.findByTitle('Open camera overlay');
+      await waitFor(() => expect(icon).not.toBeDisabled());
+      expect(screen.queryByLabelText('Camera View Mode')).toBeNull();
+
+      fireEvent.click(icon);
+
+      expect(await screen.findByTitle('Refresh stream')).toBeInTheDocument();
+      expect(openSpy).not.toHaveBeenCalled();
+    } finally {
+      delete (navigator as Navigator & { standalone?: boolean }).standalone;
+    }
+  });
+
   it('offers both modes from the caret', async () => {
     renderPage('window');
     await openModeMenu();
@@ -162,6 +182,16 @@ describe('PrintersPage — camera split button', () => {
     // "Refresh stream" is the overlay's own control; the card has no such button.
     expect(await screen.findByTitle('Refresh stream')).toBeInTheDocument();
     expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it('an overlay opened from the card belongs to the Printers page', async () => {
+    renderPage('window');
+    await openModeMenu();
+    fireEvent.click(await screen.findByText(/Embedded Overlay/));
+    expect(await screen.findByTitle('Refresh stream')).toBeInTheDocument();
+    expect(JSON.parse(storage.get('openEmbeddedCameras')!)).toEqual([
+      expect.objectContaining({ scope: 'printers' }),
+    ]);
   });
 
   it('remembers the picked mode for the next visit', async () => {

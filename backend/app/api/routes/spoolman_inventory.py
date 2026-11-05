@@ -12,13 +12,13 @@ import json
 import logging
 import re
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from datetime import datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select, text, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -48,21 +48,24 @@ from backend.app.models.ams_label import AmsLabel
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.spool_filament_preset import SpoolmanFilamentPreset
+from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.models.supplier import SpoolmanSpoolSupplier, Supplier
 from backend.app.models.user import User
 from backend.app.schemas.spool import SpoolFilamentPresetBase, SpoolKProfileBase, naive_utc
+from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
 from backend.app.schemas.spoolman import SlotAmsId, SlotTrayId, SpoolmanFilamentPatch, SpoolmanSlotAssignmentEnriched
 from backend.app.schemas.supplier import SpoolSupplierLinkInput
 from backend.app.services import filament_profile_default as profile_defaults, slot_unlink_grace, spool_swaps
+from backend.app.services.ams_assignment_lock import get_spool_move_lock
 from backend.app.services.location_service import (
     enrich_spool_dicts_with_location_id,
     maybe_sync_spoolman_locations,
     resolve_spoolman_location_string,
 )
 from backend.app.services.printer_manager import PrinterManager, printer_manager
-from backend.app.services.slicer_filament_resolver import resolve_slicer_filament
+from backend.app.services.slicer_filament_resolver import resolve_slicer_filament, reusable_slot_filament_id
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_filament_preset import forget_spoolman_spool_own_preset, resolve_spoolman_preset
 from backend.app.services.spoolman import (
@@ -181,6 +184,47 @@ async def _clear_stale_slot_fallback_tag_links(
         keep_spool_id=keep_spool_id,
         log_context=f"printer={printer_serial} ams={ams_id} tray={tray_id}",
     )
+
+
+async def _clear_vacated_slot_fallback_tag(
+    client: SpoolmanClient,
+    db: AsyncSession,
+    *,
+    spool_id: int,
+    spool: dict,
+    vacated: list[tuple[int, int, int]],
+) -> str | None:
+    """Clear the spool's extra.tag when it is the fallback tag of a slot it leaves (#1574).
+
+    A spool linked to a slot without RFID carries that slot's fallback tag, and
+    the tag lookup keeps finding it for the old slot after it moved. A real RFID
+    or any other tag is the spool's own and stays. Returns the tag it cleared,
+    or None. Raises when Spoolman refuses, before anything local has changed,
+    so the spool stays where it was.
+    """
+    tag = str((spool.get("extra") or {}).get("tag") or "").strip('"').upper()
+    if not tag or not vacated:
+        return None
+    serials = dict(
+        (await db.execute(select(Printer.id, Printer.serial_number).where(Printer.id.in_({p for p, _, _ in vacated}))))
+        .tuples()
+        .all()
+    )
+    if not any(
+        tag == get_fallback_spool_tag_for_slot(serials.get(printer_id) or "", ams_id, tray_id)
+        for printer_id, ams_id, tray_id in vacated
+    ):
+        return None
+    try:
+        await client.merge_spool_extra(spool_id, {"tag": json.dumps("")})
+    except (SpoolmanClientError, SpoolmanUnavailableError, SpoolmanNotFoundError) as exc:
+        logger.warning("Could not clear the old slot's fallback tag from Spoolman spool %s: %s", spool_id, exc)
+        raise HTTPException(
+            status_code=503 if isinstance(exc, SpoolmanUnavailableError) else 502,
+            detail="Spoolman did not clear the spool's tag for its old slot, so the spool was not moved",
+        ) from exc
+    logger.info("Cleared the old slot's fallback tag from Spoolman spool %s before moving it", spool_id)
+    return tag
 
 
 async def _get_client(db: AsyncSession) -> SpoolmanClient:
@@ -458,6 +502,9 @@ class SpoolSlotAssignmentRequest(BaseModel):
     printer_id: int = Field(..., gt=0)
     ams_id: SlotAmsId
     tray_id: SlotTrayId
+    # The spool also leaves any other slot it is assigned to, in the same
+    # transaction (#1574): a scanned spool is the one in the user's hand.
+    move: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -1099,10 +1146,16 @@ async def _purge_local_rows_for_spool(db: AsyncSession, spool_id: int) -> None:
     reference count non-zero, so deleting that supplier answers 409 forever
     with no way for the user to find the phantom reference (#2988).
 
+    Its usage history is kept, as a deleted built-in spool's is, but no longer
+    names it: Spoolman can hand the id to a new spool, which would inherit it.
+
     The caller commits.
     """
     for model in (SpoolmanKProfile, SpoolmanFilamentPreset, SpoolmanSpoolSupplier):
         await db.execute(delete(model).where(model.spoolman_spool_id == spool_id))
+    await db.execute(
+        update(SpoolUsageHistory).where(SpoolUsageHistory.spoolman_spool_id == spool_id).values(spoolman_spool_id=None)
+    )
 
 
 @router.delete("/spools/{spool_id}")
@@ -1822,6 +1875,28 @@ async def sync_spoolman_ams_weights(
     return {"synced": synced, "skipped": skipped, "printing": printing}
 
 
+def _live_slot_tray(state, ams_id: int, tray_id: int) -> dict:
+    """The tray the printer reports for a slot right now, or {} (external: vt_tray 254/255)."""
+    raw = getattr(state, "raw_data", None) if state is not None else None
+    if not isinstance(raw, dict):
+        return {}
+    if ams_id == 255:
+        vt_trays = raw.get("vt_tray") or []
+        for vt in [vt_trays] if isinstance(vt_trays, dict) else vt_trays:
+            if isinstance(vt, dict) and str(vt.get("id", 254)) == str(254 + tray_id):
+                return vt
+        return {}
+    units = raw.get("ams") or []
+    if isinstance(units, dict):
+        units = units.get("ams") or []
+    for unit in units if isinstance(units, list) else []:
+        if isinstance(unit, dict) and str(unit.get("id")) == str(ams_id):
+            for tray in unit.get("tray") or []:
+                if isinstance(tray, dict) and str(tray.get("id")) == str(tray_id):
+                    return tray
+    return {}
+
+
 @router.post("/slot-assignments")
 async def assign_spoolman_slot(
     body: SpoolSlotAssignmentRequest,
@@ -1851,34 +1926,79 @@ async def assign_spoolman_slot(
     if spool.get("archived"):
         raise HTTPException(status_code=400, detail="Cannot assign an archived spool")
 
-    # Spool confirmed in Spoolman — upsert into local slot-assignment table
-    # assigned_at is intentionally not refreshed on re-assign (original timestamp preserved)
-    try:
-        await db.execute(
-            text(
-                "INSERT INTO spoolman_slot_assignments"
-                " (printer_id, ams_id, tray_id, spoolman_spool_id)"
-                " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
-                " ON CONFLICT(printer_id, ams_id, tray_id)"
-                " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
-            ),
-            {
-                "printer_id": body.printer_id,
-                "ams_id": body.ams_id,
-                "tray_id": body.tray_id,
-                "spool_id": body.spoolman_spool_id,
-            },
-        )
-        await spool_swaps.record_assignment(
-            db, body.printer_id, body.ams_id, body.tray_id, body.spoolman_spool_id, spool_swaps.SPOOLMAN
-        )
-        await db.commit()
-        slot_unlink_grace.forget_slot(body.printer_id, body.ams_id, body.tray_id)
-    except Exception as exc:
-        await db.rollback()
-        logger.error("Failed to persist slot assignment: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to save slot assignment") from exc
+    # A move (#1574) takes the spool out of every other slot it holds, in the
+    # same commit as the upsert below, so a failed move leaves it where it was
+    # instead of in no slot. Its fallback tag for a slot it leaves is cleared
+    # first. Moves of one spool take turns (get_spool_move_lock): on PostgreSQL
+    # a move's DELETE doesn't see the slot another move inserts and commits
+    # after it began, and both left the spool assigned. A slot on a printer
+    # outside the caller's scope stays assigned, as unassigning leaves it
+    # (#1727).
+    target = (body.printer_id, body.ams_id, body.tray_id)
+    slot_columns = (SpoolmanSlotAssignment.printer_id, SpoolmanSlotAssignment.ams_id, SpoolmanSlotAssignment.tray_id)
+    others = [SpoolmanSlotAssignment.spoolman_spool_id == body.spoolman_spool_id, tuple_(*slot_columns) != target]
+    if (in_scope := printer_scope.where_strict(SpoolmanSlotAssignment.printer_id)) is not None:
+        others.append(in_scope)
+    vacated: list[tuple[int, int, int]] = []
+    cleared_tag: str | None = None
+    async with get_spool_move_lock("spoolman", body.spoolman_spool_id) if body.move else nullcontext():
+        if body.move:
+            vacated = list((await db.execute(select(*slot_columns).where(*others))).tuples())
+            cleared_tag = await _clear_vacated_slot_fallback_tag(
+                client, db, spool_id=body.spoolman_spool_id, spool=spool, vacated=vacated
+            )
 
+        # Spool confirmed in Spoolman — upsert into local slot-assignment table
+        # assigned_at is intentionally not refreshed on re-assign (original timestamp preserved)
+        try:
+            if body.move:
+                # Every other slot of the spool, not only those read above: a
+                # link or the AMS sync may have given it one more meanwhile.
+                result = await db.execute(delete(SpoolmanSlotAssignment).where(*others).returning(*slot_columns))
+                vacated = list(result.tuples())
+            await db.execute(
+                text(
+                    "INSERT INTO spoolman_slot_assignments"
+                    " (printer_id, ams_id, tray_id, spoolman_spool_id)"
+                    " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
+                    " ON CONFLICT(printer_id, ams_id, tray_id)"
+                    " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
+                ),
+                {
+                    "printer_id": body.printer_id,
+                    "ams_id": body.ams_id,
+                    "tray_id": body.tray_id,
+                    "spool_id": body.spoolman_spool_id,
+                },
+            )
+            await spool_swaps.record_assignment(
+                db, body.printer_id, body.ams_id, body.tray_id, body.spoolman_spool_id, spool_swaps.SPOOLMAN
+            )
+            await db.commit()
+            slot_unlink_grace.forget_slot(body.printer_id, body.ams_id, body.tray_id)
+        except Exception as exc:
+            await db.rollback()
+            logger.error("Failed to persist slot assignment: %s", exc)
+            if cleared_tag:
+                # The spool stays in its old slot, so it gets that slot's tag back.
+                try:
+                    await client.merge_spool_extra(body.spoolman_spool_id, {"tag": json.dumps(cleared_tag)})
+                except (SpoolmanClientError, SpoolmanUnavailableError, SpoolmanNotFoundError) as restore_exc:
+                    logger.warning(
+                        "Could not put back the fallback tag of Spoolman spool %s: %s",
+                        body.spoolman_spool_id,
+                        restore_exc,
+                    )
+            raise HTTPException(status_code=500, detail="Failed to save slot assignment") from exc
+    if vacated:
+        logger.info(
+            "Moved Spoolman spool %d to printer %d AMS%d-T%d from %s",
+            body.spoolman_spool_id,
+            body.printer_id,
+            body.ams_id,
+            body.tray_id,
+            ", ".join(f"printer {p} AMS{a}-T{t}" for p, a, t in vacated),
+        )
     # #1457: clear stale fallback-tag links on OTHER spools still bound to this
     # slot. Without this, a non-RFID slot's deterministic fallback tag stays
     # attached to the previous spool in Spoolman's extra.tag and re-surfaces in
@@ -1891,6 +2011,12 @@ async def assign_spoolman_slot(
             tray_id=body.tray_id,
             keep_spool_id=body.spoolman_spool_id,
         )
+
+    # Other tabs and the SpoolBuddy kiosk follow slot changes over the
+    # websocket, as the built-in assign announces them: the slots the spool
+    # left, and the one it went to. After the tag clean-up above, which the
+    # pages read back with the slot rows (#3402).
+    await _announce_freed_slots([*vacated, target])
 
     mapped = _map_spoolman_spool(spool)
 
@@ -1977,6 +2103,17 @@ async def assign_spoolman_slot(
                 tray_type = printer_filament_type(type_override)
 
             material_upper = material.upper().strip()
+            # Without a preset, the slot's own filament id where it fits, as in
+            # internal mode, before any generic one (#3433).
+            if not tray_info_idx:
+                current_tray = _live_slot_tray(state, body.ams_id, body.tray_id)
+                tray_info_idx = reusable_slot_filament_id(
+                    current_tray.get("tray_info_idx"),
+                    current_tray.get("tray_type"),
+                    current_tray.get("tray_sub_brands"),
+                    tray_type,
+                    f"{material} {subtype}",
+                )
             # Fall back to generic-material id when slicer_filament is empty
             # or the resolver discarded an unresolvable value. Matches the
             # internal-mode tail in inventory.py:_apply_spool_to_slot_inner,
@@ -2193,12 +2330,20 @@ async def unassign_spoolman_slot(
         unassign = delete(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.spoolman_spool_id == spoolman_spool_id)
         if (clause := printer_scope.where_strict(SpoolmanSlotAssignment.printer_id)) is not None:
             unassign = unassign.where(clause)
-        await db.execute(unassign)
+        result = await db.execute(
+            unassign.returning(
+                SpoolmanSlotAssignment.printer_id, SpoolmanSlotAssignment.ams_id, SpoolmanSlotAssignment.tray_id
+            )
+        )
+        freed = list(result.tuples())
         await db.commit()
     except Exception as exc:
         await db.rollback()
         logger.error("Failed to delete slot assignment: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to remove slot assignment") from exc
+    # Other tabs, other clients' pages and the SpoolBuddy kiosk follow slot
+    # changes over the websocket (#3402).
+    await _announce_freed_slots(freed)
 
     # Fetch the spool from Spoolman to return in InventorySpool format.
     # If the spool no longer exists in Spoolman, the local unassignment still succeeded.
@@ -2298,6 +2443,35 @@ def _filament_preset_to_dict(p: SpoolmanFilamentPreset) -> dict:
         "slicer_filament_name": p.slicer_filament_name,
         "created_at": p.created_at,
     }
+
+
+@router.get("/spools/{spool_id}/usage", response_model=list[SpoolUsageHistoryResponse])
+async def get_spoolman_spool_usage_history(
+    spool_id: int = Path(..., gt=0),
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """A Spoolman spool's per-print usage, as Bambuddy charged it (#3407)."""
+    result = await db.execute(
+        select(SpoolUsageHistory)
+        .where(SpoolUsageHistory.spoolman_spool_id == spool_id)
+        .order_by(SpoolUsageHistory.created_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+@router.delete("/spools/{spool_id}/usage")
+async def clear_spoolman_spool_usage_history(
+    spool_id: int = Path(..., gt=0),
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> dict:
+    """Clear a Spoolman spool's usage history. Spoolman's own totals are untouched."""
+    await db.execute(delete(SpoolUsageHistory).where(SpoolUsageHistory.spoolman_spool_id == spool_id))
+    await db.commit()
+    return {"status": "cleared"}
 
 
 @router.get("/spools/{spool_id}/filament-presets")

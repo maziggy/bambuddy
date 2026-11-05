@@ -928,6 +928,28 @@ describe('Layout', () => {
       expect(await screen.findByTestId('confirm-outcome-dialog')).toBeInTheDocument();
     });
 
+    it('opens the dialog on the plate the link names', async () => {
+      // Plates of one archive each have their own question (#1898).
+      let requestedRun: string | null = null;
+      server.use(
+        http.get('/api/v1/archives/42', ({ request }) => {
+          requestedRun = new URL(request.url).searchParams.get('run_id');
+          return HttpResponse.json({ ...archive, run_id: 7 });
+        }),
+      );
+      window.history.replaceState({}, '', '/archives?confirm=42&run=7&status=completed');
+
+      render(<Layout />);
+
+      await screen.findByTestId('confirm-outcome-dialog');
+      await waitFor(() => {
+        expect(requestedRun).toBe('7');
+      });
+      await waitFor(() => {
+        expect(window.location.search).toBe('?status=completed');
+      });
+    });
+
     it('strips the parameter but keeps the rest of the query', async () => {
       window.history.replaceState({}, '', '/archives?confirm=42&status=completed');
 
@@ -1042,6 +1064,29 @@ describe('Layout', () => {
       );
 
       expect(await screen.findByTestId('confirm-outcome-dialog')).toBeInTheDocument();
+    });
+
+    it('opens from the WebSocket event on the plate it names', async () => {
+      let requestedRun: string | null = null;
+      server.use(
+        http.get('/api/v1/archives/42', ({ request }) => {
+          requestedRun = new URL(request.url).searchParams.get('run_id');
+          return HttpResponse.json({ ...archive, run_id: 7 });
+        }),
+      );
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(document.querySelector('aside')).toBeInTheDocument();
+      });
+      window.dispatchEvent(
+        new CustomEvent('print-confirm-request', { detail: { archive_id: 42, run_id: 7 } })
+      );
+
+      await screen.findByTestId('confirm-outcome-dialog');
+      await waitFor(() => {
+        expect(requestedRun).toBe('7');
+      });
     });
   });
 });

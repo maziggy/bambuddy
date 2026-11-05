@@ -1,15 +1,16 @@
 /**
  * Camera overlays from any page (#2737). They used to live in the Printers
- * page, so they disappeared on every other page.
+ * page, so they disappeared on every other page. One opened from a printer
+ * card belongs to the Printers page again; one from the sidebar to every page.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter, useNavigate } from 'react-router-dom';
 import { AuthProvider } from '../../contexts/AuthContext';
 import { ThemeProvider } from '../../contexts/ThemeContext';
 import { ToastProvider } from '../../contexts/ToastContext';
-import { EmbeddedCameraProvider } from '../../contexts/EmbeddedCameraContext';
+import { EmbeddedCameraProvider, useEmbeddedCameras } from '../../contexts/EmbeddedCameraContext';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { render } from '../utils';
@@ -89,7 +90,7 @@ describe('EmbeddedCameraProvider', () => {
     render(<SomeOtherPage />);
 
     await waitFor(() =>
-      expect(JSON.parse(localStorage.getItem('openEmbeddedCameras')!)).toEqual([{ id: 2, name: 'Office P1S' }]),
+      expect(JSON.parse(localStorage.getItem('openEmbeddedCameras')!)).toEqual([{ id: 2, name: 'Office P1S', scope: 'app' }]),
     );
     await waitFor(() => expect(overlayCount()).toBe(1));
   });
@@ -249,15 +250,15 @@ describe('EmbeddedCameraProvider', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Office P1S/ }));
     await waitFor(() =>
       expect(JSON.parse(localStorage.getItem('openEmbeddedCameras')!)).toEqual([
-        { id: 1, name: 'Workshop X1C' },
-        { id: 2, name: 'Office P1S' },
+        { id: 1, name: 'Workshop X1C', scope: 'app' },
+        { id: 2, name: 'Office P1S', scope: 'app' },
       ]),
     );
 
     fireEvent.click(await screen.findByRole('button', { name: 'Cameras' }));
     fireEvent.click(await screen.findByRole('button', { name: /Office P1S/ }));
     await waitFor(() =>
-      expect(JSON.parse(localStorage.getItem('openEmbeddedCameras')!)).toEqual([{ id: 1, name: 'Workshop X1C' }]),
+      expect(JSON.parse(localStorage.getItem('openEmbeddedCameras')!)).toEqual([{ id: 1, name: 'Workshop X1C', scope: 'app' }]),
     );
   });
 
@@ -337,7 +338,7 @@ describe('CameraLauncher', () => {
     await waitFor(() => expect(overlayCount()).toBe(1));
     // A quick look: the list gets out of the way.
     expect(screen.queryByRole('region', { name: 'Cameras' })).toBeNull();
-    expect(JSON.parse(localStorage.getItem('openEmbeddedCameras')!)).toEqual([{ id: 2, name: 'Office P1S' }]);
+    expect(JSON.parse(localStorage.getItem('openEmbeddedCameras')!)).toEqual([{ id: 2, name: 'Office P1S', scope: 'app' }]);
   });
 
   it('marks an open camera and closes it from the list', async () => {
@@ -437,5 +438,97 @@ describe('CameraLauncher', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Cameras' }));
 
     expect(await screen.findByText('No printers')).toBeInTheDocument();
+  });
+});
+
+
+describe('Where an overlay is shown, by where it was opened', () => {
+  beforeEach(() => {
+    backStorage();
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json(PRINTERS)),
+      http.get('/api/v1/printers/:id', ({ params }) =>
+        HttpResponse.json(PRINTERS.find(p => p.id === Number(params.id)) ?? null),
+      ),
+      http.post('/api/v1/printers/:id/camera/stop', () => HttpResponse.json({ success: true })),
+      http.get('/api/v1/printers/:id/camera/status', () => HttpResponse.json({ active: true, stalled: false })),
+    );
+    window.history.pushState({}, '', '/');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    window.history.pushState({}, '', '/');
+  });
+
+  /** Opens printer 2 from a card ('printers') or the sidebar ('app'), and moves between pages. */
+  function Harness() {
+    const { openEmbeddedCamera } = useEmbeddedCameras();
+    const navigate = useNavigate();
+    return (
+      <>
+        <button onClick={() => openEmbeddedCamera(2, 'Office P1S', 'printers')}>from card</button>
+        <button onClick={() => openEmbeddedCamera(2, 'Office P1S', 'app')}>from sidebar</button>
+        <button onClick={() => navigate('/archives')}>to archives</button>
+        <button onClick={() => navigate('/')}>to printers</button>
+      </>
+    );
+  }
+
+  it('a camera opened from a printer card stays on the Printers page, open, and is back on returning', async () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByText('from card'));
+    await waitFor(() => expect(overlayCount()).toBe(1));
+
+    fireEvent.click(screen.getByText('to archives'));
+    await waitFor(() => expect(overlayCount()).toBe(0));
+    expect(JSON.parse(localStorage.getItem('openEmbeddedCameras')!)).toEqual([
+      { id: 2, name: 'Office P1S', scope: 'printers' },
+    ]);
+
+    fireEvent.click(screen.getByText('to printers'));
+    await waitFor(() => expect(overlayCount()).toBe(1));
+  });
+
+  it('a camera opened from the sidebar is shown on every page', async () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByText('from sidebar'));
+    await waitFor(() => expect(overlayCount()).toBe(1));
+    fireEvent.click(screen.getByText('to archives'));
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(overlayCount()).toBe(1);
+  });
+
+  it('the sidebar moves a card camera to every page, and a card does not take it back', async () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByText('from card'));
+    fireEvent.click(screen.getByText('from sidebar'));
+    fireEvent.click(screen.getByText('from card'));
+    await waitFor(() => expect(overlayCount()).toBe(1));
+    fireEvent.click(screen.getByText('to archives'));
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(overlayCount()).toBe(1);
+    expect(JSON.parse(localStorage.getItem('openEmbeddedCameras')!)).toEqual([
+      { id: 2, name: 'Office P1S', scope: 'app' },
+    ]);
+  });
+
+  it('keeps the scope across a reload: a stored card camera is not shown on another page', async () => {
+    localStorage.setItem('openEmbeddedCameras', JSON.stringify([{ id: 2, name: 'Office P1S', scope: 'printers' }]));
+    window.history.pushState({}, '', '/archives');
+    render(<SomeOtherPage />);
+    await screen.findByText('Archives');
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(overlayCount()).toBe(0);
+  });
+
+  it('a camera popped back in from its window is shown on every page', async () => {
+    window.history.pushState({}, '', '/archives');
+    render(<SomeOtherPage />);
+    await screen.findByText('Archives');
+    await waitFor(async () =>
+      expect(await requestCameraPopIn(1, 'Workshop X1C', null, { answerMs: 50 })).toBe(true),
+    );
+    await waitFor(() => expect(overlayCount()).toBe(1));
   });
 });

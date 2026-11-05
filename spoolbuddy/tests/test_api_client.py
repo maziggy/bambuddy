@@ -203,6 +203,29 @@ def _status_error(code: int, detail: str | None = None) -> httpx.HTTPStatusError
     return httpx.HTTPStatusError("rejected", request=request, response=httpx.Response(code, request=request, **body))
 
 
+class TestTagScanned:
+    @pytest.mark.asyncio
+    async def test_sends_raw_blocks(self, api):
+        api._post = AsyncMock(return_value={"status": "ok"})
+        raw = {"1": "4130302D423038004746413030000000", "9": "36B6C12DB3DA4A39A50C275F510BD399"}
+
+        await api.tag_scanned("sb-1", "865947E2", tray_uuid="36B6C12DB3DA4A39A50C275F510BD399", raw_blocks=raw)
+
+        path, payload = api._post.await_args.args
+        assert path == "/nfc/tag-scanned"
+        assert payload["raw_blocks"] == raw
+        assert payload["tray_uuid"] == "36B6C12DB3DA4A39A50C275F510BD399"
+
+    @pytest.mark.asyncio
+    async def test_raw_blocks_default_to_none(self, api):
+        api._post = AsyncMock(return_value={"status": "ok"})
+
+        await api.tag_scanned("sb-1", "04A1B2C3D4E5F6")
+
+        _, payload = api._post.await_args.args
+        assert payload["raw_blocks"] is None
+
+
 class TestRejectedRequests:
     """A request the backend refuses is not a connection problem: buffering it
     replays it forever, and the flush stops at the first item that fails."""

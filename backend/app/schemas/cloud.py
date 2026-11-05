@@ -67,6 +67,10 @@ class SlicerSetting(BaseModel):
     user_id: str | None = None
     updated_time: str | None = None
     is_custom: bool = False
+    # The id Bambu Studio puts in an AMS slot for this preset. It cannot be
+    # derived from setting_id for every preset (SUNLU's "GFSNLS03_04" is
+    # "GFSNL03", #3387), so it is passed through from Bambu's list as is.
+    filament_id: str | None = None
 
 
 class SlicerSettingsResponse(BaseModel):

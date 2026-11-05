@@ -290,7 +290,12 @@ class ArchivePurgeService:
 
                     from backend.app.models.print_log import PrintLogEntry
 
-                    await delete_db.execute(sa_delete(PrintLogEntry).where(PrintLogEntry.archive_id == archive_id))
+                    # Its open run too: it has no archive left to end on.
+                    await delete_db.execute(
+                        sa_delete(PrintLogEntry)
+                        .where(PrintLogEntry.archive_id == archive_id)
+                        .execution_options(include_open_runs=True)
+                    )
                     await delete_db.commit()
                     if await service.delete_archive(archive_id):
                         deleted += 1

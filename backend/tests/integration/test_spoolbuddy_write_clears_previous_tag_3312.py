@@ -114,7 +114,7 @@ async def _write(async_client: AsyncClient, db_session, fake: FakeSpoolman):
             json={"device_id": "sb-3312", "spool_id": TARGET, "tag_uid": UID.lower(), "success": True},
         )
     assert resp.status_code == 200, resp.text
-    return resp
+    return ws
 
 
 async def test_the_reported_case_leaves_one_holder(async_client: AsyncClient, db_session):
@@ -154,3 +154,10 @@ async def test_rewriting_the_targets_own_tag_does_not_clear_it_first(async_clien
     await _write(async_client, db_session, fake)
     assert fake.holders() == [TARGET]
     assert [w for w in fake.writes if w[0] == TARGET] == [(TARGET, {"tag": json.dumps(UID)})]
+
+
+async def test_pages_open_elsewhere_are_told_the_tag_moved(async_client: AsyncClient, db_session):
+    """Their tag -> spool map still has the previous holder (#3402)."""
+    fake = FakeSpoolman([_spool(1, tag=UID), _spool(TARGET)])
+    ws = await _write(async_client, db_session, fake)
+    assert {"type": "inventory_changed"} in [c.args[0] for c in ws.broadcast.await_args_list]

@@ -14,7 +14,14 @@ logger = logging.getLogger(__name__)
 
 
 async def execute_action(
-    printer_id: int, action: str, task_name: str, score: float, frame: bytes | None = None
+    printer_id: int,
+    action: str,
+    task_name: str,
+    score: float | None,
+    frame: bytes | None = None,
+    *,
+    print_quality: int | None = None,
+    printer_name: str | None = None,
 ) -> None:
     """Run the configured action for a detected print failure.
 
@@ -22,7 +29,10 @@ async def execute_action(
     frame: the camera snapshot the ML model flagged, if any — attached to
         the notification so the recipient can see what triggered it.
     """
-    printer_name = await _get_printer_name(printer_id)
+    # OctoEverywhere resolves the name before committing an action so stale
+    # checks can still be cancelled before any hardware control begins.
+    if printer_name is None:
+        printer_name = await _get_printer_name(printer_id)
 
     if action in ("pause", "pause_and_off"):
         _pause_print(printer_id)
@@ -30,7 +40,7 @@ async def execute_action(
     if action == "pause_and_off":
         await _turn_off_linked_plugs(printer_id)
 
-    await _notify(printer_id, printer_name, task_name, score, action, frame)
+    await _notify(printer_id, printer_name, task_name, score, action, frame, print_quality=print_quality)
 
 
 async def _get_printer_name(printer_id: int) -> str:
@@ -45,10 +55,10 @@ def _pause_print(printer_id: int) -> None:
 
     client = printer_manager.get_client(printer_id)
     if not client:
-        logger.warning("Obico pause: no MQTT client for printer %s", printer_id)
+        logger.warning("AI failure detection: no MQTT client for printer %s", printer_id)
         return
     if not client.pause_print():
-        logger.warning("Obico pause: pause_print() returned False for printer %s", printer_id)
+        logger.warning("AI failure detection: pause_print() returned False for printer %s", printer_id)
 
 
 async def _turn_off_linked_plugs(printer_id: int) -> None:
@@ -75,16 +85,23 @@ async def _turn_off_linked_plugs(printer_id: int) -> None:
                     )
                     if plug.controls_printer_power:
                         power_plug_off = plug
-                logger.info("Obico action: turned off plug %s for printer %s", plug.name, printer_id)
+                logger.info("AI failure detection: turned off plug %s for printer %s", plug.name, printer_id)
             except Exception as e:
-                logger.error("Obico action: failed to turn off plug %s: %s", plug.name, e)
+                logger.error("AI failure detection: failed to turn off plug %s: %s", plug.name, e)
     if power_plug_off is not None:
         # Once, however many plugs feed the printer.
         await run_linked_scripts_after_automatic_switch(printer_id, power_plug_off, "OFF")
 
 
 async def _notify(
-    printer_id: int, printer_name: str, task_name: str, score: float, action: str, frame: bytes | None = None
+    printer_id: int,
+    printer_name: str,
+    task_name: str,
+    score: float | None,
+    action: str,
+    frame: bytes | None = None,
+    *,
+    print_quality: int | None = None,
 ) -> None:
     """Fire the AI Failure Detection notification (#1794).
 
@@ -103,7 +120,8 @@ async def _notify(
                 confidence=score,
                 action=action,
                 db=db,
+                print_quality=print_quality,
                 image_data=frame,
             )
         except Exception as e:
-            logger.error("Obico notify failed for printer %s: %s", printer_id, e)
+            logger.error("AI failure detection notify failed for printer %s: %s", printer_id, e)

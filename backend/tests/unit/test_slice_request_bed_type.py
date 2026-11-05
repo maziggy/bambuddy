@@ -123,6 +123,35 @@ class TestAPipelineSavedWithAnOldName:
     def test_its_run_slices_on_the_supertack_plate(self):
         assert _slice_request_from_pipeline(self._pipeline("Cool Plate (SuperTack)")).bed_type == "Supertack Plate"
 
+
+class TestAPipelineSavedWithAHiddenStandardPreset:
+    """#3386: the listing hides a Standard preset behind its Bambu Cloud stock
+    twin, and Run with pipeline must slice with the twin too, as the Slice
+    dialog does."""
+
+    def test_each_ref_slices_as_the_listing_shows_it(self):
+        pipeline = SlicerPipeline(
+            name="p",
+            printer_preset_source="standard",
+            printer_preset_id="Bambu Lab X1 Carbon 0.4 nozzle",
+            process_preset_source="standard",
+            process_preset_id="0.20mm Standard @BBL X1C",
+            filament_presets_json=(
+                '[{"source": "standard", "id": "Bambu PLA Basic @BBL X1C"}, {"source": "local", "id": "3"}]'
+            ),
+            bed_type=None,
+        )
+        aliases = {
+            "standard:0.20mm Standard @BBL X1C": PresetRef(source="cloud", id="GP004"),
+            "standard:Bambu PLA Basic @BBL X1C": PresetRef(source="cloud", id="GFSA00"),
+        }
+        request = _slice_request_from_pipeline(pipeline, aliases)
+        assert request.printer_preset == PresetRef(source="standard", id="Bambu Lab X1 Carbon 0.4 nozzle")
+        assert request.process_preset == PresetRef(source="cloud", id="GP004")
+        assert request.filament_presets == [PresetRef(source="cloud", id="GFSA00"), PresetRef(source="local", id="3")]
+        # Without a map (signed out) the row slices as stored.
+        assert _slice_request_from_pipeline(pipeline).process_preset.source == "standard"
+
     def test_it_reads_back_with_the_slicers_name(self):
         response = SlicerPipelineResponse(
             id=1,

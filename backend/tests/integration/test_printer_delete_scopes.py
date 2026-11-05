@@ -180,7 +180,8 @@ async def test_a_virtual_printer_aimed_at_the_printer_goes_with_it(async_client:
     removed.assert_awaited_once()
 
 
-async def test_obico_detection_drops_the_deleted_printer(async_client: AsyncClient, db_session):
+@pytest.mark.parametrize("provider", ["obico", "octoeverywhere"])
+async def test_ai_detection_drops_the_deleted_printer(async_client: AsyncClient, db_session, provider):
     """SQLite would otherwise enrol the next printer given its id."""
     from backend.app.models.settings import Settings
 
@@ -188,26 +189,27 @@ async def test_obico_detection_drops_the_deleted_printer(async_client: AsyncClie
     c = Printer(name="C", serial_number="SCOPE-C", ip_address="192.0.2.23", access_code="x")
     db_session.add(c)
     await db_session.commit()
-    db_session.add(Settings(key="obico_enabled_printers", value=f"[{a},{b},{c.id}]"))
+    db_session.add(Settings(key=f"{provider}_enabled_printers", value=f"[{a},{b},{c.id}]"))
     await db_session.commit()
 
     response = await async_client.delete(f"/api/v1/printers/{b}")
 
     assert response.status_code == 200, response.text
-    statement = select(Settings.value).where(Settings.key == "obico_enabled_printers")
+    statement = select(Settings.value).where(Settings.key == f"{provider}_enabled_printers")
     # Written as the settings page writes it, or it reads as an unsaved change and saves again.
     assert (await db_session.execute(statement.execution_options(populate_existing=True))).scalar() == f"[{a},{c.id}]"
 
 
 @pytest.mark.sqlite_only  # stages stale ids with a raw delete, which foreign keys refuse or null out
-async def test_the_startup_repair_drops_deleted_printers_from_obico_and_virtual_printers(db_session):
+@pytest.mark.parametrize("provider", ["obico", "octoeverywhere"])
+async def test_the_startup_repair_drops_deleted_printers_from_detection_and_virtual_printers(db_session, provider):
     from backend.app.models.settings import Settings
     from backend.app.models.virtual_printer import VirtualPrinter
 
     a, b = await _printers(db_session)
     db_session.add_all(
         [
-            Settings(key="obico_enabled_printers", value=f"[{b}]"),
+            Settings(key=f"{provider}_enabled_printers", value=f"[{b}]"),
             VirtualPrinter(name="to B", mode="queue", target_printer_id=b, serial_suffix="391800013"),
             VirtualPrinter(name="any", mode="queue", target_printer_id=None, serial_suffix="391800014"),
         ]
@@ -220,8 +222,10 @@ async def test_the_startup_repair_drops_deleted_printers_from_obico_and_virtual_
     await _drop_deleted_printers_from_limits(await db_session.connection())
     await db_session.commit()
 
-    obico = (await db_session.execute(select(Settings.value).where(Settings.key == "obico_enabled_printers"))).scalar()
-    assert obico == "[]"  # none, not all ("" would be all)
+    selected = (
+        await db_session.execute(select(Settings.value).where(Settings.key == f"{provider}_enabled_printers"))
+    ).scalar()
+    assert selected == "[]"  # none, not all ("" would be all)
     left = (await db_session.execute(select(VirtualPrinter.name))).all()
     assert [name for (name,) in left] == ["any"]
 
@@ -289,11 +293,12 @@ async def test_a_provider_cant_be_limited_to_a_printer_that_doesnt_exist(async_c
     assert 999 not in (await _scopes(db_session))[0].values()
 
 
-async def test_obico_cant_be_given_a_printer_that_doesnt_exist(async_client: AsyncClient, db_session):
+@pytest.mark.parametrize("provider", ["obico", "octoeverywhere"])
+async def test_detection_cant_be_given_a_printer_that_doesnt_exist(async_client: AsyncClient, db_session, provider):
     """A settings page still open from before a delete would save the deleted id back."""
     a, _ = await _printers(db_session)
 
-    response = await async_client.put("/api/v1/settings/", json={"obico_enabled_printers": f"[{a}, 999]"})
+    response = await async_client.put("/api/v1/settings/", json={f"{provider}_enabled_printers": f"[{a}, 999]"})
 
     assert response.status_code == 400, response.text
 
@@ -331,19 +336,20 @@ async def test_a_slicer_pipeline_aimed_at_the_printer_loses_it(async_client: Asy
     assert (await db_session.execute(assigned)).scalar() is None
 
 
-async def test_obico_ids_already_stored_dont_block_a_save(async_client: AsyncClient, db_session):
+@pytest.mark.parametrize("provider", ["obico", "octoeverywhere"])
+async def test_detection_ids_already_stored_dont_block_a_save(async_client: AsyncClient, db_session, provider):
     """PostgreSQL kept the id of a printer deleted before deletes dropped it, and
     the settings page sends the whole list back: every save would be refused."""
     from backend.app.models.settings import Settings
 
     a, _ = await _printers(db_session)
-    db_session.add(Settings(key="obico_enabled_printers", value=f"[{a},999]"))
+    db_session.add(Settings(key=f"{provider}_enabled_printers", value=f"[{a},999]"))
     await db_session.commit()
 
-    response = await async_client.put("/api/v1/settings/", json={"obico_enabled_printers": f"[{a},999]"})
+    response = await async_client.put("/api/v1/settings/", json={f"{provider}_enabled_printers": f"[{a},999]"})
 
     assert response.status_code == 200, response.text
-    response = await async_client.put("/api/v1/settings/", json={"obico_enabled_printers": f"[{a},998]"})
+    response = await async_client.put("/api/v1/settings/", json={f"{provider}_enabled_printers": f"[{a},998]"})
     assert response.status_code == 400, response.text
 
 
@@ -428,19 +434,22 @@ async def test_a_pipeline_cant_be_aimed_at_a_printer_that_doesnt_exist(async_cli
     assert response.status_code == 200, response.text
 
 
-async def test_a_settings_restore_drops_printers_that_are_gone_from_obico(db_session):
+@pytest.mark.parametrize("provider", ["obico", "octoeverywhere"])
+async def test_a_settings_restore_drops_printers_that_are_gone_from_detection(db_session, provider):
     """A backup taken before a printer delete still lists it."""
     from backend.app.models.settings import Settings
     from backend.app.services.github_restore import _CategoryTally, github_restore_service
 
     a, _ = await _printers(db_session)
     await github_restore_service._restore_settings(
-        db_session, {"settings": {"obico_enabled_printers": f"[{a},999]"}}, overwrite=True, tally=_CategoryTally()
+        db_session, {"settings": {f"{provider}_enabled_printers": f"[{a},999]"}}, overwrite=True, tally=_CategoryTally()
     )
     await db_session.commit()
 
-    obico = (await db_session.execute(select(Settings.value).where(Settings.key == "obico_enabled_printers"))).scalar()
-    assert obico == f"[{a}]"
+    selected = (
+        await db_session.execute(select(Settings.value).where(Settings.key == f"{provider}_enabled_printers"))
+    ).scalar()
+    assert selected == f"[{a}]"
 
 
 @pytest.mark.parametrize("via", ["printer", "plug"])

@@ -217,6 +217,7 @@ class TestReconcileStaleActivePrints:
             mock_pm.get_status.return_value = _state("IDLE")
             with patch("backend.app.main.async_session") as mock_session:
                 session_ctx = AsyncMock()
+                session_ctx.scalars = AsyncMock(return_value=MagicMock(all=lambda: []))  # no open runs
                 session_ctx.execute = AsyncMock(return_value=MagicMock(scalars=lambda: MagicMock(all=lambda: [])))
                 mock_session.return_value.__aenter__.return_value = session_ctx
                 count = await reconcile_stale_active_prints(printer_id=1)
@@ -231,6 +232,7 @@ class TestReconcileStaleActivePrints:
             mock_pm.get_status.return_value = _state("IDLE", subtask_id="", subtask_name="")
             with patch("backend.app.main.async_session") as mock_session:
                 session_ctx = AsyncMock()
+                session_ctx.scalars = AsyncMock(return_value=MagicMock(all=lambda: []))  # no open runs
                 session_ctx.execute = AsyncMock(return_value=MagicMock(scalars=lambda: MagicMock(all=lambda: [stale])))
                 mock_session.return_value.__aenter__.return_value = session_ctx
                 with patch("backend.app.main.on_print_complete", new=AsyncMock()) as mock_complete:
@@ -254,6 +256,7 @@ class TestReconcileStaleActivePrints:
             mock_pm.get_status.return_value = _state("RUNNING", subtask_id="ABC123", subtask_name="ghost")
             with patch("backend.app.main.async_session") as mock_session:
                 session_ctx = AsyncMock()
+                session_ctx.scalars = AsyncMock(return_value=MagicMock(all=lambda: []))  # no open runs
                 session_ctx.execute = AsyncMock(
                     return_value=MagicMock(scalars=lambda: MagicMock(all=lambda: [healthy]))
                 )
@@ -278,6 +281,7 @@ class TestReconcileStaleActivePrints:
             mock_pm.get_status.return_value = _state("IDLE")
             with patch("backend.app.main.async_session") as mock_session:
                 session_ctx = AsyncMock()
+                session_ctx.scalars = AsyncMock(return_value=MagicMock(all=lambda: []))  # no open runs
                 session_ctx.execute = AsyncMock(return_value=MagicMock(scalars=lambda: MagicMock(all=lambda: [a1, a2])))
                 mock_session.return_value.__aenter__.return_value = session_ctx
                 # First call raises, second call must still happen.
@@ -379,6 +383,7 @@ class TestReconcilePayload:
             mock_pm.get_status.return_value = state
             with patch("backend.app.main.async_session") as mock_session:
                 session_ctx = AsyncMock()
+                session_ctx.scalars = AsyncMock(return_value=MagicMock(all=lambda: []))  # no open runs
                 session_ctx.execute = AsyncMock(
                     return_value=MagicMock(scalars=lambda: MagicMock(all=lambda: [archive]))
                 )
@@ -435,6 +440,7 @@ async def test_the_queue_job_s_plate_reaches_the_estimate():
         mock_pm.get_status.return_value = _state("FINISH", subtask_id="ABC123", subtask_name="ghost")
         with patch("backend.app.main.async_session") as mock_session:
             session_ctx = AsyncMock()
+            session_ctx.scalars = AsyncMock(return_value=MagicMock(all=lambda: []))  # no open runs
             session_ctx.execute = AsyncMock(side_effect=[archives, plates])
             mock_session.return_value.__aenter__.return_value = session_ctx
             with (

@@ -348,7 +348,8 @@ async def test_persisted_print_is_authorized_after_restart(monkeypatch, printer_
         created_by_id=None,
     )
     query_result = SimpleNamespace(scalar_one_or_none=lambda: archive)
-    db = SimpleNamespace(execute=AsyncMock(return_value=query_result))
+    # No open run for it: a print started before runs were opened at start.
+    db = SimpleNamespace(execute=AsyncMock(return_value=query_result), scalar=AsyncMock(return_value=None))
 
     class FakeSessionContext:
         async def __aenter__(self):
@@ -442,12 +443,14 @@ async def test_kill_switch_defers_when_restart_identity_is_not_available(monkeyp
 
 
 def _authorization_db(archive, dispatched_queue_item_id=None):
-    """Fake session answering the two lookups `_is_bambuddy_authorized_print` makes."""
+    """Fake session answering the lookups `_is_bambuddy_authorized_print` makes:
+    the job's open run (none here: a print started before runs were opened at
+    start), the archive, then the queue."""
 
     query_result = SimpleNamespace(scalar_one_or_none=lambda: archive)
     return SimpleNamespace(
         execute=AsyncMock(return_value=query_result),
-        scalar=AsyncMock(return_value=dispatched_queue_item_id),
+        scalar=AsyncMock(side_effect=[None, dispatched_queue_item_id]),
     )
 
 
@@ -497,8 +500,9 @@ async def test_either_dispatch_marker_authorizes_after_a_restart(monkeypatch, ma
 
     assert await main_module._is_bambuddy_authorized_print(9, _running_state(), db) is True
     assert main_module._active_prints[(9, "some_job.gcode.3mf")] == 77
-    # The fast path is rehydrated, so the queue is never consulted.
-    db.scalar.assert_not_awaited()
+    # The fast path is rehydrated, so the queue is never consulted: the one
+    # scalar read is the open-run lookup.
+    assert db.scalar.await_count == 1
 
 
 @pytest.mark.asyncio

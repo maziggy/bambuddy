@@ -464,6 +464,21 @@ async def _load_run_aggregates(
         aggregate["latest_run_id"] = row.id
         # What its time accuracy is measured from (#3375).
         aggregate["latest_run"] = row
+    # Every print's own video: the archive holds only its latest print's, so
+    # a card counts these to say how many there are.
+    videos = await db.execute(
+        select(PrintLogEntry.archive_id, PrintLogEntry.timelapse_path)
+        .where(
+            PrintLogEntry.archive_id.in_(archive_ids),
+            PrintLogEntry.timelapse_path.is_not(None),
+            *([scope] if scope is not None else []),
+        )
+        .distinct()
+        .execution_options(**{INCLUDE_OPEN_RUNS: True})
+    )
+    for archive_id, path in videos.all():
+        if archive_id is not None:
+            aggregates.setdefault(archive_id, {}).setdefault("run_timelapses", set()).add(path)
     return aggregates
 
 
@@ -523,8 +538,12 @@ def _scoped(data: dict, view: ScopedView | None) -> dict:
     data["actual_time_seconds"] = data["time_estimate_seconds"] = data["time_accuracy"] = None
     for name in ("energy_kwh", "energy_cost", "wear_cost"):
         data[name] = getattr(view.shown, name) if view.shown is not None else None
-    if view.hidden_timelapse is not None and data["timelapse_path"] == view.hidden_timelapse:
-        data["timelapse_path"] = None
+    if view.hidden_timelapse is not None:
+        if data["timelapse_path"] == view.hidden_timelapse:
+            data["timelapse_path"] = None
+        # The archive's own, which the count took; no print in the scope
+        # holds it, or it would not be hidden.
+        data["timelapse_count"] = max(0, data["timelapse_count"] - 1)
     if data["photos"]:
         data["photos"] = [p for p in data["photos"] if p not in view.hidden_photos] or None
     return data
@@ -599,6 +618,13 @@ def archive_to_response(
         "created_by_id": archive.created_by_id,
         "created_by_username": archive.created_by.username if archive.created_by else None,
     }
+
+    # Its videos: every print's own, and the archive's when no print holds it
+    # (attached by hand, or from before prints kept their own).
+    videos = set((run_aggregate or {}).get("run_timelapses", ()))
+    if archive.timelapse_path:
+        videos.add(archive.timelapse_path)
+    data["timelapse_count"] = len(videos)
 
     # The time accuracy of the latest print, from ``run_aggregate`` (#3375).
     accuracy_data = compute_time_accuracy(archive, run_aggregate)
@@ -4207,7 +4233,10 @@ async def get_photo(
     }
     media_type = media_types.get(ext, "image/jpeg")
 
-    return FileResponse(path=photo_path, media_type=media_type)
+    # Revalidated, not cached: a late timelapse frame is written over the live
+    # finish photo under the same name (#2547), and a cached copy would keep
+    # showing the old one.
+    return FileResponse(path=photo_path, media_type=media_type, headers={"Cache-Control": "no-cache"})
 
 
 @router.delete("/{archive_id}/photos/{filename}")

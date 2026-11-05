@@ -475,6 +475,18 @@ describe('ArchiveDetailModal', () => {
     await waitFor(() => expect(patched).toEqual({ id: '12', body: { notes: 'warped' } }));
   });
 
+  it('opens a decided print to change its outcome', async () => {
+    render(<ArchiveDetailModal archiveId={Number(routeId)} onClose={onClose} />);
+    await screen.findByTestId('archive-run-11');
+    const decided = openRow(11);
+
+    fireEvent.click(within(decided).getByRole('button', { name: /Change outcome/ }));
+
+    const dialog = await screen.findByTestId('confirm-outcome-dialog');
+    expect(within(dialog).getByRole('heading', { name: 'Change outcome' })).toBeInTheDocument();
+    expect(await within(dialog).findByRole('button', { name: 'Reject' })).toBeInTheDocument();
+  });
+
   it('opens the archive a merged one went into', async () => {
     routeId = '4';
     window.history.pushState({}, '', '/archives/4?run=11');

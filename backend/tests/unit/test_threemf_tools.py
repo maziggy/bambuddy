@@ -12,8 +12,10 @@ import zipfile
 import pytest
 
 from backend.app.utils.threemf_tools import (
+    end_z_from_gcode_tail,
     expand_to_project_slots,
     extract_embedded_presets_from_3mf,
+    extract_end_z_from_3mf,
     extract_filament_usage_from_3mf,
     extract_layer_filament_usage_from_3mf,
     extract_max_z_height_from_3mf,
@@ -1511,3 +1513,142 @@ class TestExtractLayerFilamentUsagePlateSelection:
         path = tmp_path / "broken.3mf"
         path.write_text("not a zip")
         assert extract_layer_filament_usage_from_3mf(path, 1) is None
+
+
+# Shaped like the X1 Carbon end G-code in the archive: the plate drops
+# print top + 100 and settles 2 mm back.
+_X1_END = """; MACHINE_END_GCODE_START
+; filament end gcode
+M400 ; wait for buffer to clear
+G92 E0 ; zero the extruder
+G1 E-0.8 F1800 ; retract
+G1 Z53.3 F900 \t;lower z a little
+G1 X65 Y245 F12000 ; move to safe pos
+M17 Z0.4 \t    ;lower z motor current to reduce impact if there is something in the bottom
+    G1 Z152.8 F600
+    G1 Z150.8
+M400 P100
+G90
+M17 X0.8 Y0.8 Z0.5 ; lower motor current to 45% power
+"""
+
+# Archive 454's H2C end G-code: a 237.8 mm print is too tall for the +100
+# drop, so the template's other branch ends 2 mm under the nozzle.
+_H2C_END_TALL = """; MACHINE_END_GCODE_START
+G90
+G1 Z238.2 F900 ; lower z a little
+M1002 judge_flag timelapse_record_flag
+M622 J1
+    G150.3
+    M400 ; wait all motion done
+    M991 S0 P-1 ;end smooth timelapse at safe pos
+M623  ;end of "timelapse_record_flag"
+G90
+G1 Z247.8 F900 ; lower z a little
+M17 Z0.4 ; lower z motor current
+        G1 Z241.8 F600
+        G1 Z239.8
+M400 P100
+"""
+
+
+class TestEndZFromGcodeTail:
+    """#2547: where the end G-code leaves the plate. The finish-photo restore
+    parks the plate back there, so this decides a real Z move: anything that
+    makes the position uncertain must come back None, never a best guess."""
+
+    def test_x1_end_gcode(self):
+        assert end_z_from_gcode_tail("G1 Z52.8\n" + _X1_END) == 150.8
+
+    def test_h2c_tall_print_stays_just_under_the_nozzle(self):
+        """Archive 454. Bambuddy parked this at print top + 100 = Z337.8."""
+        assert end_z_from_gcode_tail(_H2C_END_TALL) == 239.8
+
+    def test_m17_z_is_motor_current_not_a_move(self):
+        assert end_z_from_gcode_tail("; MACHINE_END_GCODE_START\nG1 Z20\nM17 Z0.4\n") == 20.0
+
+    def test_no_marker_is_unknown(self):
+        assert end_z_from_gcode_tail("G1 Z20\nG1 Z120\n") is None
+
+    def test_orca_end_gcode_follows_the_last_filament_end_gcode(self):
+        """OrcaSlicer 2.3.2 writes no MACHINE_END_GCODE_START (P1S file in the
+        archive: print top 17, end G-code ends G1 Z117 / G1 Z115). A tool
+        change mid-print writes the same comment; the last one is the end."""
+        tail = (
+            "; filament end gcode \nG1 Z10\nT1\nG1 Z10.2\nG1 Z17\n"
+            "; FEATURE: Custom\n; filament end gcode \nM400\nG1 Z17.5 F900\n"
+            "G1 X65 Y245 F12000\nM17 Z0.4\nG1 Z117 F600\nG1 Z115\n; EXECUTABLE_BLOCK_END\n"
+        )
+        assert end_z_from_gcode_tail(tail) == 115.0
+
+    def test_no_z_move_in_the_end_gcode_is_unknown(self):
+        assert end_z_from_gcode_tail("G1 Z20\n; MACHINE_END_GCODE_START\nM400\n") is None
+
+    def test_a_z_move_inside_a_firmware_conditional_is_unknown(self):
+        """M622 J1 blocks run or not on a firmware flag we can't see."""
+        tail = "; MACHINE_END_GCODE_START\nG1 Z20\nM622 J1\nG1 Z120\nM623\n"
+        assert end_z_from_gcode_tail(tail) is None
+
+    def test_an_unconditional_move_after_a_conditional_one_is_known(self):
+        tail = "; MACHINE_END_GCODE_START\nM622 J1\nG1 Z120\nM623\nG1 Z130\n"
+        assert end_z_from_gcode_tail(tail) == 130.0
+
+    def test_relative_moves_add_to_a_known_position(self):
+        tail = "; MACHINE_END_GCODE_START\nG1 Z20\nG91\nG1 Z5\nG1 Z-1\nG90\n"
+        assert end_z_from_gcode_tail(tail) == 24.0
+
+    def test_relative_move_with_no_known_start_is_unknown(self):
+        assert end_z_from_gcode_tail("; MACHINE_END_GCODE_START\nG91\nG1 Z100\n") is None
+
+    def test_relative_mode_from_before_the_marker_carries_over(self):
+        assert end_z_from_gcode_tail("G91\n; MACHINE_END_GCODE_START\nG1 Z100\n") is None
+
+    def test_homing_or_resetting_z_is_unknown(self):
+        for line in ("G28", "G28 Z", "G92 Z0", "G380 S2 Z-5"):
+            tail = f"; MACHINE_END_GCODE_START\nG1 Z120\n{line}\n"
+            assert end_z_from_gcode_tail(tail) is None, line
+
+    def test_homing_other_axes_keeps_z(self):
+        assert end_z_from_gcode_tail("; MACHINE_END_GCODE_START\nG1 Z120\nG28 X\n") == 120.0
+
+    def test_arcs_with_z_count(self):
+        assert end_z_from_gcode_tail("; MACHINE_END_GCODE_START\nG3 Z120.5 I1 J0 P1 F30000\n") == 120.5
+
+    def test_commented_out_moves_are_ignored(self):
+        assert end_z_from_gcode_tail("; MACHINE_END_GCODE_START\nG1 Z120\n; G1 Z300\n") == 120.0
+
+    def test_unparseable_z_is_unknown(self):
+        assert end_z_from_gcode_tail("; MACHINE_END_GCODE_START\nG1 Z{max_layer_z+100}\n") is None
+
+    def test_the_last_end_gcode_block_wins(self):
+        tail = "; MACHINE_END_GCODE_START\nG1 Z300\n; MACHINE_END_GCODE_START\nG1 Z120\n"
+        assert end_z_from_gcode_tail(tail) == 120.0
+
+
+class TestExtractEndZFrom3mf:
+    def test_reads_the_requested_plate(self, tmp_path):
+        path = _make_plate_3mf(
+            tmp_path,
+            {
+                "Metadata/plate_1.gcode": _header(max_z_height="52.80") + "\n" + _X1_END,
+                "Metadata/plate_2.gcode": _header(max_z_height="237.80") + "\n" + _H2C_END_TALL,
+            },
+        )
+        assert extract_end_z_from_3mf(path, 1) == 150.8
+        assert extract_end_z_from_3mf(path, 2) == 239.8
+
+    def test_finds_the_end_gcode_after_a_long_print_body(self, tmp_path):
+        """The body is streamed through; only the tail is kept."""
+        body = "G1 X1 Y1 E0.1\n" * 200_000
+        path = _make_plate_3mf(tmp_path, {"Metadata/plate_1.gcode": _header(max_z_height="52.80") + body + _X1_END})
+        assert extract_end_z_from_3mf(path, 1) == 150.8
+
+    def test_unreadable_file_is_unknown(self, tmp_path):
+        bad = tmp_path / "bad.3mf"
+        bad.write_bytes(b"not a zip")
+        assert extract_end_z_from_3mf(bad, 1) is None
+        assert extract_end_z_from_3mf(tmp_path / "missing.3mf", 1) is None
+
+    def test_no_plate_gcode_is_unknown(self, tmp_path):
+        path = _make_plate_3mf(tmp_path, {"3D/3dmodel.model": "<model/>"})
+        assert extract_end_z_from_3mf(path, 1) is None

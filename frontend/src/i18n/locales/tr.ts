@@ -1174,6 +1174,7 @@ export default {
       openSource3mf: "Kaynak 3MF'yi Bambu Studio'da aç (daha fazla seçenek için sağ tıklayın)",
       downloadF3d: 'Fusion 360 tasarım dosyasını indir',
       viewTimelapse: 'Zaman atlamalı videoyu görüntüle',
+      viewTimelapses: '{{count}} zaman atlamalı videoyu görüntüle',
       viewPhoto: '1 fotoğrafı görüntüle',
       viewPhotos: '{{count}} fotoğrafı görüntüle',
       openFolder: 'Klasörü aç: {{name}}',

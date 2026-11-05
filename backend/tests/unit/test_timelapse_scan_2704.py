@@ -519,9 +519,66 @@ class TestFinishPhotoUpgrade:
     bed, which is the worse of the two photos. The upgrade runs afterwards."""
 
     @pytest.mark.asyncio
-    async def test_puts_the_timelapse_frame_first_and_keeps_the_live_grab(self):
-        """First, because the gallery opens at index 0. Kept, because the
-        notification that already went out links to that exact file."""
+    async def test_replaces_the_live_grab_in_place(self, tmp_path):
+        """Archive 454 ended up with two finish photos of the same moment. The
+        frame now goes over the live grab's file, under its name: one photo,
+        and the archive link a notification already sent (auth off) keeps
+        working and shows the better photo."""
+        from backend.app.main import _upgrade_finish_photo_from_timelapse
+
+        photos = tmp_path / "photos"
+        photos.mkdir()
+        (photos / "finish_live_grab.jpg").write_bytes(b"live")
+        (photos / "finish_from_timelapse.jpg").write_bytes(b"frame")
+        archive = MagicMock()
+        archive.photos = ["finish_upload.jpg", "finish_live_grab.jpg"]
+        session = _session(archive)
+
+        with (
+            patch(
+                "backend.app.main._capture_finish_photo_from_timelapse",
+                AsyncMock(return_value=("finish_from_timelapse.jpg", False)),
+            ),
+            patch("backend.app.main.async_session", return_value=session),
+            patch("backend.app.main.ws_manager", MagicMock(send_archive_updated=AsyncMock())) as ws,
+        ):
+            await _upgrade_finish_photo_from_timelapse(7, tmp_path, replace="finish_live_grab.jpg")
+
+        assert archive.photos == ["finish_live_grab.jpg", "finish_upload.jpg"]
+        assert (photos / "finish_live_grab.jpg").read_bytes() == b"frame"
+        assert sorted(f.name for f in photos.iterdir()) == ["finish_live_grab.jpg"]
+        session.commit.assert_awaited()
+        assert ws.send_archive_updated.await_args.args[0]["photo_added"] == "finish_live_grab.jpg"
+
+    @pytest.mark.asyncio
+    async def test_adds_the_frame_when_the_live_grab_was_deleted_meanwhile(self, tmp_path):
+        """Nothing to replace: the user removed it from the gallery. Writing
+        over a name the archive no longer lists would hide the frame."""
+        from backend.app.main import _upgrade_finish_photo_from_timelapse
+
+        photos = tmp_path / "photos"
+        photos.mkdir()
+        (photos / "finish_from_timelapse.jpg").write_bytes(b"frame")
+        archive = MagicMock()
+        archive.photos = []
+        session = _session(archive)
+
+        with (
+            patch(
+                "backend.app.main._capture_finish_photo_from_timelapse",
+                AsyncMock(return_value=("finish_from_timelapse.jpg", False)),
+            ),
+            patch("backend.app.main.async_session", return_value=session),
+            patch("backend.app.main.ws_manager", MagicMock(send_archive_updated=AsyncMock())),
+        ):
+            await _upgrade_finish_photo_from_timelapse(7, tmp_path, replace="finish_live_grab.jpg")
+
+        assert archive.photos == ["finish_from_timelapse.jpg"]
+        assert (photos / "finish_from_timelapse.jpg").read_bytes() == b"frame"
+
+    @pytest.mark.asyncio
+    async def test_puts_the_timelapse_frame_first_without_a_live_grab_to_replace(self):
+        """First, because the gallery opens at index 0."""
         from backend.app.main import _upgrade_finish_photo_from_timelapse
 
         archive = MagicMock()

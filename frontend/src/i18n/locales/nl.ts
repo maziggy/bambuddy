@@ -1179,6 +1179,7 @@ export default {
       openSource3mf: 'Bron-3MF openen in Bambu Studio (klik met rechts voor meer opties)',
       downloadF3d: 'Fusion 360-ontwerpbestand downloaden',
       viewTimelapse: 'Timelapse bekijken',
+      viewTimelapses: '{{count}} timelapses bekijken',
       viewPhoto: '1 foto bekijken',
       viewPhotos: '{{count}} foto\'s bekijken',
       openFolder: 'Map openen: {{name}}',

@@ -1178,6 +1178,7 @@ export default {
       openSource3mf: "Відкрити вихідний файл 3MF у Bambu Studio (клацніть правою кнопкою, щоб переглянути додаткові дії)",
       downloadF3d: "Завантажити файл дизайну Fusion 360",
       viewTimelapse: "Переглянути сповільнену зйомку",
+      viewTimelapses: "Переглянути сповільнені зйомки: {{count}}",
       viewPhoto: "Переглянути 1 фото",
       viewPhotos: "Переглянути фото: {{count}}",
       openFolder: "Відкрити папку: {{name}}",

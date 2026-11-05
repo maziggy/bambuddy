@@ -235,4 +235,46 @@ describe('ConfirmOutcomeDialog', () => {
       expect(patchPayload).toEqual({ user_verdict: 'good', user_verdict_source: 'dialog', run_id: 7 });
     });
   });
+  it('opened to change a verdict, offers the choice again with the current one marked', async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get('/api/v1/archives/42', () =>
+        HttpResponse.json({ ...baseArchive, run_id: 7, user_verdict: 'good', user_verdict_source: 'dialog' })
+      ),
+    );
+    const onClose = vi.fn();
+    render(<ConfirmOutcomeDialog archiveId={42} runId={7} change onClose={onClose} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Good' })).toHaveAttribute('aria-pressed', 'true');
+    });
+    expect(screen.getByText('Change outcome')).toBeInTheDocument();
+    expect(screen.queryByText('How did your print come out?')).not.toBeInTheDocument();
+    expect(screen.queryByText('Already confirmed as a good part.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Good' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Reject' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByText('Ask me later')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Reject' }));
+    await user.click(screen.getByText('Save'));
+
+    await waitFor(() => {
+      expect(patchPayload).toEqual({ user_verdict: 'reject', user_verdict_source: 'dialog', run_id: 7 });
+    });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('closes without a change on Cancel', async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get('/api/v1/archives/42', () => HttpResponse.json({ ...baseArchive, user_verdict: 'reject' })),
+    );
+    const onClose = vi.fn();
+    render(<ConfirmOutcomeDialog archiveId={42} change onClose={onClose} />);
+
+    await user.click(await screen.findByText('Cancel'));
+
+    expect(onClose).toHaveBeenCalled();
+    expect(patchPayload).toBeNull();
+  });
 });

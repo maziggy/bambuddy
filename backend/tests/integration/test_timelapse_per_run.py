@@ -515,6 +515,27 @@ class TestFinishPhoto:
             "plate2.jpg",
         ]
 
+    async def test_the_upgrade_replaces_the_live_grab_on_its_run(self, db_session, two_plates):
+        from backend.app.main import _upgrade_finish_photo_from_timelapse
+
+        photos = two_plates.files / "photos"
+        photos.mkdir(exist_ok=True)
+        (photos / "live.jpg").write_bytes(b"live")
+        (photos / "frame.jpg").write_bytes(b"frame")
+        await _set(db_session, PrintLogEntry, two_plates.first, photos=["upload.jpg", "live.jpg"])
+        await _set(db_session, PrintArchive, two_plates.archive, photos=["plate2.jpg", "live.jpg"])
+        with patch(
+            "backend.app.main._capture_finish_photo_from_timelapse", AsyncMock(return_value=("frame.jpg", False))
+        ):
+            await _upgrade_finish_photo_from_timelapse(
+                two_plates.archive, two_plates.files, run_id=two_plates.first, replace="live.jpg"
+            )
+
+        assert (await _row(db_session, PrintLogEntry, two_plates.first)).photos == ["live.jpg", "upload.jpg"]
+        assert (await _row(db_session, PrintArchive, two_plates.archive)).photos == ["live.jpg", "plate2.jpg"]
+        assert (photos / "live.jpg").read_bytes() == b"frame"
+        assert not (photos / "frame.jpg").exists()
+
 
 class TestReprint:
     async def test_replaces_the_plates_earlier_videos_only(self, db_session, two_plates):

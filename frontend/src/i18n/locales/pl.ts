@@ -1181,6 +1181,7 @@ export default {
       openSource3mf: 'Otwórz źródłowy plik 3MF w Bambu Studio (prawy przycisk, aby zobaczyć więcej opcji)',
       downloadF3d: 'Pobierz plik projektu Fusion 360',
       viewTimelapse: 'Pokaż timelapse',
+      viewTimelapses: 'Pokaż timelapse ({{count}})',
       viewPhoto: 'Pokaż 1 zdjęcie',
       viewPhotos: 'Pokaż zdjęcia ({{count}})',
       openFolder: 'Otwórz folder: {{name}}',

@@ -615,6 +615,7 @@ export function ArchiveDetailModal({ archiveId, onClose }: { archiveId: number; 
         <ConfirmOutcomeDialog
           archiveId={archive.id}
           runId={confirmRun}
+          change={runs.find((r) => r.id === confirmRun)?.user_verdict != null}
           onClose={() => {
             setConfirmRun(null);
             queryClient.invalidateQueries({ queryKey: ['archive-runs', archive.id] });

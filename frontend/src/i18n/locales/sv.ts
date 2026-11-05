@@ -1179,6 +1179,7 @@ export default {
       openSource3mf: 'Öppna 3MF-källfil i Bambu Studio (högerklicka för fler alternativ)',
       downloadF3d: 'Ladda ner Fusion 360-designfil',
       viewTimelapse: 'Visa timelapse',
+      viewTimelapses: 'Visa {{count}} timelapse-videor',
       viewPhoto: 'Visa 1 foto',
       viewPhotos: 'Visa {{count}} foton',
       openFolder: 'Öppna mapp: {{name}}',

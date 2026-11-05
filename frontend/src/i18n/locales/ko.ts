@@ -1130,6 +1130,7 @@ export default {
       openSource3mf: 'Bambu Studio에서 소스 3MF 열기 (더 많은 옵션은 우클릭)',
       downloadF3d: 'Fusion 360 디자인 파일 다운로드',
       viewTimelapse: '타임랩스 보기',
+      viewTimelapses: '타임랩스 {{count}}개 보기',
       viewPhoto: '사진 1장 보기',
       viewPhotos: '사진 {{count}}장 보기',
       openFolder: '폴더 열기: {{name}}',

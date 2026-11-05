@@ -31,6 +31,8 @@ from backend.app.main import on_finish_photo_moment
 from backend.app.models.archive import PrintArchive
 from backend.app.services import print_dispatch_context
 
+HEIGHTS = main_module.PlateHeights(16.0, 114.0)
+
 
 @asynccontextmanager
 async def _fake_session(printer):
@@ -97,7 +99,7 @@ def patched_env(fake_printer, monkeypatch):
     async def _not_blocked(_printer_id):
         return False
 
-    monkeypatch.setattr(main_module, "_max_z_for_current_print", _no_height)
+    monkeypatch.setattr(main_module, "_plate_heights_for_current_print", _no_height)
     monkeypatch.setattr(main_module, "_plate_restore_is_blocked_by_queue", _not_blocked)
     return fake_printer
 
@@ -536,9 +538,10 @@ def test_the_consumer_does_not_rotate_the_cached_frame():
 class TestPlateRestore:
     """#2547 / #1145 / #1397 / #1565: put the plate back into camera framing.
 
-    Bambu's end G-code drops the plate ~100mm as the last thing it does, so by
-    FINISH the finished print sits well below where the camera frames it. The
-    restore commands an ABSOLUTE Z back to just above the last printed layer.
+    On X1/P1/A1 Bambu's end G-code drops the plate ~100mm as the last thing it
+    does, so by FINISH the finished print sits well below where the camera
+    frames it. The restore commands an ABSOLUTE Z back to just above the last
+    printed layer.
 
     Absolute is the safety argument, and these tests pin it: the target is a
     height the toolhead was physically at seconds earlier, so it is inside the
@@ -600,10 +603,20 @@ class TestPlateRestore:
 
         assert ok is False
 
-    def test_park_lowers_the_plate_again(self, printer_client):
-        main_module._park_plate_after_finish_photo(7, 16.0, logging.getLogger(__name__))
+    def test_park_returns_the_plate_to_the_end_gcode_position(self, printer_client):
+        """The park target is the Z the print's own end G-code left the plate
+        at, sent as given. It used to be print top + 100 mm, which on a 238 mm
+        H2C print drove the plate to the bottom of its travel: the firmware
+        doesn't clamp MQTT G-code (#2579), and Bambu's template had stopped at
+        print top + 2 mm for exactly that reason."""
+        main_module._park_plate_after_finish_photo(7, 239.8, logging.getLogger(__name__))
 
-        assert printer_client.sent == ["G90\nG1 Z116.00 F600"]
+        assert printer_client.sent == ["G90\nG1 Z239.80 F600"]
+
+    def test_park_never_touches_m211(self, printer_client):
+        main_module._park_plate_after_finish_photo(7, 114.0, logging.getLogger(__name__))
+
+        assert not any("M211" in line for line in printer_client.sent)
 
     def test_park_skipped_once_the_next_print_has_started(self, printer_client):
         printer_client.state.state = "RUNNING"
@@ -619,7 +632,13 @@ class TestPlateRestoreWiring:
 
     @pytest.fixture
     def restore_env(self, patched_env, monkeypatch):
-        calls = {"restore": [], "park": [], "blocked": False, "height": 16.0, "bound": []}
+        calls = {
+            "restore": [],
+            "park": [],
+            "blocked": False,
+            "height": main_module.PlateHeights(16.0, 114.0),
+            "bound": [],
+        }
 
         async def _height(_printer_id, _data, _logger, archive_id, plate_id=None):
             calls["bound"].append((archive_id, plate_id))
@@ -632,10 +651,10 @@ class TestPlateRestoreWiring:
             calls["restore"].append((printer_id, max_z))
             return True
 
-        def _park(printer_id, max_z, _logger):
-            calls["park"].append((printer_id, max_z))
+        def _park(printer_id, end_z, _logger):
+            calls["park"].append((printer_id, end_z))
 
-        monkeypatch.setattr(main_module, "_max_z_for_current_print", _height)
+        monkeypatch.setattr(main_module, "_plate_heights_for_current_print", _height)
         monkeypatch.setattr(main_module, "_plate_restore_is_blocked_by_queue", _blocked)
         monkeypatch.setattr(main_module, "_restore_plate_for_finish_photo", _restore)
         monkeypatch.setattr(main_module, "_park_plate_after_finish_photo", _park)
@@ -650,7 +669,27 @@ class TestPlateRestoreWiring:
         await on_finish_photo_moment(patched_env.id, {"trigger": "finish_state"})
 
         assert restore_env["restore"] == [(patched_env.id, 16.0)]
-        assert restore_env["park"] == [(patched_env.id, 16.0)]
+        assert restore_env["park"] == [(patched_env.id, 114.0)]
+
+    async def test_not_restored_when_the_end_gcode_left_the_plate_in_view(self, patched_env, restore_env):
+        """Archive 454: the H2C end G-code ended 2 mm under the nozzle (Z239.8
+        for a 237.8 mm print). Raising "back" to print top + 10 would have
+        lowered it, and the park after that sent it to the bottom."""
+        restore_env["height"] = main_module.PlateHeights(237.8, 239.8)
+
+        await on_finish_photo_moment(patched_env.id, {"trigger": "finish_state"})
+
+        assert restore_env["restore"] == []
+        assert restore_env["park"] == []
+
+    async def test_restored_only_when_the_plate_is_below_the_restore_height(self, patched_env, restore_env):
+        for end_z, moved in ((26.0, False), (26.01, True)):
+            restore_env["restore"].clear()
+            restore_env["height"] = main_module.PlateHeights(16.0, end_z)
+
+            await on_finish_photo_moment(patched_env.id, {"trigger": "finish_state"})
+
+            assert bool(restore_env["restore"]) is moved, end_z
 
     async def test_reads_the_binding_before_on_print_complete_pops_it(self, patched_env, restore_env, monkeypatch):
         """#3240: on the FINISH-state path on_print_complete is dispatched right
@@ -758,7 +797,7 @@ class TestPlateRestoreWiring:
         await on_finish_photo_moment(patched_env.id, {"trigger": "finish_state"})
 
         assert restore_env["restore"] == [(patched_env.id, 16.0)]
-        assert restore_env["park"] == [(patched_env.id, 16.0)]
+        assert restore_env["park"] == [(patched_env.id, 114.0)]
 
     async def test_producer_event_is_still_set_after_a_restore(self, patched_env, restore_env):
         """#1790: the consumer's bounded wait must be released on every exit,
@@ -766,6 +805,80 @@ class TestPlateRestoreWiring:
         await on_finish_photo_moment(patched_env.id, {"trigger": "finish_state"})
 
         assert main_module._stage22_finish_in_flight[patched_env.id].is_set()
+
+
+class TestRaisePlateDecision:
+    """``_raise_plate_for_finish_photo``: the one place both finish-photo paths
+    decide whether to move the plate and where to park it afterwards."""
+
+    @pytest.fixture
+    def decision_env(self, monkeypatch):
+        env = {"heights": HEIGHTS, "blocked": False, "restore": [], "restored": True}
+
+        async def _heights(*_args):
+            return env["heights"]
+
+        async def _blocked(_printer_id):
+            return env["blocked"]
+
+        async def _restore(printer_id, print_top, _logger):
+            env["restore"].append((printer_id, print_top))
+            return env["restored"]
+
+        monkeypatch.setattr(main_module, "_plate_heights_for_current_print", _heights)
+        monkeypatch.setattr(main_module, "_plate_restore_is_blocked_by_queue", _blocked)
+        monkeypatch.setattr(main_module, "_restore_plate_for_finish_photo", _restore)
+        return env
+
+    @staticmethod
+    async def _decide():
+        return await main_module._raise_plate_for_finish_photo(7, {}, logging.getLogger(__name__), 5, 1)
+
+    async def test_raises_and_parks_at_the_end_gcode_position(self, decision_env):
+        assert await self._decide() == 114.0
+        assert decision_env["restore"] == [(7, 16.0)]
+
+    async def test_no_move_when_the_plate_is_already_in_view(self, decision_env):
+        decision_env["heights"] = main_module.PlateHeights(237.8, 239.8)
+        assert await self._decide() is None
+        assert decision_env["restore"] == []
+
+    async def test_no_move_when_heights_are_unknown(self, decision_env):
+        decision_env["heights"] = None
+        assert await self._decide() is None
+        assert decision_env["restore"] == []
+
+    async def test_no_move_when_the_queue_has_work(self, decision_env):
+        decision_env["blocked"] = True
+        assert await self._decide() is None
+        assert decision_env["restore"] == []
+
+    async def test_nothing_to_park_when_the_restore_did_not_happen(self, decision_env):
+        decision_env["restored"] = False
+        assert await self._decide() is None
+
+
+def test_every_plate_raise_goes_through_the_decision():
+    """Both finish-photo paths raise the plate. The park target is safe only
+    because it comes from ``_raise_plate_for_finish_photo``, so no other code
+    may call the raise directly, and nothing may compute a park height."""
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(main_module))
+    callers = set()
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for node in ast.walk(fn):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "_restore_plate_for_finish_photo"
+            ):
+                callers.add(fn.name)
+    assert callers == {"_raise_plate_for_finish_photo"}
+    assert not hasattr(main_module, "_PLATE_PARK_DROP_MM")
 
 
 async def test_producer_wait_budget_covers_the_restore():
@@ -807,7 +920,7 @@ class TestMaxZResolution:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         session_maker = async_sessionmaker(engine, expire_on_commit=False)
-        env = {"reported_layers": 30, "height": 16.0, "read": [], "session_maker": session_maker}
+        env = {"reported_layers": 30, "height": 16.0, "end_z": 114.0, "read": [], "session_maker": session_maker}
 
         monkeypatch.setattr(main_module, "async_session", session_maker)
         monkeypatch.setattr(main_module.app_settings, "base_dir", tmp_path)
@@ -821,7 +934,12 @@ class TestMaxZResolution:
             env["read"].append((path, plate))
             return env["height"]
 
+        def _extract_end(path, plate):
+            env["read_end"] = (path, plate)
+            return env["end_z"]
+
         monkeypatch.setattr("backend.app.utils.threemf_tools.extract_max_z_height_from_3mf", _extract)
+        monkeypatch.setattr("backend.app.utils.threemf_tools.extract_end_z_from_3mf", _extract_end)
         try:
             yield env
         finally:
@@ -849,11 +967,13 @@ class TestMaxZResolution:
     @staticmethod
     async def _resolve(name, archive_id, plate_id=None):
         data = {"subtask_name": name} if name is not None else {}
-        return await main_module._max_z_for_current_print(1, data, logging.getLogger(__name__), archive_id, plate_id)
+        return await main_module._plate_heights_for_current_print(
+            1, data, logging.getLogger(__name__), archive_id, plate_id
+        )
 
     async def test_returns_the_height_when_binding_name_and_layers_agree(self, resolver_env):
         archive_id = await self._archive(resolver_env)
-        assert await self._resolve("job", archive_id) == 16.0
+        assert await self._resolve("job", archive_id) == HEIGHTS
 
     async def test_refuses_a_print_that_is_not_bound_to_an_archive(self, resolver_env):
         """A name alone is never enough: with no binding there is no move, even
@@ -870,7 +990,7 @@ class TestMaxZResolution:
         await self._archive(resolver_env, file_path="archive/other-plate.gcode.3mf", total_layers=313)
         resolver_env["reported_layers"] = 125
 
-        assert await self._resolve("job", bound) == 16.0
+        assert await self._resolve("job", bound) == HEIGHTS
         assert resolver_env["read"][0][0].name == "reprinted.gcode.3mf"
 
     async def test_reads_the_plate_the_job_was_dispatched_with(self, resolver_env):
@@ -890,30 +1010,30 @@ class TestMaxZResolution:
         lookup raised, was logged at debug level, and the plate never moved."""
         archive_id = await self._archive(resolver_env, file_path="archive/1/job/job.gcode.3mf", plate_id=2)
 
-        assert await self._resolve("job", archive_id) == 16.0
+        assert await self._resolve("job", archive_id) == HEIGHTS
         assert resolver_env["read"] == [(tmp_path / "archive/1/job/job.gcode.3mf", 2)]
 
     async def test_an_absolute_file_path_is_read_as_stored(self, resolver_env):
         archive_id = await self._archive(resolver_env, file_path="/srv/bambuddy/archive/job.gcode.3mf")
 
-        assert await self._resolve("job", archive_id) == 16.0
+        assert await self._resolve("job", archive_id) == HEIGHTS
         assert str(resolver_env["read"][0][0]) == "/srv/bambuddy/archive/job.gcode.3mf"
 
     async def test_matches_a_name_the_printer_echoed_with_underscores(self, resolver_env):
         """#3240: the printer reports "Cube v2" as "Cube_v2"."""
         archive_id = await self._archive(resolver_env, print_name="Cube v2", filename="Cube v2.gcode.3mf")
-        assert await self._resolve("Cube_v2", archive_id) == 16.0
+        assert await self._resolve("Cube_v2", archive_id) == HEIGHTS
 
     async def test_matches_on_the_filename_with_or_without_its_extension(self, resolver_env):
         archive_id = await self._archive(resolver_env, print_name=None, filename="Bracket Left.gcode.3mf")
-        assert await self._resolve("Bracket_Left", archive_id) == 16.0
-        assert await self._resolve("Bracket_Left.gcode", archive_id) == 16.0
-        assert await self._resolve("Bracket Left.gcode.3mf", archive_id) == 16.0
+        assert await self._resolve("Bracket_Left", archive_id) == HEIGHTS
+        assert await self._resolve("Bracket_Left.gcode", archive_id) == HEIGHTS
+        assert await self._resolve("Bracket Left.gcode.3mf", archive_id) == HEIGHTS
 
     async def test_matches_a_file_name_that_ends_in_a_space(self, resolver_env):
         """#3241: "Part .gcode.3mf" is echoed as "Part_"."""
         archive_id = await self._archive(resolver_env, print_name="Part ", filename="Part .gcode.3mf")
-        assert await self._resolve("Part_", archive_id) == 16.0
+        assert await self._resolve("Part_", archive_id) == HEIGHTS
 
     async def test_refuses_a_bound_archive_with_another_name(self, resolver_env):
         archive_id = await self._archive(resolver_env)
@@ -954,11 +1074,11 @@ class TestMaxZResolution:
         layer count for still gets its height, because binding and name agree."""
         archive_id = await self._archive(resolver_env)
         resolver_env["reported_layers"] = 0
-        assert await self._resolve("job", archive_id) == 16.0
+        assert await self._resolve("job", archive_id) == HEIGHTS
 
         resolver_env["reported_layers"] = 30
         unknown_layers = await self._archive(resolver_env, total_layers=None)
-        assert await self._resolve("job", unknown_layers) == 16.0
+        assert await self._resolve("job", unknown_layers) == HEIGHTS
 
     async def test_refuses_when_the_archive_has_no_file(self, resolver_env):
         archive_id = await self._archive(resolver_env, file_path="")
@@ -968,6 +1088,20 @@ class TestMaxZResolution:
         archive_id = await self._archive(resolver_env)
         resolver_env["height"] = None
         assert await self._resolve("job", archive_id) is None
+
+    async def test_refuses_when_the_end_gcode_position_is_unknown(self, resolver_env):
+        """No end Z, no park target the printer's own G-code chose, so no move
+        at all rather than one to a height worked out here."""
+        archive_id = await self._archive(resolver_env)
+        resolver_env["end_z"] = None
+        assert await self._resolve("job", archive_id) is None
+
+    async def test_reads_the_end_position_from_the_same_file_and_plate(self, resolver_env, tmp_path):
+        archive_id = await self._archive(resolver_env, plate_id=2)
+
+        await self._resolve("job", archive_id)
+
+        assert resolver_env["read_end"] == (tmp_path / "archive/1/job/job.gcode.3mf", 2)
 
 
 class TestBoundPrint:
@@ -1050,10 +1184,10 @@ class TestTimelapsePathPlateRestore:
             return True
 
         async def _height(_printer_id, _data, _logger, _archive_id, _plate_id=None):
-            return 16.0
+            return main_module.PlateHeights(16.0, 114.0)
 
         monkeypatch.setattr(main_module, "_restore_plate_for_finish_photo", _restore)
-        monkeypatch.setattr(main_module, "_max_z_for_current_print", _height)
+        monkeypatch.setattr(main_module, "_plate_heights_for_current_print", _height)
 
         await on_finish_photo_moment(patched_env.id, {"trigger": "finish_state", "timelapse_was_active": True})
 

@@ -1174,6 +1174,7 @@ export default {
       openSource3mf: '在 Bambu Studio 中打开源 3MF（右键查看更多选项）',
       downloadF3d: '下载 Fusion 360 设计文件',
       viewTimelapse: '查看延时摄影',
+      viewTimelapses: '查看 {{count}} 个延时摄影',
       viewPhoto: '查看 1 张照片',
       viewPhotos: '查看 {{count}} 张照片',
       openFolder: '打开文件夹：{{name}}',

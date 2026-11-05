@@ -24,7 +24,9 @@ interface VariantCandidatesProps {
   readOnlyNote?: string;
   /** Replaces the heading (default: the cross-model alternatives title). */
   title?: string;
-  /** Replaces the help line (default: the cross-model alternatives help). */
+  /** Replaces the help line (default: the cross-model alternatives help).
+   *  An empty string drops the line, for when something above the list
+   *  already explains it (the mode toggle, #3462). */
   help?: string;
 }
 
@@ -90,6 +92,9 @@ export function VariantCandidates({
     }
   }, [platesByFile, plateByFile, onPlateChange, readOnly]);
 
+  const defaultHelp = help ?? t('printModal.variants.help');
+  const helpText = readOnly ? (readOnlyNote ?? defaultHelp) : defaultHelp;
+
   const move = (from: number, to: number) => {
     if (to < 0 || to >= candidates.length) return;
     const next = [...candidates];
@@ -104,9 +109,7 @@ export function VariantCandidates({
         <PrinterIcon className="w-4 h-4 text-bambu-gray" />
         <span className="text-sm text-bambu-gray">{title ?? t('printModal.variants.title')}</span>
       </div>
-      <p className="text-xs text-bambu-gray mb-2">
-        {readOnly ? (readOnlyNote ?? help ?? t('printModal.variants.help')) : (help ?? t('printModal.variants.help'))}
-      </p>
+      {helpText !== '' && <p className="text-xs text-bambu-gray mb-2">{helpText}</p>}
 
       <div className="space-y-2">
         {candidates.map((candidate, index) => {

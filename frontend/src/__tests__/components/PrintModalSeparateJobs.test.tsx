@@ -91,6 +91,10 @@ async function pickPrinterAndWait(user: ReturnType<typeof userEvent.setup>, name
 
 const fileIds = (bodies: Body[]) => bodies.map((b) => b.library_file_id);
 
+const ALTERNATIVES_LIST_HELP = 'One job, one queue slot. The first matching printer to free up runs its file.';
+const ALTERNATIVES_HINT = 'One job. The first matching printer to free up prints its file.';
+const SEPARATE_HINT = /One queue item per file/;
+
 describe('PrintModal with several selected files (#3462)', () => {
   beforeEach(() => {
     posted = [];
@@ -102,7 +106,21 @@ describe('PrintModal with several selected files (#3462)', () => {
     renderModal([PART_A, PART_C]);
     expect(await screen.findByText('part-c.gcode.3mf')).toBeInTheDocument();
     expect(screen.getByText('Printer alternatives')).toBeInTheDocument();
+    expect(screen.getByText(ALTERNATIVES_LIST_HELP)).toBeInTheDocument();
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+  });
+
+  it('explains each mode once, under the toggle', async () => {
+    const user = userEvent.setup();
+    renderModal([PART_A, PART_C], { separateJobsAllowed: true });
+
+    await screen.findByRole('radio', { name: 'Alternatives' });
+    expect(screen.getAllByText(ALTERNATIVES_HINT)).toHaveLength(1);
+    expect(screen.queryByText(ALTERNATIVES_LIST_HELP)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: 'Separate jobs' }));
+    expect(screen.getAllByText(SEPARATE_HINT)).toHaveLength(1);
+    expect(screen.queryByText(ALTERNATIVES_HINT)).not.toBeInTheDocument();
   });
 
   it('starts on separate jobs for two files of one model and shows the printer picker', async () => {
@@ -112,6 +130,9 @@ describe('PrintModal with several selected files (#3462)', () => {
     expect(await screen.findByRole('radio', { name: 'Separate jobs' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByRole('radio', { name: 'Alternatives' })).toBeDisabled();
     expect(screen.getByText('Queue order')).toBeInTheDocument();
+    // The reason Alternatives is blocked is the one explanation shown.
+    expect(screen.getAllByText(/More than one file is sliced for A1\./)).toHaveLength(1);
+    expect(screen.queryByText(SEPARATE_HINT)).not.toBeInTheDocument();
 
     // A selected printer would bring up the first file's tray mapping; it is
     // not shown, because each file is mapped against its own 3MF at dispatch.
@@ -298,12 +319,19 @@ describe('PrintModal with several selected files (#3462)', () => {
     await waitFor(() => expect(screen.queryByText('part-a.gcode.3mf')).not.toBeInTheDocument());
     expect(screen.getByText('part-b.gcode.3mf')).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
+    // What is left is the rest of these separate jobs, not a new choice: with
+    // one file left, "Alternatives" would post a job with a single candidate.
+    expect(screen.queryByRole('radiogroup', { name: 'What the selected files become' })).not.toBeInTheDocument();
+    // With the toggle gone, the list carries the explanation, once.
+    expect(screen.getAllByText(SEPARATE_HINT)).toHaveLength(1);
 
     await waitFor(() => expect(printButton()).toBeEnabled());
     await user.click(printButton());
 
     await waitFor(() => expect(posted).toHaveLength(3));
     expect(fileIds(posted.slice(2))).toEqual([12]);
+    expect(posted[2]).not.toHaveProperty('variants');
+    expect(posted[2].printer_id).toBe(1);
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 

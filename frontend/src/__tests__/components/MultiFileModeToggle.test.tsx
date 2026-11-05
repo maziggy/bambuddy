@@ -55,4 +55,18 @@ describe('VariantCandidates title/help props', () => {
     expect(screen.getByText('Custom help line')).toBeInTheDocument();
     expect(screen.queryByText('Printer alternatives')).not.toBeInTheDocument();
   });
+
+  it('renders no help paragraph for an empty help', () => {
+    // The mode toggle above the list explains the mode; a second line here
+    // would repeat it.
+    render(<VariantCandidates {...props} help="" />);
+    expect(screen.queryByText(/One job, one queue slot/)).not.toBeInTheDocument();
+    const section = screen.getByText('Printer alternatives').parentElement!.parentElement!;
+    expect(section.querySelector('p')).toBeNull();
+  });
+
+  it('keeps the read-only note when help is empty', () => {
+    render(<VariantCandidates {...props} readOnly readOnlyNote="Set when queued" help="" />);
+    expect(screen.getByText('Set when queued')).toBeInTheDocument();
+  });
 });

@@ -136,6 +136,12 @@ export function PrintModal({
   // Cross-model alternatives (#671).
   const isCrossModel = isMultiFile && multiFileMode === 'alternatives';
   const isSeparateJobs = isMultiFile && multiFileMode === 'separate';
+  // Set once separate jobs were partly queued and the rest is still listed.
+  // The rest is the remainder of those jobs, so the mode is no longer offered:
+  // as alternatives it could be a job of one candidate, or one whose filament
+  // panel describes a file that has already been queued and left the list.
+  const [partlyQueued, setPartlyQueued] = useState(false);
+  const showModeToggle = isMultiFile && !!separateJobsAllowed && !partlyQueued;
   // Editing an already-queued cross-model item. The candidates are shown so the
   // dialog doesn't misrepresent the job as a plain "Any H2D" — which is what it
   // did before, offering a printer picker whose Save would have left a row with
@@ -1539,6 +1545,7 @@ export function PrintModal({
             'error',
           );
           setCandidates((prev) => prev.filter((c) => !outcome.queuedFileIds.includes(c.id)));
+          if (outcome.queuedFileIds.length > 0) setPartlyQueued(true);
           queryClient.invalidateQueries({ queryKey: ['queue'] });
           return;
         }
@@ -2092,8 +2099,10 @@ export function PrintModal({
 
             {/* What the marked files become (#3462). Only for a selection made
                 in the File Manager: a version group is one job sliced for
-                different printers, for which only alternatives make sense. */}
-            {isMultiFile && separateJobsAllowed && (
+                different printers, for which only alternatives make sense.
+                Its hint, or why Alternatives is blocked, is the one
+                explanation of the mode, so the list below shows none. */}
+            {showModeToggle && (
               <MultiFileModeToggle
                 value={multiFileMode}
                 onChange={handleMultiFileModeChange}
@@ -2115,7 +2124,7 @@ export function PrintModal({
                   setCandidatePlates((prev) => ({ ...prev, [fileId]: plateId }))
                 }
                 title={isSeparateJobs ? t('printModal.multiFile.orderTitle') : undefined}
-                help={isSeparateJobs ? t('printModal.multiFile.separateHint') : undefined}
+                help={showModeToggle ? '' : isSeparateJobs ? t('printModal.multiFile.separateHint') : undefined}
               />
             )}
 

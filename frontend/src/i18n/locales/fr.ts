@@ -5928,6 +5928,8 @@ export default {
     downloadingFile: 'Téléchargement du fichier de sauvegarde...',
     backupDownloaded: 'Sauvegarde téléchargée avec succès',
     failedToCreateBackup: 'Échec de la création de la sauvegarde : {{message}}',
+    backupAlreadyRunning: "Une sauvegarde est déjà en cours. Réessayez dans un instant.",
+    backupMissingFiles: "Sauvegarde terminée, mais certains fichiers n'ont pas pu être copiés (non copiés : {{count}}). Ils figurent dans le journal.",
     restore: 'Restaurer',
     restoreReplacesAll: 'La restauration remplace toutes les données.',
     restoreReplacesAllDetail: 'Votre base de données et vos fichiers actuels seront complètement remplacés. Un redémarrage est nécessaire après la restauration.',

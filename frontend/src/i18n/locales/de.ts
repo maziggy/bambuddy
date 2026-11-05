@@ -5941,6 +5941,8 @@ export default {
     downloadingFile: 'Sicherungsdatei wird heruntergeladen...',
     backupDownloaded: 'Sicherung erfolgreich heruntergeladen',
     failedToCreateBackup: 'Sicherung erstellen fehlgeschlagen: {{message}}',
+    backupAlreadyRunning: 'Es läuft bereits eine Sicherung. Versuchen Sie es gleich noch einmal.',
+    backupMissingFiles: 'Sicherung abgeschlossen, aber einige Dateien konnten nicht kopiert werden (nicht kopiert: {{count}}). Sie stehen im Log.',
     restore: 'Wiederherstellen',
     restoreReplacesAll: 'Wiederherstellung ersetzt alle Daten.',
     restoreReplacesAllDetail: 'Ihre aktuelle Datenbank und Dateien werden vollständig ersetzt. Nach der Wiederherstellung ist ein Neustart erforderlich.',

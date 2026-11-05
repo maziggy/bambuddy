@@ -5991,6 +5991,8 @@ export default {
     downloadingFile: 'Back-upbestand downloaden...',
     backupDownloaded: 'Back-up succesvol gedownload',
     failedToCreateBackup: 'Back-up maken mislukt: {{message}}',
+    backupAlreadyRunning: 'Er wordt al een back-up gemaakt. Probeer het zo meteen opnieuw.',
+    backupMissingFiles: 'Back-up voltooid, maar sommige bestanden konden niet worden gekopieerd (niet gekopieerd: {{count}}). Ze staan in het logboek.',
     restore: 'Herstellen',
     restoreReplacesAll: 'Herstellen vervangt alle gegevens.',
     restoreReplacesAllDetail: 'Je huidige database en bestanden worden volledig vervangen. Na herstel is een herstart vereist.',

@@ -5993,6 +5993,8 @@ export default {
     downloadingFile: 'Pobieranie pliku kopii zapasowej...',
     backupDownloaded: 'Kopia zapasowa została pobrana',
     failedToCreateBackup: 'Nie udało się utworzyć kopii zapasowej: {{message}}',
+    backupAlreadyRunning: 'Kopia zapasowa jest już tworzona. Spróbuj ponownie za chwilę.',
+    backupMissingFiles: 'Kopia zapasowa gotowa, ale części plików nie udało się skopiować (nieskopiowane: {{count}}). Ich lista jest w dzienniku.',
     restore: 'Przywróć',
     restoreReplacesAll: 'Przywracanie zastępuje wszystkie dane.',
     restoreReplacesAllDetail: 'Bieżąca baza danych i pliki zostaną całkowicie zastąpione. Po przywróceniu wymagane jest ponowne uruchomienie.',

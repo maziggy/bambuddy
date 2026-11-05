@@ -5993,6 +5993,8 @@ export default {
     downloadingFile: 'Downloading backup file...',
     backupDownloaded: 'Backup downloaded successfully',
     failedToCreateBackup: 'Failed to create backup: {{message}}',
+    backupAlreadyRunning: 'A backup is already running. Try again in a moment.',
+    backupMissingFiles: 'Backup finished, but some files could not be copied (not copied: {{count}}). The log lists them.',
     restore: 'Restore',
     restoreReplacesAll: 'Restore replaces all data.',
     restoreReplacesAllDetail: 'Your current database and files will be completely replaced. A restart is required after restore.',

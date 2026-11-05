@@ -5941,6 +5941,8 @@ export default {
     downloadingFile: 'バックアップファイルをダウンロードしています...',
     backupDownloaded: 'バックアップのダウンロードが成功しました',
     failedToCreateBackup: 'バックアップの作成に失敗しました: {{message}}',
+    backupAlreadyRunning: 'バックアップはすでに実行中です。しばらくしてからもう一度お試しください。',
+    backupMissingFiles: 'バックアップは完了しましたが、一部のファイルをコピーできませんでした（未コピー: {{count}}）。詳細はログを確認してください。',
     restore: '復元',
     restoreReplacesAll: '復元はすべてのデータを置き換えます。',
     restoreReplacesAllDetail: '現在のデータベースとファイルは完全に置き換えられます。復元後に再起動が必要です。',

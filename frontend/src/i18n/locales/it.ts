@@ -5927,6 +5927,8 @@ export default {
     downloadingFile: 'Download del file di backup...',
     backupDownloaded: 'Backup scaricato con successo',
     failedToCreateBackup: 'Creazione del backup fallita: {{message}}',
+    backupAlreadyRunning: 'Un backup è già in corso. Riprova tra un momento.',
+    backupMissingFiles: 'Backup completato, ma alcuni file non sono stati copiati (non copiati: {{count}}). Sono elencati nel log.',
     restore: 'Ripristina',
     restoreReplacesAll: 'Il ripristino sostituisce tutti i dati.',
     restoreReplacesAllDetail: 'Il database e i file attuali verranno completamente sostituiti. È necessario un riavvio dopo il ripristino.',

@@ -5916,6 +5916,8 @@ export default {
     downloadingFile: 'Yedek dosyası indiriliyor...',
     backupDownloaded: 'Yedek başarıyla indirildi',
     failedToCreateBackup: 'Yedek oluşturulamadı: {{message}}',
+    backupAlreadyRunning: 'Zaten bir yedekleme çalışıyor. Birazdan yeniden deneyin.',
+    backupMissingFiles: 'Yedekleme tamamlandı ancak bazı dosyalar kopyalanamadı (kopyalanmayan: {{count}}). Günlükte listelenirler.',
     restore: 'Geri Yükle',
     restoreReplacesAll: 'Geri yükleme tüm verilerin yerine geçer.',
     restoreReplacesAllDetail: 'Mevcut veritabanınız ve dosyalarınız tamamen değiştirilecek. Geri yüklemeden sonra yeniden başlatma gerekli.',

@@ -5989,6 +5989,8 @@ errors: {
     downloadingFile: 'Laddar ner säkerhetskopia...',
     backupDownloaded: 'Säkerhetskopia nedladdad',
     failedToCreateBackup: 'Kunde inte skapa säkerhetskopia: {{message}}',
+    backupAlreadyRunning: 'En säkerhetskopiering pågår redan. Försök igen om en liten stund.',
+    backupMissingFiles: 'Säkerhetskopian är klar, men vissa filer kunde inte kopieras (inte kopierade: {{count}}). De står i loggen.',
     restore: 'Återställ',
     restoreReplacesAll: 'Återställning ersätter all data.',
     restoreReplacesAllDetail: 'Din nuvarande databas och filer kommer att ersättas fullständigt. En omstart krävs efter återställning.',

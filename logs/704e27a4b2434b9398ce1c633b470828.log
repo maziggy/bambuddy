@@ -1,0 +1,200 @@
+2026-11-05 19:31:20,778 INFO [uvicorn.access] [-] [IP]:55207 - "POST /api/v1/library/files/move HTTP/1.1" 200
+2026-11-05 19:32:26,546 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 19:32:36,396 INFO [uvicorn.access] [-] [IP]:55314 - "POST /api/v1/library/bulk-delete HTTP/1.1" 200
+2026-11-05 19:33:01,612 INFO [uvicorn.access] [-] [IP]:55367 - "POST /api/v1/library/folders HTTP/1.1" 200
+2026-11-05 19:33:20,745 INFO [uvicorn.access] [-] [IP]:55372 - "POST /api/v1/library/files?folder_id=41&generate_stl_thumbnails=true HTTP/1.1" 200
+2026-11-05 19:33:21,251 INFO [backend.app.services.stl_thumbnail] [b30db3a3] Generated STL thumbnail: /opt/[user]/data/archive/library/thumbnails/8451e69151e74dc59aa1345db31ad31f.png
+2026-11-05 19:33:21,255 INFO [uvicorn.access] [-] [IP]:55372 - "POST /api/v1/library/files?folder_id=41&generate_stl_thumbnails=true HTTP/1.1" 200
+2026-11-05 19:33:53,710 INFO [backend.app.services.stl_thumbnail] [31278086] Generated STL thumbnail: /opt/[user]/data/archive/library/thumbnails/01f82993c71b4e3da9b6f3e653722f93.png
+2026-11-05 19:33:53,731 INFO [uvicorn.access] [-] [IP]:55372 - "POST /api/v1/library/files?folder_id=41&generate_stl_thumbnails=true HTTP/1.1" 200
+2026-11-05 19:33:54,280 INFO [backend.app.services.stl_thumbnail] [beb9fa60] Generated STL thumbnail: /opt/[user]/data/archive/library/thumbnails/0ef79141af3545ddb5735c024d717e08.png
+2026-11-05 19:33:54,284 INFO [uvicorn.access] [-] [IP]:55372 - "POST /api/v1/library/files?folder_id=41&generate_stl_thumbnails=true HTTP/1.1" 200
+2026-11-05 19:35:15,307 INFO [uvicorn.access] [-] [IP]:55626 - "POST /api/v1/library/files/291/slice HTTP/1.1" 202
+2026-11-05 19:35:16,681 INFO [backend.app.services.slicer_3mf_convert] [8752ebde] Substituted slot-4 filament for unused slot(s) [1, 2, 3] on plate 1 (avoids loaded-filament temp-spread and printer-compatibility validators)
+2026-11-05 19:35:16,681 INFO [backend.app.services.slicer_api] [8752ebde] Slicing Bobine+Bambu+OPt.3mf (3.7 MB) plate=1 with 6 profile(s)
+2026-11-05 19:36:56,892 INFO [backend.app.api.routes.print_queue] [67af80b0] Added library file 295 to queue for 1
+2026-11-05 19:36:56,895 INFO [uvicorn.access] [-] [IP]:55880 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-11-05 19:37:23,952 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(151, 1, None, 295)]
+2026-11-05 19:37:24,347 INFO [backend.app.services.notification_service] [-] Sent notification via Michael Homscheidt
+2026-11-05 19:37:24,347 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 unavailable — not idle (now: connected=True, state=FINISH, awaiting_plate_clear=True)
+2026-11-05 19:37:26,556 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 19:37:34,869 INFO [backend.app.api.routes.print_queue] [4791408b] Cancelled queue item 151
+2026-11-05 19:37:34,870 INFO [uvicorn.access] [-] [IP]:55879 - "POST /api/v1/queue/151/cancel HTTP/1.1" 200
+2026-11-05 19:38:09,624 INFO [uvicorn.access] [-] [IP]:55895 - "DELETE /api/v1/library/files/295 HTTP/1.1" 200
+2026-11-05 19:38:39,962 INFO [uvicorn.access] [-] [IP]:55895 - "POST /api/v1/library/files/291/slice HTTP/1.1" 202
+2026-11-05 19:38:41,577 INFO [backend.app.services.slicer_3mf_convert] [ad2397d0] Substituted slot-4 filament for unused slot(s) [1, 2, 3] on plate 1 (avoids loaded-filament temp-spread and printer-compatibility validators)
+2026-11-05 19:38:41,577 INFO [backend.app.services.slicer_api] [ad2397d0] Slicing Bobine+Bambu+OPt.3mf (3.7 MB) plate=1 with 6 profile(s)
+2026-11-05 19:39:00,240 INFO [backend.app.api.routes.print_queue] [15bbab87] Added library file 296 to queue for 1
+2026-11-05 19:39:00,244 INFO [uvicorn.access] [-] [IP]:56044 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-11-05 19:39:02,330 INFO [backend.app.api.routes.cloud] [d72df12e] get_filament_info called with 2 IDs: ['GFA01', 'GFA00']
+2026-11-05 19:39:02,869 INFO [uvicorn.access] [-] [IP]:56044 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-05 19:39:19,089 INFO [backend.app.api.routes.print_queue] [29b51986] Cancelled queue item 152
+2026-11-05 19:39:19,090 INFO [uvicorn.access] [-] [IP]:56051 - "POST /api/v1/queue/152/cancel HTTP/1.1" 200
+2026-11-05 19:39:21,118 INFO [uvicorn.access] [-] [IP]:56058 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-05 19:39:32,958 INFO [uvicorn.access] [-] [IP]:56055 - "DELETE /api/v1/library/files/296 HTTP/1.1" 200
+2026-11-05 19:39:49,459 INFO [uvicorn.access] [-] [IP]:56055 - "POST /api/v1/library/files/291/slice HTTP/1.1" 202
+2026-11-05 19:39:51,029 INFO [backend.app.services.slicer_3mf_convert] [65a96ae3] Substituted slot-4 filament for unused slot(s) [1, 2, 3] on plate 1 (avoids loaded-filament temp-spread and printer-compatibility validators)
+2026-11-05 19:39:51,029 INFO [backend.app.services.slicer_api] [65a96ae3] Slicing Bobine+Bambu+OPt.3mf (3.7 MB) plate=1 with 6 profile(s)
+2026-11-05 19:40:28,492 INFO [uvicorn.access] [-] [IP]:56137 - "POST /api/v1/library/files/291/slice HTTP/1.1" 202
+2026-11-05 19:40:30,261 INFO [backend.app.services.slicer_3mf_convert] [d4d76ef2] Substituted slot-4 filament for unused slot(s) [1, 2, 3] on plate 1 (avoids loaded-filament temp-spread and printer-compatibility validators)
+2026-11-05 19:40:30,262 INFO [backend.app.services.slicer_api] [d4d76ef2] Slicing Bobine+Bambu+OPt.3mf (3.7 MB) plate=1 with 6 profile(s)
+2026-11-05 19:41:07,611 INFO [uvicorn.access] [-] [IP]:56211 - "POST /api/v1/library/files/291/slice HTTP/1.1" 202
+2026-11-05 19:41:09,156 INFO [backend.app.services.slicer_3mf_convert] [89567eae] Substituted slot-4 filament for unused slot(s) [1, 2, 3] on plate 1 (avoids loaded-filament temp-spread and printer-compatibility validators)
+2026-11-05 19:41:09,157 INFO [backend.app.services.slicer_api] [89567eae] Slicing Bobine+Bambu+OPt.3mf (3.7 MB) plate=1 with 6 profile(s)
+2026-11-05 19:41:36,359 INFO [backend.app.api.routes.print_queue] [f5200271] Added library file 297 to queue for 1
+2026-11-05 19:41:36,362 INFO [uvicorn.access] [-] [IP]:56294 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-11-05 19:41:55,010 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(153, 1, None, 297)]
+2026-11-05 19:41:55,013 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-05 19:41:58,521 INFO [backend.app.api.routes.print_queue] [7ffd94a7] Cancelled queue item 153
+2026-11-05 19:41:58,522 INFO [uvicorn.access] [-] [IP]:56296 - "POST /api/v1/queue/153/cancel HTTP/1.1" 200
+2026-11-05 19:42:00,489 INFO [uvicorn.access] [-] [IP]:56303 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-05 19:42:14,189 INFO [uvicorn.access] [-] [IP]:56302 - "DELETE /api/v1/library/files/297 HTTP/1.1" 200
+2026-11-05 19:42:26,564 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 19:42:27,925 INFO [uvicorn.access] [-] [IP]:56302 - "POST /api/v1/library/files/291/slice HTTP/1.1" 202
+2026-11-05 19:42:29,301 INFO [backend.app.services.slicer_3mf_convert] [eb6a3cf0] Substituted slot-4 filament for unused slot(s) [1, 2, 3] on plate 1 (avoids loaded-filament temp-spread and printer-compatibility validators)
+2026-11-05 19:42:29,301 INFO [backend.app.services.slicer_api] [eb6a3cf0] Slicing Bobine+Bambu+OPt.3mf (3.7 MB) plate=1 with 6 profile(s)
+2026-11-05 19:42:46,359 INFO [backend.app.api.routes.print_queue] [1952f398] Added library file 298 to queue for 1
+2026-11-05 19:42:46,362 INFO [uvicorn.access] [-] [IP]:56310 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-11-05 19:42:55,056 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(154, 1, None, 298)]
+2026-11-05 19:42:55,060 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-05 19:43:24,722 INFO [uvicorn.access] [-] [IP]:56469 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-05 19:43:25,127 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(154, 1, None, 298)]
+2026-11-05 19:43:25,155 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-05 19:43:34,760 INFO [uvicorn.access] [-] [IP]:56468 - "DELETE /api/v1/library/files/298 HTTP/1.1" 200
+2026-11-05 19:43:36,978 INFO [uvicorn.access] [-] [IP]:56476 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-05 19:43:40,226 INFO [backend.app.api.routes.print_queue] [b4adc0e8] Cancelled queue item 154
+2026-11-05 19:43:40,227 INFO [uvicorn.access] [-] [IP]:56476 - "POST /api/v1/queue/154/cancel HTTP/1.1" 200
+2026-11-05 19:43:42,259 INFO [uvicorn.access] [-] [IP]:56478 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-05 19:44:01,410 INFO [uvicorn.access] [-] [IP]:56476 - "POST /api/v1/library/files/291/slice HTTP/1.1" 202
+2026-11-05 19:44:03,661 INFO [backend.app.services.slicer_3mf_convert] [7b60314b] Substituted slot-4 filament for unused slot(s) [1, 2, 3] on plate 1 (avoids loaded-filament temp-spread and printer-compatibility validators)
+2026-11-05 19:44:03,661 INFO [backend.app.services.slicer_api] [7b60314b] Slicing Bobine+Bambu+OPt.3mf (3.7 MB) plate=1 with 6 profile(s)
+2026-11-05 19:44:19,374 INFO [backend.app.api.routes.print_queue] [02f206a1] Added library file 299 to queue for 1
+2026-11-05 19:44:19,377 INFO [uvicorn.access] [-] [IP]:56476 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-11-05 19:44:25,271 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(155, 1, None, 299)]
+2026-11-05 19:44:25,274 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-05 19:44:55,289 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(155, 1, None, 299)]
+2026-11-05 19:44:55,292 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-11-05 19:45:01,720 INFO [backend.app.api.routes.print_queue] [f21f4fe9] Cancelled queue item 155
+2026-11-05 19:45:01,721 INFO [uvicorn.access] [-] [IP]:56560 - "POST /api/v1/queue/155/cancel HTTP/1.1" 200
+2026-11-05 19:45:39,983 INFO [uvicorn.access] [-] [IP]:56560 - "POST /api/v1/library/files/291/slice HTTP/1.1" 202
+2026-11-05 19:45:41,340 INFO [backend.app.services.slicer_3mf_convert] [9b7681d9] Substituted slot-4 filament for unused slot(s) [1, 2, 3] on plate 1 (avoids loaded-filament temp-spread and printer-compatibility validators)
+2026-11-05 19:45:41,341 INFO [backend.app.services.slicer_api] [9b7681d9] Slicing Bobine+Bambu+OPt.3mf (3.7 MB) plate=1 with 6 profile(s)
+2026-11-05 19:45:45,441 INFO [uvicorn.access] [-] [IP]:56560 - "DELETE /api/v1/library/files/299 HTTP/1.1" 200
+2026-11-05 19:45:59,974 INFO [backend.app.api.routes.print_queue] [f9eeb379] Added library file 300 to queue for 1
+2026-11-05 19:45:59,976 INFO [uvicorn.access] [-] [IP]:56642 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-11-05 19:46:12,586 INFO [backend.app.api.routes.print_queue] [0b211561] Cancelled queue item 156
+2026-11-05 19:46:12,587 INFO [uvicorn.access] [-] [IP]:56648 - "POST /api/v1/queue/156/cancel HTTP/1.1" 200
+2026-11-05 19:46:14,115 INFO [uvicorn.access] [-] [IP]:56648 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-05 19:46:34,589 INFO [uvicorn.access] [-] [IP]:56655 - "DELETE /api/v1/library/files/300 HTTP/1.1" 200
+2026-11-05 19:46:57,366 INFO [uvicorn.access] [-] [IP]:56737 - "POST /api/v1/library/files/291/slice HTTP/1.1" 202
+2026-11-05 19:46:58,898 INFO [backend.app.services.slicer_api] [599e5947] Slicing Bobine+Bambu+OPt.3mf (3.7 MB) plate=0 with 6 profile(s)
+2026-11-05 19:47:26,572 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 19:47:38,117 INFO [backend.app.api.routes.print_queue] [52a9308e] Created batch 3 'Bobine+Bambu+OPt · 2 plates' with 0 assigned items
+2026-11-05 19:47:38,130 INFO [uvicorn.access] [-] [IP]:56738 - "POST /api/v1/queue/batches HTTP/1.1" 200
+2026-11-05 19:47:38,160 INFO [backend.app.api.routes.print_queue] [5766b4d6] Added library file 301 to queue for 1
+2026-11-05 19:47:38,162 INFO [uvicorn.access] [-] [IP]:56738 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-11-05 19:47:38,191 INFO [backend.app.api.routes.print_queue] [b36ef511] Added library file 301 to queue for 1
+2026-11-05 19:47:38,194 INFO [uvicorn.access] [-] [IP]:56738 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-11-05 19:47:41,329 INFO [backend.app.api.routes.cloud] [ca733258] get_filament_info called with 2 IDs: ['GFA01', 'GFA00']
+2026-11-05 19:47:41,747 INFO [uvicorn.access] [-] [IP]:56819 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-05 19:47:43,678 INFO [uvicorn.access] [-] [IP]:56818 - "POST /api/v1/printers/1/clear-plate HTTP/1.1" 200
+2026-11-05 19:47:55,377 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:47:55,380 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:48:25,399 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:48:25,403 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:48:40,883 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-11-05 19:48:40,889 INFO [backend.app.main] [-] Auto-unlink held: spool 12 AMS0-T0 — tray reports no filament data; unlinking if it is still blank in 120s
+2026-11-05 19:48:55,422 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:48:55,425 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:49:13,809 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-11-05 19:49:25,443 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:49:25,447 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:49:55,465 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:49:55,468 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:50:25,486 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:50:25,489 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:50:55,507 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:50:55,511 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:51:25,527 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:51:25,529 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:51:55,541 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:51:55,543 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:52:25,559 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:52:25,562 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:52:26,576 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 19:52:55,580 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:52:55,583 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:52:58,105 INFO [uvicorn.access] [-] [IP]:57198 - "DELETE /api/v1/library/files/301 HTTP/1.1" 200
+2026-11-05 19:53:10,041 INFO [backend.app.api.routes.support] [6879f592] Log level changed to DEBUG
+2026-11-05 19:53:10,041 INFO [backend.app.api.routes.bug_report] [6879f592] Bug report: enabled debug logging
+2026-11-05 19:53:10,041 DEBUG [backend.app.services.bambu_mqtt] [6879f592] [[SERIAL]] Requesting status update (pushall)
+2026-11-05 19:53:10,042 INFO [uvicorn.access] [-] [IP]:57280 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-05 19:53:10,712 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-11-05 19:53:10,712 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-11-05 19:53:10,712 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: HO_Scale_Woden_Cable_Spool_1_87_Scale
+2026-11-05 19:53:10,712 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 29, 'insert_flag': True, 'power_on_flag': True}
+2026-11-05 19:53:10,712 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-11-05 19:53:10,712 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-11-05 19:53:10,714 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-05 19:53:10,714 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-11-05 19:53:10,714 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:53:10,714 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-11-05 19:53:10,714 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: HO_Scale_Woden_Cable_Spool_1_87_Scale
+2026-11-05 19:53:14,799 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:16,854 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:18,909 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:20,977 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:20,977 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 19:53:25,075 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:25,601 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:53:25,604 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:53:29,170 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:29,171 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:53:33,310 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:33,310 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 19:53:35,359 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:35,360 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:53:37,401 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:37,401 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 19:53:37,744 INFO [uvicorn.access] [-] [IP]:57360 - "POST /api/v1/library/files/291/slice HTTP/1.1" 202
+2026-11-05 19:53:39,164 INFO [backend.app.services.slicer_3mf_convert] [523c81a7] Substituted slot-4 filament for unused slot(s) [1, 2, 3] on plate 1 (avoids loaded-filament temp-spread and printer-compatibility validators)
+2026-11-05 19:53:39,165 INFO [backend.app.services.slicer_api] [523c81a7] Slicing Bobine+Bambu+OPt.3mf (3.7 MB) plate=1 with 6 profile(s)
+2026-11-05 19:53:41,514 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:43,556 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:43,556 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:53:47,671 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:47,671 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 19:53:48,208 DEBUG [backend.app.api.routes.printers] [818b7f27] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-11-05 19:53:48,209 DEBUG [backend.app.api.routes.printers] [818b7f27] Using tray_now directly as global ID: 255
+2026-11-05 19:53:48,295 DEBUG [backend.app.api.routes.printers] [bbe9294e] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-11-05 19:53:48,295 DEBUG [backend.app.api.routes.printers] [bbe9294e] Using tray_now directly as global ID: 255
+2026-11-05 19:53:51,733 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:51,733 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:53:53,791 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:53,791 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 19:53:53,818 DEBUG [backend.app.main] [-] Recorded 3 printer sensor history entries
+2026-11-05 19:53:55,622 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:53:55,625 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:53:55,846 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:55,846 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:53:59,942 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:54:02,003 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:54:02,003 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 19:54:05,823 INFO [backend.app.api.routes.print_queue] [6d8bf225] Added library file 302 to queue for 1
+2026-11-05 19:54:05,826 INFO [uvicorn.access] [-] [IP]:57363 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-11-05 19:54:06,093 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:54:06,093 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:54:12,228 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:54:12,228 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 19:54:14,272 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:54:16,317 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:54:16,317 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:54:18,364 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status

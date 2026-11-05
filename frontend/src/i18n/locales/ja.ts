@@ -4227,7 +4227,6 @@ export default {
       groupAction: 'バージョンとしてグループ化',
       groupTooltip: 'これらのファイルを、異なるプリンター向けにスライスした同一ジョブとして扱います',
       grouped: '{{count}}個のファイルをバージョンとしてグループ化しました',
-      printAlternatives: '印刷（{{count}}件の候補）',
     },
     printFiles: '印刷（{{count}}個のファイル）',
     title: 'ファイル管理',

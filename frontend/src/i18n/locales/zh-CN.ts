@@ -4214,7 +4214,6 @@ export default {
       groupAction: '归为版本组',
       groupTooltip: '将这些文件标记为针对不同打印机切片的同一任务',
       grouped: '已将 {{count}} 个文件归为版本组',
-      printAlternatives: '打印（{{count}} 个备选）',
     },
     printFiles: '打印（{{count}} 个文件）',
     title: '文件管理器',

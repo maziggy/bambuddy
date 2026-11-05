@@ -4222,7 +4222,6 @@ export default {
       groupAction: 'Sürüm olarak grupla',
       groupTooltip: 'Bu dosyaları farklı yazıcılar için dilimlenmiş aynı iş olarak işaretle',
       grouped: '{{count}} dosya sürüm olarak gruplandı',
-      printAlternatives: 'Yazdır ({{count}} alternatif)',
     },
     printFiles: 'Yazdır ({{count}} dosya)',
     title: 'Dosya Yöneticisi',

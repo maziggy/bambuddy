@@ -4227,7 +4227,6 @@ export default {
       groupAction: 'Als Versionen gruppieren',
       groupTooltip: 'Diese Dateien als denselben Auftrag markieren, gesliced für verschiedene Drucker',
       grouped: '{{count}} Dateien als Versionen gruppiert',
-      printAlternatives: 'Drucken ({{count}} Alternativen)',
     },
     printFiles: 'Drucken ({{count}} Dateien)',
     title: 'Dateimanager',

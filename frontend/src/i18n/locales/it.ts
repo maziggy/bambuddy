@@ -4214,7 +4214,6 @@ export default {
       groupAction: 'Raggruppa come versioni',
       groupTooltip: 'Segna questi file come lo stesso lavoro elaborato per stampanti diverse',
       grouped: '{{count}} file raggruppati come versioni',
-      printAlternatives: 'Stampa ({{count}} alternative)',
     },
     printFiles: 'Stampa ({{count}} file)',
     title: 'Gestore file',

@@ -4214,7 +4214,6 @@ export default {
       groupAction: 'Agrupar como versões',
       groupTooltip: 'Marcar estes arquivos como o mesmo trabalho fatiado para impressoras diferentes',
       grouped: '{{count}} arquivos agrupados como versões',
-      printAlternatives: 'Imprimir ({{count}} alternativas)',
     },
     printFiles: 'Imprimir ({{count}} arquivos)',
     title: 'Gerenciador de Arquivos',

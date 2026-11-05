@@ -4214,7 +4214,6 @@ export default {
       groupAction: '歸為版本群組',
       groupTooltip: '將這些檔案標記為針對不同印表機切片的同一工作',
       grouped: '已將 {{count}} 個檔案歸為版本群組',
-      printAlternatives: '列印（{{count}} 個備選）',
     },
     printFiles: '列印（{{count}} 個檔案）',
     title: '檔案管理器',

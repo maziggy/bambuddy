@@ -4254,7 +4254,6 @@ export default {
       groupAction: 'Згрупувати як версії',
       groupTooltip: 'Позначити ці файли як одне завдання, нарізане для різних принтерів',
       grouped: 'Файлів згруповано як версії: {{count}}',
-      printAlternatives: 'Друк (варіантів: {{count}})',
     },
     printFiles: 'Друк (файлів: {{count}})',
     title: "Менеджер файлів",

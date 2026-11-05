@@ -4259,7 +4259,6 @@ export default {
       groupAction: 'Group as versions',
       groupTooltip: 'Mark these files as the same job sliced for different printers',
       grouped: 'Grouped {{count}} files as versions',
-      printAlternatives: 'Print ({{count}} alternatives)',
     },
     printFiles: 'Print ({{count}} files)',
     title: 'File Manager',

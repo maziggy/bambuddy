@@ -4038,7 +4038,6 @@ export default {
       groupAction: '버전으로 그룹화',
       groupTooltip: '이 파일들을 서로 다른 프린터용으로 슬라이스한 동일 작업으로 표시합니다',
       grouped: '파일 {{count}}개를 버전으로 그룹화했습니다',
-      printAlternatives: '인쇄 (대안 {{count}}개)',
     },
     printFiles: '인쇄 (파일 {{count}}개)',
     title: '파일 관리자',

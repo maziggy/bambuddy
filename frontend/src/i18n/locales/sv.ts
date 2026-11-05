@@ -4256,7 +4256,6 @@ errors: {
       groupAction: 'Gruppera som versioner',
       groupTooltip: 'Markera dessa filer som samma jobb slicade för olika skrivare',
       grouped: 'Grupperade {{count}} filer som versioner',
-      printAlternatives: 'Skriv ut ({{count}} alternativ)',
     },
     printFiles: 'Skriv ut ({{count}} filer)',
     title: 'Filhanterare',

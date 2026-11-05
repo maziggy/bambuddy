@@ -4229,7 +4229,6 @@ export default {
       groupAction: 'Agrupar como versiones',
       groupTooltip: 'Marcar estos archivos como el mismo trabajo laminado para distintas impresoras',
       grouped: '{{count}} archivos agrupados como versiones',
-      printAlternatives: 'Imprimir ({{count}} alternativas)',
     },
     printFiles: 'Imprimir ({{count}} archivos)',
     title: 'Gestor de archivos',

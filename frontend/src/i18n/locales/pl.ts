@@ -4259,7 +4259,6 @@ export default {
       groupAction: 'Grupuj jako wersje',
       groupTooltip: 'Oznacz te pliki jako to samo zadanie pocięte dla różnych drukarek',
       grouped: 'Zgrupowano pliki jako wersje: {{count}}',
-      printAlternatives: 'Drukuj (alternatywy: {{count}})',
     },
     printFiles: 'Drukuj (pliki: {{count}})',
     title: 'Menedżer plików',

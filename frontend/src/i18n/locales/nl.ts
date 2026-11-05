@@ -4257,7 +4257,6 @@ export default {
       groupAction: 'Als versies groeperen',
       groupTooltip: 'Markeer deze bestanden als dezelfde taak, gesliced voor verschillende printers',
       grouped: '{{count}} bestanden als versies gegroepeerd',
-      printAlternatives: 'Afdrukken ({{count}} alternatieven)',
     },
     printFiles: 'Afdrukken ({{count}} bestanden)',
     title: 'Bestandsbeheer',

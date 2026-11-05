@@ -1,0 +1,200 @@
+2026-11-05 19:52:26,576 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 19:52:55,580 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:52:55,583 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:52:58,105 INFO [uvicorn.access] [-] [IP]:57198 - "DELETE /api/v1/library/files/301 HTTP/1.1" 200
+2026-11-05 19:53:10,041 INFO [backend.app.api.routes.support] [6879f592] Log level changed to DEBUG
+2026-11-05 19:53:10,041 INFO [backend.app.api.routes.bug_report] [6879f592] Bug report: enabled debug logging
+2026-11-05 19:53:10,041 DEBUG [backend.app.services.bambu_mqtt] [6879f592] [[SERIAL]] Requesting status update (pushall)
+2026-11-05 19:53:10,042 INFO [uvicorn.access] [-] [IP]:57280 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-05 19:53:10,712 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-11-05 19:53:10,712 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-11-05 19:53:10,712 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: HO_Scale_Woden_Cable_Spool_1_87_Scale
+2026-11-05 19:53:10,712 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 29, 'insert_flag': True, 'power_on_flag': True}
+2026-11-05 19:53:10,712 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-11-05 19:53:10,712 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-11-05 19:53:10,713 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-11-05 19:53:10,714 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-05 19:53:10,714 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-11-05 19:53:10,714 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:53:10,714 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-11-05 19:53:10,714 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: HO_Scale_Woden_Cable_Spool_1_87_Scale
+2026-11-05 19:53:14,799 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:16,854 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:18,909 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:20,977 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:20,977 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 19:53:25,075 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:25,601 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:53:25,604 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:53:29,170 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:29,171 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:53:33,310 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:33,310 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 19:53:35,359 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:35,360 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:53:37,401 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:37,401 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 19:53:37,744 INFO [uvicorn.access] [-] [IP]:57360 - "POST /api/v1/library/files/291/slice HTTP/1.1" 202
+2026-11-05 19:53:39,164 INFO [backend.app.services.slicer_3mf_convert] [523c81a7] Substituted slot-4 filament for unused slot(s) [1, 2, 3] on plate 1 (avoids loaded-filament temp-spread and printer-compatibility validators)
+2026-11-05 19:53:39,165 INFO [backend.app.services.slicer_api] [523c81a7] Slicing Bobine+Bambu+OPt.3mf (3.7 MB) plate=1 with 6 profile(s)
+2026-11-05 19:53:41,514 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:43,556 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:43,556 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:53:47,671 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:47,671 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 19:53:48,208 DEBUG [backend.app.api.routes.printers] [818b7f27] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-11-05 19:53:48,209 DEBUG [backend.app.api.routes.printers] [818b7f27] Using tray_now directly as global ID: 255
+2026-11-05 19:53:48,295 DEBUG [backend.app.api.routes.printers] [bbe9294e] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-11-05 19:53:48,295 DEBUG [backend.app.api.routes.printers] [bbe9294e] Using tray_now directly as global ID: 255
+2026-11-05 19:53:51,733 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:51,733 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:53:53,791 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:53,791 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 19:53:53,818 DEBUG [backend.app.main] [-] Recorded 3 printer sensor history entries
+2026-11-05 19:53:55,622 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:53:55,625 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:53:55,846 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:53:55,846 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:53:59,942 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:54:02,003 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:54:02,003 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 19:54:05,823 INFO [backend.app.api.routes.print_queue] [6d8bf225] Added library file 302 to queue for 1
+2026-11-05 19:54:05,826 INFO [uvicorn.access] [-] [IP]:57363 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-11-05 19:54:06,093 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:54:06,093 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:54:12,228 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:54:12,228 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 19:54:14,272 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:54:16,317 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:54:16,317 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 19:54:18,364 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 19:54:25,556 INFO [backend.app.api.routes.support] [9cd50a2a] Log level changed to INFO
+2026-11-05 19:54:25,556 INFO [backend.app.api.routes.bug_report] [9cd50a2a] Bug report: restored normal logging
+2026-11-05 19:54:25,557 INFO [uvicorn.access] [-] [IP]:57363 - "POST /api/v1/bug-report/stop-logging?was_debug=false HTTP/1.1" 200
+2026-11-05 19:54:25,878 INFO [backend.app.services.print_scheduler] [-] Queue check: found 3 pending items: [(157, 1, None, 301), (158, 1, None, 301), (159, 1, None, 302)]
+2026-11-05 19:54:25,884 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 3}
+2026-11-05 19:54:36,106 INFO [backend.app.api.routes.print_queue] [fbd7bf0b] Cancelled queue item 159
+2026-11-05 19:54:36,106 INFO [uvicorn.access] [-] [IP]:57444 - "POST /api/v1/queue/159/cancel HTTP/1.1" 200
+2026-11-05 19:54:46,319 INFO [uvicorn.access] [-] [IP]:57363 - "POST /api/v1/bug-report/submit HTTP/1.1" 200
+2026-11-05 19:54:55,904 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:54:55,908 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:55:25,926 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:55:25,930 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:55:55,950 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:55:55,953 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:56:25,973 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:56:25,976 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:56:55,995 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:56:55,998 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:57:25,817 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-05 19:57:26,017 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:57:26,020 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:57:26,582 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 19:57:56,041 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:57:56,044 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:58:26,063 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:58:26,066 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:58:56,086 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:58:56,089 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:59:26,110 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:59:26,113 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 19:59:56,132 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 19:59:56,136 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'scheduled_future': 2}
+2026-11-05 20:00:21,193 INFO [uvicorn.access] [-] [IP]:58130 - "POST /api/v1/auth/login HTTP/1.1" 200
+2026-11-05 20:00:21,263 INFO [uvicorn.access] [-] [IP]:58131 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-05 20:00:21,277 INFO [uvicorn.access] [-] [IP]:58130 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-05 20:00:21,392 INFO [uvicorn.access] [-] [IP]:58131 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-05 20:00:21,422 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-11-05 20:00:21,436 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-05 20:00:21,437 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-05 20:00:21,683 INFO [backend.app.api.routes.cloud] [c7378fa9] get_filament_info called with 2 IDs: ['GFA01', 'GFA00']
+2026-11-05 20:00:22,764 INFO [uvicorn.access] [-] [IP]:58131 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-05 20:00:26,155 INFO [backend.app.services.print_scheduler] [-] Queue check: found 2 pending items: [(157, 1, None, 301), (158, 1, None, 301)]
+2026-11-05 20:00:26,173 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 reserved — selected for dispatch in this pass
+2026-11-05 20:00:26,176 INFO [backend.app.services.print_scheduler] [-] Launching 1 upload(s) (pool 0/4 in flight)
+2026-11-05 20:00:26,182 INFO [backend.app.services.print_scheduler] [-] Starting queue item 157
+2026-11-05 20:00:26,202 ERROR [backend.app.services.print_scheduler] [-] Queue item 157: library file 301 is in the trash
+2026-11-05 20:00:29,198 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(158, 1, None, 301)]
+2026-11-05 20:00:29,209 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 reserved — selected for dispatch in this pass
+2026-11-05 20:00:29,211 INFO [backend.app.services.print_scheduler] [-] Launching 1 upload(s) (pool 0/4 in flight)
+2026-11-05 20:00:29,216 INFO [backend.app.services.print_scheduler] [-] Starting queue item 158
+2026-11-05 20:00:29,226 ERROR [backend.app.services.print_scheduler] [-] Queue item 158: library file 301 is in the trash
+2026-11-05 20:00:36,527 INFO [uvicorn.access] [-] [IP]:58139 - "DELETE /api/v1/library/files/302 HTTP/1.1" 200
+2026-11-05 20:01:50,294 INFO [backend.app.api.routes.support] [804ffc40] Log level changed to DEBUG
+2026-11-05 20:01:50,295 INFO [backend.app.api.routes.bug_report] [804ffc40] Bug report: enabled debug logging
+2026-11-05 20:01:50,295 DEBUG [backend.app.services.bambu_mqtt] [804ffc40] [[SERIAL]] Requesting status update (pushall)
+2026-11-05 20:01:50,295 INFO [uvicorn.access] [-] [IP]:58143 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-05 20:01:51,076 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-11-05 20:01:51,076 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-11-05 20:01:51,076 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: HO_Scale_Woden_Cable_Spool_1_87_Scale
+2026-11-05 20:01:51,076 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 29, 'insert_flag': True, 'power_on_flag': True}
+2026-11-05 20:01:51,076 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-11-05 20:01:51,076 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-05 20:01:51,076 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-11-05 20:01:51,077 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-11-05 20:01:51,077 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-11-05 20:01:51,077 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:01:51,077 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-11-05 20:01:51,077 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-11-05 20:01:51,077 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-11-05 20:01:51,077 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-11-05 20:01:51,077 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-05 20:01:51,077 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-11-05 20:01:51,078 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 20:01:51,078 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-11-05 20:01:51,078 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: HO_Scale_Woden_Cable_Spool_1_87_Scale
+2026-11-05 20:01:53,849 DEBUG [backend.app.main] [-] Recorded 3 printer sensor history entries
+2026-11-05 20:01:55,169 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:01:55,170 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 20:01:59,230 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:01:59,230 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 20:02:03,336 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:05,390 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:05,390 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 20:02:07,427 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:07,428 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 20:02:09,485 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:11,553 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:11,553 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 20:02:12,261 INFO [uvicorn.access] [-] [IP]:58312 - "POST /api/v1/library/files/291/slice HTTP/1.1" 202
+2026-11-05 20:02:13,615 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:13,616 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 20:02:13,706 INFO [backend.app.services.slicer_3mf_convert] [6f23e62c] Substituted slot-4 filament for unused slot(s) [1, 2, 3] on plate 1 (avoids loaded-filament temp-spread and printer-compatibility validators)
+2026-11-05 20:02:13,707 INFO [backend.app.services.slicer_api] [6f23e62c] Slicing Bobine+Bambu+OPt.3mf (3.7 MB) plate=1 with 6 profile(s)
+2026-11-05 20:02:15,666 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:19,762 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:21,804 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:21,951 DEBUG [backend.app.api.routes.printers] [37cee104] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-11-05 20:02:21,951 DEBUG [backend.app.api.routes.printers] [37cee104] Using tray_now directly as global ID: 255
+2026-11-05 20:02:22,036 DEBUG [backend.app.api.routes.printers] [42e78703] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-11-05 20:02:22,037 DEBUG [backend.app.api.routes.printers] [42e78703] Using tray_now directly as global ID: 255
+2026-11-05 20:02:25,923 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:25,923 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 20:02:26,592 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 20:02:27,977 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:27,977 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 20:02:30,026 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:32,072 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:32,072 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 20:02:33,696 INFO [backend.app.api.routes.print_queue] [0c342d20] Added library file 303 to queue for 1
+2026-11-05 20:02:33,699 INFO [uvicorn.access] [-] [IP]:58391 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-11-05 20:02:33,714 DEBUG [backend.app.api.routes.printers] [1ed7b458] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-11-05 20:02:33,714 DEBUG [backend.app.api.routes.printers] [1ed7b458] Using tray_now directly as global ID: 255
+2026-11-05 20:02:36,158 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:36,159 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 20:02:40,241 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:40,241 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-11-05 20:02:42,279 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:42,279 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -55dBm
+2026-11-05 20:02:44,328 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:46,395 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:48,438 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:50,482 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 20:02:50,482 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm

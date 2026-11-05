@@ -4290,7 +4290,7 @@ export function FileManagerPage() {
           // A version group is by definition alternatives; only an explicit
           // selection (the same one printVariantFiles prefers) may mean separate
           // jobs (#3462).
-          separateJobsAllowed={!!printFile && selectedSlicedFiles.length > 1}
+          separateJobsAllowed={selectedSlicedFiles.length > 1}
           // Naming a cross-model job after one of its files reads as though the
           // others aren't part of it.
           archiveName={

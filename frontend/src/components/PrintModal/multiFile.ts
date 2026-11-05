@@ -8,6 +8,9 @@ import type { VariantCandidate } from './VariantCandidates';
  */
 export type MultiFileMode = 'alternatives' | 'separate';
 
+// Case and outer spaces only, not isGcodeCompatible's looser normalizer: a
+// duplicate blocks "Alternatives", so it has to be certain, and the backend's
+// normalizer has the final say on which models are the same anyway.
 const norm = (m: string) => m.trim().toLowerCase();
 
 /** The model that occurs more than once (spelled as in its first occurrence), or null. Unknown models never count. */

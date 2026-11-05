@@ -1,14 +1,7 @@
 import type { PrintQueueItemCreate } from '../../api/client';
 import type { VariantCandidate } from './VariantCandidates';
 
-/**
- * Queue loop for "Separate jobs" when several sliced files are selected
- * (#3462): one queue item per file (per selected printer), in list order.
- *
- * It stops at the first refusal. That keeps the queue order intact and lets a
- * second submit continue with the remaining files without duplicating the ones
- * that are already queued (see `queuedFileIds`).
- */
+/** What `queueSeparateJobs` got into the queue, and where it stopped. */
 export interface SeparateJobsResult {
   /** Successful POSTs. */
   itemsCreated: number;
@@ -18,6 +11,14 @@ export interface SeparateJobsResult {
   failure: { file: VariantCandidate; message: string } | null;
 }
 
+/**
+ * Queue loop for "Separate jobs" when several sliced files are selected
+ * (#3462): one queue item per file (per selected printer), in list order.
+ *
+ * It stops at the first refusal. That keeps the queue order intact and lets a
+ * second submit continue with the remaining files without duplicating the ones
+ * that are already queued (see `queuedFileIds`).
+ */
 export async function queueSeparateJobs(args: {
   files: VariantCandidate[];
   plateByFile: Record<number, number | null>;

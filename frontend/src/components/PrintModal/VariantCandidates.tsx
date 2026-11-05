@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, Layers, Printer as PrinterIcon } from 'lucide-react
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 
-/** One sliced file offered as an alternative for a cross-model job (#671). */
+/** One sliced file of the list: an alternative of a cross-model job (#671), or one of the separate jobs (#3462). */
 export interface VariantCandidate {
   id: number;
   filename: string;
@@ -31,20 +31,25 @@ interface VariantCandidatesProps {
 }
 
 /**
- * The ordered candidate list for a cross-model print (#671).
+ * The ordered list of several sliced files, in one of two uses: the candidates
+ * of a cross-model print (#671), or the queue order of separate jobs (#3462).
  *
- * Only two things are configured per candidate: its order, and — when the file
+ * Only two things are configured per file: its order, and — when the file
  * holds more than one plate — which plate to run. Everything else on the modal
- * (filament overrides, print options, schedule) stays shared, because that is
- * already how model-based assignment works: the printer is unknown at queue
- * time, so there is nothing per-machine to configure. The AMS mapping in
- * particular is deliberately absent — the scheduler computes it against the
- * printer it actually picks, exactly as it does for a single-model job.
+ * (print options, schedule, and for alternatives the filament overrides) stays
+ * shared. For alternatives that is already how model-based assignment works:
+ * the printer is unknown at queue time, so there is nothing per-machine to
+ * configure. Separate jobs do know the printer, but the modal's filament panels
+ * describe the first file only, so they are hidden and no job carries them.
+ * The AMS mapping in particular is deliberately absent in both uses — the
+ * scheduler computes it against the printer and the file each item runs,
+ * exactly as it does for a single-model job.
  *
- * Order is the answer to "which would you rather have when both are free", so
- * it is explicit rather than left to whichever printer the matcher saw first.
- * Move buttons instead of drag: the list is two or three rows, and buttons work
- * from the keyboard without a drag-and-drop dependency.
+ * For alternatives, order is the answer to "which would you rather have when
+ * both are free", so it is explicit rather than left to whichever printer the
+ * matcher saw first. For separate jobs it is the order the items join the
+ * queue. Move buttons instead of drag: the list is two or three rows, and
+ * buttons work from the keyboard without a drag-and-drop dependency.
  */
 export function VariantCandidates({
   candidates,

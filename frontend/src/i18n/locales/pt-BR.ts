@@ -4216,6 +4216,7 @@ export default {
       grouped: '{{count}} arquivos agrupados como versões',
       printAlternatives: 'Imprimir ({{count}} alternativas)',
     },
+    printFiles: 'Imprimir ({{count}} arquivos)',
     title: 'Gerenciador de Arquivos',
     subtitle: 'Organize e gerencie seus arquivos de impressão',
     uploadFiles: 'Enviar Arquivos',
@@ -5638,6 +5639,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: 'O que os arquivos selecionados se tornam',
+      alternatives: 'Alternativas',
+      separate: 'Trabalhos separados',
+      alternativesHint: 'Um único trabalho. A primeira impressora compatível que ficar livre imprime o seu arquivo.',
+      separateHint: 'Um item de fila por arquivo, adicionado na ordem abaixo. As opções valem para todos os itens.',
+      alternativesBlocked: 'Mais de um arquivo está fatiado para {{model}}. As alternativas exigem um modelo de impressora diferente para cada arquivo.',
+      orderTitle: 'Ordem da fila',
+      incompatible: 'Não pode ser enviado para impressoras {{model}}: {{files}}',
+      notSlicedFor: 'Não fatiado para {{model}}: {{files}}',
+      failed: 'Não adicionado à fila: {{filename}} ({{message}}). Adicionados antes: {{queued}}.',
+    },
     variants: {
       editNote: 'Estas alternativas foram definidas ao enfileirar o trabalho. Cancele e enfileire de novo para alterá-las.',
       title: 'Alternativas de impressora',

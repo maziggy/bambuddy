@@ -4258,6 +4258,7 @@ errors: {
       grouped: 'Grupperade {{count}} filer som versioner',
       printAlternatives: 'Skriv ut ({{count}} alternativ)',
     },
+    printFiles: 'Skriv ut ({{count}} filer)',
     title: 'Filhanterare',
     subtitle: 'Organisera och hantera dina utskriftsfiler',
     uploadFiles: 'Ladda upp filer',
@@ -5695,6 +5696,18 @@ errors: {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: 'Vad de valda filerna blir',
+      alternatives: 'Alternativ',
+      separate: 'Separata jobb',
+      alternativesHint: 'Ett jobb. Den första matchande skrivaren som blir ledig skriver ut sin fil.',
+      separateHint: 'Ett köobjekt per fil, tillagda i ordningen nedan. Alternativen gäller för varje objekt.',
+      alternativesBlocked: 'Mer än en fil är skivad för {{model}}. Alternativ kräver en annan skrivarmodell för varje fil.',
+      orderTitle: 'Köordning',
+      incompatible: 'Kan inte skickas till {{model}}-skrivare: {{files}}',
+      notSlicedFor: 'Inte skivad för {{model}}: {{files}}',
+      failed: 'Inte köad: {{filename}} ({{message}}). Köade före: {{queued}}.',
+    },
     variants: {
       editNote: 'Dessa alternativ sattes när jobbet köades. Avbryt och köa om för att ändra dem.',
       title: 'Skrivaralternativ',

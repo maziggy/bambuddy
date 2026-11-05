@@ -4216,6 +4216,7 @@ export default {
       grouped: '{{count}} file raggruppati come versioni',
       printAlternatives: 'Stampa ({{count}} alternative)',
     },
+    printFiles: 'Stampa ({{count}} file)',
     title: 'Gestore file',
     subtitle: 'Organizza e gestisci i tuoi file di stampa',
     uploadFiles: 'Carica file',
@@ -5638,6 +5639,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: 'Cosa diventano i file selezionati',
+      alternatives: 'Alternative',
+      separate: 'Lavori separati',
+      alternativesHint: 'Un solo lavoro. La prima stampante compatibile che si libera stampa il proprio file.',
+      separateHint: 'Un elemento in coda per file, aggiunto nell\'ordine sotto. Le opzioni valgono per ogni elemento.',
+      alternativesBlocked: 'Più di un file è stato elaborato per {{model}}. Le alternative richiedono un modello di stampante diverso per ogni file.',
+      orderTitle: 'Ordine in coda',
+      incompatible: 'Impossibile inviare alle stampanti {{model}}: {{files}}',
+      notSlicedFor: 'Non elaborato per {{model}}: {{files}}',
+      failed: 'Non messo in coda: {{filename}} ({{message}}). Messi in coda prima: {{queued}}.',
+    },
     variants: {
       editNote: 'Queste alternative sono state definite al momento dell\'accodamento. Annulla e riaccoda per modificarle.',
       title: 'Alternative di stampante',

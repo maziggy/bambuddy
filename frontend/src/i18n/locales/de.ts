@@ -4229,6 +4229,7 @@ export default {
       grouped: '{{count}} Dateien als Versionen gruppiert',
       printAlternatives: 'Drucken ({{count}} Alternativen)',
     },
+    printFiles: 'Drucken ({{count}} Dateien)',
     title: 'Dateimanager',
     subtitle: 'Organisieren und verwalten Sie Ihre Druckdateien',
     uploadFiles: 'Dateien hochladen',
@@ -5652,6 +5653,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: 'Was aus den gewählten Dateien wird',
+      alternatives: 'Alternativen',
+      separate: 'Einzelne Aufträge',
+      alternativesHint: 'Ein Auftrag. Der erste passende Drucker, der frei wird, druckt seine Datei.',
+      separateHint: 'Ein Warteschlangeneintrag je Datei, in der Reihenfolge unten angelegt. Die Optionen gelten für jeden Eintrag.',
+      alternativesBlocked: 'Mehr als eine Datei ist für {{model}} gesliced. Alternativen brauchen für jede Datei ein anderes Druckermodell.',
+      orderTitle: 'Reihenfolge in der Warteschlange',
+      incompatible: 'Kann nicht an {{model}}-Drucker gesendet werden: {{files}}',
+      notSlicedFor: 'Nicht für {{model}} gesliced: {{files}}',
+      failed: 'Nicht eingereiht: {{filename}} ({{message}}). Davor eingereiht: {{queued}}.',
+    },
     variants: {
       editNote: 'Diese Alternativen wurden beim Einreihen festgelegt. Zum Ändern abbrechen und neu einreihen.',
       title: 'Drucker-Alternativen',

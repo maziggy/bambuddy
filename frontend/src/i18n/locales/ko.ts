@@ -4040,6 +4040,7 @@ export default {
       grouped: '파일 {{count}}개를 버전으로 그룹화했습니다',
       printAlternatives: '인쇄 (대안 {{count}}개)',
     },
+    printFiles: '인쇄 (파일 {{count}}개)',
     title: '파일 관리자',
     subtitle: '인쇄 파일 정리 및 관리',
     uploadFiles: '파일 업로드',
@@ -5422,6 +5423,18 @@ export default {
     assignedNotConfigured: 'Bambuddy에서 할당됨, 프린터에는 아직 설정되지 않음. 출력이 끝나 슬롯이 비면 프린터에 설정됩니다.'
   },
   printModal: {
+    multiFile: {
+      groupLabel: '선택한 파일의 처리 방식',
+      alternatives: '대안',
+      separate: '개별 작업',
+      alternativesHint: '작업 하나입니다. 가장 먼저 비는 호환 프린터가 자기 파일을 인쇄합니다.',
+      separateHint: '파일마다 대기열 항목 하나를 아래 순서대로 추가합니다. 옵션은 모든 항목에 적용됩니다.',
+      alternativesBlocked: '{{model}}용으로 슬라이스된 파일이 둘 이상입니다. 대안에는 파일마다 서로 다른 프린터 모델이 필요합니다.',
+      orderTitle: '대기열 순서',
+      incompatible: '{{model}} 프린터로 보낼 수 없음: {{files}}',
+      notSlicedFor: '{{model}}용으로 슬라이스되지 않음: {{files}}',
+      failed: '대기열에 추가되지 않음: {{filename}} ({{message}}). 먼저 추가된 항목: {{queued}}.',
+    },
     variants: {
       editNote: '이 대안은 대기열에 추가할 때 정해집니다. 변경하려면 취소 후 다시 추가하세요.',
       title: '프린터 대안',

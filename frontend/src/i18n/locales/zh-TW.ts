@@ -4216,6 +4216,7 @@ export default {
       grouped: '已將 {{count}} 個檔案歸為版本群組',
       printAlternatives: '列印（{{count}} 個備選）',
     },
+    printFiles: '列印（{{count}} 個檔案）',
     title: '檔案管理器',
     subtitle: '組織和管理您的列印檔案',
     uploadFiles: '上傳檔案',
@@ -5638,6 +5639,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: '所選檔案的處理方式',
+      alternatives: '備選',
+      separate: '獨立作業',
+      alternativesHint: '一個作業。第一台空閒的相符列印機列印它的檔案。',
+      separateHint: '每個檔案一個佇列項目，依下方順序加入。選項適用於每個項目。',
+      alternativesBlocked: '有多個檔案是為 {{model}} 切片的。備選要求每個檔案對應不同的列印機型號。',
+      orderTitle: '佇列順序',
+      incompatible: '無法傳送到 {{model}} 列印機：{{files}}',
+      notSlicedFor: '未為 {{model}} 切片：{{files}}',
+      failed: '未加入佇列：{{filename}}（{{message}}）。此前已加入：{{queued}}。',
+    },
     variants: {
       editNote: '這些備選在工作加入佇列時確定。如需變更，請取消後重新加入佇列。',
       title: '印表機備選',

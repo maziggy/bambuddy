@@ -58,6 +58,15 @@ export interface PrintModalProps {
    * plate preview reads from it.
    */
   variantFiles?: VariantCandidate[];
+  /**
+   * Let the user queue `variantFiles` as separate jobs instead (#3462): one
+   * queue item per file, in list order, on the printer or model picked as for
+   * a single file. Set only for files the user marked together in the File
+   * Manager, never for a version group (#2570): a group is by definition the
+   * same job sliced for different printers, which only alternatives express.
+   * Without it the modal offers the alternatives alone, as before.
+   */
+  separateJobsAllowed?: boolean;
 }
 
 /**

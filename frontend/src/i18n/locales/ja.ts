@@ -5654,11 +5654,11 @@ export default {
   printModal: {
     multiFile: {
       groupLabel: '選択したファイルの扱い',
-      alternatives: '代替',
+      alternatives: '候補',
       separate: '個別のジョブ',
-      alternativesHint: '1件のジョブです。最初に空いた対応プリンターが自分のファイルを印刷します。',
+      alternativesHint: '1つのジョブです。条件に合う最初に空いたプリンターがそのファイルを印刷します。',
       separateHint: 'ファイルごとに1件のキュー項目を、下の順序で追加します。オプションはすべての項目に適用されます。',
-      alternativesBlocked: '{{model}} 向けにスライスされたファイルが複数あります。代替には、ファイルごとに異なるプリンターモデルが必要です。',
+      alternativesBlocked: '{{model}} 向けにスライスされたファイルが複数あります。候補には、ファイルごとに異なるプリンターモデルが必要です。',
       orderTitle: 'キューの順序',
       incompatible: '{{model}} プリンターには送信できません：{{files}}',
       notSlicedFor: '{{model}} 向けにスライスされていません：{{files}}',

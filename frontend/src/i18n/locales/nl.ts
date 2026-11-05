@@ -5703,10 +5703,10 @@ export default {
       separate: 'Aparte opdrachten',
       alternativesHint: 'Eén opdracht. De eerste passende printer die vrijkomt print zijn bestand.',
       separateHint: 'Eén wachtrij-item per bestand, toegevoegd in de volgorde hieronder. De opties gelden voor elk item.',
-      alternativesBlocked: 'Meer dan één bestand is geslicet voor {{model}}. Alternatieven vragen om een ander printermodel per bestand.',
+      alternativesBlocked: 'Meer dan één bestand is gesliced voor {{model}}. Alternatieven vragen om een ander printermodel per bestand.',
       orderTitle: 'Volgorde in de wachtrij',
       incompatible: 'Kan niet worden verzonden naar {{model}}-printers: {{files}}',
-      notSlicedFor: 'Niet geslicet voor {{model}}: {{files}}',
+      notSlicedFor: 'Niet gesliced voor {{model}}: {{files}}',
       failed: 'Niet in de wachtrij gezet: {{filename}} ({{message}}). Eerder in de wachtrij gezet: {{queued}}.',
     },
     variants: {

@@ -7456,6 +7456,7 @@ export default {
     statusTitle: '상태',
     serviceRunning: '서비스 실행 중',
     thresholds: '낮음 / 높음 임계값',
+    pauseThreshold: '일시정지 임계값',
     activePrinters: '활성 인쇄물',
     noActivePrints: '현재 실행 중인 인쇄물 없음.',
     historyTitle: '최근 감지',

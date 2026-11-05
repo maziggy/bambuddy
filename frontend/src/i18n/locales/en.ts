@@ -8066,6 +8066,7 @@ export default {
     statusTitle: 'Status',
     serviceRunning: 'Service running',
     thresholds: 'Low / High thresholds',
+    pauseThreshold: 'Pause level',
     activePrinters: 'Active prints',
     noActivePrints: 'No prints currently running.',
     historyTitle: 'Recent Detections',

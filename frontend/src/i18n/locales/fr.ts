@@ -8001,6 +8001,7 @@ export default {
     statusTitle: 'Statut',
     serviceRunning: 'Service en cours d\'exécution',
     thresholds: 'Seuils bas / haut',
+    pauseThreshold: 'Seuil de pause',
     activePrinters: 'Impressions actives',
     noActivePrints: 'Aucune impression en cours.',
     historyTitle: 'Détections récentes',

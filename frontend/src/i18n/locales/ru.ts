@@ -7640,6 +7640,7 @@ export default {
     statusTitle: "Состояние",
     serviceRunning: "Служба работает",
     thresholds: "Низкий / высокий порог",
+    pauseThreshold: "Порог паузы",
     activePrinters: "Активные задания",
     noActivePrints: "Сейчас ничего не печатается.",
     historyTitle: "Последние обнаружения",

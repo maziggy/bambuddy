@@ -8066,6 +8066,7 @@ export default {
     statusTitle: 'Status',
     serviceRunning: 'Usługa działa',
     thresholds: 'Progi niski / wysoki',
+    pauseThreshold: 'Próg pauzy',
     activePrinters: 'Aktywne wydruki',
     noActivePrints: 'Obecnie nie trwają żadne wydruki.',
     historyTitle: 'Ostatnie wykrycia',

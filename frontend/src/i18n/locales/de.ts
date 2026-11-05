@@ -8013,6 +8013,7 @@ export default {
     statusTitle: 'Status',
     serviceRunning: 'Dienst läuft',
     thresholds: 'Niedrig / Hoch-Schwellwerte',
+    pauseThreshold: 'Pause-Schwelle',
     activePrinters: 'Aktive Drucke',
     noActivePrints: 'Derzeit laufen keine Drucke.',
     historyTitle: 'Letzte Erkennungen',

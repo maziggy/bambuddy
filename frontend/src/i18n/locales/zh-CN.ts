@@ -7998,6 +7998,7 @@ export default {
     statusTitle: '状态',
     serviceRunning: '服务运行中',
     thresholds: '低 / 高阈值',
+    pauseThreshold: '暂停阈值',
     activePrinters: '活动打印',
     noActivePrints: '当前没有正在进行的打印。',
     historyTitle: '最近检测',

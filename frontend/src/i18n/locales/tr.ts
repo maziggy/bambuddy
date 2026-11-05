@@ -7952,6 +7952,7 @@ export default {
     statusTitle: 'Durum',
     serviceRunning: 'Servis çalışıyor',
     thresholds: 'Düşük / Yüksek eşikler',
+    pauseThreshold: 'Duraklatma eşiği',
     activePrinters: 'Aktif baskılar',
     noActivePrints: 'Şu anda çalışan baskı yok.',
     historyTitle: 'Son Algılamalar',

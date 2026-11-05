@@ -8000,6 +8000,7 @@ export default {
     statusTitle: 'Stato',
     serviceRunning: 'Servizio in esecuzione',
     thresholds: 'Soglie bassa / alta',
+    pauseThreshold: 'Soglia di pausa',
     activePrinters: 'Stampe attive',
     noActivePrints: 'Nessuna stampa in corso.',
     historyTitle: 'Rilevamenti recenti',

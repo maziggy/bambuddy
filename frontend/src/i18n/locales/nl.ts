@@ -8064,6 +8064,7 @@ export default {
     statusTitle: 'Status',
     serviceRunning: 'Service actief',
     thresholds: 'Lage / hoge drempels',
+    pauseThreshold: 'Pauzedrempel',
     activePrinters: 'Actieve afdrukken',
     noActivePrints: 'Er worden momenteel geen afdrukken uitgevoerd.',
     historyTitle: 'Recente detecties',

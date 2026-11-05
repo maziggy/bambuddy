@@ -8062,6 +8062,7 @@ errors: {
     statusTitle: 'Status',
     serviceRunning: 'Tjänst körs',
     thresholds: 'Låga / Hög tröskelvärden',
+    pauseThreshold: 'Pauströskel',
     activePrinters: 'Aktiva utskrifter',
     noActivePrints: 'Inga utskrifter körs för närvarande.',
     historyTitle: 'Senaste upptäckter',

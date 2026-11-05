@@ -7998,6 +7998,7 @@ export default {
     statusTitle: '狀態',
     serviceRunning: '服務執行中',
     thresholds: '低 / 高閾值',
+    pauseThreshold: '暫停閾值',
     activePrinters: '活動列印',
     noActivePrints: '目前沒有正在進行的列印。',
     historyTitle: '最近檢測',

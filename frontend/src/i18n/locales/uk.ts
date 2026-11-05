@@ -8054,6 +8054,7 @@ export default {
     statusTitle: "Статус",
     serviceRunning: "Служба працює",
     thresholds: "Нижній / верхній поріг",
+    pauseThreshold: "Поріг паузи",
     activePrinters: "Активні завдання друку",
     noActivePrints: "Зараз немає роздруківок.",
     historyTitle: "Останні виявлення",

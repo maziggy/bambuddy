@@ -8014,6 +8014,7 @@ export default {
     statusTitle: 'ステータス',
     serviceRunning: 'サービス稼働中',
     thresholds: '低 / 高しきい値',
+    pauseThreshold: '一時停止しきい値',
     activePrinters: 'アクティブな印刷',
     noActivePrints: '現在、実行中の印刷はありません。',
     historyTitle: '最近の検出',

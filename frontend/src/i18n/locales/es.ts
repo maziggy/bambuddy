@@ -8021,6 +8021,7 @@ export default {
     statusTitle: 'Estado',
     serviceRunning: 'Servicio en ejecución',
     thresholds: 'Umbrales bajo / alto',
+    pauseThreshold: 'Umbral de pausa',
     activePrinters: 'Impresiones activas',
     noActivePrints: 'No hay impresiones en curso actualmente.',
     historyTitle: 'Detecciones recientes',

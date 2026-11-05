@@ -1,0 +1,200 @@
+2026-11-05 13:15:41,854 INFO [backend.app.services.spoolman_tracking] [-] [SPOOLMAN] Archive 200: slots not part of this print, left alone: AMS0-T1, AMS0-T2, AMS255-T0
+2026-11-05 13:15:41,854 INFO [backend.app.services.spoolman_tracking] [-] [SPOOLMAN] Archive 200: updated 2 spool(s)
+2026-11-05 13:15:41,856 INFO [backend.app.services.spoolman_tracking] [-] [SPOOLMAN] Archive 200 cost 5.79 -> 5.38 (2 slot(s) priced from Spoolman over 77.15g, 0.00g at the default rate)
+2026-11-05 13:15:41,858 INFO [backend.app.main] [-] [TIMING] Spoolman usage report: 3.204s elapsed
+2026-11-05 13:15:41,858 INFO [backend.app.main] [-] [TIMING] Filament usage tracking: 3.204s elapsed
+2026-11-05 13:15:41,858 INFO [backend.app.main] [-] [TIMING] Archive lookup: 3.204s elapsed
+2026-11-05 13:15:41,858 INFO [backend.app.main] [-] [ARCHIVE] Updating archive 200 status...
+2026-11-05 13:15:41,860 INFO [backend.app.main] [-] [ARCHIVE] Archive 200 status updated to completed, failure_reason=None
+2026-11-05 13:15:41,860 INFO [backend.app.main] [-] [ARCHIVE] WebSocket notification sent for archive 200
+2026-11-05 13:15:41,860 INFO [backend.app.main] [-] [TIMING] Archive status update: 3.206s elapsed
+2026-11-05 13:15:41,862 INFO [backend.app.services.finance_billing] [-] Billing is disabled; skipping print charge for archive ID 200.
+2026-11-05 13:15:41,862 INFO [backend.app.main] [-] [TIMING] Finance charge update: 3.208s elapsed
+2026-11-05 13:15:41,863 INFO [backend.app.main] [-] [PRINT_LOG] Log entry written for archive 200
+2026-11-05 13:15:41,863 INFO [backend.app.main] [-] [TIMING] Print log entry: 3.209s elapsed
+2026-11-05 13:15:41,863 INFO [backend.app.main] [-] [TIMING] Background tasks scheduled (energy, photo): 3.209s elapsed
+2026-11-05 13:15:41,863 INFO [backend.app.main] [-] [TIMING] All background tasks scheduled: 3.209s elapsed
+2026-11-05 13:15:41,863 INFO [backend.app.main] [-] [CALLBACK] on_print_complete finished for printer 1, archive 200
+2026-11-05 13:15:41,864 INFO [backend.app.main] [-] [ENERGY-BG] Starting energy calculation for archive 200
+2026-11-05 13:15:41,864 INFO [backend.app.main] [-] [PHOTO-BG] Starting finish photo capture for archive 200
+2026-11-05 13:15:41,864 INFO [backend.app.main] [-] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-11-05 13:15:41,864 INFO [backend.app.main] [-] [MAINT-BG] Starting maintenance check for printer 1
+2026-11-05 13:15:41,865 INFO [backend.app.main] [-] [LAYER-TL] Stitching layer timelapse for printer 1
+2026-11-05 13:15:41,865 INFO [backend.app.main] [-] [ENERGY-BG] No start kWh recorded for archive 200
+2026-11-05 13:15:41,866 INFO [backend.app.main] [-] [AUTO-OFF-BG] Completed
+2026-11-05 13:15:41,871 INFO [backend.app.services.notification_service] [-] No notification providers configured for maintenance_due event on printer 1
+2026-11-05 13:15:41,871 INFO [backend.app.main] [-] [MAINT-BG] Sent notification: 1 items need attention
+2026-11-05 13:15:45,174 INFO [backend.app.main] [-] [FINISH-PHOTO-MOMENT] captured RTSP frame (153724 bytes)
+2026-11-05 13:15:45,175 INFO [backend.app.main] [-] [PHOTO-BG] Saved stage-22 pre-captured frame: finish_20261105_131545_e7b0f0fe.jpg (153724 bytes)
+2026-11-05 13:15:45,176 INFO [backend.app.main] [-] [PHOTO-BG] Saved: finish_20261105_131545_e7b0f0fe.jpg
+2026-11-05 13:15:45,176 INFO [backend.app.main] [-] [PHOTO-NOTIFY] Photo task returned: finish_20261105_131545_e7b0f0fe.jpg
+2026-11-05 13:15:45,176 INFO [backend.app.main] [-] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20261105_131545_e7b0f0fe.jpg
+2026-11-05 13:15:45,186 INFO [backend.app.main] [-] [NOTIFY-BG] Loaded finish photo bytes: 153724 bytes
+2026-11-05 13:15:45,186 INFO [backend.app.services.notification_service] [-] on_print_complete called for printer 1 ([PRINTER]), status=completed
+2026-11-05 13:15:45,187 INFO [backend.app.services.notification_service] [-] No notification providers configured for on_print_complete event on printer 1
+2026-11-05 13:15:45,188 INFO [backend.app.main] [-] [NOTIFY-BG] Completed
+2026-11-05 13:17:15,005 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 13:22:15,010 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 13:27:15,013 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 13:32:15,017 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 13:37:15,022 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 13:42:15,027 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 13:47:15,033 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 13:52:15,038 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 13:57:15,042 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 14:02:15,047 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 14:07:15,050 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 14:12:15,055 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 14:17:15,060 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 14:22:15,065 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 14:23:40,478 INFO [uvicorn.access] [-] [IP]:50700 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-05 14:23:40,484 INFO [uvicorn.access] [-] [IP]:50699 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-05 14:24:39,526 INFO [uvicorn.access] [-] [IP]:51920 - "POST /api/v1/library/bulk-delete HTTP/1.1" 200
+2026-11-05 14:24:43,216 INFO [uvicorn.access] [-] [IP]:51920 - "DELETE /api/v1/library/files/10 HTTP/1.1" 200
+2026-11-05 14:24:49,641 INFO [backend.app.api.routes.cloud] [b49dbd15] get_filament_info called with 2 IDs: ['GFG99', 'GFL99']
+2026-11-05 14:24:50,161 INFO [uvicorn.access] [-] [IP]:57332 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-05 14:27:15,069 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 14:32:15,076 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 14:37:15,081 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 14:42:15,111 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 14:47:15,116 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 14:52:15,121 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 14:57:15,127 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 15:02:15,131 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 15:07:15,136 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 15:12:15,141 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 15:17:15,146 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 15:22:15,150 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 15:22:15,160 INFO [backend.app.main] [-] Cleaned up 275 old AMS sensor history entries (older than 30 days)
+2026-11-05 15:24:05,699 INFO [uvicorn.access] [-] [IP]:58068 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-05 15:24:05,703 INFO [uvicorn.access] [-] [IP]:58067 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-05 15:24:05,819 INFO [backend.app.api.routes.cloud] [47f16d5d] get_filament_info called with 2 IDs: ['GFG99', 'GFL99']
+2026-11-05 15:24:06,338 INFO [uvicorn.access] [-] [IP]:58067 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-05 15:26:19,138 INFO [backend.app.main] [-] Cleaned up 4119 old printer sensor history entries (older than 30 days)
+2026-11-05 15:27:15,164 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 15:27:15,624 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT START detected - file: Hook_-_Tape_Mount.gcode.3mf, subtask: Hook_-_Tape_Mount, is_new: True, is_file_change: False
+2026-11-05 15:27:15,625 INFO [backend.app.main] [-] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-11-05 15:27:15,626 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping=None, tray_now=255, last_loaded_tray=3
+2026-11-05 15:27:15,626 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping-related keys: {'ams_extruder_map': {'0': 0}}
+2026-11-05 15:27:15,627 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 0: T0(type=PETG, color=000000FF, now=?, tar=?), T1(type=PLA, color=9D85D1FF, now=?, tar=?), T2(type=PETG, color=C3B77FFF, now=?, tar=?), T3(type=PETG, color=FFF5F5FF, now=?, tar=?)
+2026-11-05 15:27:15,628 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Snapshotted 3 spool assignments for printer 1: {'0-0': 15, '0-2': 11, '0-3': 12}
+2026-11-05 15:27:15,632 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (5 trays): {'0-0': 100, '0-1': 100, '0-2': 100, '0-3': 100, '255-0': 0}
+2026-11-05 15:27:15,635 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-11-05 15:27:15,635 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: Hook_-_Tape_Mount.gcode.3mf, subtask: Hook_-_Tape_Mount
+2026-11-05 15:27:15,637 INFO [backend.app.main] [-] Trying filenames: ['Hook_-_Tape_Mount.gcode.3mf', 'Hook_-_Tape_Mount.3mf']
+2026-11-05 15:27:15,652 INFO [backend.app.api.routes.printers] [b42c37c9] Trying to download cover for 'Hook_-_Tape_Mount' from [IP] (trying 8 paths)
+2026-11-05 15:27:16,831 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-11-05 15:27:45,653 WARNING [backend.app.services.bambu_ftp] [b42c37c9] Printer [IP] is still busy with another download after 30.0s — starting a 8-path lookup alongside it
+2026-11-05 15:28:03,083 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-11-05 15:28:10,513 WARNING [backend.app.services.bambu_ftp] [-] FTP download timed out after 45.0s (plus 30.0s grace) for /Hook_-_Tape_Mount.gcode.3mf
+2026-11-05 15:28:10,513 INFO [backend.app.services.bambu_ftp] [-] Download 3MF from /Hook_-_Tape_Mount.gcode.3mf will retry in 2.0s...
+2026-11-05 15:28:14,456 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-11-05 15:28:19,143 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 63.5s, forcing reconnect
+2026-11-05 15:28:19,144 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-11-05 15:28:20,077 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-11-05 15:28:20,078 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/2, seq_id=22)
+2026-11-05 15:28:20,828 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS unit 0: serial number not available in version info
+2026-11-05 15:28:20,829 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS unit 0: firmware version not available in version info
+2026-11-05 15:28:20,884 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=21, 0 profiles, matched=True
+2026-11-05 15:28:20,884 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-11-05 15:28:20,885 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=22, 0 profiles, matched=True
+2026-11-05 15:28:20,885 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-11-05 15:28:20,885 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-11-05 15:28:20,885 INFO [backend.app.main] [-] [Printer 1] Primed K-profile table for nozzle 0.4: 0 profiles
+2026-11-05 15:28:57,660 WARNING [backend.app.services.bambu_ftp] [-] FTP download timed out after 45.0s (plus 30.0s grace) for /Hook_-_Tape_Mount.gcode.3mf
+2026-11-05 15:28:57,661 INFO [backend.app.services.bambu_ftp] [-] Download 3MF from /Hook_-_Tape_Mount.gcode.3mf attempt 2/4 returned failure
+2026-11-05 15:28:57,661 INFO [backend.app.services.bambu_ftp] [-] Download 3MF from /Hook_-_Tape_Mount.gcode.3mf will retry in 2.0s...
+2026-11-05 15:29:00,754 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-11-05 15:29:04,569 INFO [backend.app.services.bambu_ftp] [-] Successfully downloaded /Hook_-_Tape_Mount.gcode.3mf to /opt/[user]/archive/temp/cover_1_Hook_-_Tape_Mount.gcode.3mf (737623 bytes)
+2026-11-05 15:29:04,608 INFO [backend.app.api.routes.printers] [b42c37c9] Downloaded file size: 737623 bytes
+2026-11-05 15:29:04,608 INFO [backend.app.api.routes.printers] [b42c37c9] Cover: detected plate 1 from 3MF contents
+2026-11-05 15:29:09,590 INFO [backend.app.services.bambu_ftp] [-] Successfully downloaded /Hook_-_Tape_Mount.gcode.3mf to /opt/[user]/archive/temp/Hook_-_Tape_Mount.gcode.3mf (737623 bytes)
+2026-11-05 15:29:09,590 INFO [backend.app.services.bambu_ftp] [-] FTP mode cached for [IP]: prot_p
+2026-11-05 15:29:09,595 INFO [backend.app.services.bambu_ftp] [-] Download 3MF from /Hook_-_Tape_Mount.gcode.3mf succeeded on attempt 3/4
+2026-11-05 15:29:09,595 INFO [backend.app.main] [-] Downloaded: /Hook_-_Tape_Mount.gcode.3mf
+2026-11-05 15:29:09,606 INFO [backend.app.main] [-] Created archive 201 for Hook_-_Tape_Mount.gcode.3mf
+2026-11-05 15:29:09,607 INFO [backend.app.main] [-] [ENERGY] No smart plug for printer 1 (archive 201)
+2026-11-05 15:29:09,608 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-05 15:29:09,608 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-11-05 15:29:10,732 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Tray change during print: tray=2 at layer=0
+2026-11-05 15:29:12,616 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 124565 bytes
+2026-11-05 15:29:12,616 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 ([PRINTER])
+2026-11-05 15:29:12,617 INFO [backend.app.services.notification_service] [-] No notification providers configured for print_start event on printer 1
+2026-11-05 15:29:12,618 INFO [backend.app.main] [-] Loaded 1 printable objects for printer 1
+2026-11-05 15:29:12,692 INFO [backend.app.services.spoolman_tracking] [-] [SPOOLMAN] Stored tracking data for print: printer=1, archive=201 (3mf=yes, remain_snapshot=5 slot(s))
+2026-11-05 15:29:12,693 INFO [backend.app.services.spoolman_tracking] [-] [SPOOLMAN] Print start: archive 201 slot_to_tray=None (source: none)
+2026-11-05 15:29:13,539 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-11-05 15:29:14,610 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-11-05 15:29:14,624 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /timelapse/video: 550 
+2026-11-05 15:29:15,476 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-11-05 15:29:15,518 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /record: 550 
+2026-11-05 15:29:16,437 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-11-05 15:29:16,485 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /recording: 550 
+2026-11-05 15:29:16,501 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 0 video files for printer 1
+2026-11-05 15:29:47,274 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-05 15:29:47,274 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-11-05 15:29:49,249 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 124375 bytes
+2026-11-05 15:30:33,045 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-05 15:30:33,045 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-11-05 15:30:35,162 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 136955 bytes
+2026-11-05 15:30:53,978 INFO [backend.app.api.routes.cloud] [5b861012] get_filament_info called with 2 IDs: ['GFG99', 'GFL99']
+2026-11-05 15:30:54,506 INFO [uvicorn.access] [-] [IP]:63696 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-05 15:31:02,144 INFO [uvicorn.access] [-] [IP]:63692 - "POST /api/v1/makerworld/resolve HTTP/1.1" 200
+2026-11-05 15:31:26,996 INFO [uvicorn.access] [-] [IP]:63700 - "POST /api/v1/makerworld/import HTTP/1.1" 502
+2026-11-05 15:31:30,562 INFO [uvicorn.access] [-] [IP]:63700 - "POST /api/v1/makerworld/import HTTP/1.1" 502
+2026-11-05 15:32:03,343 INFO [uvicorn.access] [-] [IP]:63705 - "POST /api/v1/makerworld/resolve HTTP/1.1" 200
+2026-11-05 15:32:15,169 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 15:32:16,871 INFO [uvicorn.access] [-] [IP]:63716 - "POST /api/v1/makerworld/import HTTP/1.1" 502
+2026-11-05 15:32:20,630 INFO [uvicorn.access] [-] [IP]:63716 - "POST /api/v1/makerworld/import HTTP/1.1" 502
+2026-11-05 15:32:25,439 INFO [backend.app.services.camera] [84bd58f2] Found ffmpeg at: /usr/bin/ffmpeg
+2026-11-05 15:32:40,571 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-05 15:32:40,571 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-11-05 15:32:43,215 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 127490 bytes
+2026-11-05 15:33:18,575 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-11-05 15:33:19,773 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-11-05 15:33:19,773 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-11-05 15:33:22,313 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 128178 bytes
+2026-11-05 15:36:48,087 INFO [uvicorn.access] [-] [IP]:63662 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-11-05 15:36:48,088 INFO [uvicorn.access] [-] [IP]:61533 - "POST /api/v1/auth/media-token HTTP/1.1" 200
+2026-11-05 15:36:48,091 INFO [uvicorn.access] [-] [IP]:52473 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-11-05 15:36:48,127 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-11-05 15:36:48,127 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-11-05 15:36:48,127 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-11-05 15:36:48,158 INFO [backend.app.api.routes.cloud] [b8ae30a6] get_filament_info called with 2 IDs: ['GFG99', 'GFL99']
+2026-11-05 15:36:48,750 INFO [uvicorn.access] [-] [IP]:52473 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-11-05 15:36:53,795 INFO [uvicorn.access] [-] [IP]:61533 - "POST /api/v1/makerworld/resolve HTTP/1.1" 200
+2026-11-05 15:37:01,660 INFO [uvicorn.access] [-] [IP]:63662 - "POST /api/v1/makerworld/import HTTP/1.1" 502
+2026-11-05 15:37:15,175 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-05 15:37:36,546 INFO [backend.app.api.routes.support] [8660e08c] Log level changed to DEBUG
+2026-11-05 15:37:36,546 INFO [backend.app.api.routes.bug_report] [8660e08c] Bug report: enabled debug logging
+2026-11-05 15:37:36,546 DEBUG [backend.app.services.bambu_mqtt] [8660e08c] [[SERIAL]] Requesting status update (pushall)
+2026-11-05 15:37:36,546 INFO [uvicorn.access] [-] [IP]:53997 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: Hook_-_Tape_Mount.gcode.3mf, subtask_name: Hook_-_Tape_Mount
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '2', 'tray_now': '2', 'tray_pre': '2', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 29, 'insert_flag': True, 'power_on_flag': False}
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 2
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -45dBm
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-11-05 15:37:36,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: Hook_-_Tape_Mount.gcode.3mf, subtask: Hook_-_Tape_Mount
+2026-11-05 15:37:39,005 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 15:37:39,006 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-11-05 15:37:41,068 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 15:37:41,068 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -45dBm
+2026-11-05 15:37:42,976 INFO [uvicorn.access] [-] [IP]:55530 - "POST /api/v1/makerworld/import HTTP/1.1" 502
+2026-11-05 15:37:45,141 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 15:37:47,201 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 15:37:49,265 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-05 15:37:50,944 INFO [uvicorn.access] [-] [IP]:61488 - "POST /api/v1/makerworld/import HTTP/1.1" 502
+2026-11-05 15:37:51,301 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status

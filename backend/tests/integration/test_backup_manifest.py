@@ -34,7 +34,7 @@ async def test_the_backup_records_the_version_that_made_it(async_client, monkeyp
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setattr(app_settings, "base_dir", tmp_path)
 
-    zip_path, _filename = await create_backup_zip(output_path=tmp_path)
+    zip_path, _filename, _warnings = await create_backup_zip(output_path=tmp_path)
     try:
         with zipfile.ZipFile(zip_path) as zf:
             assert "manifest.json" in zf.namelist()
@@ -108,7 +108,7 @@ async def test_overlay_logo_survives_backup_and_restore(async_client, monkeypatc
     original = b"saved overlay logo"
     logo.write_bytes(original)
 
-    zip_path, _ = await create_backup_zip(output_path=tmp_path)
+    zip_path, *_ = await create_backup_zip(output_path=tmp_path)
     with zipfile.ZipFile(zip_path) as archive:
         assert archive.read("overlay-branding/logo.png") == original
     logo.write_bytes(b"replacement logo")
@@ -150,7 +150,7 @@ async def test_a_restore_stops_the_virtual_printers(async_client, monkeypatch, t
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setattr(app_settings, "base_dir", tmp_path)
     monkeypatch.setattr(app_settings, "database_url", f"sqlite+aiosqlite:///{db_path}")
-    zip_path, _ = await create_backup_zip(output_path=tmp_path)
+    zip_path, *_ = await create_backup_zip(output_path=tmp_path)
     monkeypatch.setitem(virtual_printer_manager._instances, 4242, object())
 
     with (

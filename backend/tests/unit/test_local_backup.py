@@ -215,6 +215,17 @@ class TestPruneBackups:
         remaining = list(tmp_path.glob("bambuddy-backup-*.zip"))
         assert len(remaining) == 1
 
+    def test_prune_removes_what_a_crash_left_mid_write(self, tmp_path):
+        """Nothing else matches a .part, so it would stay in the folder for good."""
+        service = LocalBackupService()
+        backup = tmp_path / "bambuddy-backup-20260412-000000.zip"
+        backup.write_text("backup")
+        leftover = tmp_path / ".bambuddy-backup-20260411-000000.zip.part"
+        leftover.write_text("half a backup")
+        service._prune_backups(tmp_path, retention=5)
+        assert backup.exists()
+        assert not leftover.exists()
+
 
 class TestResolveBackupFile:
     """Tests for backup file resolution with path traversal protection."""
@@ -326,6 +337,7 @@ class TestGetStatus:
         assert status["is_running"] is False
         assert status["last_backup_at"] is None
         assert status["last_status"] is None
+        assert status["last_missing_files"] == 0
         assert status["next_run"] is None
 
 

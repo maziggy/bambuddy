@@ -4,16 +4,19 @@ On a large install the archive directory holds gigabytes. Copying it and
 deflating the ZIP on the event loop froze the whole app for minutes during the
 nightly backup: no printer status, no queue, no API.
 
-With that work in threads, two things the blocked loop used to rule out by
-accident have to be ruled out on purpose: two backups at once (each stages its
-own copy of the archive), and a cancelled backup deleting its staging folder
-while a copy thread still writes into it.
+With that work in threads, what the blocked loop used to rule out by accident
+has to be ruled out on purpose: two backups at once (each stages its own copy
+of the archive), a cancelled backup deleting its staging folder while a copy
+thread still writes into it, and the list, Download, Restore or Delete reaching
+a ZIP that is still being written.
 """
 
 from __future__ import annotations
 
 import asyncio
 import io
+import json
+import os
 import shutil
 import sqlite3
 import tempfile
@@ -24,6 +27,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import JSON, Column, Integer, MetaData, Table
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from backend.app.core.config import settings as app_settings
 from backend.app.core.db_dialect import is_sqlite
@@ -73,6 +78,36 @@ def _database_in(zip_path: Path, into: Path) -> sqlite3.Connection:
         return sqlite3.connect(zf.extract("bambuddy.db", into))
 
 
+class _Ticks:
+    """Slows backup steps and counts how often the event loop ticked during each."""
+
+    def __init__(self):
+        self.ticks = 0
+        self.during: dict[str, int] = {}
+
+    def slowed(self, step, func):
+        def run(*args, **kwargs):
+            if step in self.during:  # copytree copies subfolders through itself
+                return func(*args, **kwargs)
+            before = self.ticks
+            time.sleep(0.5)  # stands in for a multi-gigabyte archive
+            self.during[step] = self.ticks - before
+            return func(*args, **kwargs)
+
+        return run
+
+    async def run(self):
+        while True:
+            await asyncio.sleep(0.02)
+            self.ticks += 1
+
+    def assert_the_loop_kept_running(self, expected: set[str]):
+        # A step run on the loop would see no tick at all during its half second.
+        assert set(self.during) == expected
+        for step, count in self.during.items():
+            assert count >= 10, f"the event loop stood still during {step}"
+
+
 class _Gate:
     """Holds the backups' directory copies until released; counts them and how many ran at once."""
 
@@ -101,6 +136,47 @@ class _Gate:
         return run
 
 
+def _lose_a_file_during_the_copy(backup_env, monkeypatch):
+    """Have one archived file vanish between copytree's listing and its copy."""
+    (backup_env.data / "archive" / "1" / "gone.gcode.3mf").write_bytes(b"y" * 16)
+    real_copytree = shutil.copytree
+
+    def copy(source, target, **kwargs):
+        if Path(source).name == "gone.gcode.3mf":
+            raise FileNotFoundError(2, "No such file or directory", source)
+        return shutil.copy2(source, target, **kwargs)
+
+    def copytree(src, dst, *args, **kwargs):
+        if not args:  # subfolders come back through here with the copy_function
+            kwargs["copy_function"] = copy
+        return real_copytree(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "copytree", copytree)
+
+
+@pytest.fixture
+async def postgres_export(monkeypatch, tmp_path):
+    """Send the backup down its PostgreSQL branch, reading a small table of its own.
+
+    All that branch needs is an async engine and the metadata, so this runs on
+    every gate, not only on the PostgreSQL one.
+    """
+    from backend.app.core import database, db_dialect
+
+    metadata = MetaData()
+    table = Table("export_probe", metadata, Column("id", Integer, primary_key=True), Column("data", JSON))
+    source = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'source.db'}")
+    async with source.begin() as conn:
+        await conn.run_sync(metadata.create_all)
+        await conn.execute(table.insert(), [{"data": {"colour": "red"}}, {"data": [1, 2]}])
+
+    monkeypatch.setattr(db_dialect, "is_sqlite", lambda: False)
+    monkeypatch.setattr(database, "engine", source)
+    monkeypatch.setattr(database, "Base", SimpleNamespace(metadata=metadata))
+    yield metadata
+    await source.dispose()
+
+
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_the_event_loop_keeps_running_while_the_backup_copies_files(
@@ -112,44 +188,21 @@ async def test_the_event_loop_keeps_running_while_the_backup_copies_files(
         # A row the copy has to carry over; the test app database has no schema of its own.
         _probe_table(["kept"])
 
-    ticks = 0
-    ticks_during: dict[str, int] = {}
-
-    def slowed(step, func):
-        def run(*args, **kwargs):
-            if step in ticks_during:  # copytree copies subfolders through itself
-                return func(*args, **kwargs)
-            before = ticks
-            time.sleep(0.5)  # stands in for a multi-gigabyte archive
-            ticks_during[step] = ticks - before
-            return func(*args, **kwargs)
-
-        return run
-
-    monkeypatch.setattr(shutil, "copytree", slowed("copytree", shutil.copytree))
-    monkeypatch.setattr(settings_routes, "_write_backup_zip", slowed("zip", settings_routes._write_backup_zip))
+    ticks = _Ticks()
+    monkeypatch.setattr(shutil, "copytree", ticks.slowed("copytree", shutil.copytree))
+    monkeypatch.setattr(settings_routes, "_write_backup_zip", ticks.slowed("zip", settings_routes._write_backup_zip))
     if is_sqlite():
         monkeypatch.setattr(
-            settings_routes, "_copy_sqlite_database", slowed("database", settings_routes._copy_sqlite_database)
+            settings_routes, "_copy_sqlite_database", ticks.slowed("database", settings_routes._copy_sqlite_database)
         )
 
-    async def ticker():
-        nonlocal ticks
-        while True:
-            await asyncio.sleep(0.02)
-            ticks += 1
-
-    task = asyncio.create_task(ticker())
+    task = asyncio.create_task(ticks.run())
     try:
-        zip_path, _filename = await settings_routes.create_backup_zip(output_path=backup_env.out)
+        zip_path, _filename, _warnings = await settings_routes.create_backup_zip(output_path=backup_env.out)
     finally:
         task.cancel()
 
-    # A step run on the loop would see no tick at all during its half second.
-    expected = {"copytree", "zip", "database"} if is_sqlite() else {"copytree", "zip"}
-    assert set(ticks_during) == expected
-    for step, count in ticks_during.items():
-        assert count >= 10, f"the event loop stood still during {step}"
+    ticks.assert_the_loop_kept_running({"copytree", "zip", "database"} if is_sqlite() else {"copytree", "zip"})
 
     try:
         with zipfile.ZipFile(zip_path) as zf:
@@ -205,7 +258,7 @@ async def test_the_database_copy_is_consistent_while_the_app_keeps_writing(
 
     monkeypatch.setattr(settings_routes, "_copy_sqlite_database", copy_while_the_app_writes)
     try:
-        zip_path, _filename = await settings_routes.create_backup_zip(output_path=backup_env.out)
+        zip_path, _filename, _warnings = await settings_routes.create_backup_zip(output_path=backup_env.out)
     finally:
         writer.close()
 
@@ -219,11 +272,147 @@ async def test_the_database_copy_is_consistent_while_the_app_keeps_writing(
     assert "before the copy" in values
 
 
+@pytest.mark.sqlite_only
+@pytest.mark.parametrize("name", ["bambuddy.db", "bambuddy.db?timeout=30"])
+def test_a_database_that_is_not_there_fails_the_copy_and_is_not_created(tmp_path, name):
+    from backend.app.api.routes import settings as settings_routes
+
+    with pytest.raises(sqlite3.OperationalError):
+        settings_routes._copy_sqlite_database(tmp_path / name, tmp_path / "copy.db")
+
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.sqlite_only
+def test_the_database_copy_finds_a_path_that_needs_escaping(tmp_path):
+    from backend.app.api.routes import settings as settings_routes
+
+    folder = tmp_path / "my data #1 100%20"
+    folder.mkdir()
+    conn = sqlite3.connect(folder / "bambuddy.db")
+    try:
+        conn.execute("CREATE TABLE backup_probe (value TEXT)")
+        conn.execute("INSERT INTO backup_probe VALUES ('kept')")
+        conn.commit()
+    finally:
+        conn.close()
+
+    settings_routes._copy_sqlite_database(folder / "bambuddy.db", tmp_path / "copy.db")
+
+    conn = sqlite3.connect(tmp_path / "copy.db")
+    try:
+        assert conn.execute("SELECT value FROM backup_probe").fetchall() == [("kept",)]
+    finally:
+        conn.close()
+
+
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.parametrize("step", ["copytree", "zip"])
+async def test_the_event_loop_keeps_running_through_the_postgres_export(
+    backup_env, postgres_export, monkeypatch, tmp_path
+):
+    from backend.app.api.routes import settings as settings_routes
+
+    ticks = _Ticks()
+
+    class SlowExport(sqlite3.Connection):
+        inserted = False
+
+        def executemany(self, *args):
+            self.inserted = True
+            return ticks.slowed("insert", super().executemany)(*args)
+
+        def commit(self):
+            # The schema step commits too, on a connection of its own.
+            return ticks.slowed("commit", super().commit)() if self.inserted else super().commit()
+
+    real_connect = sqlite3.connect
+    monkeypatch.setattr(sqlite3, "connect", lambda *args, **kwargs: real_connect(*args, factory=SlowExport, **kwargs))
+    monkeypatch.setattr(postgres_export, "create_all", ticks.slowed("schema", postgres_export.create_all))
+    # The first row is the first json.dumps of the backup; the manifest comes later.
+    monkeypatch.setattr(json, "dumps", ticks.slowed("serialize", json.dumps))
+
+    task = asyncio.create_task(ticks.run())
+    try:
+        zip_path, _filename, _warnings = await settings_routes.create_backup_zip(output_path=backup_env.out)
+    finally:
+        task.cancel()
+
+    ticks.assert_the_loop_kept_running({"schema", "serialize", "insert", "commit"})
+
+    conn = _database_in(zip_path, tmp_path / "check")
+    try:
+        rows = [json.loads(row[0]) for row in conn.execute("SELECT data FROM export_probe ORDER BY id")]
+    finally:
+        conn.close()
+    assert rows == [{"colour": "red"}, [1, 2]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_failed_postgres_export_closes_its_database(backup_env, postgres_export, monkeypatch):
+    from backend.app.api.routes import settings as settings_routes
+
+    closed = []
+
+    class NoticesClose(sqlite3.Connection):
+        def close(self):
+            closed.append(True)
+            super().close()
+
+    def disk_full(*_args):
+        raise OSError(28, "No space left on device")
+
+    real_connect = sqlite3.connect
+    monkeypatch.setattr(sqlite3, "connect", lambda *args, **kwargs: real_connect(*args, factory=NoticesClose, **kwargs))
+    monkeypatch.setattr(settings_routes, "_export_rows", disk_full)
+
+    with pytest.raises(OSError, match="No space left"):
+        await settings_routes.create_backup_zip(output_path=backup_env.out)
+
+    assert closed == [True]
+    assert list(backup_env.temp.iterdir()) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_cancelled_postgres_export_lets_its_insert_finish_before_closing(
+    backup_env, postgres_export, monkeypatch
+):
+    from backend.app.api.routes import settings as settings_routes
+
+    real_export = settings_routes._export_rows
+    started = threading.Event()
+    outcomes: list[str] = []
+
+    def slow_export(*args):
+        started.set()
+        time.sleep(0.5)
+        try:
+            real_export(*args)
+        except sqlite3.Error as e:  # a database closed under the running insert
+            outcomes.append(str(e))
+            raise
+        outcomes.append("inserted")
+
+    monkeypatch.setattr(settings_routes, "_export_rows", slow_export)
+
+    backup = asyncio.create_task(settings_routes.create_backup_zip(output_path=backup_env.out))
+    assert await asyncio.to_thread(started.wait, 10)
+    backup.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await backup
+
+    assert outcomes == ["inserted"]
+    assert list(backup_env.temp.iterdir()) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.parametrize("step", ["copytree", "zip", "rename"])
+@pytest.mark.parametrize("shutdown", [False, True], ids=["cancel", "shutdown"])
 async def test_a_cancelled_backup_waits_for_its_copy_then_removes_the_staging_folder(
-    async_client, backup_env, monkeypatch, step
+    async_client, backup_env, monkeypatch, step, shutdown
 ):
     from backend.app.api.routes import settings as settings_routes
 
@@ -247,14 +436,21 @@ async def test_a_cancelled_backup_waits_for_its_copy_then_removes_the_staging_fo
 
     if step == "copytree":
         monkeypatch.setattr(shutil, "copytree", slowed(shutil.copytree, lambda _src, dst: Path(dst).parent))
-    else:
+    elif step == "zip":
         monkeypatch.setattr(
             settings_routes, "_write_backup_zip", slowed(settings_routes._write_backup_zip, lambda temp, _zip: temp)
         )
+    else:
+        monkeypatch.setattr(os, "replace", slowed(os.replace, lambda *_paths: next(backup_env.temp.iterdir())))
 
+    tasks_before = asyncio.all_tasks()
     backup = asyncio.create_task(settings_routes.create_backup_zip(output_path=backup_env.out))
     assert await asyncio.to_thread(started.wait, 10)
     backup.cancel()
+    if shutdown:
+        # asyncio.run cancels every task that is left, not only the backup.
+        for task in asyncio.all_tasks() - tasks_before:
+            task.cancel()
     # The cancel comes out as it went in, not as an error from the clean-up.
     with pytest.raises(asyncio.CancelledError):
         await backup
@@ -269,6 +465,135 @@ async def test_a_cancelled_backup_waits_for_its_copy_then_removes_the_staging_fo
     assert list(backup_env.out.iterdir()) == []
     assert not settings_routes._backup_lock.locked()
     assert settings_routes._backup_claims == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_zip_being_written_is_out_of_reach_until_it_is_complete(async_client, backup_env, monkeypatch):
+    """The list, Download, Restore and Delete can all run while the ZIP is written."""
+    from backend.app.api.routes import settings as settings_routes
+    from backend.app.services.local_backup import LocalBackupService
+
+    real_write = settings_routes._write_backup_zip
+    written = threading.Event()
+    finish = threading.Event()
+
+    def write_then_hold(temp_path, zip_file):
+        real_write(temp_path, zip_file)
+        written.set()
+        finish.wait(10)
+
+    monkeypatch.setattr(settings_routes, "_write_backup_zip", write_then_hold)
+
+    service = LocalBackupService()
+    path = str(backup_env.out)
+    local = asyncio.create_task(service.run_backup({"path": path, "retention": 5}))
+    try:
+        assert await asyncio.to_thread(written.wait, 10)
+        [part] = backup_env.out.iterdir()
+        final_name = part.name.removeprefix(".").removesuffix(".part")
+        assert final_name.startswith("bambuddy-backup-")
+        assert final_name.endswith(".zip")
+
+        assert service.list_backups(path) == []
+        for name in (final_name, part.name):
+            # Download and Restore go through resolve_backup_file.
+            assert service.resolve_backup_file(path, name) is None
+            assert service.delete_backup(path, name)["success"] is False
+        assert part.exists()
+    finally:
+        finish.set()
+
+    result = await local
+    assert result["success"] is True
+    assert result["filename"] == final_name
+    assert [f.name for f in backup_env.out.iterdir()] == [final_name]
+    assert [b["filename"] for b in service.list_backups(path)] == [final_name]
+    with zipfile.ZipFile(backup_env.out / final_name) as zf:
+        assert zf.testzip() is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_failed_zip_leaves_nothing_in_the_backup_folder(async_client, backup_env, monkeypatch):
+    from backend.app.api.routes import settings as settings_routes
+    from backend.app.services.local_backup import LocalBackupService
+
+    def disk_full(_temp_path, zip_file):
+        zip_file.write_bytes(b"PK")
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(settings_routes, "_write_backup_zip", disk_full)
+
+    result = await LocalBackupService().run_backup({"path": str(backup_env.out), "retention": 5})
+
+    assert result["success"] is False
+    assert list(backup_env.out.iterdir()) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_local_backup_that_lost_a_file_is_not_a_clean_success(async_client, backup_env, monkeypatch):
+    from backend.app.services.local_backup import LocalBackupService
+
+    service = LocalBackupService()
+    settings = {"path": str(backup_env.out), "retention": 5}
+
+    with monkeypatch.context() as patched:
+        _lose_a_file_during_the_copy(backup_env, patched)
+        result = await service.run_backup(settings)
+
+    # The rest of the backup is good, so it is kept, and it says what it misses.
+    assert result["success"] is True
+    assert result["missing_files"] == 1
+    assert "archive/1/gone.gcode.3mf" in result["message"]
+    with zipfile.ZipFile(backup_env.out / result["filename"]) as zf:
+        names = zf.namelist()
+    assert "archive/1/part.gcode.3mf" in names
+    assert "archive/1/gone.gcode.3mf" not in names
+
+    status = service.get_status()
+    assert status["last_status"] == "warning"
+    assert status["last_missing_files"] == 1
+    assert "archive/1/gone.gcode.3mf" in status["last_message"]
+
+    # The next backup that gets everything is a clean success again.
+    result = await service.run_backup(settings)
+    assert result["success"] is True
+    assert "missing_files" not in result
+    status = service.get_status()
+    assert status["last_status"] == "success"
+    assert status["last_missing_files"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_a_download_that_lost_a_file_says_so(async_client, backup_env, monkeypatch):
+    with monkeypatch.context() as patched:
+        _lose_a_file_during_the_copy(backup_env, patched)
+        resp = await async_client.get("/api/v1/settings/backup")
+
+    assert resp.status_code == 200
+    assert resp.headers["X-Backup-Missing-Files"] == "1"
+
+    resp = await async_client.get("/api/v1/settings/backup")
+    assert resp.status_code == 200
+    assert "X-Backup-Missing-Files" not in resp.headers
+
+
+def test_a_folder_that_could_not_be_read_counts_as_missing(monkeypatch, tmp_path):
+    from backend.app.api.routes import settings as settings_routes
+
+    source = tmp_path / "archive"
+    source.mkdir()
+    (source / "part.3mf").write_bytes(b"x")
+
+    def denied(*_args, **_kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(shutil, "copytree", denied)
+
+    assert settings_routes._copy_backup_dirs([("archive", source)], tmp_path / "stage") == ["archive/"]
 
 
 @pytest.mark.asyncio

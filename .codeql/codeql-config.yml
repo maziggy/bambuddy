@@ -3,6 +3,13 @@ name: "Bambuddy CodeQL Configuration"
 # Uses the default query suite with accepted-risk exclusions.
 # Each exclusion is reviewed and documented below.
 
+# static/ is the frontend build output (minified bundles of frontend/src and
+# its npm dependencies). frontend/src is scanned itself; the bundles only add
+# third-party code under a new hashed file name with every build, e.g.
+# three.js's Math.random() object ids reported as js/insecure-randomness.
+paths-ignore:
+  - static/
+
 query-filters:
   # ── Python Accepted Risk ─────────────────────────────────────
 

@@ -489,7 +489,8 @@ jobs:
     name: Docker Build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
-    timeout-minutes: 20
+    # The integration suite alone takes well over 20 minutes on a runner.
+    timeout-minutes: 40
     needs: [backend-tests, frontend-build]
     steps:
       - uses: actions/checkout@v6
@@ -540,8 +541,17 @@ jobs:
       - name: Build integration test runner
         run: docker compose -f docker-compose.test.yml build integration-test-runner
 
+      # The compose command's -n 30 fits the local test host, not a 4-CPU
+      # runner: there it was slower and tests ran out of time. --timeout
+      # turns a hung test into a failure with its name instead of a cancel.
       - name: Run integration test suite
-        run: docker compose -f docker-compose.test.yml run --rm integration-test-runner
+        run: |
+          docker compose -f docker-compose.test.yml run --rm integration-test-runner \
+            pytest backend/tests/integration/ \
+              --tb=short \
+              --timeout=60 --timeout-method=thread \
+              -p no:cacheprovider \
+              -n auto
 
       - name: Show logs on failure
         if: failure()

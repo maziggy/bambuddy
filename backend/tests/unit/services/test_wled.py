@@ -26,9 +26,13 @@ def test_effective_status_uses_existing_bambuddy_states_and_priorities():
     assert effective_wled_status(_state("PAUSE")) == "paused"
     assert effective_wled_status(_state("FINISH")) == "finished"
     assert effective_wled_status(_state("FAILED")) == "error"
-    assert effective_wled_status(_state("IDLE"), awaiting_plate_clear=True) == "queue_waiting"
-    assert effective_wled_status(_state("PAUSE", ams_status_main=1)) == "filament_problem"
-    assert effective_wled_status(_state("PAUSE", mc_print_sub_stage=3)) == "filament_problem"
+    assert effective_wled_status(_state("IDLE"), awaiting_plate_clear=True, require_plate_clear=True) == "queue_waiting"
+    assert effective_wled_status(_state("PAUSE", stg_cur=6)) == "filament_problem"
+    assert effective_wled_status(_state("PAUSE", stg_cur=16)) == "paused"
+    assert effective_wled_status(_state("PAUSE", stg_cur=16, ams_status_main=1, mc_print_sub_stage=3)) == "paused"
+    assert (
+        effective_wled_status(_state("PAUSE", stg_cur=6, ams_status_main=0, mc_print_sub_stage=0)) == "filament_problem"
+    )
     fault = HMSError(code="0300_0008", attr=0x03000200, module=3, severity=1, description="Nozzle temperature abnormal")
     assert effective_wled_status(_state("IDLE", hms_errors=[fault])) == "hms_error"
     assert effective_wled_status(_state("RUNNING", connected=False)) == "offline"
@@ -36,23 +40,31 @@ def test_effective_status_uses_existing_bambuddy_states_and_priorities():
 
 
 @pytest.mark.parametrize(
-    ("state", "awaiting_plate_clear", "expected"),
+    ("state", "awaiting_plate_clear", "require_plate_clear", "expected"),
     [
-        ("FINISH", True, "queue_waiting"),
-        ("FAILED", True, "queue_waiting"),
-        ("IDLE", True, "queue_waiting"),
-        ("FINISH", False, "finished"),
-        ("FAILED", False, "error"),
-        ("RUNNING", True, "printing"),
-        ("PRINTING", True, "printing"),
-        ("PREPARE", True, "prepare"),
-        ("SLICING", True, "prepare"),
-        ("PAUSE", True, "paused"),
-        ("UNKNOWN", True, None),
+        ("FINISH", True, False, "finished"),
+        ("FAILED", True, False, "error"),
+        ("IDLE", True, False, "idle"),
+        ("FINISH", True, True, "queue_waiting"),
+        ("FAILED", True, True, "queue_waiting"),
+        ("IDLE", True, True, "queue_waiting"),
+        ("FINISH", False, True, "finished"),
+        ("FAILED", False, True, "error"),
+        ("RUNNING", True, True, "printing"),
+        ("PRINTING", True, True, "printing"),
+        ("PREPARE", True, True, "prepare"),
+        ("SLICING", True, True, "prepare"),
+        ("PAUSE", True, True, "paused"),
+        ("UNKNOWN", True, True, None),
     ],
 )
-def test_plate_gate_precedes_only_idle_finished_and_error(state, awaiting_plate_clear, expected):
-    assert effective_wled_status(_state(state), awaiting_plate_clear=awaiting_plate_clear) == expected
+def test_plate_gate_precedes_only_idle_finished_and_error(state, awaiting_plate_clear, require_plate_clear, expected):
+    assert (
+        effective_wled_status(
+            _state(state), awaiting_plate_clear=awaiting_plate_clear, require_plate_clear=require_plate_clear
+        )
+        == expected
+    )
 
 
 @pytest.mark.parametrize(
@@ -79,15 +91,22 @@ def test_specific_fault_priorities_are_preserved_with_plate_gate():
     fault = HMSError(code="fault", attr=0, module=0, severity=2, description="Filament fault")
     for state in ("RUNNING", "FINISH", "FAILED", "IDLE", "PAUSE"):
         assert (
-            effective_wled_status(_state(state, hms_errors=[ignored, fault]), awaiting_plate_clear=True) == "hms_error"
-        )
-    for values in ({"ams_status_main": 1}, {"mc_print_sub_stage": 3}):
-        assert (
-            effective_wled_status(_state("PAUSE", hms_errors=[fault], **values), awaiting_plate_clear=True)
-            == "filament_problem"
+            effective_wled_status(
+                _state(state, hms_errors=[ignored, fault]), awaiting_plate_clear=True, require_plate_clear=True
+            )
+            == "hms_error"
         )
     assert (
-        effective_wled_status(_state("FINISH", connected=False, hms_errors=[fault]), awaiting_plate_clear=True)
+        effective_wled_status(
+            _state("PAUSE", stg_cur=6, hms_errors=[fault]), awaiting_plate_clear=True, require_plate_clear=True
+        )
+        == "filament_problem"
+    )
+    assert effective_wled_status(_state("PAUSE", stg_cur=16, hms_errors=[fault])) == "hms_error"
+    assert (
+        effective_wled_status(
+            _state("FINISH", connected=False, hms_errors=[fault]), awaiting_plate_clear=True, require_plate_clear=True
+        )
         == "offline"
     )
 
@@ -176,6 +195,7 @@ async def test_status_logging_follows_successful_sends_without_poll_duplicates(c
             "presets": {"printing": 32, "finished": 34, "queue_waiting": 36},
         },
     )
+    manager.require_plate_clear = True
     for state, awaiting in (("RUNNING", False), ("FINISH", False), ("FINISH", True)):
         manager.handle_status(1, _state(state), awaiting_plate_clear=awaiting)
         await asyncio.sleep(0)
@@ -236,6 +256,51 @@ async def test_status_changes_are_deduplicated_and_missing_or_disabled_mappings_
     manager.handle_status(2, _state("IDLE"))
     await asyncio.sleep(0)
     assert len(sent) == 2
+    await manager.shutdown()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("raw_state", "stage", "hms", "gate", "required", "presets", "expected_state", "expected_preset"),
+    [
+        ("PAUSE", 6, False, False, True, {"paused": 7}, "paused", 7),
+        ("PAUSE", 6, True, False, True, {"hms_error": 8, "paused": 7}, "hms_error", 8),
+        ("PAUSE", 16, False, False, True, {"filament_problem": 6, "paused": 7}, "paused", 7),
+        ("RUNNING", -1, True, False, True, {"printing": 3}, "printing", 3),
+        ("FINISH", -1, False, True, False, {"queue_waiting": 5, "finished": 9}, "finished", 9),
+        ("FINISH", -1, False, True, True, {"queue_waiting": 5, "finished": 9}, "queue_waiting", 5),
+        ("FINISH", -1, False, True, True, {"finished": 9}, "finished", 9),
+        ("FAILED", -1, False, True, True, {"error": 10}, "error", 10),
+        ("IDLE", -1, False, True, True, {"idle": 1}, "idle", 1),
+        ("FINISH", -1, False, True, True, {"idle": 1}, None, None),
+        ("RUNNING", -1, False, False, True, {"idle": 1}, None, None),
+    ],
+)
+async def test_missing_preset_falls_back_only_to_applicable_states(
+    raw_state, stage, hms, gate, required, presets, expected_state, expected_preset
+):
+    sent = []
+
+    def handler(request: httpx.Request):
+        sent.append(request)
+        return httpx.Response(200, json={"success": True})
+
+    manager, client = _manager(handler)
+    manager.require_plate_clear = required
+    manager.configure_printer(1, {"enabled": True, "base_url": "http://wled.local", "presets": presets})
+    fault = HMSError(code="fault", attr=0, module=0, severity=1, description="Nozzle fault")
+    manager.handle_status(
+        1,
+        _state(raw_state, stg_cur=stage, hms_errors=[fault] if hms else []),
+        awaiting_plate_clear=gate,
+    )
+    await asyncio.sleep(0)
+
+    assert [request.content for request in sent] == (
+        [f'{{"ps":{expected_preset}}}'.encode()] if expected_preset else []
+    )
+    assert manager._runtime[1].status == expected_state
     await manager.shutdown()
     await client.aclose()
 

@@ -18,31 +18,44 @@ class WLEDResponseError(ValueError):
     """WLED returned JSON that does not match the expected API shape."""
 
 
-def effective_wled_status(state: PrinterState, *, awaiting_plate_clear: bool = False) -> str | None:
+def effective_wled_status(
+    state: PrinterState, *, awaiting_plate_clear: bool = False, require_plate_clear: bool = False
+) -> str | None:
     """Map Bambuddy's existing printer state to a WLED mapping key."""
+    statuses = _applicable_wled_statuses(
+        state, awaiting_plate_clear=awaiting_plate_clear, require_plate_clear=require_plate_clear
+    )
+    return statuses[0] if statuses else None
+
+
+def _applicable_wled_statuses(
+    state: PrinterState, *, awaiting_plate_clear: bool = False, require_plate_clear: bool = False
+) -> list[str]:
+    """Return applicable states in priority order for mapped-preset fallback."""
     if not state.connected:
-        return "offline"
+        return ["offline"]
 
     printer_state = (state.state or "").upper()
-    if printer_state == "PAUSE" and (state.ams_status_main == 1 or state.mc_print_sub_stage not in (None, 0)):
-        return "filament_problem"
+    statuses = []
+    if printer_state == "PAUSE" and state.stg_cur == 6:
+        statuses.append("filament_problem")
     if any(hms_fault_counts(error) for error in state.hms_errors):
-        return "hms_error"
-    if awaiting_plate_clear and printer_state in {"IDLE", "FINISH", "FAILED"}:
-        return "queue_waiting"
+        statuses.append("hms_error")
+    if require_plate_clear and awaiting_plate_clear and printer_state in {"IDLE", "FINISH", "FAILED"}:
+        statuses.append("queue_waiting")
     if printer_state == "FAILED":
-        return "error"
-    if printer_state == "PAUSE":
-        return "paused"
-    if printer_state == "FINISH":
-        return "finished"
-    if printer_state in {"RUNNING", "PRINTING"}:
-        return "printing"
-    if printer_state in {"PREPARE", "SLICING"}:
-        return "prepare"
-    if printer_state == "IDLE":
-        return "idle"
-    return None
+        statuses.append("error")
+    elif printer_state == "PAUSE":
+        statuses.append("paused")
+    elif printer_state == "FINISH":
+        statuses.append("finished")
+    elif printer_state in {"RUNNING", "PRINTING"}:
+        statuses.append("printing")
+    elif printer_state in {"PREPARE", "SLICING"}:
+        statuses.append("prepare")
+    elif printer_state == "IDLE":
+        statuses.append("idle")
+    return statuses
 
 
 @dataclass
@@ -60,6 +73,7 @@ class WLEDManager:
     def __init__(self, client: httpx.AsyncClient | None = None):
         self._client = client
         self._owns_client = client is None
+        self.require_plate_clear = False
         self._configs: dict[int, WLEDConfig] = {}
         self._runtime: dict[int, _WLEDRuntime] = {}
 
@@ -97,7 +111,16 @@ class WLEDManager:
             self._cancel_runtime(printer_id)
             return
 
-        status = effective_wled_status(state, awaiting_plate_clear=awaiting_plate_clear)
+        status = next(
+            (
+                candidate
+                for candidate in _applicable_wled_statuses(
+                    state, awaiting_plate_clear=awaiting_plate_clear, require_plate_clear=self.require_plate_clear
+                )
+                if getattr(config.presets, candidate) is not None
+            ),
+            None,
+        )
         preset_id = getattr(config.presets, status, None) if status else None
         runtime = self._runtime.setdefault(printer_id, _WLEDRuntime())
         if runtime.status == status and runtime.preset_id == preset_id:

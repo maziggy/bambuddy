@@ -11196,8 +11196,10 @@ async def lifespan(app: FastAPI):
     # WLED is entirely optional. Seed its in-memory per-printer configuration
     # before MQTT connections begin emitting status callbacks.
     async with async_session() as db:
+        from backend.app.api.routes.settings import get_setting, setting_is_true
         from backend.app.models.printer import Printer
 
+        wled_manager.require_plate_clear = setting_is_true(await get_setting(db, "require_plate_clear"))
         result = await db.execute(select(Printer.id, Printer.wled_config))
         for printer_id, config in result.all():
             wled_manager.configure_printer(printer_id, config)

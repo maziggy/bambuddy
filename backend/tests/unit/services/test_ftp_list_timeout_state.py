@@ -7,7 +7,7 @@ started another one in the shared FTP pool.
 """
 
 import asyncio
-import ftplib
+import ftplib  # nosec B402 -- tests construct real ftplib error types
 import threading
 from unittest.mock import patch
 

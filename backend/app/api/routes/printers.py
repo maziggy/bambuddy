@@ -246,7 +246,7 @@ async def list_wled_presets(
     printer_id: int,
     request: WLEDPresetListRequest,
     _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Read existing presets from WLED without changing its configuration."""
     if not await db.scalar(select(Printer.id).where(Printer.id == printer_id)):
@@ -264,7 +264,7 @@ async def test_wled_connection(
     printer_id: int,
     request: WLEDPresetListRequest,
     _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Check WLED connectivity and return its optional identity."""
     if not await db.scalar(select(Printer.id).where(Printer.id == printer_id)):
@@ -282,7 +282,7 @@ async def test_wled_preset(
     printer_id: int,
     request: WLEDPresetTestRequest,
     _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Activate one validated preset without changing stored configuration."""
     if not await db.scalar(select(Printer.id).where(Printer.id == printer_id)):

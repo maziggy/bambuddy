@@ -65,6 +65,7 @@ class _WLEDRuntime:
     target: tuple[str | None, int | None] | None = None
     generation: int = 0
     confirmed_generation: int | None = None
+    finished_timeout_expired: bool = False
     send_task: asyncio.Task | None = None
     finished_task: asyncio.Task | None = None
 
@@ -125,9 +126,15 @@ class WLEDManager:
         )
         preset_id = getattr(config.presets, status, None) if status else None
         runtime = self._runtime.setdefault(printer_id, _WLEDRuntime())
+        if state.connected and (state.state or "").upper() in {"PREPARE", "SLICING", "RUNNING", "PRINTING"}:
+            runtime.finished_timeout_expired = False
+        expired_finished = runtime.finished_timeout_expired and status == "finished" and config.presets.idle is not None
         target = (status, preset_id)
         if runtime.target == target:
-            if (
+            if expired_finished:
+                if runtime.finished_task is not None and not runtime.finished_task.done():
+                    return
+            elif (
                 preset_id is None
                 or runtime.confirmed_generation == runtime.generation
                 or (runtime.send_task is not None and not runtime.send_task.done())
@@ -141,6 +148,14 @@ class WLEDManager:
             runtime.target = target
 
         generation = runtime.generation
+        if expired_finished:
+            if runtime.status == "idle" and runtime.preset_id == config.presets.idle:
+                return
+            runtime.finished_task = spawn_background_task(
+                self._send_finished_idle(printer_id, generation, config.base_url, config.presets.idle),
+                name=f"wled-finished-idle-{printer_id}",
+            )
+            return
         if preset_id is not None:
             runtime.send_task = spawn_background_task(
                 self._send_status(printer_id, config.base_url, status, preset_id, generation),
@@ -172,6 +187,20 @@ class WLEDManager:
             if runtime and runtime.generation == generation and runtime.target == (status, preset_id):
                 runtime.status = status
                 runtime.preset_id = preset_id
+                runtime.confirmed_generation = generation
+
+    async def _send_finished_idle(self, printer_id: int, generation: int, base_url: str, idle_preset_id: int) -> None:
+        if await self.send_preset(printer_id, base_url, idle_preset_id, status="idle"):
+            runtime = self._runtime.get(printer_id)
+            if (
+                runtime
+                and runtime.generation == generation
+                and runtime.finished_timeout_expired
+                and runtime.target
+                and runtime.target[0] == "finished"
+            ):
+                runtime.status = "idle"
+                runtime.preset_id = idle_preset_id
                 runtime.confirmed_generation = generation
 
     async def send_preset(self, printer_id: int, base_url: str, preset_id: int, *, status: str | None = None) -> bool:
@@ -266,7 +295,8 @@ class WLEDManager:
             runtime = self._runtime.get(printer_id)
             if not runtime or runtime.generation != generation or not runtime.target or runtime.target[0] != "finished":
                 return
-            await self.send_preset(printer_id, base_url, idle_preset_id, status="idle")
+            runtime.finished_timeout_expired = True
+            await self._send_finished_idle(printer_id, generation, base_url, idle_preset_id)
         except asyncio.CancelledError:
             return
 

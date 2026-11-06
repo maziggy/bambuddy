@@ -457,7 +457,7 @@ def test_invalid_persisted_config_is_treated_as_disabled():
 
 
 @pytest.mark.asyncio
-async def test_finished_timeout_sends_idle_and_new_status_cancels_it(caplog):
+async def test_finished_timeout_confirms_idle_until_new_print_cycle(caplog):
     caplog.set_level(logging.INFO, logger="backend.app.services.wled")
     sent = []
 
@@ -476,23 +476,127 @@ async def test_finished_timeout_sends_idle_and_new_status_cancels_it(caplog):
         },
     )
     manager.handle_status(1, _state("FINISH"))
-    await asyncio.sleep(0)
+    await manager._runtime[1].send_task
     runtime = manager._runtime[1]
     await manager._finish_timeout(1, runtime.generation, "http://wled.local", 1, 0)
     assert [request.content for request in sent] == [b'{"ps":9}', b'{"ps":1}']
     assert "[WLED] Printer 1 state=idle -> preset=1" in caplog.messages
+    assert (runtime.status, runtime.preset_id) == ("idle", 1)
 
-    # Further FINISH telemetry must not reactivate the finished preset.
     manager.handle_status(1, _state("FINISH", progress=100))
     await asyncio.sleep(0)
     assert len(sent) == 2
 
     manager.handle_status(1, _state("IDLE"))
+    await manager._runtime[1].send_task
+    manager.handle_status(1, _state("FINISH"))
+    await asyncio.sleep(0)
+    assert [request.content for request in sent].count(b'{"ps":9}') == 1
+
+    manager.handle_status(1, _state("RUNNING"))
+    await manager._runtime[1].send_task
+    assert sent[-1].content == b'{"ps":3}'
+    manager.handle_status(1, _state("FINISH"))
+    await manager._runtime[1].send_task
+    assert [request.content for request in sent].count(b'{"ps":9}') == 2
+    await manager.shutdown()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_finished_timeout_cancels_when_printing_resumes():
+    manager, client = _manager(lambda request: httpx.Response(200, json={"success": True}))
+    manager.configure_printer(
+        1,
+        {
+            "enabled": True,
+            "base_url": "http://wled.local",
+            "presets": {"finished": 9, "idle": 1, "printing": 3},
+            "finished_timeout_seconds": 10,
+        },
+    )
     manager.handle_status(1, _state("FINISH"))
     timer = manager._runtime[1].finished_task
     manager.handle_status(1, _state("RUNNING"))
-    await asyncio.sleep(0)
-    assert timer is not None and timer.cancelled()
-    assert sent[-1].content == b'{"ps":3}'
+    assert timer is not None and timer.cancelling()
+    await manager._runtime[1].send_task
     await manager.shutdown()
     await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_failed_finished_timeout_idle_send_is_retryable():
+    sent = []
+
+    def handler(request: httpx.Request):
+        sent.append(request)
+        return httpx.Response(503 if request.content == b'{"ps":1}' and len(sent) == 2 else 200, json={"success": True})
+
+    manager, client = _manager(handler)
+    manager.configure_printer(
+        1,
+        {
+            "enabled": True,
+            "base_url": "http://wled.local",
+            "presets": {"finished": 9, "idle": 1},
+            "finished_timeout_seconds": 10,
+        },
+    )
+    manager.handle_status(1, _state("FINISH"))
+    runtime = manager._runtime[1]
+    await runtime.send_task
+    runtime.finished_task.cancel()
+    runtime.finished_task = asyncio.create_task(
+        manager._finish_timeout(1, runtime.generation, "http://wled.local", 1, 0)
+    )
+    await runtime.finished_task
+    assert (runtime.status, runtime.preset_id) == ("finished", 9)
+
+    manager.handle_status(1, _state("FINISH"))
+    await runtime.finished_task
+    assert [request.content for request in sent] == [b'{"ps":9}', b'{"ps":1}', b'{"ps":1}']
+    assert (runtime.status, runtime.preset_id) == ("idle", 1)
+    await manager.shutdown()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_late_finished_timeout_idle_cannot_confirm_over_new_printing(monkeypatch):
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def delayed_send(printer_id, base_url, preset_id, *, status=None):
+        if preset_id == 1:
+            started.set()
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                await release.wait()
+        return True
+
+    manager = WLEDManager()
+    monkeypatch.setattr(manager, "send_preset", delayed_send)
+    manager.configure_printer(
+        1,
+        {
+            "enabled": True,
+            "base_url": "http://wled.local",
+            "presets": {"finished": 9, "idle": 1, "printing": 3},
+            "finished_timeout_seconds": 10,
+        },
+    )
+    manager.handle_status(1, _state("FINISH"))
+    runtime = manager._runtime[1]
+    await runtime.send_task
+    runtime.finished_task.cancel()
+    old_timeout = asyncio.create_task(manager._finish_timeout(1, runtime.generation, "http://wled.local", 1, 0))
+    runtime.finished_task = old_timeout
+    await asyncio.wait_for(started.wait(), 1)
+
+    manager.handle_status(1, _state("RUNNING"))
+    await runtime.send_task
+    assert (runtime.status, runtime.preset_id) == ("printing", 3)
+    release.set()
+    await old_timeout
+    assert (runtime.status, runtime.preset_id) == ("printing", 3)
+    await manager.shutdown()

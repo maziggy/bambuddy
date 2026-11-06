@@ -1,7 +1,7 @@
 from datetime import datetime
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 from backend.app.schemas.printer_location import normalize_location_name
@@ -40,11 +40,19 @@ class WLEDPresets(BaseModel):
     offline: int | None = Field(default=None, ge=1, le=250)
 
 
-class WLEDConfig(BaseModel):
+class WLEDStoredConfig(BaseModel):
     enabled: bool = False
-    base_url: str | None = Field(default=None, max_length=500)
+    base_url: str | None = None
     presets: WLEDPresets = Field(default_factory=WLEDPresets)
     finished_timeout_seconds: int | None = Field(default=None, ge=0, le=86400)
+
+    @field_serializer("base_url")
+    def _mask_stored_url_login(self, value: str | None) -> str | None:
+        return _mask_url_login(value)
+
+
+class WLEDConfig(WLEDStoredConfig):
+    base_url: str | None = Field(default=None, max_length=500)
 
     @field_validator("base_url")
     @classmethod
@@ -183,6 +191,7 @@ class PrinterUpdate(IgnoresNullForRequiredColumns):
 
 
 class PrinterResponse(PrinterBase):
+    wled_config: WLEDStoredConfig | None = None
     id: int
     is_active: bool
     nozzle_count: int = 1  # 1 or 2, auto-detected from MQTT

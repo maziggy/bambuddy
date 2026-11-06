@@ -311,6 +311,45 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_legacy_wled_url_does_not_break_reads_or_weaken_input_validation(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        printer = await printer_factory(name="Legacy WLED")
+        unsafe_url = "http://169.254.169.254/latest/meta-data"
+        printer.wled_config = {"enabled": True, "base_url": unsafe_url, "presets": {"printing": 3}}
+        await db_session.commit()
+
+        listed = await async_client.get("/api/v1/printers/")
+        assert listed.status_code == 200
+        assert next(p for p in listed.json() if p["id"] == printer.id)["wled_config"]["base_url"] == unsafe_url
+
+        detail = await async_client.get(f"/api/v1/printers/{printer.id}")
+        assert detail.status_code == 200
+        assert detail.json()["wled_config"]["base_url"] == unsafe_url
+
+        rejected = await async_client.patch(f"/api/v1/printers/{printer.id}", json={"wled_config": printer.wled_config})
+        assert rejected.status_code == 422
+
+        rejected_create = await async_client.post(
+            "/api/v1/printers/",
+            json={
+                "name": "Unsafe WLED",
+                "serial_number": "00M09A999999999",
+                "ip_address": "192.168.1.99",
+                "access_code": "12345678",
+                "wled_config": printer.wled_config,
+            },
+        )
+        assert rejected_create.status_code == 422
+
+        printer.wled_config = {"enabled": True, "base_url": "http://user:secret@wled.local"}
+        await db_session.commit()
+        redacted = await async_client.get(f"/api/v1/printers/{printer.id}")
+        assert redacted.status_code == 200
+        assert redacted.json()["wled_config"]["base_url"] == "http://user:[REDACTED]@wled.local"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_load_wled_presets(self, async_client: AsyncClient, printer_factory):
         printer = await printer_factory(name="WLED Printer")
         with patch(

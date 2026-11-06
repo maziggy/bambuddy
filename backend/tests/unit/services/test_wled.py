@@ -245,6 +245,15 @@ def test_invalid_persisted_config_is_treated_as_disabled():
     manager.configure_printer(1, {"enabled": True, "base_url": None})
     assert manager._configs[1].enabled is False
 
+    manager.configure_printer(
+        1,
+        {"enabled": True, "base_url": "http://169.254.169.254/latest/meta-data", "presets": {"printing": 3}},
+    )
+    manager.handle_status(1, _state("RUNNING"))
+    assert manager._configs[1].enabled is False
+    assert manager._runtime == {}
+    assert manager._client is None
+
 
 @pytest.mark.asyncio
 async def test_finished_timeout_sends_idle_and_new_status_cancels_it(caplog):

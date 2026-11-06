@@ -430,6 +430,41 @@ async def test_the_finish_photo_is_the_ended_runs_too(test_engine, db_session, q
     assert archive.photos == ["finish.jpg"]
 
 
+async def test_a_later_prints_finish_photo_is_added_to_the_archives(test_engine, db_session, queued_print):
+    """Archive #455: the second plate's photo went on its run only. The
+    archive already held the first plate's, and appending to that list in
+    place is no change the ORM writes."""
+    from backend.app.core.tasks import spawn_background_task
+    from backend.app.models.archive import PrintArchive
+
+    archive = await db_session.get(PrintArchive, queued_print["archive"])
+    archive.photos = ["plate1.jpg"]
+    await db_session.commit()
+
+    turn = asyncio.Lock()
+
+    async def in_turn(coro):
+        async with turn:
+            return await coro
+
+    def spawn(coro, name=None, **kwargs):
+        return spawn_background_task(coro if name == "photo-then-notify" else in_turn(coro), name=name, **kwargs)
+
+    capture = AsyncMock(return_value=("plate2.jpg", False))
+    with (
+        patch("backend.app.main.spawn_background_task", side_effect=spawn),
+        patch("backend.app.main._capture_finish_photo_from_timelapse", capture),
+        patch("backend.app.main._schedule_timelapse_scan"),
+        patch("backend.app.api.routes.settings.get_setting", AsyncMock(return_value="true")),
+    ):
+        await _complete(test_engine, queued_print["printer"], "completed", extra={"timelapse_was_active": True})
+
+    db_session.expire_all()
+    archive, _item, logs, _charges = await _rows(db_session, queued_print["archive"], queued_print["item"])
+    assert logs[0].photos == ["plate2.jpg"]
+    assert archive.photos == ["plate1.jpg", "plate2.jpg"]
+
+
 async def test_the_registered_mapping_is_drained_when_the_printer_reported_one(test_engine, db_session, queued_print):
     """PAM/I3: left behind, the archive's next run (sent without a mapping)
     would charge its usage through this run's trays."""
@@ -602,6 +637,36 @@ async def test_the_completions_media_work_holds_the_archive(test_engine, db_sess
     }
     assert sum(1 for archive_id, _ in held if archive_id == queued_print["archive"]) >= 3
     assert not archive_work.is_held(queued_print["archive"])
+
+
+async def test_the_late_timelapse_frame_replaces_the_live_grab(test_engine, db_session, queued_print):
+    """Archive 454: the video landed 2s after the notification's wait, and the
+    archive kept both photos. The upgrade is told which one to write over."""
+    from backend.app.core.tasks import spawn_background_task
+
+    # One shared SQLite connection: tasks take turns, but for the notification.
+    turn = asyncio.Lock()
+
+    async def in_turn(coro):
+        async with turn:
+            return await coro
+
+    def spawn(coro, name=None, **kwargs):
+        return spawn_background_task(coro if name == "photo-then-notify" else in_turn(coro), name=name, **kwargs)
+
+    upgrade = AsyncMock()
+    with (
+        patch("backend.app.main.spawn_background_task", side_effect=spawn),
+        patch("backend.app.services.camera.capture_finish_photo", AsyncMock(return_value="finish_live.jpg")),
+        patch("backend.app.main._scan_for_timelapse_with_retries", AsyncMock()),
+        patch("backend.app.main._capture_finish_photo_from_timelapse", AsyncMock(return_value=(None, True))),
+        patch("backend.app.main._upgrade_finish_photo_from_timelapse", upgrade),
+        patch("backend.app.api.routes.settings.get_setting", AsyncMock(return_value="true")),
+    ):
+        await _complete(test_engine, queued_print["printer"], "completed", extra={"timelapse_was_active": True})
+
+    upgrade.assert_called_once()
+    assert upgrade.call_args.kwargs["replace"] == "finish_live.jpg"
 
 
 async def test_the_print_end_announces_the_run_it_wrote(test_engine, db_session, queued_print):

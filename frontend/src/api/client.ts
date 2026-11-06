@@ -927,6 +927,8 @@ export interface Archive {
   // The latest print of the archive (among those the caller may see), whose
   // figures the per-print fields show (archive redesign).
   latest_run_id?: number | null;
+  // How many videos its prints have; timelapse_path is the latest print's only.
+  timelapse_count?: number;
   quantity: number;
   energy_kwh: number | null;
   energy_cost: number | null;
@@ -3626,7 +3628,7 @@ export interface ObicoStatus {
   is_running: boolean;
   last_error: string | null;
   per_printer: Record<string, { class: string; frame_count: number; score: number }>;
-  thresholds: { low: number; high: number };
+  thresholds: { low: number; high: number; pause?: number };
   history: ObicoDetectionEvent[];
   enabled: boolean;
   ml_url: string;

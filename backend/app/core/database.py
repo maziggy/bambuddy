@@ -6037,6 +6037,8 @@ async def _run_migrations(conn):
     # (``print_cost_estimate.fill_plate_estimates``).
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN plate_estimates JSON")
 
+    await _backfill_archive_run_photos(conn)
+
     await _migrate_auth_datetimes_to_timestamp(conn)
     await _migrate_add_missing_set_null_fks(conn)
     await _migrate_wallet_transactions_keep_deleted_users(conn)
@@ -6085,6 +6087,72 @@ async def _backfill_print_log_plate_ids(conn) -> None:
                 " WHERE e.archive_id = print_log_entries.archive_id) = 1"
             )
         )
+        await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": flag, "v": "true"})
+
+
+async def _backfill_archive_run_photos(conn) -> None:
+    """Put back on its archive a finish photo only its run kept.
+
+    The finish photo of a later print on an archive was appended to the
+    archive's list in place, which the ORM does not see as a change, so only
+    the run's list was saved. The archive serves and shows photos from its own
+    list, so that print looked like it had none. Each photo a run lists, that
+    its archive does not and that is on disk, is appended to the archive's
+    list in run order. A photo whose file is gone stays off.
+
+    Once only, gated by a settings flag: a photo deleted from an archive is
+    also removed from its run, but a second pass must never be what decides
+    that."""
+    from types import SimpleNamespace
+
+    from sqlalchemy import JSON, bindparam, text
+
+    from backend.app.utils.archive_paths import find_archive_photo
+
+    flag = "_backfill_archive_run_photos_done"
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already is not None:
+            return
+        rows = (
+            await conn.execute(
+                text(
+                    "SELECT a.id, a.file_path, a.photos, e.photos AS run_photos FROM print_archives a "
+                    "JOIN print_log_entries e ON e.archive_id = a.id WHERE e.photos IS NOT NULL "
+                    "ORDER BY a.id, CASE WHEN e.started_at IS NULL THEN 1 ELSE 0 END, e.started_at, e.id"
+                ).columns(photos=JSON, run_photos=JSON)
+            )
+        ).fetchall()
+        archives: dict[int, tuple[SimpleNamespace, list, list]] = {}
+        for row in rows:
+            archive, _, photos = archives.setdefault(
+                row.id,
+                (SimpleNamespace(id=row.id, file_path=row.file_path), list(row.photos or []), list(row.photos or [])),
+            )
+            for name in row.run_photos or []:
+                if not isinstance(name, str) or name in photos:
+                    continue
+                # Per photo, and broad: one unreadable path must not cost the
+                # user their boot.
+                try:
+                    found = find_archive_photo(archive, name) is not None
+                except Exception as exc:
+                    logger.warning("Could not look for photo %s of archive %s: %s", name, row.id, exc)
+                    continue
+                if found:
+                    photos.append(name)
+        update = text("UPDATE print_archives SET photos = :photos WHERE id = :id").bindparams(
+            bindparam("photos", type_=JSON)
+        )
+        restored = 0
+        for archive_id, (_, before, photos) in archives.items():
+            if photos != before:
+                await conn.execute(update, {"photos": photos, "id": archive_id})
+                restored += 1
+        if restored:
+            logger.info("Restored finish photos kept only by their print on %d archive(s)", restored)
         await conn.execute(text('INSERT INTO settings ("key", value) VALUES (:k, :v)'), {"k": flag, "v": "true"})
 
 

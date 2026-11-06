@@ -630,6 +630,64 @@ describe('ArchivesPage', () => {
       await waitFor(() => expect(window.location.pathname).toBe('/archives/2'));
     });
 
+    it("counts every print's video and opens the archive to play them", async () => {
+      // Plate 2's video is the archive's; plate 1's is on its print.
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([{ ...mockArchives[0], timelapse_path: 'archives/1/b.mp4', timelapse_count: 2 }]),
+        ),
+      );
+      render(<ArchivesPage />);
+      const button = await screen.findByTestId('archive-card-timelapse');
+
+      expect(button).toHaveAttribute('title', 'View 2 timelapses');
+      expect(within(button).getByText('2')).toBeInTheDocument();
+      fireEvent.click(button);
+
+      await waitFor(() => expect(window.location.pathname).toBe('/archives/1'));
+    });
+
+    it('plays a single video in place', async () => {
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([{ ...mockArchives[0], timelapse_path: 'archives/1/a.mp4', timelapse_count: 1 }]),
+        ),
+      );
+      render(<ArchivesPage />);
+      const button = await screen.findByTestId('archive-card-timelapse');
+
+      expect(button).toHaveAttribute('title', 'View timelapse');
+      fireEvent.click(button);
+
+      expect(window.location.pathname).toBe('/archives');
+    });
+
+    it("opens the archive for a video only an earlier print has", async () => {
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([{ ...mockArchives[0], timelapse_path: null, timelapse_count: 1 }]),
+        ),
+      );
+      render(<ArchivesPage />);
+      fireEvent.click(await screen.findByTestId('archive-card-timelapse'));
+
+      await waitFor(() => expect(window.location.pathname).toBe('/archives/1'));
+    });
+
+    it("says in the list how many videos an archive's prints have", async () => {
+      server.use(
+        http.get('/api/v1/archives/', () =>
+          HttpResponse.json([{ ...mockArchives[0], timelapse_path: null, timelapse_count: 2 }]),
+        ),
+      );
+      render(<ArchivesPage />);
+      await screen.findByTestId('archive-card-timelapse');
+      fireEvent.click(screen.getByTitle(/list/i));
+
+      await waitFor(() => expect(screen.queryByTestId('archive-card-timelapse')).not.toBeInTheDocument());
+      expect(screen.getByTitle('View 2 timelapses')).toBeInTheDocument();
+    });
+
     it('leaves the page alone for a click on a control in the card', async () => {
       render(<ArchivesPage />);
       await screen.findByText('#2');

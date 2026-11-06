@@ -235,20 +235,22 @@ class MakerWorldService(ProviderService):
     async def get_download(self, ref: ProviderResourceRef) -> ProviderDownloadInfo:
         """Resolve the signed 3MF download for a specific MakerWorld profile.
 
-        Handles the provider-specific dance: the iot-service endpoint needs
-        the *alphanumeric* ``modelId`` (e.g. ``"US2bb73b106683e5"``) from the
-        design, not the integer design id, and picks a default profile when
-        the caller didn't specify one. Enriches ``ref.sub_id`` with the actual
-        profile used so the route can build the per-plate dedupe key.
+        Picks a default profile when the caller didn't specify one, and
+        enriches ``ref.sub_id`` with the actual profile used so the route can
+        build the per-plate dedupe key.
+
+        The link comes from the design-service instance endpoint, which takes
+        the *instance* behind the profile (#3447, #3448): since 2026-11-03 the
+        iot-service profile endpoint answers "success" with an empty ``url``.
+        That one is still asked when the instance gives no link, or when no
+        instance is found for the profile; it needs the *alphanumeric*
+        ``modelId`` (e.g. ``"US2bb73b106683e5"``), not the integer design id.
         """
         model_id = int(ref.external_id)
         design = await self.get_design(model_id)
 
-        alphanumeric_model_id = design.get("modelId")
-        if not isinstance(alphanumeric_model_id, str) or not alphanumeric_model_id:
-            raise MakerWorldUnavailableError("MakerWorld design metadata missing the modelId field")
-
         profile_id = int(ref.sub_id) if ref.sub_id else None
+        envelope: dict[str, Any] | None = None
         if profile_id is None:
             for instance in design.get("instances") or []:
                 pid = instance.get("profileId")
@@ -265,9 +267,17 @@ class MakerWorldService(ProviderService):
             if profile_id is None:
                 raise MakerWorldUnavailableError("MakerWorld returned no instances for this model")
 
-        manifest = await self.get_profile_download(profile_id, alphanumeric_model_id)
-
+        manifest: dict[str, Any] = {}
+        instance_id = await self._instance_id_for_profile(model_id, design, profile_id, envelope)
+        if instance_id is not None:
+            manifest = await self.get_instance_download(instance_id)
         signed_url = manifest.get("url")
+        if not signed_url or not isinstance(signed_url, str):
+            alphanumeric_model_id = design.get("modelId")
+            if not isinstance(alphanumeric_model_id, str) or not alphanumeric_model_id:
+                raise MakerWorldUnavailableError("MakerWorld design metadata missing the modelId field")
+            manifest = await self.get_profile_download(profile_id, alphanumeric_model_id)
+            signed_url = manifest.get("url")
         if not signed_url or not isinstance(signed_url, str):
             raise MakerWorldUnavailableError("MakerWorld did not return a download URL")
 
@@ -429,15 +439,66 @@ class MakerWorldService(ProviderService):
         ``api.bambulab.com`` backend (not Cloudflare-protected
         ``makerworld.com``), accepts the same long-lived bearer users already
         sign in with, and mints the signed CDN URL that the browser would
-        otherwise fetch via session cookies. This is the only known non-
-        cookie path to a download URL, after ruling out ``/design-service/``
-        endpoints on ``makerworld.com`` (cookie-gated) and the now-dead
-        ``/instance/{id}/f3mf?type=download`` shape.
+        otherwise fetch via session cookies. The ``/design-service/``
+        endpoints on ``makerworld.com`` are cookie-gated; the instance one on
+        ``api.bambulab.com`` is the other non-cookie path.
+
+        Since 2026-11-03 it answers "success" with an empty ``url`` (#3447,
+        #3448); ``get_download`` asks ``get_instance_download`` first and this
+        only when that gives no link.
         """
+        return await self._get_bambu_api_json(
+            f"https://api.bambulab.com/v1/iot-service/api/user/profile/{int(profile_id)}",
+            {"model_id": str(model_id)},
+            "profile",
+            profile_id,
+        )
+
+    async def get_instance_download(self, instance_id: int) -> dict[str, Any]:
+        """Fetch the signed 3MF download URL for a MakerWorld instance.
+
+        Hits ``api.bambulab.com/v1/design-service/instance/{instanceId}/f3mf
+        ?type=download`` with the stored Bambu Cloud bearer; anonymously it
+        answers with an error. Returns ``{"name": "<file>.3mf", "url":
+        "https://makerworld.bblmw.com/...", "highCompression": ...}``
+        (measured 2026-11-04); without a sign-in it answers 403 "Please log
+        in to download models.", like a model the account can't download.
+        The instance id is the ``id`` of an entry in
+        the design's ``instances``, not its ``profileId``.
+        """
+        return await self._get_bambu_api_json(
+            f"https://api.bambulab.com/v1/design-service/instance/{int(instance_id)}/f3mf",
+            {"type": "download"},
+            "instance",
+            instance_id,
+        )
+
+    async def _instance_id_for_profile(
+        self, model_id: int, design: dict[str, Any], profile_id: int, envelope: dict[str, Any] | None = None
+    ) -> int | None:
+        """The instance behind *profile_id*: from the design's ``instances``,
+        else from the ``/design/{id}/instances`` envelope (*envelope* when the
+        caller already has it). None when neither lists it."""
+        for instance in design.get("instances") or []:
+            if isinstance(instance, dict) and instance.get("profileId") == profile_id:
+                if isinstance(instance.get("id"), int):
+                    return instance["id"]
+        if envelope is None:
+            envelope = await self.get_design_instances(model_id)
+        for hit in envelope.get("hits") or []:
+            if isinstance(hit, dict) and hit.get("profileId") == profile_id and isinstance(hit.get("id"), int):
+                return hit["id"]
+        return None
+
+    async def _get_bambu_api_json(
+        self, url: str, params: dict[str, str], kind: str, resource_id: int
+    ) -> dict[str, Any]:
+        """GET a Bambu Lab API download endpoint with the stored bearer,
+        mapping its status to the MakerWorld errors. *kind* and *resource_id*
+        name the resource in the messages ("profile 123")."""
         if not self._auth_token:
             raise MakerWorldAuthError("Downloading files from MakerWorld requires a Bambu Cloud login")
 
-        url = f"https://api.bambulab.com/v1/iot-service/api/user/profile/{int(profile_id)}"
         headers = dict(_CLIENT_HEADERS)
         headers["Authorization"] = f"Bearer {self._auth_token}"
 
@@ -445,7 +506,7 @@ class MakerWorldService(ProviderService):
             response = await self._client.get(
                 url,
                 headers=headers,
-                params={"model_id": str(model_id)},
+                params=params,
                 timeout=30.0,
             )
         except httpx.TimeoutException as exc:
@@ -458,20 +519,20 @@ class MakerWorldService(ProviderService):
             raise MakerWorldAuthError(_SIGN_IN_EXPIRED_MESSAGE)
         if response.status_code == 403:
             upstream = _extract_upstream_error(response)
-            raise MakerWorldForbiddenError(upstream or f"Bambu Lab refused access to profile {profile_id}")
+            raise MakerWorldForbiddenError(upstream or f"Bambu Lab refused access to {kind} {resource_id}")
         if response.status_code == 404:
-            raise MakerWorldNotFoundError(f"MakerWorld profile not found: {profile_id}")
+            raise MakerWorldNotFoundError(f"MakerWorld {kind} not found: {resource_id}")
         if response.status_code != 200:
             raise MakerWorldUnavailableError(
-                f"Bambu Lab API unexpected status {response.status_code} for profile {profile_id}"
+                f"Bambu Lab API unexpected status {response.status_code} for {kind} {resource_id}"
             )
 
         try:
             data = response.json()
         except ValueError as exc:
-            raise MakerWorldUnavailableError(f"Bambu Lab API returned non-JSON for profile {profile_id}") from exc
+            raise MakerWorldUnavailableError(f"Bambu Lab API returned non-JSON for {kind} {resource_id}") from exc
         if not isinstance(data, dict):
-            raise MakerWorldUnavailableError(f"Bambu Lab API returned unexpected JSON shape for profile {profile_id}")
+            raise MakerWorldUnavailableError(f"Bambu Lab API returned unexpected JSON shape for {kind} {resource_id}")
         return data
 
     async def download_3mf(self, signed_url: str) -> tuple[bytes, str]:

@@ -13,6 +13,9 @@ interface ConfirmOutcomeDialogProps {
   // The run asked about: plates of one archive each have their own question.
   // Omitted (an archive card's menu, an older link) means its latest run.
   runId?: number | null;
+  // Opened to change a verdict already given (the archive window's "Change
+  // outcome"): the choice is offered again instead of only stating it.
+  change?: boolean;
   onClose: () => void;
 }
 
@@ -23,7 +26,7 @@ interface ConfirmOutcomeDialogProps {
  * ?confirm=<id> deep link a push notification carries. Rejecting offers an
  * optional reason and a one-click reprint through the regular PrintModal.
  */
-export function ConfirmOutcomeDialog({ archiveId, runId, onClose }: ConfirmOutcomeDialogProps) {
+export function ConfirmOutcomeDialog({ archiveId, runId, change = false, onClose }: ConfirmOutcomeDialogProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -70,7 +73,8 @@ export function ConfirmOutcomeDialog({ archiveId, runId, onClose }: ConfirmOutco
   // fall back to the thumbnail when no camera shot exists.
   const photoFilename = archive?.photos?.[0] ?? null;
   const photoUrl = photoFilename ? api.getArchivePhotoUrl(targetId, photoFilename) : null;
-  const alreadyDecided = archive?.user_verdict != null;
+  const verdict = archive?.user_verdict ?? null;
+  const alreadyDecided = verdict != null && !change;
   // Why this print already has a verdict — the plate-clear default answers
   // prompts on its own, and without this the answer looks like it appeared
   // from nowhere (#1898).
@@ -109,7 +113,7 @@ export function ConfirmOutcomeDialog({ archiveId, runId, onClose }: ConfirmOutco
       <div className="bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary w-full max-w-md overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-bambu-dark-tertiary">
-          <h3 className="text-white font-semibold">{t('confirmOutcome.title')}</h3>
+          <h3 className="text-white font-semibold">{change ? t('archivePage.changeOutcome') : t('confirmOutcome.title')}</h3>
           <button onClick={onClose} className="text-bambu-gray hover:text-white transition-colors" title={t('common.close')}>
             <X className="w-5 h-5" />
           </button>
@@ -133,7 +137,7 @@ export function ConfirmOutcomeDialog({ archiveId, runId, onClose }: ConfirmOutco
           {alreadyDecided ? (
             <>
               <p className="text-sm text-bambu-gray text-center">
-                {archive?.user_verdict === 'good'
+                {verdict === 'good'
                   ? t('confirmOutcome.alreadyGood')
                   : t('confirmOutcome.alreadyRejected')}
               </p>
@@ -149,7 +153,8 @@ export function ConfirmOutcomeDialog({ archiveId, runId, onClose }: ConfirmOutco
                 type="button"
                 onClick={() => setRejecting(true)}
                 disabled={verdictMutation.isPending}
-                className="flex flex-col items-center gap-1.5 px-6 py-3 rounded-xl border border-red-500/40 text-red-500 hover:bg-red-500/10 transition-colors"
+                aria-pressed={change ? verdict === 'reject' : undefined}
+                className={`flex flex-col items-center gap-1.5 px-6 py-3 rounded-xl border border-red-500/40 text-red-500 hover:bg-red-500/10 transition-colors ${change && verdict === 'reject' ? 'bg-red-500/10 ring-2 ring-red-500/60' : ''}`}
               >
                 <ThumbsDown className="w-7 h-7" />
                 <span className="text-xs">{t('confirmOutcome.reject')}</span>
@@ -158,7 +163,8 @@ export function ConfirmOutcomeDialog({ archiveId, runId, onClose }: ConfirmOutco
                 type="button"
                 onClick={handleGood}
                 disabled={verdictMutation.isPending}
-                className="flex flex-col items-center gap-1.5 px-6 py-3 rounded-xl border border-bambu-green/50 text-bambu-green hover:bg-bambu-green/10 transition-colors"
+                aria-pressed={change ? verdict === 'good' : undefined}
+                className={`flex flex-col items-center gap-1.5 px-6 py-3 rounded-xl border border-bambu-green/50 text-bambu-green hover:bg-bambu-green/10 transition-colors ${change && verdict === 'good' ? 'bg-bambu-green/10 ring-2 ring-bambu-green/60' : ''}`}
               >
                 <ThumbsUp className="w-7 h-7" />
                 <span className="text-xs">{t('confirmOutcome.good')}</span>
@@ -212,7 +218,7 @@ export function ConfirmOutcomeDialog({ archiveId, runId, onClose }: ConfirmOutco
               onClick={onClose}
               className="w-full mt-4 text-xs text-bambu-gray hover:text-white transition-colors"
             >
-              {t('confirmOutcome.later')}
+              {change ? t('common.cancel') : t('confirmOutcome.later')}
             </button>
           )}
         </div>

@@ -1543,6 +1543,109 @@ def extract_max_z_height_from_3mf(file_path: Path, plate_id: int | None = None) 
     return value if value > 0 else None
 
 
+# The end G-code is a few KB; the tail kept while streaming the plate G-code
+# only has to be sure to hold all of it.
+_END_GCODE_TAIL_BYTES = 256 * 1024
+_END_GCODE_MARKER = "; MACHINE_END_GCODE_START"
+# OrcaSlicer writes no MACHINE_END_GCODE_START; its end G-code follows the last
+# filament end G-code, as Bambu Studio's does the marker.
+_ORCA_END_GCODE_MARKER = "; filament end gcode"
+_MOVE_COMMANDS = frozenset({"G0", "G1", "G2", "G3"})
+_Z_WORD = re.compile(r"^Z(-?\d+(?:\.\d*)?|-?\.\d+)$", re.IGNORECASE)
+
+
+def end_z_from_gcode_tail(tail: str) -> float | None:
+    """The Z the end G-code leaves the plate at, or None if it can't be told.
+
+    Follows every Z the end G-code sets after ``; MACHINE_END_GCODE_START``
+    (Bambu Studio) or, in a file without it, after the last ``; filament end
+    gcode`` (OrcaSlicer, which writes it right before the machine end G-code).
+    Anything that makes the final position uncertain gives None rather than a
+    guess: no marker, a Z move inside an ``M622``/``M623`` block (run or
+    skipped by the firmware, we can't know which), a relative Z with no known
+    start, ``G28``/``G92`` touching Z, or any other G-code carrying a Z word.
+    The print body before the marker is absolute in Bambu and Orca G-code, so
+    absolute is the mode the end G-code starts in unless the tail says G91.
+    """
+    start = tail.rfind(_END_GCODE_MARKER)
+    if start < 0:
+        start = tail.rfind(_ORCA_END_GCODE_MARKER)
+    if start < 0:
+        return None
+
+    absolute = True
+    for line in tail[:start].splitlines():
+        code = line.split(";", 1)[0].split()
+        if code and code[0].upper() in ("G90", "G91"):
+            absolute = code[0].upper() == "G90"
+
+    z: float | None = None
+    conditional = 0
+    for line in tail[start:].splitlines():
+        words = line.split(";", 1)[0].split()
+        if not words:
+            continue
+        command = words[0].upper()
+        if command == "M622":
+            conditional += 1
+            continue
+        if command == "M623":
+            conditional = max(0, conditional - 1)
+            continue
+        if command == "G90":
+            absolute = True
+            continue
+        if command == "G91":
+            absolute = False
+            continue
+        if command == "G28":
+            # A bare G28 homes every axis, Z included.
+            if len(words) == 1 or any(w.upper().startswith("Z") for w in words[1:]):
+                z = None
+            continue
+        if not command.startswith("G"):
+            continue
+        z_words = [w for w in words[1:] if w[:1] in ("Z", "z")]
+        if not z_words:
+            continue
+        match = _Z_WORD.match(z_words[0])
+        if command not in _MOVE_COMMANDS or match is None or conditional:
+            z = None
+            continue
+        value = float(match.group(1))
+        if absolute:
+            z = value
+        else:
+            z = None if z is None else z + value
+    return z if z is not None and z > 0 else None
+
+
+def extract_end_z_from_3mf(file_path: Path, plate_id: int | None = None) -> float | None:
+    """The Z the plate's end G-code leaves the plate at, or None (#2547).
+
+    The finish-photo plate restore parks the plate back here, so it never
+    sends a Z the printer's own G-code didn't: Bambu's templates keep their
+    end moves inside each model's travel (``G1 Z{max_layer_z + 100}`` only
+    while that fits), and the firmware does not clamp G-code sent over MQTT
+    (#2579). The whole plate G-code is streamed through, because the end
+    G-code is its last few KB and a deflated entry can't be read from the end.
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            names = zf.namelist()
+            target = select_plate_gcode_name(names, plate_id) or default_plate_gcode_name(names)
+            if target is None:
+                return None
+            tail = b""
+            with zf.open(target, "r") as fh:
+                while chunk := fh.read(1024 * 1024):
+                    tail = (tail + chunk)[-_END_GCODE_TAIL_BYTES:]
+    except (OSError, zipfile.BadZipFile, KeyError) as e:
+        logger.debug("end Z: cannot read %s: %s", file_path, e)
+        return None
+    return end_z_from_gcode_tail(tail.decode("utf-8", errors="ignore"))
+
+
 def _substitute_placeholders(snippet: str, header: dict[str, str]) -> str:
     """Replace `{var}` placeholders with header values, leaving unknowns intact."""
 

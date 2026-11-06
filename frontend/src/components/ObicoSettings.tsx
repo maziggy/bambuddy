@@ -412,6 +412,12 @@ export function ObicoSettings() {
                     {status.thresholds.low.toFixed(2)} / {status.thresholds.high.toFixed(2)}
                   </span>
                 </div>
+                {status.thresholds.pause != null && (
+                  <div className="flex justify-between">
+                    <span className="text-bambu-gray">{t('failureDetection.pauseThreshold')}</span>
+                    <span className="text-white font-mono">{status.thresholds.pause.toFixed(2)}</span>
+                  </div>
+                )}
                 {status.last_error && (
                   <div className="flex items-start gap-2 text-red-700 dark:text-red-400">
                     <X className="w-4 h-4 mt-0.5 flex-shrink-0" />

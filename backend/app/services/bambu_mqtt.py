@@ -25,7 +25,7 @@ from backend.app.services.hms_actions import HMSAction, get_actions_for_error_co
 from backend.app.services.hms_errors import alert_level_from_print_error, describe_fault
 from backend.app.utils.ams_drying import ACTIVE_DRY_STATUSES, DRY_COUNTDOWN_STALL_SECONDS
 from backend.app.utils.ams_humidity import ams_humidity_percent
-from backend.app.utils.paho_teardown import retire_paho_client
+from backend.app.utils.paho_teardown import discard_queued_publishes, retire_paho_client
 
 logger = logging.getLogger(__name__)
 
@@ -1837,9 +1837,8 @@ class BambuMQTTClient:
         #   → socket-close fallback. There is no running loop on that thread to
         #     hand the rebuilt client, so close the socket and let paho's own
         #     loop detect the broken connection and auto-reconnect (same
-        #     instance, same client_id — queue replay is theoretically possible
-        #     here but those paths have always done socket-close and #1136 was
-        #     specifically triggered from the dispatch path).
+        #     instance, same client_id). paho would re-send its old outbox on
+        #     that reconnect; _on_connect empties it first (#3454).
         logger.warning("[%s] Forcing MQTT reconnect: %s", self.serial_number, reason)
         self._stale_reconnecting = True
         self.state.connected = False
@@ -1895,9 +1894,8 @@ class BambuMQTTClient:
         broken connection and triggers auto-reconnect on the SAME client
         instance. Safe to call from paho's own network thread (the loop
         polls the socket on every iteration and handles a closed socket
-        gracefully). Used as a fallback when hard-reset isn't safe; queue
-        replay remains theoretically possible here but #1136 specifically
-        traced through the dispatch-deadline path which now hard-resets."""
+        gracefully). Used as a fallback when hard-reset isn't safe. The old
+        outbox is not re-sent: _on_connect empties it first (#3454)."""
         if self._client:
             try:
                 sock = self._client.socket()
@@ -1906,8 +1904,30 @@ class BambuMQTTClient:
             except Exception:
                 pass
 
+    def _drop_previous_connection_commands(self, client) -> None:
+        """Forget every command queued on an earlier connection (#3454).
+
+        Called first in on_connect, which paho runs before it re-sends its
+        old outbox. Makes every printer command at most once per connection;
+        a command lost in the seconds before a drop is clicked again."""
+        dropped = discard_queued_publishes(client)
+        if dropped is None:
+            logger.warning(
+                "[%s] Cannot clear paho's outbox on reconnect (paho internals changed); "
+                "commands from the previous connection may be sent again",
+                self.serial_number,
+            )
+        elif dropped:
+            logger.info(
+                "[%s] Dropped %d command(s) queued on the previous MQTT connection",
+                self.serial_number,
+                dropped,
+            )
+
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         if rc == 0:
+            # First, before anything here publishes on the new connection.
+            self._drop_previous_connection_commands(client)
             self.state.connected = True
             self.last_connect_error = None
             self.last_connect_error_name = None
@@ -6347,9 +6367,8 @@ class BambuMQTTClient:
         # busy and cannot start a new task"), and on an A1 mini that error
         # cancels the RUNNING job (#2598). IDLE / FINISH / FAILED are valid
         # start targets; only the active-print states are refused. (A
-        # transport-level QoS-1 replay on reconnect would bypass this guard,
-        # but the dispatch/watchdog reconnect path hard-resets the client with a
-        # fresh client_id, so paho has no inflight project_file to replay there.)
+        # transport-level QoS-1 replay on reconnect would bypass this guard;
+        # _on_connect empties paho's outbox before it can re-send (#3454).)
         if self.state.state in _ACTIVE_PRINT_STATES:
             logger.warning(
                 "[%s] start_print refused: printer busy (gcode_state=%s) — not publishing project_file for %s",

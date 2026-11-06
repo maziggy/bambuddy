@@ -4,7 +4,7 @@ Polls a self-hosted Obico ML API with snapshots from each monitored printer
 while a print is running, smooths scores over time, and dispatches a configured
 action (notify / pause / pause_and_off) when a sustained failure is detected.
 
-See `obico_smoothing.py` for the per-print EWM + rolling-mean math.
+See `obico_smoothing.py` for the EWM + rolling-mean math (Obico's own).
 """
 
 import asyncio
@@ -21,13 +21,23 @@ from sqlalchemy import select
 from backend.app.core.database import async_session
 from backend.app.models.settings import Settings
 from backend.app.services.obico_smoothing import (
+    ESCALATING_FACTOR,
+    Baseline,
     PrintState,
     classify,
     score_from_detections,
     thresholds,
+    triggers_action,
 )
 
 logger = logging.getLogger(__name__)
+
+# A print in these states is over, or a new one is being prepared: the next
+# RUNNING one starts fresh. PAUSE (and any state not listed) keeps the print's
+# smoothing and its "action fired", so a resumed print isn't re-armed (#3459).
+# PREPARE/SLICING only come before a print, and catch a reprint of the same
+# file with no job id whose FINISH fell between two polls.
+_ENDED_STATES = ("FINISH", "FAILED", "IDLE", "PREPARE", "SLICING")
 
 HISTORY_MAX = 50
 HEALTH_TIMEOUT = 5.0
@@ -95,6 +105,11 @@ class ObicoDetectionService:
         self._states: dict[int, PrintState] = {}
         # printer_id -> task_name active when state was created (used to detect new prints)
         self._state_keys: dict[int, str] = {}
+        # printer_id -> the printer's job id (subtask_id) for that state, once known
+        self._print_ids: dict[int, str] = {}
+        # printer_id -> long-term mean of its frames, kept across its prints so
+        # what its camera always sees counts as baseline (#3459). Memory only.
+        self._baselines: dict[int, Baseline] = {}
         # printer_id -> last classification ("safe"/"warning"/"failure").
         # Only written after an inference actually came back, so a missing entry
         # means "we have no verdict", which is not the same as "safe" (#2952).
@@ -111,7 +126,15 @@ class ObicoDetectionService:
 
     def forget_printer(self, printer_id: int) -> None:
         """A deleted printer's verdict and score, not the next printer's given its id."""
-        for state in (self._states, self._state_keys, self._last_class, self._errors, self._action_fired):
+        for state in (
+            self._states,
+            self._state_keys,
+            self._print_ids,
+            self._baselines,
+            self._last_class,
+            self._errors,
+            self._action_fired,
+        ):
             state.pop(printer_id, None)
 
     # ---- lifecycle ----
@@ -134,6 +157,7 @@ class ObicoDetectionService:
         self.stop()
         self._states.clear()
         self._state_keys.clear()
+        self._print_ids.clear()
         self._action_fired.clear()
         self._last_class.clear()
         self._errors.clear()
@@ -222,16 +246,41 @@ class ObicoDetectionService:
                 continue
             if not printer_manager.is_connected(printer_id):
                 continue
-            if not status or getattr(status, "state", None) != "RUNNING":
-                # Reset state when not printing so the next print starts fresh
-                self._states.pop(printer_id, None)
-                self._state_keys.pop(printer_id, None)
-                self._action_fired.pop(printer_id, None)
-                self._last_class.pop(printer_id, None)
-                self._errors.pop(printer_id, None)
+            print_state = getattr(status, "state", None) if status else None
+            if print_state != "RUNNING":
+                if print_state is None or print_state in _ENDED_STATES:
+                    # The print is over: the next one starts fresh
+                    self._end_print(printer_id)
                 continue
 
             await self._check_printer(printer_id, status, settings)
+
+    def _end_print(self, printer_id: int) -> None:
+        for state in (
+            self._states,
+            self._state_keys,
+            self._print_ids,
+            self._action_fired,
+            self._last_class,
+            self._errors,
+        ):
+            state.pop(printer_id, None)
+
+    @staticmethod
+    def _job_id(status) -> str | None:
+        subtask_id = getattr(status, "subtask_id", None)
+        if isinstance(subtask_id, (str, int)) and str(subtask_id) not in ("", "0"):
+            return str(subtask_id)
+        return None
+
+    def _is_new_print(self, printer_id: int, key: str, job_id: str | None) -> bool:
+        """Another task name, or another job id once both are known: a
+        printer that went from one print to the next while we didn't see it
+        idle (a pause no longer resets) must not carry the first one's state."""
+        if self._state_keys.get(printer_id) != key:
+            return True
+        known = self._print_ids.get(printer_id)
+        return bool(known and job_id and known != job_id)
 
     async def _capture_frame(self, printer_id: int) -> bytes | None:
         """Capture one JPEG frame from the printer camera. Returns None on failure."""
@@ -261,10 +310,15 @@ class ObicoDetectionService:
     async def _check_printer(self, printer_id: int, status, settings: dict):
         task_name = getattr(status, "task_name", None) or getattr(status, "subtask_name", "") or ""
         key = f"{task_name}"
-        if self._state_keys.get(printer_id) != key:
-            self._states[printer_id] = PrintState()
+        job_id = self._job_id(status)
+        if self._is_new_print(printer_id, key, job_id):
+            baseline = self._baselines.setdefault(printer_id, Baseline())
+            self._states[printer_id] = PrintState(baseline=baseline)
             self._state_keys[printer_id] = key
+            self._print_ids.pop(printer_id, None)
             self._action_fired[printer_id] = False
+        if job_id:
+            self._print_ids[printer_id] = job_id
 
         # Capture locally first, then hand Obico a nonce URL that returns the
         # cached bytes instantly. Obico's ML API is GET-only (/p/?img=URL) with a
@@ -324,8 +378,9 @@ class ObicoDetectionService:
         state = self._states.get(printer_id)
         if state is None:
             return  # deleted while the check waited (forget_printer)
-        score = state.update(current_p)
-        verdict = classify(score, settings["sensitivity"])
+        reading = state.update(current_p)
+        score = reading.score
+        verdict = classify(reading, settings["sensitivity"])
         self._last_class[printer_id] = verdict
         # A successful capture + ML call clears any transient error from previous
         # polls (typical case: cold-start RTSP timeout on first frame after startup,
@@ -341,13 +396,13 @@ class ObicoDetectionService:
                     "task_name": task_name,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "current_p": round(current_p, 4),
-                    "score": round(score, 4),
+                    "score": round(max(0.0, score), 4),
                     "class": verdict,
                     "detections": len(detections),
                 }
             )
 
-        if verdict == "failure" and not self._action_fired.get(printer_id):
+        if triggers_action(verdict, settings["action"]) and not self._action_fired.get(printer_id):
             self._action_fired[printer_id] = True
             await self._dispatch_action(printer_id, settings["action"], task_name, score, frame)
 
@@ -407,7 +462,8 @@ class ObicoDetectionService:
             result[pid] = {
                 "class": verdict,
                 "frame_count": state.frame_count,
-                "score": round(state.ewm_mean, 4),
+                # Below the printer's background is no detection at all.
+                "score": round(max(0.0, state.last.score), 4),
                 "error": error,
             }
         return result
@@ -422,7 +478,8 @@ class ObicoDetectionService:
             "is_running": self._task is not None and not self._task.done(),
             "last_error": self._last_error,
             "per_printer": self.get_per_printer(),
-            "thresholds": {"low": low, "high": high},
+            # Pausing needs the score divided by this factor to be failing.
+            "thresholds": {"low": low, "high": high, "pause": high * ESCALATING_FACTOR},
             "history": list(self._history),
         }
 

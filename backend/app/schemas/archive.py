@@ -157,6 +157,9 @@ class ArchiveResponse(BaseModel):
     # The latest print of the archive (by start, among those the caller may
     # see): the run the per-print fields are taken from.
     latest_run_id: int | None = None
+    # How many videos its prints have: the archive's timelapse_path is only
+    # its latest print's.
+    timelapse_count: int = 0
 
     # Energy tracking
     energy_kwh: float | None = _per_print(None, _FIRST_PRINT)

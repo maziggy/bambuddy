@@ -129,6 +129,38 @@ class TestSeeing:
         assert body["timelapse_path"] == f"{DIR}/b.mp4"
         assert body["photos"] == ["finish_b.jpg", "0a1b2c3d.jpg"]
 
+    async def test_the_card_counts_every_prints_video(self, async_client, db_session, plates):
+        # The archive holds plate 2's video only; plate 1's is on its print.
+        listed = (await async_client.get("/api/v1/archives/", headers=plates.admin)).json()
+        assert listed[0]["timelapse_count"] == 2
+        assert (await async_client.get(_url(plates), headers=plates.admin)).json()["timelapse_count"] == 2
+
+        # A scoped user counts their prints' videos only.
+        assert (await async_client.get("/api/v1/archives/", headers=plates.of_a)).json()[0]["timelapse_count"] == 1
+        assert (await async_client.get(_url(plates), headers=plates.of_b)).json()["timelapse_count"] == 1
+
+    async def test_a_video_no_print_holds_counts_too(self, async_client, db_session, plates):
+        archive = await _row(db_session, PrintArchive, plates.archive)
+        archive.timelapse_path = f"{DIR}/hand.mp4"
+        await db_session.commit()
+
+        assert (await async_client.get(_url(plates), headers=plates.admin)).json()["timelapse_count"] == 3
+        # Of the archive, not of a print of theirs: hidden from A's user, as
+        # its path is.
+        assert (await async_client.get(_url(plates), headers=plates.of_a)).json()["timelapse_count"] == 1
+
+    async def test_no_video_counts_none(self, async_client, db_session, plates):
+        db_session.expire_all()
+        for model, row_id in (
+            (PrintArchive, plates.archive),
+            (PrintLogEntry, plates.first),
+            (PrintLogEntry, plates.second),
+        ):
+            (await db_session.get(model, row_id)).timelapse_path = None
+        await db_session.commit()
+
+        assert (await async_client.get(_url(plates), headers=plates.admin)).json()["timelapse_count"] == 0
+
     async def test_a_printer_it_never_printed_on_sees_nothing(self, async_client, plates):
         assert (await async_client.get("/api/v1/archives/", headers=plates.of_c)).json() == []
         assert (await async_client.get(_url(plates), headers=plates.of_c)).status_code == 404

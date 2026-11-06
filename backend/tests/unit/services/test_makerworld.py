@@ -366,10 +366,11 @@ class TestResolve:
 
 class TestGetDownload:
     """``get_download`` — the interface-level "resource → signed 3MF URL"
-    flow the /makerworld/import route drives. The provider-specific dance
-    lives here: the iot-service endpoint needs the *alphanumeric* modelId
-    (not the integer design id), the profile falls back in two tiers, and
-    three malformed-upstream shapes must map to UnavailableError (502)."""
+    flow the /makerworld/import route drives. The profile falls back in two
+    tiers; the link comes from the instance behind the profile, and from the
+    iot-service profile endpoint (which needs the *alphanumeric* modelId, not
+    the integer design id) only when that gives none (#3447, #3448). Malformed
+    upstream shapes map to UnavailableError (502)."""
 
     @pytest.fixture
     def service(self):
@@ -379,7 +380,7 @@ class TestGetDownload:
         design = {
             "id": 1400373,
             "modelId": "US2bb73b106683e5",
-            "instances": [{"profileId": 298919107, "title": "9 cells"}],
+            "instances": [{"id": 4028000, "profileId": 298919107, "title": "9 cells"}],
         }
         design.update(overrides)
         return design
@@ -391,18 +392,23 @@ class TestGetDownload:
         return await service.get_download(ref)
 
     @pytest.mark.asyncio
-    async def test_resolves_alphanumeric_model_id_and_explicit_profile(self, service):
-        """Explicit profile_id flows through; get_profile_download receives
-        the alphanumeric modelId from the design, not the integer id."""
-        service.get_design = AsyncMock(return_value=self._design())
+    async def test_the_link_comes_from_the_instance_behind_the_profile(self, service):
+        """Explicit profile_id: its instance is asked, the profile endpoint is not."""
+        service.get_design = AsyncMock(
+            return_value=self._design(
+                instances=[{"id": 1, "profileId": 5}, {"id": 4028000, "profileId": 298919107}],
+            )
+        )
         manifest = self._manifest()
-        service.get_profile_download = AsyncMock(return_value=manifest)
+        service.get_instance_download = AsyncMock(return_value=manifest)
+        service.get_profile_download = AsyncMock()
 
         info = await self._run(
             service, ProviderResourceRef(source_type="makerworld", external_id="1400373", sub_id="298919107")
         )
 
-        service.get_profile_download.assert_awaited_once_with(298919107, "US2bb73b106683e5")
+        service.get_instance_download.assert_awaited_once_with(4028000)
+        service.get_profile_download.assert_not_awaited()
         assert info.url == manifest["url"]
         assert info.suggested_filename == "benchy.3mf"
         # The enriched ref carries the resolved profile for the dedupe key.
@@ -412,31 +418,87 @@ class TestGetDownload:
     async def test_falls_back_to_first_design_instance_profile(self, service):
         """No profile given → first ``design.instances[].profileId`` wins."""
         service.get_design = AsyncMock(return_value=self._design())
-        service.get_profile_download = AsyncMock(return_value=self._manifest())
+        service.get_instance_download = AsyncMock(return_value=self._manifest())
 
         info = await self._run(service, ProviderResourceRef(source_type="makerworld", external_id="1400373"))
 
-        service.get_profile_download.assert_awaited_once_with(298919107, "US2bb73b106683e5")
+        service.get_instance_download.assert_awaited_once_with(4028000)
         assert info.ref.sub_id == "298919107"
 
     @pytest.mark.asyncio
     async def test_second_tier_falls_back_to_instances_envelope(self, service):
         """Design carries no usable profileId → the ``/design/{id}/instances``
-        envelope is consulted before giving up."""
+        envelope is consulted before giving up, once, for the instance too."""
         service.get_design = AsyncMock(return_value=self._design(instances=[{"title": "no profileId here"}]))
-        service.get_design_instances = AsyncMock(return_value={"total": 1, "hits": [{"profileId": 298919564}]})
-        service.get_profile_download = AsyncMock(return_value=self._manifest())
+        service.get_design_instances = AsyncMock(
+            return_value={"total": 1, "hits": [{"id": 4028001, "profileId": 298919564}]}
+        )
+        service.get_instance_download = AsyncMock(return_value=self._manifest())
 
         info = await self._run(service, ProviderResourceRef(source_type="makerworld", external_id="1400373"))
 
         service.get_design_instances.assert_awaited_once_with(1400373)
-        service.get_profile_download.assert_awaited_once_with(298919564, "US2bb73b106683e5")
+        service.get_instance_download.assert_awaited_once_with(4028001)
         assert info.ref.sub_id == "298919564"
 
     @pytest.mark.asyncio
+    async def test_an_instance_the_design_lists_without_id_is_found_in_the_envelope(self, service):
+        service.get_design = AsyncMock(return_value=self._design(instances=[{"profileId": 298919107}]))
+        service.get_design_instances = AsyncMock(
+            return_value={"total": 2, "hits": [{"id": 1, "profileId": 5}, {"id": 4028000, "profileId": 298919107}]}
+        )
+        service.get_instance_download = AsyncMock(return_value=self._manifest())
+
+        await self._run(service, ProviderResourceRef(source_type="makerworld", external_id="1400373"))
+
+        service.get_instance_download.assert_awaited_once_with(4028000)
+
+    @pytest.mark.asyncio
+    async def test_no_link_from_the_instance_asks_the_profile(self, service):
+        """The profile endpoint gets the alphanumeric modelId, not the integer id."""
+        service.get_design = AsyncMock(return_value=self._design())
+        service.get_instance_download = AsyncMock(return_value={"name": "x.3mf", "url": ""})
+        manifest = self._manifest(name="from-profile.3mf")
+        service.get_profile_download = AsyncMock(return_value=manifest)
+
+        info = await self._run(
+            service, ProviderResourceRef(source_type="makerworld", external_id="1400373", sub_id="298919107")
+        )
+
+        service.get_profile_download.assert_awaited_once_with(298919107, "US2bb73b106683e5")
+        assert info.url == manifest["url"]
+        assert info.suggested_filename == "from-profile.3mf"
+
+    @pytest.mark.asyncio
+    async def test_a_profile_no_instance_lists_asks_the_profile(self, service):
+        service.get_design = AsyncMock(return_value=self._design())
+        service.get_design_instances = AsyncMock(return_value={"total": 0, "hits": []})
+        service.get_instance_download = AsyncMock()
+        service.get_profile_download = AsyncMock(return_value=self._manifest())
+
+        info = await self._run(
+            service, ProviderResourceRef(source_type="makerworld", external_id="1400373", sub_id="777")
+        )
+
+        service.get_instance_download.assert_not_awaited()
+        service.get_profile_download.assert_awaited_once_with(777, "US2bb73b106683e5")
+        assert info.ref.sub_id == "777"
+
+    @pytest.mark.asyncio
+    async def test_the_instance_link_needs_no_model_id(self, service):
+        service.get_design = AsyncMock(return_value=self._design(modelId=None))
+        service.get_instance_download = AsyncMock(return_value=self._manifest())
+
+        info = await self._run(service, ProviderResourceRef(source_type="makerworld", external_id="1400373"))
+
+        assert info.url == self._manifest()["url"]
+
+    @pytest.mark.asyncio
     async def test_missing_alphanumeric_model_id_is_unavailable(self, service):
-        """A design without the ``modelId`` field can't reach iot-service."""
-        service.get_design = AsyncMock(return_value={"id": 1400373})
+        """No link from the instance, and a design without the ``modelId``
+        field can't reach iot-service."""
+        service.get_design = AsyncMock(return_value=self._design(modelId=None))
+        service.get_instance_download = AsyncMock(return_value={"url": ""})
 
         with pytest.raises(MakerWorldUnavailableError, match="modelId"):
             await self._run(service, ProviderResourceRef(source_type="makerworld", external_id="1400373"))
@@ -450,20 +512,34 @@ class TestGetDownload:
             await self._run(service, ProviderResourceRef(source_type="makerworld", external_id="1400373"))
 
     @pytest.mark.asyncio
-    async def test_manifest_without_url_is_unavailable(self, service):
+    async def test_a_refusal_from_the_instance_is_not_retried_on_the_profile(self, service):
+        """Bambu's reason (paid, points, region) reaches the user rather than
+        the profile endpoint's empty link."""
         service.get_design = AsyncMock(return_value=self._design())
-        service.get_profile_download = AsyncMock(return_value={"name": "benchy.3mf"})
+        service.get_instance_download = AsyncMock(side_effect=MakerWorldForbiddenError("paid model"))
+        service.get_profile_download = AsyncMock()
+
+        with pytest.raises(MakerWorldForbiddenError, match="paid model"):
+            await self._run(service, ProviderResourceRef(source_type="makerworld", external_id="1400373"))
+        service.get_profile_download.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_link_from_either_is_unavailable(self, service):
+        """The reports: the profile answers with ``url: ""``, and here the instance does too."""
+        service.get_design = AsyncMock(return_value=self._design())
+        service.get_instance_download = AsyncMock(return_value={"name": "benchy.3mf"})
+        service.get_profile_download = AsyncMock(return_value={"name": "benchy.3mf", "url": ""})
 
         with pytest.raises(MakerWorldUnavailableError, match="download URL"):
             await self._run(service, ProviderResourceRef(source_type="makerworld", external_id="1400373"))
 
 
 class TestGetProfileDownload:
-    """The new auth-gated 3MF manifest endpoint on the Bambu iot-service.
+    """The auth-gated 3MF manifest endpoint on the Bambu iot-service.
 
-    Replaces the removed ``get_instance_download`` / ``get_model_download``
-    helpers — YASTL#51's endpoint mints the signed CDN URL from the same
-    long-lived Bambu Cloud bearer users already have.
+    YASTL#51's endpoint minted the signed CDN URL from the same long-lived
+    Bambu Cloud bearer users already have; since 2026-11-03 it answers with
+    an empty ``url`` and is only the fallback behind the instance endpoint.
     """
 
     def _make_service(self, *, auth_token: str | None = "tok-abc") -> MakerWorldService:
@@ -560,6 +636,84 @@ class TestGetProfileDownload:
 
         with pytest.raises(MakerWorldUnavailableError):
             await svc.get_profile_download(1, "M1")
+
+
+class TestGetInstanceDownload:
+    """The design-service instance endpoint on ``api.bambulab.com`` that
+    mints the signed URL since the profile endpoint stopped (#3447, #3448).
+    Same bearer, same status mapping, the resource named as an instance."""
+
+    def _make_service(self, *, auth_token: str | None = "tok-abc") -> MakerWorldService:
+        svc = MakerWorldService(client=MagicMock(spec=httpx.AsyncClient), auth_token=auth_token)
+        svc._client.get = AsyncMock()
+        return svc
+
+    def _respond(self, svc, status, body=None):
+        resp = MagicMock()
+        resp.status_code = status
+        resp.json.return_value = body if body is not None else {}
+        svc._client.get.return_value = resp
+
+    @pytest.mark.asyncio
+    async def test_requires_auth_token(self):
+        svc = self._make_service(auth_token=None)
+        with pytest.raises(MakerWorldAuthError):
+            await svc.get_instance_download(4028000)
+        svc._client.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_sends_bearer_and_type_download(self):
+        svc = self._make_service(auth_token="tok-abc")
+        self._respond(
+            svc, 200, {"name": "m.3mf", "url": "https://makerworld.bblmw.com/m.3mf", "highCompression": False}
+        )
+
+        manifest = await svc.get_instance_download(4028000)
+
+        call = svc._client.get.call_args
+        url = call.args[0] if call.args else call.kwargs.get("url")
+        assert url == "https://api.bambulab.com/v1/design-service/instance/4028000/f3mf"
+        assert call.kwargs["headers"]["Authorization"] == "Bearer tok-abc"
+        assert call.kwargs["params"] == {"type": "download"}
+        assert manifest["name"] == "m.3mf"
+
+    @pytest.mark.asyncio
+    async def test_maps_401_to_auth_error(self):
+        svc = self._make_service()
+        self._respond(svc, 401, {"error": "token expired"})
+        with pytest.raises(MakerWorldAuthError):
+            await svc.get_instance_download(4028000)
+
+    @pytest.mark.asyncio
+    async def test_an_expired_sign_in_is_noted(self):
+        """The same sign-out as every other MakerWorld call (``_note_auth_failure``)."""
+        svc = self._make_service()
+        svc._note_auth_failure = AsyncMock()
+        self._respond(svc, 401, {"code": 4, "error": "Please login."})
+        with pytest.raises(MakerWorldAuthError):
+            await svc.get_instance_download(4028000)
+        svc._note_auth_failure.assert_awaited_once_with(svc._client.get.return_value)
+
+    @pytest.mark.asyncio
+    async def test_maps_403_to_forbidden_naming_the_instance(self):
+        svc = self._make_service()
+        self._respond(svc, 403, {})
+        with pytest.raises(MakerWorldForbiddenError, match="instance 4028000"):
+            await svc.get_instance_download(4028000)
+
+    @pytest.mark.asyncio
+    async def test_maps_404_to_not_found_naming_the_instance(self):
+        svc = self._make_service()
+        self._respond(svc, 404)
+        with pytest.raises(MakerWorldNotFoundError, match="instance not found: 4028000"):
+            await svc.get_instance_download(4028000)
+
+    @pytest.mark.asyncio
+    async def test_other_status_is_unavailable(self):
+        svc = self._make_service()
+        self._respond(svc, 500)
+        with pytest.raises(MakerWorldUnavailableError, match="for instance 4028000"):
+            await svc.get_instance_download(4028000)
 
 
 class TestDownload3MF:

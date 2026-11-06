@@ -1,7 +1,7 @@
 """Migration coverage for per-printer WLED configuration (#1528)."""
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.app.core.database import run_migrations
@@ -19,7 +19,9 @@ async def test_wled_config_migration_is_additive_and_idempotent(test_engine):
         await conn.execute(text("ALTER TABLE printers DROP COLUMN wled_config"))
         await run_migrations(conn)
         await run_migrations(conn)
-        columns = {row[1] for row in (await conn.execute(text("PRAGMA table_info(printers)"))).all()}
+        columns = await conn.run_sync(
+            lambda sync_conn: {col["name"] for col in inspect(sync_conn).get_columns("printers")}
+        )
         stored = (
             await conn.execute(text("SELECT wled_config FROM printers WHERE serial_number = 'WLED-LEGACY'"))
         ).scalar_one()

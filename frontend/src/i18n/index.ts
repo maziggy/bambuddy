@@ -1,50 +1,66 @@
-import i18n from 'i18next';
+import i18n, { type BackendModule, type ResourceLanguage } from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
+import { recoverFromMissingChunk } from '../utils/lazyPage';
 
-// Import translations directly for bundling
+// English is bundled: it is the fallback for every missing key. The other
+// languages are separate files, and only the one in use is loaded (#3175).
 import en from './locales/en';
-import de from './locales/de';
-import es from './locales/es';
-import fr from './locales/fr';
-import ja from './locales/ja';
-import it from './locales/it';
-import nl from './locales/nl';
-import ko from './locales/ko';
-import ptBR from './locales/pt-BR';
-import zhCN from './locales/zh-CN';
-import zhTW from './locales/zh-TW';
-import sv from './locales/sv';
-import tr from './locales/tr';
-import ru from './locales/ru';
-import uk from './locales/uk';
 
-const resources = {
-  en: { translation: en },
-  de: { translation: de },
-  es: { translation: es },
-  fr: { translation: fr },
-  ja: { translation: ja },
-  it: { translation: it },
-  nl: { translation: nl },
-  ko: { translation: ko },
-  'pt-BR': { translation: ptBR },
-  'zh-CN': { translation: zhCN },
-  'zh-TW': { translation: zhTW },
-  sv: { translation: sv },
-  tr: { translation: tr },
-  ru: { translation: ru },
-  uk: { translation: uk },
+const LOCALE_LOADERS: Record<string, () => Promise<{ default: ResourceLanguage }>> = {
+  de: () => import('./locales/de'),
+  es: () => import('./locales/es'),
+  fr: () => import('./locales/fr'),
+  ja: () => import('./locales/ja'),
+  it: () => import('./locales/it'),
+  nl: () => import('./locales/nl'),
+  pl: () => import('./locales/pl'),
+  ko: () => import('./locales/ko'),
+  'pt-BR': () => import('./locales/pt-BR'),
+  'zh-CN': () => import('./locales/zh-CN'),
+  'zh-TW': () => import('./locales/zh-TW'),
+  sv: () => import('./locales/sv'),
+  tr: () => import('./locales/tr'),
+  ru: () => import('./locales/ru'),
+  uk: () => import('./locales/uk'),
 };
 
-const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'nl', 'pt-BR', 'ru', 'sv', 'tr', 'uk', 'zh-CN', 'zh-TW'];
+/** Hands i18next a language's file when it needs that language. i18next
+ *  loads it before switching, so the interface never shows a half-loaded
+ *  language. */
+export const localeBackend: BackendModule = {
+  type: 'backend',
+  init() {},
+  read(language, _namespace, callback) {
+    const load = LOCALE_LOADERS[language];
+    if (!load) {
+      callback(null, {});
+      return;
+    }
+    load().then(
+      (module) => callback(null, module.default),
+      (error) => {
+        // A tab from before an update asks for a file the update deleted.
+        void recoverFromMissingChunk().then((reloading) => {
+          if (!reloading) callback(error, null);
+        });
+      },
+    );
+  },
+};
+
+const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'nl', 'pl', 'pt-BR', 'ru', 'sv', 'tr', 'uk', 'zh-CN', 'zh-TW'];
 const APPLIANCE_CONSUMED_KEY = 'bambuddy_appliance_locale_consumed';
 
-i18n
+/** Settles once the language in use has loaded (or failed to). */
+export const i18nReady = i18n
+  .use(localeBackend)
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
-    resources,
+    resources: { en: { translation: en } },
+    // Load every other language through localeBackend.
+    partialBundledLanguages: true,
     fallbackLng: 'en',
     supportedLngs: SUPPORTED_LNGS,
 
@@ -112,6 +128,7 @@ export const availableLanguages = [
   { code: 'it', name: 'Italian', nativeName: 'Italiano' },
   { code: 'ko', name: 'Korean', nativeName: '한국어' },
   { code: 'nl', name: 'Dutch', nativeName: 'Nederlands' },
+  { code: 'pl', name: 'Polish', nativeName: 'Polski' },
   { code: 'pt-BR', name: 'Portuguese (Brazil)', nativeName: 'Português (Brasil)' },
   { code: 'zh-CN', name: 'Chinese (Simplified)', nativeName: '简体中文' },
   { code: 'zh-TW', name: 'Chinese (Traditional)', nativeName: '繁體中文' },

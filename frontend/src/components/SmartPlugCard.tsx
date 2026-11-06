@@ -144,9 +144,9 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                 <h3 className="font-medium text-white truncate">{plug.name}</h3>
                 <p
                   className="text-sm text-bambu-gray truncate"
-                  title={plug.plug_type === 'mqtt' ? plug.mqtt_topic ?? undefined : plug.plug_type === 'homeassistant' ? plug.ha_entity_id ?? undefined : plug.plug_type === 'rest' ? plug.rest_on_url ?? plug.rest_off_url ?? undefined : plug.ip_address ?? undefined}
+                  title={plug.plug_type === 'mqtt' ? plug.mqtt_topic ?? undefined : plug.plug_type === 'homeassistant' ? plug.ha_entity_id ?? undefined : plug.plug_type === 'rest' ? plug.rest_on_url || plug.rest_off_url || 'REST' : plug.ip_address ?? undefined}
                 >
-                  {plug.plug_type === 'mqtt' ? plug.mqtt_topic : plug.plug_type === 'homeassistant' ? plug.ha_entity_id : plug.plug_type === 'rest' ? (plug.rest_on_url || plug.rest_off_url) : plug.ip_address}
+                  {plug.plug_type === 'mqtt' ? plug.mqtt_topic : plug.plug_type === 'homeassistant' ? plug.ha_entity_id : plug.plug_type === 'rest' ? (plug.rest_on_url || plug.rest_off_url || 'REST') : plug.ip_address}
                 </p>
               </div>
             </div>

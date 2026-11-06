@@ -31,7 +31,7 @@ async def test_color_map_empty_catalog(async_client: AsyncClient):
     response = await async_client.get("/api/v1/inventory/colors/map")
     assert response.status_code == 200
     body = response.json()
-    assert body == {"colors": {}, "by_material": {}}
+    assert body["colors"] == {} and body["by_material"] == {} and body["bambu"] == []
 
 
 @pytest.mark.asyncio
@@ -411,3 +411,67 @@ async def test_a_material_containing_the_separator_is_still_read_correctly(async
     body = (await async_client.get("/api/v1/inventory/colors/map")).json()
 
     assert body["by_material"] == {"pla|matte|ffffff": "Ivory White"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_color_map_lists_bambu_colours_for_nearest_naming(async_client: AsyncClient, db_session):
+    """#3279: a colour set on the printer's screen is reported as a hex a step or
+    two off the catalogue's (5A657B for Blue Grey 5B6579), so the frontend names
+    it by the nearest Bambu colour. It gets every Bambu row with its material,
+    and only Bambu's: other brands' names are not the printer's palette."""
+    await _seed(
+        db_session,
+        [
+            {
+                "manufacturer": "Bambu Lab",
+                "color_name": "Blue Grey",
+                "hex_color": "#5B6579",
+                "material": "PLA Basic",
+                "is_default": True,
+            },
+            {
+                "manufacturer": "bambu lab",
+                "color_name": "Translucent Orange",
+                "hex_color": "FF911AFF",
+                "material": "PETG Translucent",
+                "is_default": False,
+            },
+            {
+                "manufacturer": "eSUN",
+                "color_name": "Translucent Orange",
+                "hex_color": "#DD7135",
+                "material": "PETG",
+                "is_default": True,
+            },
+            {
+                "manufacturer": "Bambu Lab",
+                "color_name": "Broken",
+                "hex_color": "#12",
+                "material": "PLA Basic",
+                "is_default": True,
+            },
+        ],
+    )
+
+    response = await async_client.get("/api/v1/inventory/colors/map")
+
+    assert response.status_code == 200
+    assert sorted(response.json()["bambu"], key=lambda e: e["hex"]) == [
+        {"hex": "5b6579", "name": "Blue Grey", "material": "PLA Basic"},
+        {"hex": "ff911a", "name": "Translucent Orange", "material": "PETG Translucent"},
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_color_map_names_the_product_line_of_each_bambu_preset(async_client: AsyncClient):
+    """#3279: a slot without RFID reports its preset (GFA00) but no
+    tray_sub_brands, so the frontend needs the preset's product line to look
+    for that range's colours first."""
+    response = await async_client.get("/api/v1/inventory/colors/map")
+
+    presets = response.json()["preset_materials"]
+    assert presets["GFA00"] == "PLA Basic"
+    assert presets["GFA01"] == "PLA Matte"
+    assert all(not name.startswith("Bambu ") for name in presets.values())

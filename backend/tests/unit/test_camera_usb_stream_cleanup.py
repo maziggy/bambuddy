@@ -12,9 +12,11 @@ ffmpeg into the same registries the RTSP path uses.
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 import time
 from contextlib import suppress
-from unittest.mock import mock_open, patch
+from unittest.mock import AsyncMock, mock_open, patch
 
 import pytest
 
@@ -191,8 +193,50 @@ async def test_cleanup_janitor_reaps_stale_external_usb_stream(monkeypatch):
 def test_scan_matches_v4l2_ffmpeg(monkeypatch):
     cmdline = b"ffmpeg\x00-f\x00v4l2\x00-i\x00/dev/video0\x00-f\x00mjpeg\x00-\x00"
     monkeypatch.setattr("os.listdir", lambda _p: ["52020"])
+    monkeypatch.setattr(camera, "_read_ppid", lambda _pid: 1)
     with patch("builtins.open", mock_open(read_data=cmdline)):
         assert 52020 in camera._scan_bambu_ffmpeg_pids()
+
+
+def test_scan_matches_an_orphaned_rtsp_ffmpeg(monkeypatch):
+    cmdline = b"ffmpeg\x00-i\x00rtsp://bblp:code@127.0.0.1:4000/streaming/live/1\x00-\x00"
+    monkeypatch.setattr("os.listdir", lambda _p: ["52022"])
+    monkeypatch.setattr(camera, "_read_ppid", lambda _pid: 1)
+    with patch("builtins.open", mock_open(read_data=cmdline)):
+        assert camera._scan_bambu_ffmpeg_pids() == [52022]
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="/proc")
+def test_scan_leaves_another_processes_camera_ffmpeg_alone(tmp_path):
+    """For real, through /proc: the same command run by another program (here
+    a shell standing in for another Bambuddy) is not found; ours is."""
+    import subprocess
+
+    fake = tmp_path / "ffmpeg"
+    fake.write_text("#!/bin/sh\nsleep 30\n")
+    fake.chmod(0o755)
+    url = "rtsp://bblp:code@127.0.0.1:4000/streaming/live/1"
+    theirs = subprocess.Popen(["sh", "-c", f"'{fake}' -i '{url}' -; true"])
+    ours = subprocess.Popen([str(fake), "-i", url, "-"])
+    try:
+        deadline = time.monotonic() + 5
+        other = None
+        while other is None and time.monotonic() < deadline:
+            for pid in os.listdir("/proc"):
+                if pid.isdigit() and camera._read_ppid(int(pid)) == theirs.pid:
+                    other = int(pid)
+            time.sleep(0.05)
+        assert other is not None, "the other program's ffmpeg did not start"
+
+        found = camera._scan_bambu_ffmpeg_pids()
+
+        assert ours.pid in found
+        assert other not in found
+    finally:
+        for proc in (theirs, ours):
+            proc.kill()
+            proc.wait()
+        subprocess.run(["pkill", "-f", str(fake)], check=False)
 
 
 def test_scan_ignores_unrelated_ffmpeg(monkeypatch):
@@ -201,3 +245,101 @@ def test_scan_ignores_unrelated_ffmpeg(monkeypatch):
     monkeypatch.setattr("os.listdir", lambda _p: ["52021"])
     with patch("builtins.open", mock_open(read_data=cmdline)):
         assert camera._scan_bambu_ffmpeg_pids() == []
+
+
+# ---------------------------------------------------------------------------
+# 5. Only our own USB ffmpeg: another program's camera process is left alone
+# ---------------------------------------------------------------------------
+
+OWN_PID = 4242
+ONE_SHOT = [b"/usr/bin/ffmpeg", b"-f", b"v4l2", b"-i", b"/dev/video0", b"-frames:v", b"1", b"-f", b"image2pipe", b"-"]
+STREAM = [b"ffmpeg", b"-f", b"v4l2", b"-framerate", b"10", b"-i", b"/dev/video2", b"-f", b"mjpeg", b"-"]
+
+
+def test_our_one_shot_and_stream_commands_are_ours():
+    assert camera._is_bambuddy_ffmpeg(ONE_SHOT, OWN_PID, OWN_PID)
+    assert camera._is_bambuddy_ffmpeg(STREAM, OWN_PID, OWN_PID)
+
+
+def test_an_orphan_from_an_earlier_run_is_ours():
+    """Reparented to init once the Bambuddy that spawned it died."""
+    assert camera._is_bambuddy_ffmpeg(STREAM, 1, OWN_PID)
+
+
+def test_another_programs_usb_ffmpeg_is_not_ours():
+    """motion, an OctoPrint webcam or a recording on a bare-metal install."""
+    assert not camera._is_bambuddy_ffmpeg(STREAM, 777, OWN_PID)
+
+
+def test_a_different_v4l2_command_shape_is_not_ours():
+    recording = [b"ffmpeg", b"-f", b"v4l2", b"-input_format", b"h264", b"-i", b"/dev/video0", b"/srv/cam.mkv"]
+    assert not camera._is_bambuddy_ffmpeg(recording, OWN_PID, OWN_PID)
+
+
+RTSP = [b"ffmpeg", b"-rtsp_transport", b"tcp", b"-i", b"rtsps://bblp:code@10.0.0.5:322/streaming/live/1", b"-"]
+
+
+def test_our_bambu_rtsp_and_its_orphans_are_ours():
+    assert camera._is_bambuddy_ffmpeg(RTSP, OWN_PID, OWN_PID)
+    assert camera._is_bambuddy_ffmpeg(RTSP, 1, OWN_PID)
+
+
+def test_another_bambuddys_rtsp_is_not_ours():
+    """A second install or a test server on the same host runs the same
+    command: its cleanup killed this one's live camera every minute."""
+    assert not camera._is_bambuddy_ffmpeg(RTSP, 777, OWN_PID)
+    assert not camera._is_bambuddy_ffmpeg(RTSP, None, OWN_PID)
+
+
+def test_unknown_parent_is_not_ours_for_usb():
+    assert not camera._is_bambuddy_ffmpeg(STREAM, None, OWN_PID)
+
+
+# ---------------------------------------------------------------------------
+# 6. A stuck ffmpeg can never hang the stream's own cleanup (#2580)
+# ---------------------------------------------------------------------------
+
+
+class _WedgedProc:
+    """ffmpeg blocked in write() on a full pipe: SIGTERM is ignored, and after
+    SIGKILL wait() never returns while its pipes are unread."""
+
+    def __init__(self) -> None:
+        self.pid = 52999
+        self.returncode = None
+        self.stdout = asyncio.StreamReader()
+        self.stdout.feed_data(b"\xff\xd8" + b"x" * 200 + b"\xff\xd9")
+        self.stderr = asyncio.StreamReader()
+        self.killed = False
+
+    def terminate(self) -> None:
+        pass
+
+    def kill(self) -> None:
+        self.killed = True
+        self.returncode = -9
+
+    async def wait(self) -> int:
+        await asyncio.Event().wait()
+        return -9  # pragma: no cover
+
+
+@pytest.mark.asyncio
+async def test_a_wedged_usb_ffmpeg_does_not_hang_the_stream_cleanup(monkeypatch):
+    """The shared upstream's cleanup runs in the fan-out broadcaster, which stop,
+    a camera change, printer delete and shutdown all wait on."""
+    from backend.app.services import external_camera
+
+    monkeypatch.setattr(camera, "_FFMPEG_TERM_TIMEOUT", 0.05)
+    monkeypatch.setattr(camera, "_FFMPEG_KILL_TIMEOUT", 0.05)
+    proc = _WedgedProc()
+    monkeypatch.setattr(external_camera, "get_ffmpeg_path", lambda: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(external_camera, "_safe_usb_device_path", lambda _d: "/dev/video0")
+    monkeypatch.setattr("asyncio.create_subprocess_exec", AsyncMock(return_value=proc))
+
+    stream = external_camera._stream_usb("/dev/video0", 5)
+    assert await asyncio.wait_for(anext(stream), 2)
+
+    await asyncio.wait_for(stream.aclose(), 2)
+
+    assert proc.killed

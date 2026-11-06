@@ -38,7 +38,8 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
   });
 
   const purgeMutation = useMutation({
-    mutationFn: () => api.executeArchivePurge(days, purgeStats),
+    // The age the shown preview was made for, never one still being typed.
+    mutationFn: () => api.executeArchivePurge(debouncedDays, purgeStats),
     onSuccess: (res) => {
       showToast(t('archivePurge.toast.success', { count: res.deleted }), 'success');
       queryClient.invalidateQueries({ queryKey: ['archives'] });
@@ -59,7 +60,8 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
   const preview = previewQuery.data;
   const count = preview?.count ?? 0;
   const totalBytes = preview?.total_bytes ?? 0;
-  const canConfirm = count > 0 && !purgeMutation.isPending;
+  // Only once the preview matches the field: the button shows its count.
+  const canConfirm = count > 0 && days === debouncedDays && !previewQuery.isFetching && !purgeMutation.isPending;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

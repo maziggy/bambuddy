@@ -2,12 +2,10 @@ import { describe, it, expect } from 'vitest';
 import type { NozzleRackSlot } from '../../api/client';
 import type { RackGroupInfo } from '../../components/PrintModal/types';
 import {
-  RACK_POSITIONS,
   autoAssignRackPositions,
   isRackSlotEligible,
   rackByPosition,
   rackOptionsForGroup,
-  rackPositionToNozzleId,
 } from '../../utils/nozzleRack';
 
 /**
@@ -45,16 +43,6 @@ const group = (over: Partial<RackGroupInfo> = {}): RackGroupInfo => ({
 });
 
 const t = (key: string) => key;
-
-describe('rack position numbering', () => {
-  it('maps position n to physical nozzle id 15 + n', () => {
-    expect(RACK_POSITIONS.map(rackPositionToNozzleId)).toEqual([16, 17, 18, 19, 20, 21]);
-  });
-
-  it.each([0, -1, 7, 1.5])('rejects %s as a position', (position) => {
-    expect(rackPositionToNozzleId(position)).toBeNull();
-  });
-});
 
 describe('reading the live rack', () => {
   it('recovers the mounted nozzle from the lone gap', () => {

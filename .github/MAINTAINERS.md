@@ -38,6 +38,7 @@ Enable these rules:
 - [x] Require branches to be up to date before merging
 - Add these status checks (they appear after CI runs once):
   - `Backend Lint`
+  - `Backend Type Check`
   - `Backend Tests`
   - `Frontend Lint`
   - `Frontend Type Check`
@@ -64,6 +65,7 @@ The CI workflow (`.github/workflows/ci.yml`) runs on:
 | Job | Purpose | Required for PR |
 |-----|---------|-----------------|
 | `backend-lint` | Ruff linting + format check | Yes |
+| `backend-typecheck` | basedpyright against the baseline (pinned env, `requirements-typecheck.lock`) | Yes |
 | `backend-tests` | Unit tests | Yes |
 | `frontend-lint` | ESLint | Yes |
 | `frontend-typecheck` | TypeScript compilation | Yes |

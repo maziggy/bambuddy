@@ -27,6 +27,7 @@ import importlib
 import pkgutil
 import warnings
 
+import pytest
 from sqlalchemy import create_engine, inspect
 
 from backend.app.core.database import Base
@@ -69,6 +70,7 @@ def test_the_tables_that_used_to_cycle_sort_parents_first():
     )
 
 
+@pytest.mark.sqlite_only  # SQLite table rebuild
 def test_the_altered_constraint_still_exists_on_sqlite():
     """use_alter asks for ALTER TABLE ADD CONSTRAINT, and SQLite has no such
     statement. It inlines the key into CREATE TABLE instead -- but if that ever

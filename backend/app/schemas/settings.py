@@ -1,5 +1,7 @@
 import json
 import re
+from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
@@ -64,6 +66,19 @@ class AppSettings(BaseModel):
         default="total",
         description="Energy display mode on stats: 'print' shows sum of per-print energy, 'total' shows lifetime plug consumption",
     )
+    # A plain string on the way out, like energy_tracking_mode: a stray value
+    # (a restored backup) reads as "fixed" everywhere instead of failing the
+    # whole settings response. Writes are checked in AppSettingsUpdate.
+    energy_price_source: str = Field(
+        default="fixed",
+        description=(
+            "Where the electricity price comes from: 'fixed' uses energy_cost_per_kwh, "
+            "'homeassistant' reads energy_price_ha_entity hourly and at print start and end (#1251)"
+        ),
+    )
+    energy_price_ha_entity: str = Field(
+        default="", description="Home Assistant sensor holding the electricity price per kWh"
+    )
 
     # Spoolman integration
     spoolman_enabled: bool = Field(default=False, description="Enable Spoolman integration for filament tracking")
@@ -110,6 +125,11 @@ class AppSettings(BaseModel):
     # Bed cooled notification threshold
     bed_cooled_threshold: float = Field(
         default=35.0, description="Bed temperature threshold for cooled notification (°C)"
+    )
+
+    # Heads-up before a pause the slicer put into the print (#2984)
+    pause_warning_minutes: int = Field(
+        default=5, description="Minutes before a pause to send the pause-coming-up notification"
     )
 
     # AMS threshold settings for humidity and temperature coloring
@@ -218,12 +238,6 @@ class AppSettings(BaseModel):
     )
 
     # Virtual Printer
-    virtual_printer_enabled: bool = Field(default=False, description="Enable virtual printer for slicer uploads")
-    virtual_printer_access_code: str = Field(default="", description="Access code for virtual printer authentication")
-    virtual_printer_mode: str = Field(
-        default="archive",
-        description="Mode: 'archive' (archive now), 'review' (pending review), 'queue' (add to print queue), or 'proxy' (relay to real printer)",
-    )
     virtual_printer_archive_name_source: str = Field(
         default="metadata",
         description="Source for the archive's display name on virtual-printer uploads: 'metadata' uses the 3MF's embedded print_name (default, matches Bambu's behavior), 'filename' uses the filename Bambu Studio sent over FTP (lets users rename via the slicer's 'send to printer' dialog).",
@@ -282,13 +296,21 @@ class AppSettings(BaseModel):
     )
 
     # File Manager / Library settings
-    library_archive_mode: str = Field(
-        default="ask",
-        description="When printing from File Manager, create archive entry: 'always', 'never', or 'ask'",
-    )
     library_disk_warning_gb: float = Field(
         default=5.0,
         description="Show warning when free disk space falls below this threshold (GB)",
+    )
+
+    # Chamber light while the camera is in use (#1655): "off", "all" printers,
+    # or the "selected" printers (Printer.camera_light_auto). A stored value
+    # outside these reads as off in the service, so it is a plain str here.
+    camera_light_mode: str = Field(
+        default="off",
+        description="Turn the chamber light on while the camera is in use: 'off', 'all' or 'selected' printers",
+    )
+    camera_light_delay: float = Field(
+        default=2.0,
+        description="Seconds an automatic snapshot waits after the chamber light was turned on",
     )
 
     # Camera view settings
@@ -619,6 +641,9 @@ class AppSettings(BaseModel):
         default="",
         description="Self-hosted Obico ML API base URL (e.g., http://192.168.1.10:3333)",
     )
+    bambuddy_internal_url: str = Field(
+        default="", description="Bambuddy Internal URL for Obico; empty uses External URL"
+    )
     obico_ml_token: str = Field(
         default="",
         description=(
@@ -643,6 +668,29 @@ class AppSettings(BaseModel):
     obico_enabled_printers: str = Field(
         default="",
         description="JSON array of printer IDs to monitor (empty = all connected printers)",
+    )
+
+    # OctoEverywhere AI failure detection
+    octoeverywhere_enabled: bool = Field(default=False, description="Enable OctoEverywhere AI print failure detection")
+    octoeverywhere_api_key: str = Field(default="", description="OctoEverywhere Gadget API key")
+    octoeverywhere_api_key_configured: bool = Field(
+        default=False, description="Whether an OctoEverywhere Gadget API key is saved"
+    )
+    octoeverywhere_poll_interval: int = Field(
+        default=20, ge=5, le=30, description="Seconds between inspections, subject to the server's minimum interval"
+    )
+    octoeverywhere_confidence: str = Field(
+        default="medium",
+        description=(
+            "Confidence OctoEverywhere needs before suggesting a warning or pause: lowest, low, medium, high, "
+            "or highest (API levels 1-5). Lower reports sooner with more false positives."
+        ),
+    )
+    octoeverywhere_action: str = Field(
+        default="notify", description="Action on failure: notify, pause, or pause_and_off"
+    )
+    octoeverywhere_enabled_printers: str = Field(
+        default="", description="JSON array of printer IDs to monitor (empty = all connected printers)"
     )
 
     # Inventory forecasting
@@ -679,6 +727,23 @@ class AppSettings(BaseModel):
         description="JSON object with 'order' key containing array of sidebar item IDs (empty = no default)",
     )
 
+    # The settings page sends every field back on each save, and the update
+    # schema accepts only these values. A stored value outside them would make
+    # every later save fail, so it is read back as what the service treats it as.
+    @field_validator("camera_light_mode", mode="before")
+    @classmethod
+    def _known_camera_light_mode(cls, value):
+        return value if value in ("off", "all", "selected") else "off"
+
+    @field_validator("camera_light_delay", mode="before")
+    @classmethod
+    def _camera_light_delay_in_range(cls, value):
+        try:
+            seconds = float(value)
+        except (TypeError, ValueError):
+            return 2.0
+        return min(max(0.0, seconds), 5.0)
+
 
 class AppSettingsUpdate(BaseModel):
     """Schema for updating settings (all fields optional)."""
@@ -691,6 +756,8 @@ class AppSettingsUpdate(BaseModel):
     currency: str | None = None
     energy_cost_per_kwh: float | None = None
     energy_tracking_mode: str | None = None
+    energy_price_source: Literal["fixed", "homeassistant"] | None = None
+    energy_price_ha_entity: str | None = Field(default=None, max_length=255)
     spoolman_enabled: bool | None = None
     spoolman_url: str | None = None
     spoolman_sync_mode: str | None = None
@@ -708,13 +775,15 @@ class AppSettingsUpdate(BaseModel):
     language: str | None = None
     notification_language: str | None = None
     bed_cooled_threshold: float | None = None
+    pause_warning_minutes: int | None = Field(default=None, ge=1, le=120)
     ams_humidity_good: int | None = None
     ams_humidity_fair: int | None = None
     ams_temp_good: float | None = None
     ams_temp_fair: float | None = None
     ams_temp_alarm: float | None = None
-    ams_history_retention_days: int | None = None
-    printer_sensor_history_retention_days: int | None = None
+    # At least a day: 0 or less put the cleanup cutoff at now and deleted all history daily.
+    ams_history_retention_days: int | None = Field(default=None, ge=1)
+    printer_sensor_history_retention_days: int | None = Field(default=None, ge=1)
     queue_drying_enabled: bool | None = None
     queue_drying_block: bool | None = None
     ambient_drying_enabled: bool | None = None
@@ -727,9 +796,6 @@ class AppSettingsUpdate(BaseModel):
     time_format: str | None = None
     default_printer_id: int | None = None
     pipeline_max_copies: int | None = None
-    virtual_printer_enabled: bool | None = None
-    virtual_printer_access_code: str | None = None
-    virtual_printer_mode: str | None = None
     virtual_printer_archive_name_source: str | None = None
     dark_style: str | None = None
     dark_background: str | None = None
@@ -753,9 +819,12 @@ class AppSettingsUpdate(BaseModel):
     ha_enabled: bool | None = None
     ha_url: str | None = None
     ha_token: str | None = None
-    library_archive_mode: str | None = None
     library_disk_warning_gb: float | None = None
     camera_view_mode: str | None = None
+    camera_light_mode: Literal["off", "all", "selected"] | None = None
+    # Capped by camera_light.MAX_DELAY_SECONDS: the finish photo's budget
+    # has no more to spare.
+    camera_light_delay: float | None = Field(default=None, ge=0, le=5)
     preferred_slicer: str | None = None
     open_in_slicer: str | None = None
     slice_engine: str | None = None
@@ -815,11 +884,20 @@ class AppSettingsUpdate(BaseModel):
     ldap_default_group: str | None = None
     obico_enabled: bool | None = None
     obico_ml_url: str | None = None
+    bambuddy_internal_url: str | None = None
     obico_ml_token: str | None = None
     obico_sensitivity: str | None = None
     obico_action: str | None = None
     obico_poll_interval: int | None = Field(default=None, ge=5, le=120)
     obico_enabled_printers: str | None = None
+    octoeverywhere_enabled: bool | None = None
+    octoeverywhere_api_key: str | None = None
+    # Unset fields default to None; the settings route rejects an explicit null
+    # for numeric settings before it can be stored.
+    octoeverywhere_poll_interval: int | None = Field(default=None, ge=5, le=30)
+    octoeverywhere_confidence: str | None = None
+    octoeverywhere_action: str | None = None
+    octoeverywhere_enabled_printers: str | None = None
     default_sidebar_order: str | None = None
     forecast_global_lead_time_days: int | None = Field(default=None, ge=0)
     location_sensor_poll_interval: int | None = Field(default=None, ge=60, le=3600)
@@ -926,18 +1004,56 @@ class AppSettingsUpdate(BaseModel):
             raise ValueError("ldap_group_mapping must be a JSON object mapping LDAP group DNs to BamBuddy group names")
         return v
 
-    @field_validator("obico_enabled_printers")
+    @field_validator("octoeverywhere_api_key")
     @classmethod
-    def validate_obico_enabled_printers(cls, v: str | None) -> str | None:
+    def validate_octoeverywhere_api_key(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if any(ord(char) < 33 or ord(char) > 126 for char in v):
+            raise ValueError("octoeverywhere_api_key must contain only printable ASCII characters without spaces")
+        return v
+
+    @field_validator("obico_enabled_printers", "octoeverywhere_enabled_printers")
+    @classmethod
+    def validate_obico_enabled_printers(cls, v: str | None, info: ValidationInfo) -> str | None:
         if v is None or v == "":
             return v
         try:
             parsed = json.loads(v)
         except json.JSONDecodeError:
-            raise ValueError("obico_enabled_printers must be valid JSON or empty")
-        if not isinstance(parsed, list) or not all(isinstance(item, int) for item in parsed):
-            raise ValueError("obico_enabled_printers must be a JSON array of printer IDs (integers)")
+            raise ValueError(f"{info.field_name} must be valid JSON or empty")
+        if not isinstance(parsed, list) or not all(type(item) is int and item > 0 for item in parsed):
+            raise ValueError(f"{info.field_name} must be a JSON array of printer IDs (positive integers)")
         return v
+
+    @field_validator("bambuddy_internal_url")
+    @classmethod
+    def validate_bambuddy_internal_url(cls, v: str | None) -> str:
+        """Require an absolute http(s) URL, or empty to fall back to External URL.
+
+        Obico's ML server fetches snapshots from this address, so a value
+        without a scheme ("bambuddy:8000") would only fail later, mid-print,
+        as a snapshot error. Rejecting it here surfaces the mistake on save.
+
+        An explicit null clears the field. The settings updater stores None
+        as the literal "None", which would read back as an address.
+        """
+        candidate = (v or "").strip()
+        if not candidate:
+            return ""
+        error = "bambuddy_internal_url must be a full http:// or https:// address"
+        if any(ch.isspace() for ch in candidate):
+            raise ValueError(error)
+        try:
+            parsed = urlparse(candidate)
+            hostname = parsed.hostname
+            _ = parsed.port  # raises on a port outside 0-65535
+        except ValueError:
+            raise ValueError(error) from None
+        if parsed.scheme not in ("http", "https") or not hostname:
+            raise ValueError(error)
+        return candidate
 
     @staticmethod
     def _validate_preset_triple(v: str | None, field_name: str, lo: int, hi: int) -> str | None:
@@ -978,20 +1094,29 @@ class AppSettingsUpdate(BaseModel):
 
     @field_validator("obico_sensitivity")
     @classmethod
-    def validate_obico_sensitivity(cls, v: str | None) -> str | None:
+    def validate_obico_sensitivity(cls, v: str | None, info: ValidationInfo) -> str | None:
         if v is None:
             return v
         if v not in ("low", "medium", "high"):
-            raise ValueError("obico_sensitivity must be 'low', 'medium', or 'high'")
+            raise ValueError(f"{info.field_name} must be 'low', 'medium', or 'high'")
         return v
 
-    @field_validator("obico_action")
+    @field_validator("octoeverywhere_confidence")
     @classmethod
-    def validate_obico_action(cls, v: str | None) -> str | None:
+    def validate_octoeverywhere_confidence(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v not in ("lowest", "low", "medium", "high", "highest"):
+            raise ValueError("octoeverywhere_confidence must be 'lowest', 'low', 'medium', 'high', or 'highest'")
+        return v
+
+    @field_validator("obico_action", "octoeverywhere_action")
+    @classmethod
+    def validate_obico_action(cls, v: str | None, info: ValidationInfo) -> str | None:
         if v is None:
             return v
         if v not in ("notify", "pause", "pause_and_off"):
-            raise ValueError("obico_action must be 'notify', 'pause', or 'pause_and_off'")
+            raise ValueError(f"{info.field_name} must be 'notify', 'pause', or 'pause_and_off'")
         return v
 
     @field_validator("default_sidebar_order")
@@ -1017,3 +1142,23 @@ class AppSettingsUpdate(BaseModel):
         if not isinstance(order, list) or not all(isinstance(item, str) for item in order):
             raise ValueError("sidebar order must be an array of strings")
         return v
+
+
+# Settings that decide who can sign in or where credential material goes: a
+# directory server that hands out groups, local sign-in, the session length,
+# the address password-reset and welcome links point at, the metrics
+# endpoint's token, and the folder full backups (every password hash) are
+# written to. Admin-only to change (routes/settings.update_settings, and a
+# GitHub restore by a non-admin skips them); the settings permissions keep
+# everything else.
+ADMIN_ONLY_SETTING_KEYS = frozenset(
+    {key for key in AppSettingsUpdate.model_fields if key.startswith("ldap_")}
+    | {
+        "local_login_enabled",
+        "session_max_hours",
+        "external_url",
+        "prometheus_enabled",
+        "prometheus_token",
+        "local_backup_path",
+    }
+)

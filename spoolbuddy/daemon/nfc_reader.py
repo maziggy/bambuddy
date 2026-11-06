@@ -205,12 +205,21 @@ class NFCReader:
 
                 # Try reading Bambu tag data
                 tray_uuid = None
+                raw_blocks = None
                 tag_type = "mifare_classic" if sak in (0x08, 0x18) else "ntag" if sak in (0x00, 0x04) else "unknown"
 
                 if sak in (0x08, 0x18):
-                    blocks = self._nfc.read_bambu_tag(uid_bytes)
+                    # A reader fault mid-read (a BUSY timeout, an SPI error) must
+                    # not escape poll() and stop the loop: report the tag without
+                    # its tray UUID, so matching falls back to the UID (#3377)
+                    try:
+                        blocks = self._nfc.read_bambu_tag(uid_bytes)
+                    except Exception as e:
+                        logger.warning("Bambu tag read failed for %s: %s", uid_hex, e)
+                        blocks = None
                     if blocks:
                         tray_uuid = _extract_tray_uuid(blocks)
+                        raw_blocks = _raw_blocks(blocks)
 
                 logger.info("Tag detected: %s (SAK=0x%02X, type=%s)", uid_hex, sak, tag_type)
                 return "tag_detected", {
@@ -218,6 +227,7 @@ class NFCReader:
                     "sak": sak,
                     "tag_type": tag_type,
                     "tray_uuid": tray_uuid,
+                    "raw_blocks": raw_blocks,
                 }
 
             # Tag still present — no event
@@ -239,27 +249,22 @@ class NFCReader:
 
 
 def _extract_tray_uuid(blocks: dict[int, bytes]) -> str | None:
-    """Extract tray_uuid from Bambu MIFARE Classic data blocks."""
-    # Block 4-5 contain the tray UUID as 32 ASCII hex chars across 32 bytes.
-    if 4 in blocks and 5 in blocks:
-        raw = blocks[4] + blocks[5]
-        try:
-            # Preferred path: decode full ASCII payload, keep only hex chars.
-            ascii_candidate = raw.decode("ascii", errors="ignore")
-            hex_chars = "".join(ch for ch in ascii_candidate if ch in "0123456789abcdefABCDEF")
-            if len(hex_chars) >= 32:
-                uuid_str = hex_chars[:32].upper()
-                if uuid_str != "0" * 32:
-                    return uuid_str
-        except Exception:
-            pass
+    """Extract tray_uuid from Bambu MIFARE Classic data blocks.
 
-        try:
-            # Fallback for partially decoded payloads: use first 16 raw bytes as hex.
-            # This preserves compatibility with older decoding behavior.
-            uuid_str = raw[:16].hex().upper()
-            if uuid_str and uuid_str != "0" * 32:
-                return uuid_str
-        except Exception:
-            pass
-    return None
+    The tray UUID is the 16 raw bytes of block 9, as 32 uppercase hex chars.
+    Both tags of a spool carry the same value, and it is what the AMS reports
+    as tray_uuid. Blocks 4-5 hold the filament type ("PLA Matte"), not the UUID:
+    reading them made every spool of one type share an id (#984).
+    """
+    data = blocks.get(9)
+    if not data or len(data) < 16:
+        return None
+    uuid_str = data[:16].hex().upper()
+    if uuid_str == "0" * 32:
+        return None
+    return uuid_str
+
+
+def _raw_blocks(blocks: dict[int, bytes]) -> dict[str, str]:
+    """Bambu tag blocks as {"block number": "32 uppercase hex chars"}, for the backend to decode (#2685)."""
+    return {str(block): data.hex().upper() for block, data in sorted(blocks.items())}

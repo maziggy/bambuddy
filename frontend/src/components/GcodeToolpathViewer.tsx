@@ -449,7 +449,14 @@ export function GcodeToolpathViewer({
   }
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative overflow-hidden ${className}`}>
+      {/*
+        `overflow-hidden` (#3371): `setSize` writes the canvas width inline and
+        only runs from the observer, so for one round the canvas keeps the old
+        width. An absolute box that overflows still counts towards the scroll
+        area of `<main>`, so on a page exactly its height the 15px of a scrollbar
+        toggled on and off forever and nothing was drawn.
+      */}
       {/*
         Absolute, not `w-full h-full` (#2887). The canvas is appended here and
         this element is what the ResizeObserver watches, so its height must come

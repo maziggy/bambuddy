@@ -1,0 +1,16 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // The browser loads the service worker by URL (public/sw-register.js, which
+  // index.html includes), so no import leads to it.
+  "entry": ["public/sw.js"],
+  "ignore": [
+    // Tools run by hand (node scripts/...), not part of the app.
+    "scripts/**",
+    // Types the sibling vendor .js; TypeScript reads it for that import.
+    "src/lib/vendor/toolpathRenderer.d.ts"
+  ],
+  // Keeps browserslist's baseline data current; nothing imports it.
+  "ignoreDependencies": ["baseline-browser-mapping"],
+  // Unused exports and types are left out: most are only used in their own file.
+  "include": ["files", "dependencies", "devDependencies", "unlisted", "unresolved", "binaries"]
+}

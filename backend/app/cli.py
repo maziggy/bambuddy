@@ -53,10 +53,6 @@ async def kiosk_bootstrap(
                 f"API key {name!r} already exists (prefix={existing.key_prefix}). Re-run with --force to rotate."
             )
 
-        if existing:
-            await db.delete(existing)
-            await db.flush()
-
         full_key, key_hash, key_prefix = generate_api_key()
         row = APIKey(
             name=name,
@@ -83,6 +79,19 @@ async def kiosk_bootstrap(
             expires_at=None,
         )
         db.add(row)
+        if existing:
+            from backend.app.api.routes.api_keys import drop_api_key_tokens
+
+            # The new key is added before the old one goes, so it gets a new id:
+            # SQLite would give it the old one's, and the old (perhaps leaked)
+            # key's links and open dashboards would take its printers, all of
+            # them even if an admin had limited or disabled the old key. This
+            # runs outside the server, so those dashboards stay open with the
+            # scope they had until the server next refreshes scopes, which
+            # closes sockets whose key is gone.
+            await db.flush()
+            await drop_api_key_tokens(db, [existing.id])
+            await db.delete(existing)
 
         # Mark first-run setup as completed so the kiosk URL loads directly
         # instead of being force-redirected to /setup by AuthContext. Without

@@ -8,6 +8,20 @@ import { render } from '../utils';
 import { SystemInfoPage } from '../../pages/SystemInfoPage';
 import { api } from '../../api/client';
 
+// Every permission unless a test takes one away.
+const permissions = vi.hoisted(() => ({ denied: [] as string[] }));
+
+vi.mock('../../contexts/AuthContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../contexts/AuthContext')>();
+  return {
+    ...actual,
+    useAuth: () => ({
+      ...actual.useAuth(),
+      hasPermission: (permission: string) => !permissions.denied.includes(permission),
+    }),
+  };
+});
+
 // Mock the API client
 vi.mock('../../api/client', () => ({
   api: {
@@ -96,6 +110,19 @@ const mockSystemInfo = {
 describe('SystemInfoPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    permissions.denied = [];
+  });
+
+  it('shows the support tools only to users who may change settings', async () => {
+    (api.getSystemInfo as ReturnType<typeof vi.fn>).mockResolvedValue(mockSystemInfo);
+    permissions.denied = ['settings:update'];
+
+    render(<SystemInfoPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('X1C-01')).toBeInTheDocument();
+    });
+    expect(screen.queryByText("What's in the support bundle?")).not.toBeInTheDocument();
   });
 
   it('renders loading state initially', async () => {

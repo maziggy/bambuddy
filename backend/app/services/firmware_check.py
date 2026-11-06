@@ -13,6 +13,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 
@@ -158,6 +159,10 @@ class FirmwareCheckService:
                 "Accept-Language": "en-US,en;q=0.9",
             },
         )
+        # Bambu Lab hosts known to be unreachable (no internet, a blocked
+        # host): each outage is logged once, not on every fetch of every check.
+        # Per host, as the wiki and bambulab.com can fail independently.
+        self._unreachable_hosts: set[str] = set()
         # curl_cffi session for bambulab.com (lazily initialised on first use).
         # See module-level note on why this is needed.
         self._bambulab_client: object | None = None
@@ -192,6 +197,27 @@ class FirmwareCheckService:
             )
         return self._bambulab_client
 
+    def _note_unreachable(self, url: str, error: Exception) -> None:
+        """A fetch failed at the transport: log the host's outage once, then quietly."""
+        host = urlparse(url).hostname or url
+        if host in self._unreachable_hosts:
+            logger.debug("%s still unreachable (%s): %s", host, url, error)
+            return
+        self._unreachable_hosts.add(host)
+        logger.warning(
+            "%s unreachable (%s: %s); firmware checks keep retrying, further failures "
+            "are logged at debug level until it is reachable again",
+            host,
+            url,
+            error,
+        )
+
+    def _note_reachable(self, url: str) -> None:
+        host = urlparse(url).hostname or url
+        if host in self._unreachable_hosts:
+            self._unreachable_hosts.discard(host)
+            logger.info("%s reachable again", host)
+
     async def _bambulab_get(self, url: str) -> tuple[int, str]:
         """GET against bambulab.com. Returns (status_code, body_text).
 
@@ -203,16 +229,18 @@ class FirmwareCheckService:
         if client is not None:
             try:
                 response = await client.get(url)  # type: ignore[attr-defined]
-                return response.status_code, response.text
             except Exception as e:
-                logger.error("curl_cffi error fetching %s: %s", url, e)
+                self._note_unreachable(url, e)
                 return 0, ""
+            self._note_reachable(url)
+            return response.status_code, response.text
         try:
             response = await self._client.get(url)
-            return response.status_code, response.text
         except Exception as e:
-            logger.error("httpx error fetching %s: %s", url, e)
+            self._note_unreachable(url, e)
             return 0, ""
+        self._note_reachable(url)
+        return response.status_code, response.text
 
     def _build_id_cache_path(self) -> Path:
         cache_dir = _data_dir / "firmware"
@@ -328,9 +356,18 @@ class FirmwareCheckService:
         if not wiki_path:
             return []
 
+        url = f"{BAMBU_WIKI_BASE}{wiki_path}"
         try:
-            url = f"{BAMBU_WIKI_BASE}{wiki_path}"
             response = await self._client.get(url, follow_redirects=True)
+        except httpx.TransportError as e:
+            self._note_unreachable(url, e)
+            return []
+        except Exception as e:
+            # Reached, but no usable answer (a redirect loop, a broken encoding).
+            logger.debug("Error fetching wiki firmware list for %s: %s", api_key, e)
+            return []
+        self._note_reachable(url)
+        try:
             if response.status_code != 200:
                 return []
 
@@ -454,7 +491,9 @@ class FirmwareCheckService:
         if download_info:
             return download_info
 
-        logger.warning("Could not fetch firmware info for %s from wiki or download page", api_key)
+        # Already reported once as an outage when the sites are unreachable.
+        log = logger.debug if self._unreachable_hosts else logger.warning
+        log("Could not fetch firmware info for %s from wiki or download page", api_key)
         return None
 
     async def get_latest_version(self, model: str) -> FirmwareVersion | None:

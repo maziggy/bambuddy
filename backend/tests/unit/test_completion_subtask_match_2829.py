@@ -38,6 +38,36 @@ class TestTheReportedCase:
         assert _subtask_names_match(expected, "H2D_Carbon_Filter_(V2)_Body_&_Solid_Lid")
 
 
+class TestASpaceAtEitherEnd:
+    """#3241: a file saved with a space before its extension. The printer turns
+    that space into an underscore like every other, so stripping whitespace
+    before the substitution left the underscore on the echo alone."""
+
+    def test_a_trailing_space_matches_its_trailing_underscore(self):
+        """Queue item 1460, verbatim from the warning it logged."""
+        expected = _subtask_name_from_filename("Unterteil H2S mit Logo V24 .gcode.3mf")
+
+        assert _subtask_names_match(expected, "Unterteil_H2S_mit_Logo_V24_")
+
+    def test_a_leading_space_matches_its_leading_underscore(self):
+        assert _subtask_names_match(" Deckel", "_Deckel")
+
+    def test_a_different_print_still_does_not_match(self):
+        assert not _subtask_names_match("Unterteil H2S mit Logo V24 ", "Unterteil_H2S_mit_Logo_V25_")
+
+    def test_a_truncated_echo_of_it_still_matches(self):
+        assert _subtask_names_match("Unterteil H2S mit Logo V24 ", "Unterteil_H2S_mit...")
+
+    def test_a_cut_right_after_the_last_underscore_still_matches(self):
+        """The full side loses its edge underscore; the cut must too."""
+        assert _subtask_names_match("Part_", "Part_...")
+        assert _subtask_names_match("Unterteil H2S mit Logo V24 ", "Unterteil_H2S_mit_Logo_V24_...")
+
+    def test_a_cut_with_nothing_before_the_marker_matches_nothing(self):
+        assert not _subtask_names_match("Benchy", "_...")
+        assert not _subtask_names_match("Benchy", "...")
+
+
 class TestTruncation:
     """The printer cuts long names and marks the cut with '...'.
 
@@ -101,6 +131,9 @@ class TestNormalisation:
             ("A_B", "a_b"),
             (" A  B ", "a__b"),
             ("Mundstück", "mundstück"),
+            ("V24 ", "v24"),
+            ("V24_", "v24"),
+            (" V24", "v24"),
         ],
     )
     def test_canonical_form(self, raw, expected):

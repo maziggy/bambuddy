@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
+
 # ============ Folder Schemas ============
 
 
@@ -26,13 +28,18 @@ class ExternalFolderCreate(BaseModel):
     parent_id: int | None = None
 
 
-class FolderUpdate(BaseModel):
+class FolderUpdate(IgnoresNullForRequiredColumns):
     """Schema for updating a folder."""
+
+    __orm_table__ = "library_folders"
 
     name: str | None = Field(None, min_length=1, max_length=255)
     parent_id: int | None = None
     project_id: int | None = None  # 0 to unlink
     archive_id: int | None = None  # 0 to unlink
+    # Visible to (and writable by) every library:read_own user (#3201).
+    # Only library:update_all may change it.
+    shared: bool | None = None
 
 
 class FolderResponse(BaseModel):
@@ -56,6 +63,13 @@ class FolderResponse(BaseModel):
     # tracks rename/move events. Recursion across subfolders is intentionally
     # left out to keep the route a single GROUP BY rather than a recursive CTE.
     latest_activity_at: datetime | None = None
+    # Ownership (#3201). ``can_*`` are for the user asking: what the File
+    # Manager may offer on this folder. The routes enforce the same rules.
+    created_by_id: int | None = None
+    shared: bool = False
+    can_write: bool = True
+    can_rename: bool = True
+    can_delete: bool = True
     created_at: datetime
     updated_at: datetime
 
@@ -92,6 +106,13 @@ class FolderTreeItem(BaseModel):
     file_count: int = 0
     # See FolderResponse.latest_activity_at — #1770 folder sort source.
     latest_activity_at: datetime | None = None
+    # Ownership (#3201). ``can_*`` are for the user asking: what the File
+    # Manager may offer on this folder. The routes enforce the same rules.
+    created_by_id: int | None = None
+    shared: bool = False
+    can_write: bool = True
+    can_rename: bool = True
+    can_delete: bool = True
     children: list["FolderTreeItem"] = []
 
     class Config:
@@ -101,22 +122,10 @@ class FolderTreeItem(BaseModel):
 # ============ File Schemas ============
 
 
-class FileCreate(BaseModel):
-    """Schema for creating a file entry (internal use after upload)."""
-
-    filename: str
-    file_path: str
-    file_type: str
-    file_size: int
-    file_hash: str | None = None
-    thumbnail_path: str | None = None
-    metadata: dict | None = None
-    folder_id: int | None = None
-    project_id: int | None = None
-
-
-class FileUpdate(BaseModel):
+class FileUpdate(IgnoresNullForRequiredColumns):
     """Schema for updating a file."""
+
+    __orm_table__ = "library_files"
 
     filename: str | None = Field(None, min_length=1, max_length=255)
     folder_id: int | None = None
@@ -278,8 +287,10 @@ class TagCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
 
 
-class TagUpdate(BaseModel):
+class TagUpdate(IgnoresNullForRequiredColumns):
     """Rename a tag. ``name`` is required — there's nothing else to update."""
+
+    __orm_table__ = "library_tags"
 
     name: str = Field(..., min_length=1, max_length=64)
 
@@ -495,12 +506,14 @@ class VariantGroupCreate(BaseModel):
     name: str | None = Field(None, max_length=255)
 
 
-class VariantGroupUpdate(BaseModel):
+class VariantGroupUpdate(IgnoresNullForRequiredColumns):
     """Rename a group and/or re-order its members.
 
     ``member_file_ids`` must list exactly the group's current members; a partial
     list is rejected rather than guessing where the omitted ones belong.
     """
+
+    __orm_table__ = "file_variant_groups"
 
     name: str | None = Field(None, max_length=255)
     member_file_ids: list[int] | None = None

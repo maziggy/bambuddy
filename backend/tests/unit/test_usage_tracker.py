@@ -504,8 +504,8 @@ class TestTrackFrom3mf:
         )
 
         filament_usage = [{"slot_id": 1, "used_g": 20.0, "type": "PLA", "color": ""}]
-        # Per-layer data: at layer 25, filament 0 used 5000mm
-        layer_data = {10: {0: 2000.0}, 25: {0: 5000.0}, 50: {0: 10000.0}}
+        # Per-layer data: at layer 25, filament 0 has fed 6000 of its 10000mm
+        layer_data = {10: {0: 2000.0}, 25: {0: 6000.0}, 50: {0: 10000.0}}
         filament_props = {1: {"density": 1.24, "diameter": 1.75}}
         handled_trays: set[tuple[int, int]] = set()
 
@@ -521,7 +521,7 @@ class TestTrackFrom3mf:
             ),
             patch(
                 "backend.app.utils.threemf_tools.get_cumulative_usage_at_layer",
-                return_value={0: 5000.0},
+                return_value={0: 6000.0},
             ),
             patch(
                 "backend.app.utils.threemf_tools.extract_filament_properties_from_3mf",
@@ -529,7 +529,7 @@ class TestTrackFrom3mf:
             ),
             patch(
                 "backend.app.utils.threemf_tools.mm_to_grams",
-                return_value=12.0,  # 5000mm at 1.75mm/1.24g/cm3
+                return_value=99.0,  # the G-code's own grams, not what is charged
             ),
         ):
             mock_settings.base_dir = MagicMock()
@@ -548,7 +548,8 @@ class TestTrackFrom3mf:
             )
 
         assert len(results) == 1
-        # Should use per-layer grams (12.0g), not linear scale (10.0g)
+        # The slicer's 20g times the share of the feed done by layer 25 (#3317):
+        # not the linear progress scale (10.0g), nor the G-code's grams (99.0g).
         assert results[0]["weight_used"] == 12.0
 
     @pytest.mark.asyncio
@@ -817,8 +818,9 @@ class TestTrackFrom3mf:
         assignment = _make_assignment(spool_id=10, ams_id=2, tray_id=1)
         archive = _make_archive(archive_id=50)
 
-        # db: archive, assignment, spool (no queue lookup when ams_mapping provided)
-        db = _mock_db_sequential([archive, assignment, spool])
+        # db: archive, queue item for the plate (None), assignment, spool;
+        # the given ams_mapping skips only the mapping fallback
+        db = _mock_db_sequential([archive, None, assignment, spool])
 
         printer_manager = MagicMock()
         printer_manager.get_status.return_value = SimpleNamespace(
@@ -1127,9 +1129,10 @@ class TestTrayChangeSplit:
         assign_b = _make_assignment(spool_id=20, ams_id=0, tray_id=1)
         archive = _make_archive(archive_id=200)
 
-        # No queue_item placeholder: passing ams_mapping bypasses the queue lookup
+        # The queue lookup runs once, for the plate; the given ams_mapping
+        # skips only the mapping fallback
         # at usage_tracker.py:816 (`if not slot_to_tray and archive_id`).
-        db = _mock_db_sequential([archive, assign_a, spool_a, assign_b, spool_b])
+        db = _mock_db_sequential([archive, None, assign_a, spool_a, assign_b, spool_b])
 
         # Slicer mapping says slot 1 -> tray 0; printer actually swapped to tray 1 at layer 30
         printer_manager = MagicMock()
@@ -1852,8 +1855,9 @@ class TestMqttMappingIntegration:
         assignment = _make_assignment(spool_id=1, ams_id=0, tray_id=2)
         archive = _make_archive(archive_id=10)
 
-        # db: archive, assignment, spool (no queue lookup when ams_mapping provided)
-        db = _mock_db_sequential([archive, assignment, spool])
+        # db: archive, queue item for the plate (None), assignment, spool;
+        # the given ams_mapping skips only the mapping fallback
+        db = _mock_db_sequential([archive, None, assignment, spool])
 
         printer_manager = MagicMock()
         printer_manager.get_status.return_value = SimpleNamespace(

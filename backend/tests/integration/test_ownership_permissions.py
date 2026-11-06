@@ -856,8 +856,11 @@ class TestLibraryOwnershipPermissions(TestOwnershipPermissionsSetup):
             from backend.app.models.library import LibraryFolder
 
             _counter[0] += 1
+            # Ownerless and shared: a folder from before #3201 after the
+            # upgrade backfill, or one made with auth off.
             defaults = {
                 "name": f"TestFolder_{_counter[0]}",
+                "shared": True,
             }
             defaults.update(kwargs)
 
@@ -1053,9 +1056,10 @@ class TestLibraryOwnershipPermissions(TestOwnershipPermissionsSetup):
         assert stranger.status_code == 404
 
     # ========================================================================
-    # Folder deletion (#1781): folders have no ownership tracking, so users
-    # with only library:delete_own may delete empty, non-external, non-linked
-    # folders. Everything else still requires library:delete_all.
+    # Folder deletion (#1781): a folder without an owner may be deleted with
+    # only library:delete_own when it is empty, non-external and non-linked.
+    # Everything else still requires library:delete_all. Owned folders (#3201)
+    # are covered in test_library_folder_ownership_3201.py.
     # ========================================================================
 
     @pytest.mark.asyncio

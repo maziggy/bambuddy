@@ -14,6 +14,9 @@ export default defineConfig({
     },
     setupFiles: ['./src/__tests__/setup.ts'],
     testTimeout: 10000,
+    // Console output only from failing tests (Docker, test_frontend.sh and
+    // plain runs alike); pass --silent=false to see a passing test's logs.
+    silent: 'passed-only',
     include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     exclude: ['node_modules', 'dist'],
     coverage: {

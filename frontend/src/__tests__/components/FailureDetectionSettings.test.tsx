@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { FailureDetectionSettings } from '../../components/FailureDetectionSettings';
@@ -23,6 +23,7 @@ const baseSettings = {
   include_beta_updates: false,
   obico_enabled: false,
   obico_ml_url: '',
+  bambuddy_internal_url: '',
   obico_ml_token: '',
   obico_sensitivity: 'medium',
   obico_action: 'notify',
@@ -60,6 +61,7 @@ describe('FailureDetectionSettings', () => {
     });
     expect(screen.getByText(/Obico ML API URL/i)).toBeInTheDocument();
     expect(screen.getByText(/Sensitivity/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('http://bambuddy:8000')).toBeDisabled();
   });
 
   it('test button calls the test-connection endpoint and shows success', async () => {
@@ -82,6 +84,53 @@ describe('FailureDetectionSettings', () => {
       expect(called).toBe(true);
     });
     expect(await screen.findByText(/ML API reachable/i)).toBeInTheDocument();
+  });
+
+  it.each([
+    ['', 'http://print-server:8000'],
+    ['http://print-server:8000', ''],
+  ])('auto-saves a Bambuddy Internal URL change from "%s" to "%s"', async (initial, next) => {
+    let settings = { ...baseSettings, obico_enabled: true, bambuddy_internal_url: initial };
+    let saved: Record<string, unknown> | null = null;
+    server.use(
+      http.get('/api/v1/settings/', () => HttpResponse.json(settings)),
+      http.put('/api/v1/settings/', async ({ request }) => {
+        saved = (await request.json()) as Record<string, unknown>;
+        settings = { ...settings, ...saved };
+        return HttpResponse.json(settings);
+      }),
+    );
+    render(<FailureDetectionSettings />);
+    const input = await screen.findByPlaceholderText('http://bambuddy:8000');
+    await waitFor(() => {
+      expect(input).not.toBeDisabled();
+      expect(input).toHaveValue(initial);
+    });
+    await userEvent.clear(input);
+    if (next) await userEvent.type(input, next);
+    await waitFor(() => expect(saved?.bambuddy_internal_url).toBe(next), { timeout: 3000 });
+  });
+
+  it('flags a Bambuddy Internal URL without a scheme and does not save it', async () => {
+    const puts: Record<string, unknown>[] = [];
+    server.use(
+      http.get('/api/v1/settings/', () =>
+        HttpResponse.json({ ...baseSettings, obico_enabled: true, bambuddy_internal_url: '' }),
+      ),
+      http.put('/api/v1/settings/', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        puts.push(body);
+        return HttpResponse.json({ ...baseSettings, ...body });
+      }),
+    );
+    render(<FailureDetectionSettings />);
+    const input = await screen.findByPlaceholderText('http://bambuddy:8000');
+    await waitFor(() => expect(input).not.toBeDisabled());
+    await userEvent.type(input, 'bambuddy:8000');
+    expect(await screen.findByText(/Must start with http:\/\/ or https:\/\//)).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    expect(puts.filter((body) => 'bambuddy_internal_url' in body)).toEqual([]);
   });
 
   describe('ML API token (#2733)', () => {
@@ -177,6 +226,98 @@ describe('FailureDetectionSettings', () => {
 
       await waitFor(() => expect(saved).not.toBeNull(), { timeout: 3000 });
       expect(saved!.obico_ml_token).toBe('typed');
+    });
+  });
+
+  describe('printers that are gone', () => {
+    const limited = { ...baseSettings, obico_enabled: true, obico_enabled_printers: '[1,2]' };
+    const printerOne = [{ id: 1, name: 'A', serial_number: 'S1', model: 'X1C', is_active: true }];
+
+    it('sends back printers this user cannot see', async () => {
+      // GET /printers lists only the caller's printers; one missing from it may
+      // just be hidden. The server drops deleted ones itself.
+      let saved: Record<string, unknown> | null = null;
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json(limited)),
+        http.get('/api/v1/printers', () => HttpResponse.json(printerOne)),
+        http.put('/api/v1/settings/', async ({ request }) => {
+          saved = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...limited, ...saved });
+        }),
+      );
+      render(<FailureDetectionSettings />);
+      const input = await screen.findByPlaceholderText(/ML_API_TOKEN/i);
+      await waitFor(() => expect(input).not.toBeDisabled());
+      await screen.findByText('A');
+      await userEvent.type(input, 'typed');
+
+      await waitFor(() => expect(saved).not.toBeNull(), { timeout: 3000 });
+      expect(saved!.obico_enabled_printers).toBe('[1,2]');
+    });
+
+    it('takes back what the server refused, so the next save goes through', async () => {
+      // Printer 5 was deleted elsewhere after this page listed it.
+      const stored = { ...limited, obico_enabled_printers: '[1]' };
+      let printerCalls = 0;
+      let saved: Record<string, unknown> | null = null;
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json(stored)),
+        http.get('/api/v1/printers', () =>
+          HttpResponse.json(
+            printerCalls++ === 0
+              ? [...printerOne, { id: 5, name: 'E', serial_number: 'S5', model: 'X1C', is_active: true }]
+              : printerOne,
+          ),
+        ),
+        http.put('/api/v1/settings/', async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>;
+          if (body.obico_enabled_printers === '[1,5]') {
+            return HttpResponse.json({ detail: 'Unknown printer: 5' }, { status: 400 });
+          }
+          saved = body;
+          return HttpResponse.json({ ...stored, ...body });
+        }),
+      );
+      render(<FailureDetectionSettings />);
+      const input = await screen.findByPlaceholderText(/ML_API_TOKEN/i);
+      await waitFor(() => expect(input).not.toBeDisabled());
+      await userEvent.click(within((await screen.findByText('E')).closest('label')!).getByRole('checkbox'));
+      expect(await screen.findByText(/Unknown printer: 5/, {}, { timeout: 3000 })).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByText('E')).not.toBeInTheDocument());
+
+      await userEvent.type(input, 'typed');
+      await waitFor(() => expect(saved).not.toBeNull(), { timeout: 3000 });
+      expect(saved!.obico_enabled_printers).toBe('[1]');
+    });
+
+    it('keeps an address being typed when the server refuses it as unfinished', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json({ ...baseSettings, obico_enabled: true })),
+        http.put('/api/v1/settings/', () =>
+          HttpResponse.json({ detail: [{ msg: 'URL must include a hostname' }] }, { status: 422 }),
+        ),
+      );
+      render(<FailureDetectionSettings />);
+      const input = await screen.findByPlaceholderText('http://192.168.1.10:3333');
+      await waitFor(() => expect(input).not.toBeDisabled());
+      await userEvent.type(input, 'http://');
+
+      expect(await screen.findByText(/Settings not saved/, {}, { timeout: 3000 })).toBeInTheDocument();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(input).toHaveValue('http://');
+    });
+
+    it('says so when the save is refused', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json(limited)),
+        http.put('/api/v1/settings/', () => HttpResponse.json({ detail: 'Unknown printer: 2' }, { status: 400 })),
+      );
+      render(<FailureDetectionSettings />);
+      const input = await screen.findByPlaceholderText(/ML_API_TOKEN/i);
+      await waitFor(() => expect(input).not.toBeDisabled());
+      await userEvent.type(input, 'typed');
+
+      expect(await screen.findByText(/Unknown printer: 2/, {}, { timeout: 3000 })).toBeInTheDocument();
     });
   });
 

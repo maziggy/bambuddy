@@ -215,7 +215,7 @@ export function ConnectedAppsSection() {
           e.preventDefault();
           if (name.trim() && redirectUri.trim()) create.mutate();
         }}
-        className="grid gap-3 md:grid-cols-[1fr_1.5fr_auto]"
+        className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto]"
       >
         <input
           type="text"

@@ -1,4 +1,4 @@
-import { Cloud, CloudOff, Cog, Loader2, RefreshCw, X } from 'lucide-react';
+import { Cloud, CloudOff, Cog, Grid2x2, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -7,6 +7,7 @@ import {
   type PresetRef,
   type PresetSource,
   type SliceJobProgress,
+  type LoadedSpoolPrinter,
   type SliceRequest,
   type SlicerCloudStatus,
   type UnifiedPreset,
@@ -17,6 +18,7 @@ import { useSliceJobTracker } from '../contexts/SliceJobTrackerContext';
 import { useToast } from '../contexts/ToastContext';
 import { useIsWideLayout } from '../hooks/useIsWideLayout';
 import { PlatePickerModal } from './PlatePickerModal';
+import { SliceSpoolPicker } from './SliceSpoolPicker';
 import SlicerSettingsPanel, { type FilamentChoice } from './SlicerSettingsPanel';
 import type { DesignOverride, PlateFilament } from '../types/plates';
 import type { SettingValue } from '../types/slicerSettings';
@@ -31,10 +33,43 @@ import {
   findPresetByName,
   pickDefault,
   pickFilamentForSlot,
+  listedRef,
   pickProcessDefault,
+  refValue,
   statesDifferentMaterial,
   type Slot,
 } from '../utils/slicePresetPicker';
+import {
+  buildFilamentNameIndex,
+  isConnectedModelPreset,
+  matchedFilamentRefs,
+  pickConnectedPrinterPreset,
+  printerProfileModel,
+  printersOfModel,
+} from '../utils/sliceLoadedSpools';
+
+// The Slice dialog's two filters (#3172), remembered per browser. Off unless
+// the user turned them on.
+const ONLY_CONNECTED_MODELS_KEY = 'bambuddy.slice.onlyConnectedModels';
+const ONLY_LOADED_SPOOLS_KEY = 'bambuddy.slice.onlyLoadedSpools';
+
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeFlag(key: string, value: boolean): void {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    // Storage blocked: the choice simply isn't remembered.
+  }
+}
+
+const NO_LOADED_PRINTERS: LoadedSpoolPrinter[] = [];
 
 export type SliceSource =
   | { kind: 'libraryFile'; id: number; filename: string }
@@ -51,7 +86,7 @@ interface SliceModalProps {
 function toRefValue(ref: PresetRef | null): string {
   // The HTML `<select>` value space is flat strings; encode source + id so
   // the same preset name can live in multiple tiers without collision.
-  return ref ? `${ref.source}:${ref.id}` : '';
+  return ref ? refValue(ref) : '';
 }
 
 function fromRefValue(raw: string): PresetRef | null {
@@ -62,6 +97,57 @@ function fromRefValue(raw: string): PresetRef | null {
   const id = raw.slice(idx + 1);
   if (source !== 'orca_cloud' && source !== 'cloud' && source !== 'local' && source !== 'standard') return null;
   return { source, id };
+}
+
+// Every preset group is listed in the order the slicer's bundled list already
+// uses (#3386): Bambu, Generic and other brands, each by name, with support
+// filaments after the real ones. The cloud tiers arrive in whatever order the
+// service returns, which reads as no order at all. Names compare without case
+// and with numbers by value, decimals included, so "0.08mm" sorts before
+// "0.2mm" and "PA6" before "PA12".
+const NAME_TEXT_ORDER = new Intl.Collator(undefined, { sensitivity: 'base' });
+const NAME_NUMBER = /(\d+(?:\.\d+)?)/;
+const SUPPORT_MATERIAL = /\b(support|pva|bvoh|hips)\b/i;
+
+// split() with a capture group puts the numbers at the odd indices.
+function compareNameParts(pa: string[], pb: string[]): number {
+  for (let i = 0; i < Math.min(pa.length, pb.length); i++) {
+    const d = i % 2 ? Number(pa[i]) - Number(pb[i]) : NAME_TEXT_ORDER.compare(pa[i], pb[i]);
+    if (d) return d;
+  }
+  return pa.length - pb.length;
+}
+
+function presetRank(name: string, slot: Slot): number {
+  const brand = /^bambu\b/i.test(name) ? 0 : /^generic\b/i.test(name) ? 1 : 2;
+  return (slot === 'filament' && SUPPORT_MATERIAL.test(name) ? 3 : 0) + brand;
+}
+
+function sortPresets(presets: UnifiedPreset[], slot: Slot): UnifiedPreset[] {
+  return presets
+    .map((p) => ({ p, rank: presetRank(p.name, slot), parts: p.name.split(NAME_NUMBER) }))
+    .sort(
+      (a, b) =>
+        a.rank - b.rank || compareNameParts(a.parts, b.parts) || NAME_TEXT_ORDER.compare(a.p.name, b.p.name),
+    )
+    .map(({ p }) => p);
+}
+
+// Every tier sorted once, for the dropdowns. The auto-picks keep the
+// listing's own order, so sorting never changes what is preselected.
+function sortListing(data: UnifiedPresetsResponse): UnifiedPresetsResponse {
+  const sortTier = (tier: UnifiedPresetsBySlot): UnifiedPresetsBySlot => ({
+    printer: sortPresets(tier.printer, 'printer'),
+    process: sortPresets(tier.process, 'process'),
+    filament: sortPresets(tier.filament, 'filament'),
+  });
+  return {
+    ...data,
+    local: sortTier(data.local),
+    orca_cloud: sortTier(data.orca_cloud),
+    cloud: sortTier(data.cloud),
+    standard: sortTier(data.standard),
+  };
 }
 
 // Inline spinner for the filament-requirements query. The backend runs a
@@ -228,6 +314,9 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
   // PETG on a plate a designer labelled PLA is a thing people do on purpose. A
   // ref rather than state: this must not itself re-trigger the pre-pick.
   const explicitFilamentSlots = useRef<Set<number>>(new Set());
+  // Same for the printer: only an auto-pick is moved to an online model when
+  // "only online printers" is on (#3172).
+  const explicitPrinter = useRef(false);
   // Per-slot colour override, plate-slot-ordered alongside `filamentPresets`.
   // `null` means "not overridden" rather than "no colour": the slot then falls
   // through to the source plate's own colour, and — when the source has none
@@ -433,6 +522,8 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
     }
   };
 
+  const sortedPresets = useMemo(() => presetsQuery.data && sortListing(presetsQuery.data), [presetsQuery.data]);
+
   // Canonical Bambu printer-model registry — drives the @BBL <code> name
   // fallback in slicerPrinterMatch for cloud / standard presets (#1325).
   // Long staleTime: the registry only changes across backend releases.
@@ -450,10 +541,85 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
   // Compatibility ground truth: the slicer's own `compatible_printers` list
   // on local-imported presets, plus the @BBL <code> name fallback for cloud
   // / standard presets via the backend Bambu printer-model registry.
+  // Plus, for printer presets saved under a name of their own, the preset
+  // each was saved from (#3250).
+  const printerParents = useMemo<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    const data = presetsQuery.data;
+    if (!data) return out;
+    for (const tier of [data.local, data.orca_cloud, data.cloud, data.standard]) {
+      for (const p of tier.printer) {
+        if (p.inherits && !Object.hasOwn(out, p.name)) out[p.name] = p.inherits;
+      }
+    }
+    return out;
+  }, [presetsQuery.data]);
   const compatIndex = useMemo<PrinterCompatibilityIndex>(
-    () => buildCompatibilityIndex(printerModelsQuery.data ?? {}),
-    [printerModelsQuery.data],
+    () => buildCompatibilityIndex(printerModelsQuery.data ?? {}, printerParents),
+    [printerModelsQuery.data, printerParents],
   );
+
+  // What the connected printers have loaded (#3172), for the two filters and
+  // the Pick screen. A caller who may not read printer status gets an error
+  // here, and the dialog then simply offers none of it.
+  const [onlyConnectedModels, setOnlyConnectedModels] = useState(() => readFlag(ONLY_CONNECTED_MODELS_KEY));
+  const [onlyLoadedSpools, setOnlyLoadedSpools] = useState(() => readFlag(ONLY_LOADED_SPOOLS_KEY));
+  const [pickerRow, setPickerRow] = useState<number | null>(null);
+  const loadedSpoolsQuery = useQuery({
+    queryKey: ['slicerLoadedSpools'],
+    queryFn: api.getSlicerLoadedSpools,
+    staleTime: 15_000,
+    retry: false,
+    enabled: !needsPlatePicker,
+  });
+  const loadedPrinters = loadedSpoolsQuery.data?.printers ?? NO_LOADED_PRINTERS;
+  const printerModels = useMemo(() => printerModelsQuery.data ?? {}, [printerModelsQuery.data]);
+  // Spools only count on printers of the selected profile's model — an A1's
+  // AMS says nothing about what an X1C job can start on. A profile whose
+  // model can't be read keeps every connected printer.
+  const spoolPrinters = useMemo(
+    () => printersOfModel(loadedPrinters, printerProfileModel(selectedPrinterName, printerModels, printerParents)),
+    [loadedPrinters, selectedPrinterName, printerModels, printerParents],
+  );
+  const filamentNameIndex = useMemo(
+    () => (presetsQuery.data ? buildFilamentNameIndex(presetsQuery.data) : new Map()),
+    [presetsQuery.data],
+  );
+  const loadedFilamentRefs = useMemo(
+    () =>
+      presetsQuery.data
+        ? matchedFilamentRefs(spoolPrinters, presetsQuery.data, filamentNameIndex, selectedPrinterName, compatIndex)
+        : new Set<string>(),
+    [spoolPrinters, presetsQuery.data, filamentNameIndex, selectedPrinterName, compatIndex],
+  );
+  // Each filter only applies while it has something to go on: with nothing
+  // online, or no loaded spool matching a profile, the full lists stay.
+  const printerFilter = useMemo(() => {
+    if (!onlyConnectedModels || loadedPrinters.length === 0) return null;
+    const models = loadedPrinters.map((p) => p.model);
+    return (p: UnifiedPreset) => isConnectedModelPreset(p, models, printerModels, printerParents);
+  }, [onlyConnectedModels, loadedPrinters, printerModels, printerParents]);
+  const filamentFilter = useMemo(() => {
+    if (!onlyLoadedSpools || loadedFilamentRefs.size === 0) return null;
+    return (p: UnifiedPreset) => loadedFilamentRefs.has(toRefValue(p));
+  }, [onlyLoadedSpools, loadedFilamentRefs]);
+  // The preset listing with only the loaded spools' filaments, for the
+  // auto-pick while that filter is on.
+  const loadedOnlyPresets = useMemo<UnifiedPresetsResponse | null>(() => {
+    const data = presetsQuery.data;
+    if (!data || !filamentFilter) return null;
+    const narrow = (by: UnifiedPresetsBySlot): UnifiedPresetsBySlot => ({
+      ...by,
+      filament: by.filament.filter(filamentFilter),
+    });
+    return {
+      ...data,
+      local: narrow(data.local),
+      orca_cloud: narrow(data.orca_cloud),
+      cloud: narrow(data.cloud),
+      standard: narrow(data.standard),
+    };
+  }, [presetsQuery.data, filamentFilter]);
 
   // The picked process preset's effective values, flattened by the sidecar.
   // Without this the settings panel shows OrcaSlicer's compiled-in defaults —
@@ -558,6 +724,33 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetsQuery.data, embeddedPrinter]);
 
+  // With "only online printers" on, an auto-picked printer of a model that
+  // isn't online moves to one that is — the file's own printer first, when
+  // that model is online. The status arrives after the presets, so this runs
+  // apart from the pre-pick above. A printer the user chose is left alone.
+  useEffect(() => {
+    const data = presetsQuery.data;
+    // Nor while the file's own settings are in use: that needs the file's printer.
+    if (!data || !printerFilter || explicitPrinter.current || !printerPreset || useEmbedded) return;
+    const current = findPreset(data, printerPreset, 'printer');
+    if (current && printerFilter(current)) return;
+    const embedded = findPresetByName(data, 'printer', embeddedPrinter);
+    const embeddedPreset = findPreset(data, embedded, 'printer');
+    const next = embeddedPreset && printerFilter(embeddedPreset)
+      ? embedded
+      : pickConnectedPrinterPreset(data, loadedPrinters.map((p) => p.model), printerModels, printerParents);
+    if (next) setPrinterPreset(next);
+  }, [
+    presetsQuery.data,
+    printerFilter,
+    printerPreset,
+    embeddedPrinter,
+    loadedPrinters,
+    printerModels,
+    printerParents,
+    useEmbedded,
+  ]);
+
   // Process pre-pick / re-pick (#1325): defaults to a process compatible with
   // the selected printer, and re-defaults when a printer change leaves the
   // current process incompatible. A compatible or unknown manual pick is kept.
@@ -598,23 +791,35 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
           const wrongMaterial = p
             && !explicitFilamentSlots.current.has(i)
             && statesDifferentMaterial(p, slot.type);
+          // With "only loaded spools" on, an auto-pick that isn't one of them
+          // is re-picked from them; a choice the user made stays (#3172).
+          const notLoaded = p
+            && filamentFilter !== null
+            && !explicitFilamentSlots.current.has(i)
+            && !filamentFilter(p);
           if (
             p
             && !wrongMaterial
+            && !notLoaded
             && presetCompatibility(p, 'filament', selectedPrinterName, compatIndex) !== 'mismatch'
           ) {
             return cur;
           }
         }
-        return pickFilamentForSlot(
-          data,
-          { type: slot.type, color: slot.color },
-          selectedPrinterName,
-          compatIndex,
-        );
+        const required = { type: slot.type, color: slot.color };
+        // From the loaded spools first, but only one of the plate's material:
+        // the picker falls back to a wrong material when that is all it has,
+        // and a loaded PLA is no answer for a PETG slot (#2982).
+        const fromLoaded = loadedOnlyPresets
+          && pickFilamentForSlot(loadedOnlyPresets, required, selectedPrinterName, compatIndex);
+        const loadedPreset = findPreset(data, fromLoaded ?? null, 'filament');
+        if (fromLoaded && loadedPreset && !statesDifferentMaterial(loadedPreset, slot.type)) {
+          return fromLoaded;
+        }
+        return pickFilamentForSlot(data, required, selectedPrinterName, compatIndex);
       });
     });
-  }, [presetsQuery.data, filamentSlots, selectedPrinterName, compatIndex]);
+  }, [presetsQuery.data, filamentSlots, selectedPrinterName, compatIndex, filamentFilter, loadedOnlyPresets]);
 
   // Drop colour overrides when the slot count changes. A plate switch renumbers
   // the slots, so keeping index-keyed overrides would paint slot 2's colour
@@ -840,14 +1045,18 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
                     // Apply slot state. The filament list is right-padded from
                     // current state so a pipeline with fewer entries than the
                     // current source's slot count keeps the existing tail.
-                    setPrinterPreset(picked.printer_preset);
-                    setProcessPreset(picked.process_preset);
+                    // A pipeline saved with a stock Bambu Cloud preset gets
+                    // the Standard copy the dialog lists instead (#3386).
+                    const listed = (ref: PresetRef) => (presetsQuery.data ? listedRef(presetsQuery.data, ref) : ref);
+                    explicitPrinter.current = true;
+                    setPrinterPreset(listed(picked.printer_preset));
+                    setProcessPreset(listed(picked.process_preset));
                     setBedType(picked.bed_type);
                     setFilamentPresets((current) => {
                       const next = current.length > 0 ? [...current] : picked.filament_presets.map(() => null);
                       for (let i = 0; i < next.length; i++) {
                         if (i < picked.filament_presets.length) {
-                          next[i] = picked.filament_presets[i];
+                          next[i] = listed(picked.filament_presets[i]);
                           // Applying a pipeline is as deliberate as picking
                           // from the dropdown, so the slots it fills are
                           // exempt from the material re-pick too.
@@ -942,12 +1151,69 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
                   </div>
                 )}
               </div>
+              {/* #3172: narrow the lists to what is online and loaded. Shown
+                  only when the caller may read printer status at all. */}
+              {loadedSpoolsQuery.isSuccess && (
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-start gap-2 text-sm text-bambu-gray cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={onlyConnectedModels}
+                      onChange={(e) => {
+                        setOnlyConnectedModels(e.target.checked);
+                        writeFlag(ONLY_CONNECTED_MODELS_KEY, e.target.checked);
+                      }}
+                      disabled={isEnqueuing}
+                      className="mt-0.5 cursor-pointer"
+                    />
+                    <span>
+                      {t('slice.filters.onlyConnectedModels', 'Only printers that are online')}
+                      <span className="block text-xs text-bambu-gray/70">
+                        {t('slice.filters.onlyConnectedModelsHint', 'Printer profiles for the models online right now, at every nozzle size.')}
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2 text-sm text-bambu-gray cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={onlyLoadedSpools}
+                      onChange={(e) => {
+                        setOnlyLoadedSpools(e.target.checked);
+                        writeFlag(ONLY_LOADED_SPOOLS_KEY, e.target.checked);
+                      }}
+                      disabled={isEnqueuing}
+                      className="mt-0.5 cursor-pointer"
+                    />
+                    <span>
+                      {t('slice.filters.onlyLoadedSpools', 'Only spools that are loaded')}
+                      <span className="block text-xs text-bambu-gray/70">
+                        {t('slice.filters.onlyLoadedSpoolsHint', 'Filament profiles of the spools in the online printers of the selected model. A profile you pick yourself stays.')}
+                      </span>
+                    </span>
+                  </label>
+                  {(onlyConnectedModels || onlyLoadedSpools) && loadedPrinters.length === 0 && (
+                    <p className="text-xs text-bambu-gray/70" role="status">
+                      {t('slice.filters.noneOnline', 'No printer is online, so every profile is shown.')}
+                    </p>
+                  )}
+                  {onlyLoadedSpools && loadedPrinters.length > 0 && loadedFilamentRefs.size === 0 && (
+                    <p className="text-xs text-bambu-gray/70" role="status">
+                      {t('slice.filters.noneLoaded', 'No loaded spool has a profile for this printer, so every filament profile is shown.')}
+                    </p>
+                  )}
+                </div>
+              )}
               <PresetDropdown
                 label={t('slice.printer')}
                 slot="printer"
-                data={presetsQuery.data}
+                data={sortedPresets ?? presetsQuery.data}
                 value={printerPreset}
-                onChange={setPrinterPreset}
+                onChange={(ref) => {
+                  explicitPrinter.current = true;
+                  setPrinterPreset(ref);
+                }}
+                allowed={printerFilter}
+                filteredLabel={t('slice.filters.notOnline', 'Not online')}
                 // Locked in embedded mode too: the picked printer is unused on
                 // the embedded-settings path, and changing it away from the
                 // design's target would drop canUseEmbedded and yank the toggle
@@ -977,7 +1243,7 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
               <PresetDropdown
                 label={t('slice.process')}
                 slot="process"
-                data={presetsQuery.data}
+                data={sortedPresets ?? presetsQuery.data}
                 value={processPreset}
                 onChange={setProcessPreset}
                 disabled={isEnqueuing || useEmbedded}
@@ -1067,7 +1333,7 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
                       key={`filament-${idx}`}
                       label={label}
                       slot="filament"
-                      data={presetsQuery.data}
+                      data={sortedPresets ?? presetsQuery.data}
                       value={filamentPresets[idx] ?? null}
                       onChange={(ref) => {
                         explicitFilamentSlots.current.add(idx);
@@ -1096,6 +1362,9 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
                       }
                       selectedPrinterName={selectedPrinterName}
                       compatIndex={compatIndex}
+                      allowed={filamentFilter}
+                      filteredLabel={t('slice.filters.notLoaded', 'Not loaded')}
+                      onPick={loadedPrinters.length > 0 ? () => setPickerRow(idx) : undefined}
                     />
                   );
                 })
@@ -1243,6 +1512,45 @@ export function SliceModal({ source, onClose, defaultAutoArrange = false }: Slic
           </button>
         </div>
       </div>
+      {pickerRow !== null && presetsQuery.data && filamentSlots[pickerRow] && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <SliceSpoolPicker
+            printers={spoolPrinters}
+            data={presetsQuery.data}
+            index={filamentNameIndex}
+            selectedPrinterName={selectedPrinterName}
+            compatIndex={compatIndex}
+            slotLabel={
+              filamentSlots.length > 1
+                ? t('slice.filamentSlot', { index: pickerRow + 1, type: filamentSlots[pickerRow].type })
+                : t('slice.filament')
+            }
+            onClose={() => setPickerRow(null)}
+            onPick={(match, colour) => {
+              const idx = pickerRow;
+              explicitFilamentSlots.current.add(idx);
+              setFilamentPresets((current) => {
+                const next = current.length === filamentSlots.length
+                  ? [...current]
+                  : filamentSlots.map((_, i) => current[i] ?? null);
+                next[idx] = match.ref;
+                return next;
+              });
+              // The spool's colour goes with it, so the preview matches it.
+              if (colour) {
+                setFilamentColours((current) => {
+                  const next = current.length === filamentSlots.length
+                    ? [...current]
+                    : filamentSlots.map((_, i) => current[i] ?? null);
+                  next[idx] = colour;
+                  return next;
+                });
+              }
+              setPickerRow(null);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -1310,21 +1618,23 @@ function CloudStatusBanner({
 }
 
 // Build-plate options offered in the SliceModal (#1337). Values are the
-// canonical strings the slicer's StaticPrintConfig validator accepts as
-// `curr_bed_type` — BambuStudio is the default sidecar, so this matches its
-// enum; OrcaSlicer accepts the same set with a Supertack alias that users
-// can target via the same dropdown if they re-import their presets.
+// `curr_bed_type` names in BambuStudio's and OrcaSlicer's enum
+// (s_keys_map_BedType); the slicer CLI slices any other name as Cool Plate
+// (#3359). Smooth PEI is High Temp Plate there, so it has no entry of its own.
 const BED_TYPE_OPTIONS: { value: string; labelKey: string; fallback: string }[] = [
   { value: 'Cool Plate', labelKey: 'slice.bedType.coolPlate', fallback: 'Cool Plate' },
   {
-    value: 'Cool Plate (SuperTack)',
+    value: 'Supertack Plate',
     labelKey: 'slice.bedType.coolPlateSuperTack',
     fallback: 'Cool Plate SuperTack',
   },
   { value: 'Engineering Plate', labelKey: 'slice.bedType.engineering', fallback: 'Engineering Plate' },
-  { value: 'High Temp Plate', labelKey: 'slice.bedType.highTemp', fallback: 'High Temp Plate' },
+  {
+    value: 'High Temp Plate',
+    labelKey: 'slice.bedType.highTemp',
+    fallback: 'Smooth PEI Plate / High Temp Plate',
+  },
   { value: 'Textured PEI Plate', labelKey: 'slice.bedType.texturedPEI', fallback: 'Textured PEI Plate' },
-  { value: 'Smooth PEI Plate', labelKey: 'slice.bedType.smoothPEI', fallback: 'Smooth PEI Plate' },
 ];
 
 function BedTypeDropdown({
@@ -1349,6 +1659,10 @@ function BedTypeDropdown({
         className="flex-1 min-w-0 px-3 py-2 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm focus:outline-none focus:border-bambu-gray disabled:opacity-50"
       >
         <option value="">{t('slice.bedType.auto')}</option>
+        {/* A saved pipeline can hold a plate the list doesn't offer (saved
+            through the API). Shown as it is, so the select doesn't read
+            "Auto" while that plate is sent (#3359). */}
+        {value && !BED_TYPE_OPTIONS.some((opt) => opt.value === value) && <option value={value}>{value}</option>}
         {BED_TYPE_OPTIONS.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {t(opt.labelKey, opt.fallback)}
@@ -1383,6 +1697,14 @@ interface PresetDropdownProps {
   // held back behind a "Show all" link instead of padding out the main list.
   selectedPrinterName?: string | null;
   compatIndex?: PrinterCompatibilityIndex;
+  // The Slice dialog's own filters (#3172): presets for which this returns
+  // false are held back behind the same "Show all", in a group of their own
+  // named by `filteredLabel`. Applied after the printer filter above, and
+  // dropped when it would leave nothing to pick.
+  allowed?: ((preset: UnifiedPreset) => boolean) | null;
+  filteredLabel?: string;
+  // Opens the loaded-spools picker for this row.
+  onPick?: () => void;
 }
 
 function PresetDropdown({
@@ -1397,6 +1719,9 @@ function PresetDropdown({
   swatchColorLabel,
   selectedPrinterName,
   compatIndex,
+  allowed,
+  filteredLabel,
+  onPick,
 }: PresetDropdownProps) {
   const { t } = useTranslation();
   // Reveals the other-printer group for this slot only. Per-dropdown rather
@@ -1410,13 +1735,17 @@ function PresetDropdown({
   // The colour input needs its own id so the hex beside it can be a <label>
   // for it rather than for the preset <select> it sits next to.
   const colourId = `${selectId}-colour`;
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState('');
+  const searchButton = useRef<HTMLButtonElement>(null);
+  const selectedRefValue = toRefValue(value);
 
   // Tier sections (imported → cloud → standard), plus — for a process /
   // filament slot with a selected printer — a trailing group of presets that
   // resolve to a different printer (#1325). Compatibility-unknown presets
   // stay in their tier, so a custom / untagged preset is never hidden, and
   // empty sections collapse out.
-  const { sections, otherEntries } = useMemo(() => {
+  const { sections, otherEntries, filteredEntries } = useMemo(() => {
     const tiers: { key: keyof UnifiedPresetsResponse; label: string; fallback: string }[] = [
       { key: 'local', label: 'slice.tier.local', fallback: 'Imported' },
       { key: 'orca_cloud', label: 'slice.tier.orcaCloud', fallback: 'Orca Cloud' },
@@ -1465,26 +1794,77 @@ function PresetDropdown({
     // when the filter empties the list, show it unfiltered — a visible preset
     // for the wrong printer is recoverable, an empty dropdown is not.
     if (compatSections.length === 0 && other.length > 0) {
-      return { sections: unfiltered, otherEntries: [] };
+      return { sections: unfiltered, otherEntries: [], filteredEntries: [] };
     }
-    return { sections: compatSections, otherEntries: other };
-  }, [data, slot, t, selectedPrinterName, compatIndex]);
+    // The dialog's own filters (#3172) narrow what the printer filter left.
+    // Leaving nothing is treated the same way as above: the filter is dropped
+    // rather than handing the user an empty dropdown.
+    if (allowed) {
+      const kept: { tierLabel: string; entries: UnifiedPreset[] }[] = [];
+      const filtered: UnifiedPreset[] = [];
+      for (const section of compatSections) {
+        const entries = section.entries.filter((p) => {
+          if (allowed(p)) return true;
+          filtered.push(p);
+          return false;
+        });
+        if (entries.length > 0) kept.push({ tierLabel: section.tierLabel, entries });
+      }
+      if (kept.length > 0) {
+        return { sections: kept, otherEntries: other, filteredEntries: filtered };
+      }
+    }
+    return { sections: compatSections, otherEntries: other, filteredEntries: [] as UnifiedPreset[] };
+  }, [data, slot, t, selectedPrinterName, compatIndex, allowed]);
+
+  // Search narrows what is listed, never what is chosen: every word must
+  // appear in the name, and the selected preset always stays (#3386). Every
+  // dropdown has it, so it is always where you look for it; the box opens from
+  // a button so a dialog full of filament rows stays compact. A query looks
+  // through the held-back groups too, which keep their labels.
+  const words = searching ? query.toLowerCase().split(/\s+/).filter(Boolean) : [];
+  const expanded = showAll || words.length > 0;
 
   // Other-printer presets are held back by default so the list shows what is
   // usable on the selected printer. Two things are never hidden: a preset whose
   // compatibility is merely *unknown* (it never reaches otherEntries), and the
   // one currently selected — a pipeline or an auto-pick can land on a
   // cross-printer preset, and dropping it from the options would blank the
-  // select and silently discard the choice.
-  const selectedRefValue = toRefValue(value);
+  // select and silently discard the choice. These groups mix tiers, so they
+  // are sorted once they are shown.
   const visibleOther = useMemo(() => {
-    if (showAll) return otherEntries;
-    return otherEntries.filter((p) => `${p.source}:${p.id}` === selectedRefValue);
-  }, [showAll, otherEntries, selectedRefValue]);
+    if (expanded) return sortPresets(otherEntries, slot);
+    return otherEntries.filter((p) => toRefValue(p) === selectedRefValue);
+  }, [expanded, otherEntries, slot, selectedRefValue]);
 
-  const hiddenCount = otherEntries.length - visibleOther.length;
+  const visibleFiltered = useMemo(() => {
+    if (expanded) return sortPresets(filteredEntries, slot);
+    return filteredEntries.filter((p) => toRefValue(p) === selectedRefValue);
+  }, [expanded, filteredEntries, slot, selectedRefValue]);
+
+  const hiddenCount =
+    otherEntries.length - visibleOther.length + filteredEntries.length - visibleFiltered.length;
   const totalEntries =
-    sections.reduce((sum, s) => sum + s.entries.length, 0) + visibleOther.length;
+    sections.reduce((sum, s) => sum + s.entries.length, 0) + visibleOther.length + visibleFiltered.length;
+
+  const closeSearch = () => {
+    setSearching(false);
+    setQuery('');
+  };
+  const nameMatches = (p: UnifiedPreset) => words.every((w) => p.name.toLowerCase().includes(w));
+  const matches = (p: UnifiedPreset) => nameMatches(p) || toRefValue(p) === selectedRefValue;
+  const noMatches =
+    words.length > 0 &&
+    !sections.some((s) => s.entries.some(nameMatches)) &&
+    !visibleFiltered.some(nameMatches) &&
+    !visibleOther.some(nameMatches);
+  const shownSections = words.length
+    ? sections
+        .map((s) => ({ tierLabel: s.tierLabel, entries: s.entries.filter(matches) }))
+        .filter((s) => s.entries.length > 0)
+    : sections;
+  const shownFiltered = words.length ? visibleFiltered.filter(matches) : visibleFiltered;
+  const shownOther = words.length ? visibleOther.filter(matches) : visibleOther;
 
   return (
     // A plain wrapper rather than a <label> around everything: the "Show all"
@@ -1504,13 +1884,13 @@ function PresetDropdown({
           />
         )}
         <label htmlFor={selectId}>{label}</label>
-        {(hiddenCount > 0 || showAll) && (
-          <span className="ml-auto flex items-center gap-1.5 font-normal">
-            {hiddenCount > 0 && (
-              <span className="text-bambu-gray/60">
-                {t('slice.presetsHidden', '{{count}} hidden', { count: hiddenCount })}
-              </span>
-            )}
+        <span className="ml-auto flex items-center gap-1.5 font-normal">
+          {hiddenCount > 0 && (
+            <span className="text-bambu-gray/60">
+              {t('slice.presetsHidden', '{{count}} hidden', { count: hiddenCount })}
+            </span>
+          )}
+          {(hiddenCount > 0 || showAll) && (
             <button
               type="button"
               onClick={() => setShowAll((v) => !v)}
@@ -1521,13 +1901,49 @@ function PresetDropdown({
                 ? t('slice.showFewerPresets', 'Show fewer')
                 : t('slice.showAllPresets', 'Show all')}
             </button>
-          </span>
-        )}
+          )}
+          <button
+            ref={searchButton}
+            type="button"
+            onClick={() => (searching ? closeSearch() : setSearching(true))}
+            disabled={disabled}
+            aria-label={`${label}: ${searching ? t('slice.closeSearch', 'Close search') : t('common.search', 'Search')}`}
+            title={searching ? t('slice.closeSearch', 'Close search') : t('common.search', 'Search')}
+            className={`hover:text-white disabled:opacity-50 ${searching ? 'text-bambu-green' : ''}`}
+          >
+            <Search className="w-3.5 h-3.5" />
+          </button>
+        </span>
       </div>
+      {searching && (
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return;
+            closeSearch();
+            // The input unmounts, which would leave focus on <body>.
+            searchButton.current?.focus();
+          }}
+          autoFocus
+          disabled={disabled}
+          placeholder={t('slice.searchPresets', 'Search presets...')}
+          aria-label={`${label}: ${t('slice.searchPresets', 'Search presets...')}`}
+          className="w-full px-3 py-1.5 mb-1 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm placeholder:text-bambu-gray focus:outline-none focus:border-bambu-gray disabled:opacity-50"
+        />
+      )}
+      {/* Mounted with the search box and only its text changes, so screen
+          readers announce it when a query stops matching. */}
+      {searching && (
+        <p role="status" className={noMatches ? 'text-xs text-bambu-gray mb-1' : 'sr-only'}>
+          {noMatches ? t('slice.noMatchingPresets', 'No matching presets found.') : ''}
+        </p>
+      )}
       <div className="flex items-stretch gap-2">
       <select
         id={selectId}
-        value={toRefValue(value)}
+        value={selectedRefValue}
         onChange={(e) => onChange(fromRefValue(e.target.value))}
         disabled={disabled || totalEntries === 0}
         className="w-full px-3 py-2 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm focus:outline-none focus:border-bambu-gray disabled:opacity-50"
@@ -1537,19 +1953,28 @@ function PresetDropdown({
             ? t('slice.noPresetsForSlot')
             : t('slice.selectPreset')}
         </option>
-        {sections.map((section) => (
+        {shownSections.map((section) => (
           <optgroup key={section.tierLabel} label={section.tierLabel}>
             {section.entries.map((p) => (
-              <option key={`${p.source}:${p.id}`} value={`${p.source}:${p.id}`}>
+              <option key={toRefValue(p)} value={toRefValue(p)}>
                 {p.name}
               </option>
             ))}
           </optgroup>
         ))}
-        {visibleOther.length > 0 && (
+        {shownFiltered.length > 0 && (
+          <optgroup label={filteredLabel ?? t('slice.otherPrinters')}>
+            {shownFiltered.map((p) => (
+              <option key={toRefValue(p)} value={toRefValue(p)}>
+                {p.name}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {shownOther.length > 0 && (
           <optgroup label={t('slice.otherPrinters')}>
-            {visibleOther.map((p) => (
-              <option key={`${p.source}:${p.id}`} value={`${p.source}:${p.id}`}>
+            {shownOther.map((p) => (
+              <option key={toRefValue(p)} value={toRefValue(p)}>
                 {p.name}
               </option>
             ))}
@@ -1593,6 +2018,18 @@ function PresetDropdown({
             {colourInputValue(swatchColor)}
           </span>
         </label>
+      )}
+      {onPick && (
+        <button
+          type="button"
+          onClick={onPick}
+          disabled={disabled}
+          title={t('slice.loadedSpools.pickTitle', 'Pick a spool loaded in a connected printer')}
+          className="flex items-center gap-1.5 px-2.5 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-sm text-bambu-gray transition-colors enabled:hover:text-white enabled:hover:border-bambu-gray disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Grid2x2 className="w-4 h-4" aria-hidden />
+          {t('slice.loadedSpools.pick', 'Pick')}
+        </button>
       )}
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, AlertTriangle, Loader2, Pencil, Printer, ThumbsUp, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Layers, Loader2, Pencil, Printer, ThumbsUp, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { CostCenterSummary, PrintQueueItemCreate, PrintQueueItemUpdate, SlotMaterial } from '../../api/client';
@@ -17,11 +17,12 @@ import {
 } from '../../hooks/useFilamentMapping';
 import { useMultiPrinterFilamentMapping, type PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
 import { getColorName } from '../../utils/colors';
+import { productLineOf, useFilamentNameByIdx } from './useFilamentLabels';
 import { isGcodeCompatible, isPrinterCurrentlyDispatchable } from '../../utils/printer';
 import { getCurrencySymbol } from '../../utils/currency';
 import { getBedTypeInfo } from '../../utils/bedType';
 import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
-import { isPlaceholderDate, effectivePreferLowest } from '../../utils/amsHelpers';
+import { isPlaceholderDate, effectivePreferLowest, filamentTypesCompatible } from '../../utils/amsHelpers';
 import { resolveArchiveSlicerAmsMapping } from './archiveAmsMapping';
 import { FilamentMapping } from './FilamentMapping';
 import { FilamentOverride } from './FilamentOverride';
@@ -41,6 +42,7 @@ import type {
 } from './types';
 import { DEFAULT_PRINT_OPTIONS, DEFAULT_SCHEDULE_OPTIONS } from './types';
 import { NumberInput } from '../NumberInput';
+import { hasGcodeSnippets, useUiSettings } from '../../hooks/useUiSettings';
 
 /** Same filament: type ignoring case, colour as RRGGBB ignoring `#`, case and alpha. */
 function isSameFilament(a: { type: string; color: string }, b: { type: string; color: string }): boolean {
@@ -90,6 +92,7 @@ export function PrintModal({
   archiveName,
   queueItem,
   initialSelectedPrinterIds,
+  preselectPlateId,
   onClose,
   onSuccess,
   projectId,
@@ -99,7 +102,10 @@ export function PrintModal({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const { hasPermission, user } = useAuth();
+  const { hasPermission, hasAnyPermission, user } = useAuth();
+  // Their jobs wait for someone to start them (#1620); the server enforces it,
+  // this keeps the request and the dialog honest about it.
+  const needsReview = !hasAnyPermission('queue:start_unreviewed', 'queue:update_all');
 
   // Determine if we're printing a library file
   const isLibraryFile = !!libraryFileId && !archiveId;
@@ -127,6 +133,7 @@ export function PrintModal({
   const [candidatePlates, setCandidatePlates] = useState<Record<number, number | null>>({});
 
   type FilamentWarningItem = {
+    printerId: number;
     printerName: string;
     slotLabel: string;
     requiredGrams: number;
@@ -152,6 +159,9 @@ export function PrintModal({
   const [selectedPlates, setSelectedPlates] = useState<Set<number>>(() => {
     if (mode === 'edit-queue-item' && queueItem?.plate_id != null) {
       return new Set([queueItem.plate_id]);
+    }
+    if (mode === 'create' && !isCrossModel && preselectPlateId != null) {
+      return new Set([preselectPlateId]);
     }
     return new Set();
   });
@@ -226,6 +236,14 @@ export function PrintModal({
     }
     return {};
   });
+
+  // The printer `manualMappings` were resolved against (#2799). Its entries are
+  // global tray IDs, which mean nothing on any other machine, so they follow
+  // this one printer instead of every selected one. Seeded when editing an
+  // existing item, whose stored mapping belongs to the printer it is queued on.
+  const [sharedMappingPrinterId, setSharedMappingPrinterId] = useState<number | null>(() =>
+    mode === 'edit-queue-item' ? queueItem?.printer_id ?? null : null,
+  );
 
   // Per-printer override configs (for multi-printer selection)
   const [perPrinterConfigs, setPerPrinterConfigs] = useState<Record<number, PerPrinterConfig>>({});
@@ -310,10 +328,7 @@ export function PrintModal({
   const effectivePrinterId = selectedPrinters.length > 0 ? selectedPrinters[0] : null;
 
   // Queries
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
 
   // Sync print option defaults from settings once available
   const printDefaultsApplied = useRef(false);
@@ -428,14 +443,14 @@ export function PrintModal({
   }, [selectedPrinters, inventoryRemainQueries]);
 
   // Fetch archive details to get sliced_for_model
-  const { data: archiveDetails } = useQuery({
+  const { data: archiveDetails, isError: archiveDetailsFailed } = useQuery({
     queryKey: ['archive', archiveId],
     queryFn: () => api.getArchive(archiveId!),
     enabled: !!archiveId && !isLibraryFile,
   });
 
   // Fetch library file details to get sliced_for_model
-  const { data: libraryFileDetails } = useQuery({
+  const { data: libraryFileDetails, isError: libraryFileDetailsFailed } = useQuery({
     queryKey: ['library-file', libraryFileId],
     queryFn: () => api.getLibraryFile(libraryFileId!),
     enabled: isLibraryFile && !!libraryFileId,
@@ -443,6 +458,10 @@ export function PrintModal({
 
   // Get sliced_for_model from archive or library file
   const slicedForModel = archiveDetails?.sliced_for_model || libraryFileDetails?.sliced_for_model || null;
+  // Until the file's details are in, the model it was sliced for is unknown.
+  const sourceDetailsPending =
+    (!!archiveId && !isLibraryFile && !archiveDetails && !archiveDetailsFailed) ||
+    (isLibraryFile && !libraryFileDetails && !libraryFileDetailsFailed);
 
   // The archive's own saved AMS-slot pick from the slicer (see the "Save AMS
   // mapping" virtual-printer setting) — undefined for library files or
@@ -507,6 +526,8 @@ export function PrintModal({
   );
 
   // Fetch available filaments for model-based assignment (for filament override UI)
+  // Preset id -> name, to store a colour name within its product line (SN-C9)
+  const filamentNameByIdx = useFilamentNameByIdx();
   const { data: availableFilaments } = useQuery({
     queryKey: ['available-filaments', targetModel, targetLocation],
     queryFn: () => api.getAvailableFilaments(targetModel!, targetLocation ?? undefined),
@@ -720,13 +741,22 @@ export function PrintModal({
     setPerPrinterConfigs,
     settings?.prefer_lowest_filament,
     inventoryByTrayIdPerPrinter,
+    sharedMappingPrinterId,
   );
 
-  // Auto-select first plate when plates load (single or multi-plate)
+  // Auto-select first plate when plates load (single or multi-plate). A plate
+  // chosen before the plates were known (a reprint's or a queue item's) that
+  // the file doesn't have, because the file changed since, is dropped: left
+  // selected, it would be printed or keep the selection from ever falling
+  // back to a plate the file has (#3395).
   useEffect(() => {
-    if (platesData?.plates && platesData.plates.length >= 1 && selectedPlates.size === 0) {
-      setSelectedPlates(new Set([platesData.plates[0].index]));
-    }
+    const list = platesData?.plates;
+    if (!list?.length) return;
+    setSelectedPlates((prev) => {
+      const kept = [...prev].filter((index) => list.some((p) => p.index === index));
+      if (kept.length > 0 && kept.length === prev.size) return prev;
+      return new Set(kept.length > 0 ? kept : [list[0].index]);
+    });
   }, [platesData, selectedPlates.size]);
 
   // Cross-model: the candidate list owns plate choice, and `platesData` is the
@@ -741,15 +771,33 @@ export function PrintModal({
     setSelectedPlates((prev) => (prev.size === 1 && prev.has(chosen) ? prev : new Set([chosen])));
   }, [isCrossModel, libraryFileId, candidatePlates]);
 
-  // Auto-select first printer when only one available
+  // Auto-select the default printer (Settings), else the only one available.
+  // The default is offered once per opening: deselecting it to pick another
+  // printer must not bring it back, and neither may settings that arrive after
+  // a printer was already chosen. It is not offered where the printer list is
+  // hidden (several variants, or printing to a model), nor when the file was
+  // sliced for another model.
+  const defaultPrinterOffered = useRef(false);
   useEffect(() => {
     // Skip auto-select for edit mode (already initialized from queueItem)
     if (mode === 'edit-queue-item') return;
+    if (selectedPrinters.length > 0) {
+      defaultPrinterOffered.current = true;
+      return;
+    }
     const activePrinters = printers?.filter(p => p.is_active) || [];
-    if (activePrinters.length === 1 && selectedPrinters.length === 0) {
+    const defaultId = settings?.default_printer_id;
+    const preferred =
+      defaultId != null && !isCrossModel && assignmentMode === 'printer' && !sourceDetailsPending
+        ? activePrinters.find(p => p.id === defaultId && (!slicedForModel || p.model === slicedForModel))
+        : undefined;
+    if (preferred && !defaultPrinterOffered.current) {
+      defaultPrinterOffered.current = true;
+      setSelectedPrinters([preferred.id]);
+    } else if (activePrinters.length === 1) {
       setSelectedPrinters([activePrinters[0].id]);
     }
-  }, [mode, printers, selectedPrinters.length]);
+  }, [mode, printers, selectedPrinters.length, settings?.default_printer_id, isCrossModel, assignmentMode, slicedForModel, sourceDetailsPending]);
 
   // Clear manual mappings and per-printer configs when printer or plate changes.
   // The per-plate mappings go with them: a manual override holds a global tray id,
@@ -763,6 +811,11 @@ export function PrintModal({
         setManualMappingsByPlate({});
         setPerPrinterConfigs({});
         setInitialExpandApplied(new Set());
+      }
+      // Rack positions name slots of the queued printer's nozzle rack.
+      if (printersChanged) {
+        setNozzleRackChoice({});
+        setNozzleRackChoiceByPlate({});
       }
     } else {
       setManualMappings({});
@@ -850,6 +903,19 @@ export function PrintModal({
 
   const isMultiPlate = platesData?.is_multi_plate ?? false;
   const plates = platesData?.plates ?? [];
+  // The plates that will print, beside the buttons: in a long plate list the
+  // selected card can be far out of view (#3395).
+  const selectedPlatesSummary =
+    !isCrossModel && isMultiPlate && plates.length > 1
+      ? plates
+          .filter((p) => selectedPlates.has(p.index))
+          .map((p) => {
+            const label = t('printModal.plateN', 'Plate {{n}}', { n: p.index });
+            const name = p.name?.trim();
+            return name && name !== label ? `${label} – ${name}` : label;
+          })
+          .join(', ')
+      : '';
 
   const filamentWarningMessage = useMemo(() => {
     if (!filamentWarningItems || filamentWarningItems.length === 0) return '';
@@ -880,18 +946,11 @@ export function PrintModal({
     mutationFn: (data: PrintQueueItemCreate) => api.addToQueue(data),
   });
 
-  // Update queue item mutation
+  // Update queue item mutation. The submit handler reports the outcome and
+  // closes, once for the whole save: an edit can add entries for further
+  // printers after this runs.
   const updateQueueMutation = useMutation({
     mutationFn: (data: PrintQueueItemUpdate) => api.updateQueueItem(queueItem!.id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast('Queue item updated');
-      onSuccess?.();
-      onClose();
-    },
-    onError: (error: Error) => {
-      showToast(error.message || 'Failed to update queue item', 'error');
-    },
   });
 
   // Get mapping for a specific printer (per-printer override or default).
@@ -909,17 +968,95 @@ export function PrintModal({
       if (plateId === null || selectedPrinters.length !== 1) return undefined;
       return perPlateAmsMappings.get(plateId);
     }
-    // For multi-printer selection, check if this printer has an override
+    // For multi-printer selection every printer maps against its own AMS.
+    // A mapping is a list of global tray IDs, which only mean something on the
+    // printer they were resolved against, so `amsMapping` — computed against
+    // the first selected printer — cannot be reused on the rest: the slot index
+    // still resolves, so nothing looks wrong, and the job prints from whatever
+    // sits in that tray on the other machine (#2799).
+    //
+    // `getFinalMapping` is the single source of truth here: the hook decides
+    // per printer which overrides legitimately apply (its own, the shared ones
+    // if they were authored against it, otherwise none), and the match badge is
+    // derived from that same decision, so the panel cannot promise one mapping
+    // while another is submitted. Undefined while a printer's status loads —
+    // send none and let the scheduler map it at dispatch, as the multi-plate
+    // path above already does.
     if (selectedPrinters.length > 1) {
-      const printerConfig = perPrinterConfigs[printerId];
-      if (printerConfig && !printerConfig.useDefault) {
-        return multiPrinterMapping.getFinalMapping(printerId);
-      }
+      return multiPrinterMapping.getFinalMapping(printerId);
+    }
+    // The single-printer path says the same thing, explicitly. `amsMapping`
+    // folds in `manualMappings`, so it is this printer's mapping only while this
+    // printer is the one those overrides were authored against. In practice the
+    // effect above clears them whenever the selection changes, but that leaves
+    // the rule enforced in one place and merely implied in the other — a thin
+    // thing to rest on the next time that effect is edited.
+    if (sharedMappingPrinterId !== null && sharedMappingPrinterId !== printerId) {
+      return multiPrinterMapping.getFinalMapping(printerId);
     }
     return amsMapping;
   };
 
-  const handleSubmit = async (e?: React.FormEvent, options?: { skipFilamentCheck?: boolean }) => {
+  // Whether `mapping` sends a slot to a tray of another material (#2799). Only
+  // the user can have done that: neither this dialog's matcher nor the
+  // scheduler's maps across types. The scheduler re-checks every stored mapping
+  // against the printer before dispatch, and a slot on a tray of the wrong type
+  // is exactly what a mapping meant for another printer looks like, so it would
+  // replace the user's pick. skip_filament_check is the acknowledgement it
+  // leaves alone. Same type rule as the scheduler, and a tray or requirement
+  // with no type is not judged, as there.
+  //
+  // Editing seeds the picks from the stored mapping, which may itself be a
+  // mapping made for another printer, queued before this check existed. A slot
+  // still on the tray the dialog opened with is not a pick made here, so it is
+  // left to the scheduler to judge.
+  const openedWithTray = (printerId: number, plateId: number | null, slotId: number): number | undefined => {
+    if (mode !== 'edit-queue-item' || !Array.isArray(queueItem?.ams_mapping)) return undefined;
+    if (printerId !== queueItem.printer_id || plateId !== initialPlateId) return undefined;
+    return queueItem.ams_mapping[slotId - 1];
+  };
+  // The live status the mapping of this printer was matched against.
+  const statusForPrinter = (printerId: number) =>
+    selectedPrinters.length > 1
+      ? multiPrinterMapping.printerResults.find((result) => result.printerId === printerId)?.status
+      : printerStatus;
+  const mappingSubstitutesMaterial = (
+    printerId: number,
+    plateId: number | null,
+    mapping: number[] | undefined,
+  ): boolean => {
+    if (!mapping) return false;
+    const reqs = isMultiPlateSelection
+      ? plateId != null ? mappingPerPlateReqs.get(plateId)?.filaments : undefined
+      : mappingFilamentReqs?.filaments;
+    if (!reqs) return false;
+    const loaded = buildLoadedFilaments(statusForPrinter(printerId));
+    return reqs.some((req) => {
+      const slotId = req.slot_id ?? 0;
+      const tray = slotId > 0 ? mapping[slotId - 1] : undefined;
+      if (tray == null || tray < 0) return false;
+      if (openedWithTray(printerId, plateId, slotId) === tray) return false;
+      const filament = loaded.find((f) => f.globalTrayId === tray);
+      return !!filament?.type && !!req.type && !filamentTypesCompatible(filament.type, req.type);
+    });
+  };
+
+  // Saving an existing job. Only Queue has a manual-start checkbox, so a
+  // scheduled job keeps whatever wait it had: a student's scheduled job waits
+  // for review (#1620), and editing it must not start it.
+  const editManualStart =
+    needsReview ||
+    (scheduleOptions.scheduleType === 'queue'
+      ? scheduleOptions.requireManualStart
+      : scheduleOptions.scheduleType === 'scheduled' && !!queueItem?.manual_start);
+
+  // `acknowledgedPrinters`: the printers whose filament warning the user
+  // answered with "Print Anyway". Only their jobs skip the scheduler's check;
+  // another printer in the same submit was never checked against.
+  const handleSubmit = async (
+    e?: React.FormEvent,
+    options?: { skipFilamentCheck?: boolean; acknowledgedPrinters?: number[] },
+  ) => {
     e?.preventDefault();
 
     if (billingEnabled && selectedCostCenter == null) {
@@ -1014,6 +1151,7 @@ export function PrintModal({
               const needed = pooledRequired.get(key) ?? 0;
               if (available >= needed) continue;
               warningItems.push({
+                printerId,
                 printerName,
                 slotLabel,
                 requiredGrams: needed,
@@ -1027,6 +1165,7 @@ export function PrintModal({
 
             if (slot.remaining_g >= requiredGrams) continue;
             warningItems.push({
+              printerId,
               printerName,
               slotLabel,
               requiredGrams,
@@ -1108,7 +1247,11 @@ export function PrintModal({
 
           // Include slot if user changed the filament OR force_color_match is enabled
           if (userOverride || isForceColor) {
-            entries.push({ slot_id: req.slot_id, type: effectiveType, color: effectiveColor, color_name: getColorName(effectiveColor), ...storedVariantFor(req.slot_id, effectiveType, effectiveColor), force_color_match: isForceColor });
+            const variant = storedVariantFor(req.slot_id, effectiveType, effectiveColor);
+            // A slot left as sliced keeps its own preset; a swapped one only a stored matching one.
+            const preset = variant.tray_info_idx ?? (userOverride ? undefined : req.tray_info_idx);
+            const colorName = getColorName(effectiveColor, productLineOf(preset, effectiveType, filamentNameByIdx));
+            entries.push({ slot_id: req.slot_id, type: effectiveType, color: effectiveColor, color_name: colorName, ...variant, force_color_match: isForceColor });
           }
         }
       } else {
@@ -1116,7 +1259,9 @@ export function PrintModal({
         for (const [slotId, { type, color }] of Object.entries(filamentOverrides)) {
           const id = parseInt(slotId, 10);
           const isForceColor = forceColorMatch[id] ?? false;
-          entries.push({ slot_id: id, type, color, color_name: getColorName(color), ...storedVariantFor(id, type, color), force_color_match: isForceColor });
+          const variant = storedVariantFor(id, type, color);
+          const colorName = getColorName(color, productLineOf(variant.tray_info_idx, type, filamentNameByIdx));
+          entries.push({ slot_id: id, type, color, color_name: colorName, ...variant, force_color_match: isForceColor });
         }
       }
 
@@ -1136,13 +1281,57 @@ export function PrintModal({
         ? buildFilamentOverridesArray(perPlateReqs.get(plateId))
         : filamentOverridesArray;
 
-    // A specific-printer job carries only the slots the user actually changed
+    // A specific-printer job carries the slots the user actually changed
     // (#3133): the tray mapping was matched against them, and they are what the
-    // scheduler needs if it has to recompute that mapping at dispatch. The
-    // force-colour flags on their own stay behind — printer mode never sent
-    // them, and changing that is not what this is for.
-    const printerOverridesForPlate = (plateId: number | null) => {
-      const entries = overridesForPlate(plateId)?.filter((o) => filamentOverrides[o.slot_id]);
+    // scheduler needs if it has to recompute that mapping at dispatch. And the
+    // slots ticked "Force color match" (#3445), which were dropped on save, so a
+    // recompute fell back to the sliced colour and took any spool of the type.
+    //
+    // A ticked slot set to a tray of the user's choosing asks for that tray's
+    // filament: it is the alternative picked for the slot. Only a tray chosen
+    // in this panel, or the one the job was saved with: one the dialog matched
+    // on its own may be a stand-in of another colour, and ticking the box there
+    // means wait for the colour asked for. A job opened with a forced entry
+    // keeps it while its slot stays on the tray it was saved with, whatever
+    // that tray holds now (it may have been reloaded since). Everything else
+    // keeps the filament the dialog asks for.
+    const chosenTray = (printerId: number, plateId: number | null, slotId: number): number | undefined => {
+      if (selectedPrinters.length !== 1) return undefined;
+      const picks = isMultiPlateSelection
+        ? plateId != null ? manualMappingsByPlate[plateId] : undefined
+        : sharedMappingPrinterId === null || sharedMappingPrinterId === printerId ? manualMappings : undefined;
+      const tray = picks?.[slotId];
+      if (tray == null) return undefined;
+      const keptForced =
+        storedOverrideBySlot.get(slotId)?.force_color_match === true && openedWithTray(printerId, plateId, slotId) === tray;
+      return keptForced ? undefined : tray;
+    };
+    const printerOverridesForPlate = (printerId: number | null, plateId: number | null) => {
+      const loaded = printerId != null ? buildLoadedFilaments(statusForPrinter(printerId)) : [];
+      // The box is only on screen with one printer selected; a tick left over
+      // from before more were added is not saved.
+      const ticksShown = selectedPrinters.length === 1;
+      const entries = overridesForPlate(plateId)
+        ?.flatMap((o) => {
+          const changed = !!filamentOverrides[o.slot_id];
+          if (!changed && !(o.force_color_match && ticksShown)) return [];
+          const tray = o.force_color_match && printerId != null ? chosenTray(printerId, plateId, o.slot_id) : undefined;
+          if (tray == null) return [o];
+          const filament = loaded.find((f) => f.globalTrayId === tray);
+          // A chosen tray that can't be read now (printer off, tray emptied)
+          // says nothing about the filament wanted: asking for the sliced one
+          // would hold the job against the user's own pick. Saved unforced,
+          // as before #3445.
+          if (!filament) return changed ? [{ ...o, force_color_match: false }] : [];
+          return [{
+            slot_id: o.slot_id,
+            type: filament.type,
+            color: filament.color,
+            color_name: filament.colorName,
+            ...(filament.trayInfoIdx ? { tray_info_idx: filament.trayInfoIdx } : {}),
+            force_color_match: true,
+          }];
+        });
       return entries && entries.length > 0 ? entries : undefined;
     };
 
@@ -1168,7 +1357,7 @@ export function PrintModal({
           require_previous_success: scheduleOptions.requirePreviousSuccess,
           auto_off_after: scheduleOptions.autoOffAfter,
           gcode_injection: scheduleOptions.gcodeInjection,
-          manual_start: scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart,
+          manual_start: needsReview || (scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart),
           scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
             ? new Date(scheduleOptions.scheduledTime).toISOString()
             : undefined,
@@ -1262,18 +1451,22 @@ export function PrintModal({
       printer_id: assignmentMode === 'printer' ? printerId : null,
       target_model: assignmentMode === 'model' ? targetModel : null,
       target_location: assignmentMode === 'model' ? targetLocation : null,
-      filament_overrides: assignmentMode === 'model' ? overridesForPlate(plateId) : printerOverridesForPlate(plateId),
+      filament_overrides: assignmentMode === 'model' ? overridesForPlate(plateId) : printerOverridesForPlate(printerId, plateId),
       // Use library_file_id for library files, archive_id for archives
       archive_id: isLibraryFile ? undefined : archiveId,
       library_file_id: isLibraryFile ? libraryFileId : undefined,
       require_previous_success: scheduleOptions.requirePreviousSuccess,
       auto_off_after: scheduleOptions.autoOffAfter,
       gcode_injection: scheduleOptions.gcodeInjection,
-      manual_start: scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart,
+      manual_start: needsReview || (scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart),
       // When the user clicks "Print Anyway" on the frontend deficit warning,
       // persist that acknowledgement so the scheduler doesn't immediately
       // re-flag the item on its first dispatch tick (#1698-followup).
-      skip_filament_check: options?.skipFilamentCheck === true ? true : undefined,
+      skip_filament_check:
+        (printerId != null && options?.acknowledgedPrinters?.includes(printerId)) ||
+        (printerId != null && mappingSubstitutesMaterial(printerId, plateId, getMappingForPrinter(printerId, plateId)))
+          ? true
+          : undefined,
       ams_mapping: printerId ? getMappingForPrinter(printerId, plateId) : undefined,
       // Rack positions per filament group (#1784). Only sent in printer mode:
       // in model mode the target printer is not known yet, and the rack it
@@ -1312,7 +1505,7 @@ export function PrintModal({
               require_previous_success: scheduleOptions.requirePreviousSuccess,
               auto_off_after: scheduleOptions.autoOffAfter,
               gcode_injection: scheduleOptions.gcodeInjection,
-              manual_start: scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart,
+              manual_start: editManualStart,
               ams_mapping: undefined,
               plate_id: plateId,
               scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
@@ -1370,12 +1563,16 @@ export function PrintModal({
                 // null, not undefined: omitting the field left a model job's
                 // overrides on the row after it moved to a printer, whatever the
                 // user did with them here (#3133).
-                filament_overrides: printerOverridesForPlate(plateId) ?? null,
+                filament_overrides: printerOverridesForPlate(printerId, plateId) ?? null,
                 require_previous_success: scheduleOptions.requirePreviousSuccess,
                 auto_off_after: scheduleOptions.autoOffAfter,
                 gcode_injection: scheduleOptions.gcodeInjection,
-                manual_start: scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart,
+                manual_start: editManualStart,
                 ams_mapping: printerMapping,
+                // Only ever set here, never cleared: an earlier "Print Anyway"
+                // stays acknowledged across an edit on the same printer. On
+                // another printer the backend drops it unless sent here.
+                skip_filament_check: mappingSubstitutesMaterial(printerId, plateId, printerMapping) ? true : undefined,
                 // null, not undefined: an operator who cleared their picks
                 // means "assign these again", and undefined would leave the
                 // stale ones on the row (#1784).
@@ -1541,10 +1738,10 @@ export function PrintModal({
   // queue item regardless of batch size, so there's no underlying reason for
   // the quantity-1 case to be blocked.
   useEffect(() => {
-    if (mode === 'create' && scheduleOptions.gcodeInjection && !settings?.gcode_snippets) {
+    if (mode === 'create' && scheduleOptions.gcodeInjection && !hasGcodeSnippets(settings)) {
       setScheduleOptions((opts) => ({ ...opts, gcodeInjection: false }));
     }
-  }, [mode, settings?.gcode_snippets, scheduleOptions.gcodeInjection]);
+  }, [mode, settings, scheduleOptions.gcodeInjection]);
 
   // Modal title and action button text based on mode
   const getModalConfig = () => {
@@ -1860,7 +2057,12 @@ export function PrintModal({
                 printerId={effectivePrinterId!}
                 filamentReqs={mappingFilamentReqs}
                 manualMappings={manualMappings}
-                onManualMappingChange={setManualMappings}
+                onManualMappingChange={(next) => {
+                  // This panel only renders for a single selected printer, so
+                  // its tray IDs belong to that printer alone (#2799).
+                  setSharedMappingPrinterId(effectivePrinterId!);
+                  setManualMappings(next);
+                }}
                 onEstimatedCostChange={setEstimatedCost}
                 budgetAvailable={billingEnabled ? selectedCostCenter?.budget_available ?? null : null}
                 quantity={effectiveQuantity}
@@ -1976,7 +2178,8 @@ export function PrintModal({
               canControlPrinter={hasPermission('printers:control')}
               showStagger={!isEditing && assignmentMode === 'printer' && selectedPrinters.length > 1}
               printerCount={selectedPrinters.length}
-              hasGcodeSnippets={!!settings?.gcode_snippets}
+              hasGcodeSnippets={hasGcodeSnippets(settings)}
+              needsReview={needsReview}
             />
 
             {/* Outcome prompt (#1898) sits outside the collapsed Print Options
@@ -2015,6 +2218,17 @@ export function PrintModal({
               </div>
             )}
 
+            {selectedPlatesSummary && (
+              <p
+                className="flex items-center gap-1.5 text-sm text-bambu-gray min-w-0"
+                title={selectedPlatesSummary}
+                data-testid="selected-plates-summary"
+              >
+                <Layers className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{selectedPlatesSummary}</span>
+              </p>
+            )}
+
             {/* Actions */}
             <div className="flex gap-3 pt-2">
               <Button type="button" variant="secondary" onClick={onClose} className="flex-1" disabled={isSubmitting}>
@@ -2050,8 +2264,9 @@ export function PrintModal({
           cancelText={t('common.cancel')}
           variant="warning"
           onConfirm={() => {
+            const acknowledgedPrinters = [...new Set(filamentWarningItems.map((item) => item.printerId))];
             setFilamentWarningItems(null);
-            void handleSubmit(undefined, { skipFilamentCheck: true });
+            void handleSubmit(undefined, { skipFilamentCheck: true, acknowledgedPrinters });
           }}
           onCancel={() => setFilamentWarningItems(null)}
         />

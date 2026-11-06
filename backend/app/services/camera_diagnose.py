@@ -146,7 +146,7 @@ async def _check_tcp_reachable(ip_address: str, port: int, timeout: float) -> Ca
             status="ok",
             duration_ms=int((time.monotonic() - started) * 1000),
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return CameraDiagnoseStage(
             name="tcp_reachable",
             status="failed",

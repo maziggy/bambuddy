@@ -20,11 +20,13 @@ import pytest
 
 from backend.app.services.pipeline_eligibility import _canonical as eligibility_canonical
 from backend.app.services.print_scheduler import canonical_filament_type as scheduler_canonical
-from backend.app.utils.filament_types import (
-    FILAMENT_TYPE_GROUPS,
-    canonical_filament_type,
-    filament_types_compatible,
-)
+from backend.app.utils.filament_types import FILAMENT_TYPE_GROUPS, canonical_filament_type
+
+
+def filament_types_compatible(a: str | None, b: str | None) -> bool:
+    """The comparison the matcher and the pre-flight make."""
+    return canonical_filament_type(a) == canonical_filament_type(b)
+
 
 # Every type either module has ever had an opinion about, plus the shapes the
 # printer actually emits.

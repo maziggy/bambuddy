@@ -67,6 +67,10 @@ class SlicerSetting(BaseModel):
     user_id: str | None = None
     updated_time: str | None = None
     is_custom: bool = False
+    # The id Bambu Studio puts in an AMS slot for this preset. It cannot be
+    # derived from setting_id for every preset (SUNLU's "GFSNLS03_04" is
+    # "GFSNL03", #3387), so it is passed through from Bambu's list as is.
+    filament_id: str | None = None
 
 
 class SlicerSettingsResponse(BaseModel):
@@ -102,24 +106,6 @@ class SlicerSettingUpdate(BaseModel):
 
     name: str | None = Field(None, description="New display name")
     setting: dict | None = Field(None, description="Setting key-value pairs to update")
-
-
-class SlicerSettingDetail(BaseModel):
-    """Detailed slicer setting/preset response."""
-
-    message: str | None = None
-    code: str | None = None
-    error: str | None = None
-    public: bool = False
-    version: str | None = None
-    type: str
-    name: str
-    update_time: str | None = None
-    nickname: str | None = None
-    base_id: str | None = None
-    setting: dict = Field(default_factory=dict)
-    filament_id: str | None = None
-    setting_id: str | None = None  # For response after create
 
 
 class SlicerSettingDeleteResponse(BaseModel):

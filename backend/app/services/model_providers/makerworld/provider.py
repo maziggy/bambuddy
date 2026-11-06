@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from backend.app.core.auth import is_auth_enabled
 from backend.app.core.permissions import Permission
 from backend.app.services.model_providers.base import (
     ModelProvider,
@@ -78,7 +79,12 @@ class MakerWorldProvider(ModelProvider):
         flag those installs read back on the status endpoints.
         """
         identity = user if user is not None else api_key_owner
-        token, _email, _region = await get_stored_token(db, identity)
+        # Without an identity, the stored sign-in is the auth-off install's.
+        # With auth on (an API key without Allow Cloud Access) there is none.
+        if identity is None and await is_auth_enabled(db):
+            token = None
+        else:
+            token, _email, _region = await get_stored_token(db, identity)
         user_id = identity.id if identity is not None else None
         return MakerWorldService(
             client=client,

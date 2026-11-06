@@ -17,7 +17,7 @@ import { aggregateGroupSpool } from '../../utils/inventoryGrouping';
 // and effect_type are part of the key (#1154) so multi-colour / effect
 // variants don't get collapsed under "Group similar".
 function spoolGroupKey(s: InventorySpool): string {
-  return `${s.material}|${s.subtype || ''}|${s.brand || ''}|${s.color_name || ''}|${s.rgba || ''}|${s.extra_colors || ''}|${s.effect_type || ''}|${s.label_weight}`;
+  return `${s.material}|${s.subtype || ''}|${s.brand || ''}|${s.color_name || ''}|${s.rgba || ''}|${s.extra_colors || ''}|${s.effect_type || ''}|${s.label_weight}|${s.last_dried_at || ''}`;
 }
 
 type DisplayItem =
@@ -102,6 +102,12 @@ describe('spoolGroupKey', () => {
     const a = makeSpool({ id: 1 });
     const b = makeSpool({ id: 2 });
     expect(spoolGroupKey(a)).toBe(spoolGroupKey(b));
+  });
+
+  it('keeps a dried spool out of a group with an undried one (#2863)', () => {
+    const a = makeSpool({ id: 1, last_dried_at: '2026-10-06T12:30:00' });
+    const b = makeSpool({ id: 2 });
+    expect(spoolGroupKey(a)).not.toBe(spoolGroupKey(b));
   });
 
   it('generates different key when material differs', () => {

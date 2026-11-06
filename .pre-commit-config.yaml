@@ -23,7 +23,9 @@ repos:
         # doesn't drift the files away from upstream.
         exclude: ^static/
       - id: end-of-file-fixer
-        exclude: ^static/
+        # .basedpyright/baseline.json is written by basedpyright without a final
+        # newline, and rewritten by it whenever an error is fixed.
+        exclude: ^(static/|\.basedpyright/)
       - id: check-yaml
       - id: check-json
         exclude: ^(static/|frontend/tsconfig\.)

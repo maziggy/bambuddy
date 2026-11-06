@@ -83,7 +83,7 @@ describe('PrintersPage — verdict on the card', () => {
       http.get('/api/v1/printers/:id/status', () => HttpResponse.json(status)),
       http.get('/api/v1/settings/ui-preferences', () => HttpResponse.json(uiPreferences)),
       http.get('/api/v1/settings/', () => HttpResponse.json({ ...uiPreferences, auto_archive: true })),
-      http.get('/api/v1/archives/', () => HttpResponse.json([finishedPrint])),
+      http.get('/api/v1/archives/last-per-printer', () => HttpResponse.json([finishedPrint])),
       http.patch('/api/v1/archives/:id', async ({ request }) => {
         const body = (await request.json()) as Record<string, unknown>;
         patched.push(body);
@@ -102,6 +102,38 @@ describe('PrintersPage — verdict on the card', () => {
     expect(patched[0].user_verdict).toBe('good');
     expect(patched[0].user_verdict_source).toBe('printer_card');
     expect(await screen.findByText('Marked as good part')).toBeInTheDocument();
+  });
+
+  it('answers its own print when the archive printed on more printers', async () => {
+    // Plates of one archive are runs of their own; the card's row names its run.
+    const user = userEvent.setup();
+    server.use(
+      http.get('/api/v1/archives/last-per-printer', () => HttpResponse.json([{ ...finishedPrint, run_id: 7 }])),
+    );
+    render(<PrintersPage />);
+
+    await user.click(await screen.findByTitle('Good'));
+
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(patched[0].run_id).toBe(7);
+  });
+
+  // The card reads its row out of one page-wide answer; another printer's
+  // archive must not stand in for its own.
+  it('ignores the last print of another printer', async () => {
+    let served = false;
+    server.use(
+      http.get('/api/v1/archives/last-per-printer', () => {
+        served = true;
+        return HttpResponse.json([{ ...finishedPrint, id: 43, printer_id: 2 }]);
+      }),
+    );
+    render(<PrintersPage />);
+
+    await waitFor(() => expect(served).toBe(true));
+    expect(await screen.findByRole('button', { name: 'Mark plate as cleared' })).toBeInTheDocument();
+    expect(screen.queryByTitle('Good')).toBeNull();
+    expect(screen.queryByText(/Last: Bracket/)).toBeNull();
   });
 
   it('sends the reject to the dialog and records nothing on its own', async () => {
@@ -146,7 +178,7 @@ describe('PrintersPage — verdict on the card', () => {
             created_at: '2026-08-18T00:00:00Z',
           });
         }),
-        http.get('/api/v1/archives/', () => {
+        http.get('/api/v1/archives/last-per-printer', () => {
           archiveServed = true;
           return HttpResponse.json([archive]);
         }),

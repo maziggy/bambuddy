@@ -1,5 +1,5 @@
 // Bambuddy Service Worker
-const CACHE_NAME = 'bambuddy-v30';
+const CACHE_NAME = 'bambuddy-v31';
 const STATIC_CACHE = 'bambuddy-static-v29';
 
 // Static assets to cache on install
@@ -17,6 +17,33 @@ const STATIC_ASSETS = [
   '/fonts/inter-latin.woff2',
   '/fonts/inter-latin-ext.woff2',
 ];
+
+// <name>-<8-char hash>.<ext> directly under /assets/, as Vite emits them.
+const HASHED_ASSET_RE = /^\/assets\/[^/]+-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$/;
+const ENTRY_SCRIPT_RE = /\/assets\/index-[A-Za-z0-9_-]{8}\.js/;
+
+// An update ships new file names, and the old files would stay cached for
+// good. When a page names an entry script the cache has not seen, that is a
+// new build: drop the cached /assets files, and the new ones are cached as
+// they are used.
+async function dropOldBuildAssets(response) {
+  try {
+    const html = await response.text();
+    const entry = html.match(ENTRY_SCRIPT_RE);
+    if (!entry) return;
+    const cache = await caches.open(CACHE_NAME);
+    // Listed first, so files the new build caches meanwhile are kept.
+    const keys = await cache.keys();
+    if (await cache.match(entry[0])) return;
+    await Promise.all(
+      keys
+        .filter((key) => new URL(key.url).pathname.startsWith('/assets/'))
+        .map((key) => cache.delete(key)),
+    );
+  } catch {
+    // Pruning is housekeeping; never let it break a page load.
+  }
+}
 
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
@@ -83,6 +110,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // The page polls /health to learn whether the server is back (#3175); an
+  // answer from the cache would say it is when it is not.
+  if (url.pathname === '/health') {
+    return;
+  }
+
   // Skip camera stream/snapshot requests - Safari has issues with streaming through SW
   if (url.pathname.includes('/camera/stream') || url.pathname.includes('/camera/snapshot')) {
     return;
@@ -136,8 +169,33 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // JS/CSS assets - network first (Vite content-hashes filenames, so
-  // cache-busting is built in; network-first ensures new builds load immediately)
+  // Files Vite names by content hash never change (#3175): serve them from
+  // the cache, so an installed app opens without asking the server for the
+  // bundle. The backend marks them immutable too.
+  if (HASHED_ASSET_RE.test(url.pathname)) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) {
+          return cached;
+        }
+        return fetch(request).then((response) => {
+          // Kept for good, so never keep a page a proxy sent for a missing file.
+          const isHtml = (response.headers.get('content-type') || '').includes('text/html');
+          if (response.ok && !isHtml) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, clone);
+            });
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // Other JS/CSS (the pdf.js runtime data under /assets/pdfjs/, ...) - network
+  // first, the cache only when offline.
   if (
     url.pathname.startsWith('/assets/') ||
     url.pathname.endsWith('.js') ||
@@ -170,6 +228,12 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(request, clone);
           });
+          const pruning = dropOldBuildAssets(response.clone());
+          try {
+            event.waitUntil(pruning);
+          } catch {
+            // Too late to extend the event in this browser; pruning still runs.
+          }
         }
         return response;
       })

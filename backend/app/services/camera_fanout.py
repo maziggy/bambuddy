@@ -224,7 +224,7 @@ class MjpegBroadcaster:
             if predecessor is not None:
                 try:
                     await asyncio.wait_for(predecessor.wait_until_torn_down(), timeout=_TEARDOWN_WAIT_SECONDS)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning("Prior broadcaster %r didn't tear down in time; dialing anyway", self._key)
             async for chunk in self._factory(self._upstream_disconnect):
                 # Snapshot subscribers under lock so we don't iterate a list
@@ -314,6 +314,27 @@ async def shutdown_broadcaster(key: str) -> bool:
     return True
 
 
+async def retire_broadcasters(prefix: str, *, keep: str) -> None:
+    """Shut down every broadcaster under ``prefix`` except ``keep``, and wait
+    (bounded) until their upstreams have closed.
+
+    For a camera that changed: the new upstream has a different key, so the
+    predecessor gate cannot hold it back while the old one still has the
+    device open, and a camera that allows one reader (USB) would refuse it.
+    Covers one already tearing down after its grace window, too.
+    """
+    async with _registry_lock:
+        retiring = [bc for key, bc in _broadcasters.items() if key.startswith(prefix) and key != keep]
+    for bc in retiring:
+        if not bc.stopped:
+            await bc.force_shutdown()
+    for bc in retiring:
+        try:
+            await asyncio.wait_for(bc.wait_until_torn_down(), timeout=_TEARDOWN_WAIT_SECONDS)
+        except TimeoutError:
+            logger.warning("Broadcaster %r didn't tear down in time; continuing", bc.key)
+
+
 async def shutdown_all_broadcasters() -> None:
     """Tear down every broadcaster (for app shutdown)."""
     async with _registry_lock:
@@ -365,7 +386,7 @@ async def iter_subscriber(
         while True:
             try:
                 chunk = await asyncio.wait_for(queue.get(), timeout=_DISCONNECT_POLL_SECONDS)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # No frame this tick — is the client still there? This used to
                 # wait 30 s before asking, and the disconnect check after a yield
                 # only fires when frames are actually flowing. So a viewer that

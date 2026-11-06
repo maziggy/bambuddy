@@ -6,10 +6,31 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from backend.app.core.logging_filters import redact_query_tokens, redact_url_credentials, url_host_only
+
 if TYPE_CHECKING:
     from backend.app.models.smart_plug import SmartPlug
 
 logger = logging.getLogger(__name__)
+
+
+def _log_target(url: str | None) -> str:
+    """The device a REST URL points at, for a log line: scheme and host only.
+
+    The rest of the URL may be the credential (a login, a query token, a
+    webhook id in the path).
+    """
+    return url_host_only(url)
+
+
+def _log_error(error: Exception, url: str) -> str:
+    """What to log of an error: a connection error's text with the URL it may
+    quote reduced to its host; for anything else only its type, as its text
+    may quote a request header."""
+    if not isinstance(error, httpx.ConnectError):
+        return type(error).__name__
+    text = str(error).replace(url, _log_target(url))
+    return redact_query_tokens(redact_url_credentials(text)) or ""
 
 
 class RESTSmartPlugService:
@@ -65,7 +86,8 @@ class RESTSmartPlugService:
             if isinstance(headers, dict):
                 return {str(k): str(v) for k, v in headers.items()}
         except (json.JSONDecodeError, TypeError):
-            logger.warning("Failed to parse REST headers JSON: %s", headers_json)
+            # Not the value: headers carry credentials.
+            logger.warning("Failed to parse REST headers JSON; sending none")
         return {}
 
     @staticmethod
@@ -94,7 +116,7 @@ class RESTSmartPlugService:
     ) -> httpx.Response | None:
         """Send an HTTP request and return the response."""
         if not self._validate_url(url):
-            logger.warning("Blocked REST request to invalid URL: %s", url)
+            logger.warning("Blocked REST request to invalid URL: %s", _log_target(url))
             return None
 
         try:
@@ -114,16 +136,18 @@ class RESTSmartPlugService:
                 response.raise_for_status()
                 return response
         except httpx.TimeoutException:
-            logger.warning("REST smart plug at %s timed out", url)
+            logger.warning("REST smart plug at %s timed out", _log_target(url))
             return None
         except httpx.HTTPStatusError as e:
-            logger.warning("REST smart plug at %s returned error: %s", url, e)
+            logger.warning("REST smart plug at %s returned HTTP %s", _log_target(url), e.response.status_code)
             return None
         except httpx.RequestError as e:
-            logger.warning("Failed to connect to REST smart plug at %s: %s", url, e)
+            logger.warning("Failed to connect to REST smart plug at %s: %s", _log_target(url), _log_error(e, url))
             return None
         except Exception as e:
-            logger.error("Unexpected error communicating with REST smart plug at %s: %s", url, e)
+            logger.error(
+                "Unexpected error communicating with REST smart plug at %s: %s", _log_target(url), _log_error(e, url)
+            )
             return None
 
     async def turn_on(self, plug: "SmartPlug") -> bool:
@@ -137,7 +161,7 @@ class RESTSmartPlugService:
         response = await self._send_request(plug.rest_on_url, method, headers, plug.rest_on_body)
 
         if response is not None:
-            logger.info("Turned ON REST smart plug '%s' via %s %s", plug.name, method, plug.rest_on_url)
+            logger.info("Turned ON REST smart plug '%s' via %s %s", plug.name, method, _log_target(plug.rest_on_url))
             return True
 
         logger.warning("Failed to turn ON REST smart plug '%s'", plug.name)
@@ -154,7 +178,7 @@ class RESTSmartPlugService:
         response = await self._send_request(plug.rest_off_url, method, headers, plug.rest_off_body)
 
         if response is not None:
-            logger.info("Turned OFF REST smart plug '%s' via %s %s", plug.name, method, plug.rest_off_url)
+            logger.info("Turned OFF REST smart plug '%s' via %s %s", plug.name, method, _log_target(plug.rest_off_url))
             return True
 
         logger.warning("Failed to turn OFF REST smart plug '%s'", plug.name)

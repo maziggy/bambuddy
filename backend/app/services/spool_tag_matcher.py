@@ -9,11 +9,12 @@ from sqlalchemy.orm import selectinload
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.schemas.spool import normalize_effect_type
-from backend.app.services import slot_unlink_grace
+from backend.app.services import slot_unlink_grace, spool_swaps
 from backend.app.services.color_catalog_lookup import resolve_bambu_color
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_filament_preset import printer_safe_filament_id, resolve_spool_preset
 from backend.app.utils.tag_normalization import (
+    normalize_hex as _normalize_hex,
     normalize_tag_uid as _normalize_tag_uid,
     normalize_tray_uuid as _normalize_tray_uuid,
 )
@@ -23,6 +24,13 @@ logger = logging.getLogger(__name__)
 # Zero-value constants for tag validation
 ZERO_TAG_UID = "0000000000000000"
 ZERO_TRAY_UUID = "00000000000000000000000000000000"
+
+# ISO 14443-3 cascade tag. A reader that stops after cascade level 1 reports a
+# 7- or 10-byte UID as this byte plus the UID's first three bytes (#3258).
+CASCADE_TAG = "88"
+# SAK bit that says the UID goes on at the next cascade level. Such a reader
+# reports the SAK of level 1, so its 88 form always comes with this bit set.
+SAK_UID_INCOMPLETE = 0x04
 
 # Spool catalog row describing the reusable plastic spool Bambu Lab ships filament
 # on, and the weight to assume when that row is absent. DEFAULT_SPOOL_CATALOG holds
@@ -49,20 +57,17 @@ def is_bambu_tag(tag_uid: str, tray_uuid: str, tray_info_idx: str) -> bool:
     return uuid_valid or (is_valid_tag(tag_uid, tray_uuid) and has_preset)
 
 
-async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
-    """Create a new Spool inventory entry from AMS tray MQTT data.
+async def resolve_tray_fields(db: AsyncSession, tray_data: dict) -> dict:
+    """The spool fields an AMS tray report describes: material, colour, profile, temps, label weight.
 
-    Extracts material, subtype, color, temps, and tag info from the tray dict.
-    Looks up core_weight from the spool catalog if a Bambu Lab entry matches.
+    Shared by AMS auto-creation and SpoolBuddy's Quick Add prefill from a decoded
+    tag (#2685), so a roll gets the same material, colour name and profile
+    whichever reader saw it. Returns a dict of ``Spool`` column values.
     """
-    from backend.app.models.spool_catalog import SpoolCatalogEntry
-
     tray_type = tray_data.get("tray_type", "")  # "PLA"
     tray_sub_brands = tray_data.get("tray_sub_brands", "")  # "PLA Basic"
     tray_color = tray_data.get("tray_color", "FFFFFFFF")  # RRGGBBAA
     tray_id_name = tray_data.get("tray_id_name", "")  # Color name e.g. "Jade White"
-    tag_uid = _normalize_tag_uid(tray_data.get("tag_uid", ""))
-    tray_uuid = _normalize_tray_uuid(tray_data.get("tray_uuid", ""))
     tray_info_idx = tray_data.get("tray_info_idx", "")
     nozzle_min = tray_data.get("nozzle_temp_min", 0)
     nozzle_max = tray_data.get("nozzle_temp_max", 0)
@@ -153,6 +158,39 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
                 continue
             break
 
+    # Resolve slicer filament name from builtin table
+    slicer_filament_name = None
+    if tray_info_idx:
+        try:
+            from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
+
+            slicer_filament_name = _BUILTIN_FILAMENT_NAMES.get(tray_info_idx)
+        except Exception:
+            pass
+        # Fallback: use tray_sub_brands as the display name
+        if not slicer_filament_name and tray_sub_brands:
+            slicer_filament_name = tray_sub_brands
+
+    return {
+        "material": material,
+        "subtype": subtype,
+        "color_name": color_name,
+        "rgba": rgba,
+        "extra_colors": extra_colors,
+        "effect_type": effect_type,
+        "brand": "Bambu Lab",
+        "label_weight": label_weight,
+        "slicer_filament": tray_info_idx or None,
+        "slicer_filament_name": slicer_filament_name,
+        "nozzle_temp_min": int(nozzle_min) if nozzle_min else None,
+        "nozzle_temp_max": int(nozzle_max) if nozzle_max else None,
+    }
+
+
+async def bambu_spool_core_weight(db: AsyncSession) -> tuple[int, int | None]:
+    """The empty-spool weight an RFID roll arrives on, and the catalog row it came from (if any)."""
+    from backend.app.models.spool_catalog import SpoolCatalogEntry
+
     # Look up core weight from the spool catalog by exact name. The previous
     # "Bambu Lab%" prefix query had no matching step and no ORDER BY, so it took
     # whichever of the three Bambu Lab rows the database returned first — High Temp
@@ -177,19 +215,21 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     if catalog_entry:
         core_weight = catalog_entry.weight
         core_weight_catalog_id = catalog_entry.id
+    return core_weight, core_weight_catalog_id
 
-    # Resolve slicer filament name from builtin table
-    slicer_filament_name = None
-    if tray_info_idx:
-        try:
-            from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
 
-            slicer_filament_name = _BUILTIN_FILAMENT_NAMES.get(tray_info_idx)
-        except Exception:
-            pass
-        # Fallback: use tray_sub_brands as the display name
-        if not slicer_filament_name and tray_sub_brands:
-            slicer_filament_name = tray_sub_brands
+async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
+    """Create a new Spool inventory entry from AMS tray MQTT data.
+
+    Extracts material, subtype, color, temps, and tag info from the tray dict.
+    Looks up core_weight from the spool catalog if a Bambu Lab entry matches.
+    """
+    fields = await resolve_tray_fields(db, tray_data)
+    material, subtype, color_name = fields["material"], fields["subtype"], fields["color_name"]
+    label_weight = fields["label_weight"]
+    tag_uid = _normalize_tag_uid(tray_data.get("tag_uid", ""))
+    tray_uuid = _normalize_tray_uuid(tray_data.get("tray_uuid", ""))
+    core_weight, core_weight_catalog_id = await bambu_spool_core_weight(db)
 
     # Calculate initial weight_used from AMS remain percentage
     remain_raw = tray_data.get("remain")
@@ -215,22 +255,11 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     )
 
     spool = Spool(
-        material=material,
-        subtype=subtype,
-        color_name=color_name,
-        rgba=rgba,
-        extra_colors=extra_colors,
-        effect_type=effect_type,
-        brand="Bambu Lab",
+        **fields,
         material_number=material_number,
-        label_weight=label_weight,
         core_weight=core_weight,
         core_weight_catalog_id=core_weight_catalog_id,
         weight_used=weight_used,
-        slicer_filament=tray_info_idx or None,
-        slicer_filament_name=slicer_filament_name,
-        nozzle_temp_min=int(nozzle_min) if nozzle_min else None,
-        nozzle_temp_max=int(nozzle_max) if nozzle_max else None,
         tag_uid=tag_uid if tag_uid and tag_uid != ZERO_TAG_UID else None,
         tray_uuid=tray_uuid if tray_uuid and tray_uuid != ZERO_TRAY_UUID else None,
         data_origin="rfid_auto",
@@ -254,6 +283,13 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     from backend.app.services.supplier_links import apply_supplier_inheritance
 
     await apply_supplier_inheritance(db, spool)
+
+    # The product's profile default (#1326): its K profiles and per-model
+    # presets. The tag's own preset stays -- it names what is on the roll.
+    from backend.app.services.filament_profile_default import fill_internal_spool
+
+    await fill_internal_spool(db, spool)
+    await db.flush()
 
     logger.info(
         "Auto-created spool %d from AMS tray data: %s %s %s (tag=%s uuid=%s)",
@@ -402,10 +438,31 @@ async def link_tag_to_inventory_spool(db: AsyncSession, spool: Spool, tray_data:
     )
 
 
-async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Spool | None:
+async def tag_belongs_to_archived_spool(db: AsyncSession, tag_uid: str, tray_uuid: str) -> bool:
+    """True when the tag is an archived spool's.
+
+    Archiving releases the spool's slot, but its tag can stay in the AMS (an
+    empty core waiting to be swapped). Treated as unknown, it would be linked
+    to a matching unopened spool or become a new one.
+    """
+    tray_uuid_norm = _normalize_tray_uuid(tray_uuid)
+    tag_uid_norm = _normalize_tag_uid(tag_uid)
+    conditions = []
+    if tray_uuid_norm and tray_uuid_norm != ZERO_TRAY_UUID and tray_uuid_norm != "0" * len(tray_uuid_norm):
+        conditions.append(func.upper(Spool.tray_uuid) == tray_uuid_norm)
+    if tag_uid_norm and tag_uid_norm != ZERO_TAG_UID and tag_uid_norm != "0" * len(tag_uid_norm):
+        conditions.append(func.upper(Spool.tag_uid) == tag_uid_norm)
+    if not conditions:
+        return False
+    found = await db.scalar(select(Spool.id).where(Spool.archived_at.is_not(None), or_(*conditions)).limit(1))
+    return found is not None
+
+
+async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str, sak: int | None = None) -> Spool | None:
     """Look up an active spool by RFID tag UID or Bambu Lab tray UUID.
 
-    Prefers tray_uuid match over tag_uid (more reliable).
+    Prefers tray_uuid match over tag_uid (more reliable). sak is the SAK the
+    reader reported with the UID, when it reported one.
     """
     tray_uuid_norm = _normalize_tray_uuid(tray_uuid)
     tag_uid_norm = _normalize_tag_uid(tag_uid)
@@ -494,6 +551,108 @@ async def get_spool_by_tag(db: AsyncSession, tag_uid: str, tray_uuid: str) -> Sp
                         )
                         return candidate
 
+        spool = await _spool_by_cascade_level_1(db, tag_uid, sak)
+        if spool:
+            return spool
+
+    return None
+
+
+def cascade_level_1_uid(tag_uid: str | None) -> str | None:
+    """The form a reader that stops after cascade level 1 reports this UID in, or None.
+
+    Only a 7- or 10-byte UID goes on past level 1; such a reader reports it as
+    the cascade tag plus its first three bytes (#3258).
+    """
+    uid = _normalize_hex(tag_uid)
+    return CASCADE_TAG + uid[:6] if len(uid) in (14, 20) else None
+
+
+def cascade_level_1_uid_start(tag_uid: str | None, sak: int | None = None) -> str | None:
+    """The first three bytes of the UID behind a read that stopped after cascade level 1, or None.
+
+    A SAK without the incomplete bit says the UID ended there: a 4-byte UID
+    that begins with 88 (a non-ISO clone card) is not such a read.
+    """
+    if sak is not None and not sak & SAK_UID_INCOMPLETE:
+        return None
+    uid = _normalize_hex(tag_uid)
+    return uid[len(CASCADE_TAG) :] if len(uid) == 8 and uid.startswith(CASCADE_TAG) else None
+
+
+def begins_with_cascade_level_1(stored_uid: str, uid_start: str) -> bool:
+    """Whether a stored tag link is a 7-byte UID that a cascade level 1 read of uid_start begins."""
+    return len(stored_uid) == 14 and stored_uid.startswith(uid_start)
+
+
+def warn_cascade_level_1_ambiguous(tag_uid: str, spool_ids: list) -> None:
+    """Log that more than one spool fits a tag at cascade level 1, so none is matched."""
+    logger.warning(
+        "Tag %s fits the tag links of spools %s at cascade level 1; not guessing between them",
+        tag_uid,
+        spool_ids,
+    )
+
+
+async def _spool_by_cascade_level_1(db: AsyncSession, tag_uid: str, sak: int | None = None) -> Spool | None:
+    """Match a tag UID and a link stored from the tag's cascade level 1 alone, either way round.
+
+    SpoolBuddy daemons before #3258 stopped after cascade level 1 and reported
+    the NTAG 04ECE673D32A81 as 8804ECE6, so spools linked on the scale carry
+    that form. A full read finds such a spool and rewrites its link to the full
+    UID, so the short form dies out. A level-1 read from a daemon not updated
+    yet finds the spool linked by the 7-byte UID it begins, so a link that was
+    rewritten, or stored by another reader, still works there. Three bytes can
+    begin more than one tag, so only a single fitting spool is matched.
+    """
+    loads = (selectinload(Spool.k_profiles), selectinload(Spool.assignments))
+    full_uid = _normalize_hex(tag_uid)
+    level1_uid = cascade_level_1_uid(full_uid)
+    uid_start = cascade_level_1_uid_start(full_uid, sak)
+    matches: list[Spool] = []
+
+    if level1_uid:
+        result = await db.execute(
+            select(Spool)
+            .options(*loads)
+            .where(func.upper(Spool.tag_uid) == level1_uid, Spool.archived_at.is_(None))
+            .limit(100)
+        )
+        matches = list(result.scalars().all())
+        if len(matches) == 1:
+            spool = matches[0]
+            spool.tag_uid = _normalize_tag_uid(full_uid)
+            await db.flush()
+            logger.info(
+                "Matched spool %d by its cascade level 1 tag link %s; link rewritten to the full UID %s",
+                spool.id,
+                level1_uid,
+                spool.tag_uid,
+            )
+            return spool
+    elif uid_start:
+        result = await db.execute(
+            select(Spool)
+            .options(*loads)
+            .where(func.upper(Spool.tag_uid).like(f"{uid_start}%"), Spool.archived_at.is_(None))
+            .limit(100)
+        )
+        matches = [
+            spool
+            for spool in result.scalars().all()
+            if begins_with_cascade_level_1(_normalize_tag_uid(spool.tag_uid), uid_start)
+        ]
+        if len(matches) == 1:
+            logger.info(
+                "Matched spool %d by cascade level 1 of its tag UID: scanned=%s, stored=%s",
+                matches[0].id,
+                full_uid,
+                matches[0].tag_uid,
+            )
+            return matches[0]
+
+    if len(matches) > 1:
+        warn_cascade_level_1_ambiguous(full_uid, [spool.id for spool in matches])
     return None
 
 
@@ -556,6 +715,7 @@ async def auto_assign_spool(
     )
     db.add(assignment)
     await db.flush()
+    await spool_swaps.record_assignment(db, printer_id, ams_id, tray_id, spool.id, spool_swaps.INVENTORY)
     slot_unlink_grace.forget_slot(printer_id, ams_id, tray_id)
 
     # Apply K-profile via MQTT (if available)

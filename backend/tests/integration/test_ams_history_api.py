@@ -178,26 +178,13 @@ class TestAMSHistoryAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_delete_old_history(
+    async def test_history_cannot_be_deleted_through_the_api(
         self, async_client: AsyncClient, ams_history_factory, printer_factory, db_session
     ):
-        """Verify old history can be deleted."""
+        """Old history goes by the retention setting only; there is no delete route."""
         printer = await printer_factory()
-        # Create an old record
         await ams_history_factory(printer_id=printer.id, recorded_at=datetime.now() - timedelta(days=60))
 
-        # Delete records older than 30 days
         response = await async_client.delete(f"/api/v1/ams-history/{printer.id}", params={"days": 30})
-        assert response.status_code == 200
-        data = response.json()
-        assert data["deleted"] >= 1
 
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_delete_old_history_no_records(self, async_client: AsyncClient, printer_factory, db_session):
-        """Verify delete with no old records returns 0."""
-        printer = await printer_factory()
-        response = await async_client.delete(f"/api/v1/ams-history/{printer.id}", params={"days": 30})
-        assert response.status_code == 200
-        data = response.json()
-        assert data["deleted"] == 0
+        assert response.status_code == 405

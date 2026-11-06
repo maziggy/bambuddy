@@ -169,3 +169,37 @@ async def test_bootstrap_custom_name(session_maker):
         validated = await _validate_api_key(db, key)
         assert validated is not None
         assert validated.name == "custom-kiosk-name"
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_rotating_drops_the_old_keys_links(session_maker):
+    """The new key gets a new id, and the old key's camera and WebSocket links go.
+
+    Deleted first, SQLite gave the new key the old one's id: the old (perhaps
+    leaked) key's links and open dashboards took the new key's printers, all of
+    them even when an admin had limited or disabled the old key.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from backend.app.models.auth_ephemeral import AuthEphemeralToken
+
+    await kiosk_bootstrap(DEFAULT_KIOSK_KEY_NAME, force=False, session_maker=session_maker, ensure_schema=False)
+    async with session_maker() as db:
+        old_id = (await db.execute(select(APIKey.id))).scalar_one()
+        expires = datetime.now(timezone.utc) + timedelta(hours=1)
+        db.add_all(
+            [
+                AuthEphemeralToken(
+                    token=f"{kind}-old", token_type=kind, username="", api_key_id=old_id, expires_at=expires
+                )
+                for kind in ("camera_stream", "websocket")
+            ]
+        )
+        await db.commit()
+
+    await kiosk_bootstrap(DEFAULT_KIOSK_KEY_NAME, force=True, session_maker=session_maker, ensure_schema=False)
+
+    async with session_maker() as db:
+        assert (await db.execute(select(APIKey.id))).scalar_one() != old_id
+        assert (await db.execute(select(AuthEphemeralToken.token))).scalars().all() == []

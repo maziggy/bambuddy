@@ -43,12 +43,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
+from backend.app.utils.filament_finish import different_finish
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
+    GENERIC_IDS_REPLACED_ON_REUSE,
     filament_id_to_setting_id,
     normalize_slicer_filament,
+    orca_to_bambu_filament_id,
+    setting_id_to_filament_id,
 )
 from backend.app.utils.filament_types import is_material_name
+from backend.app.utils.slicer_strings import first_slicer_string
 
 logger = logging.getLogger(__name__)
 
@@ -82,10 +87,16 @@ _MAX_INHERITS_DEPTH = 5
 
 
 def _content_filament_id(content: dict) -> str:
+    """A profile's filament_id as the printer knows it.
+
+    One copied from an OrcaSlicer system preset is Orca's own id ("OFMUWNkp"),
+    which the printer cannot resolve; it is translated with Orca's own table,
+    and one the table does not know reads as none, so the lookup goes on to
+    the parents (#3387)."""
     raw = content.get("filament_id")
     if isinstance(raw, list):
         raw = raw[0] if raw else None
-    return raw.strip() if isinstance(raw, str) else ""
+    return orca_to_bambu_filament_id(raw.strip()) if isinstance(raw, str) else ""
 
 
 def _catalog_filament_id(preset_name: str) -> str:
@@ -229,7 +240,8 @@ def _preset_filament_type(raw: object) -> str | None:
     """Read a slicer preset's ``filament_type`` field.
 
     Bambu Studio and OrcaSlicer both store it as a one-element array
-    (``["PLA"]``); some hand-written and older profiles store a bare string.
+    (``["PLA"]``); some hand-written and older profiles store a bare string,
+    and Orca Cloud can return it INI-quoted (``'"PLA"'``, #3380).
     ``orca_profiles._extract_filament_fields`` accepts both and this has to
     agree with it, since that is what fills ``LocalPreset.filament_type``.
 
@@ -240,11 +252,42 @@ def _preset_filament_type(raw: object) -> str | None:
     ``filament_type`` is a product line, which is the case this whole module
     exists to keep out of an AMS slot.
     """
-    if isinstance(raw, list):
-        raw = raw[0] if raw else None
-    if isinstance(raw, str) and raw.strip():
-        return raw.strip()
-    return None
+    return first_slicer_string(raw)
+
+
+def reusable_slot_filament_id(
+    current_tray_info_idx: str | None,
+    current_tray_type: str | None,
+    current_tray_sub_brands: str | None,
+    tray_type: str,
+    spool_text: str,
+) -> str:
+    """The slot's own filament id, when a spool without a preset may keep it.
+
+    A spool whose preset is empty or unresolvable would otherwise get the
+    generic id for its material, which turns a genuine Bambu PLA Basic into
+    Generic PLA. When the slot already holds a specific filament id of the same
+    type, keeping it is closer. Shared by both inventory modes (#3433): the
+    Spoolman route went straight to the generic id.
+
+    Not kept: a generic id, a cloud user preset (PFUS/PFCN), a material name
+    left in that field by a Bambuddy from before #2902, another type, and
+    another finish when both name one (a Silk spool does not take a Matte id).
+    ``spool_text`` is the spool's material and subtype.
+    """
+    current = (current_tray_info_idx or "").strip()
+    if (
+        current
+        and current not in GENERIC_IDS_REPLACED_ON_REUSE
+        and not current.startswith("PFUS")
+        and not current.startswith("PFCN")
+        and not is_material_name(current)
+        and current_tray_type
+        and current_tray_type.upper() == tray_type.upper()
+        and not different_finish(spool_text, current_tray_sub_brands)
+    ):
+        return current
+    return ""
 
 
 async def resolve_slicer_filament(
@@ -363,17 +406,41 @@ async def resolve_slicer_filament(
                     own_filament_id = detail.get("filament_id") or (
                         cloud_setting.get("filament_id") if isinstance(cloud_setting, dict) else None
                     )
-                    if own_filament_id:
+                    # An official preset's id comes from its full setting_id
+                    # (#3387). The detail read above is the suffix-free base's,
+                    # and for some bases that is another filament: "GFSA05" is
+                    # Bambu PLA Matte @BBL X1, while "GFSA05_07" -- and the
+                    # bare id Bambuddy builds from GFA05 -- is Bambu PLA Silk.
+                    # Its type and name only count when it is the same filament.
+                    # A spool named after that very preset is the exception: it
+                    # was picked as Bambu's legacy bare preset ("Bambu TPU 95A
+                    # @BBL X1C", "GFSU00" -> GFU01), not built by Bambuddy, and
+                    # Bambu's own id is then the right one.
+                    official = setting_id_to_filament_id(sf) if base_sf.startswith("GFS") else ""
+                    detail_name = detail.get("name")
+                    if (
+                        official
+                        and own_filament_id
+                        and isinstance(detail_name, str)
+                        and detail_name.strip()
+                        and detail_name.strip() == (slicer_filament_name or "").strip()
+                    ):
+                        official = own_filament_id
+                    if official:
+                        tray_info_idx = official
+                        if own_filament_id and own_filament_id != official:
+                            type_override = None
+                        else:
+                            cloud_name = detail.get("name", "")
+                            if cloud_name:
+                                sub_brand_override = cloud_name.split("@")[0].strip()
+                    elif own_filament_id:
                         tray_info_idx = own_filament_id
                         cloud_name = detail.get("name", "")
                         if cloud_name:
                             sub_brand_override = cloud_name.replace(r"@.*$", "").split("@")[0].strip()
                     elif detail.get("base_id"):
-                        bid = detail["base_id"].split("_")[0]
-                        if bid.startswith("GFS") and len(bid) >= 5:
-                            tray_info_idx = f"GF{bid[3:]}"
-                        else:
-                            tray_info_idx = bid
+                        tray_info_idx = setting_id_to_filament_id(detail["base_id"])
                 finally:
                     await cloud.close()
             elif cloud is not None:

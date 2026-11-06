@@ -197,27 +197,80 @@ class TestRegisterDevice:
         assert payload["calibration_factor"] == 1.05
 
 
-class TestReportUpdateStatus:
+def _status_error(code: int, detail: str | None = None) -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "http://localhost:5000/x")
+    body = {"json": {"detail": detail}} if detail is not None else {}
+    return httpx.HTTPStatusError("rejected", request=request, response=httpx.Response(code, request=request, **body))
+
+
+class TestTagScanned:
     @pytest.mark.asyncio
-    async def test_report_update_status(self, api):
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"ok": True}
-        mock_resp.raise_for_status = MagicMock()
-        api._client.post = AsyncMock(return_value=mock_resp)
+    async def test_sends_raw_blocks(self, api):
+        api._post = AsyncMock(return_value={"status": "ok"})
+        raw = {"1": "4130302D423038004746413030000000", "9": "36B6C12DB3DA4A39A50C275F510BD399"}
 
-        result = await api.report_update_status("dev-1", "updating", "Fetching...")
+        await api.tag_scanned("sb-1", "865947E2", tray_uuid="36B6C12DB3DA4A39A50C275F510BD399", raw_blocks=raw)
 
-        assert result == {"ok": True}
-        call_args = api._client.post.call_args
-        assert "/devices/dev-1/update-status" in call_args[0][0]
-        payload = call_args[1]["json"]
-        assert payload["status"] == "updating"
-        assert payload["message"] == "Fetching..."
+        path, payload = api._post.await_args.args
+        assert path == "/nfc/tag-scanned"
+        assert payload["raw_blocks"] == raw
+        assert payload["tray_uuid"] == "36B6C12DB3DA4A39A50C275F510BD399"
 
     @pytest.mark.asyncio
-    async def test_report_update_status_failure_returns_none(self, api):
-        api._client.post = AsyncMock(side_effect=httpx.ConnectError("fail"))
+    async def test_raw_blocks_default_to_none(self, api):
+        api._post = AsyncMock(return_value={"status": "ok"})
 
-        result = await api.report_update_status("dev-1", "error", "oops")
+        await api.tag_scanned("sb-1", "04A1B2C3D4E5F6")
+
+        _, payload = api._post.await_args.args
+        assert payload["raw_blocks"] is None
+
+
+class TestRejectedRequests:
+    """A request the backend refuses is not a connection problem: buffering it
+    replays it forever, and the flush stops at the first item that fails."""
+
+    @pytest.mark.asyncio
+    async def test_a_heartbeat_for_an_unregistered_device_is_not_buffered(self, api):
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock(side_effect=_status_error(404, "Device not registered"))
+        api._client.post = AsyncMock(return_value=resp)
+
+        result = await api.heartbeat(device_id="dev-1", nfc_ok=True, scale_ok=True, uptime_s=1)
 
         assert result is None
+        assert len(api._buffer) == 0
+        assert api.unregistered is True
+
+    @pytest.mark.asyncio
+    async def test_a_proxys_bare_404_is_not_taken_for_an_unregistered_device(self, api):
+        """A reverse proxy answers 404 while Bambuddy restarts."""
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock(side_effect=_status_error(404))
+        api._client.post = AsyncMock(return_value=resp)
+
+        await api.heartbeat(device_id="dev-1", nfc_ok=True, scale_ok=True, uptime_s=1)
+
+        assert api.unregistered is False
+
+    @pytest.mark.asyncio
+    async def test_a_connection_error_is_still_buffered(self, api):
+        api._client.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
+
+        await api.heartbeat(device_id="dev-1", nfc_ok=True, scale_ok=True, uptime_s=1)
+
+        assert len(api._buffer) == 1
+        assert api.unregistered is False
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_buffered_item_does_not_block_the_rest(self, api):
+        api._buffer.append({"path": "/devices/dev-1/heartbeat", "data": {}})
+        api._buffer.append({"path": "/scale/reading", "data": {"w": 1}})
+        rejected = MagicMock(raise_for_status=MagicMock(side_effect=_status_error(404)))
+        accepted = MagicMock(raise_for_status=MagicMock())
+        api._client.post = AsyncMock(side_effect=[rejected, accepted])
+
+        await api._flush_buffer()
+
+        assert len(api._buffer) == 0
+        assert api._client.post.await_count == 2

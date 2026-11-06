@@ -571,29 +571,6 @@ class TestSliceOutputValidation:
             )
 
 
-class TestHealth:
-    @pytest.mark.asyncio
-    async def test_health_returns_body(self):
-        def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(
-                status_code=200,
-                json={"status": "healthy", "checks": {"orcaslicer": {"available": True}}},
-            )
-
-        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
-        body = await service.health()
-        assert body["status"] == "healthy"
-
-    @pytest.mark.asyncio
-    async def test_health_unreachable_raises(self):
-        def handler(request: httpx.Request) -> httpx.Response:
-            raise httpx.ConnectError("no route")
-
-        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
-        with pytest.raises(SlicerApiUnavailableError):
-            await service.health()
-
-
 class TestSliceWithProfilesProgress:
     """Live-progress wiring for slice_with_profiles.
 

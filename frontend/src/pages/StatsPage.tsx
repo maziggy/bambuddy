@@ -10,6 +10,7 @@ import {
   DollarSign,
   Target,
   Zap,
+  Wrench,
   AlertTriangle,
   TrendingDown,
   FileSpreadsheet,
@@ -45,45 +46,15 @@ import { getCurrencySymbol } from '../utils/currency';
 import { formatWeight } from '../utils/weight';
 import { parseUTCDate, formatDuration } from '../utils/date';
 import { MetricToggle, type Metric } from '../components/MetricToggle';
+import { useUiSettings } from '../hooks/useUiSettings';
+import { computeDateRange, localDate, type TimeframePreset } from '../utils/statsDateRange';
 
 // Timeframe types and helpers
-type TimeframePreset = 'today' | 'this-week' | 'this-month' | 'last-7' | 'last-30' | 'last-90' | 'this-year' | 'all-time' | 'custom';
 
 interface TimeframeState {
   preset: TimeframePreset;
   dateFrom: string | undefined; // YYYY-MM-DD
   dateTo: string | undefined;   // YYYY-MM-DD
-}
-
-function computeDateRange(preset: TimeframePreset): { dateFrom?: string; dateTo?: string } {
-  const now = new Date();
-  const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate();
-  const fmt = (dt: Date) => dt.toISOString().split('T')[0];
-  const todayStr = fmt(now);
-
-  switch (preset) {
-    case 'today':
-      return { dateFrom: todayStr, dateTo: todayStr };
-    case 'this-week': {
-      const day = now.getUTCDay();
-      const start = new Date(Date.UTC(y, m, d - (day === 0 ? 6 : day - 1)));
-      return { dateFrom: fmt(start), dateTo: todayStr };
-    }
-    case 'this-month':
-      return { dateFrom: fmt(new Date(Date.UTC(y, m, 1))), dateTo: todayStr };
-    case 'last-7':
-      return { dateFrom: fmt(new Date(Date.UTC(y, m, d - 6))), dateTo: todayStr };
-    case 'last-30':
-      return { dateFrom: fmt(new Date(Date.UTC(y, m, d - 29))), dateTo: todayStr };
-    case 'last-90':
-      return { dateFrom: fmt(new Date(Date.UTC(y, m, d - 89))), dateTo: todayStr };
-    case 'this-year':
-      return { dateFrom: fmt(new Date(Date.UTC(y, 0, 1))), dateTo: todayStr };
-    case 'all-time':
-      return { dateFrom: undefined, dateTo: undefined };
-    case 'custom':
-      return {};
-  }
 }
 
 const TIMEFRAME_PRESETS: TimeframePreset[] = [
@@ -133,6 +104,7 @@ function QuickStatsWidget({
     total_cost: number;
     total_energy_kwh: number;
     total_energy_cost: number;
+    total_wear_cost?: number;
     energy_data_warming_up?: boolean;
   } | undefined;
   currency: string;
@@ -163,6 +135,18 @@ function QuickStatsWidget({
       warning: warmingUp,
       tooltip: warmingUpTooltip,
     },
+    // Only once a printer has a wear cost set (#694), so installs without one
+    // don't get a tile that always reads zero.
+    ...((stats?.total_wear_cost ?? 0) > 0
+      ? [{
+          icon: Wrench,
+          color: 'text-slate-500 dark:text-slate-300',
+          label: t('stats.wearCost'),
+          value: `${currency} ${stats?.total_wear_cost?.toFixed(2) ?? '0.00'}`,
+          warning: false,
+          tooltip: undefined,
+        }]
+      : []),
   ];
 
   return (
@@ -897,9 +881,9 @@ function RecordsWidget({ archives, currency }: { archives: ArchiveSlim[]; curren
       });
     }
 
-    // Filament + measured energy (#1432); prints without a smart plug have
-    // energy_cost null and compete on filament cost alone.
-    const costliest = findMax(a => (a.cost ?? 0) + (a.energy_cost ?? 0));
+    // Filament + measured energy (#1432) + printer wear (#694); a cost that
+    // wasn't recorded is null and simply doesn't add.
+    const costliest = findMax(a => (a.cost ?? 0) + (a.energy_cost ?? 0) + (a.wear_cost ?? 0));
     if (costliest.archive) {
       result.push({
         icon: DollarSign, iconColor: 'text-green-600 dark:text-green-400', label: t('stats.mostExpensivePrint'),
@@ -1063,10 +1047,7 @@ export function StatsPage() {
     queryFn: () => api.getArchivesSlim(effectiveDateRange.dateFrom, effectiveDateRange.dateTo, createdByIdParam),
   });
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
 
   // The supplier widget aggregates the internal spool table, which is empty
   // in Spoolman mode — there the assignments live in the Spoolman twin table.
@@ -1127,6 +1108,9 @@ export function StatsPage() {
       const result = await api.recalculateCosts();
       await Promise.all([refetchStats(), refetchArchives()]);
       showToast(t('stats.recalculatedCosts', { count: result.updated }));
+      if (result.spoolman_unreachable) {
+        showToast(t('stats.recalculateSpoolmanUnreachable', { count: result.spoolman_unreachable }), 'warning');
+      }
     } catch {
       showToast(t('stats.recalculateFailed'), 'error');
     } finally {
@@ -1425,7 +1409,7 @@ export function StatsPage() {
                         <input
                           type="date"
                           value={timeframe.dateFrom || ''}
-                          max={timeframe.dateTo || new Date().toISOString().split('T')[0]}
+                          max={timeframe.dateTo || localDate(new Date())}
                           onChange={(e) => setTimeframe(prev => ({ ...prev, dateFrom: e.target.value || undefined }))}
                           className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded-md px-3 py-1.5 text-sm text-white"
                         />
@@ -1436,7 +1420,7 @@ export function StatsPage() {
                           type="date"
                           value={timeframe.dateTo || ''}
                           min={timeframe.dateFrom}
-                          max={new Date().toISOString().split('T')[0]}
+                          max={localDate(new Date())}
                           onChange={(e) => setTimeframe(prev => ({ ...prev, dateTo: e.target.value || undefined }))}
                           className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded-md px-3 py-1.5 text-sm text-white"
                         />

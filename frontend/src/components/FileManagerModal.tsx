@@ -353,7 +353,7 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
   // real. An unreachable printer answers with an empty file list and a warning,
   // and treating that as "those files are gone" would throw away a selection
   // the user made moments ago because one poll happened to fail.
-  const listingIsReal = !!data && !data.warnings?.includes('printer_unavailable');
+  const listingIsReal = !!data && !data.warnings?.length;
   useEffect(() => {
     if (!listingIsReal) return;
     const visiblePaths = new Set(visibleFiles.filter(file => !file.is_directory).map(file => file.path));
@@ -623,6 +623,10 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
             ) : data?.warnings?.includes('printer_unavailable') ? (
               <div className="text-center py-12 text-amber-600 dark:text-amber-400">
                 {t('printerFiles.printerUnavailable')}
+              </div>
+            ) : data?.warnings?.includes('listing_timed_out') ? (
+              <div className="text-center py-12 text-amber-600 dark:text-amber-400">
+                {t('printerFiles.listingTimedOut')}
               </div>
             ) : !data?.files?.length ? (
               <div className="text-center py-12 text-bambu-gray">

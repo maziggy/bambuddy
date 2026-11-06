@@ -266,6 +266,27 @@ describe('StatsPage', () => {
         expect(screen.getByText('Energy Cost')).toBeInTheDocument();
       });
     });
+
+    it('shows printer wear cost once a printer has a rate (#694)', async () => {
+      server.use(
+        http.get('/api/v1/archives/stats', () => HttpResponse.json({ ...mockStats, total_wear_cost: 7.25 })),
+      );
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Wear Cost')).toBeInTheDocument();
+      });
+      expect(screen.getByText(/7\.25/)).toBeInTheDocument();
+    });
+
+    it('leaves the wear tile out when no wear was recorded (#694)', async () => {
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Energy Cost')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Wear Cost')).not.toBeInTheDocument();
+    });
   });
 
   describe('widgets', () => {
@@ -554,6 +575,22 @@ describe('StatsPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Recalculate Costs')).toBeInTheDocument();
       });
+    });
+
+    it('says when Spoolman could not be reached for its prices (#3414)', async () => {
+      server.use(
+        http.post('/api/v1/archives/recalculate-costs', () =>
+          HttpResponse.json({ message: '', updated: 2, preserved: 0, usage_repriced: 3, spoolman_unreachable: 4 })
+        )
+      );
+      render(<StatsPage />);
+      const button = await screen.findByText('Recalculate Costs');
+
+      button.click();
+
+      expect(
+        await screen.findByText('Spoolman could not be reached: 4 usage records of its spools kept their old price')
+      ).toBeInTheDocument();
     });
   });
 

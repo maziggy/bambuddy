@@ -79,6 +79,22 @@ function renderCrossModel() {
 describe('PrintModal cross-model mode', () => {
   beforeEach(() => mockBackend());
 
+  it('does not select the default printer the hidden picker would have shown', async () => {
+    // A selected printer behind the candidate list would bring up a filament
+    // mapping panel for a printer nobody picked.
+    server.use(
+      http.get('/api/v1/settings/', () => HttpResponse.json({ default_printer_id: 1, currency: 'USD' })),
+      http.get('/api/v1/printers/:id/status', () =>
+        HttpResponse.json({ connected: true, state: 'IDLE', ams: [], vt_tray: [] }),
+      ),
+    );
+    renderCrossModel();
+    await screen.findByText('h2d.gcode.3mf');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(screen.queryByText(/Filament Mapping/)).not.toBeInTheDocument();
+  });
+
   it('replaces the printer picker with the candidate list', async () => {
     renderCrossModel();
     expect(await screen.findByText('x1c.gcode.3mf')).toBeInTheDocument();

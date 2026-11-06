@@ -654,19 +654,58 @@ class TestAdminDisable2FA:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_admin_disable_requires_admin(self, async_client: AsyncClient):
-        """Only admins can use the admin disable endpoint."""
-        # The only user in a fresh setup IS admin, so just check the 404 path
+    async def test_admin_disable_reports_a_user_without_2fa(self, async_client: AsyncClient):
+        """The Edit user dialog says so, rather than claiming it removed something."""
+        token = await _setup_and_login(async_client, "adminno2fa", "adminno2fa123")
+        created = await async_client.post(
+            "/api/v1/users",
+            json={"username": "plainuser2fa", "password": "Plainuser2fa1!"},
+            headers=_auth_header(token),
+        )
+        response = await async_client.request(
+            "DELETE",
+            f"/api/v1/auth/2fa/admin/{created.json()['id']}",
+            json={"admin_password": _norm_pw("adminno2fa123")},
+            headers=_auth_header(token),
+        )
+        assert response.status_code == 200
+        assert response.json()["had_2fa"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_disable_reports_email_2fa(self, async_client: AsyncClient, db_session):
+        from backend.app.api.routes.settings import set_setting
+
+        token = await _setup_and_login(async_client, "adminmail2fa", "adminmail2fa123")
+        created = await async_client.post(
+            "/api/v1/users",
+            json={"username": "mailuser2fa", "password": "Mailuser2fa1!"},
+            headers=_auth_header(token),
+        )
+        user_id = created.json()["id"]
+        await set_setting(db_session, f"user_{user_id}_email_2fa_enabled", "true")
+        await db_session.commit()
+
+        response = await async_client.request(
+            "DELETE",
+            f"/api/v1/auth/2fa/admin/{user_id}",
+            json={"admin_password": _norm_pw("adminmail2fa123")},
+            headers=_auth_header(token),
+        )
+        assert response.status_code == 200
+        assert response.json()["had_2fa"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_disable_unknown_user_is_404(self, async_client: AsyncClient):
         token = await _setup_and_login(async_client, "admincheck", "admincheck123")
-        # Try to disable for a non-existent user_id — should get 200 (no-op) or 404
         response = await async_client.request(
             "DELETE",
             "/api/v1/auth/2fa/admin/99999",
             json={"admin_password": _norm_pw("admincheck123")},
             headers=_auth_header(token),
         )
-        # Admin users succeed regardless (returns 200 even if user doesn't exist)
-        assert response.status_code == 200
+        assert response.status_code == 404
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -696,6 +735,7 @@ class TestAdminDisable2FA:
             headers=_auth_header(token),
         )
         assert response.status_code == 200
+        assert response.json()["had_2fa"] is True
 
         # I2: admin_disable_2fa bumps password_changed_at, invalidating the old token.
         # Re-login to get a fresh token before checking status.
@@ -1156,6 +1196,37 @@ class TestAdminDisableNonAdminRejection:
         )
         assert resp.status_code == 403
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_users_update_permission_alone_is_not_enough(self, async_client: AsyncClient):
+        """Editing users is admin-only; so is removing their 2FA."""
+        admin_token = await _setup_and_login(async_client, "adminperm2fa", "adminperm2fa1")
+        admin_id = (await async_client.get("/api/v1/auth/me", headers=_auth_header(admin_token))).json()["id"]
+
+        group = await async_client.post(
+            "/api/v1/groups",
+            json={"name": "User managers", "permissions": ["users:read", "users:update"]},
+            headers=_auth_header(admin_token),
+        )
+        assert group.status_code == 201, group.text
+        created = await async_client.post(
+            "/api/v1/users",
+            json={"username": "usermgr2fa", "password": "Usermgr2fa1!", "group_ids": [group.json()["id"]]},
+            headers=_auth_header(admin_token),
+        )
+        assert created.status_code == 201, created.text
+        login = await async_client.post(LOGIN_URL, json={"username": "usermgr2fa", "password": "Usermgr2fa1!"})
+        manager_token = login.json()["access_token"]
+
+        resp = await async_client.request(
+            "DELETE",
+            f"/api/v1/auth/2fa/admin/{admin_id}",
+            json={"admin_password": "Usermgr2fa1!"},
+            headers=_auth_header(manager_token),
+        )
+
+        assert resp.status_code == 403
+
 
 # ===========================================================================
 # Regenerate backup codes
@@ -1331,6 +1402,71 @@ class TestTOTPReplay:
             json={"pre_auth_token": pre_auth2, "method": "totp", "code": code},
         )
         assert second.status_code == 400
+
+    @staticmethod
+    def _freeze_mfa_clock(monkeypatch, at: float) -> type:
+        """Pin the clock the MFA routes read; set ``clock.at`` to move it."""
+        from backend.app.api.routes import mfa as mfa_module
+
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime.fromtimestamp(Clock.at, tz)
+
+        Clock.at = at
+        monkeypatch.setattr(mfa_module, "datetime", Clock)
+        return Clock
+
+    async def _verify(self, client: AsyncClient, username: str, password: str, code: str):
+        pre_auth = await _login_get_pre_auth_token(client, username, password)
+        return await client.post(
+            "/api/v1/auth/2fa/verify",
+            json={"pre_auth_token": pre_auth, "method": "totp", "code": code},
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_totp_replay_in_the_next_step_is_rejected(self, async_client: AsyncClient, monkeypatch):
+        """A code stays valid into the next 30-second step; its reuse there must still fail."""
+        _token, secret = await _setup_totp_user(async_client, "replaynext", "replaynext1")
+        totp = pyotp.TOTP(secret)
+        step_start = (int(time.time()) // 30 + 1) * 30
+        code = totp.at(step_start)
+        clock = self._freeze_mfa_clock(monkeypatch, step_start + 29)
+
+        first = await self._verify(async_client, "replaynext", "replaynext1", code)
+        assert first.status_code == 200
+
+        clock.at = step_start + 31
+        second = await self._verify(async_client, "replaynext", "replaynext1", code)
+        assert second.status_code == 400
+        assert second.json()["detail"] == "TOTP code already used"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_previous_step_code_records_its_own_step(self, async_client: AsyncClient, monkeypatch):
+        """Used first in the next step, the code is recorded under its own step: the
+        current step's code is still accepted afterwards, the replay is not."""
+        _token, secret = await _setup_totp_user(async_client, "prevstep", "prevstep12")
+        totp = pyotp.TOTP(secret)
+        step_start = (int(time.time()) // 30 + 1) * 30
+        old_code, new_code = totp.at(step_start), totp.at(step_start + 30)
+        self._freeze_mfa_clock(monkeypatch, step_start + 35)
+
+        assert (await self._verify(async_client, "prevstep", "prevstep12", old_code)).status_code == 200
+        assert (await self._verify(async_client, "prevstep", "prevstep12", old_code)).status_code == 400
+        assert (await self._verify(async_client, "prevstep", "prevstep12", new_code)).status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_code_two_steps_old_is_rejected(self, async_client: AsyncClient, monkeypatch):
+        _token, secret = await _setup_totp_user(async_client, "stalecode", "stalecode12")
+        step_start = (int(time.time()) // 30 + 1) * 30
+        code = pyotp.TOTP(secret).at(step_start)
+        self._freeze_mfa_clock(monkeypatch, step_start + 61)
+
+        resp = await self._verify(async_client, "stalecode", "stalecode12", code)
+        assert resp.status_code == 401
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -5074,6 +5210,7 @@ class TestListOidcLinksDefensiveProviderNull:
     row is removed without the ORM cascade running.
     """
 
+    @pytest.mark.sqlite_only  # a dangling reference needs foreign keys off
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_list_oidc_links_returns_deleted_marker_for_orphan_provider(

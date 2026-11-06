@@ -29,6 +29,7 @@ export function ScheduleOptionsPanel({
   showStagger = false,
   printerCount = 0,
   hasGcodeSnippets = false,
+  needsReview = false,
 }: ScheduleOptionsProps) {
   const { t } = useTranslation();
   const [dateValue, setDateValue] = useState('');
@@ -227,8 +228,16 @@ export function ScheduleOptionsPanel({
         </div>
       )}
 
+      {/* Their jobs always wait, so the checkbox would only mislead (#1620) */}
+      {needsReview && (
+        <p className="flex items-start gap-1.5 text-sm text-bambu-gray">
+          <Hand className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+          {t('printModal.awaitingReviewNote')}
+        </p>
+      )}
+
       {/* Manual start */}
-      {options.scheduleType === 'queue' && (
+      {!needsReview && options.scheduleType === 'queue' && (
         <div className="flex items-center gap-2">
           <input
             type="checkbox"

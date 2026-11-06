@@ -14,6 +14,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes, Outlet } from 'react-router-dom';
 import { SpoolBuddyDashboard } from '../../pages/spoolbuddy/SpoolBuddyDashboard';
 import { ToastProvider } from '../../contexts/ToastContext';
+import type { UnknownTagData } from '../../hooks/useSpoolBuddyState';
+
+// The kiosk runs signed in; these tests render it without the auth provider.
+vi.mock('../../contexts/AuthContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../contexts/AuthContext')>();
+  return { ...actual, useAuth: () => ({ hasPermission: () => true }) };
+});
 
 const mockShowToast = vi.fn();
 vi.mock('../../contexts/ToastContext', async (importOriginal) => {
@@ -91,6 +98,7 @@ const mockOutletContext = {
     matchedSpool: null,
     unknownTagUid: null,
     unknownTrayUuid: null,
+    unknownTagData: null as UnknownTagData | null,
     deviceOnline: true,
     deviceId: 'dev-1',
     remainingWeight: null,
@@ -350,7 +358,7 @@ describe('SpoolBuddyDashboard', () => {
       });
     });
 
-    it('calls linkTagToSpoolmanSpool with tag_uid when linking in Spoolman mode', async () => {
+    it('sends the tray UUID when linking a Bambu tag in Spoolman mode (#984)', async () => {
       const { api } = await import('../../api/client');
       (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
         spoolman_enabled: 'true',
@@ -365,7 +373,7 @@ describe('SpoolBuddyDashboard', () => {
 
       renderPage({
         unknownTagUid: 'AABB1122334455FF',
-        unknownTrayUuid: 'DEADBEEFDEADBEEFDEADBEEFDEADBEEF',
+        unknownTrayUuid: '9E0B0717BEE94D7887EB1D8DFD1A14F3',
       });
 
       const linkBtn = await waitFor(() => screen.getByText('Assign Spool'));
@@ -377,10 +385,84 @@ describe('SpoolBuddyDashboard', () => {
       const confirmBtn = await waitFor(() => screen.getByText('Link Tag'));
       fireEvent.click(confirmBtn);
 
+      // The route stores tray_uuid over tag_uid -- the value the AMS keeps in
+      // extra.tag, and the same on both tags of the spool.
+      await waitFor(() => {
+        expect(api.linkTagToSpoolmanSpool).toHaveBeenCalledWith(30, {
+          tag_uid: 'AABB1122334455FF',
+          tray_uuid: '9E0B0717BEE94D7887EB1D8DFD1A14F3',
+        });
+      });
+    });
+
+    it('links by tag_uid alone in Spoolman mode when the tag has no tray UUID', async () => {
+      const { api } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      (api.getSpoolmanInventorySpools as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 30, material: 'TPU', brand: 'Bambu', tag_uid: null, tray_uuid: null, archived_at: null, color_name: 'Orange', rgba: 'FF6600FF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 0 },
+      ]);
+
+      renderPage({ unknownTagUid: 'AABB1122334455FF' });
+
+      fireEvent.click(await waitFor(() => screen.getByText('Assign Spool')));
+      fireEvent.click(await waitFor(() => screen.getByText('Orange')));
+      fireEvent.click(await waitFor(() => screen.getByText('Link Tag')));
+
       await waitFor(() => {
         expect(api.linkTagToSpoolmanSpool).toHaveBeenCalledWith(30, {
           tag_uid: 'AABB1122334455FF',
           tray_uuid: undefined,
+        });
+      });
+    });
+
+    it('shows the spool card for a Spoolman spool stored under the tag\'s tray UUID (#984)', async () => {
+      // After quick-add or link, Spoolman's extra.tag holds the tray UUID and the
+      // spool comes back with tray_uuid set and tag_uid null. The card must still
+      // find it, or the kiosk keeps offering "Add to Inventory" until a re-scan.
+      const { api } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      (api.getSpoolmanInventorySpools as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 40, material: 'PLA', brand: 'Bambu', tag_uid: null, tray_uuid: '9E0B0717BEE94D7887EB1D8DFD1A14F3', archived_at: null, color_name: 'Teal', rgba: '008080FF', subtype: 'Matte', label_weight: 1000, core_weight: 250, weight_used: 0 },
+      ]);
+
+      renderPage({ unknownTagUid: 'AABB1122', unknownTrayUuid: '9E0B0717BEE94D7887EB1D8DFD1A14F3' });
+
+      await waitFor(() => expect(screen.getByText('Sync Weight')).toBeDefined());
+      expect(screen.queryByText('Add to Inventory')).toBeNull();
+    });
+
+    it('quick-adds a Spoolman spool linked by its tray UUID (#984)', async () => {
+      const { api } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+
+      renderPage({ unknownTagUid: 'AABB1122334455FF', unknownTrayUuid: '9E0B0717BEE94D7887EB1D8DFD1A14F3' });
+
+      fireEvent.click(await waitFor(() => screen.getAllByText('Add to Inventory')[0]));
+      fireEvent.click(await waitFor(() => screen.getByText('Add Anyway')));
+
+      await waitFor(() => {
+        expect(api.linkTagToSpoolmanSpool).toHaveBeenCalledWith(4, {
+          tag_uid: 'AABB1122334455FF',
+          tray_uuid: '9E0B0717BEE94D7887EB1D8DFD1A14F3',
         });
       });
     });
@@ -665,6 +747,406 @@ describe('SpoolBuddyDashboard', () => {
         expect(mockShowToast).not.toHaveBeenCalled();
         // Modal closes via finally, UnknownTagCard still absent (tag still present but no SpoolInfoCard)
         expect(screen.queryByText('Link Tag')).toBeNull();
+      });
+    });
+  });
+
+  describe('Bambu tray UUID in local mode (#984)', () => {
+    const TRAY_UUID = '9E0B0717BEE94D7887EB1D8DFD1A14F3';
+
+    beforeEach(async () => {
+      const { api } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'false',
+        spoolman_url: '',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      (api.getSpools as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 3, material: 'ABS', brand: 'Polymaker', tag_uid: null, tray_uuid: null, archived_at: null, color_name: 'White', rgba: 'FFFFFFFF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 0 },
+      ]);
+    });
+
+    it('links the tag together with its tray UUID as a Bambu Lab tag', async () => {
+      const { api } = await import('../../api/client');
+      renderPage({ unknownTagUid: 'AABB9999', unknownTrayUuid: TRAY_UUID });
+
+      fireEvent.click(await waitFor(() => screen.getByText('Assign Spool')));
+      fireEvent.click(await waitFor(() => screen.getByText('White')));
+      fireEvent.click(await waitFor(() => screen.getByText('Link Tag')));
+
+      await waitFor(() => {
+        expect(api.linkTagToSpool).toHaveBeenCalledWith(3, {
+          tag_uid: 'AABB9999',
+          tray_uuid: TRAY_UUID,
+          tag_type: 'bambulab',
+          data_origin: 'nfc_link',
+        });
+      });
+    });
+
+    it('quick-adds the spool with its tray UUID, so the other tag and the AMS find it', async () => {
+      const { api } = await import('../../api/client');
+      renderPage({ unknownTagUid: 'AABB9999', unknownTrayUuid: TRAY_UUID });
+
+      fireEvent.click(await waitFor(() => screen.getAllByText('Add to Inventory')[0]));
+      fireEvent.click(await waitFor(() => screen.getByText('Add Anyway')));
+
+      await waitFor(() => expect(api.createSpool).toHaveBeenCalledTimes(1));
+      const payload = (api.createSpool as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.tag_uid).toBe('AABB9999');
+      expect(payload.tray_uuid).toBe(TRAY_UUID);
+      expect(payload.tag_type).toBe('bambulab');
+    });
+
+    it('quick-adds a tag without a tray UUID as a generic tag, as before', async () => {
+      const { api } = await import('../../api/client');
+      renderPage({ unknownTagUid: 'AABB9999' });
+
+      fireEvent.click(await waitFor(() => screen.getAllByText('Add to Inventory')[0]));
+      fireEvent.click(await waitFor(() => screen.getByText('Add Anyway')));
+
+      await waitFor(() => expect(api.createSpool).toHaveBeenCalledTimes(1));
+      const payload = (api.createSpool as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.tray_uuid).toBeNull();
+      expect(payload.tag_type).toBe('generic');
+    });
+
+    it('still saves the tray UUID when the spool is lifted off the reader while quick-add is open', async () => {
+      const { api } = await import('../../api/client');
+      const setterRef: { current: React.Dispatch<React.SetStateAction<typeof mockOutletContext.sbState>> | null } = { current: null };
+      function DynWrapper() {
+        const [sbState, setSbState] = React.useState({
+          ...mockOutletContext.sbState,
+          unknownTagUid: 'AABB9999',
+          unknownTrayUuid: TRAY_UUID,
+        });
+        setterRef.current = setSbState;
+        return <Outlet context={{ ...mockOutletContext, sbState }} />;
+      }
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+      render(
+        <ToastProvider>
+          <QueryClientProvider client={qc}>
+            <MemoryRouter initialEntries={['/spoolbuddy']}>
+              <Routes>
+                <Route element={<DynWrapper />}>
+                  <Route path="spoolbuddy" element={<SpoolBuddyDashboard />} />
+                </Route>
+              </Routes>
+            </MemoryRouter>
+          </QueryClientProvider>
+        </ToastProvider>
+      );
+      fireEvent.click(await waitFor(() => screen.getAllByText('Add to Inventory')[0]));
+      await waitFor(() => screen.getByText('Add Anyway'));
+
+      // Tag removed: the dialog stays open, the live tag state is gone.
+      act(() => setterRef.current!((prev) => ({ ...prev, unknownTagUid: null, unknownTrayUuid: null })));
+
+      fireEvent.click(await waitFor(() => screen.getByText('Add Anyway')));
+
+      await waitFor(() => expect(api.createSpool).toHaveBeenCalledTimes(1));
+      const payload = (api.createSpool as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload.tag_uid).toBe('AABB9999');
+      expect(payload.tray_uuid).toBe(TRAY_UUID);
+    });
+  });
+
+  describe('Quick Add from a decoded Bambu tag (#2685)', () => {
+    const TRAY_UUID = '36B6C12DB3DA4A39A50C275F510BD399';
+    const TAG_DATA: UnknownTagData = {
+      material: 'PLA',
+      subtype: 'Basic',
+      color_name: 'Cyan',
+      rgba: '0086D6FF',
+      extra_colors: null,
+      effect_type: null,
+      brand: 'Bambu Lab',
+      label_weight: 1000,
+      slicer_filament: 'GFA00',
+      slicer_filament_name: 'Bambu PLA Basic',
+      nozzle_temp_min: 190,
+      nozzle_temp_max: 230,
+      core_weight: 216,
+      core_weight_catalog_id: 7,
+      variant_id: 'A00-B08',
+      diameter: 1.75,
+      drying_temp: 55,
+      drying_time: 8,
+    };
+
+    async function setSpoolmanMode(enabled: boolean) {
+      const { api } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: enabled ? 'true' : 'false',
+        spoolman_url: enabled ? 'http://localhost:7912' : '',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+    }
+
+    it('shows the spool the tag describes instead of the basic-PLA warning', async () => {
+      await setSpoolmanMode(false);
+      renderPage({ unknownTagUid: '865947E2', unknownTrayUuid: TRAY_UUID, unknownTagData: TAG_DATA });
+
+      // The card names the spool before the dialog is opened
+      await waitFor(() => expect(screen.getByText('Bambu Lab PLA Basic')).toBeDefined());
+
+      fireEvent.click(screen.getAllByText('Add to Inventory')[0]);
+
+      // ...and the dialog repeats it with the weight and diameter it will save
+      await waitFor(() => expect(screen.getByText('Cyan · 1000 g · 1.75 mm')).toBeDefined());
+      expect(screen.getAllByText('Bambu Lab PLA Basic')).toHaveLength(2);
+      expect(screen.queryByText('Add Anyway')).toBeNull();
+      expect(screen.queryByText(/basic PLA spool entry/)).toBeNull();
+    });
+
+    it('takes the tag data when the same tag comes back with a good read', async () => {
+      // First read failed (no blocks, so no tag data), the spool is put back and
+      // read again: Quick Add must create the decoded spool, not the blank PLA one.
+      const { api } = await import('../../api/client');
+      await setSpoolmanMode(false);
+      const setterRef: { current: React.Dispatch<React.SetStateAction<typeof mockOutletContext.sbState>> | null } = { current: null };
+      function DynWrapper() {
+        const [sbState, setSbState] = React.useState({
+          ...mockOutletContext.sbState,
+          unknownTagUid: '865947E2',
+          unknownTrayUuid: null as string | null,
+          unknownTagData: null as UnknownTagData | null,
+        });
+        setterRef.current = setSbState;
+        return <Outlet context={{ ...mockOutletContext, sbState }} />;
+      }
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+      render(
+        <ToastProvider>
+          <QueryClientProvider client={qc}>
+            <MemoryRouter initialEntries={['/spoolbuddy']}>
+              <Routes>
+                <Route element={<DynWrapper />}>
+                  <Route path="spoolbuddy" element={<SpoolBuddyDashboard />} />
+                </Route>
+              </Routes>
+            </MemoryRouter>
+          </QueryClientProvider>
+        </ToastProvider>
+      );
+
+      // Failed read: the plain new-tag card
+      await waitFor(() => expect(screen.getByText('865947E2')).toBeDefined());
+      expect(screen.queryByText('Bambu Lab PLA Basic')).toBeNull();
+
+      // Lifted off the reader, then placed again and read properly
+      act(() => setterRef.current!((prev) => ({ ...prev, unknownTagUid: null, unknownTrayUuid: null, unknownTagData: null })));
+      act(() =>
+        setterRef.current!((prev) => ({ ...prev, unknownTagUid: '865947E2', unknownTrayUuid: TRAY_UUID, unknownTagData: TAG_DATA })),
+      );
+
+      await waitFor(() => expect(screen.getByText('Bambu Lab PLA Basic')).toBeDefined());
+      fireEvent.click(screen.getAllByText('Add to Inventory')[0]);
+      fireEvent.click(await waitFor(() => screen.getByText('Add')));
+
+      await waitFor(() => expect(api.createSpool).toHaveBeenCalledTimes(1));
+      expect((api.createSpool as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({
+        material: 'PLA',
+        subtype: 'Basic',
+        color_name: 'Cyan',
+        brand: 'Bambu Lab',
+        core_weight: 216,
+        tag_uid: '865947E2',
+        tray_uuid: TRAY_UUID,
+        tag_type: 'bambulab',
+      });
+    });
+
+    it('keeps the tag data when the same tag comes back with a failed read', async () => {
+      // Good read first, the spool is lifted and put back, and that read fails
+      // (no blocks): the card and Quick Add must keep the first read's spool.
+      const { api } = await import('../../api/client');
+      await setSpoolmanMode(false);
+      const setterRef: { current: React.Dispatch<React.SetStateAction<typeof mockOutletContext.sbState>> | null } = { current: null };
+      function DynWrapper() {
+        const [sbState, setSbState] = React.useState({
+          ...mockOutletContext.sbState,
+          unknownTagUid: '865947E2',
+          unknownTrayUuid: TRAY_UUID as string | null,
+          unknownTagData: TAG_DATA as UnknownTagData | null,
+        });
+        setterRef.current = setSbState;
+        return <Outlet context={{ ...mockOutletContext, sbState }} />;
+      }
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+      render(
+        <ToastProvider>
+          <QueryClientProvider client={qc}>
+            <MemoryRouter initialEntries={['/spoolbuddy']}>
+              <Routes>
+                <Route element={<DynWrapper />}>
+                  <Route path="spoolbuddy" element={<SpoolBuddyDashboard />} />
+                </Route>
+              </Routes>
+            </MemoryRouter>
+          </QueryClientProvider>
+        </ToastProvider>
+      );
+
+      // Good read: the card names the spool
+      await waitFor(() => expect(screen.getByText('Bambu Lab PLA Basic')).toBeDefined());
+
+      // Lifted off the reader, then placed again and the read fails
+      act(() => setterRef.current!((prev) => ({ ...prev, unknownTagUid: null, unknownTrayUuid: null, unknownTagData: null })));
+      act(() => setterRef.current!((prev) => ({ ...prev, unknownTagUid: '865947E2', unknownTrayUuid: null, unknownTagData: null })));
+
+      await waitFor(() => expect(screen.getByText('865947E2')).toBeDefined());
+      expect(screen.getByText('Bambu Lab PLA Basic')).toBeDefined();
+      fireEvent.click(screen.getAllByText('Add to Inventory')[0]);
+      fireEvent.click(await waitFor(() => screen.getByText('Add')));
+
+      await waitFor(() => expect(api.createSpool).toHaveBeenCalledTimes(1));
+      expect((api.createSpool as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({
+        material: 'PLA',
+        subtype: 'Basic',
+        color_name: 'Cyan',
+        brand: 'Bambu Lab',
+        core_weight: 216,
+        tag_uid: '865947E2',
+        tray_uuid: TRAY_UUID,
+        tag_type: 'bambulab',
+      });
+    });
+
+    it('creates that spool in local mode, with its tray UUID and catalog tare', async () => {
+      const { api } = await import('../../api/client');
+      await setSpoolmanMode(false);
+      renderPage({ unknownTagUid: '865947E2', unknownTrayUuid: TRAY_UUID, unknownTagData: TAG_DATA });
+
+      fireEvent.click(await waitFor(() => screen.getAllByText('Add to Inventory')[0]));
+      fireEvent.click(await waitFor(() => screen.getByText('Add')));
+
+      await waitFor(() => expect(api.createSpool).toHaveBeenCalledTimes(1));
+      expect((api.createSpool as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({
+        material: 'PLA',
+        subtype: 'Basic',
+        color_name: 'Cyan',
+        rgba: '0086D6FF',
+        brand: 'Bambu Lab',
+        label_weight: 1000,
+        core_weight: 216,
+        core_weight_catalog_id: 7,
+        slicer_filament: 'GFA00',
+        slicer_filament_name: 'Bambu PLA Basic',
+        nozzle_temp_min: 190,
+        nozzle_temp_max: 230,
+        tag_uid: '865947E2',
+        tray_uuid: TRAY_UUID,
+        tag_type: 'bambulab',
+      });
+    });
+
+    it('creates that spool in Spoolman mode, still without a tare (#2908)', async () => {
+      const { api } = await import('../../api/client');
+      await setSpoolmanMode(true);
+      renderPage({ unknownTagUid: '865947E2', unknownTrayUuid: TRAY_UUID, unknownTagData: TAG_DATA });
+
+      fireEvent.click(await waitFor(() => screen.getAllByText('Add to Inventory')[0]));
+      fireEvent.click(await waitFor(() => screen.getByText('Add')));
+
+      await waitFor(() => expect(api.createSpoolmanInventorySpool).toHaveBeenCalledTimes(1));
+      const payload = (api.createSpoolmanInventorySpool as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(payload).toMatchObject({
+        material: 'PLA',
+        subtype: 'Basic',
+        color_name: 'Cyan',
+        rgba: '0086D6FF',
+        brand: 'Bambu Lab',
+        label_weight: 1000,
+        slicer_filament: 'GFA00',
+        nozzle_temp_min: 190,
+        nozzle_temp_max: 230,
+      });
+      expect(payload).not.toHaveProperty('core_weight');
+      await waitFor(() =>
+        expect(api.linkTagToSpoolmanSpool).toHaveBeenCalledWith(4, { tag_uid: '865947E2', tray_uuid: TRAY_UUID }),
+      );
+    });
+  });
+
+  describe('Spoolman mode, spool lifted while a dialog is open', () => {
+    // The reader state is cleared when the tag leaves the reader; the card and
+    // its dialogs stay. Linking must use the tag the card shows.
+    function renderLiftable() {
+      const setterRef: { current: React.Dispatch<React.SetStateAction<typeof mockOutletContext.sbState>> | null } = { current: null };
+      function DynWrapper() {
+        const [sbState, setSbState] = React.useState({ ...mockOutletContext.sbState, unknownTagUid: 'AABB1122334455FF' });
+        setterRef.current = setSbState;
+        return <Outlet context={{ ...mockOutletContext, sbState }} />;
+      }
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+      render(
+        <ToastProvider>
+          <QueryClientProvider client={qc}>
+            <MemoryRouter initialEntries={['/spoolbuddy']}>
+              <Routes>
+                <Route element={<DynWrapper />}>
+                  <Route path="spoolbuddy" element={<SpoolBuddyDashboard />} />
+                </Route>
+              </Routes>
+            </MemoryRouter>
+          </QueryClientProvider>
+        </ToastProvider>
+      );
+      return () => act(() => setterRef.current!((prev) => ({ ...prev, unknownTagUid: null, unknownTrayUuid: null })));
+    }
+
+    beforeEach(async () => {
+      const { api } = await import('../../api/client');
+      (api.getSpoolmanSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        spoolman_enabled: 'true',
+        spoolman_url: 'http://localhost:7912',
+        spoolman_sync_mode: 'off',
+        spoolman_disable_weight_sync: 'false',
+        spoolman_report_partial_usage: 'false',
+      });
+      (api.getSpoolmanInventorySpools as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 30, material: 'TPU', brand: 'Polymaker', tag_uid: null, tray_uuid: null, archived_at: null, color_name: 'Orange', rgba: 'FF6600FF', subtype: null, label_weight: 1000, core_weight: 250, weight_used: 0 },
+      ]);
+    });
+
+    it('links the tag shown on the card', async () => {
+      const { api } = await import('../../api/client');
+      const lift = renderLiftable();
+
+      fireEvent.click(await waitFor(() => screen.getByText('Assign Spool')));
+      fireEvent.click(await waitFor(() => screen.getByText('Orange')));
+      await waitFor(() => screen.getByText('Link Tag'));
+      lift();
+      fireEvent.click(screen.getByText('Link Tag'));
+
+      await waitFor(() => {
+        expect(api.linkTagToSpoolmanSpool).toHaveBeenCalledWith(30, {
+          tag_uid: 'AABB1122334455FF',
+          tray_uuid: undefined,
+        });
+      });
+    });
+
+    it('quick-adds the spool with the tag shown on the card', async () => {
+      const { api } = await import('../../api/client');
+      const lift = renderLiftable();
+
+      fireEvent.click(await waitFor(() => screen.getAllByText('Add to Inventory')[0]));
+      await waitFor(() => screen.getByText('Add Anyway'));
+      lift();
+      fireEvent.click(screen.getByText('Add Anyway'));
+
+      await waitFor(() => {
+        expect(api.linkTagToSpoolmanSpool).toHaveBeenCalledWith(4, {
+          tag_uid: 'AABB1122334455FF',
+          tray_uuid: undefined,
+        });
       });
     });
   });

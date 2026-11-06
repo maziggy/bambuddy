@@ -17,9 +17,12 @@ These tests pin the parts that make the diff dependable:
 """
 
 import logging
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+from backend.app.core.printer_scope import ALL_PRINTERS
 
 logger = logging.getLogger(__name__)
 
@@ -380,7 +383,7 @@ class TestManualScanUsesTheBaseline:
         a.created_at = a.completed_at
         return a
 
-    async def _scan(self, archive, listing, download=None, delete=None):
+    async def _scan(self, archive, listing, download=None, delete=None, claimed=()):
         from backend.app.api.routes import archives as archives_mod
 
         service = MagicMock()
@@ -391,14 +394,16 @@ class TestManualScanUsesTheBaseline:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock()
         session.execute = AsyncMock(
-            return_value=MagicMock(
-                scalar_one_or_none=MagicMock(return_value=_printer()),
-                scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[]))),
-            )
+            return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=_printer())),
         )
 
         with (
             patch("backend.app.core.database.async_session", return_value=session),
+            # Videos other prints of this printer hold
+            patch(
+                "backend.app.api.routes.archives._claimed_timelapse_stems",
+                AsyncMock(return_value={Path(p).stem for p in claimed}),
+            ),
             patch("backend.app.api.routes.archives.ArchiveService", return_value=service),
             patch("backend.app.services.bambu_ftp.list_files_async", AsyncMock(return_value=listing)),
             patch(
@@ -411,7 +416,7 @@ class TestManualScanUsesTheBaseline:
             ),
             patch("backend.app.services.bambu_ftp.delete_archived_timelapse", delete or AsyncMock()),
         ):
-            return await archives_mod.scan_timelapse(archive.id, None)
+            return await archives_mod.scan_timelapse(archive.id, None, ALL_PRINTERS)
 
     @pytest.mark.asyncio
     async def test_attaches_the_single_unclaimed_new_file(self):
@@ -514,9 +519,66 @@ class TestFinishPhotoUpgrade:
     bed, which is the worse of the two photos. The upgrade runs afterwards."""
 
     @pytest.mark.asyncio
-    async def test_puts_the_timelapse_frame_first_and_keeps_the_live_grab(self):
-        """First, because the gallery opens at index 0. Kept, because the
-        notification that already went out links to that exact file."""
+    async def test_replaces_the_live_grab_in_place(self, tmp_path):
+        """Archive 454 ended up with two finish photos of the same moment. The
+        frame now goes over the live grab's file, under its name: one photo,
+        and the archive link a notification already sent (auth off) keeps
+        working and shows the better photo."""
+        from backend.app.main import _upgrade_finish_photo_from_timelapse
+
+        photos = tmp_path / "photos"
+        photos.mkdir()
+        (photos / "finish_live_grab.jpg").write_bytes(b"live")
+        (photos / "finish_from_timelapse.jpg").write_bytes(b"frame")
+        archive = MagicMock()
+        archive.photos = ["finish_upload.jpg", "finish_live_grab.jpg"]
+        session = _session(archive)
+
+        with (
+            patch(
+                "backend.app.main._capture_finish_photo_from_timelapse",
+                AsyncMock(return_value=("finish_from_timelapse.jpg", False)),
+            ),
+            patch("backend.app.main.async_session", return_value=session),
+            patch("backend.app.main.ws_manager", MagicMock(send_archive_updated=AsyncMock())) as ws,
+        ):
+            await _upgrade_finish_photo_from_timelapse(7, tmp_path, replace="finish_live_grab.jpg")
+
+        assert archive.photos == ["finish_live_grab.jpg", "finish_upload.jpg"]
+        assert (photos / "finish_live_grab.jpg").read_bytes() == b"frame"
+        assert sorted(f.name for f in photos.iterdir()) == ["finish_live_grab.jpg"]
+        session.commit.assert_awaited()
+        assert ws.send_archive_updated.await_args.args[0]["photo_added"] == "finish_live_grab.jpg"
+
+    @pytest.mark.asyncio
+    async def test_adds_the_frame_when_the_live_grab_was_deleted_meanwhile(self, tmp_path):
+        """Nothing to replace: the user removed it from the gallery. Writing
+        over a name the archive no longer lists would hide the frame."""
+        from backend.app.main import _upgrade_finish_photo_from_timelapse
+
+        photos = tmp_path / "photos"
+        photos.mkdir()
+        (photos / "finish_from_timelapse.jpg").write_bytes(b"frame")
+        archive = MagicMock()
+        archive.photos = []
+        session = _session(archive)
+
+        with (
+            patch(
+                "backend.app.main._capture_finish_photo_from_timelapse",
+                AsyncMock(return_value=("finish_from_timelapse.jpg", False)),
+            ),
+            patch("backend.app.main.async_session", return_value=session),
+            patch("backend.app.main.ws_manager", MagicMock(send_archive_updated=AsyncMock())),
+        ):
+            await _upgrade_finish_photo_from_timelapse(7, tmp_path, replace="finish_live_grab.jpg")
+
+        assert archive.photos == ["finish_from_timelapse.jpg"]
+        assert (photos / "finish_from_timelapse.jpg").read_bytes() == b"frame"
+
+    @pytest.mark.asyncio
+    async def test_puts_the_timelapse_frame_first_without_a_live_grab_to_replace(self):
+        """First, because the gallery opens at index 0."""
         from backend.app.main import _upgrade_finish_photo_from_timelapse
 
         archive = MagicMock()
@@ -765,3 +827,35 @@ class TestFileMustHaveStoppedGrowing:
         assert result is True
         # Checked against what we actually received, not against the listing.
         assert settled.await_args.args[3] == 1000
+
+
+class TestAScanWithoutABaselineSkipsClaimedVideos:
+    """An archive from before the baseline was stored is matched on name and
+    clock, which must not hand it a video another archive already holds
+    (SN-C7)."""
+
+    _archive = TestManualScanUsesTheBaseline._archive
+    _scan = TestManualScanUsesTheBaseline._scan
+
+    @pytest.mark.asyncio
+    async def test_a_short_name_does_not_take_another_archive_s_video(self):
+        archive = self._archive(None)
+        archive.filename = "1.3mf"  # "1" is in every video's timestamp
+        listing = [_video("video_2026-07-28_21-19-10.avi"), _video("video_2026-07-28_21-19-40.avi")]
+
+        result = await self._scan(archive, listing, claimed=["archive/1/other/video_2026-07-28_21-19-10.mp4"])
+
+        assert result.get("filename") != "video_2026-07-28_21-19-10.avi"
+
+    @pytest.mark.asyncio
+    async def test_a_claimed_video_is_still_offered_for_picking_by_hand(self):
+        """Picking by hand is how a wrong match is put right."""
+        archive = self._archive(None)
+        archive.filename = "mops.3mf"
+        archive.started_at = archive.completed_at = archive.created_at = None
+        listing = [_video("video_a.avi"), _video("video_b.avi")]
+
+        result = await self._scan(archive, listing, claimed=["archive/1/other/video_a.mp4"])
+
+        assert result["status"] == "not_found"
+        assert {f["name"] for f in result["available_files"]} == {"video_a.avi", "video_b.avi"}

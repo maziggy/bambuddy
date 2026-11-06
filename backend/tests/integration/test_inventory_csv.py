@@ -433,6 +433,23 @@ class TestInventoryCsvUsageColumns:
         assert spool.last_used is not None
         assert spool.last_used.year == 2026 and spool.last_used.month == 6 and spool.last_used.day == 1
 
+    @pytest.mark.parametrize(
+        ("written", "stored"),
+        [("2026-10-01T10:00:00+02:00", "2026-10-01 08:00:00"), ("2026-10-01T10:00:00", "2026-10-01 10:00:00")],
+    )
+    async def test_import_stores_last_used_in_utc(
+        self, async_client: AsyncClient, db_session: AsyncSession, written, stored
+    ):
+        """LU-1: an offset was dropped on SQLite, keeping the wall time. A time
+        without one is UTC, as export writes it."""
+        csv_text = f"material,color_name,rgba,last_used\nPLA,White,ffffffff,{written}\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+
+        assert response.status_code == 200, response.text
+        spool = (await db_session.execute(select(Spool))).scalars().one()
+        assert str(spool.last_used.replace(tzinfo=None)) == stored
+
     async def test_import_rejects_bad_last_used(self, async_client: AsyncClient):
         csv_text = "material,color_name,rgba,last_used\nPLA,White,ffffffff,not-a-date\n"
 

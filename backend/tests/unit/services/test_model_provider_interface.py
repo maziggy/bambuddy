@@ -112,6 +112,35 @@ class TestBuildService:
     read the caller's stored Bambu Cloud token and wire the rejected-token
     callback so a 401 invalidates the shared credential app-wide."""
 
+    @pytest.fixture(autouse=True)
+    def _auth_off(self):
+        """These describe the auth-off install, the only one whose sign-in is
+        stored without a user (see the auth-on test below)."""
+        with patch(
+            "backend.app.services.model_providers.makerworld.provider.is_auth_enabled",
+            AsyncMock(return_value=False),
+        ):
+            yield
+
+    @pytest.mark.asyncio
+    async def test_with_auth_on_no_identity_borrows_no_stored_sign_in(self):
+        """With auth on, a caller without a user (an API key without Allow
+        Cloud Access) gets no token: the sign-in stored without a user is the
+        auth-off install's, and may be left over after auth was turned on."""
+        stored = AsyncMock(return_value=("global-tok", "admin@x.com", "global"))
+        with (
+            patch(
+                "backend.app.services.model_providers.makerworld.provider.is_auth_enabled",
+                AsyncMock(return_value=True),
+            ),
+            patch("backend.app.services.model_providers.makerworld.provider.get_stored_token", stored),
+        ):
+            svc = await makerworld_provider.build_service(db=AsyncMock(), user=None)
+
+        assert svc._auth_token is None
+        stored.assert_not_awaited()
+        await svc.close()
+
     @pytest.mark.asyncio
     async def test_seeds_token_and_auth_failure_callback(self):
         db = AsyncMock()

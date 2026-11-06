@@ -80,8 +80,10 @@ class SmartPlug(Base):
     rest_energy_total_path: Mapped[str | None] = mapped_column(String(200), nullable=True)
     rest_energy_total_multiplier: Mapped[float] = mapped_column(Float, server_default="1.0")
 
-    # Link to printer (multiple plugs/scripts can be linked to one printer)
-    printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id", ondelete="SET NULL"), nullable=True)
+    # Link to printer (multiple plugs/scripts can be linked to one printer).
+    # CASCADE, not SET NULL: a plug without a printer is everyone's, so one left
+    # by a deleted printer would open the hardware it powers to every user.
+    printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id", ondelete="CASCADE"), nullable=True)
 
     # Whether this plug actually feeds the printer's own power (#2629). The
     # printer link is also used for accessories that merely follow the print

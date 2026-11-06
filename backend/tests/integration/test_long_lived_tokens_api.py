@@ -10,6 +10,8 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
+from backend.app.core.printer_scope import ALL_PRINTERS
+
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
@@ -293,7 +295,7 @@ class TestCameraStreamTokenVerification:
         )
         long_lived = created.json()["token"]
 
-        assert await verify_camera_stream_token(long_lived) is True
+        assert await verify_camera_stream_token(long_lived) == ALL_PRINTERS  # admin-owned: every printer (#1727)
 
     async def test_revoked_long_lived_token_fails_camera_stream_check(self, async_client: AsyncClient):
         from backend.app.core.auth import verify_camera_stream_token
@@ -311,11 +313,52 @@ class TestCameraStreamTokenVerification:
             f"/api/v1/auth/tokens/{token_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert await verify_camera_stream_token(long_lived) is False
+        assert await verify_camera_stream_token(long_lived) is None
 
     async def test_garbage_token_fails_camera_stream_check(self, async_client: AsyncClient):
         from backend.app.core.auth import verify_camera_stream_token
 
         await _setup_admin(async_client, suffix="_verify_garbage")
-        assert await verify_camera_stream_token("bblt_aaaaaaaa_garbage") is False
-        assert await verify_camera_stream_token("not-a-real-token") is False
+        assert await verify_camera_stream_token("bblt_aaaaaaaa_garbage") is None
+        assert await verify_camera_stream_token("not-a-real-token") is None
+
+
+class TestHashOnlyOverlayTokens:
+    async def test_creation_is_hash_only_without_encryption(self, async_client, db_session, monkeypatch):
+        from backend.app.core import encryption
+        from backend.app.core.auth import verify_password
+        from backend.app.models.long_lived_token import LongLivedToken
+        from backend.app.services.long_lived_tokens import verify_token
+
+        jwt = await _setup_admin(async_client, suffix="_hash_only")
+        monkeypatch.setattr(encryption, "_get_fernet", lambda: None)
+        headers = {"Authorization": f"Bearer {jwt}"}
+        created = await async_client.post(
+            "/api/v1/auth/tokens", headers=headers, json={"name": "OBS", "scope": "overlay", "expires_in_days": 30}
+        )
+        assert created.status_code == 201
+        assert created.headers["cache-control"] == "no-store"
+        body = created.json()
+        row = await db_session.get(LongLivedToken, body["id"])
+        assert verify_password(body["token"], row.secret_hash)
+        assert await verify_token(db_session, body["token"], scope="overlay") is not None
+        listing = (await async_client.get("/api/v1/auth/tokens", headers=headers)).json()
+        assert listing[0]["token"] is None
+        assert "can_reuse" not in listing[0]
+        assert body["token"] not in str(listing)
+
+    async def test_recovery_endpoint_is_absent(self, async_client):
+        from backend.app.api.routes.auth import router
+
+        assert not any("overlay-secret" in route.path for route in router.routes)
+        jwt = await _setup_admin(async_client, suffix="_no_recovery")
+        headers = {"Authorization": f"Bearer {jwt}"}
+        created = await async_client.post(
+            "/api/v1/auth/tokens", headers=headers, json={"name": "OBS", "scope": "overlay", "expires_in_days": 30}
+        )
+        response = await async_client.post(
+            f"/api/v1/auth/tokens/{created.json()['id']}/overlay-secret", headers=headers
+        )
+        # The SPA static fallback may answer 405 for an unknown POST.
+        assert response.status_code in (404, 405)
+        assert created.json()["token"] not in response.text

@@ -59,6 +59,17 @@ class TestRedactUrlCredentials:
         result = redact_url_credentials("rtsp://bblp:code@10.0.0.1/live/user@example")
         assert result == "rtsp://bblp:[REDACTED]@10.0.0.1/live/user@example"
 
+    def test_masks_every_login_shape_a_camera_accepts(self):
+        """An empty user, an unencoded @ in the user, a bare token: the login
+        is everything up to the last @ before the path."""
+        for url, expected in (
+            ("from 'rtsp://:pw123@10.0.0.5/s'", "from 'rtsp://:[REDACTED]@10.0.0.5/s'"),
+            ("rtsp://me@example.com:pw123@10.0.0.5/s", "rtsp://me@example.com:[REDACTED]@10.0.0.5/s"),
+            ("GET http://tok123@10.0.0.5/snap.jpg failed", "GET http://[REDACTED]@10.0.0.5/snap.jpg failed"),
+            ("rtsp://admin:pa:ss@10.0.0.5/s", "rtsp://admin:[REDACTED]@10.0.0.5/s"),
+        ):
+            assert redact_url_credentials(url) == expected
+
     def test_leaves_credential_free_text_alone(self):
         for untouched in (
             "Connection refused",

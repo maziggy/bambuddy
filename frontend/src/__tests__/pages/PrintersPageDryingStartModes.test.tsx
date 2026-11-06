@@ -129,6 +129,17 @@ describe('PrintersPage - drying start modes', () => {
     );
   });
 
+  it('does not offer rotation while the printer reports a slot of this AMS as loaded', async () => {
+    // The tray state code for "loaded" differs by firmware; tray_now does not.
+    server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json({ ...IDLE, tray_now: 2 })));
+    const user = userEvent.setup();
+    render(<PrintersPage />);
+    await openDryingPopover(user);
+
+    const rotate = screen.getByRole('button', { name: 'Rotate spool during drying' });
+    expect((rotate as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('lets the temperature be retyped instead of snapping to the 45 °C minimum (#3182)', async () => {
     const user = userEvent.setup();
     render(<PrintersPage />);

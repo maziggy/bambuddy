@@ -46,7 +46,7 @@ def _cert_pair(tmp_path: Path) -> tuple[Path, Path]:
     CertificateService. Returns ``(cert_path, key_path)`` suitable for
     ``load_cert_chain`` calls inside the VP services under test."""
     svc = CertificateService(cert_dir=tmp_path, serial="01P00A391800001")
-    return svc.ensure_certificates()
+    return svc.generate_certificates()
 
 
 def _assert_required_ciphers(ctx: ssl.SSLContext, where: str) -> None:

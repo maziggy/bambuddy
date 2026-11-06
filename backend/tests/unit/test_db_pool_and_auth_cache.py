@@ -12,7 +12,14 @@ class TestPoolConfiguration:
     """P0: env-configurable, dialect-aware pool sizing."""
 
     def test_sqlite_defaults_when_unset(self, monkeypatch):
-        """SQLite keeps 20 + 200 when no env override is set."""
+        """SQLite defaults are 10 + 90 when no env override is set (#2883).
+
+        WAL keeps a closed connection's db fd open until the last connection
+        closes, so the pool's fds stay at its peak: ~201 open / ~101 parked
+        here against ~441 / ~221 at the old 20 + 200. That default dates from
+        b8fa2df36, a 100+ printer SQLite farm before #2572 made authenticated
+        requests a single checkout; such a farm can raise DB_MAX_OVERFLOW or
+        move to PostgreSQL."""
         from backend.app.core import database
 
         for attr in ("db_pool_size", "db_max_overflow", "db_pool_timeout", "db_pool_recycle"):
@@ -20,8 +27,8 @@ class TestPoolConfiguration:
         monkeypatch.setattr(database, "is_sqlite", lambda: True)
 
         kwargs = database._resolve_pool_kwargs()
-        assert kwargs["pool_size"] == 20
-        assert kwargs["max_overflow"] == 200
+        assert kwargs["pool_size"] == 10
+        assert kwargs["max_overflow"] == 90
         # No server-socket recycle/pre-ping for a local file.
         assert "pool_pre_ping" not in kwargs
         assert "pool_recycle" not in kwargs
@@ -30,7 +37,7 @@ class TestPoolConfiguration:
         """Postgres default is 20 + 60 (was 10 + 20) with pre-ping + recycle."""
         from backend.app.core import database
 
-        for attr in ("db_pool_size", "db_max_overflow", "db_pool_timeout", "db_pool_recycle"):
+        for attr in ("db_pool_size", "db_max_overflow", "db_pool_timeout", "db_pool_recycle", "db_pool_pre_ping"):
             monkeypatch.setattr(database.settings, attr, None, raising=False)
         monkeypatch.setattr(database, "is_sqlite", lambda: False)
 
@@ -55,6 +62,41 @@ class TestPoolConfiguration:
         assert kwargs["max_overflow"] == 200
         assert kwargs["pool_timeout"] == 45
         assert kwargs["pool_recycle"] == 600
+
+    def test_pre_ping_can_be_disabled_on_postgres(self, monkeypatch):
+        """DB_POOL_PRE_PING=false drops pool_pre_ping; the other defaults stay."""
+        from backend.app.core import database
+
+        monkeypatch.setattr(database.settings, "db_pool_pre_ping", False, raising=False)
+        monkeypatch.setattr(database, "is_sqlite", lambda: False)
+
+        kwargs = database._resolve_pool_kwargs()
+        assert kwargs["pool_pre_ping"] is False
+        assert kwargs["pool_recycle"] == 1800
+
+    def test_pre_ping_env_string_is_parsed(self, monkeypatch):
+        """The real DB_POOL_PRE_PING env strings reach the setting as booleans."""
+        from backend.app.core.config import Settings
+
+        for raw, expected in (("false", False), ("0", False), ("true", True), ("1", True)):
+            monkeypatch.setenv("DB_POOL_PRE_PING", raw)
+            assert Settings().db_pool_pre_ping is expected, raw
+
+    def test_pre_ping_explicit_true_is_honoured(self, monkeypatch):
+        from backend.app.core import database
+
+        monkeypatch.setattr(database.settings, "db_pool_pre_ping", True, raising=False)
+        monkeypatch.setattr(database, "is_sqlite", lambda: False)
+
+        assert database._resolve_pool_kwargs()["pool_pre_ping"] is True
+
+    def test_pre_ping_override_is_a_no_op_on_sqlite(self, monkeypatch):
+        from backend.app.core import database
+
+        monkeypatch.setattr(database.settings, "db_pool_pre_ping", False, raising=False)
+        monkeypatch.setattr(database, "is_sqlite", lambda: True)
+
+        assert "pool_pre_ping" not in database._resolve_pool_kwargs()
 
     @pytest.mark.asyncio
     async def test_concurrent_checkouts_exceed_base_pool_size(self, tmp_path):

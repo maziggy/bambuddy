@@ -30,6 +30,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.routes.orca_cloud import _build_authenticated_service as _build_orca_service
+from backend.app.core.auth import is_auth_enabled
 from backend.app.core.permissions import Permission
 from backend.app.models.local_preset import LocalPreset
 from backend.app.models.user import User
@@ -41,6 +42,7 @@ from backend.app.services.bambu_cloud import (
 )
 from backend.app.services.bambu_cloud_credentials import get_stored_token
 from backend.app.services.orca_cloud import OrcaCloudAuthError, OrcaCloudError
+from backend.app.utils.slicer_strings import unescape_strings_cstyle
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +68,12 @@ _SLOT_TO_PROFILE_TYPE = {
     "process": "process",
     "filament": "filament",
 }
+
+# String-list options Orca Cloud can return INI-encoded (#3380). The sidecar
+# only fixes up `compatible_printers` when it is an array (#3250), so a
+# process made for a user printer preset passes the Slice dialog's check and
+# is then refused by the CLI.
+_ORCA_STRING_LIST_FIELDS = ("compatible_printers", "filament_type", "default_filament_colour")
 
 
 async def resolve_preset_ref(
@@ -111,6 +119,12 @@ async def _resolve_local(db: AsyncSession, ref: PresetRef, slot: str) -> str:
     return preset.setting
 
 
+# The sign-in stored without a user belongs to an install with auth off. With
+# auth on, a caller without a user (an API key without Allow Cloud Access)
+# has no cloud sign-in of its own and must not borrow that one.
+_NO_CLOUD_IDENTITY = "{cloud} presets need a signed-in user or an API key with Allow Cloud Access ({slot})"
+
+
 async def _resolve_cloud(db: AsyncSession, user: User | None, ref: PresetRef, slot: str) -> str:
     """Fetch a single cloud preset detail. Permission gate matches the
     rest of the cloud surface (`CLOUD_AUTH`) so a user with `LIBRARY_UPLOAD`
@@ -121,6 +135,8 @@ async def _resolve_cloud(db: AsyncSession, user: User | None, ref: PresetRef, sl
             status_code=403,
             detail=f"Cloud presets require the cloud:auth permission ({slot})",
         )
+    if user is None and await is_auth_enabled(db):
+        raise HTTPException(status_code=403, detail=_NO_CLOUD_IDENTITY.format(cloud="Bambu Cloud", slot=slot))
 
     token, _email, region = await get_stored_token(db, user)
     if not token:
@@ -198,6 +214,8 @@ async def _resolve_orca_cloud(db: AsyncSession, user: User | None, ref: PresetRe
             status_code=403,
             detail=f"Orca Cloud presets require the orca_cloud:auth permission ({slot})",
         )
+    if user is None and await is_auth_enabled(db):
+        raise HTTPException(status_code=403, detail=_NO_CLOUD_IDENTITY.format(cloud="Orca Cloud", slot=slot))
 
     try:
         svc = await _build_orca_service(db, user)
@@ -248,6 +266,14 @@ async def _resolve_orca_cloud(db: AsyncSession, user: User | None, ref: PresetRe
         # same forced pin to `"system"` for the same reason — see the
         # Bambu Cloud branch above.
         content = {**content, "type": _SLOT_TO_PROFILE_TYPE[slot], "from": "system"}
+        for key in _ORCA_STRING_LIST_FIELDS:
+            raw = content.get(key)
+            # Parsed the way the slicer would, empty items included, so
+            # per-extruder positions survive. A string it can't parse is
+            # forwarded as is.
+            items = unescape_strings_cstyle(raw) if isinstance(raw, str) else None
+            if items is not None:
+                content[key] = items
     return json.dumps(content)
 
 

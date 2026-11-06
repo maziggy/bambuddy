@@ -125,7 +125,7 @@ async def _shutdown(server: asyncio.Server) -> None:
     server.close()
     try:
         await asyncio.wait_for(server.wait_closed(), timeout=5.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         pass
 
 

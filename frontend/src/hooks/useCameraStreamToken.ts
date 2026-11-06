@@ -7,7 +7,6 @@ import {
   setMediaToken,
   getMediaToken,
   withStreamToken,
-  withMediaToken,
 } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -171,11 +170,4 @@ export function useStreamTokenSync() {
  */
 export function useCameraStreamToken() {
   return { withToken: withStreamToken };
-}
-
-/**
- * Hook for components that need to wrap media URLs with the media token.
- */
-export function useMediaToken() {
-  return { withToken: withMediaToken };
 }

@@ -16,6 +16,7 @@ from backend.app.core.database import Base, run_migrations
 from backend.app.models.archive import PrintArchive
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
+from backend.app.models.settings import Settings
 
 
 @pytest.fixture
@@ -186,6 +187,9 @@ async def test_run_migrations_adds_column_and_backfills_in_order(force_sqlite_di
             db.add(PrintArchive(id=436, filename="heart 3.gcode.3mf", file_path="x", file_size=1, status="cancelled"))
             await db.flush()
             db.add(PrintQueueItem(id=177, printer_id=printer_id, archive_id=436, status="cancelled", plate_id=22))
+            # An install where the one-shot archive_fts rebuild already ran: the
+            # backfill's own rebuild guard is what must keep this from failing.
+            db.add(Settings(key="_archive_fts_rebuilt_once", value="true"))
             await db.commit()
 
         # Upgrade boot: run_migrations must add print_archives.plate_id, rebuild the

@@ -1,0 +1,11 @@
+# Known schema drift between a PostgreSQL database upgraded from an older
+# release and a fresh install, as found when scripts/check_postgres_upgrade.py
+# was introduced (2026-10-10). Each line is an object and exactly how it
+# differs ("<object> | fresh install: ...; upgraded: ..."), as the check prints
+# it. The check fails on drift not listed here (also a listed object that now
+# differs in another way) and on a line that no longer drifts: a fix that brings
+# an upgraded database in line with the models removes its line.
+# Comment lines start with "#".
+#
+# Empty: all drift found then was fixed on 2026-10-11. Fix new drift with a
+# migration instead of listing it here.

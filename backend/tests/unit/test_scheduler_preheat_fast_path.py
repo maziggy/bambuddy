@@ -45,7 +45,7 @@ def item():
 
 @pytest.fixture
 def archive():
-    return SimpleNamespace(bed_temperature=60)
+    return SimpleNamespace(file_path=None, bed_temperature=60)
 
 
 def _make_printer(model: str, printer_id: int = PRINTER_ID):
@@ -441,7 +441,7 @@ async def test_preheat_falls_back_to_configured_bed_temp_when_metadata_missing(s
     """
     db = AsyncMock()
     client = _make_client()
-    archive_no_bed = SimpleNamespace(bed_temperature=None)
+    archive_no_bed = SimpleNamespace(file_path=None, bed_temperature=None)
 
     with (
         patch.object(scheduler, "_get_bool_setting", AsyncMock(return_value=True)),
@@ -469,7 +469,7 @@ async def test_preheat_fallback_honours_configured_temp(scheduler, item):
     """The fallback reads `queue_keep_warm_bed_temp`; it is not hard-coded."""
     db = AsyncMock()
     client = _make_client()
-    archive_no_bed = SimpleNamespace(bed_temperature=None)
+    archive_no_bed = SimpleNamespace(file_path=None, bed_temperature=None)
 
     with (
         patch.object(scheduler, "_get_bool_setting", AsyncMock(return_value=True)),
@@ -500,7 +500,7 @@ async def test_preheat_still_skips_when_no_bed_temp_and_no_chamber_target(schedu
     db = AsyncMock()
     client = _make_client()
     pla_item = SimpleNamespace(id=43, preheat_override="inherit", preheat_chamber_target_override=0)
-    archive_no_bed = SimpleNamespace(bed_temperature=None)
+    archive_no_bed = SimpleNamespace(file_path=None, bed_temperature=None)
 
     with (
         patch.object(scheduler, "_get_bool_setting", AsyncMock(return_value=True)),

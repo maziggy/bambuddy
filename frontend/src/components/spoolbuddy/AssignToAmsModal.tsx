@@ -9,6 +9,7 @@ import type { AmsThresholds } from './AmsUnitCard';
 import { getFillBarColor } from '../../utils/amsHelpers';
 import { getSwatchStyle, resolveSpoolColorName } from '../../utils/colors';
 import { spoolSwatchStyle } from './spoolPaint';
+import { useUiSettings } from '../../hooks/useUiSettings';
 
 function getAmsName(id: number): string {
   if (id <= 3) return `AMS ${String.fromCharCode(65 + id)}`;
@@ -205,12 +206,7 @@ export function AssignToAmsModal({
     enabled: isOpen && targetPrinterId !== null,
   });
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: () => api.getSettings(),
-    enabled: isOpen,
-    staleTime: 5 * 60 * 1000,
-  });
+  const { data: settings } = useUiSettings({ enabled: isOpen, staleTime: 5 * 60 * 1000 });
 
   const { data: assignments } = useQuery({
     queryKey: ['spool-assignments', targetPrinterId],
@@ -230,10 +226,11 @@ export function AssignToAmsModal({
     ? spoolmanAssignments.find(a => a.spoolman_spool_id === spool.id)
     : undefined;
 
-  // Build fill-level override map from inventory assignments
+  // Build fill-level override map from inventory assignments, in built-in
+  // mode only: kept rows from it would fill Spoolman-mode slots (#3430).
   const fillOverrides = useMemo(() => {
     const map: Record<string, number> = {};
-    if (!assignments) return map;
+    if (!assignments || spoolmanMode) return map;
     for (const a of assignments) {
       const sp = a.spool;
       if (sp && sp.label_weight > 0 && sp.weight_used != null) {
@@ -242,7 +239,7 @@ export function AssignToAmsModal({
       }
     }
     return map;
-  }, [assignments]);
+  }, [assignments, spoolmanMode]);
 
   const amsThresholds: AmsThresholds | undefined = settings ? {
     humidityGood: Number(settings.ams_humidity_good) || 40,
@@ -330,7 +327,7 @@ export function AssignToAmsModal({
       queryClient.invalidateQueries({ queryKey: ['slotPresets'] });
       queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
       queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
-      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments-all'] });
+      queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments', 'all'] });
       queryClient.invalidateQueries({ queryKey: ['inventory-spools'] });
       queryClient.invalidateQueries({ queryKey: ['spoolman-inventory-spools'] });
       setTimeout(() => onClose(), pendingConfig ? 2500 : 1500);

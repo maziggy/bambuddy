@@ -414,3 +414,57 @@ class TestSliceRouteCloudOwnerResolution:
             db=db_session,
         )
         assert owner is None
+
+
+class TestPresetValuesResolvesAsCloudOwner:
+    """GET /slicer/preset-values resolves a cloud preset as the key's
+    owner when the key has Allow Cloud Access, like the preset listing does.
+    A key without it has no cloud identity there."""
+
+    async def _resolved_as(self, client: AsyncClient, db: AsyncSession, *, can_access_cloud: bool):
+        from unittest.mock import AsyncMock, patch
+
+        from fastapi import HTTPException
+
+        await _setup_auth_with_admin(client)
+        owner = await _store_admin_cloud_token(db, "cloudadmin", token="fake-token")
+        full_key, key_hash, key_prefix = generate_api_key()
+        db.add(
+            APIKey(
+                name="presets",
+                key_hash=key_hash,
+                key_prefix=key_prefix,
+                user_id=owner.id,
+                can_manage_library=True,
+                can_access_cloud=can_access_cloud,
+            )
+        )
+        await db.commit()
+
+        resolve = AsyncMock(side_effect=HTTPException(status_code=400, detail="stop here"))
+        with patch("backend.app.api.routes.slicer_presets.resolve_preset_ref", resolve):
+            resp = await client.get(
+                "/api/v1/slicer/preset-values",
+                params={"source": "cloud", "id": "PFUS123", "slot": "process"},
+                headers={"X-API-Key": full_key},
+            )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["resolved"] is False
+        user = resolve.await_args.args[1]
+        return owner, user
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_key_with_cloud_scope_resolves_as_its_owner(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        owner, user = await self._resolved_as(async_client, db_session, can_access_cloud=True)
+        assert user is not None and user.id == owner.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_key_without_cloud_scope_has_no_cloud_identity(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        _owner, user = await self._resolved_as(async_client, db_session, can_access_cloud=False)
+        assert user is None

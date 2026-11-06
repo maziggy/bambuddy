@@ -1,16 +1,16 @@
 /* Scoped to the opt-in renderer. Existing OBS sources retain their styling. */
 .updated-overlay {
   --overlay-scale: 1;
-  --overlay-space: clamp(12px, 2.5vmin, 32px);
+  --overlay-space: clamp(12px, calc(2.5 * var(--overlay-vmin, 1vmin)), 32px);
   position: relative;
   isolation: isolate;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  min-height: 100vh;
+  min-height: var(--overlay-height, 100vh);
   color: #fff;
-  background: #10171b;
-  font-size: calc(clamp(14px, 2.2vmin, 28px) * var(--overlay-scale));
+  background: rgb(16 23 27 / var(--overlay-background-alpha, 1));
+  font-size: calc(clamp(14px, calc(2.2 * var(--overlay-vmin, 1vmin)), 28px) * var(--overlay-scale));
   line-height: 1.3;
   font-variant-numeric: tabular-nums;
 }
@@ -35,7 +35,7 @@
   min-width: 0;
   padding: 0.65em 0.9em;
   border-radius: 0.7em;
-  background: rgb(12 19 23 / 90%);
+  background: rgb(12 19 23 / var(--overlay-identity-alpha, 0.9));
 }
 .updated-overlay__identity svg {
   flex-shrink: 0;
@@ -58,8 +58,8 @@
   flex-shrink: 0;
   margin-left: auto;
 }
-.updated-overlay__logo img {
-  width: clamp(100px, 19vmin, 230px);
+.updated-overlay__logo > a img {
+  width: clamp(100px, calc(19 * var(--overlay-vmin, 1vmin)), 230px);
   height: auto;
 }
 .updated-overlay__camera {
@@ -79,7 +79,7 @@
 }
 .updated-overlay__panel {
   padding: var(--overlay-space);
-  background: rgb(12 19 23 / 88%);
+  background: rgb(12 19 23 / var(--overlay-panel-alpha, 0.88));
 }
 .updated-overlay__summary {
   display: flex;
@@ -189,54 +189,52 @@
   font-size: 0.65em;
   color: #b8c0c7;
 }
-@media (orientation: portrait) {
-  .updated-overlay {
-    display: grid;
-    font-size: calc(clamp(14px, 3vmin, 36px) * var(--overlay-scale));
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto 1fr auto;
-    min-height: 100vh;
-  }
-  .updated-overlay__header {
-    grid-row: 1;
-    align-items: center;
-    background: #10171b;
-  }
-  .updated-overlay__identity {
-    background: none;
-    padding: 0;
-  }
-  .updated-overlay__camera {
-    position: relative;
-    grid-row: 2;
-    min-height: 30vh;
-    z-index: 0;
-  }
-  .updated-overlay__panel {
-    grid-row: 3;
-    background: #10171b;
-  }
-  .updated-overlay__summary {
-    flex-direction: column-reverse;
-    align-items: stretch;
-    gap: 0.65em;
-  }
-  .updated-overlay__progress {
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 0.3em;
-  }
-  .updated-overlay__progress > div {
-    flex: 0 0 100%;
-    order: 1;
-  }
-  .updated-overlay__readings {
-    flex-direction: column;
-  }
-  .updated-overlay__temperatures:not(:first-child) {
-    border-top: 1px solid #ffffff35;
-    padding-top: 0.8em;
-  }
+.updated-overlay[data-layout='portrait'] {
+  display: grid;
+  font-size: calc(clamp(14px, calc(3 * var(--overlay-vmin, 1vmin)), 36px) * var(--overlay-scale));
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
+  min-height: var(--overlay-height, 100vh);
+}
+.updated-overlay[data-layout='portrait'] .updated-overlay__header {
+  grid-row: 1;
+  align-items: center;
+  background: rgb(16 23 27 / var(--overlay-background-alpha, 1));
+}
+.updated-overlay[data-layout='portrait'] .updated-overlay__identity {
+  background: none;
+  padding: 0;
+}
+.updated-overlay[data-layout='portrait'] .updated-overlay__camera {
+  position: relative;
+  grid-row: 2;
+  min-height: calc(var(--overlay-height, 100vh) * 0.3);
+  z-index: 0;
+}
+.updated-overlay[data-layout='portrait'] .updated-overlay__panel {
+  grid-row: 3;
+  background: rgb(16 23 27 / var(--overlay-background-alpha, 1));
+}
+.updated-overlay[data-layout='portrait'] .updated-overlay__summary {
+  flex-direction: column-reverse;
+  align-items: stretch;
+  gap: 0.65em;
+}
+.updated-overlay[data-layout='portrait'] .updated-overlay__progress {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.3em;
+}
+.updated-overlay[data-layout='portrait'] .updated-overlay__progress > div {
+  flex: 0 0 100%;
+  order: 1;
+}
+.updated-overlay[data-layout='portrait'] .updated-overlay__readings {
+  flex-direction: column;
+}
+.updated-overlay[data-layout='portrait'] .updated-overlay__temperatures:not(:first-child) {
+  border-top: 1px solid #ffffff35;
+  padding-top: 0.8em;
 }
 @media (prefers-reduced-motion: reduce) {
   .updated-overlay__progress > div > div {

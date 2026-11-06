@@ -905,7 +905,7 @@ function SettingsSection({
                   </button>
                   <button
                     onClick={() => {
-                      if (confirm(t('maintenance.deleteTypeConfirm', { name: type.name }))) {
+                      if (confirm(`${t('maintenance.deleteTypeConfirm', { name: type.name })}\n\n${t('maintenance.deleteTypeAllPrinters')}`)) {
                         onDeleteType(type.id);
                       }
                     }}

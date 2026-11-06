@@ -133,6 +133,7 @@ class TestCrud:
 
         assert response.status_code == 422
 
+    @pytest.mark.sqlite_only  # an over-length value only SQLite stores
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_a_row_that_predates_the_bound_is_still_readable(

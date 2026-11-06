@@ -8,7 +8,7 @@ import { SystemHealthPanel } from './SystemHealthPanel';
 import { Collapsible } from './Collapsible';
 import { useIsMobile } from '../hooks/useIsMobile';
 
-type ViewState = 'form' | 'logging' | 'stopping' | 'submitting' | 'success' | 'error';
+type ViewState = 'form' | 'logging' | 'stopping' | 'review' | 'submitting' | 'success' | 'error';
 
 /** One scanned printer paired with its name — the diagnostic result alone
  *  carries no name, and the bug-report panel lists affected printers by name. */
@@ -159,6 +159,11 @@ export function BugReportBubble({ showTrigger = true, open, onOpenChange, onLogg
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [wasDebug, setWasDebug] = useState(false);
+  // Logs from a stopped run, held until the user submits or discards them
+  // (#3363). Stopping never files the report by itself.
+  const [heldLogs, setHeldLogs] = useState<string | null>(null);
+  const heldLogsRef = useRef(heldLogs);
+  heldLogsRef.current = heldLogs;
   const modalRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handleStopLoggingRef = useRef<() => void>(() => {});
@@ -229,11 +234,18 @@ export function BugReportBubble({ showTrigger = true, open, onOpenChange, onLogg
   // A run in progress is the exception (#2847). Step 2 asks the user to
   // reproduce the problem, which usually means reaching a part of the app the
   // panel is sitting on top of, so closing it has to be allowed — and the only
-  // thing that stops debug logging is the Stop & Submit button on the step this
-  // reset used to throw away.
+  // thing that stops debug logging is the Stop Logging button on the step this
+  // reset used to throw away. A stopped run's logs are kept the same way: on
+  // the review, while sending, and after a failed send, which reopens on the
+  // review (#3363). Debug logging is already off by then, so they cannot be
+  // captured again.
   useEffect(() => {
     if (!isOpen) return;
-    if (viewStateRef.current === 'logging' || viewStateRef.current === 'stopping' || viewStateRef.current === 'submitting') return;
+    if (['logging', 'stopping', 'review', 'submitting'].includes(viewStateRef.current)) return;
+    if (viewStateRef.current === 'error' && heldLogsRef.current !== null) {
+      setViewState('review');
+      return;
+    }
     setViewState('form');
     setDescription('');
     setEmail('');
@@ -244,6 +256,7 @@ export function BugReportBubble({ showTrigger = true, open, onOpenChange, onLogg
     setElapsedSeconds(0);
     setStartedAt(null);
     setWasDebug(false);
+    setHeldLogs(null);
   }, [isOpen]);
 
   // Pick a run back up after a reload. The panel's own state is gone by then,
@@ -366,8 +379,8 @@ export function BugReportBubble({ showTrigger = true, open, onOpenChange, onLogg
   };
 
   const handleStopLogging = async () => {
-    // The cap can fire while the panel is closed, and stopping submits. Show
-    // the panel so that happens in front of the user instead of behind them.
+    // The cap can fire while the panel is closed. Show the panel so the review
+    // it ends on is in front of the user instead of behind them.
     setIsOpen(true);
     // The run is over from here whichever way it goes, so there is nothing left
     // to resume — including when stopping fails, where the banner in Layout is
@@ -377,13 +390,22 @@ export function BugReportBubble({ showTrigger = true, open, onOpenChange, onLogg
     setViewState('stopping');
     try {
       const stopResult = await bugReportApi.stopLogging(wasDebug);
-      await handleSubmitReport(stopResult.logs);
+      // A public GitHub issue is filed only from the review step: a click on
+      // stop (#3363) or the 5-minute cap is not a decision to send.
+      setHeldLogs(stopResult.logs ?? '');
+      setViewState('review');
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : t('bugReport.unexpectedError'));
       setViewState('error');
     }
   };
   handleStopLoggingRef.current = handleStopLogging;
+
+  const handleDiscard = () => {
+    setHeldLogs(null);
+    setViewState('form');
+    setIsOpen(false);
+  };
 
   const handleSubmitReport = async (debugLogs: string) => {
     setViewState('submitting');
@@ -398,6 +420,7 @@ export function BugReportBubble({ showTrigger = true, open, onOpenChange, onLogg
       if (result.success) {
         setIssueUrl(result.issue_url || null);
         setIssueNumber(result.issue_number || null);
+        setHeldLogs(null);
         setViewState('success');
       } else {
         setErrorMessage(result.message);
@@ -688,7 +711,7 @@ export function BugReportBubble({ showTrigger = true, open, onOpenChange, onLogg
                     {/* Step 3: Upcoming */}
                     <div className="flex items-center gap-3">
                       <Circle className="w-5 h-5 text-gray-300 dark:text-gray-600 flex-shrink-0" />
-                      <span className="text-sm text-gray-400 dark:text-gray-500">{t('bugReport.stepStopLogging')}</span>
+                      <span className="text-sm text-gray-400 dark:text-gray-500">{t('bugReport.stepReview')}</span>
                     </div>
                   </div>
 
@@ -701,13 +724,39 @@ export function BugReportBubble({ showTrigger = true, open, onOpenChange, onLogg
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">{t('bugReport.closeKeepsRecording')}</p>
                   </div>
 
-                  {/* Stop & Submit button */}
+                  {/* Stop button */}
                   <div className="flex justify-center">
                     <button
                       onClick={handleStopLogging}
                       className="px-6 py-2.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
                     >
-                      {t('bugReport.stopAndSubmit')}
+                      {t('bugReport.stopLogging')}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {viewState === 'review' && heldLogs !== null && (
+                <div data-testid="bug-report-review" className="py-4 space-y-4">
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">{t('bugReport.reviewTitle')}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{t('bugReport.reviewBody')}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {t('bugReport.reviewLogLines', { lines: heldLogs.split('\n').filter((l) => l.trim()).length })}
+                    </p>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={handleDiscard}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                    >
+                      {t('bugReport.discard')}
+                    </button>
+                    <button
+                      onClick={() => handleSubmitReport(heldLogs)}
+                      className="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
+                    >
+                      {t('bugReport.submit')}
                     </button>
                   </div>
                 </div>
@@ -717,7 +766,7 @@ export function BugReportBubble({ showTrigger = true, open, onOpenChange, onLogg
                 <div className="flex flex-col items-center justify-center py-6 gap-3">
                   <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
                   <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
-                    {viewState === 'stopping' ? t('bugReport.stoppingLogs') : t('bugReport.submitting')}
+                    {viewState === 'stopping' ? t('bugReport.collectingLogs') : t('bugReport.submitting')}
                   </p>
                   {viewState === 'submitting' && (
                     // Diagnostics are run server-side inside the submit call
@@ -766,7 +815,9 @@ export function BugReportBubble({ showTrigger = true, open, onOpenChange, onLogg
                   <p className="text-sm text-gray-600 dark:text-gray-400 text-center">{errorMessage}</p>
                   <div className="flex gap-2 mt-4">
                     <button
-                      onClick={() => setViewState('form')}
+                      // A failed send keeps its logs, so trying again goes back
+                      // to the review rather than to a new recording.
+                      onClick={() => setViewState(heldLogs !== null ? 'review' : 'form')}
                       className="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
                     >
                       {t('bugReport.submit')}

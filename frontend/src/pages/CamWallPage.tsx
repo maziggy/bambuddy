@@ -20,13 +20,16 @@
  * mint the WS ticket anyway.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { CameraWall, type CameraWallStatus } from '../components/CameraWall';
+import { CAM_WALL_TILE_SIZES, DEFAULT_CAM_WALL_TILE_SIZE } from '../components/camWallTileSize';
 import { type CameraTileStatusMode } from '../components/CameraTile';
 import { api, setStreamToken } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import { AuthRetrying } from '../components/AuthRetrying';
+import { isStandaloneWebApp } from '../utils/camera';
 
 // Kiosk polling cadence. Matches the staleTime the in-page wall runs at, so a
 // tile's chip is never more stale than it would be on the Printers page.
@@ -58,10 +61,20 @@ function fromUrlOrStorage(
   return clampInt(localStorage.getItem(storageKey), fallback, min, max);
 }
 
+/** ``?size=s|m|l|xl`` (#2735), else the size last picked on the Printers page. */
+function tileSizeFrom(params: URLSearchParams): number {
+  const requested = params.get('size')?.toLowerCase();
+  const fromUrl = CAM_WALL_TILE_SIZES.indexOf(requested as (typeof CAM_WALL_TILE_SIZES)[number]);
+  if (fromUrl >= 0) return fromUrl + 1;
+  const saved = parseInt(localStorage.getItem('camWallTileSize') ?? '', 10);
+  return saved >= 1 && saved <= 4 ? saved : DEFAULT_CAM_WALL_TILE_SIZE;
+}
+
 export function CamWallPage() {
   const { t } = useTranslation();
   const location = useLocation();
-  const { authEnabled, loading: authLoading, user } = useAuth();
+  const navigate = useNavigate();
+  const { authEnabled, loading: authLoading, user, authUnconfirmed } = useAuth();
   const [searchParams] = useSearchParams();
 
   const token = searchParams.get('token');
@@ -83,6 +96,7 @@ export function CamWallPage() {
       MAX_SNAPSHOT_SEC,
     ),
   );
+  const [tileSize] = useState(() => tileSizeFrom(searchParams));
   const [statusMode, setStatusMode] = useState<CameraTileStatusMode>(() => {
     const requested = searchParams.get('status') ?? localStorage.getItem('camWallStatusMode');
     // 'full' names the file on the bed. Fine on a signed-in screen, wrong on one
@@ -145,6 +159,10 @@ export function CamWallPage() {
     );
   }
 
+  if (!kiosk && authUnconfirmed) {
+    return <AuthRetrying />;
+  }
+
   // No token and no session: this is just a normal page of the app.
   if (!kiosk && authEnabled && !user) {
     return <Navigate to="/login" replace state={{ from: location }} />;
@@ -170,9 +188,16 @@ export function CamWallPage() {
         maxLive={maxLive}
         snapshotIntervalSec={snapshotIntervalSec}
         statusMode={statusMode}
+        tileSize={tileSize}
         statuses={kiosk ? kioskStatuses : undefined}
         showSettings={!kiosk}
-        onTileClick={kiosk ? undefined : (id) => window.open(`/camera/${id}`, `camera-${id}`)}
+        // A home-screen web app has no second window: the camera opens in
+        // place and its back button returns here (#3419).
+        onTileClick={
+          kiosk
+            ? undefined
+            : (id) => (isStandaloneWebApp() ? navigate(`/camera/${id}`) : window.open(`/camera/${id}`, `camera-${id}`))
+        }
         // Writes to the same localStorage keys the Printers page reads, so a
         // change made here follows the user back there. A kiosk wall hides the
         // popover, so these never fire.

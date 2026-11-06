@@ -59,7 +59,7 @@ def _make_factory(
                 try:
                     await asyncio.wait_for(disconnect.wait(), timeout=delay)
                     return
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
             yield chunk
 
@@ -584,3 +584,58 @@ async def test_subscriber_with_no_frames_detaches_promptly():
     await asyncio.wait_for(drain(), timeout=3.0)
     assert bc.subscriber_count == 0
     await bc.force_shutdown()
+
+
+class TestRetireBroadcasters:
+    """A changed camera gets a new key, so the predecessor gate cannot hold its
+    upstream back while the old one still has a single-reader device open."""
+
+    @staticmethod
+    def _slow_closing(closed: list[str], name: str):
+        async def factory(disconnect_event: asyncio.Event) -> AsyncGenerator[bytes, None]:
+            try:
+                while not disconnect_event.is_set():
+                    yield b"--frame\r\n"
+                    await asyncio.sleep(0.01)
+            finally:
+                await asyncio.sleep(0.2)  # closing the device takes a while
+                closed.append(name)
+
+        return factory
+
+    @pytest.mark.asyncio
+    async def test_waits_until_the_old_upstream_has_closed(self):
+        closed: list[str] = []
+        old = await camera_fanout.get_or_create_broadcaster("printer-9-ext-old", self._slow_closing(closed, "old"))
+        await old.subscribe()
+        await asyncio.sleep(0.05)
+
+        await camera_fanout.retire_broadcasters("printer-9-ext-", keep="printer-9-ext-new")
+
+        assert closed == ["old"]
+
+    @pytest.mark.asyncio
+    async def test_also_waits_for_one_already_tearing_down(self):
+        closed: list[str] = []
+        old = await camera_fanout.get_or_create_broadcaster("printer-9-ext-old", self._slow_closing(closed, "old"))
+        await old.subscribe()
+        await asyncio.sleep(0.05)
+        teardown = asyncio.create_task(old.force_shutdown())
+        await asyncio.sleep(0.01)
+
+        await camera_fanout.retire_broadcasters("printer-9-ext-", keep="printer-9-ext-new")
+
+        assert closed == ["old"]
+        await teardown
+
+    @pytest.mark.asyncio
+    async def test_leaves_the_kept_one_and_other_printers_alone(self):
+        closed: list[str] = []
+        kept = await camera_fanout.get_or_create_broadcaster("printer-9-ext-new", self._slow_closing(closed, "new"))
+        other = await camera_fanout.get_or_create_broadcaster("printer-19-ext-x", self._slow_closing(closed, "other"))
+        await kept.subscribe()
+        await other.subscribe()
+
+        await camera_fanout.retire_broadcasters("printer-9-ext-", keep="printer-9-ext-new")
+
+        assert not kept.stopped and not other.stopped

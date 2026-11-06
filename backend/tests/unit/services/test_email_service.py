@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.notification_template import NotificationTemplate
 from backend.app.services.email_service import (
-    create_password_reset_email_from_template,
     create_welcome_email_from_template,
     generate_secure_password,
     render_template,
@@ -54,7 +53,9 @@ class TestEmailTemplateFormatting:
         # Verify text body has newlines
         assert "\n\n" in text_body
         assert "Hello testuser!" in text_body
-        assert "Your password is: testpass123" in text_body
+        # The password is added by Bambuddy, never by the template
+        assert "Your password is: \n" in text_body
+        assert text_body.endswith("Username: testuser\nPassword: testpass123")
 
         # Verify HTML body has <br> tags instead of relying on CSS
         assert "<br>" in html_body
@@ -66,47 +67,8 @@ class TestEmailTemplateFormatting:
 
         # Verify that escaped content is present (XSS protection)
         assert "Hello testuser!<br>" in html_body
-        assert "Your password is: testpass123<br>" in html_body
-
-    @pytest.mark.asyncio
-    async def test_password_reset_email_newlines_converted_to_br(self):
-        """Verify that newlines in password reset email body are converted to <br> tags."""
-        # Mock database session
-        db = AsyncMock(spec=AsyncSession)
-
-        # Mock template with newlines
-        template = NotificationTemplate(
-            event_type="password_reset",
-            name="Password Reset",
-            title_template="{app_name} - Password Reset",
-            body_template="Hello {username},\n\nYour password has been reset.\nNew password: {password}\n\nLogin at: {login_url}",
-            is_default=True,
-        )
-
-        # Patch get_notification_template to return our template
-        with patch("backend.app.services.email_service.get_notification_template", return_value=template):
-            # Generate email
-            subject, text_body, html_body = await create_password_reset_email_from_template(
-                db=db,
-                username="testuser",
-                password="newpass456",
-                login_url="http://example.com/login",
-                app_name="TestApp",
-            )
-
-        # Verify subject
-        assert subject == "TestApp - Password Reset"
-
-        # Verify text body has newlines
-        assert "\n\n" in text_body
-        assert "Hello testuser," in text_body
-
-        # Verify HTML body has <br> tags
-        assert "<br>" in html_body
-        # Should not use white-space: pre-wrap
-        assert "white-space: pre-wrap" not in html_body
-        # Should have security alert
-        assert "Security Alert" in html_body
+        assert "Your password is: <br>" in html_body
+        assert ">testpass123</code>" in html_body
 
     @pytest.mark.asyncio
     async def test_email_header_padding(self):

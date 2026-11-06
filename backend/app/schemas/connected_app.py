@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 from backend.app.schemas.print_queue import UTCDatetime
 
 # RFC 7636: 43-128 chars from the unreserved set. The challenge is the
@@ -38,7 +39,8 @@ class ConnectedAppCreate(BaseModel):
     _check_redirect = field_validator("redirect_uri")(_validate_redirect_uri)
 
 
-class ConnectedAppUpdate(BaseModel):
+class ConnectedAppUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "connected_apps"
     name: str | None = Field(default=None, min_length=1, max_length=100)
     redirect_uri: str | None = Field(default=None, min_length=1, max_length=500)
     enabled: bool | None = None

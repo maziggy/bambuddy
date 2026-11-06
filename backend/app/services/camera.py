@@ -18,7 +18,13 @@ import weakref
 from datetime import datetime
 from pathlib import Path
 
-from backend.app.utils.ffmpeg_output import NO_FFMPEG_OUTPUT, summarize_ffmpeg_stderr
+from backend.app.utils.ffmpeg_output import (
+    FFMPEG_RTSP_LOGLEVEL,
+    NO_FFMPEG_OUTPUT,
+    read_ffmpeg_log_until_open,
+    reap_ffmpeg,
+    summarize_ffmpeg_stderr,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -382,7 +388,7 @@ async def close_tls_proxy(server: "asyncio.Server") -> None:
     way to guarantee no handler outlives the server that owns it.
 
     ``Server.close_clients()`` would do this natively, but it landed in Python
-    3.13 and Bambuddy supports 3.10, so the handler set is tracked by hand in
+    3.13 and Bambuddy supports 3.11, so the handler set is tracked by hand in
     ``_proxy_handlers``.
 
     Safe to call on any ``asyncio.Server`` from anywhere else: a server that
@@ -404,12 +410,6 @@ def is_chamber_image_model(model: str | None) -> bool:
     A1, A1MINI, P1P, P1S use the chamber image protocol on port 6000.
     """
     return not supports_rtsp(model)
-
-
-def build_camera_url(ip_address: str, access_code: str, model: str | None) -> str:
-    """Build the RTSPS URL for the printer camera (RTSP models only)."""
-    port = get_camera_port(model)
-    return f"rtsps://bblp:{access_code}@{ip_address}:{port}/streaming/live/1"
 
 
 def _create_chamber_auth_payload(access_code: str) -> bytes:
@@ -778,6 +778,7 @@ async def _capture_camera_frame_bytes_uncoalesced(
     cmd = [
         ffmpeg,
         "-y",
+        *FFMPEG_RTSP_LOGLEVEL,
         "-rtsp_transport",
         "tcp",
         "-rtsp_flags",
@@ -807,14 +808,19 @@ async def _capture_camera_frame_bytes_uncoalesced(
 
         _active_capture_pids.add(process.pid)
         try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+            # The printer's answers reach ffmpeg through the proxy unchanged,
+            # so a redirect is refused here as for an external camera.
+            async with asyncio.timeout(timeout):
+                state, log = await read_ffmpeg_log_until_open(process)
+                stdout, stderr = await process.communicate()
         except TimeoutError:
-            process.kill()
-            await process.wait()
             logger.error("Camera frame bytes capture timed out after %ss", timeout)
             return None
+        stderr = log + stderr
 
-        if process.returncode == 0 and stdout and len(stdout) >= 100:
+        if state == "redirected":
+            return None
+        if state == "open" and process.returncode == 0 and stdout and len(stdout) >= 100:
             logger.info("Successfully captured camera frame bytes: %s bytes", len(stdout))
             return stdout
         else:
@@ -832,6 +838,8 @@ async def _capture_camera_frame_bytes_uncoalesced(
         logger.exception("Camera frame bytes capture failed: %s", e)
         return None
     finally:
+        # Killed however the capture ends, not only on its deadline (#3292).
+        await reap_ffmpeg(process)
         if process is not None:
             _active_capture_pids.discard(process.pid)
         await close_tls_proxy(proxy_server)
@@ -901,18 +909,15 @@ async def extract_video_last_frame(video_path: Path, output_path: Path) -> bool:
             logger.warning("ffmpeg produced no output for %s", video_path)
             return False
         return True
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning("ffmpeg timed out extracting last frame from %s", video_path)
-        if process is not None:
-            try:
-                process.kill()
-                await process.wait()
-            except ProcessLookupError:
-                pass  # Already exited
         return False
     except OSError as e:
         logger.warning("ffmpeg subprocess error for %s: %s", video_path, e)
         return False
+    finally:
+        # Killed however this ends, not only on its deadline (#3292).
+        await reap_ffmpeg(process)
 
 
 def apply_camera_rotation(image_data: bytes, rotation: int, logger: logging.Logger) -> bytes:

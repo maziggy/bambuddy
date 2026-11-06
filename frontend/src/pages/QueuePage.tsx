@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { bulkUpdateToast } from '../utils/queueBulkUpdate';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   DndContext,
@@ -20,6 +21,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { queueItemDisplayName } from '../utils/queueItemName';
+import { queueItemThumbnailUrl } from '../utils/queueItemThumbnail';
 import {
   Clock,
   Trash2,
@@ -69,6 +71,7 @@ import { PipelineRunsView } from './PipelineRunsPage';
 import { type TimeFormat, formatETA, formatDuration, formatRelativeTime, parseUTCDate } from '../utils/date';
 import { getBedTypeInfo } from '../utils/bedType';
 import { getColorName } from '../utils/colors';
+import { productLineOf, useFilamentNameByIdx } from '../components/PrintModal/useFilamentLabels';
 import type { PrintQueueItem, PrintQueueBulkUpdate, Permission, CalibrationMode, PrinterStatus, SlotSpoolIdentity } from '../api/client';
 import { formatSlotLabel, getEmptySlotKind } from '../utils/amsHelpers';
 import type { PlateMetadata } from '../types/plates';
@@ -81,10 +84,16 @@ import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { QueueStatsBar } from '../components/QueueStatsBar';
 import { CompactHistoryRow } from '../components/CompactHistoryRow';
+import { ColorSubstitutionNotes } from '../components/ColorSubstitutionNotes';
 import { QueueTimelineView } from '../components/QueueTimelineView';
 import { compareQueueOrder } from '../utils/queueOrder';
 import { BatchOrdersView } from '../components/BatchOrdersView';
+import { ThumbnailHoverPreview } from '../components/ThumbnailHoverPreview';
 import { buildLoadedFilaments, type LoadedFilament } from '../hooks/useFilamentMapping';
+import { hasGcodeSnippets, useUiSettings } from '../hooks/useUiSettings';
+
+// The scheduler's MODEL_GATE_WAIT_REASON (print_scheduler.py).
+const MODEL_GATE_WAIT_REASON = 'The last print failed on every free matching printer';
 
 type QueueFilamentDisplay = {
   slotId: number;
@@ -122,6 +131,35 @@ function emptyMappedSlotLabel(status: PrinterStatus | undefined, trayId: number)
   return formatSlotLabel(amsId, slot, isHt, false);
 }
 
+/**
+ * The backup tray each mapped tray handed over to during the running print.
+ *
+ * With AMS Filament Backup on, a spool that runs out is replaced by an identical
+ * one in another slot, and the job's stored mapping still names the empty slot.
+ * The printer's tray log shows the switch: a tray the mapping doesn't name, right
+ * after the tray it took over from. A backup that runs out in turn hands over
+ * again, so the chain resolves to the slot the mapping named.
+ */
+function backupTrays(mapping: number[] | null | undefined, log: [number, number][] | undefined): Map<number, number> {
+  const backups = new Map<number, number>();
+  if (!mapping?.length || !log?.length) return backups;
+  const mapped = new Set(mapping.filter((tray) => tray >= 0));
+  // Backup tray -> the mapped tray it stands in for.
+  const standsInFor = new Map<number, number>();
+  let previous: number | undefined;
+  for (const [tray] of log) {
+    if (previous !== undefined && !mapped.has(tray) && !standsInFor.has(tray)) {
+      const original = mapped.has(previous) ? previous : standsInFor.get(previous);
+      if (original !== undefined) {
+        standsInFor.set(tray, original);
+        backups.set(original, tray);
+      }
+    }
+    previous = tray;
+  }
+  return backups;
+}
+
 function queueFilamentLabel(filament: QueueFilamentDisplay): string {
   return filament.slotLabel
     ? [
@@ -146,15 +184,21 @@ function resolveQueueFilaments(
   loadedFilaments: LoadedFilament[] = [],
   status?: PrinterStatus,
   emptyLabel = 'Empty',
+  filamentNameByIdx: Record<string, string> = {},
 ): QueueFilamentDisplay[] {
   // A stored AMS mapping names the physical tray that will actually feed a 3MF
   // slot. Once its live tray data is available, that is more specific than
   // either the queue override or the original slice. When the printer reports
   // that tray as empty, keep the intended colour but say the slot is empty.
+  // While the job prints, a slot whose spool ran out shows the backup spool the
+  // printer switched to instead.
+  const backups =
+    item.status === 'printing' ? backupTrays(item.ams_mapping, status?.tray_change_log) : new Map<number, number>();
   const resolveSlot = (planned: QueueFilamentDisplay): QueueFilamentDisplay => {
     const slotId = planned.slotId;
-    const mappedTrayId = slotId > 0 ? item.ams_mapping?.[slotId - 1] : undefined;
-    if (mappedTrayId == null || mappedTrayId < 0) return planned;
+    const storedTrayId = slotId > 0 ? item.ams_mapping?.[slotId - 1] : undefined;
+    if (storedTrayId == null || storedTrayId < 0) return planned;
+    const mappedTrayId = backups.get(storedTrayId) ?? storedTrayId;
     const loaded = loadedFilaments.find((filament) => filament.globalTrayId === mappedTrayId);
     if (loaded) {
       return {
@@ -192,12 +236,16 @@ function resolveQueueFilaments(
         const override = overrides.get(filament.slot_id);
         const color = override?.color ?? filament.color;
         const type = override?.type ?? filament.type;
+        // An override is another filament: the plate's preset is not its own.
+        const productLine = override
+          ? productLineOf(override.tray_info_idx, override.type, filamentNameByIdx)
+          : productLineOf(filament.tray_info_idx, filament.type, filamentNameByIdx);
 
         return resolveSlot({
           slotId: filament.slot_id,
           type,
           color,
-          colorName: override?.color_name?.trim() || getColorName(color, type),
+          colorName: override?.color_name?.trim() || getColorName(color, productLine),
         });
       });
   }
@@ -213,7 +261,7 @@ function resolveQueueFilaments(
         color: override.color,
         colorName:
           override.color_name?.trim() ||
-          getColorName(override.color, override.type),
+          getColorName(override.color, productLineOf(override.tray_info_idx, override.type, filamentNameByIdx)),
       }),
     );
   }
@@ -555,6 +603,9 @@ function SortableQueueItem({
   etaNow?: number;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
+  const { hasAnyPermission } = useAuth();
+  // Their waiting jobs are started by someone who manages the queue (#1620)
+  const awaitingReview = !hasAnyPermission('queue:update_all', 'queue:start_unreviewed');
   const hasPhysicalAmsMapping =
     item.printer_id != null && (item.ams_mapping?.some((trayId) => trayId >= 0) ?? false);
 
@@ -616,7 +667,15 @@ function SortableQueueItem({
   // Combine plates data from either source
   const platesData = isLibraryFile ? libraryPlatesData : archivePlatesData;
   const plates = platesData?.plates ?? [];
-  const queueFilaments = resolveQueueFilaments(item, plates, loadedFilaments, status, t('ams.empty'));
+  const filamentNameByIdx = useFilamentNameByIdx();
+  const queueFilaments = resolveQueueFilaments(
+    item,
+    plates,
+    loadedFilaments,
+    status,
+    t('ams.empty'),
+    filamentNameByIdx,
+  );
 
   const canReorder = hasPermission('queue:reorder');
   const {
@@ -648,6 +707,7 @@ function SortableQueueItem({
       : null;
 
   const isMobileSelectable = isPending && onToggleSelect;
+  const thumbnailUrl = queueItemThumbnailUrl(item);
 
   return (
     <div
@@ -746,33 +806,18 @@ function SortableQueueItem({
         )}
 
         {/* Thumbnail - use plate-specific thumbnail if plate_id is set */}
-        <div className="w-10 h-10 sm:w-14 sm:h-14 flex-shrink-0 bg-bambu-dark rounded-lg overflow-hidden">
-          {item.archive_thumbnail ? (
-            <img
-              src={
-                item.plate_id != null
-                  ? api.getArchivePlateThumbnail(item.archive_id!, item.plate_id)
-                  : api.getArchiveThumbnail(item.archive_id!)
-              }
-              alt=""
-              className="w-full h-full object-cover"
-            />
-          ) : item.library_file_thumbnail ? (
-            <img
-              src={
-                item.plate_id != null
-                  ? api.getLibraryFilePlateThumbnail(item.library_file_id!, item.plate_id)
-                  : api.getLibraryFileThumbnailUrl(item.library_file_id!)
-              }
-              alt=""
-              className="w-full h-full object-cover"
-            />
+        <ThumbnailHoverPreview
+          src={thumbnailUrl}
+          className="w-10 h-10 sm:w-14 sm:h-14 flex-shrink-0 bg-bambu-dark rounded-lg overflow-hidden"
+        >
+          {thumbnailUrl ? (
+            <img src={thumbnailUrl} alt="" className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-bambu-gray">
               <Layers className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
           )}
-        </div>
+        </ThumbnailHoverPreview>
 
         {/* Info */}
         <div className="flex-1 min-w-0">
@@ -791,7 +836,7 @@ function SortableQueueItem({
               </Link>
             ) : item.library_file_id ? (
               <Link
-                to={`/library?highlight=${item.library_file_id}`}
+                to={`/files?highlight=${item.library_file_id}`}
                 className="text-bambu-gray hover:text-bambu-green transition-colors flex-shrink-0"
                 title={t('queue.viewInFileManager')}
               >
@@ -941,7 +986,7 @@ function SortableQueueItem({
             {item.manual_start && (
               <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 rounded-full border border-purple-200 dark:border-purple-500/20 flex items-center gap-1">
                 <Hand className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                {t('queue.badges.staged')}
+                {awaitingReview ? t('queue.badges.awaitingReview') : t('queue.badges.staged')}
               </span>
             )}
             {item.require_previous_success && (
@@ -1036,6 +1081,13 @@ function SortableQueueItem({
             </p>
           )}
 
+          {/* Sent with a spool of another colour than the file asks for (#3279). */}
+          <ColorSubstitutionNotes
+            substitutions={item.color_substitutions}
+            t={t}
+            className="text-[10px] sm:text-xs mt-1.5 sm:mt-2"
+          />
+
           {/* Archive carries the slicer's own live-resolved AMS-slot pick
               (extra_data.slicer_ams_mapping) — reprints of this archive reuse
               the exact physical spool instead of re-deriving one. */}
@@ -1082,8 +1134,14 @@ function SortableQueueItem({
                     variant="ghost"
                     size="sm"
                     onClick={onStart}
-                    disabled={!canModify('queue', 'update', item.created_by_id)}
-                    title={!canModify('queue', 'update', item.created_by_id) ? t('queue.permissions.noStartPrint') : t('queue.actions.startPrint')}
+                    disabled={awaitingReview || !canModify('queue', 'update', item.created_by_id)}
+                    title={
+                      awaitingReview
+                        ? t('queue.permissions.awaitingReview')
+                        : !canModify('queue', 'update', item.created_by_id)
+                          ? t('queue.permissions.noStartPrint')
+                          : t('queue.actions.startPrint')
+                    }
                     className="text-bambu-green hover:text-bambu-green-light hover:bg-bambu-green/10 p-1.5 sm:p-2"
                   >
                     <Play className="w-4 h-4" />
@@ -1450,8 +1508,10 @@ type HistoryRow =
   | { kind: 'batch'; batchId: number; batchName: string; items: PrintQueueItem[] };
 
 interface HistorySectionProps {
+  // The loaded page, then any other runs of its batches (see getQueueHistory)
   items: PrintQueueItem[];
-  collapsed: boolean;
+  // Matching history in all, loaded or not
+  total: number;
   visibleCount: number;
   onShowMore: () => void;
   sortBy: 'date' | 'name' | 'printer';
@@ -1472,6 +1532,7 @@ interface HistorySectionProps {
 
 function HistorySection({
   items,
+  total,
   visibleCount,
   onShowMore,
   sortBy,
@@ -1524,7 +1585,7 @@ function HistorySection({
         <h2 className="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
           {t('queue.sections.history')}
           <span className="text-xs sm:text-sm font-normal text-bambu-gray">
-            ({t('queue.itemCount', { count: items.length })})
+            ({t('queue.itemCount', { count: total })})
           </span>
         </h2>
         <div className="flex items-center gap-2">
@@ -1650,15 +1711,15 @@ function HistorySection({
           );
         })}
       </div>
-      {items.length > visibleCount && (
+      {total > visibleCount && (
         <div className="mt-4 flex flex-col items-center gap-2">
           <Button variant="secondary" size="sm" onClick={onShowMore}>
             {t('queue.history.showMore')}
           </Button>
           <span className="text-xs text-bambu-gray">
             {t('queue.history.showingCount', {
-              shown: Math.min(visibleCount, items.length),
-              total: items.length,
+              shown: Math.min(visibleCount, total),
+              total,
             })}
           </span>
         </div>
@@ -1668,6 +1729,9 @@ function HistorySection({
 }
 
 const HISTORY_PAGE_SIZE = 50;
+// The statuses the Queue tab works with; the rest is history.
+const ACTIVE_STATUSES = ['pending', 'printing', 'skipped'];
+const EMPTY_QUEUE: PrintQueueItem[] = [];
 
 export function QueuePage() {
   const { t } = useTranslation();
@@ -1693,6 +1757,8 @@ export function QueuePage() {
     printerName: string;
     skippedCount: number;
   } | null>(null);
+  // Same for a model whose waiting jobs are held by failed last prints.
+  const [resumeModelConfirm, setResumeModelConfirm] = useState<string | null>(null);
   const [historySortBy, setHistorySortBy] = useState<'date' | 'name' | 'printer'>(() => {
     const saved = localStorage.getItem('queue.historySortBy');
     return (saved as 'date' | 'name' | 'printer') || 'date';
@@ -1801,10 +1867,7 @@ export function QueuePage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
-  });
+  const { data: settings } = useUiSettings();
 
   const timeFormat: TimeFormat = settings?.time_format || 'system';
 
@@ -1819,11 +1882,46 @@ export function QueuePage() {
   });
   const activeBatchCount = activeBatches?.length ?? 0;
 
-  const { data: queue, isLoading } = useQuery({
-    queryKey: ['queue', filterPrinter, filterStatus],
-    queryFn: () => api.getQueue(filterPrinter || undefined, filterStatus || undefined),
+  // Only what is still in play: pending and printing, plus skipped for the
+  // Resume-after-failure banner. History has its own paged query below. This
+  // used to be the whole queue, history included, every five seconds; on a
+  // farm that was thousands of rows and stalled the server.
+  const activeStatuses = filterStatus
+    ? (ACTIVE_STATUSES.includes(filterStatus) ? filterStatus : null)
+    : ACTIVE_STATUSES.join(',');
+  const { data: activeQueue, isLoading } = useQuery({
+    queryKey: ['queue', filterPrinter, activeStatuses],
+    queryFn: () => api.getQueue(filterPrinter || undefined, activeStatuses ?? undefined),
     refetchInterval: 5000,
+    // A finished status selected in the filter leaves nothing active to show
+    enabled: activeStatuses !== null,
   });
+  const queue = activeStatuses === null ? EMPTY_QUEUE : activeQueue;
+
+  // One page of history at a time, filtered and sorted on the server.
+  // "Show more" asks for a longer first page rather than appending, so a
+  // batch row always sees the rest of its runs.
+  const historyFilters = {
+    printerId: filterPrinter,
+    status: filterStatus || undefined,
+    location: filterLocation || undefined,
+  };
+  const { data: historyPage, isLoading: historyLoading } = useQuery({
+    queryKey: ['queue', 'history', historyFilters, historySortBy, historySortAsc, historyVisibleCount],
+    queryFn: () =>
+      api.getQueueHistory({
+        ...historyFilters,
+        sortBy: historySortBy,
+        reverse: historySortAsc,
+        limit: historyVisibleCount,
+      }),
+    // Nothing pushes history changes, so it is polled: briskly while the tab
+    // shows one page, slowly once it is expanded (a long page is what used to
+    // stall the server) or when only the badge and stats need the total.
+    refetchInterval: activeTab === 'history' && historyVisibleCount <= HISTORY_PAGE_SIZE ? 5000 : 30000,
+    placeholderData: keepPreviousData,
+  });
+  const historyTotal = historyPage?.total ?? 0;
 
   const { data: printers } = useQuery({
     queryKey: ['printers'],
@@ -1834,6 +1932,7 @@ export function QueuePage() {
     mutationFn: (enabled: boolean) => api.updateSettings({ queue_shortest_first: enabled }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.invalidateQueries({ queryKey: ['ui-settings'] });
     },
   });
 
@@ -1882,6 +1981,14 @@ export function QueuePage() {
     }>;
   } | null>(null);
 
+  // A filament the printer has no tray for at all (#2799): 409 with
+  // `code=unmatched_filament` and the missing filaments. Same "Print Anyway"
+  // path as the deficit above.
+  const [filamentMissingConfirm, setFilamentMissingConfirm] = useState<{
+    itemId: number;
+    missing: string[];
+  } | null>(null);
+
   const startMutation = useMutation({
     mutationFn: ({ id, skipFilamentCheck }: { id: number; skipFilamentCheck?: boolean }) =>
       api.startQueueItem(id, { skipFilamentCheck }),
@@ -1889,6 +1996,7 @@ export function QueuePage() {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       showToast(t('queue.toast.released'));
       setFilamentShortConfirm(null);
+      setFilamentMissingConfirm(null);
     },
     onError: (error: unknown, variables) => {
       if (error instanceof ApiError && error.status === 409 && error.code === 'insufficient_filament') {
@@ -1899,6 +2007,11 @@ export function QueuePage() {
           filament_type?: string | null;
         }>;
         setFilamentShortConfirm({ itemId: variables.id, deficit: deficitRaw });
+        return;
+      }
+      if (error instanceof ApiError && error.status === 409 && error.code === 'unmatched_filament') {
+        const missing = (error.detail?.missing ?? []) as string[];
+        setFilamentMissingConfirm({ itemId: variables.id, missing });
         return;
       }
       showToast(t('queue.toast.startFailed'), 'error');
@@ -1914,21 +2027,10 @@ export function QueuePage() {
   });
 
   const clearHistoryMutation = useMutation({
-    mutationFn: async () => {
-      const historyItems = queue?.filter(i =>
-        ['completed', 'failed', 'skipped', 'cancelled'].includes(i.status)
-      ) || [];
-      let cleared = 0;
-      let kept = 0;
-      for (const item of historyItems) {
-        const result = await api.removeFromQueue(item.id);
-        // A row a batch order still needs is kept rather than deleted, so the
-        // count has to come from what the backend actually did (#2960).
-        if (result.deleted === false) kept += 1;
-        else cleared += 1;
-      }
-      return { cleared, kept };
-    },
+    // One request for the history under the current filters. A row a batch
+    // order still needs is kept rather than deleted, so the counts come from
+    // what the backend actually did (#2960).
+    mutationFn: () => api.clearQueueHistory(historyFilters),
     onSuccess: ({ cleared, kept }) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       queryClient.invalidateQueries({ queryKey: ['batches'] });
@@ -1947,7 +2049,8 @@ export function QueuePage() {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       setSelectedItems([]);
       setShowBulkEditModal(false);
-      showToast(result.message);
+      const toast = bulkUpdateToast(result);
+      showToast(t(toast.key, toast.params), toast.type);
     },
     onError: () => showToast(t('queue.toast.updateFailed'), 'error'),
   });
@@ -1978,6 +2081,16 @@ export function QueuePage() {
           acknowledged: result.acknowledged,
         }),
       );
+    },
+    onError: () => showToast(t('queue.toast.resumeAfterFailureFailed'), 'error'),
+  });
+
+  const resumeModelMutation = useMutation({
+    mutationFn: (model: string) => api.resumeModelQueueAfterFailure(model),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      setResumeModelConfirm(null);
+      showToast(t('queue.toast.resumedModelAfterFailure', { count: result.acknowledged }));
     },
     onError: () => showToast(t('queue.toast.resumeAfterFailureFailed'), 'error'),
   });
@@ -2021,8 +2134,9 @@ export function QueuePage() {
     queue?.forEach(item => {
       if (item.target_location) locations.add(item.target_location);
     });
+    historyPage?.locations.forEach(location => locations.add(location));
     return Array.from(locations).sort();
-  }, [printers, queue]);
+  }, [printers, queue, historyPage?.locations]);
 
   // Helper to check if a queue item matches the location filter
   const matchesLocationFilter = useCallback((item: PrintQueueItem): boolean => {
@@ -2235,26 +2349,8 @@ export function QueuePage() {
     return map;
   }, [activePrinterIds, printerStatusQueries]);
 
-  const historyItems = useMemo(() => {
-    let items = queue?.filter(i => ['completed', 'failed', 'skipped', 'cancelled'].includes(i.status)) || [];
-    if (filterLocation) {
-      items = items.filter(matchesLocationFilter);
-    }
-    return [...items].sort((a, b) => {
-      let cmp: number;
-      if (historySortBy === 'name') {
-        const aName = a.archive_name || a.library_file_name || '';
-        const bName = b.archive_name || b.library_file_name || '';
-        cmp = aName.localeCompare(bName);
-      } else if (historySortBy === 'printer') {
-        cmp = (a.printer_name || '').localeCompare(b.printer_name || '');
-      } else {
-        // Default: by date - most recent first (desc) is the natural order
-        cmp = (parseUTCDate(b.completed_at || b.created_at)?.getTime() ?? 0) - (parseUTCDate(a.completed_at || a.created_at)?.getTime() ?? 0);
-      }
-      return historySortAsc ? -cmp : cmp;
-    });
-  }, [queue, historySortBy, historySortAsc, matchesLocationFilter, filterLocation]);
+  // Filtered and sorted by the server; see the history query above.
+  const historyItems = historyPage?.items ?? EMPTY_QUEUE;
 
   // Calculate total queue time
   const totalQueueTime = useMemo(() => {
@@ -2566,6 +2662,25 @@ export function QueuePage() {
       .sort((a, b) => a.printerName.localeCompare(b.printerName));
   }, [queue]);
 
+  // Models whose "any printer" jobs wait because the last print failed on
+  // every free printer of the model (the scheduler's MODEL_GATE_WAIT_REASON).
+  const gateBlockedModels = useMemo<Array<{ model: string; waitingCount: number }>>(() => {
+    const counts = new Map<string, number>();
+    queue?.forEach((item) => {
+      if (
+        item.status === 'pending' &&
+        !item.printer_id &&
+        item.target_model &&
+        item.waiting_reason === MODEL_GATE_WAIT_REASON
+      ) {
+        counts.set(item.target_model, (counts.get(item.target_model) ?? 0) + 1);
+      }
+    });
+    return Array.from(counts.entries())
+      .map(([model, waitingCount]) => ({ model, waitingCount }))
+      .sort((a, b) => a.model.localeCompare(b.model));
+  }, [queue]);
+
   const aggregateForRows = (rows: QueueRow[]) => {
     let count = 0;
     let time = 0;
@@ -2600,7 +2715,7 @@ export function QueuePage() {
         {([
           { id: 'queue' as const, label: t('queue.tabs.queue'), icon: Clock, count: pendingItems.length + activeItems.length },
           { id: 'batches' as const, label: t('queue.tabs.batches'), icon: Package, count: activeBatchCount },
-          { id: 'history' as const, label: t('queue.tabs.history'), icon: ListOrdered, count: historyItems.length },
+          { id: 'history' as const, label: t('queue.tabs.history'), icon: ListOrdered, count: historyTotal },
           { id: 'timeline' as const, label: t('queue.tabs.timeline'), icon: GanttChart, count: null as number | null },
           // Slicer Pipelines dashboard (#1425 PR C). Lives here instead of
           // its own sidebar entry so the Print Queue page is the single
@@ -2635,7 +2750,7 @@ export function QueuePage() {
         pendingCount={pendingItems.length}
         totalTime={totalQueueTime}
         totalWeight={totalWeight}
-        historyCount={historyItems.length}
+        historyCount={historyTotal}
         t={t}
       />}
 
@@ -2666,6 +2781,34 @@ export function QueuePage() {
                 onClick={() =>
                   setResumeConfirm({ printerId, printerName, skippedCount })
                 }
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-100 dark:bg-orange-500/20 hover:bg-orange-200 dark:hover:bg-orange-500/30 text-orange-900 dark:text-orange-100 text-sm rounded-md border border-orange-300 dark:border-orange-500/40 transition-colors flex-shrink-0"
+              >
+                <PlayCircle className="w-4 h-4" />
+                {t('queue.resumeAfterFailure.button')}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'queue' && gateBlockedModels.length > 0 && hasPermission('queue:update_all' as Permission) && (
+        <div className="mb-4 space-y-2">
+          {gateBlockedModels.map(({ model, waitingCount }) => (
+            <div
+              key={model}
+              className="flex items-center gap-3 px-4 py-3 bg-orange-50 dark:bg-orange-500/10 border border-orange-300 dark:border-orange-500/30 rounded-lg"
+            >
+              <AlertCircle className="w-5 h-5 text-orange-600 dark:text-orange-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-orange-800 dark:text-orange-200">
+                  {t('queue.resumeModelAfterFailure.banner', { model, count: waitingCount })}
+                </div>
+                <div className="text-xs text-orange-800/80 dark:text-orange-200/70 mt-0.5">
+                  {t('queue.resumeModelAfterFailure.bannerHint', { model })}
+                </div>
+              </div>
+              <button
+                onClick={() => setResumeModelConfirm(model)}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-100 dark:bg-orange-500/20 hover:bg-orange-200 dark:hover:bg-orange-500/30 text-orange-900 dark:text-orange-100 text-sm rounded-md border border-orange-300 dark:border-orange-500/40 transition-colors flex-shrink-0"
               >
                 <PlayCircle className="w-4 h-4" />
@@ -2727,7 +2870,7 @@ export function QueuePage() {
 
         <div className="hidden sm:block flex-1" />
 
-        {activeTab === 'history' && historyItems.length > 0 && (
+        {activeTab === 'history' && historyTotal > 0 && (
           <Button
             className="w-full sm:w-auto"
             variant="secondary"
@@ -2794,9 +2937,9 @@ export function QueuePage() {
         <PipelineRunsView />
       ) : activeTab === 'batches' ? (
         <BatchOrdersView hasPermission={hasPermission} t={t} focusBatchId={focusBatchId} />
-      ) : isLoading ? (
+      ) : isLoading || (activeTab === 'history' && historyLoading) ? (
         <div className="text-center py-12 text-bambu-gray">{t('common.loading')}</div>
-      ) : queue?.length === 0 ? (
+      ) : queue?.length === 0 && !historyLoading && historyTotal === 0 ? (
         <Card className="p-12 text-center border-dashed">
           <Calendar className="w-16 h-16 text-bambu-gray mx-auto mb-4 opacity-50" />
           <h3 className="text-xl font-medium text-white mb-2">{t('queue.empty.title')}</h3>
@@ -2824,7 +2967,7 @@ export function QueuePage() {
       ) : activeTab === 'history' ? (
         <HistorySection
           items={historyItems}
-          collapsed={false}
+          total={historyTotal}
           visibleCount={historyVisibleCount}
           onShowMore={() => setHistoryVisibleCount((c) => c + HISTORY_PAGE_SIZE)}
           sortBy={historySortBy}
@@ -3110,6 +3253,7 @@ export function QueuePage() {
           archiveId={requeueItem.archive_id ?? undefined}
           libraryFileId={requeueItem.library_file_id ?? undefined}
           archiveName={queueItemDisplayName(requeueItem, (n) => t('common.plusNMore', { count: n }))}
+          preselectPlateId={requeueItem.plate_id}
           onClose={() => setRequeueItem(null)}
         />
       )}
@@ -3139,6 +3283,19 @@ export function QueuePage() {
             startMutation.mutate({ id: filamentShortConfirm.itemId, skipFilamentCheck: true });
           }}
           onCancel={() => setFilamentShortConfirm(null)}
+        />
+      )}
+
+      {filamentMissingConfirm && (
+        <ConfirmModal
+          title={t('queue.filamentMissing.confirmTitle')}
+          message={t('queue.filamentMissing.confirmIntro') + '\n\n' + filamentMissingConfirm.missing.join('\n')}
+          confirmText={t('queue.filamentShort.printAnyway')}
+          variant="warning"
+          onConfirm={() => {
+            startMutation.mutate({ id: filamentMissingConfirm.itemId, skipFilamentCheck: true });
+          }}
+          onCancel={() => setFilamentMissingConfirm(null)}
         />
       )}
 
@@ -3191,11 +3348,22 @@ export function QueuePage() {
         />
       )}
 
+      {resumeModelConfirm && (
+        <ConfirmModal
+          title={t('queue.resumeAfterFailure.confirmTitle')}
+          message={t('queue.resumeModelAfterFailure.confirmMessage', { model: resumeModelConfirm })}
+          confirmText={t('queue.resumeAfterFailure.button')}
+          variant="warning"
+          onConfirm={() => resumeModelMutation.mutate(resumeModelConfirm)}
+          onCancel={() => setResumeModelConfirm(null)}
+        />
+      )}
+
       {/* Clear History Confirm Modal */}
       {showClearHistoryConfirm && (
         <ConfirmModal
           title={t('queue.confirm.clearHistoryTitle')}
-          message={t('queue.confirm.clearHistoryMessage', { count: historyItems.length })}
+          message={t('queue.confirm.clearHistoryMessage', { count: historyTotal })}
           confirmText={t('queue.clearHistory')}
           variant="danger"
           onConfirm={() => {
@@ -3219,7 +3387,7 @@ export function QueuePage() {
           onClose={() => setShowBulkEditModal(false)}
           isSaving={bulkUpdateMutation.isPending}
           canControlPrinter={hasPermission('printers:control')}
-          hasGcodeSnippets={!!settings?.gcode_snippets}
+          hasGcodeSnippets={hasGcodeSnippets(settings)}
           t={t}
         />
       )}

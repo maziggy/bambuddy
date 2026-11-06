@@ -11,6 +11,12 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SpoolBuddyTopBar } from '../../../components/spoolbuddy/SpoolBuddyTopBar';
 
+// The kiosk runs signed in; these tests render it without the auth provider.
+vi.mock('../../../contexts/AuthContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../contexts/AuthContext')>();
+  return { ...actual, useAuth: () => ({ hasPermission: () => true }) };
+});
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (_key: string, fallback: string) => fallback,

@@ -181,6 +181,27 @@ class TestThePlateThatOnlyPrintsFromTheSpoolHolder:
         # turns 254 into -1 plus ams_mapping2, and none of that changes.
         assert call.kwargs["ams_mapping"] == [-1, -1, -1, -1, -1, -1, 254]
 
+    async def test_a_real_tray_another_plate_uses_does_not_bring_the_ams_back(self, dispatch_case):
+        """Multi-plate: filament 1 (an AMS tray) is printed by another plate.
+        The command builder turns use_ams back on for any real tray in the
+        mapping, so the scheduler tells it this plate's answer is exact."""
+        ids = await dispatch_case.build([5, 254], filaments='<filament id="2" used_g="9.0" type="PLA"/>', plate_id=4)
+        call = await _dispatch(dispatch_case, ids)
+
+        assert call.kwargs["use_ams"] is False
+        assert call.kwargs["plate_uses_only_external"] is True
+
+    async def test_a_job_that_already_has_the_ams_off_says_so_too(self, dispatch_case):
+        """use_ams=False from a bulk edit or the API: the builder would turn it
+        back on for the other plate's real tray."""
+        ids = await dispatch_case.build(
+            [5, 254], filaments='<filament id="2" used_g="9.0" type="PLA"/>', plate_id=4, use_ams=False
+        )
+        call = await _dispatch(dispatch_case, ids)
+
+        assert call.kwargs["use_ams"] is False
+        assert call.kwargs["plate_uses_only_external"] is True
+
     async def test_the_main_nozzle_sentinel_counts_too(self, dispatch_case):
         ids = await dispatch_case.build([-1, -1, -1, -1, -1, -1, 255])
         call = await _dispatch(dispatch_case, ids)
@@ -246,6 +267,8 @@ class TestWhatMustNotChange:
         call = await _dispatch(dispatch_case, ids)
 
         assert call.kwargs["use_ams"] is True
+        # The builder keeps its own reconcile for it.
+        assert call.kwargs["plate_uses_only_external"] is False
 
     async def test_use_ams_false_is_never_promoted_here(self, dispatch_case):
         """Promotion is the builder's job (#2595) and stays there."""

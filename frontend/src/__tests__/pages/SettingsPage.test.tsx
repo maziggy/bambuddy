@@ -92,6 +92,25 @@ describe('SettingsPage', () => {
   });
 
   describe('rendering', () => {
+    it('opens notification settings from the OctoEverywhere readiness link', async () => {
+      window.history.replaceState({}, '', '/settings?tab=failure-detection');
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json({
+          ...mockSettings,
+          octoeverywhere_enabled: true,
+          octoeverywhere_api_key: '',
+          octoeverywhere_api_key_configured: true,
+        })),
+      );
+      render(<SettingsPage />);
+
+      await userEvent.click(await screen.findByRole('link', { name: 'Configure notifications' }));
+
+      expect(await screen.findByRole('button', { name: /add provider/i })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'OctoEverywhere AI Detection' })).not.toBeInTheDocument();
+      expect(window.location.search).toBe('?tab=notifications');
+    });
+
     it('renders the page title', async () => {
       render(<SettingsPage />);
 
@@ -176,6 +195,80 @@ describe('SettingsPage', () => {
     });
   });
 
+  describe('electricity price source (#1251)', () => {
+    const haSettings = {
+      ...mockSettings,
+      ha_enabled: true,
+      energy_cost_per_kwh: 0.42,
+      energy_price_source: 'homeassistant',
+      energy_price_ha_entity: 'sensor.amber_general_price',
+    };
+
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/ha-sensors/entities', () =>
+          HttpResponse.json([
+            { entity_id: 'sensor.amber_general_price', friendly_name: 'Amber price', state: '0.42', domain: 'sensor', device_class: null, unit_of_measurement: 'AUD/kWh' },
+            { entity_id: 'sensor.room_temperature', friendly_name: 'Room', state: '21', domain: 'sensor', device_class: 'temperature', unit_of_measurement: '°C' },
+          ])
+        )
+      );
+    });
+
+    it('offers a fixed price by default, with no sensor field', async () => {
+      render(<SettingsPage />);
+
+      const input = (await screen.findByText('Electricity cost per kWh')).parentElement!.querySelector('input')!;
+      expect(input).not.toBeDisabled();
+      expect(screen.queryByPlaceholderText('sensor.electricity_price')).not.toBeInTheDocument();
+    });
+
+    it('shows the sensor and the last price read, read-only, with Home Assistant as the source', async () => {
+      server.use(http.get('/api/v1/settings/', () => HttpResponse.json(haSettings)));
+      render(<SettingsPage />);
+
+      expect(await screen.findByPlaceholderText('sensor.electricity_price')).toHaveValue('sensor.amber_general_price');
+      const input = screen.getByText('Last price read per kWh').parentElement!.querySelector('input')!;
+      expect(input).toBeDisabled();
+      expect(input).toHaveValue(0.42);
+      // Only price sensors are suggested, not every sensor in Home Assistant.
+      await waitFor(() => {
+        const options = document.querySelectorAll('#ha-price-entities option');
+        expect(Array.from(options).map((o) => o.getAttribute('value'))).toEqual(['sensor.amber_general_price']);
+      });
+    });
+
+    it('warns when Home Assistant is not connected', async () => {
+      server.use(http.get('/api/v1/settings/', () => HttpResponse.json({ ...haSettings, ha_enabled: false })));
+      render(<SettingsPage />);
+
+      expect(await screen.findByText(/Home Assistant is not set up/)).toBeInTheDocument();
+    });
+
+    it('does not send its stale copy of a price read from Home Assistant', async () => {
+      let saved: Record<string, unknown> | null = null;
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json(haSettings)),
+        http.put('/api/v1/settings/', async ({ request }) => {
+          saved = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...haSettings, ...saved });
+        })
+      );
+      render(<SettingsPage />);
+
+      const label = await screen.findByText('Restore plate for finish photo');
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await userEvent.click(within(label.closest('div')!.parentElement!).getByRole('checkbox'));
+
+      await waitFor(() => {
+        expect(saved).not.toBeNull();
+      }, { timeout: 3000 });
+      expect(saved!).not.toHaveProperty('energy_cost_per_kwh');
+      expect(saved!.energy_price_source).toBe('homeassistant');
+      expect(saved!.energy_price_ha_entity).toBe('sensor.amber_general_price');
+    });
+  });
+
   describe('general settings', () => {
     it('shows date format setting', async () => {
       render(<SettingsPage />);
@@ -198,6 +291,7 @@ describe('SettingsPage', () => {
       // choice is made per stream rather than once for the whole install. The
       // External Cameras section is still here, which is what keeps this from
       // passing merely because the Camera card failed to render.
+      window.history.replaceState({}, '', '/?tab=camera');
       render(<SettingsPage />);
 
       await waitFor(() => {
@@ -1518,6 +1612,76 @@ describe('SettingsPage', () => {
     });
   });
 
+  describe('Camera tab and menu order', () => {
+    const tabLabels = () => Array.from(document.querySelectorAll('nav button')).map((button) => button.textContent?.trim() ?? '');
+
+    it('lists General first and the other tabs alphabetically', async () => {
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Camera' })).toBeInTheDocument());
+      const labels = tabLabels().map((label) => label.replace(/\d+$/, ''));
+      expect(labels[0]).toBe('General');
+      const rest = labels.slice(1);
+      expect(rest).toEqual([...rest].sort((a, b) => a.localeCompare(b, 'en')));
+      expect(rest).toContain('Camera');
+    });
+
+    it('holds external cameras, camera tokens and the streaming overlay', async () => {
+      window.history.replaceState({}, '', '/?tab=camera');
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByText('External Cameras')).toBeInTheDocument());
+      expect(document.getElementById('card-camera-tokens')).not.toBeNull();
+      expect(document.getElementById('card-stream-overlay')).not.toBeNull();
+    });
+
+    it('no longer shows camera settings on General or API Keys', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByText('Default Printer')).toBeInTheDocument());
+      expect(screen.queryByText('External Cameras')).toBeNull();
+      await user.click(screen.getByRole('button', { name: /^API Keys/ }));
+      await waitFor(() => expect(document.getElementById('card-createapi')).not.toBeNull());
+      expect(document.getElementById('card-camera-tokens')).toBeNull();
+      expect(document.getElementById('card-stream-overlay')).toBeNull();
+    });
+
+    const signInWith = (permissions: string[]) => {
+      server.use(
+        http.get('/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('/api/v1/auth/me', () => HttpResponse.json({
+          id: 2, username: 'viewer', role: 'user', is_active: true, is_admin: false,
+          groups: [{ id: 2, name: 'Viewers' }], permissions, created_at: '2026-01-01T00:00:00Z',
+        })),
+      );
+      setAuthToken('test-token');
+    };
+
+    it('hides API Keys from a user who may see nothing on it, but keeps Camera', async () => {
+      signInWith(['settings:read', 'camera:view']);
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Camera' })).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: /^API Keys/ })).toBeNull();
+    });
+
+    it('sends an API Keys link to the Camera tab for a user who cannot see API Keys', async () => {
+      signInWith(['settings:read', 'camera:view']);
+      window.history.replaceState({}, '', '/?tab=apikeys');
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByText('External Cameras')).toBeInTheDocument());
+    });
+
+    it.each([['api_keys:read'], ['settings:update']])('shows API Keys to a user with %s', async (permission) => {
+      signInWith(['settings:read', permission]);
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByRole('button', { name: /^API Keys/ })).toBeInTheDocument());
+    });
+
+    it.each(['#card-camera-tokens', '#card-stream-overlay'])('opens the Camera tab for an old API Keys link to %s', async (hash) => {
+      window.history.replaceState({}, '', `/?tab=apikeys${hash}`);
+      render(<SettingsPage />);
+      await waitFor(() => expect(screen.getByText('External Cameras')).toBeInTheDocument());
+    });
+  });
+
   describe('external camera snapshot URL override (#1177)', () => {
     /**
      * The snapshot URL input only appears for stream camera types where the
@@ -1546,12 +1710,23 @@ describe('SettingsPage', () => {
       updated_at: '2026-01-01T00:00:00Z',
     };
 
+    // External cameras live on the Camera tab.
+    beforeEach(() => {
+      window.history.replaceState({}, '', '/?tab=camera');
+    });
+
+    // A camera's fields stay folded until its row is opened.
+    const openCameraFields = async () => {
+      await userEvent.setup().click(await screen.findByLabelText('Camera settings: go2rtc Cam'));
+    };
+
     it('renders the snapshot URL input when camera_type is mjpeg', async () => {
       server.use(
         http.get('/api/v1/printers/', () => HttpResponse.json([mjpegPrinter])),
       );
 
       render(<SettingsPage />);
+      await openCameraFields();
 
       await waitFor(() => {
         expect(screen.getByPlaceholderText(/api\/frame\.jpeg\?src=printer/)).toBeInTheDocument();
@@ -1566,6 +1741,7 @@ describe('SettingsPage', () => {
       );
 
       render(<SettingsPage />);
+      await openCameraFields();
 
       // Wait for the live-stream URL placeholder to render so we know the
       // camera section finished mounting before asserting absence of the
@@ -1589,6 +1765,7 @@ describe('SettingsPage', () => {
         );
 
         render(<SettingsPage />);
+        await openCameraFields();
 
         const input = await waitFor(() =>
           screen.getByPlaceholderText(/api\/frame\.jpeg\?src=printer/),
@@ -1615,6 +1792,224 @@ describe('SettingsPage', () => {
       // mode on PR #1263).
       15_000,
     );
+  });
+
+  describe('chamber light for the camera (#1655)', () => {
+    const base = {
+      serial_number: 'S',
+      ip_address: '192.168.1.100',
+      access_code: 'XXXX',
+      model: 'P1S',
+      location: null,
+      nozzle_count: 1,
+      is_active: true,
+      auto_archive: true,
+      external_camera_url: null,
+      external_camera_type: null,
+      external_camera_enabled: false,
+      external_camera_snapshot_url: null,
+      camera_rotation: 0,
+      camera_light_auto: false,
+      plate_detection_enabled: false,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+    const farm = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ ...base, id: 100 + i, name: `Farm ${i + 1}`, serial_number: `S${i}` }));
+
+    const withSettings = (overrides: Record<string, unknown>) =>
+      http.get('/api/v1/settings/', () => HttpResponse.json({ ...mockSettings, ...overrides }));
+
+    // The page ignores edits for 100ms after the settings load.
+    const settle = () => new Promise(resolve => setTimeout(resolve, 200));
+
+    beforeEach(() => {
+      window.history.replaceState({}, '', '/?tab=camera');
+    });
+
+    it('is off by default and lists no printers, however many there are', async () => {
+      server.use(http.get('/api/v1/printers/', () => HttpResponse.json(farm(120))));
+
+      render(<SettingsPage />);
+
+      expect(await screen.findByRole('radio', { name: 'Off' })).toBeChecked();
+      expect(screen.queryByLabelText('Wait before snapshot')).toBeNull();
+      expect(screen.queryByTestId('camera-light-printers')).toBeNull();
+      expect(within(document.getElementById('card-camera')!).queryByText('Farm 77')).toBeNull();
+    });
+
+    it('switches every printer on with one choice and saves it', async () => {
+      let saved: Record<string, unknown> | null = null;
+      server.use(
+        http.put('/api/v1/settings/', async ({ request }) => {
+          saved = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...mockSettings, ...saved });
+        }),
+      );
+
+      render(<SettingsPage />);
+      const all = await screen.findByRole('radio', { name: 'All printers' });
+      await settle();
+      await userEvent.click(all);
+
+      await waitFor(() => expect(saved?.camera_light_mode).toBe('all'), { timeout: 3000 });
+      expect(screen.getByLabelText('Wait before snapshot')).toHaveValue(2);
+      expect(screen.queryByTestId('camera-light-printers')).toBeNull();
+    });
+
+    it('saves one delay for all printers, never one the server would refuse', async () => {
+      const saves: Record<string, unknown>[] = [];
+      server.use(
+        withSettings({ camera_light_mode: 'all', camera_light_delay: 2 }),
+        http.put('/api/v1/settings/', async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>;
+          saves.push(body);
+          return HttpResponse.json({ ...mockSettings, camera_light_mode: 'all', ...body });
+        }),
+      );
+
+      render(<SettingsPage />);
+      const input = await screen.findByLabelText('Wait before snapshot');
+      await settle();
+      const user = userEvent.setup();
+      await user.clear(input);
+      await user.type(input, '9');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      expect(saves.some(b => b.camera_light_delay === 9)).toBe(false);
+
+      await user.clear(input);
+      await user.type(input, '1.5');
+      await waitFor(() => expect(saves.some(b => b.camera_light_delay === 1.5)).toBe(true), { timeout: 3000 });
+    }, 10_000);
+
+    it('picks printers for the selected mode from a searchable list and removes them again', async () => {
+      const printers = farm(120);
+      printers[41] = { ...printers[41], camera_light_auto: true };
+      const patches: { id: number; body: Record<string, unknown> }[] = [];
+      server.use(
+        withSettings({ camera_light_mode: 'selected' }),
+        http.get('/api/v1/printers/', () => HttpResponse.json(printers)),
+        http.patch('/api/v1/printers/:id', async ({ params, request }) => {
+          const body = (await request.json()) as Record<string, unknown>;
+          patches.push({ id: Number(params.id), body });
+          return HttpResponse.json({ ...printers[Number(params.id) - 100], ...body });
+        }),
+      );
+
+      render(<SettingsPage />);
+      const chips = await screen.findByTestId('camera-light-printers');
+      expect(within(chips).getByText('Farm 42')).toBeInTheDocument();
+      expect(within(chips).queryByText('Farm 7')).toBeNull();
+
+      const user = userEvent.setup();
+      await user.click(within(chips).getByRole('button', { name: 'Add printer' }));
+      await user.type(screen.getByLabelText('Search printers'), 'farm 7');
+      const options = within(screen.getByRole('listbox', { name: 'Add printer' })).getAllByRole('option');
+      // Farm 7 and Farm 70-79; Farm 42, already picked, is not offered.
+      expect(options).toHaveLength(11);
+      await user.click(within(options[0]).getByRole('button', { name: 'Farm 7' }));
+      await waitFor(() => expect(patches).toContainEqual({ id: 106, body: { camera_light_auto: true } }));
+
+      await user.click(screen.getByRole('button', { name: 'Remove Farm 42' }));
+      await waitFor(() => expect(patches).toContainEqual({ id: 141, body: { camera_light_auto: false } }));
+    });
+  });
+
+  describe('external cameras list only the printers that have one', () => {
+    const cam = (id: number, name: string, extra: Record<string, unknown> = {}) => ({
+      id,
+      name,
+      serial_number: `S${id}`,
+      ip_address: '192.168.1.100',
+      access_code: 'XXXX',
+      model: 'P1S',
+      location: null,
+      nozzle_count: 1,
+      is_active: true,
+      auto_archive: true,
+      external_camera_url: null,
+      external_camera_type: null,
+      external_camera_enabled: false,
+      external_camera_snapshot_url: null,
+      camera_rotation: 0,
+      camera_light_auto: false,
+      plate_detection_enabled: false,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      ...extra,
+    });
+
+    beforeEach(() => {
+      window.history.replaceState({}, '', '/?tab=camera');
+    });
+
+    it('shows a farm\'s two external cameras, not its 120 printers, folded with where each points', async () => {
+      const printers = Array.from({ length: 120 }, (_, i) => cam(100 + i, `Farm ${i + 1}`));
+      printers[4] = cam(104, 'Farm 5', {
+        external_camera_enabled: true,
+        external_camera_type: 'mjpeg',
+        external_camera_url: 'http://192.168.1.60:1984/api/stream.mjpeg',
+      });
+      printers[9] = cam(109, 'Farm 10', {
+        external_camera_enabled: true,
+        external_camera_type: 'rtsp',
+        external_camera_url: 'rtsp://user:pw@192.168.1.61:554/live',
+      });
+      server.use(http.get('/api/v1/printers/', () => HttpResponse.json(printers)));
+
+      render(<SettingsPage />);
+      const list = await screen.findByTestId('external-camera-list');
+
+      expect(within(list).getAllByRole('button', { name: /^Camera settings:/ })).toHaveLength(2);
+      expect(within(list).getByText('MJPEG · 192.168.1.60:1984')).toBeInTheDocument();
+      expect(within(list).getByText('RTSP · 192.168.1.61:554')).toBeInTheDocument();
+      expect(screen.queryByPlaceholderText(/Camera URL/i)).toBeNull();
+
+      const user = userEvent.setup();
+      await user.click(screen.getByLabelText('Camera settings: Farm 5'));
+      expect(screen.getByDisplayValue('http://192.168.1.60:1984/api/stream.mjpeg')).toBeInTheDocument();
+      await user.click(screen.getByLabelText('Camera settings: Farm 10'));
+      expect(screen.getByDisplayValue('rtsp://user:pw@192.168.1.61:554/live')).toBeInTheDocument();
+      expect(screen.queryByDisplayValue('http://192.168.1.60:1984/api/stream.mjpeg')).toBeNull();
+    });
+
+    it('adds an external camera from the printer picker and opens its fields', async () => {
+      const printers = [cam(1, 'Garage X1C'), cam(2, 'Office A1')];
+      let body: Record<string, unknown> | null = null;
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json(printers)),
+        http.patch('/api/v1/printers/2', async ({ request }) => {
+          body = (await request.json()) as Record<string, unknown>;
+          Object.assign(printers[1], body);
+          return HttpResponse.json(printers[1]);
+        }),
+      );
+
+      render(<SettingsPage />);
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole('button', { name: 'Add external camera' }));
+      await user.click(screen.getByRole('button', { name: 'Office A1' }));
+
+      await waitFor(() => expect(body).toEqual({ external_camera_enabled: true }));
+      expect(await screen.findByPlaceholderText(/Camera URL/i)).toBeInTheDocument();
+    });
+
+    it('removes an external camera', async () => {
+      const printers = [cam(1, 'Garage X1C', { external_camera_enabled: true, external_camera_url: 'http://192.168.1.9/s' })];
+      let body: Record<string, unknown> | null = null;
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json(printers)),
+        http.patch('/api/v1/printers/1', async ({ request }) => {
+          body = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...printers[0], ...body });
+        }),
+      );
+
+      render(<SettingsPage />);
+      await userEvent.click(await screen.findByRole('button', { name: 'Remove the external camera from Garage X1C' }));
+
+      await waitFor(() => expect(body).toEqual({ external_camera_enabled: false }));
+    });
   });
 
   describe('theme mode buttons', () => {
@@ -1727,6 +2122,50 @@ describe('SettingsPage', () => {
         expect(window.location.search).toContain('tab=queue');
         expect(window.location.search).toContain('sub=pipelines');
       });
+    });
+  });
+
+  describe('printer access sub-tab (#1727)', () => {
+    const asAdmin = (isAdmin: boolean) => {
+      setAuthToken('test-token', 'session');
+      server.use(
+        http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('*/api/v1/auth/me', () =>
+          HttpResponse.json({ id: 1, username: 'u', is_admin: isAdmin, groups: [], permissions: ['settings:read', 'users:read', 'groups:read'] })
+        ),
+        http.get('/api/v1/groups/', () => HttpResponse.json([])),
+        http.get('/api/v1/users/', () => HttpResponse.json([]))
+      );
+    };
+
+    it('opens straight on Printer access from a deep link', async () => {
+      asAdmin(true);
+      window.history.replaceState({}, '', '/settings?tab=users&sub=printer-access&view=printers');
+      render(<SettingsPage />);
+
+      expect(await screen.findByText(/Besides the groups listed here/)).toBeInTheDocument();
+    });
+
+    it('drops the sub-tab from the URL when leaving it', async () => {
+      asAdmin(true);
+      window.history.replaceState({}, '', '/settings?tab=users&sub=printer-access&group=4');
+      render(<SettingsPage />);
+      const user = userEvent.setup();
+      await screen.findByText(/Pick a group to choose its printers/);
+
+      await user.click(screen.getByRole('button', { name: 'General' }));
+      await waitFor(() => expect(window.location.search).toBe(''));
+    });
+
+    it('lands non-admins on the Users sub-tab instead', async () => {
+      asAdmin(false);
+      window.history.replaceState({}, '', '/settings?tab=users&sub=printer-access');
+      render(<SettingsPage />);
+
+      // The sub-tab row is there, without Printer access
+      expect(await screen.findByRole('button', { name: /Two-Factor|2FA/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Printer access' })).not.toBeInTheDocument();
+      expect(screen.queryByText(/Pick a group to choose its printers/)).not.toBeInTheDocument();
     });
   });
 
@@ -2236,5 +2675,70 @@ describe('SettingsPage — settings changed outside the page (#2716)', () => {
 
     await waitFor(() => expect(puts).toHaveLength(1), { timeout: 3000 });
     expect(puts[0].external_url).toBe(window.location.origin);
+  });
+
+  describe('as a non-admin with settings:update', () => {
+    // Only an administrator may change the sign-in settings; the server refuses
+    // a save that changes one, which would take the rest of the save with it.
+    beforeEach(() => {
+      server.use(
+        http.get('/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 2, username: 'manager', role: 'user', is_active: true, is_admin: false,
+            groups: [{ id: 5, name: 'Settings managers' }],
+            permissions: ['settings:read', 'settings:update', 'users:read'],
+            created_at: '2026-01-01T00:00:00Z',
+          }),
+        ),
+      );
+      setAuthToken('test-token');
+    });
+
+    it('does not fill in the external URL from the browser', async () => {
+      served = { ...mockSettings, external_url: '' };
+      renderPage();
+      await screen.findByText(restoreLabel);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      await changeOnServer({ spoolman_url: 'http://spoolman.example' });
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      expect(puts.filter((body) => body.external_url === window.location.origin)).toEqual([]);
+    });
+
+    it('shows the external URL read-only', async () => {
+      served = { ...mockSettings };
+      window.history.replaceState({}, '', '/?tab=network');
+      renderPage();
+
+      const input = await screen.findByPlaceholderText('http://192.168.1.100:8000');
+      await waitFor(() => expect(input).toBeDisabled());
+      expect(screen.getAllByText('Only an administrator can change this.').length).toBeGreaterThan(0);
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('does not offer the connected apps', async () => {
+      // An app's redirect address decides where an admin's sign-in is sent.
+      served = { ...mockSettings };
+      window.history.replaceState({}, '', '/?tab=apikeys');
+      renderPage();
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /^API Keys/ })).toBeInTheDocument());
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(screen.queryByText('Connected Apps')).toBeNull();
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('does not offer the mail server and LDAP sub-tabs', async () => {
+      served = { ...mockSettings };
+      window.history.replaceState({}, '', '/?tab=users');
+      renderPage();
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /^Two-Factor Auth/ })).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: /^LDAP/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Email Authentication/ })).toBeNull();
+      window.history.replaceState({}, '', '/');
+    });
   });
 });

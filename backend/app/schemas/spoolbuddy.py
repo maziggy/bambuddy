@@ -1,6 +1,5 @@
 import json
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -95,7 +94,24 @@ class TagScannedRequest(BaseModel):
     tray_uuid: str | None = Field(None, max_length=32, pattern=r"^[0-9A-Fa-f]*$")
     sak: int | None = None
     tag_type: str | None = Field(None, max_length=50)
-    raw_blocks: dict | None = None
+    # Data blocks of a Bambu tag the daemon read, block number -> 32 hex chars
+    # (#2685). Absent when no Bambu read succeeded.
+    raw_blocks: dict[str, str] | None = None
+
+    @field_validator("raw_blocks")
+    @classmethod
+    def validate_raw_blocks(cls, v: dict[str, str] | None) -> dict[str, str] | None:
+        if v is None:
+            return v
+        if len(v) > 16:
+            raise ValueError("raw_blocks holds at most 16 blocks")
+        for key, value in v.items():
+            # MIFARE Classic 1K has blocks 0-63, 16 bytes each
+            if not key.isdigit() or int(key) > 63:
+                raise ValueError(f"raw_blocks key {key!r} is not a block number 0-63")
+            if len(value) != 32 or any(c not in "0123456789abcdefABCDEF" for c in value):
+                raise ValueError(f"raw_blocks block {key} is not 32 hex characters")
+        return v
 
 
 class TagRemovedRequest(BaseModel):
@@ -172,11 +188,6 @@ class SystemCommandResultRequest(BaseModel):
     command: str = Field(..., max_length=50)
     success: bool
     message: str | None = Field(None, max_length=500)
-
-
-class UpdateStatusRequest(BaseModel):
-    status: Literal["updating", "complete", "error"]
-    message: str | None = Field(None, max_length=255)
 
 
 # --- Diagnostics schemas ---

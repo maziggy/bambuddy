@@ -2,8 +2,8 @@
  * Tests for the MaintenancePage component.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { render } from '../utils';
 import { MaintenancePage } from '../../pages/MaintenancePage';
 import { http, HttpResponse } from 'msw';
@@ -146,5 +146,26 @@ describe('MaintenancePage', () => {
         expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
       });
     });
+  });
+
+  it('says that deleting a custom type applies to every printer', async () => {
+    server.use(
+      http.get('/api/v1/maintenance/types', () =>
+        HttpResponse.json([
+          ...mockMaintenanceTypes,
+          { id: 9, name: 'Custom Check', description: null, default_interval_hours: 10, is_system: false },
+        ]),
+      ),
+    );
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(<MaintenancePage />);
+    fireEvent.click(await screen.findByText('Settings'));
+    const card = (await screen.findByText('Custom Check')).closest('.rounded-xl') as HTMLElement;
+    const buttons = within(card).getAllByRole('button');
+    fireEvent.click(buttons[buttons.length - 1]);
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('not only yours'));
+    confirm.mockRestore();
   });
 });

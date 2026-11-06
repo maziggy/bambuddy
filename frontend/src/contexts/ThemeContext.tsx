@@ -22,6 +22,8 @@ interface ThemeContextType {
   // Show live print progress (% + accent-coloured ring favicon) in the browser tab
   progressInTitle: boolean;
   setProgressInTitle: (v: boolean) => void;
+  tabDisplay: 'percentage' | 'time';
+  setTabDisplay: (v: 'percentage' | 'time') => void;
   // Actions
   toggleMode: () => void;
   setMode: (mode: ThemeMode) => void;
@@ -42,7 +44,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // and returns 401 — harmless (the catch swallows it) but noisy in the
   // network panel and wasteful. ThemeProvider is mounted inside
   // AuthProvider in App.tsx specifically so this hook is callable.
-  const { authEnabled, user, loading: authLoading } = useAuth();
+  const { authEnabled, user, loading: authLoading, hasPermission } = useAuth();
+  const readsAllSettings = hasPermission('settings:read');
 
   // Mode
   const [mode, setModeState] = useState<ThemeMode>(() => {
@@ -101,6 +104,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('progress-in-title', String(v));
   };
 
+  const [tabDisplay, setTabDisplayState] = useState<'percentage' | 'time'>(() =>
+    localStorage.getItem('tab-display') === 'time' ? 'time' : 'percentage'
+  );
+  const setTabDisplay = (v: 'percentage' | 'time') => {
+    setTabDisplayState(v);
+    localStorage.setItem('tab-display', v);
+  };
+
   // Sync from API once auth state is known. Same gate shape as
   // useStreamTokenSync / ColorCatalogProvider: wait for AuthContext to
   // settle, then only fetch when we can actually expect a 200 (auth
@@ -108,7 +119,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (authLoading) return;
     if (authEnabled && user === null) return;
-    api.getSettings().then((settings) => {
+    // The theme is part of what any signed-in user may read (useUiSettings).
+    (readsAllSettings ? api.getSettings() : api.getUiSettings()).then((settings) => {
       // Dark settings
       if (settings.dark_style) {
         setDarkStyleState(settings.dark_style as ThemeStyle);
@@ -139,7 +151,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // Re-fetch when auth state transitions (e.g. login completes); the
     // gate above short-circuits subsequent calls once we already have a
     // valid sync.
-  }, [authLoading, authEnabled, user]);
+  }, [authLoading, authEnabled, user, readsAllSettings]);
 
   // Apply theme classes based on current mode
   useEffect(() => {
@@ -216,7 +228,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       resolvedMode,
       darkStyle, darkBackground, darkAccent,
       lightStyle, lightBackground, lightAccent,
-      progressInTitle, setProgressInTitle,
+      progressInTitle, setProgressInTitle, tabDisplay, setTabDisplay,
       toggleMode, setMode,
       setDarkStyle, setDarkBackground, setDarkAccent,
       setLightStyle, setLightBackground, setLightAccent,

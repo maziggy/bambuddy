@@ -30,7 +30,7 @@ import json
 from dataclasses import dataclass
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.local_preset import LocalPreset
@@ -282,7 +282,16 @@ async def check_pipeline_eligibility(
             issues=(EligibilityIssue(kind="class_not_set"),),
         )
 
-    candidates = (await db.execute(select(Printer).where(Printer.model == pipeline.target_model_class))).scalars().all()
+    # Without regard to case, as the queue and the scheduler match a model
+    candidates = (
+        (
+            await db.execute(
+                select(Printer).where(func.lower(Printer.model) == (pipeline.target_model_class or "").lower())
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     if not candidates:
         return EligibilityReport(

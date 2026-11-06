@@ -33,7 +33,21 @@ pulling a startup graph behind them.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import logging
+
 from backend.app.core.logging_filters import redact_url_credentials
+
+logger = logging.getLogger(__name__)
+
+# Encoder options that bound libx264's memory (#3292). ffmpeg runs in
+# Bambuddy's own cgroup, so in a container its memory counts against the same
+# limit. Left automatic, x264 sizes its threads from the host's cores, not the
+# container's CPU limit, and a 1080p layer-timelapse stitch peaked at about
+# 1.2 GiB on a 30-core host (4K about 4.6 GiB). Two threads and a short
+# lookahead brought 1080p to about 300 MiB with the same preset and quality.
+X264_BOUNDED_ARGS = ("-threads", "2", "-x264-params", "rc-lookahead=10")
 
 # What ffmpeg prints before it has anything to say. Every line of the banner is
 # either the version line or an indented continuation, and a real diagnostic is
@@ -100,3 +114,99 @@ def summarize_ffmpeg_stderr(text: str | bytes | None) -> str:
         # From the end, for the same reason the whole module exists.
         summary = "..." + summary[-_MAX_CHARACTERS:]
     return summary
+
+
+# ffmpeg's RTSP demuxer follows a server's 3xx Location by itself, with no
+# option to refuse, and logs the first line below before it connects there.
+# Only the configured address was ever checked, so a redirect ends the fetch:
+# nothing fetched from the new destination is used. av_dump_format prints the
+# second once the input is open, before ffmpeg writes any output.
+_RTSP_REDIRECT_LOG = b"Redirecting to "
+_INPUT_OPEN_LOG = b"Input #0, "
+# Pinned: both lines are logged at "info".
+FFMPEG_RTSP_LOGLEVEL = ("-loglevel", "info")
+# Longest log line read before the input is open; ffmpeg's own are far shorter.
+_MAX_LOG_LINE = 65536
+
+
+def rtsp_log_event(line: bytes) -> str | None:
+    """``"redirected"`` or ``"open"`` for the ffmpeg log line that says so."""
+    if _RTSP_REDIRECT_LOG in line:
+        return "redirected"
+    if line.startswith(_INPUT_OPEN_LOG):
+        return "open"
+    return None
+
+
+def refuse_rtsp_redirect(process: asyncio.subprocess.Process, line: bytes) -> None:
+    """Stop an ffmpeg that reported following a redirect, saying where to."""
+    target = line.split(_RTSP_REDIRECT_LOG, 1)[-1].split(b"\n", 1)[0].decode("utf-8", "replace").strip()
+    logger.error(
+        "RTSP camera redirected to %s; redirects are not followed, configure that address instead",
+        (redact_url_credentials(target) or "")[:80],
+    )
+    with contextlib.suppress(ProcessLookupError):
+        process.kill()
+
+
+async def read_ffmpeg_log_until_open(process: asyncio.subprocess.Process) -> tuple[str, bytes]:
+    """Read an RTSP ffmpeg's log up to the line saying its input is open.
+
+    Returns ``("open", log)``; ``("redirected", log)`` after a redirect, with
+    ffmpeg killed; or ``("ended", log)`` when ffmpeg stopped first.
+    """
+    assert process.stderr is not None
+    log = b""
+    while True:
+        try:
+            line = await process.stderr.readline()
+        except ValueError:
+            # A line past the reader's limit is no line of ffmpeg's own.
+            with contextlib.suppress(ProcessLookupError):
+                process.kill()
+            return "ended", log
+        if not line:
+            return "ended", log
+        log = (log + line)[-_MAX_LOG_LINE:]
+        event = rtsp_log_event(line)
+        if event == "redirected":
+            refuse_rtsp_redirect(process, line)
+            return event, log
+        if event == "open":
+            return event, log
+
+
+async def watch_ffmpeg_log(process: asyncio.subprocess.Process) -> None:
+    """Drain a streaming ffmpeg's log, so a full pipe never stalls it, and
+    stop ffmpeg should it report a redirect after all."""
+    assert process.stderr is not None
+    tail = b""
+    while chunk := await process.stderr.read(4096):
+        window = tail + chunk
+        if _RTSP_REDIRECT_LOG in window:
+            refuse_rtsp_redirect(process, window[window.index(_RTSP_REDIRECT_LOG) :])
+            return
+        tail = window[-len(_RTSP_REDIRECT_LOG) :]
+
+
+async def reap_ffmpeg(process: asyncio.subprocess.Process | None, timeout: float = 10.0) -> None:
+    """Kill ``process`` if it is still running and wait for it to exit (#3292).
+
+    For the ``finally`` of a one-shot capture: an error while reading ffmpeg's
+    output, or the capture being cancelled, otherwise leaves it running. In a
+    container it shares Bambuddy's memory limit, so every one left behind
+    counts against it until the container restarts. Never raises.
+    """
+    if process is None or process.returncode is not None:
+        return
+    with contextlib.suppress(ProcessLookupError):
+        process.kill()
+    try:
+        await asyncio.wait_for(process.wait(), timeout)
+    except TimeoutError:
+        if process.returncode is None:
+            logger.warning("ffmpeg (pid %s) did not exit after it was killed", process.pid)
+        else:
+            # wait() also waits for the output pipes to close, which can lag
+            # behind a child that has already gone.
+            logger.warning("ffmpeg (pid %s) was killed but its output did not close in %.0f s", process.pid, timeout)

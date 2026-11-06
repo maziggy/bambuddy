@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import shutil
+import signal
 import sys
 import time
 
@@ -25,6 +26,53 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/updates", tags=["updates"])
 
 # Global state for update progress
+# How long one update step may run. Generous, for slow links and a Raspberry
+# Pi, but finite: a step that hung (a stalled git fetch or npm install) left the
+# status at "downloading" or "installing" for good, and every retry answered
+# "Update already in progress" until Bambuddy was restarted.
+GIT_STEP_TIMEOUT_SECONDS = 300
+INSTALL_STEP_TIMEOUT_SECONDS = 900
+TERMINATE_GRACE_SECONDS = 5
+
+
+class _StepTimedOut(Exception):
+    def __init__(self, step: str, seconds: float) -> None:
+        super().__init__(f"{step} timed out after {seconds:.0f} s")
+        self.step = step
+
+
+async def _communicate(process, timeout: float, step: str) -> tuple[bytes, bytes]:
+    """``process.communicate()`` with a deadline; at it the step is stopped."""
+    try:
+        return await asyncio.wait_for(process.communicate(), timeout)
+    except TimeoutError:
+        # Asked first: git removes its lock files on SIGTERM, and a lock left
+        # by SIGKILL would make every retry fail. Killed if it does not go.
+        for sig, grace in ((signal.SIGTERM, TERMINATE_GRACE_SECONDS), (signal.SIGKILL, 10)):
+            _signal_step(process, sig)
+            try:
+                await asyncio.wait_for(process.wait(), grace)
+                break
+            except (TimeoutError, ProcessLookupError):
+                if sig == signal.SIGKILL:
+                    logger.warning("%s did not exit after being killed", step)
+        raise _StepTimedOut(step, timeout) from None
+
+
+def _signal_step(process, sig) -> None:
+    """The whole process group where the step was started in its own session
+    (npm and pip start children of their own); otherwise the process itself."""
+    try:
+        if hasattr(os, "killpg") and isinstance(process.pid, int) and os.getpgid(process.pid) == process.pid:
+            os.killpg(process.pid, sig)
+        elif sig == signal.SIGTERM:
+            process.terminate()
+        else:
+            process.kill()
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+
+
 _update_status = {
     "status": "idle",  # idle, checking, downloading, installing, complete, error
     "progress": 0,
@@ -324,8 +372,8 @@ async def _origin_points_at_repo(git_path: str, git_config: list[str], app_dir, 
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await process.communicate()
-    except (OSError, asyncio.CancelledError):
+        stdout, _ = await _communicate(process, GIT_STEP_TIMEOUT_SECONDS, "git remote get-url")
+    except (OSError, asyncio.CancelledError, _StepTimedOut):
         # Fail closed: let the caller go through the rewrite branch if we
         # can't even invoke git. The unconditional set-url is the safer
         # fallback, only mildly destructive.
@@ -447,7 +495,7 @@ async def get_version():
 
 @router.get("/check")
 async def check_for_updates(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SYSTEM_READ),
 ):
     """Check GitHub for available updates."""
@@ -753,7 +801,7 @@ async def _perform_update(target_ref: str):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            await process.communicate()
+            await _communicate(process, GIT_STEP_TIMEOUT_SECONDS, "git remote set-url")
 
         _update_status = {
             "status": "downloading",
@@ -787,7 +835,7 @@ async def _perform_update(target_ref: str):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
+        stdout, stderr = await _communicate(process, GIT_STEP_TIMEOUT_SECONDS, "git fetch")
 
         if process.returncode != 0:
             error_msg = stderr.decode() if stderr else "Git fetch failed"
@@ -823,7 +871,7 @@ async def _perform_update(target_ref: str):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
+        stdout, stderr = await _communicate(process, GIT_STEP_TIMEOUT_SECONDS, "git reset")
 
         if process.returncode != 0:
             error_msg = stderr.decode() if stderr else "Git reset failed"
@@ -858,8 +906,9 @@ async def _perform_update(target_ref: str):
             cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
-        stdout, stderr = await process.communicate()
+        stdout, stderr = await _communicate(process, INSTALL_STEP_TIMEOUT_SECONDS, "pip install")
 
         if process.returncode != 0:
             logger.warning("pip install warning: %s", stderr.decode() if stderr else "unknown")
@@ -876,29 +925,36 @@ async def _perform_update(target_ref: str):
                 "error": None,
             }
 
-            # npm install
-            process = await asyncio.create_subprocess_exec(
-                npm_path,
-                "install",
-                cwd=str(frontend_dir),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            await process.communicate()
+            # Optional: the release ships pre-built static files, so a build
+            # that fails or runs out of time leaves those in place.
+            try:
+                # npm install
+                process = await asyncio.create_subprocess_exec(
+                    npm_path,
+                    "install",
+                    cwd=str(frontend_dir),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    start_new_session=True,
+                )
+                await _communicate(process, INSTALL_STEP_TIMEOUT_SECONDS, "npm install")
 
-            # npm run build
-            process = await asyncio.create_subprocess_exec(
-                npm_path,
-                "run",
-                "build",
-                cwd=str(frontend_dir),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await process.communicate()
+                # npm run build
+                process = await asyncio.create_subprocess_exec(
+                    npm_path,
+                    "run",
+                    "build",
+                    cwd=str(frontend_dir),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    start_new_session=True,
+                )
+                stdout, stderr = await _communicate(process, INSTALL_STEP_TIMEOUT_SECONDS, "npm run build")
 
-            if process.returncode != 0:
-                logger.warning("Frontend build warning: %s", stderr.decode() if stderr else "unknown")
+                if process.returncode != 0:
+                    logger.warning("Frontend build warning: %s", stderr.decode() if stderr else "unknown")
+            except _StepTimedOut as exc:
+                logger.warning("%s; keeping the pre-built frontend", exc)
         else:
             logger.info("npm not found or frontend dir missing - using pre-built static files")
 
@@ -911,6 +967,29 @@ async def _perform_update(target_ref: str):
 
         logger.info("Update completed successfully")
 
+    except _StepTimedOut as exc:
+        logger.error("Update failed: %s", exc)
+        if exc.step == "pip install":
+            # git reset has already moved the code: it must not be started on
+            # dependencies that were never installed.
+            advice = (
+                "The new code is in place but its dependencies were not installed. "
+                "Check for updates and run the update again before restarting."
+            )
+        elif exc.step == "git reset":
+            # Stopped while the files were being replaced: some may be new.
+            advice = (
+                "The new code may be only partly in place. "
+                "Check for updates and run the update again before restarting."
+            )
+        else:
+            advice = "Nothing was installed. Check for updates and run the update again."
+        _update_status = {
+            "status": "error",
+            "progress": 0,
+            "message": f"Update failed: {exc.step} took too long",
+            "error": f"{exc}. {advice}",
+        }
     except Exception as e:
         logger.error("Update failed: %s", e)
         _update_status = {
@@ -924,7 +1003,7 @@ async def _perform_update(target_ref: str):
 @router.post("/apply")
 async def apply_update(
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Apply available update (git pull + rebuild)."""

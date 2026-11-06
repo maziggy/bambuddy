@@ -147,42 +147,42 @@ describe('AuthContext', () => {
         result.current.hasAnyPermission('printers:read' as Permission, 'settings:update' as Permission)
       ).toBe(true);
     });
-
-    it('hasAllPermissions returns true for any permissions when auth disabled', async () => {
-      const { result } = renderHook(() => useAuth(), {
-        wrapper: createWrapper(),
-      });
-
-      await waitFor(() => {
-        expect(result.current.authEnabled).toBe(false);
-      });
-
-      expect(
-        result.current.hasAllPermissions('printers:read' as Permission, 'settings:update' as Permission)
-      ).toBe(true);
-    });
   });
 
-  describe('when auth requires setup', () => {
+  describe('first-run setup', () => {
+    const realLocation = window.location;
+
+    function stubLocation(pathname: string) {
+      const { origin, protocol, host, hostname, port } = realLocation;
+      const location = { origin, protocol, host, hostname, port, pathname, href: origin + pathname, search: '', hash: '' };
+      Object.defineProperty(window, 'location', { configurable: true, value: location });
+      return location;
+    }
+
     beforeEach(() => {
       server.use(
-        http.get('/api/v1/auth/status', () => {
-          return HttpResponse.json({
-            auth_enabled: false,
-            requires_setup: true,
-          });
-        })
+        http.get('/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: false, requires_setup: true }))
       );
     });
 
-    it('requiresSetup is true', async () => {
-      const { result } = renderHook(() => useAuth(), {
-        wrapper: createWrapper(),
-      });
+    afterEach(() => {
+      Object.defineProperty(window, 'location', { configurable: true, value: realLocation });
+    });
 
-      await waitFor(() => {
-        expect(result.current.requiresSetup).toBe(true);
-      });
+    it('sends a new install to the setup page', async () => {
+      const location = stubLocation('/');
+
+      renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(location.href).toBe('/setup'));
+    });
+
+    it('leaves a camera page where it is', async () => {
+      const location = stubLocation('/camera/1');
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(location.href).toBe(`${realLocation.origin}/camera/1`);
     });
   });
 
@@ -303,24 +303,6 @@ describe('AuthContext', () => {
         )
       ).toBe(true);
     });
-
-    it('hasAllPermissions returns true for any combination', async () => {
-      const { result } = renderHook(() => useAuth(), {
-        wrapper: createWrapper(),
-      });
-
-      await waitFor(() => {
-        expect(result.current.loading).toBe(false);
-      });
-
-      expect(
-        result.current.hasAllPermissions(
-          'settings:update' as Permission,
-          'api_keys:create' as Permission,
-          'groups:delete' as Permission
-        )
-      ).toBe(true);
-    });
   });
 
   describe('auth:expired event (#1698)', () => {
@@ -364,6 +346,102 @@ describe('AuthContext', () => {
         expect(result.current.user).toBeNull();
       });
     });
+
+    it('re-reads the auth status on an auth:recheck event', async () => {
+      // A WebSocket closed 4401 asks for it: auth may have been turned on, or
+      // the session ended, while this tab still holds the old state.
+      const status = vi.fn(() => HttpResponse.json({ auth_enabled: true, requires_setup: false }));
+      server.use(http.get('/api/v1/auth/status', status));
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => {
+        expect(result.current.user).not.toBeNull();
+      });
+      const before = status.mock.calls.length;
+
+      act(() => {
+        window.dispatchEvent(new CustomEvent('auth:recheck'));
+      });
+
+      await waitFor(() => {
+        expect(status.mock.calls.length).toBe(before + 1);
+      });
+    });
+
+    it.each([
+      ['the auth status', '/api/v1/auth/status'],
+      ['the signed-in user', '/api/v1/auth/me'],
+    ])('keeps the session when a re-check cannot read %s', async (_what, path) => {
+      // A failed scope refresh (a database error) closes every socket with
+      // 4401; the re-check that follows may hit the same failure. Only a
+      // definite answer may sign the tab out or switch it to "auth off".
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => {
+        expect(result.current.user).not.toBeNull();
+      });
+      const before = result.current.user;
+      server.use(http.get(path, () => HttpResponse.json({ detail: 'database is locked' }, { status: 500 })));
+
+      act(() => {
+        window.dispatchEvent(new CustomEvent('auth:recheck'));
+      });
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+
+      expect(result.current.authEnabled).toBe(true);
+      expect(result.current.user).toEqual(before);
+    });
+
+    it('signs a key whose owner was deactivated out on a re-check, keeping the key', async () => {
+      // /auth/me answers 403 for an API key (a SpoolBuddy kiosk) whose owner is
+      // deactivated or gone: a definite answer, unlike a database error. The
+      // key is kept: reactivating the owner makes it work again, and the kiosk
+      // would otherwise need setting up again.
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => {
+        expect(result.current.user).not.toBeNull();
+      });
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ detail: 'API key owner is deactivated or no longer exists' }, { status: 403 })
+        )
+      );
+
+      act(() => {
+        window.dispatchEvent(new CustomEvent('auth:recheck'));
+      });
+
+      await waitFor(() => {
+        expect(result.current.user).toBeNull();
+      });
+      expect(getAuthToken()).toBe('valid-token');
+    });
+
+    it('repeats a re-check that got no answer until it gets one', async () => {
+      // Nothing else would ask again: after a refused token mint there is no
+      // socket, so no further close can trigger it, and the tab froze.
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => {
+        expect(result.current.user).not.toBeNull();
+      });
+      let failing = true;
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          failing
+            ? HttpResponse.json({ detail: 'database is locked' }, { status: 500 })
+            : HttpResponse.json({ detail: 'Token no longer valid' }, { status: 401 })
+        )
+      );
+
+      act(() => {
+        window.dispatchEvent(new CustomEvent('auth:recheck'));
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      expect(result.current.user).not.toBeNull(); // kept: no answer yet
+      failing = false;
+
+      await waitFor(() => expect(result.current.user).toBeNull(), { timeout: 5000 });
+      // A definite 401 clears the token too, as the first load does.
+      expect(getAuthToken()).toBeNull();
+    }, 10000);
 
     it('does not crash when the event fires after unmount', async () => {
       const { result, unmount } = renderHook(() => useAuth(), {
@@ -434,6 +512,98 @@ describe('AuthContext', () => {
       // Definitive invalid-token → persisted copy is removed.
       expect(window.localStorage.removeItem).toHaveBeenCalledWith('auth_token');
     });
+
+    it('keeps asking after the first load gets no answer, and signs in when it does (#3360)', async () => {
+      // The reporter's kiosk: the database was out of connections while it
+      // loaded. It used to stop after three tries and show the login page.
+      let down = true;
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          down
+            ? HttpResponse.json({ detail: 'Authentication service temporarily unavailable' }, { status: 503 })
+            : HttpResponse.json({ id: 1, username: 'kiosk', is_active: true, permissions: [], groups: [] })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.loading).toBe(false), { timeout: 4000 });
+      expect(result.current.authUnconfirmed).toBe(true);
+      expect(result.current.user).toBeNull();
+      expect(getAuthToken()).toBe('valid-token');
+
+      down = false;
+      await waitFor(() => expect(result.current.user?.username).toBe('kiosk'), { timeout: 6000 });
+      expect(result.current.authUnconfirmed).toBe(false);
+    }, 12000);
+
+    it('ends the wait on a definite 401', async () => {
+      let down = true;
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          down
+            ? new HttpResponse(null, { status: 503 })
+            : HttpResponse.json({ detail: 'Invalid API key' }, { status: 401 })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.authUnconfirmed).toBe(true), { timeout: 4000 });
+
+      down = false;
+      await waitFor(() => expect(result.current.authUnconfirmed).toBe(false), { timeout: 6000 });
+      expect(result.current.user).toBeNull();
+      expect(getAuthToken()).toBeNull();
+    }, 12000);
+
+    it('waits instead of showing the open UI when even the auth status gets no answer', async () => {
+      let down = true;
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          down
+            ? new HttpResponse(null, { status: 503 })
+            : HttpResponse.json({ auth_enabled: true, requires_setup: false })
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({ id: 1, username: 'kiosk', is_active: true, permissions: [], groups: [] })
+        )
+      );
+
+      const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(result.current.authUnconfirmed).toBe(true);
+
+      down = false;
+      await waitFor(() => expect(result.current.user?.username).toBe('kiosk'), { timeout: 6000 });
+      expect(result.current.authEnabled).toBe(true);
+      expect(result.current.authUnconfirmed).toBe(false);
+    }, 12000);
+
+    it("persists a kiosk's ?token= key once a later try confirms it", async () => {
+      setAuthToken(null);
+      localStorage.removeItem('auth_token');
+      window.history.replaceState({}, '', '/spoolbuddy?token=bb_kiosk');
+      let down = true;
+      server.use(
+        http.get('/api/v1/auth/me', () =>
+          down
+            ? new HttpResponse(null, { status: 503 })
+            : HttpResponse.json({ id: 1, username: 'kiosk', is_active: true, permissions: [], groups: [] })
+        )
+      );
+      vi.mocked(window.localStorage.setItem).mockClear();
+      try {
+        const { result } = renderHook(() => useAuth(), { wrapper: createWrapper() });
+        await waitFor(() => expect(result.current.authUnconfirmed).toBe(true), { timeout: 4000 });
+        expect(window.localStorage.setItem).not.toHaveBeenCalledWith('auth_token', 'bb_kiosk');
+
+        down = false;
+        await waitFor(() => expect(result.current.user).not.toBeNull(), { timeout: 6000 });
+        expect(window.localStorage.setItem).toHaveBeenCalledWith('auth_token', 'bb_kiosk');
+      } finally {
+        window.history.replaceState({}, '', '/');
+      }
+    }, 12000);
 
     it('loads the user when the persisted token is valid', async () => {
       server.use(

@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import smtplib
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
@@ -17,6 +18,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.logging_filters import redact_refused_headers
 from backend.app.models.archive import PrintArchive
 from backend.app.models.notification import (
     NotificationDigestQueue,
@@ -25,10 +27,16 @@ from backend.app.models.notification import (
     TelegramPendingVerdict,
 )
 from backend.app.models.notification_template import NotificationTemplate
+from backend.app.services.email_service import add_required_headers
+from backend.app.services.notify_client import NotifyClient, NotifyError, notify_credentials, notify_supports_photos
 from backend.app.services.print_confirmation import one_tap_url
 from backend.app.utils.notification_photos import save_notification_photo
 
 logger = logging.getLogger(__name__)
+
+# How long a digest event is kept for: through one failed daily digest, so it
+# goes out with the next one, then dropped (FO-C4).
+DIGEST_RETRY_HOURS = 48
 
 # Honest User-Agent — matches the convention used by every other outbound
 # httpx client in the codebase (bambu_cloud, makerworld, firmware_check,
@@ -108,6 +116,32 @@ def _assert_safe_provider_url(url: str, *, label: str) -> str | None:
     except ValueError as exc:
         return str(exc)
     return None
+
+
+def _event_priority_level(config: dict, event_type: str | None) -> int | None:
+    """The 1-5 priority level mapped to this event in config.event_priorities.
+
+    1=min, 2=low, 3=default, 4=high, 5=urgent, as the dialog writes them for
+    ntfy (#990) and Gotify (#2743). None when the event has no valid entry.
+    """
+    event_priorities = config.get("event_priorities") or {}
+    if not event_type or not isinstance(event_priorities, dict):
+        return None
+    raw = event_priorities.get(event_type)
+    if raw is None and not event_type.startswith("on_"):
+        raw = event_priorities.get(f"on_{event_type}")
+    try:
+        level = int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
+    if level is not None and 1 <= level <= 5:
+        return level
+    return None
+
+
+# Gotify priorities run 0-10; its Android app stays silent below 4 and pops
+# the notification up from 8. The dialog's five levels map onto those bands.
+_GOTIFY_PRIORITY_BY_LEVEL = {1: 0, 2: 2, 3: 5, 4: 8, 5: 10}
 
 
 def _opaque_http_failure(response: httpx.Response, *, label: str) -> str:
@@ -335,12 +369,26 @@ class NotificationService:
         attach_photo mirrors the provider's own toggle (see _send_to_provider)
         — when set, a bundled sample image stands in for a real snapshot.
         """
+        success, message = await self._send_test_notification(provider_type, config, db, attach_photo)
+        # The text goes back to the caller: an HTTP client refusing a header
+        # quotes its value, which may be a credential the caller never sees.
+        return success, redact_refused_headers(message) or message
+
+    async def _send_test_notification(
+        self,
+        provider_type: str,
+        config: dict[str, Any],
+        db: AsyncSession | None,
+        attach_photo: bool,
+    ) -> tuple[bool, str]:
         if db:
             title, message = await self._build_message_from_template(db, "test", {})
         else:
             title = "Bambuddy Test"
             message = "This is a test notification. If you see this, notifications are working!"
 
+        if provider_type == "notify" and not notify_supports_photos(config.get("device_id")):
+            attach_photo = False
         image_data = await asyncio.to_thread(_load_sample_notification_image) if attach_photo else None
 
         try:
@@ -369,11 +417,48 @@ class NotificationService:
             elif provider_type == "bark":
                 photo_url = await self._get_or_build_photo_url(db, image_data, "test") if attach_photo else None
                 return await self._send_bark(config, title, message, image_url=photo_url)
+            elif provider_type == "gotify":
+                photo_url = await self._get_or_build_photo_url(db, image_data, "test") if attach_photo else None
+                return await self._send_gotify(config, title, message, event_type="test", image_url=photo_url)
+            elif provider_type == "notify":
+                photo_url = await self._get_or_build_photo_url(db, image_data, "test") if attach_photo else None
+                return await self._send_notify(config, title, message, image_url=photo_url)
             else:
                 return False, f"Unknown provider type: {provider_type}"
         except Exception as e:
             logger.exception("Error sending test notification via %s", provider_type)
             return False, str(e)
+
+    async def _send_notify(
+        self,
+        config: dict,
+        title: str,
+        message: str,
+        image_url: str | None = None,
+        event_type: str | None = None,
+        printer_id: int | None = None,
+    ) -> tuple[bool, str]:
+        """Ordinary Notify! alerts use the existing event, digest and quiet-hours rules."""
+        try:
+            device_id, token = notify_credentials(config)
+            client = NotifyClient(await self._get_client())
+            group_type = str(config.get("group_type") or "").strip()
+            if not group_type:
+                group_type = f"bambuddy-printer-{printer_id}" if printer_id is not None else "bambuddy"
+            await client.send_notification(
+                device_id,
+                token,
+                title=title,
+                text=message,
+                group_type=group_type,
+                icon_url=config.get("icon_url"),
+                image_url=image_url,
+                time_sensitive=config.get("time_sensitive") is True
+                and event_type in {"print_failed", "print_stopped", "printer_error", "ai_failure_detection"},
+            )
+            return True, "Message sent successfully"
+        except NotifyError as exc:
+            return False, str(exc)
 
     async def _send_callmebot(self, config: dict, message: str) -> tuple[bool, str]:
         """Send notification via CallMeBot (WhatsApp)."""
@@ -383,9 +468,12 @@ class NotificationService:
         if not phone or not apikey:
             return False, "Phone number and API key are required"
 
-        # URL encode the message
-        encoded_message = quote(message)
-        url = f"https://api.callmebot.com/whatsapp.php?phone={phone}&text={encoded_message}&apikey={apikey}"
+        # Every value URL-encoded: a phone number written "+49 151 ..." would
+        # otherwise lose its "+", which a query string reads as a space.
+        url = (
+            "https://api.callmebot.com/whatsapp.php"
+            f"?phone={quote(phone, safe='')}&text={quote(message, safe='')}&apikey={quote(apikey, safe='')}"
+        )
 
         client = await self._get_client()
         response = await client.get(url)
@@ -455,6 +543,58 @@ class NotificationService:
             return True, "Message sent successfully"
         return False, _opaque_http_failure(response, label="Bark server")
 
+    async def _send_gotify(
+        self,
+        config: dict,
+        title: str,
+        message: str,
+        event_type: str | None = None,
+        url: str | None = None,
+        image_url: str | None = None,
+    ) -> tuple[bool, str]:
+        """Send notification via a self-hosted Gotify server (#2743).
+
+        POSTs JSON to {server}/message with the application token in the
+        X-Gotify-Key header, so the token never ends up in a URL or a log line.
+        Gotify takes no uploads: a photo goes in as a URL its Android app
+        fetches itself, and ``url`` opens on tap.
+        """
+        server = (config.get("server") or "").strip().rstrip("/")
+        # Gotify's own docs show the full endpoint, so a pasted ".../message"
+        # must not turn into ".../message/message".
+        server = server.removesuffix("/message")
+        app_token = (config.get("app_token") or "").strip()
+
+        if not server or not app_token:
+            return False, "Server URL and app token are required"
+
+        url_error = _assert_safe_provider_url(server, label="Gotify server URL")
+        if url_error:
+            return False, url_error
+
+        # Events without a mapped level go out at Gotify's middle band (5), the
+        # "Default" the dialog shows for them -- sound on, no pop-up.
+        level = _event_priority_level(config, event_type) or 3
+        payload: dict[str, Any] = {
+            "title": title,
+            "message": message,
+            "priority": _GOTIFY_PRIORITY_BY_LEVEL[level],
+        }
+        notification_extras: dict[str, Any] = {}
+        if url:
+            notification_extras["click"] = {"url": url}
+        if image_url:
+            notification_extras["bigImageUrl"] = image_url
+        if notification_extras:
+            payload["extras"] = {"client::notification": notification_extras}
+
+        client = await self._get_client()
+        response = await client.post(f"{server}/message", json=payload, headers={"X-Gotify-Key": app_token})
+
+        if response.status_code == 200:
+            return True, "Message sent successfully"
+        return False, _opaque_http_failure(response, label="Gotify server")
+
     async def _send_ntfy(
         self,
         config: dict,
@@ -498,17 +638,9 @@ class NotificationService:
         # lookup used to miss for every real notification and hit only in tests
         # that called this method with the prefixed name (issue #3139). Both
         # spellings are accepted, which also leaves stored configs untouched.
-        event_priorities = config.get("event_priorities") or {}
-        if event_type and isinstance(event_priorities, dict):
-            raw = event_priorities.get(event_type)
-            if raw is None and not event_type.startswith("on_"):
-                raw = event_priorities.get(f"on_{event_type}")
-            try:
-                priority = int(raw) if raw is not None else None
-            except (TypeError, ValueError):
-                priority = None
-            if priority is not None and 1 <= priority <= 5:
-                headers["Priority"] = str(priority)
+        priority = _event_priority_level(config, event_type)
+        if priority is not None:
+            headers["Priority"] = str(priority)
 
         if auth_token:
             headers["Authorization"] = f"Bearer {auth_token}"
@@ -746,6 +878,8 @@ class NotificationService:
         image_data: bytes | None,
         buttons: list[dict] | None,
         archive_id: int | None,
+        *,
+        run_id: int | None = None,
     ) -> tuple[bool, str]:
         """Deliver the outcome prompt the way the provider's verdict mode asks (#3046).
 
@@ -786,8 +920,20 @@ class NotificationService:
             # dispatch_outcome_confirmation mints a live token right before
             # sending. Without one the prompt's links are dead too, and a
             # reaction must not outlive them, so there is nothing to remember.
+            # The run's token when the prompt is for a run, the archive's when
+            # it was sent the way it was before runs had their own.
             archive = await db.get(PrintArchive, archive_id)
-            if archive is None or not archive.confirm_token or archive.confirm_token_used_at is not None:
+            holder = archive
+            if run_id is not None:
+                from backend.app.models.print_log import PrintLogEntry
+
+                holder = await db.get(PrintLogEntry, run_id)
+            if (
+                archive is None
+                or holder is None
+                or not holder.confirm_token
+                or holder.confirm_token_used_at is not None
+            ):
                 logger.warning("Outcome prompt for archive %s went out without a live confirm token", archive_id)
                 return ok, status
             db.add(
@@ -796,7 +942,7 @@ class NotificationService:
                     chat_id=str(((sent or {}).get("chat") or {}).get("id") or config.get("chat_id", "")).strip(),
                     message_id=message_id,
                     archive_id=archive_id,
-                    confirm_token=archive.confirm_token,
+                    confirm_token=holder.confirm_token,
                     has_caption=image_data is not None,
                     message_text=message,
                 )
@@ -889,6 +1035,8 @@ class NotificationService:
                 msg["To"] = to_email
                 msg["Subject"] = f"[Bambuddy] {subject}"
                 msg.attach(MIMEText(body, "plain"))
+
+            add_required_headers(msg, from_email)
 
             # smtplib is synchronous and blocking: a wedged / greylisting /
             # firewall-dropped relay leaves recv() stuck. Two problems, two
@@ -1249,14 +1397,17 @@ class NotificationService:
         event_type: str | None = None,
         variables: dict | None = None,
         photo_cache: dict | None = None,
+        printer_id: int | None = None,
+        bypass_quiet_hours: bool = False,
     ) -> tuple[bool, str]:
         """Send notification to a specific provider.
 
         *photo_cache* lets the providers of one send share a single persisted
-        photo URL (see _get_or_build_photo_url).
+        photo URL (see _get_or_build_photo_url). *bypass_quiet_hours* is for
+        the daily digest, which goes out at the time chosen for it.
         """
         # Check quiet hours
-        if self._is_in_quiet_hours(provider):
+        if not bypass_quiet_hours and self._is_in_quiet_hours(provider):
             logger.info("Skipping notification to %s - quiet hours active", provider.name)
             return True, "Skipped - quiet hours"
 
@@ -1336,6 +1487,7 @@ class NotificationService:
                     # the message, or both. The link preview is off in all of
                     # them (see _send_telegram_confirm_request).
                     _archive_id = (variables or {}).get("archive_id")
+                    _run_id = (variables or {}).get("run_id")
                     return await self._send_telegram_confirm_request(
                         provider,
                         config,
@@ -1344,6 +1496,7 @@ class NotificationService:
                         image_data,
                         tg_buttons,
                         _archive_id if isinstance(_archive_id, int) else None,
+                        run_id=_run_id if isinstance(_run_id, int) else None,
                     )
                 # Every other event keeps Telegram's link preview, for the same
                 # reason as the Slack unfurl in _send_webhook: when the finish
@@ -1396,6 +1549,30 @@ class NotificationService:
                     else None
                 )
                 return await self._send_bark(config, title, message, url=bark_url, image_url=photo_url)
+            elif provider.provider_type == "notify":
+                photo_url = (
+                    await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
+                    if provider.attach_photo and notify_supports_photos(config.get("device_id"))
+                    else None
+                )
+                return await self._send_notify(
+                    config, title, message, image_url=photo_url, event_type=event_type, printer_id=printer_id
+                )
+            elif provider.provider_type == "gotify":
+                # Outcome confirmation (#1898): like Bark, Gotify opens one URL
+                # on tap -- deep-link into the confirmation dialog.
+                gotify_url = None
+                _gotify_confirm = (variables or {}).get("confirm_url")
+                if event_type == "print_confirm_request" and _gotify_confirm and _gotify_confirm.startswith("http"):
+                    gotify_url = _gotify_confirm
+                photo_url = (
+                    await self._get_or_build_photo_url(db, image_data, event_type, photo_cache)
+                    if provider.attach_photo
+                    else None
+                )
+                return await self._send_gotify(
+                    config, title, message, event_type=event_type, url=gotify_url, image_url=photo_url
+                )
             else:
                 return False, f"Unknown provider type: {provider.provider_type}"
         except Exception as e:
@@ -1412,7 +1589,8 @@ class NotificationService:
             if success:
                 provider.last_success = datetime.now(timezone.utc)
             else:
-                provider.last_error = error
+                # Read by every notification reader: no refused header's value.
+                provider.last_error = redact_refused_headers(error)
                 provider.last_error_at = datetime.now(timezone.utc)
             await db.commit()
 
@@ -1421,8 +1599,16 @@ class NotificationService:
         db: AsyncSession,
         event_field: str,
         printer_id: int | None = None,
+        *,
+        fleet_wide: bool = False,
     ) -> list[NotificationProvider]:
         """Get all enabled providers that want a specific event type.
+
+        A provider limited to one printer gets that printer's events. An event
+        with no printer -- a job for "Any <model>" not yet assigned -- reaches
+        only "All printers" providers, unless it is about the whole fleet
+        (``fleet_wide``: the queue finishing, stock, app messages), which
+        every provider that wants it gets.
 
         Runs under ``no_autoflush`` (#2770). Callers routinely hold pending
         writes when they raise an event — the AMS sensor loop does
@@ -1445,6 +1631,8 @@ class NotificationService:
             query = query.where(
                 (NotificationProvider.printer_id.is_(None)) | (NotificationProvider.printer_id == printer_id)
             )
+        elif not fleet_wide:
+            query = query.where(NotificationProvider.printer_id.is_(None))
 
         with db.no_autoflush:
             result = await db.execute(query)
@@ -1470,7 +1658,7 @@ class NotificationService:
                 title=title,
                 message=message,
                 success=success,
-                error_message=error_message,
+                error_message=redact_refused_headers(error_message),
                 printer_id=printer_id,
                 printer_name=printer_name,
             )
@@ -1489,7 +1677,6 @@ class NotificationService:
         event_type: str = "unknown",
         printer_id: int | None = None,
         printer_name: str | None = None,
-        force_immediate: bool = False,
         image_data: bytes | None = None,
         variables: dict | None = None,
     ):
@@ -1511,6 +1698,7 @@ class NotificationService:
                     event_type=event_type,
                     variables=variables,
                     photo_cache=photo_cache,
+                    printer_id=printer_id,
                 )
 
                 # Also queue for digest if enabled (digest is a summary, not a queue)
@@ -1563,6 +1751,7 @@ class NotificationService:
         title: str,
         message: str,
         url: str | None = None,
+        allowed: Callable[[NotificationProvider], bool] | None = None,
     ) -> int:
         """A message another application sends through Bambuddy.
 
@@ -1570,9 +1759,12 @@ class NotificationService:
         through the same path as Bambuddy's own events: quiet hours, the daily
         digest and the log (whose event type names the sender). The text is
         the app's own; a link, when given, is appended so every channel type
-        carries it. Returns how many channels it was handed to.
+        carries it. Returns how many channels it was handed to. ``allowed``
+        narrows the channels to those the sender may reach.
         """
-        providers = await self._get_providers_for_event(db, "on_app_message")
+        providers = await self._get_providers_for_event(db, "on_app_message", fleet_wide=True)
+        if allowed is not None:
+            providers = [provider for provider in providers if allowed(provider)]
         if not providers:
             return 0
         body = f"{message}\n{url}" if url else message
@@ -1723,6 +1915,11 @@ class NotificationService:
                 variables["reason"] = archive_data["failure_reason"]
             if archive_data.get("finish_photo_url"):
                 variables["finish_photo_url"] = archive_data["finish_photo_url"]
+            # The archive (file) and run (this print) it was, for links and
+            # webhooks (archive redesign).
+            for key in ("archive_id", "run_id"):
+                if archive_data.get(key) is not None:
+                    variables[key] = str(archive_data[key])
 
             # Build per-slot breakdown string with AMS info when available
             if archive_data.get("usage_results"):
@@ -1780,6 +1977,7 @@ class NotificationService:
         reject_url: str | None = None,
         confirm_url: str | None = None,
         archive_id: int | None = None,
+        run_id: int | None = None,
     ):
         """Ask for a post-print outcome verdict (#1898).
 
@@ -1788,7 +1986,8 @@ class NotificationService:
         feature. good_url / reject_url are the one-tap capability links
         (rendered as ntfy action buttons), confirm_url deep-links into the
         archive's confirmation dialog in the web UI. archive_id lets a Telegram
-        provider in reaction mode (#3046) tie the sent message to the archive.
+        provider in reaction mode (#3046) tie the sent message to the archive,
+        and run_id to the run whose token the links carry.
         """
         providers = await self._get_providers_for_event(db, "on_print_confirm_request", printer_id)
         if not providers:
@@ -1809,6 +2008,8 @@ class NotificationService:
             variables["confirm_url"] = confirm_url
         if archive_id is not None:
             variables["archive_id"] = archive_id
+        if run_id is not None:
+            variables["run_id"] = run_id
 
         image_data = None
         if archive_data:
@@ -1905,7 +2106,6 @@ class NotificationService:
             "print_missing_spool_assignment",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -1938,7 +2138,6 @@ class NotificationService:
             "billing_charge_failed",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -1957,7 +2156,7 @@ class NotificationService:
 
     async def on_printer_error(
         self,
-        printer_id: int,
+        printer_id: int | None,
         printer_name: str,
         error_type: str,
         db: AsyncSession,
@@ -1993,12 +2192,13 @@ class NotificationService:
         printer_id: int,
         printer_name: str,
         task_name: str,
-        confidence: float,
+        confidence: float | None,
         action: str,
         db: AsyncSession,
         image_data: bytes | None = None,
+        print_quality: int | None = None,
     ):
-        """Handle AI failure-detection event (Obico spaghetti / print-failure ML).
+        """Handle AI failure-detection events from the configured provider.
 
         Split out of on_printer_error (#1794) so a user can subscribe to AI
         alerts without also being paged for every HMS hardware code.
@@ -2010,8 +2210,10 @@ class NotificationService:
         variables = {
             "printer": printer_name,
             "task_name": task_name or "current job",
-            "confidence": f"{confidence:.2f}",
+            "confidence": f"{confidence:.2f}" if confidence is not None else "N/A",
             "action": action,
+            "provider": "OctoEverywhere" if print_quality is not None else "Obico",
+            "print_quality": f"{print_quality}/10" if print_quality is not None else "N/A",
         }
 
         title, message = await self._build_message_from_template(db, "ai_failure_detection", variables)
@@ -2054,7 +2256,6 @@ class NotificationService:
             "plate_not_empty",
             printer_id,
             printer_name,
-            force_immediate=True,
             image_data=image_data,
             variables=variables,
         )
@@ -2161,7 +2362,7 @@ class NotificationService:
         threshold: float,
         db: AsyncSession,
     ):
-        """Handle AMS high humidity alarm event. Always sends immediately (bypasses digest)."""
+        """Handle AMS high humidity alarm event. Sent immediately, and also in the daily digest if enabled."""
         providers = await self._get_providers_for_event(db, "on_ams_humidity_high", printer_id)
         if not providers:
             return
@@ -2174,7 +2375,6 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "ams_humidity_high", variables)
-        # Alarms always send immediately, bypassing digest mode
         await self._send_to_providers(
             providers,
             title,
@@ -2183,7 +2383,6 @@ class NotificationService:
             "ams_humidity_high",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -2196,7 +2395,7 @@ class NotificationService:
         threshold: float,
         db: AsyncSession,
     ):
-        """Handle AMS high temperature alarm event. Always sends immediately (bypasses digest)."""
+        """Handle AMS high temperature alarm event. Sent immediately, and also in the daily digest if enabled."""
         providers = await self._get_providers_for_event(db, "on_ams_temperature_high", printer_id)
         if not providers:
             return
@@ -2209,7 +2408,6 @@ class NotificationService:
         }
 
         title, message = await self._build_message_from_template(db, "ams_temperature_high", variables)
-        # Alarms always send immediately, bypassing digest mode
         await self._send_to_providers(
             providers,
             title,
@@ -2218,7 +2416,6 @@ class NotificationService:
             "ams_temperature_high",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -2234,7 +2431,8 @@ class NotificationService:
     ):
         """Handle automatic drying giving up on one AMS unit (#2770).
 
-        Sent immediately rather than folded into a digest: it reports that
+        Worth sending immediately (as every notification is; a daily digest only
+        repeats it): it reports that
         Bambuddy has STOPPED doing something, and a report of inaction that
         arrives with tomorrow's summary has already cost the user a day.
         """
@@ -2259,7 +2457,6 @@ class NotificationService:
             "ams_drying_suspended",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -2272,7 +2469,7 @@ class NotificationService:
         threshold: float,
         db: AsyncSession,
     ):
-        """Handle AMS-HT high humidity alarm event. Always sends immediately (bypasses digest)."""
+        """Handle AMS-HT high humidity alarm event. Sent immediately, and also in the daily digest if enabled."""
         providers = await self._get_providers_for_event(db, "on_ams_ht_humidity_high", printer_id)
         if not providers:
             return
@@ -2286,7 +2483,6 @@ class NotificationService:
 
         # Use the same template as regular AMS (can create separate templates later if needed)
         title, message = await self._build_message_from_template(db, "ams_humidity_high", variables)
-        # Alarms always send immediately, bypassing digest mode
         await self._send_to_providers(
             providers,
             title,
@@ -2295,7 +2491,6 @@ class NotificationService:
             "ams_ht_humidity_high",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -2308,7 +2503,7 @@ class NotificationService:
         threshold: float,
         db: AsyncSession,
     ):
-        """Handle AMS-HT high temperature alarm event. Always sends immediately (bypasses digest)."""
+        """Handle AMS-HT high temperature alarm event. Sent immediately, and also in the daily digest if enabled."""
         providers = await self._get_providers_for_event(db, "on_ams_ht_temperature_high", printer_id)
         if not providers:
             return
@@ -2322,7 +2517,6 @@ class NotificationService:
 
         # Use the same template as regular AMS (can create separate templates later if needed)
         title, message = await self._build_message_from_template(db, "ams_temperature_high", variables)
-        # Alarms always send immediately, bypassing digest mode
         await self._send_to_providers(
             providers,
             title,
@@ -2331,7 +2525,6 @@ class NotificationService:
             "ams_ht_temperature_high",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -2371,7 +2564,8 @@ class NotificationService:
     ):
         """A Home Assistant sensor bound to a printer entered its alert state (#1148).
 
-        Sent immediately rather than folded into a digest: the case this exists
+        Worth sending immediately (as every notification is; a daily digest only
+        repeats it): the case this exists
         for is an enclosure door left open, which is only worth telling someone
         about while they can still act on it.
         """
@@ -2394,7 +2588,6 @@ class NotificationService:
             "ha_sensor_alert",
             printer_id,
             printer_name,
-            force_immediate=True,
             variables=variables,
         )
 
@@ -2407,7 +2600,7 @@ class NotificationService:
     ):
         """A Home Assistant sensor bound to a storage location entered its alert state (#2824).
 
-        Sent immediately rather than folded into a digest, for the same reason
+        Worth sending immediately, for the same reason
         as on_ha_sensor_alert above: this is the "drybox went stale" case, only
         worth acting on while the humidity/temperature is still climbing.
         """
@@ -2415,7 +2608,7 @@ class NotificationService:
         # a single printer via provider.printer_id, and a location alert has no
         # printer to scope by, so sharing it would leak drybox alerts to a
         # provider narrowed to one printer's sensors.
-        providers = await self._get_providers_for_event(db, "on_location_ha_sensor_alert", None)
+        providers = await self._get_providers_for_event(db, "on_location_ha_sensor_alert", fleet_wide=True)
         if not providers:
             return
 
@@ -2432,7 +2625,6 @@ class NotificationService:
             message,
             db,
             "location_ha_sensor_alert",
-            force_immediate=True,
             variables=variables,
         )
 
@@ -2466,6 +2658,44 @@ class NotificationService:
             printer_id,
             printer_name,
             image_data=image_data,
+            variables=variables,
+        )
+
+    async def on_print_pause_upcoming(
+        self,
+        printer_id: int,
+        printer_name: str,
+        filename: str,
+        *,
+        minutes: int,
+        layer: int,
+        total_layers: int,
+        db: AsyncSession,
+    ):
+        """A pause the slicer put into the print is coming up (#2984)."""
+        providers = await self._get_providers_for_event(db, "on_print_pause_upcoming", printer_id)
+        if not providers:
+            return
+
+        variables = {
+            "printer": printer_name,
+            "filename": self._clean_filename(filename),
+            # At least a minute: a pause seconds away still reads as "1m".
+            "time_to_pause": self._format_duration(max(minutes, 1) * 60),
+            "eta": await self._format_eta(max(minutes * 60, 1), db),
+            "layer": str(layer),
+            "total_layers": str(total_layers),
+        }
+
+        title, message = await self._build_message_from_template(db, "print_pause_upcoming", variables)
+        await self._send_to_providers(
+            providers,
+            title,
+            message,
+            db,
+            "print_pause_upcoming",
+            printer_id,
+            printer_name,
             variables=variables,
         )
 
@@ -2679,9 +2909,14 @@ class NotificationService:
         target_model: str,
         waiting_reason: str,
         db: AsyncSession,
+        printer_id: int | None = None,
     ):
-        """Handle job waiting for filament event."""
-        providers = await self._get_providers_for_event(db, "on_queue_job_waiting", None)
+        """Handle job waiting for filament event.
+
+        ``printer_id`` is the printer a pinned job waits on; None for a job for
+        "Any <model>" that no printer holds.
+        """
+        providers = await self._get_providers_for_event(db, "on_queue_job_waiting", printer_id)
         if not providers:
             return
 
@@ -2748,7 +2983,7 @@ class NotificationService:
         db: AsyncSession,
     ):
         """Handle all queue jobs completed event."""
-        providers = await self._get_providers_for_event(db, "on_queue_completed", None)
+        providers = await self._get_providers_for_event(db, "on_queue_completed", fleet_wide=True)
         if not providers:
             return
 
@@ -2783,7 +3018,7 @@ class NotificationService:
         leaves out the providers that have the break alert on, so the producer can send
         the reorder event for a break SKU without telling those providers twice.
         """
-        providers = await self._get_providers_for_event(db, "on_stock_reorder_alert", None)
+        providers = await self._get_providers_for_event(db, "on_stock_reorder_alert", fleet_wide=True)
         if skip_break_subscribers:
             providers = [p for p in providers if not p.on_stock_break_alert]
         if not providers:
@@ -2819,7 +3054,7 @@ class NotificationService:
 
         ``subtype`` and ``color`` as for :meth:`on_stock_reorder_alert`.
         """
-        providers = await self._get_providers_for_event(db, "on_stock_break_alert", None)
+        providers = await self._get_providers_for_event(db, "on_stock_break_alert", fleet_wide=True)
         if not providers:
             return
 
@@ -2883,7 +3118,19 @@ class NotificationService:
             )
             queue_entries = list(result.scalars().all())
 
+            # Events kept after a failed digest get the next one, not every
+            # one after it: a provider whose digest always fails (revoked
+            # credentials, a busy day too long for Pushover) would otherwise
+            # grow its queue without end. Before FO-C4 a failed day was
+            # simply deleted.
+            cutoff = datetime.utcnow() - timedelta(hours=DIGEST_RETRY_HOURS)
+            expired = [e for e in queue_entries if e.created_at is not None and e.created_at < cutoff]
+            for entry in expired:
+                await db.delete(entry)
+            queue_entries = [e for e in queue_entries if e not in expired]
+
             if not queue_entries:
+                await db.commit()
                 logger.debug("No queued notifications for provider %s", provider.name)
                 return
 
@@ -2903,15 +3150,21 @@ class NotificationService:
                 event_label = event_type.replace("_", " ").title()
                 body_parts.append(f"== {event_label} ({len(entries)}) ==")
                 for entry in entries:
-                    time_str = entry.created_at.strftime("%H:%M")
+                    # From an earlier day (late yesterday, or kept from a
+                    # failed digest): say which day.
+                    if entry.created_at.date() != datetime.utcnow().date():
+                        time_str = entry.created_at.strftime("%m-%d %H:%M")
+                    else:
+                        time_str = entry.created_at.strftime("%H:%M")
                     printer_info = f"[{entry.printer_name}] " if entry.printer_name else ""
                     body_parts.append(f"  {time_str} {printer_info}{entry.title}")
                 body_parts.append("")
 
             body = "\n".join(body_parts)
 
-            # Send the digest
-            success, error = await self._send_to_provider(provider, title, body, db)
+            # Send the digest. At its own time even inside quiet hours: skipped
+            # there, it was logged as sent and its events deleted (FO-C4).
+            success, error = await self._send_to_provider(provider, title, body, db, bypass_quiet_hours=True)
 
             # Log the digest
             await self._log_notification(
@@ -2924,9 +3177,11 @@ class NotificationService:
                 error_message=error if not success else None,
             )
 
-            # Clear the queue
-            for entry in queue_entries:
-                await db.delete(entry)
+            # Clear the queue once it went out; a failed send keeps the events
+            # for the next digest instead of losing them (FO-C4).
+            if success:
+                for entry in queue_entries:
+                    await db.delete(entry)
             await db.commit()
 
             if success:

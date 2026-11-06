@@ -94,7 +94,7 @@ def test_the_websocket_serializer_reports_no_humidity_for_an_index_only_unit():
     result = printer_state_to_dict(PrinterState(connected=True, state="IDLE", raw_data=_index_only_unit()))
 
     assert result["ams"][0]["humidity"] is None
-    assert result["ams"][0]["temp"] == "24.0"  # the other sensor is unaffected
+    assert result["ams"][0]["temp"] == 24.0  # the other sensor is unaffected
 
 
 @pytest.mark.asyncio

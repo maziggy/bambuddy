@@ -1,4 +1,4 @@
-"""Unit tests for SpoolBuddy schema validation (security fixes H2, M2, M4).
+"""Unit tests for SpoolBuddy schema validation (security fixes M2, M4).
 
 Tests Pydantic model validation without requiring a running server or DB.
 """
@@ -10,46 +10,8 @@ from backend.app.schemas.spoolbuddy import (
     DeviceRegisterRequest,
     HeartbeatRequest,
     ScaleReadingRequest,
-    UpdateStatusRequest,
     WriteTagResultRequest,
 )
-
-# ---------------------------------------------------------------------------
-# H2 — UpdateStatusRequest: only valid Literal values accepted
-# ---------------------------------------------------------------------------
-
-
-class TestUpdateStatusRequestValidation:
-    def test_valid_status_updating(self):
-        req = UpdateStatusRequest(status="updating")
-        assert req.status == "updating"
-
-    def test_valid_status_complete(self):
-        req = UpdateStatusRequest(status="complete")
-        assert req.status == "complete"
-
-    def test_valid_status_error(self):
-        req = UpdateStatusRequest(status="error")
-        assert req.status == "error"
-
-    def test_invalid_status_rejected(self):
-        """Arbitrary status strings must be rejected (H2: prevents unbounded WS injection)."""
-        with pytest.raises(ValidationError):
-            UpdateStatusRequest(status="hacked")
-
-    def test_empty_status_rejected(self):
-        with pytest.raises(ValidationError):
-            UpdateStatusRequest(status="")
-
-    def test_message_max_length_enforced(self):
-        """message field must not exceed 255 chars."""
-        with pytest.raises(ValidationError):
-            UpdateStatusRequest(status="updating", message="x" * 256)
-
-    def test_message_at_max_length_accepted(self):
-        req = UpdateStatusRequest(status="complete", message="x" * 255)
-        assert len(req.message) == 255
-
 
 # ---------------------------------------------------------------------------
 # M2 — HeartbeatRequest: system_stats size limit (4096 bytes)

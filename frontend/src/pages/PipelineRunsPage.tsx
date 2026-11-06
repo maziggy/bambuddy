@@ -707,6 +707,8 @@ function JobStatusChip({ status }: { status: PipelineRun['jobs'][number]['status
     completed: 'bg-emerald-700 text-emerald-100',
     failed: 'bg-red-700 text-red-100',
     cancelled: 'bg-rose-900 text-rose-200',
+    // Dispatched; whether it printed is not known.
+    unknown: 'bg-slate-700 text-slate-300',
   };
   return (
     <span className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold tracking-wide ${colours[status]}`}>

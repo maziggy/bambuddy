@@ -21,16 +21,21 @@ tokens — a leaked permanent token would be irrevocable footgun-by-design).
 
 from __future__ import annotations
 
+import logging
 import secrets
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import get_password_hash, verify_password
 from backend.app.models.long_lived_token import LongLivedToken
+from backend.app.services.last_used import LastUsedThrottle
+
+logger = logging.getLogger(__name__)
 
 # Issue #1108 hard cap. Bump here if policy changes — UI default is shorter
 # (90 days) and the create route enforces this ceiling.
@@ -59,8 +64,9 @@ STREAM_SCOPES: tuple[str, ...] = ("camera_stream", "camwall", "overlay")
 
 # Don't write to last_used_at more than once per minute per token. MJPEG
 # streams call verify() at most once per fetch (the browser holds the
-# connection open), but snapshots may rapid-fire — this caps DB churn.
-_LAST_USED_DEBOUNCE = timedelta(minutes=1)
+# connection open), but snapshots may rapid-fire — this caps DB churn. The
+# throttle also holds when the write fails (#3360).
+_last_used = LastUsedThrottle(timedelta(minutes=1))
 
 # Token format constants — kept in one place so format changes are localized.
 _TOKEN_PREFIX = "bblt_"
@@ -198,16 +204,23 @@ async def verify_token(
         if not verify_password(full_token, record.secret_hash):
             continue
         # Record use, but rate-limit DB writes to keep MJPEG-keepalive cheap.
-        last = record.last_used_at
-        if last is None or _coerce_utc(last) + _LAST_USED_DEBOUNCE <= now:
+        if _last_used.due(record.secret_hash, record.last_used_at, now):
+            record_id = record.id
             record.last_used_at = now
-            await db.commit()
+            try:
+                await db.commit()
+            except SQLAlchemyError as e:
+                # The token matched; only the bookkeeping failed (a read-only
+                # replica after a failover, a locked database), which must not
+                # turn a Cam Wall kiosk away (#3360). Re-read it so a revoke
+                # that landed meanwhile still counts; a failed re-read raises.
+                await db.rollback()
+                logger.warning("Could not record token %s as used: %s", record_id, e)
+                await db.refresh(record)
+                if record.revoked_at is not None or _is_expired(record, now):
+                    return None
         return record
     return None
-
-
-def _coerce_utc(dt: datetime) -> datetime:
-    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
 
 
 async def list_user_tokens(db: AsyncSession, user_id: int) -> list[LongLivedToken]:

@@ -115,6 +115,23 @@ describe('buildFilamentPresetOptions', () => {
     expect(option.filamentId).toBe('GFG98');
   });
 
+  it("takes a cloud preset's filament id from Bambu's list when it carries one (#3387)", () => {
+    const [listed] = buildFilamentPresetOptions({
+      cloudSettings: [cloudSetting({ setting_id: 'GFSX01_02', name: 'New Filament', filament_id: 'GFX07' })],
+    });
+    expect(listed.filamentId).toBe('GFX07');
+    // A bare id that could name two filaments is the one picked by its name:
+    // "Generic PA" is GFN99, not the rule's GFN98 (Generic PA-CF).
+    const [bare] = buildFilamentPresetOptions({
+      cloudSettings: [cloudSetting({ setting_id: 'GFSN98', name: 'Generic PA', filament_id: 'GFN99' })],
+    });
+    expect(bare.filamentId).toBe('GFN99');
+    const [derived] = buildFilamentPresetOptions({
+      cloudSettings: [cloudSetting({ setting_id: 'GFSNLS03_04', name: 'SUNLU PLA+ @BBL A1' })],
+    });
+    expect(derived.filamentId).toBe('GFSNL03');
+  });
+
   it('leaves a cloud user preset unresolved for the detail lookup', () => {
     // PFUS ids are setting ids, not filament ids — the printer rejects them,
     // so guessing one here would file the calibration under nothing.

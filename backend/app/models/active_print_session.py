@@ -55,3 +55,7 @@ class ActivePrintSession(Base):
 
     # [[global_tray_id, layer_num], ...] mirroring PrinterState.tray_change_log.
     tray_change_log: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+    # Spool on each assigned tray at print start and every spool assigned to a
+    # tray since, mirroring PrinterState.spool_change_log (services.spool_swaps).
+    spool_change_log: Mapped[list | None] = mapped_column(JSON, nullable=True)

@@ -71,6 +71,10 @@ def _state(connected: bool, state: str = "IDLE") -> SimpleNamespace:
         door_open=False,
         subtask_name="",
         ams_filament_backup=None,
+        firmware_version=None,
+        developer_mode=None,
+        airduct_mode=0,
+        print_ams_mapping=None,
     )
 
 
@@ -83,9 +87,11 @@ def _reset_edge_state():
         if not task.done():
             task.cancel()
     main_module._printer_offline_notify_tasks.clear()
+    main_module._printer_offline_published.clear()
     main_module._printer_reconciled_since_connect.clear()
     main_module._last_status_broadcast.clear()
     yield
+    main_module._printer_offline_published.clear()
     main_module._printer_last_connected.clear()
     for task in list(main_module._printer_offline_notify_tasks.values()):
         if not task.done():
@@ -168,6 +174,167 @@ class TestMaybeNotifyPrinterOffline:
             main_module._printer_offline_notify_tasks[1] = MagicMock()
             await main_module._maybe_notify_printer_offline(printer_id=1)
             assert 1 not in main_module._printer_offline_notify_tasks
+
+
+class TestRelayOfflineOnline:
+    """The MQTT relay's printers/{serial}/offline and /online events: offline on
+    the same debounced edge as the notification, online only after an offline
+    was published, so they always come in pairs."""
+
+    @staticmethod
+    def _session(printer):
+        scalar = MagicMock()
+        scalar.scalar_one_or_none.return_value = printer
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=scalar)
+        session_cm = MagicMock()
+        session_cm.__aenter__ = AsyncMock(return_value=db)
+        session_cm.__aexit__ = AsyncMock(return_value=False)
+        return session_cm
+
+    @pytest.mark.asyncio
+    async def test_offline_is_published_when_still_offline_after_debounce(self):
+        printer = SimpleNamespace(id=1, name="Workshop", serial_number="SN1")
+        relay = MagicMock()
+        relay.on_printer_offline = AsyncMock()
+        with (
+            patch("backend.app.main.asyncio.sleep", new=AsyncMock()),
+            patch("backend.app.main.printer_manager") as mock_pm,
+            patch("backend.app.main.async_session", return_value=self._session(printer)),
+            patch("backend.app.main.notification_service") as mock_notif,
+            patch("backend.app.main.mqtt_relay", relay),
+        ):
+            mock_pm.is_connected.return_value = False
+            mock_notif.on_printer_offline = AsyncMock()
+            await main_module._maybe_notify_printer_offline(printer_id=1)
+
+        relay.on_printer_offline.assert_awaited_once_with(1, "Workshop", "SN1")
+        assert 1 in main_module._printer_offline_published
+
+    @pytest.mark.asyncio
+    async def test_a_failing_notification_still_publishes_offline(self):
+        printer = SimpleNamespace(id=1, name="Workshop", serial_number="SN1")
+        relay = MagicMock()
+        relay.on_printer_offline = AsyncMock()
+        with (
+            patch("backend.app.main.asyncio.sleep", new=AsyncMock()),
+            patch("backend.app.main.printer_manager") as mock_pm,
+            patch("backend.app.main.async_session", return_value=self._session(printer)),
+            patch("backend.app.main.notification_service") as mock_notif,
+            patch("backend.app.main.mqtt_relay", relay),
+        ):
+            mock_pm.is_connected.return_value = False
+            mock_notif.on_printer_offline = AsyncMock(side_effect=RuntimeError("provider down"))
+            await main_module._maybe_notify_printer_offline(printer_id=1)
+
+        relay.on_printer_offline.assert_awaited_once()
+
+    @pytest.mark.parametrize(("enabled", "connected"), [(False, False), (True, False)])
+    @pytest.mark.asyncio
+    async def test_an_offline_the_relay_could_not_send_is_not_paired_later(self, enabled, connected):
+        """With the relay off or its broker down, no offline went out, so the
+        reconnect must not send an online on its own."""
+        printer = SimpleNamespace(id=1, name="Workshop", serial_number="SN1")
+        relay = MagicMock()
+        relay.enabled = enabled
+        relay.connected = connected
+        relay.on_printer_offline = AsyncMock()
+        with (
+            patch("backend.app.main.asyncio.sleep", new=AsyncMock()),
+            patch("backend.app.main.printer_manager") as mock_pm,
+            patch("backend.app.main.async_session", return_value=self._session(printer)),
+            patch("backend.app.main.notification_service") as mock_notif,
+            patch("backend.app.main.mqtt_relay", relay),
+        ):
+            mock_pm.is_connected.return_value = False
+            mock_notif.on_printer_offline = AsyncMock()
+            await main_module._maybe_notify_printer_offline(printer_id=1)
+
+        assert 1 not in main_module._printer_offline_published
+        mock_notif.on_printer_offline.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_no_offline_when_reconnected_during_debounce(self):
+        relay = MagicMock()
+        relay.on_printer_offline = AsyncMock()
+        with (
+            patch("backend.app.main.asyncio.sleep", new=AsyncMock()),
+            patch("backend.app.main.printer_manager") as mock_pm,
+            patch("backend.app.main.mqtt_relay", relay),
+        ):
+            mock_pm.is_connected.return_value = True
+            await main_module._maybe_notify_printer_offline(printer_id=1)
+
+        relay.on_printer_offline.assert_not_awaited()
+        assert 1 not in main_module._printer_offline_published
+
+    @staticmethod
+    def _handler_patches(relay, pm):
+        ws_mgr = MagicMock()
+        ws_mgr.send_printer_status = AsyncMock()
+        return (
+            patch("backend.app.main.ws_manager", ws_mgr),
+            patch("backend.app.main.mqtt_relay", relay),
+            patch("backend.app.main.printer_manager", pm),
+            _spawn_patch(),
+            patch("backend.app.main.printer_state_to_dict", return_value={}),
+        )
+
+    @staticmethod
+    def _relay_and_pm():
+        relay = MagicMock()
+        relay.on_printer_status = AsyncMock()
+        relay.on_printer_online = AsyncMock()
+        pm = MagicMock()
+        pm.get_printer.return_value = SimpleNamespace(name="Workshop", serial_number="SN1")
+        pm.get_model.return_value = ""
+        pm.is_awaiting_plate_clear.return_value = False
+        return relay, pm
+
+    @pytest.mark.asyncio
+    async def test_online_is_published_once_after_a_published_offline(self):
+        relay, pm = self._relay_and_pm()
+        main_module._printer_last_connected[1] = False
+        main_module._printer_offline_published.add(1)
+        p1, p2, p3, p4, p5 = self._handler_patches(relay, pm)
+        with p1, p2, p3, p4, p5:
+            await main_module.on_printer_status_change(1, _state(connected=True))
+            await main_module.on_printer_status_change(1, _state(connected=True))
+
+        relay.on_printer_online.assert_awaited_once_with(1, "Workshop", "SN1")
+        assert 1 not in main_module._printer_offline_published
+
+    @pytest.mark.asyncio
+    async def test_online_waits_for_the_relay_when_its_broker_is_down_at_reconnect(self):
+        relay, pm = self._relay_and_pm()
+        relay.enabled = True
+        relay.connected = False
+        main_module._printer_last_connected[1] = False
+        main_module._printer_offline_published.add(1)
+        p1, p2, p3, p4, p5 = self._handler_patches(relay, pm)
+        with p1, p2, p3, p4, p5:
+            await main_module.on_printer_status_change(1, _state(connected=True))
+            relay.on_printer_online.assert_not_awaited()
+            assert 1 in main_module._printer_offline_published
+
+            relay.connected = True
+            await main_module.on_printer_status_change(1, _state(connected=True))
+
+        relay.on_printer_online.assert_awaited_once_with(1, "Workshop", "SN1")
+        assert 1 not in main_module._printer_offline_published
+
+    @pytest.mark.asyncio
+    async def test_no_online_without_a_published_offline(self):
+        """A blip shorter than the debounce published no offline, so no online."""
+        relay, pm = self._relay_and_pm()
+        p1, p2, p3, p4, p5 = self._handler_patches(relay, pm)
+        with p1, p2, p3, p4, p5, patch("backend.app.main._maybe_notify_printer_offline", new=AsyncMock()):
+            await main_module.on_printer_status_change(1, _state(connected=True))
+            await main_module.on_printer_status_change(1, _state(connected=False))
+            await main_module.on_printer_status_change(1, _state(connected=True))
+            await asyncio.sleep(0)
+
+        relay.on_printer_online.assert_not_awaited()
 
 
 class TestOfflineEdgeDetection:

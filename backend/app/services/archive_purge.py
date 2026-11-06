@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core import database as _database
 from backend.app.models.archive import PrintArchive
 from backend.app.models.settings import Settings
-from backend.app.services.archive import ArchiveService
+from backend.app.services.archive import ArchiveService, _count_related_queue_items
 
 logger = logging.getLogger(__name__)
 
@@ -274,6 +274,12 @@ class ArchivePurgeService:
         for archive_id in ids:
             async with _database.async_session() as delete_db:
                 service = ArchiveService(delete_db)
+                # Both modes remove the archive's queue items; one that is
+                # printing stays with its archive until the next run, as
+                # DELETE /archives/{id} refuses with 409 (#1734).
+                _total, printing = await _count_related_queue_items(delete_db, archive_id)
+                if printing:
+                    continue
                 if purge_stats:
                     # Hard-delete linked PrintLogEntry rows first so their
                     # filament / cost contributions stop counting in /stats.
@@ -284,7 +290,12 @@ class ArchivePurgeService:
 
                     from backend.app.models.print_log import PrintLogEntry
 
-                    await delete_db.execute(sa_delete(PrintLogEntry).where(PrintLogEntry.archive_id == archive_id))
+                    # Its open run too: it has no archive left to end on.
+                    await delete_db.execute(
+                        sa_delete(PrintLogEntry)
+                        .where(PrintLogEntry.archive_id == archive_id)
+                        .execution_options(include_open_runs=True)
+                    )
                     await delete_db.commit()
                     if await service.delete_archive(archive_id):
                         deleted += 1

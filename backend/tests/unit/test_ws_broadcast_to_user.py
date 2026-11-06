@@ -17,14 +17,20 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from backend.app.core.printer_scope import ALL_PRINTERS
 from backend.app.core.websocket import ConnectionManager
 
 
 def _mock_conn(user_id: int | None):
-    """Build a stand-in WebSocket-shaped object with the principal stamp."""
+    """Build a stand-in WebSocket-shaped object with the principal stamp.
+
+    Every real connection also gets a printer scope at connect (#1727); these
+    tests are about user routing, so it is the unrestricted one.
+    """
     conn = SimpleNamespace()
     conn.state = SimpleNamespace()
     conn.state.bambuddy_principal_user_id = user_id
+    conn.state.bambuddy_printer_scope = ALL_PRINTERS
     conn.send_text = AsyncMock()
     return conn
 

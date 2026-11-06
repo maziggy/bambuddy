@@ -148,6 +148,8 @@ class TestGetInventoryRemain:
                 # Present even when there is nothing to say, so the client can
                 # branch on the field rather than on its absence.
                 "spool": None,
+                # Unpriced: the dialog's estimate uses the default rate.
+                "cost_per_kg": None,
             }
         ]
 

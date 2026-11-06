@@ -326,6 +326,47 @@ describe('AssignToAmsModal', () => {
     });
   });
 
+  describe('fill levels by inventory mode (#3430)', () => {
+    const loaded = {
+      ...PRINTER_STATUS_ONLINE,
+      ams: [
+        {
+          ...PRINTER_STATUS_ONLINE.ams[0],
+          tray: [
+            { id: 0, ...BLANK_TRAY, tray_type: 'PLA', tray_color: 'FF0000FF', remain: 100 },
+            { id: 1, ...BLANK_TRAY },
+            { id: 2, ...BLANK_TRAY },
+            { id: 3, ...BLANK_TRAY },
+          ],
+        },
+      ],
+    };
+    // A built-in row for slot 0 at 10 % left; the AMS itself reports 100 %.
+    const keptRow = [
+      { id: 1, spool_id: 42, printer_id: 1, ams_id: 0, tray_id: 0, spool: { label_weight: 1000, weight_used: 900 } },
+    ];
+
+    async function fillWidths(spoolmanMode: boolean) {
+      vi.mocked(api.getPrinterStatus).mockResolvedValue(loaded as never);
+      vi.mocked(api.getAssignments).mockResolvedValue(keptRow as never);
+      const { container } = render(
+        <AssignToAmsModal isOpen onClose={() => {}} spool={SPOOL as never} printerId={1} spoolmanMode={spoolmanMode} />,
+      );
+      await waitFor(() => expect(container.querySelector('[style*="width"]')).not.toBeNull());
+      await waitFor(() => expect(api.getAssignments).toHaveBeenCalled());
+      await new Promise((r) => setTimeout(r, 20));
+      return [...container.querySelectorAll<HTMLElement>('[style*="width"]')].map((el) => el.style.width);
+    }
+
+    it('Spoolman mode ignores a kept built-in row', async () => {
+      expect(await fillWidths(true)).toContain('100%');
+    });
+
+    it('built-in mode uses it', async () => {
+      expect(await fillWidths(false)).toContain('10%');
+    });
+  });
+
   describe('API routing based on spoolmanMode', () => {
     it('calls assignSpool when spoolmanMode is false', async () => {
       const user = userEvent.setup();

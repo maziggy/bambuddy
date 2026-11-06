@@ -357,7 +357,9 @@ class TestACustomPresetsOwnFilamentId:
                 slicer_filament_name=None,
                 material="PLA",
             )
-        assert idx == "GFNLS03"
+        # SUNLU PLA+'s own id: its setting_id does not follow the "drop the S"
+        # rule, which gave "GFNLS03", an id no profile has (#3387).
+        assert idx == "GFSNL03"
         assert sid == "PFUSfb87cd50b76616"
 
 
@@ -407,6 +409,26 @@ class TestOrcaCloudIsTheFirstSource:
         assert brand == "Overture Matte PLA"
         assert type_override == "PLA"
         svc.close.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_an_ini_quoted_filament_type_is_read_like_the_slicer(self):
+        """#3380: Orca Cloud can return ``filament_type`` INI-quoted."""
+        db = MagicMock()
+        svc = self._svc(
+            {"id": self.ORCA_ID, "name": "My PETG", "content": {"filament_id": "P56e1be0", "filament_type": '"PETG"'}}
+        )
+        with patch(
+            "backend.app.api.routes.orca_cloud._build_authenticated_service",
+            AsyncMock(return_value=svc),
+        ):
+            _idx, _sid, _brand, type_override = await resolve_slicer_filament(
+                db=db,
+                current_user=None,
+                slicer_filament=self.ORCA_ID,
+                slicer_filament_name=None,
+                material="PETG",
+            )
+        assert type_override == "PETG"
 
     @pytest.mark.asyncio
     async def test_a_profile_with_no_filament_id_leaves_the_caller_its_fallback(self):

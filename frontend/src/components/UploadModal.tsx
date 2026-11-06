@@ -43,16 +43,17 @@ export function UploadModal({ onClose, initialFiles }: UploadModalProps) {
   const uploadMutation = useMutation({
     mutationFn: (filesToUpload: File[]) =>
       api.uploadArchivesBulk(filesToUpload),
-    onSuccess: (result) => {
+    onSuccess: (result, sent) => {
       setUploadResult(result);
       queryClient.invalidateQueries({ queryKey: ['archives'] });
       queryClient.invalidateQueries({ queryKey: ['archiveStats'] });
 
-      // Update file statuses based on result
+      // Update file statuses based on result. Each outcome names its file by
+      // position in the batch sent; two files can share a name.
       setFiles((prev) =>
         prev.map((f) => {
-          const success = result.results.find((r) => r.filename === f.file.name);
-          const error = result.errors.find((e) => e.filename === f.file.name);
+          const success = result.results.find((r) => sent[r.index] === f.file);
+          const error = result.errors.find((e) => sent[e.index] === f.file);
           if (success) {
             return { ...f, status: 'success', archiveId: success.id };
           }

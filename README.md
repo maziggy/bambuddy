@@ -242,12 +242,12 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - **Per-filament humidity threshold** — Set a different humidity trigger per filament type (e.g. Nylon at 20%, PLA at 60%, ASA at 30%) instead of one global value. Mixed-material AMS units use the most-restrictive threshold across the loaded spools so a single PLA + Nylon unit triggers at Nylon's level. Drives both the auto-drying scheduler and the hourly humidity alarm so the two can never disagree on whether a unit is "too humid"
 - Dual external spool support for H2D (Ext-L / Ext-R)
 - **Filament Track Switch inlet binding** — Shows which AMS feeds which FTS inlet, and K-profiles follow the inlet
-- **HMS error monitoring with one-click actions** — Live HMS error log with history and the same Resume / Stop / Continue / Retry / Check Assistant / Don't Remind Me action buttons BambuStudio shows. Click and the matching MQTT command goes back to the printer — no more walking to the device just to dismiss a paused-print dialog. Catalog covers every Bambu model (X1 / P1 / A1 / H2 series); buttons are translated in all 15 supported languages
+- **HMS error monitoring with one-click actions** — Live HMS error log with history and the same Resume / Stop / Continue / Retry / Check Assistant / Don't Remind Me action buttons BambuStudio shows. Click and the matching MQTT command goes back to the printer — no more walking to the device just to dismiss a paused-print dialog. Catalog covers every Bambu model (X1 / P1 / A1 / H2 series); buttons are translated in all 16 supported languages
 - **Heater history charts** — Bambuddy logs nozzle, bed, and chamber readings every minute and surfaces them via a tiny chart icon on each heater tile in the printer card. Click for a per-heater modal with current / average / min / max stats, target overlay, and a 6h / 24h / 48h / 7d time range — works on read-only chamber sensors (X1C / P2S) too. AMS humidity and temperature get the same treatment (already shipped).
 - Print success rates & trends
 - Filament usage tracking
 - Cost analytics & failure analysis
-- **AI print-failure detection** — Optional integration with a self-hosted [Obico](https://github.com/TheSpaghettiDetective/obico-server) ML API: watches each running print's camera feed, smooths scores over time (30-frame warmup + EWM + rolling means), and fires a configurable action once per print (notify / pause / pause-and-off)
+- **AI print-failure detection** — Choose a self-hosted [Obico](https://github.com/TheSpaghettiDetective/obico-server) ML API or [OctoEverywhere cloud detection](https://docs.octoeverywhere.com/ai-failure-detection-apis/overview/) with a Gadget API key. Watches running prints through their cameras and supports notifications, pausing, or pausing and turning off linked smart plugs. Obico smooths scores locally; OctoEverywhere provides print quality and warning/pause decisions.
 - Per-user statistics filtering (admin permission gated)
 - Statistics grouped by your own material number
 - CSV/Excel export
@@ -409,7 +409,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - Debug logging toggle with live indicator
 - Live application log viewer with filtering
 - Support bundle generator with comprehensive diagnostics (privacy-filtered)
-- **In-app bug reporting** — Submit bug reports directly from the UI with optional screenshot (upload, paste, or drag & drop), interactive debug log capture (start logging, reproduce at your own pace, stop & submit), and system info. Reports create GitHub issues via a secure relay. Privacy-first: all logs are sanitized and sensitive data (IPs, serials, credentials) is never included.
+- **In-app bug reporting** — Submit bug reports directly from the UI with optional screenshot (upload, paste, or drag & drop), interactive debug log capture (start logging, reproduce at your own pace, stop, then review and submit or discard), and system info. Reports create GitHub issues via a secure relay. Privacy-first: all logs are sanitized and sensitive data (IPs, serials, credentials) is never included.
 
 ### 🔒 Optional Authentication
 - Enable/disable authentication any time
@@ -438,7 +438,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 </tr>
 </table>
 
-**Plus:** Configurable slicer (Bambu Studio / OrcaSlicer) • Customizable themes (style, background, accent) • Mobile responsive • Keyboard shortcuts • 15 languages (EN/DE/ES/FR/IT/JA/KO/NL/PT-BR/RU/SV/TR/UK/ZH-CN/ZH-TW) • Auto updates • Database backup/restore • System info dashboard
+**Plus:** Configurable slicer (Bambu Studio / OrcaSlicer) • Customizable themes (style, background, accent) • Mobile responsive • Keyboard shortcuts • 16 languages (EN/DE/ES/FR/IT/JA/KO/NL/PL/PT-BR/RU/SV/TR/UK/ZH-CN/ZH-TW) • Auto updates • Database backup/restore • System info dashboard
 
 ---
 
@@ -599,7 +599,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 ## 🚀 Quick Start
 
 ### Requirements
-- Python 3.10+ (3.11/3.12 recommended)
+- Python 3.11+ (3.12 or 3.13 recommended)
 - Bambu Lab printer with **Developer Mode** enabled (see below)
 - **"Store sent files on external storage"** enabled in Bambu Studio/OrcaSlicer
 - Same local network as printer
@@ -757,7 +757,7 @@ git clone https://github.com/maziggy/bambuddy.git
 cd bambuddy
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.lock
 
 # Run (--loop asyncio avoids a uvloop TLS bug that can truncate VP FTP uploads)
 uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --loop asyncio
@@ -831,7 +831,7 @@ Full documentation available at **[wiki.bambuddy.cool](http://wiki.bambuddy.cool
 |-----------|------------|
 | Backend | Python, FastAPI, SQLAlchemy |
 | Frontend | React, TypeScript, Tailwind CSS |
-| Database | SQLite (default) or PostgreSQL |
+| Database | SQLite (default) or PostgreSQL 13+ |
 | 3D Viewer | Three.js (models), libvgcode (G-code preview) |
 | Communication | MQTT (TLS), FTPS |
 

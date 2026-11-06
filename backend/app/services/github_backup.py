@@ -8,19 +8,24 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import desc, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import async_session
+from backend.app.core.logging_filters import URL_CREDENTIALS_PATTERN, redact_refused_headers
 from backend.app.models.archive import PrintArchive
+from backend.app.models.archive_alias import ArchiveAlias
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
+from backend.app.models.print_log import INCLUDE_OPEN_RUNS, PrintLogEntry
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.spool import Spool
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
 from backend.app.services.git_providers.factory import get_provider_backend
+from backend.app.services.github_restore import is_restorable_setting_key
 from backend.app.services.printer_manager import printer_manager
+from backend.app.services.secret_fields import SECRET_PLACEHOLDER, is_secret_setting_key, mask_preset
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +48,8 @@ def _bambu_preset_record(setting_id, our_type: str, entry: dict, detail: dict) -
 
     ``user_id`` from the listing is deliberately dropped. It identifies the
     account and adds nothing to a rebuild, and backup repositories can be
-    public.
+    public. A printer connection's credentials in ``setting`` are shown as
+    the placeholder.
     """
     return {
         "setting_id": str(setting_id),
@@ -53,7 +59,7 @@ def _bambu_preset_record(setting_id, our_type: str, entry: dict, detail: dict) -
         "updated_time": entry.get("updated_time"),
         "base_id": detail.get("base_id"),
         "filament_id": detail.get("filament_id"),
-        "setting": detail.get("setting") or {},
+        "setting": mask_preset(detail.get("setting") or {}),
     }
 
 
@@ -62,14 +68,15 @@ def _orca_profile_record(entry: dict) -> dict:
 
     ``content`` is kept whole rather than picked apart: it is the profile, the
     sync API hands it over inline, and Orca owns its shape. Narrowing it here
-    would mean guessing which keys a future restore needs.
+    would mean guessing which keys a future restore needs. A printer
+    connection's credentials are the exception: shown as the placeholder.
     """
     return {
         "id": str(entry.get("id")) if entry.get("id") is not None else None,
         "name": entry.get("name"),
         "updated_time": entry.get("updated_time"),
         "created_time": entry.get("created_time"),
-        "content": entry.get("content"),
+        "content": mask_preset(entry.get("content")),
     }
 
 
@@ -86,6 +93,12 @@ _PROVIDER_DISPLAY_NAMES = {
     "gitea": "Gitea",
     "forgejo": "Forgejo",
 }
+
+
+def _without_refused_headers(result: dict) -> dict:
+    """*result* with its texts masked where an HTTP client refusing a header
+    quoted the value: the stored token, which the API never returns."""
+    return {key: redact_refused_headers(value) if isinstance(value, str) else value for key, value in result.items()}
 
 
 class GitHubBackupService:
@@ -161,7 +174,7 @@ class GitHubBackupService:
         """Test connection and permissions for the given provider."""
         backend = get_provider_backend(provider)
         client = await self._get_client()
-        return await backend.test_connection(repo_url, token, client)
+        return _without_refused_headers(await backend.test_connection(repo_url, token, client))
 
     async def run_backup(self, config_id: int, trigger: str = "manual") -> dict:
         """Run a backup operation.
@@ -292,7 +305,7 @@ class GitHubBackupService:
 
                     provider_name = _PROVIDER_DISPLAY_NAMES.get(config.provider, config.provider)
                     self._backup_progress = f"Pushing to {provider_name}..."
-                    push_result = await self._push_to_provider(config, backup_data)
+                    push_result = _without_refused_headers(await self._push_to_provider(config, backup_data))
 
                     # Update log and config
                     log.status = push_result["status"]
@@ -321,13 +334,14 @@ class GitHubBackupService:
 
                 except Exception as e:
                     logger.exception("Backup failed")
+                    error = redact_refused_headers(str(e)) or ""
                     log.status = "failed"
                     log.completed_at = datetime.now(timezone.utc)
-                    log.error_message = str(e)
+                    log.error_message = error
 
                     config.last_backup_at = datetime.now(timezone.utc)
                     config.last_backup_status = "failed"
-                    config.last_backup_message = str(e)
+                    config.last_backup_message = error
 
                     if config.schedule_enabled:
                         config.next_scheduled_run = self.calculate_next_run(config.schedule_type)
@@ -335,7 +349,7 @@ class GitHubBackupService:
                     await db.commit()
                     return {
                         "success": False,
-                        "message": str(e),
+                        "message": error,
                         "log_id": log_id,
                         "commit_sha": None,
                         "files_changed": 0,
@@ -742,9 +756,19 @@ class GitHubBackupService:
         result = await db.execute(select(Settings))
         settings = result.scalars().all()
 
-        # Filter out sensitive settings
-        sensitive_keys = {"bambu_cloud_token", "auth_secret_key"}
-        settings_data = {s.key: s.value for s in settings if s.key not in sensitive_keys}
+        # A credential is written as the placeholder when set (blank counts as
+        # unset, as it does for the restore), so the restore can still tell
+        # whether a switch had one. A URL with a login in it is
+        # left out: masked, it would be restored over a working one.
+        # Anything else a restore would not write is left out: keys earlier
+        # versions left behind (some hold a credential under a name no rule
+        # recognises), runtime state and Bambuddy's own flags.
+        settings_data = {}
+        for s in settings:
+            if is_secret_setting_key(s.key):
+                settings_data[s.key] = SECRET_PLACEHOLDER if (s.value or "").strip() else s.value
+            elif is_restorable_setting_key(s.key) and not URL_CREDENTIALS_PATTERN.search(s.value or ""):
+                settings_data[s.key] = s.value
 
         files["settings/app_settings.json"] = {
             "version": "1.0",
@@ -756,9 +780,14 @@ class GitHubBackupService:
         result = await db.execute(select(Spool))
         spools = result.scalars().all()
 
-        if not spools:
-            return
+        if spools:
+            self._collect_spool_list(spools, files)
 
+        # Collected without built-in spools too: in Spoolman mode the usage
+        # history names Spoolman's spools, and there are no built-in ones (#3407).
+        await self._collect_spool_usage(db, files)
+
+    def _collect_spool_list(self, spools, files: dict) -> None:
         spool_list = []
         for s in spools:
             spool_data = {
@@ -771,6 +800,8 @@ class GitHubBackupService:
                 "label_weight": s.label_weight,
                 "core_weight": s.core_weight,
                 "weight_used": s.weight_used,
+                # The "Reset Total Consumed" point (WU-7).
+                "weight_used_baseline": s.weight_used_baseline,
                 "weight_locked": s.weight_locked,
                 "slicer_filament": s.slicer_filament,
                 "slicer_filament_name": s.slicer_filament_name,
@@ -788,6 +819,13 @@ class GitHubBackupService:
                 "category": s.category,
                 "low_stock_threshold_pct": s.low_stock_threshold_pct,
                 "storage_location": s.storage_location,
+                # When it was last printed with (LU-4): without it, every spool
+                # read as never used after a restore.
+                "last_used": str(s.last_used) if s.last_used else None,
+                # Last drying (#2863).
+                "last_dried_at": str(s.last_dried_at) if s.last_dried_at else None,
+                "last_dried_temp": s.last_dried_temp,
+                "last_dried_hours": s.last_dried_hours,
                 "tag_uid": s.tag_uid,
                 "tray_uuid": s.tray_uuid,
                 "data_origin": s.data_origin,
@@ -801,8 +839,9 @@ class GitHubBackupService:
             "version": "1.0",
             "spools": spool_list,
         }
+        logger.info("Collected %d spools", len(spool_list))
 
-        # Collect usage history
+    async def _collect_spool_usage(self, db: AsyncSession, files: dict) -> None:
         usage_result = await db.execute(select(SpoolUsageHistory))
         usages = usage_result.scalars().all()
 
@@ -813,6 +852,7 @@ class GitHubBackupService:
                     {
                         "id": u.id,
                         "spool_id": u.spool_id,
+                        "spoolman_spool_id": u.spoolman_spool_id,
                         "printer_id": u.printer_id,
                         "print_name": u.print_name,
                         "archive_id": u.archive_id,
@@ -828,12 +868,18 @@ class GitHubBackupService:
                 "usage_history": usage_list,
             }
 
-        logger.info("Collected %d spools and %d usage records", len(spool_list), len(usages))
+        logger.info("Collected %d usage records", len(usages))
 
     async def _collect_archives(self, db: AsyncSession, files: dict):
         """Collect print archive metadata (no binary files)."""
         result = await db.execute(select(PrintArchive))
         archives = result.scalars().all()
+
+        # Its prints and merges, written whenever archives are: a push keeps
+        # the files a backup leaves out, so skipping an empty list would leave
+        # an earlier backup's beside these archives.
+        await self._collect_print_runs(db, files)
+        await self._collect_archive_aliases(db, files)
 
         if not archives:
             return
@@ -880,6 +926,7 @@ class GitHubBackupService:
                 "quantity": a.quantity,
                 "energy_kwh": a.energy_kwh,
                 "energy_cost": a.energy_cost,
+                "wear_cost": a.wear_cost,
                 "created_at": str(a.created_at) if a.created_at else None,
                 # Soft-deleted archives are collected too — their row is kept on
                 # purpose so the stats endpoint keeps counting their filament and
@@ -910,6 +957,68 @@ class GitHubBackupService:
 
         logger.info("Collected %d print archives", len(archive_list))
 
+    async def _collect_print_runs(self, db: AsyncSession, files: dict) -> None:
+        """Each print of an archive (archive redesign P3): statistics and the
+        print log count these, not archives.
+
+        Left out: the one-tap confirm token (a credential), photo, timelapse
+        and thumbnail paths (their files are not in a Git backup), the energy
+        meter reading at the start (only needed while it prints), and the
+        wallet, cost centre and queue links, none of which are backed up.
+        """
+        runs = (await db.execute(select(PrintLogEntry).execution_options(**{INCLUDE_OPEN_RUNS: True}))).scalars().all()
+        user_names = dict((await db.execute(select(User.id, User.username))).all())
+        files["archives/print_runs.json"] = {
+            "version": "1.0",
+            "runs": [
+                {
+                    "id": r.id,
+                    "archive_id": r.archive_id,
+                    "print_name": r.print_name,
+                    "plate_id": r.plate_id,
+                    "printer_id": r.printer_id,
+                    "printer_name": r.printer_name,
+                    "status": r.status,
+                    "started_at": str(r.started_at) if r.started_at else None,
+                    "completed_at": str(r.completed_at) if r.completed_at else None,
+                    "duration_seconds": r.duration_seconds,
+                    "duration_unmeasured": r.duration_unmeasured,
+                    "ended_offline": r.ended_offline,
+                    "filament_type": r.filament_type,
+                    "filament_color": r.filament_color,
+                    "filament_used_grams": r.filament_used_grams,
+                    "cost": r.cost,
+                    "energy_kwh": r.energy_kwh,
+                    "energy_cost": r.energy_cost,
+                    "wear_cost": r.wear_cost,
+                    "failure_reason": r.failure_reason,
+                    "user_verdict": r.user_verdict,
+                    "user_verdict_source": r.user_verdict_source,
+                    "user_verdict_at": str(r.user_verdict_at) if r.user_verdict_at else None,
+                    "quantity": r.quantity,
+                    "notes": r.notes,
+                    # Who started it, as the print log shows it.
+                    "created_by_username": r.created_by_username,
+                    # Its owner, by name as for archives (ids renumber on a
+                    # rebuilt instance), and only one that still exists: a
+                    # deleted user's name may be someone else's on restore.
+                    "owner_username": user_names.get(r.created_by_id) if r.created_by_id is not None else None,
+                    "created_at": str(r.created_at) if r.created_at else None,
+                }
+                for r in runs
+            ],
+        }
+        logger.info("Collected %d prints", len(runs))
+
+    async def _collect_archive_aliases(self, db: AsyncSession, files: dict) -> None:
+        """Which archive went into which (archive redesign P2), so a restore
+        follows a merged archive to the one it went into."""
+        aliases = (await db.execute(select(ArchiveAlias.merged_archive_id, ArchiveAlias.archive_id))).all()
+        files["archives/aliases.json"] = {
+            "version": "1.0",
+            "aliases": [{"merged_archive_id": merged, "archive_id": into} for merged, into in aliases],
+        }
+
     async def _push_to_provider(self, config: GitHubBackupConfig, files: dict) -> dict:
         """Push files to the configured Git provider."""
         backend = get_provider_backend(config.provider)
@@ -931,18 +1040,6 @@ class GitHubBackupService:
     def progress(self) -> str | None:
         """Get current backup progress message."""
         return self._backup_progress
-
-    async def get_logs(self, config_id: int, limit: int = 50, offset: int = 0) -> list[GitHubBackupLog]:
-        """Get backup logs for a configuration."""
-        async with async_session() as db:
-            result = await db.execute(
-                select(GitHubBackupLog)
-                .where(GitHubBackupLog.config_id == config_id)
-                .order_by(desc(GitHubBackupLog.started_at))
-                .offset(offset)
-                .limit(limit)
-            )
-            return list(result.scalars().all())
 
 
 # Singleton instance

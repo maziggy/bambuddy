@@ -131,7 +131,7 @@ async def test_connection_released_before_preheat_soak(dispatch_case):
 
     item = SimpleNamespace(id=1, preheat_override="on", preheat_chamber_target_override=None)
     printer = SimpleNamespace(id=7, model="P1S")  # no chamber sensor → straight to soak
-    archive = SimpleNamespace(bed_temperature=60)
+    archive = SimpleNamespace(file_path=None, bed_temperature=60)
 
     async with dispatch_case.session_maker() as db:
         # Simulate the caller's earlier reads holding an open transaction.
@@ -169,3 +169,51 @@ async def test_connection_released_before_preheat_soak(dispatch_case):
     assert observed.get("in_transaction_at_soak") is False, (
         "the pooled connection was still idle-in-transaction during the heat-soak wait"
     )
+
+
+@pytest.mark.asyncio
+async def test_a_dispatch_forgets_the_file_browsers_copy(dispatch_case):
+    """The upload replaces the printer's file at that path (TO-C2): a preview
+    kept from before must not be served for the new one."""
+    from backend.app.services.printer_file_cache import printer_file_cache
+
+    scheduler = PrintScheduler()
+    printer_id = dispatch_case.ids.printer_id
+    paths: list[str] = []
+
+    async def delete_old(_ip, _code, remote_path, *args, **kwargs):
+        # The preview someone opened of the old file at this path.
+        paths.append(remote_path)
+        printer_file_cache._keep((printer_id, remote_path), b"old 3mf")
+        return True
+
+    printer_file_cache._keep((printer_id, "/other.3mf"), b"other")
+
+    async with dispatch_case.session_maker() as db:
+        item = await db.get(PrintQueueItem, dispatch_case.ids.item_id)
+        patches = [
+            patch.object(scheduler_module.settings, "base_dir", dispatch_case.base_dir),
+            patch("backend.app.services.print_scheduler.printer_manager.is_connected", MagicMock(return_value=True)),
+            patch("backend.app.services.print_scheduler.printer_manager.get_status", MagicMock(return_value=None)),
+            patch("backend.app.services.print_scheduler.printer_manager.start_print", MagicMock(return_value=True)),
+            patch("backend.app.services.print_scheduler.printer_manager.set_awaiting_plate_clear", MagicMock()),
+            patch(
+                "backend.app.services.print_scheduler.get_ftp_retry_settings",
+                AsyncMock(return_value=(False, 0, 0, 1.0)),
+            ),
+            patch("backend.app.services.print_scheduler.delete_file_async", delete_old),
+            patch("backend.app.services.print_scheduler.upload_file_async", AsyncMock(return_value=True)),
+            patch("backend.app.services.print_scheduler.cache_3mf_download", MagicMock()),
+            discarding_spawn_patch(),
+            patch.object(scheduler, "_propagate_owner_to_printer_manager", AsyncMock()),
+            patch.object(scheduler, "_power_off_if_needed", AsyncMock()),
+            patch.object(scheduler, "_preheat_and_soak", AsyncMock()),
+        ]
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            await scheduler._start_print(db, item)
+
+    assert paths, "the dispatch never replaced a file"
+    assert (printer_id, paths[0]) not in printer_file_cache._entries
+    assert (printer_id, "/other.3mf") in printer_file_cache._entries

@@ -53,7 +53,7 @@ def state_to_numeric(state: str) -> int:
 
 @router.get("/metrics", response_class=Response)
 async def get_metrics(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     authorization: str | None = Header(None),
 ):
     """

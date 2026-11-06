@@ -7,7 +7,7 @@ Tests against a real mock implicit FTPS server, covering:
 - Upload (chunked transfer, progress, error codes)
 - Delete
 - File size
-- Storage info (AVBL, directory scan, diagnose_storage)
+- Storage info (AVBL, directory scan)
 - Model-specific behavior (X1C prot_p, A1 prot_c fallback)
 - Async wrappers
 - Failure injection scenarios (regressions for 0.1.8 bugs)
@@ -19,6 +19,7 @@ import socket
 import threading
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -451,6 +452,68 @@ class TestUpload:
         assert result is False
         client.disconnect()
 
+    @pytest.mark.parametrize(("server_size", "logged_error"), [(100, True), (1024, False), (None, False)])
+    def test_upload_without_a_226_is_checked_on_a_new_connection(
+        self, ftp_client_factory, ftp_server, tmp_path, caplog, server_size, logged_error
+    ):
+        """No 226 within the wait (an H2D can take 30+ s) still lets the upload
+        proceed, but its size is read back on a fresh connection, since the
+        old one may be out of step, and a mismatch is logged as an error."""
+        import logging
+
+        import backend.app.services.bambu_ftp as ftp_mod
+
+        local = tmp_path / "test.bin"
+        local.write_bytes(b"data" * 256)
+        client = ftp_client_factory()
+        client.connect()
+
+        def never_answers():
+            raise TimeoutError("timed out")
+
+        client._ftp.voidresp = never_answers
+        checked: list[str] = []
+
+        def fake_size(c, remote_path):
+            checked.append(remote_path)
+            return server_size
+
+        with (
+            patch.object(ftp_mod, "_size_on_new_connection", fake_size),
+            caplog.at_level(logging.INFO, logger="backend.app.services.bambu_ftp"),
+        ):
+            assert client.upload_file(local, "/cache/test.bin") is True
+        client.disconnect()
+
+        assert checked == ["/cache/test.bin"]
+        errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert bool(errors) is logged_error
+
+    def test_the_read_back_reads_the_size_on_its_own_connection(self, ftp_client_factory, ftp_server, tmp_path):
+        import backend.app.services.bambu_ftp as ftp_mod
+
+        local = tmp_path / "r.bin"
+        local.write_bytes(b"x" * 300)
+        client = ftp_client_factory()
+        client.connect()
+        assert client.upload_file(local, "/cache/r.bin") is True
+
+        assert ftp_mod._size_on_new_connection(client, "/cache/r.bin") == 300
+        client.disconnect()
+
+    def test_a_refused_read_back_does_not_pause_the_printer(self, ftp_client_factory, ftp_server):
+        """A second session can be refused while the first still waits; that
+        must not open the cool-off that skips the printer's archive downloads."""
+        import ssl
+
+        import backend.app.services.bambu_ftp as ftp_mod
+
+        client = ftp_client_factory()
+        with patch.object(ftp_mod.ImplicitFTP_TLS, "connect", side_effect=ssl.SSLError("refused")):
+            assert ftp_mod._size_on_new_connection(client, "/cache/r.bin") is None
+
+        assert not ftp_mod.BambuFTPClient.handshake_blocked("127.0.0.1")
+
     def test_upload_426_with_intact_file_proceeds(self, ftp_client_factory, ftp_server, tmp_path):
         """Some P2S firmware revisions return 426 on voidresp() even when the
         file landed fully (TLS data-channel close races the 226). #1417
@@ -593,73 +656,6 @@ class TestUpload:
         assert result is False
         client.disconnect()
 
-    def test_upload_bytes_426_with_intact_file_proceeds(self, ftp_client_factory, ftp_server):
-        """upload_bytes() mirrors the same SIZE-verify logic as upload_file."""
-        import ftplib  # nosec B402 — tests need the real ftplib to construct mock 426 responses
-
-        client = ftp_client_factory()
-        client.connect()
-        data = b"x" * 1024
-
-        def raise_426():
-            raise ftplib.error_temp("426 Failure reading network stream.")
-
-        def fake_size(_path):
-            return 1024  # printer-side file matches expected size
-
-        client._ftp.voidresp = raise_426
-        client._ftp.size = fake_size
-
-        result = client.upload_bytes(data, "/cache/bytes.bin")
-        assert result is True
-        client.disconnect()
-
-    def test_upload_bytes_426_with_truncated_file_returns_false(self, ftp_client_factory, ftp_server):
-        """The truncated branch for upload_bytes()."""
-        import ftplib  # nosec B402 — tests need the real ftplib to construct mock 426 responses
-
-        client = ftp_client_factory()
-        client.connect()
-        data = b"x" * 1024
-
-        def raise_426():
-            raise ftplib.error_temp("426 Failure reading network stream.")
-
-        def fake_size(_path):
-            return 100
-
-        client._ftp.voidresp = raise_426
-        client._ftp.size = fake_size
-
-        result = client.upload_bytes(data, "/cache/bytes.bin")
-        assert result is False
-        client.disconnect()
-
-    def test_upload_bytes_success(self, ftp_client_factory, ftp_server):
-        """upload_bytes() writes data to server."""
-        data = b"Bytes upload content"
-        client = ftp_client_factory()
-        client.connect()
-        result = client.upload_bytes(data, "/cache/bytes.bin")
-        assert result is True
-        client.disconnect()
-        # Verify via fresh connection
-        time.sleep(_UPLOAD_FLUSH_DELAY)
-        client2 = ftp_client_factory()
-        client2.connect()
-        downloaded = client2.download_file("/cache/bytes.bin")
-        assert downloaded == data
-        client2.disconnect()
-
-    def test_upload_bytes_failure(self, ftp_client_factory, ftp_server):
-        """upload_bytes() returns False on STOR failure."""
-        ftp_server.inject_failure("STOR", 553, "No space.")
-        client = ftp_client_factory()
-        client.connect()
-        result = client.upload_bytes(b"data", "/cache/fail.bin")
-        assert result is False
-        client.disconnect()
-
     def test_upload_large_chunked(self, ftp_client_factory, ftp_server, tmp_path):
         """Large file upload in chunks completes without error.
 
@@ -785,25 +781,6 @@ class TestStorageInfo:
         client = BambuFTPClient("127.0.0.1", "12345678")
         assert client.get_storage_info() is None
 
-    def test_diagnose_storage_success(self, ftp_client_factory, ftp_server):
-        """diagnose_storage() returns connected=True with working diagnostics."""
-        client = ftp_client_factory()
-        client.connect()
-        diag = client.diagnose_storage()
-        assert diag["connected"] is True
-        assert diag["can_list_root"] is True
-        assert diag["can_list_cache"] is True
-        assert diag["pwd"] is not None
-        assert diag["storage_info"] is not None
-        client.disconnect()
-
-    def test_diagnose_storage_not_connected(self):
-        """diagnose_storage() reports not connected."""
-        client = BambuFTPClient("127.0.0.1", "12345678")
-        diag = client.diagnose_storage()
-        assert diag["connected"] is False
-        assert "FTP not connected" in diag["errors"]
-
 
 # ---------------------------------------------------------------------------
 # TestModelSpecificBehavior
@@ -872,7 +849,6 @@ class TestModelSpecificBehavior:
     def test_unknown_model_defaults_prot_p(self, ftp_client_factory):
         """Unknown model defaults to prot_p."""
         client = ftp_client_factory(printer_model="FuturePrinter3000")
-        assert client._is_a1_model() is False
         assert client._should_use_prot_c() is False
         assert client.connect() is True
         client.disconnect()
@@ -1342,21 +1318,6 @@ class TestFailureScenarios:
         client.connect()
         result = client.upload_file(local, "/cache/test.bin")
         assert result is False
-        client.disconnect()
-
-    def test_diagnose_storage_cwd_failure_doesnt_propagate(self, ftp_client_factory, ftp_server):
-        """diagnose_storage CWD failure doesn't crash the whole operation.
-
-        Regression: diagnose_storage() was called in the upload path and
-        a CWD failure would propagate and crash the upload.
-        """
-        ftp_server.inject_failure("CWD", 550, "No such directory.", count=2)
-        client = ftp_client_factory()
-        client.connect()
-        diag = client.diagnose_storage()
-        # Should still return results (with errors noted)
-        assert diag["connected"] is True
-        assert len(diag["errors"]) > 0
         client.disconnect()
 
     def test_failure_injection_count_decrements(self, ftp_client_factory, ftp_server):

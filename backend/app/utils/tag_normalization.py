@@ -1,5 +1,7 @@
 """Shared helpers for normalizing RFID tag and tray identifiers."""
 
+import uuid
+
 
 def normalize_hex(value: str | None) -> str:
     if not value:
@@ -22,3 +24,19 @@ def normalize_tray_uuid(value: str | None) -> str:
     if len(uuid) >= 32:
         uuid = uuid[:32]
     return uuid
+
+
+def is_bambu_tray_uuid(value: str | None) -> bool:
+    """True when ``value`` is a tray UUID a Bambu tag really carries.
+
+    Every tray_uuid seen from the AMS and from tag block 9 is an RFC 4122
+    version-4 UUID. SpoolBuddy daemons before #984 sent tag blocks 4-5 instead,
+    which hold the filament type ("PLA Matte" as hex) and fail this check, so
+    every spool of one type would share an id if such a value were matched or
+    stored.
+    """
+    normalized = normalize_tray_uuid(value)
+    if len(normalized) != 32:
+        return False
+    parsed = uuid.UUID(hex=normalized)
+    return parsed.version == 4 and parsed.variant == uuid.RFC_4122

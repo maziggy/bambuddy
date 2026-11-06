@@ -53,6 +53,43 @@ jobs:
       - name: Run ruff format check
         run: ruff format --check backend/
 
+  backend-typecheck:
+    name: Backend Type Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install the pinned type-check environment
+        # requirements-typecheck.lock, not requirements.txt: the baseline only
+        # holds for these exact library versions (see requirements-typecheck.txt).
+        run: pip install -r requirements-typecheck.lock
+
+      - name: Check the lock covers requirements.txt
+        # A dependency added to requirements.txt but not to the lock would show
+        # up below as an unresolved import instead of saying what is wrong.
+        run: |
+          if ! out=$(pip install --dry-run -r requirements.txt 2>&1); then
+            echo "$out"
+            echo "::error::pip could not resolve requirements.txt against the type-check environment."
+            exit 1
+          fi
+          if echo "$out" | grep '^Would install'; then
+            echo "::error::requirements-typecheck.lock is missing packages from requirements.txt. Regenerate it as described in requirements-typecheck.txt."
+            exit 1
+          fi
+
+      - name: Run basedpyright
+        # Errors recorded in .basedpyright/baseline.json pass; any new one fails.
+        # Lock mode also fails when a baselined error was fixed but the smaller
+        # baseline was not committed.
+        run: basedpyright --pythonpath "$(which python)" --baselinemode=lock
+
   backend-security:
     name: Backend Security
     runs-on: ubuntu-latest
@@ -72,7 +109,7 @@ jobs:
           # setuptools that trips pip-audit (PYSEC-2026-3447, fixed in 83.0.0).
           # A fix exists, so we upgrade rather than --ignore-vuln.
           python -m pip install --upgrade pip setuptools
-          pip install -r requirements.txt
+          pip install -r requirements.lock
           pip install pip-audit
 
       - name: Run pip-audit
@@ -113,14 +150,15 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.lock', 'requirements-dev.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # The pinned versions that ship (Docker, installers), not whatever is newest.
+          pip install -r requirements.lock
           pip install -r requirements-dev.txt
 
       - name: Run tests (shard ${{ matrix.shard }}/4)
@@ -154,6 +192,58 @@ jobs:
             --splits 4 --group ${{ matrix.shard }} \
             --durations-path tests/.test_durations
 
+  backend-postgres-upgrade:
+    # The test suite runs on SQLite only. This builds PostgreSQL databases with
+    # older releases' code, upgrades them and compares each with a fresh
+    # install (see scripts/check_postgres_upgrade.py).
+    name: PostgreSQL Upgrade Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
+    needs: backend-lint
+    services:
+      postgres:
+        # The version the docker-compose example and the wiki use.
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # The release tags: older releases' code builds the databases to upgrade.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          # Its own key: this job installs the lock only, and finishes long
+          # before the test shards, so sharing theirs would save a cache
+          # without the dev packages under their key.
+          key: ${{ runner.os }}-pip-lock-${{ hashFiles('requirements.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-lock-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+
+      - name: Upgrade from older releases and compare with a fresh install
+        timeout-minutes: 10
+        run: python scripts/check_postgres_upgrade.py --url postgresql://postgres:ci@localhost:5432/postgres
+
   # ============================================================================
   # Frontend Checks
   # ============================================================================
@@ -179,6 +269,10 @@ jobs:
       - name: Run ESLint
         working-directory: frontend
         run: npm run lint
+
+      - name: Unused files and dependencies (knip)
+        working-directory: frontend
+        run: npm run check:knip
 
   frontend-security:
     name: Frontend Security

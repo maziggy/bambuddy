@@ -587,3 +587,48 @@ describe("presetCompatibility — BambuStudio's \"# \" user-clone prefix", () =>
     ).toBe('unknown');
   });
 });
+
+describe('presetCompatibility — printer preset saved under a name of its own (#3250)', () => {
+  const RENAMED = 'Bambu Lab H2D 0.4 nozzle - Apply Skew Calibration - Only use once';
+  const H2D = 'Bambu Lab H2D 0.4 nozzle';
+  const index = buildCompatibilityIndex(PRINTER_MODELS, { [RENAMED]: H2D });
+
+  it('matches a stock process by name through the parent', () => {
+    expect(presetCompatibility({ name: '0.16mm Balanced Quality @BBL H2D' }, 'process', RENAMED, index)).toBe('match');
+  });
+
+  it('still rules out a process for another printer', () => {
+    expect(presetCompatibility({ name: '0.20mm Standard @BBL X1C' }, 'process', RENAMED, index)).toBe('mismatch');
+  });
+
+  it('matches a list naming the parent', () => {
+    expect(
+      presetCompatibility({ name: 'Mine', compatible_printers: [H2D] }, 'process', RENAMED, index),
+    ).toBe('match');
+  });
+
+  it('matches a list naming the renamed preset itself', () => {
+    expect(
+      presetCompatibility({ name: 'Mine', compatible_printers: [RENAMED] }, 'process', RENAMED, index),
+    ).toBe('match');
+  });
+
+  it('rejects a list naming neither', () => {
+    expect(
+      presetCompatibility({ name: 'Mine', compatible_printers: [X1C] }, 'process', RENAMED, index),
+    ).toBe('mismatch');
+  });
+
+  it('without a known parent the name alone decides, as before', () => {
+    const noParents = buildCompatibilityIndex(PRINTER_MODELS);
+    expect(
+      presetCompatibility({ name: '0.16mm Balanced Quality @BBL H2D' }, 'process', RENAMED, noParents),
+    ).toBe('mismatch');
+  });
+
+  it('ignores names that collide with Object.prototype', () => {
+    expect(
+      presetCompatibility({ name: '0.16mm Balanced Quality @BBL H2D' }, 'process', 'constructor', index),
+    ).toBe('unknown');
+  });
+});

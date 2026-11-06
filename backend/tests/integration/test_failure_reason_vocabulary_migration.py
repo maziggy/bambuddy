@@ -106,6 +106,8 @@ def test_the_map_covers_every_writer_that_ever_existed() -> None:
     # 3. The two stale-path prose sentences.
     assert m["Stale - print likely cancelled or failed without status update"] == "noStatusUpdate"
     assert m["Stale - reconciled after reconnect, end time unknown"] == "noStatusUpdate"
+    # 4. The offline queue stop (PC-C4).
+    assert m["Stopped by user (printer was offline)"] == "userCancelled"
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +177,7 @@ async def test_running_twice_changes_nothing(db_session: AsyncSession, model) ->
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.sqlite_only  # upgrades its own SQLite database
 async def test_upgrade_from_before_print_log_failure_reason_boots(tmp_path) -> None:
     """A database older than #1378 has no print_log_entries.failure_reason.
 
@@ -214,6 +217,7 @@ async def test_upgrade_from_before_print_log_failure_reason_boots(tmp_path) -> N
         await engine.dispose()
 
 
+@pytest.mark.sqlite_only  # upgrades its own SQLite database
 async def test_archive_missing_from_the_fts_index_is_converted(tmp_path) -> None:
     """Archives created before archive_fts existed were never indexed.
 

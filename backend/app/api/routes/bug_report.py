@@ -73,7 +73,7 @@ async def start_logging(
 @router.post("/stop-logging", response_model=StopLoggingResponse)
 async def stop_logging(
     was_debug: bool = Query(default=False),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Collect logs and restore previous log level."""
     logs = await _get_recent_sanitized_logs()

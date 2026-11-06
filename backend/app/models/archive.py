@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -8,6 +8,8 @@ from backend.app.core.database import Base
 
 class PrintArchive(Base):
     __tablename__ = "print_archives"
+    # SQLite would give a freed id to the next row; see core/database AUTOINCREMENT_TABLES
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id"), nullable=True)
@@ -29,6 +31,12 @@ class PrintArchive(Base):
     content_hash: Mapped[str | None] = mapped_column(String(64))  # SHA256 hash for duplicate detection
     thumbnail_path: Mapped[str | None] = mapped_column(String(500))
     timelapse_path: Mapped[str | None] = mapped_column(String(500))
+    # The plate whose run produced ``timelapse_path`` (#3275). Every plate of a
+    # Send All shares this archive, so a print start may delete the previous
+    # video only when it is the same plate printing again; another plate's
+    # video is the only copy of that plate's run. NULL when unknown -- a
+    # manually attached video, or one attached before this column existed.
+    timelapse_plate_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # True when Bambuddy forced timelapse recording on for this print so the
     # finish-photo extractor (#1397) could pull the post-park-pre-drop frame.
     # The cleanup path uses this to know the timelapse should be deleted
@@ -45,6 +53,12 @@ class PrintArchive(Base):
     # timestamps. NULL for archives predating this, and for baselines taken at
     # completion time, which are useless by construction.
     timelapse_baseline: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # The baseline above was taken off a card that could not be read, so it
+    # says nothing about what was on it. The completion scan then attaches a
+    # video only when exactly one is unclaimed, rather than picking between
+    # several (#3412). Read only alongside a non-NULL baseline, and written by
+    # everything that writes one.
+    timelapse_baseline_unread: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     source_3mf_path: Mapped[str | None] = mapped_column(String(500))  # Original project 3MF from slicer
     f3d_path: Mapped[str | None] = mapped_column(String(500))  # Fusion 360 design file
 
@@ -86,6 +100,14 @@ class PrintArchive(Base):
     # Plate 1. NULL for archives with no specific selected plate.
     plate_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # The slicer's estimate for each plate of the file, by plate index
+    # (``threemf_tools.extract_plate_estimates_from_3mf``): what one print of
+    # a plate is measured against (#3375). The whole-file columns add the
+    # plates up. NULL until the file has been read; ``{}`` for a file
+    # without slice info. None is stored as SQL NULL, not JSON null, so the
+    # fill finds an archive unread again after a restore of its columns.
+    plate_estimates: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+
     # Extended metadata (JSON blob for flexibility)
     extra_data: Mapped[dict | None] = mapped_column(JSON)
 
@@ -98,7 +120,7 @@ class PrintArchive(Base):
 
     # User additions
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
-    wallet_charge_skipped: Mapped[bool] = mapped_column(Boolean, default=False)
+    wallet_charge_skipped: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     tags: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
     cost: Mapped[float | None] = mapped_column(Float)
@@ -144,9 +166,17 @@ class PrintArchive(Base):
     # Energy tracking
     energy_kwh: Mapped[float | None] = mapped_column(Float)  # Energy consumed in kWh
     energy_cost: Mapped[float | None] = mapped_column(Float)  # Cost of energy consumed
+    # Printer wear for the first run, at the printer's hourly wear cost (#694).
+    wear_cost: Mapped[float | None] = mapped_column(Float)
     # Plug lifetime counter captured at print start; delta at print end becomes energy_kwh.
     # Persisted so per-print tracking survives backend restarts mid-print (#941).
     energy_start_kwh: Mapped[float | None] = mapped_column(Float)
+    # When and from which plug that counter was read, and the electricity price
+    # then. With the plug's hourly snapshots in between, these let the print's
+    # cost follow a price that changes while it runs (#1251).
+    energy_start_at: Mapped[datetime | None] = mapped_column(DateTime)
+    energy_start_plug_id: Mapped[int | None] = mapped_column(Integer)
+    energy_start_price: Mapped[float | None] = mapped_column(Float)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

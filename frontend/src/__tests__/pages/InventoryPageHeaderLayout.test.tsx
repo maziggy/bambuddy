@@ -70,9 +70,9 @@ describe('InventoryPage — header layout', () => {
     // Without this the group is as wide as all its buttons laid end to end,
     // whatever the viewport is.
     expect(group.className).toContain('flex-wrap');
-    // All six actions (CSV import/export, Locations, Suppliers (#2988),
-    // labels, add) stay in that one group -- wrapping them is the fix,
-    // hiding any of them is not.
-    expect(group.querySelectorAll('button')).toHaveLength(6);
+    // All seven actions (CSV import/export, Locations, Suppliers (#2988),
+    // labels, assign by QR (#1574), add) stay in that one group -- wrapping
+    // them is the fix, hiding any of them is not.
+    expect(group.querySelectorAll('button')).toHaveLength(7);
   });
 });

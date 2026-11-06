@@ -167,7 +167,7 @@ class TestPostgresBranch:
     @pytest.mark.asyncio
     async def test_pg_branch_uses_true_and_if_not_exists(self):
         executed = await self._capture_sql(is_sqlite_value=False)
-        stmts = [s for s in executed if "controls_printer_power" in s]
+        stmts = [s for s in executed if "ADD COLUMN" in s and "controls_printer_power" in s]
 
         assert len(stmts) == 1, f"expected exactly one statement, got: {stmts!r}"
         assert "IF NOT EXISTS" in stmts[0]  # idempotent on PG, which has no _safe_execute retry semantics
@@ -177,7 +177,7 @@ class TestPostgresBranch:
     async def test_sqlite_branch_uses_numeric_default(self):
         """SQLite has no true/false literal — the switch must not be inverted."""
         executed = await self._capture_sql(is_sqlite_value=True)
-        stmts = [s for s in executed if "controls_printer_power" in s]
+        stmts = [s for s in executed if "ADD COLUMN" in s and "controls_printer_power" in s]
 
         assert len(stmts) == 1
         assert "DEFAULT 1" in stmts[0]

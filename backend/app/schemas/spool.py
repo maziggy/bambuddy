@@ -1,7 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field, field_validator
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
 from backend.app.schemas.supplier import SpoolSupplierResponse
 
 # Visual variant applied to a spool's swatch — purely cosmetic, does not
@@ -92,6 +93,17 @@ def normalize_effect_type(value: str | None) -> str | None:
     return canonical
 
 
+def naive_utc(value: datetime | None) -> datetime | None:
+    """Store a datetime the way Bambuddy's naive ``DateTime`` columns hold it: UTC.
+
+    A browser sends local time with an offset. Dropping the offset without
+    converting would shift the stored moment by that offset (#2863).
+    """
+    if value is not None and value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
 class SpoolBase(BaseModel):
     material: str = Field(..., min_length=1, max_length=50)
     subtype: str | None = None
@@ -155,7 +167,10 @@ class SpoolBase(BaseModel):
 
 
 class SpoolCreate(SpoolBase):
-    pass
+    # Never negative from a client; more than the label is possible (print
+    # tracking of a mis-labelled spool). Here, not on SpoolBase: a response
+    # must still serialise a value stored before there was a bound.
+    weight_used: float = Field(default=0, ge=0)
 
 
 class SpoolBulkCreate(BaseModel):
@@ -163,7 +178,8 @@ class SpoolBulkCreate(BaseModel):
     quantity: int = Field(default=1, ge=1, le=100)
 
 
-class SpoolUpdate(BaseModel):
+class SpoolUpdate(IgnoresNullForRequiredColumns):
+    __orm_table__ = "spool"
     material: str | None = None
     subtype: str | None = None
     color_name: str | None = None
@@ -185,7 +201,7 @@ class SpoolUpdate(BaseModel):
     label_weight: int | None = None
     core_weight: int | None = None
     core_weight_catalog_id: int | None = None
-    weight_used: float | None = None
+    weight_used: float | None = Field(default=None, ge=0)
     slicer_filament: str | None = None
     slicer_filament_name: str | None = None
     nozzle_temp_min: int | None = None
@@ -197,6 +213,14 @@ class SpoolUpdate(BaseModel):
     tag_type: str | None = None
     cost_per_kg: float | None = Field(default=None, ge=0)
     weight_locked: bool | None = None
+    # Set by hand for a drying done outside an AMS; null clears it (#2863).
+    last_dried_at: datetime | None = None
+
+    @field_validator("last_dried_at")
+    @classmethod
+    def _validate_last_dried_at(cls, v: datetime | None) -> datetime | None:
+        return naive_utc(v)
+
     # User-defined category + per-spool low-stock threshold override (#729).
     category: str | None = Field(default=None, max_length=50)
     low_stock_threshold_pct: int | None = Field(default=None, ge=1, le=99)
@@ -268,6 +292,10 @@ class SpoolResponse(SpoolBase):
     rgba: str | None = None
     added_full: bool | None = None
     last_used: datetime | None = None
+    # Last drying (#2863). Only the date is writable, through SpoolUpdate.
+    last_dried_at: datetime | None = None
+    last_dried_temp: int | None = None
+    last_dried_hours: float | None = None
     encode_time: datetime | None = None
     tag_uid: str | None = None
     tray_uuid: str | None = None
@@ -309,6 +337,9 @@ class SpoolAssignmentCreate(BaseModel):
     printer_id: int
     ams_id: int
     tray_id: int
+    # The spool also leaves any other slot it is assigned to, in the same
+    # transaction (#1574): a scanned spool is the one in the user's hand.
+    move: bool = False
 
 
 class SpoolAssignmentResponse(BaseModel):

@@ -24,11 +24,8 @@ interface FilamentData {
 
 interface SpoolmanConfig {
   enabled: boolean;
-  onLinkSpool?: () => void;
-  onUnlinkSpool?: () => void;
   linkedSpoolId?: number | null; // Spoolman spool ID if this tray is already linked
   spoolmanUrl?: string | null; // Base URL for Spoolman (for "Open in Spoolman" link)
-  syncMode?: string | null; // If auto-sync is enabled, we may want to hide the unlink option for Bambu spools
 }
 
 interface InventoryConfig {
@@ -89,7 +86,6 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
   // z-index because z-index doesn't cross stacking-context boundaries.
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const [copied, setCopied] = useState(false);
-  const [showUnlinkConfirm, setShowUnlinkConfirm] = useState(false);
   const triggerRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -581,45 +577,6 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
         </div>,
         document.body,
       )}
-
-      {/* Unlink Confirmation Dialog */}
-      {showUnlinkConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center" onClick={() => setShowUnlinkConfirm(false)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div
-            className="relative bg-bambu-dark-secondary rounded-lg shadow-xl w-full max-w-sm mx-4 border border-bambu-dark-tertiary"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-4 space-y-4">
-              <div className="space-y-2">
-                <h3 className="text-base font-semibold text-white">
-                  {t('spoolman.unlinkConfirmTitle')}
-                </h3>
-                <p className="text-sm text-bambu-gray">
-                  {t('spoolman.unlinkConfirmMessage')}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowUnlinkConfirm(false)}
-                  className="flex-1 px-3 py-2 text-sm font-medium rounded transition-colors bg-bambu-dark hover:bg-bambu-dark-tertiary text-white"
-                >
-                  {t('common.cancel')}
-                </button>
-                <button
-                  onClick={() => {
-                    spoolman?.onUnlinkSpool?.();
-                    setShowUnlinkConfirm(false);
-                  }}
-                  className="flex-1 px-3 py-2 text-sm font-medium rounded transition-colors bg-red-100 dark:bg-red-500/20 hover:bg-red-200 dark:hover:bg-red-500/40 text-red-700 dark:text-red-400"
-                >
-                  {t('inventory.unassignSpool')}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -635,9 +592,13 @@ interface EmptySlotHoverCardProps {
   // surfaces the user-cleared label; undefined / "physical" keeps the
   // historical "Empty slot" wording.
   kind?: 'physical' | 'reset';
+  /** A spool assigned in Bambuddy to a slot the printer reports loaded but
+   *  blank -- typically one swapped in mid-print, which the printer will not
+   *  take a configuration for until the print is over (#3434). */
+  assigned?: { label: string; colorHex?: string | null; onUnassign?: () => void };
 }
 
-export function EmptySlotHoverCard({ children, className = '', configureSlot, onAssignSpool, actions, kind }: EmptySlotHoverCardProps) {
+export function EmptySlotHoverCard({ children, className = '', configureSlot, onAssignSpool, actions, kind, assigned }: EmptySlotHoverCardProps) {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   // Screen-space coords for the portaled card — same pattern as
@@ -700,6 +661,7 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot, on
     <div
       ref={triggerRef}
       className={`relative ${className}`}
+      data-testid="empty-slot"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
@@ -721,18 +683,40 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot, on
             bg-bambu-dark-secondary border border-bambu-dark-tertiary
             rounded-md shadow-lg overflow-hidden
           ">
-            <div className="px-3 py-1.5 text-xs text-bambu-gray whitespace-nowrap">
-              {kind === 'reset' ? t('ams.emptySlotReset') : t('ams.emptySlot')}
-            </div>
+            {assigned ? (
+              <div className="px-3 py-1.5 text-xs space-y-1">
+                <div className="flex items-center gap-1.5 text-white whitespace-nowrap">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full border border-amber-500 border-dashed flex-shrink-0"
+                    style={{ backgroundColor: assigned.colorHex ? `#${assigned.colorHex.slice(0, 6)}` : 'transparent' }}
+                  />
+                  {assigned.label}
+                </div>
+                <div className="text-amber-400 max-w-[14rem]">{t('ams.assignedNotConfigured')}</div>
+              </div>
+            ) : (
+              <div className="px-3 py-1.5 text-xs text-bambu-gray whitespace-nowrap">
+                {kind === 'reset' ? t('ams.emptySlotReset') : t('ams.emptySlot')}
+              </div>
+            )}
             {/* Configure slot button */}
-            {(configureSlot?.enabled || onAssignSpool || actions) && (
+            {(configureSlot?.enabled || onAssignSpool || assigned?.onUnassign || actions) && (
               <div className="px-2 pb-2 space-y-1">
                 {/* Assign before Configure, matching the filled-slot card
                     above (#2791).  The two cards are separate render paths
                     and had drifted into opposite orders, so the menu
                     reshuffled itself depending on whether the slot happened
                     to hold filament. */}
-                {onAssignSpool && (
+                {assigned?.onUnassign && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); dismiss(); assigned.onUnassign?.(); }}
+                    className="w-full flex items-center justify-start gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-red-100 dark:bg-red-500/20 hover:bg-red-200 dark:hover:bg-red-500/40 text-red-700 dark:text-red-400"
+                  >
+                    <Unlink className="w-3.5 h-3.5" />
+                    {t('inventory.unassignSpool')}
+                  </button>
+                )}
+                {onAssignSpool && !assigned && (
                   <button
                     onClick={(e) => { e.stopPropagation(); dismiss(); onAssignSpool(); }}
                     className="w-full flex items-center justify-start gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/40 text-bambu-blue"

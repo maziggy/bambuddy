@@ -23,6 +23,12 @@ class LibraryFolder(Base):
     external_show_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
     external_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    # Ownership (#3201): who made the folder, and whether an admin shared it
+    # with everyone. library:read_own users see only their own folders, shared
+    # ones and the folders holding their files (services/library_folder_access).
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    shared: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+
     # Link to project or archive
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
     # use_alter breaks a dependency cycle in the schema, and is not about this
@@ -212,7 +218,7 @@ class LibraryFile(Base):
     )
 
     @classmethod
-    def active(cls) -> "Select[tuple[LibraryFile]]":
+    def active(cls) -> "Select[LibraryFile]":
         """Select statement that excludes trashed (soft-deleted) files.
 
         Use this in place of ``select(LibraryFile)`` for any user-facing listing

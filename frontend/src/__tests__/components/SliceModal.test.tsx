@@ -35,6 +35,7 @@ vi.mock('../../api/client', () => ({
     createSlicerPipeline: vi.fn(),
     getSlicerPrinterModels: vi.fn(),
     getSlicerPresetValues: vi.fn(),
+    getSlicerLoadedSpools: vi.fn(),
   },
 }));
 
@@ -51,6 +52,7 @@ const mockApi = api as unknown as {
   createSlicerPipeline: ReturnType<typeof vi.fn>;
   getSlicerPrinterModels: ReturnType<typeof vi.fn>;
   getSlicerPresetValues: ReturnType<typeof vi.fn>;
+  getSlicerLoadedSpools: ReturnType<typeof vi.fn>;
 };
 
 function makeUnified(overrides: Partial<UnifiedPresetsResponse> = {}): UnifiedPresetsResponse {
@@ -145,6 +147,8 @@ describe('SliceModal', () => {
     });
     // Default: no saved pipelines. Tests opt in by overriding this.
     mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [] });
+    // Default: no printer online (#3172), so the dialog's filters do nothing.
+    mockApi.getSlicerLoadedSpools.mockResolvedValue({ printers: [] });
   });
 
   it('auto-selects the highest-priority tier per slot on first load', async () => {
@@ -709,6 +713,44 @@ describe('SliceModal', () => {
       expect(mockApi.sliceLibraryFile).toHaveBeenCalledWith(
         100,
         expect.objectContaining({ bed_type: 'Textured PEI Plate' }),
+      );
+    });
+  });
+
+  it("sends the slicer's own names for the SuperTack and Smooth PEI plates (#3359)", async () => {
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+
+    const bedSelect = presetSelects().find((el) =>
+      (el as HTMLSelectElement).options[0]?.textContent?.toLowerCase().includes('auto'),
+    ) as HTMLSelectElement;
+    // BambuStudio and OrcaSlicer slice any other name as Cool Plate.
+    expect(Array.from(bedSelect.options).map((o) => o.value)).toEqual([
+      '',
+      'Cool Plate',
+      'Supertack Plate',
+      'Engineering Plate',
+      'High Temp Plate',
+      'Textured PEI Plate',
+    ]);
+    const user = userEvent.setup();
+    await user.selectOptions(bedSelect, 'Supertack Plate');
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => {
+      expect(mockApi.sliceLibraryFile).toHaveBeenCalledWith(
+        100,
+        expect.objectContaining({ bed_type: 'Supertack Plate' }),
       );
     });
   });
@@ -1701,6 +1743,47 @@ describe('SliceModal', () => {
     });
   });
 
+  it("shows a pipeline's plate the list doesn't offer instead of Auto (#3359)", async () => {
+    mockApi.listSlicerPipelines.mockResolvedValue({
+      pipelines: [
+        {
+          id: 7,
+          name: 'Orca textured',
+          description: null,
+          printer_preset: { source: 'local', id: '1' },
+          process_preset: { source: 'local', id: '2' },
+          filament_presets: [{ source: 'local', id: '3' }],
+          bed_type: 'Textured Cool Plate',
+          target_kind: 'printer_class',
+          target_printer_id: null,
+          target_model_class: null,
+          fanout_strategy: 'max_parallel',
+          created_by: null,
+          created_at: '2026-06-27T00:00:00Z',
+          updated_at: '2026-06-27T00:00:00Z',
+        },
+      ],
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => {
+      const select = screen.getByLabelText(/Apply pipeline/i) as HTMLSelectElement;
+      expect(within(select).getByText('Orca textured')).toBeDefined();
+    });
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText(/Apply pipeline/i), '7');
+
+    const bedSelect = presetSelects().find((el) =>
+      (el as HTMLSelectElement).options[0]?.textContent?.toLowerCase().includes('auto'),
+    ) as HTMLSelectElement;
+    expect(bedSelect.value).toBe('Textured Cool Plate');
+    expect(bedSelect.selectedOptions[0].textContent).toBe('Textured Cool Plate');
+  });
+
   it('saves the current four-slot selection as a new pipeline when the user clicks Save as pipeline', async () => {
     mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [] });
     mockApi.createSlicerPipeline.mockResolvedValue({
@@ -2048,6 +2131,7 @@ describe('SliceModal — process settings in "slice as designed" mode', () => {
     mockApi.getSlicerPresets.mockResolvedValue(fullThreeTier);
     mockApi.getSlicerPresetValues.mockResolvedValue({ resolved: true, values: {}, reason: 'ok' });
     mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [] });
+    mockApi.getSlicerLoadedSpools.mockResolvedValue({ printers: [] });
     mockApi.getSlicerPrinterModels.mockResolvedValue({});
     mockApi.getLibraryFilePlates.mockResolvedValue({
       file_id: 100,
@@ -2132,6 +2216,7 @@ describe('SliceModal — process settings layout', () => {
     mockApi.getSlicerPresets.mockResolvedValue(fullThreeTier);
     mockApi.getSlicerPresetValues.mockResolvedValue({ resolved: true, values: {}, reason: 'ok' });
     mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [] });
+    mockApi.getSlicerLoadedSpools.mockResolvedValue({ printers: [] });
     mockApi.getLibraryFilePlates.mockResolvedValue({
       file_id: 100,
       filename: 'Cube.stl',
@@ -2207,6 +2292,7 @@ describe('SliceModal — presets filtered by the selected printer', () => {
     mockApi.getSlicerPresets.mockResolvedValue(presets);
     mockApi.getSlicerPrinterModels.mockResolvedValue({ 'Bambu Lab X1 Carbon': 'X1C' });
     mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [] });
+    mockApi.getSlicerLoadedSpools.mockResolvedValue({ printers: [] });
     mockApi.getLibraryFilePlates.mockResolvedValue({
       file_id: 100, filename: 'Cube.stl', plates: [], is_multi_plate: false,
     });
@@ -2480,6 +2566,7 @@ describe('SliceModal — material and printer filtering (#2982)', () => {
       'Bambu Lab X1 Carbon': 'X1C',
     });
     mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [] });
+    mockApi.getSlicerLoadedSpools.mockResolvedValue({ printers: [] });
     mockApi.getLibraryFilePlates.mockResolvedValue({ file_id: 100, filename: 'Plate.3mf', plates: [] });
     mockApi.sliceLibraryFile.mockResolvedValue({
       job_id: 42,
@@ -2707,5 +2794,188 @@ describe('SliceModal — material and printer filtering (#2982)', () => {
     );
     const labels = Array.from(processSelect!.options).map((o) => o.textContent);
     expect(labels.some((l) => l?.includes('0.06mm Fine @BBL A1 0.2 nozzle'))).toBe(false);
+  });
+});
+
+describe('SliceModal — preset list order, stock duplicates and search (#3386)', () => {
+  const generics = Array.from({ length: 30 }, (_, i) => ({
+    id: `g-${i}`,
+    name: `Generic Filament ${i + 1}`,
+    source: 'standard' as const,
+  }));
+  const presets = makeUnified({
+    cloud: {
+      printer: [],
+      process: [],
+      filament: [
+        { id: 'PFUS-z', name: 'zeta PLA', source: 'cloud' },
+        { id: 'PFUS-10', name: 'alpha PLA 10', source: 'cloud' },
+        { id: 'PFUS-a', name: 'Alpha PLA', source: 'cloud' },
+        { id: 'PFUS-9', name: 'alpha PLA 9', source: 'cloud' },
+        // Stock, but newer than the bundle: the listing keeps it under Bambu Cloud.
+        { id: 'GFSA99', name: 'Bambu PLA Brand New', source: 'cloud' },
+        // Stock, and the listing dropped its Standard twin.
+        { id: 'GFSA00', name: 'Bambu PLA Basic', source: 'cloud' },
+      ],
+    },
+    standard: {
+      printer: [{ id: 'Bambu Lab X1 Carbon 0.4 nozzle', name: 'Bambu Lab X1 Carbon 0.4 nozzle', source: 'standard' }],
+      process: [
+        { id: '0.20mm Standard', name: '0.20mm Standard', source: 'standard' },
+        { id: '0.12mm Fine tree support', name: '0.12mm Fine tree support', source: 'standard' },
+        { id: '0.08mm Extra Fine', name: '0.08mm Extra Fine', source: 'standard' },
+        { id: '0.4mm Draft', name: '0.4mm Draft', source: 'standard' },
+      ],
+      filament: [
+        { id: 'Generic PVA', name: 'Generic PVA', source: 'standard' },
+        { id: 'Bambu Support For PLA', name: 'Bambu Support For PLA', source: 'standard' },
+        { id: 'eSUN PLA+', name: 'eSUN PLA+', source: 'standard' },
+        { id: 'Bambu PLA Matte', name: 'Bambu PLA Matte', source: 'standard' },
+        {
+          id: 'Bambu PETG HF @BBL H2D',
+          name: 'Bambu PETG HF @BBL H2D',
+          source: 'standard',
+          compatible_printers: ['Bambu Lab H2D 0.4 nozzle'],
+        },
+        ...generics,
+      ],
+    },
+    // The listing dropped the Standard copy of "Bambu PLA Basic".
+    stock_aliases: { 'standard:Bambu PLA Basic': { source: 'cloud', id: 'GFSA00' } },
+  });
+
+  const filamentSelect = () => presetSelects()[3];
+  const groupNames = (select: HTMLSelectElement, label: string) =>
+    Array.from(select.querySelectorAll('optgroup'))
+      .filter((g) => g.label === label)
+      .flatMap((g) => Array.from(g.querySelectorAll('option')).map((o) => o.textContent));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockApi.getSlicerPresets.mockResolvedValue(presets);
+    mockApi.getSlicerPresetValues.mockResolvedValue({ resolved: true, values: {}, reason: 'ok' });
+    mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [] });
+    mockApi.getSlicerLoadedSpools.mockResolvedValue({ printers: [] });
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100, filename: 'Cube.stl', plates: [], is_multi_plate: false,
+    });
+    mockApi.getLibraryFileFilamentRequirements.mockResolvedValue({
+      file_id: 100, filename: 'Cube.stl', plate_id: 1, filaments: [],
+    });
+  });
+
+  const open = async () => {
+    renderWithTracker({ source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' }, onClose: vi.fn() });
+    await waitFor(() => expect(presetSelects()).toHaveLength(4));
+    await waitFor(() => expect(filamentSelect().value).not.toBe(''));
+  };
+
+  it("sorts every group the way the bundled list is ordered", async () => {
+    await open();
+    // Bambu first, then other brands; by name without case, numbers by value.
+    expect(groupNames(filamentSelect(), 'Bambu Cloud')).toEqual([
+      'Bambu PLA Basic',
+      'Bambu PLA Brand New',
+      'Alpha PLA',
+      'alpha PLA 9',
+      'alpha PLA 10',
+      'zeta PLA',
+    ]);
+    // Bambu, Generic, other brands; support materials after every filament.
+    const standard = groupNames(filamentSelect(), 'Standard');
+    expect(standard.slice(0, 4)).toEqual([
+      'Bambu PLA Matte',
+      'Generic Filament 1',
+      'Generic Filament 2',
+      'Generic Filament 3',
+    ]);
+    expect(standard.slice(-3)).toEqual(['eSUN PLA+', 'Bambu Support For PLA', 'Generic PVA']);
+    // Decimals compare by value, and "support" only means a support material
+    // in a filament list.
+    expect(groupNames(presetSelects()[1], 'Standard')).toEqual([
+      '0.08mm Extra Fine',
+      '0.12mm Fine tree support',
+      '0.20mm Standard',
+      '0.4mm Draft',
+    ]);
+  });
+
+  it('applies a pipeline saved with a hidden Standard preset as its Bambu Cloud copy', async () => {
+    const user = userEvent.setup();
+    mockApi.listSlicerPipelines.mockResolvedValue({
+      pipelines: [
+        {
+          id: 7,
+          name: 'Old pipeline',
+          description: null,
+          printer_preset: { source: 'standard', id: 'Bambu Lab X1 Carbon 0.4 nozzle' },
+          process_preset: { source: 'standard', id: '0.20mm Standard' },
+          filament_presets: [{ source: 'standard', id: 'Bambu PLA Basic' }],
+          bed_type: null,
+          target_kind: 'printer_class',
+          target_printer_id: null,
+          target_model_class: null,
+          fanout_strategy: 'max_parallel',
+          created_by: null,
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+    });
+    await open();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Apply pipeline' }), '7');
+    expect(filamentSelect().value).toBe('cloud:GFSA00');
+  });
+
+  it('offers search on every dropdown, and it never drops the selection', async () => {
+    const user = userEvent.setup();
+    await open();
+    // Printer, process and filament each get one, however short the list.
+    const buttons = screen.getAllByRole('button', { name: /: Search$/ });
+    expect(buttons).toHaveLength(3);
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    await user.click(screen.getByRole('button', { name: /^Filament.*: Search$/ }));
+    const boxes = [screen.getByRole('searchbox')];
+    // The status line is there, empty, from the moment the box opens.
+    const status = screen.getByRole('status');
+    expect(status.textContent).toBe('');
+    // The auto-pick lands on the first Bambu Cloud preset in API order.
+    expect(filamentSelect().selectedOptions[0].textContent).toBe('zeta PLA');
+
+    await user.type(boxes[0], 'pla ALPHA');
+    const names = Array.from(filamentSelect().options)
+      .filter((o) => o.value !== '')
+      .map((o) => o.textContent);
+    // Every word has to match, in any order and any case; the selected preset
+    // stays although it doesn't match, so the choice is never lost.
+    expect(names).toEqual(['Alpha PLA', 'alpha PLA 9', 'alpha PLA 10', 'zeta PLA']);
+    expect(filamentSelect().value).toBe('cloud:PFUS-z');
+
+    expect(screen.queryByText('No matching presets found.')).toBeNull();
+
+    // Only the selection left: say so rather than leave a one-entry list.
+    await user.type(boxes[0], ' nothing');
+    // Same element, new text: screen readers announce a change, not a mount.
+    expect(screen.getByRole('status')).toBe(status);
+    expect(status).toHaveTextContent('No matching presets found.');
+
+    // Escape closes the box, brings the full list back and returns focus to
+    // the button that opened it.
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(groupNames(filamentSelect(), 'Standard')).toContain('Generic Filament 30');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Filament.*: Search$/ }));
+  });
+
+  it('searches the held-back presets too, under their own label', async () => {
+    const user = userEvent.setup();
+    await open();
+    // A preset for another printer is held back behind "Show all".
+    expect(Array.from(filamentSelect().options).map((o) => o.textContent)).not.toContain('Bambu PETG HF @BBL H2D');
+
+    await user.click(screen.getByRole('button', { name: /^Filament.*: Search$/ }));
+    await user.type(screen.getByRole('searchbox'), 'petg hf');
+    expect(groupNames(filamentSelect(), 'Other printers')).toEqual(['Bambu PETG HF @BBL H2D']);
+    expect(screen.queryByText('No matching presets found.')).toBeNull();
   });
 });

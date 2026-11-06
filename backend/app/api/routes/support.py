@@ -177,7 +177,7 @@ async def get_logs(
     limit: int = Query(200, ge=1, le=1000, description="Maximum number of entries to return"),
     level: str | None = Query(None, description="Filter by log level (DEBUG, INFO, WARNING, ERROR)"),
     search: str | None = Query(None, description="Search in message or logger name"),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Get recent application log entries with optional filtering."""
     entries, total_lines = read_log_entries(limit=limit, level_filter=level, search=search)
@@ -222,21 +222,20 @@ def _sanitize_path(path: str) -> str:
 
 
 def _detect_docker_network_mode() -> str:
-    """Detect Docker network mode by checking for host-level interfaces.
+    """The container's network mode as the connection diagnostic reads it:
+    "host", "bridge", "macvlan", "ipvlan", "ipvlan_l3", or "unknown".
 
-    In host mode the container shares the host network namespace, so Docker
-    infrastructure interfaces (docker0, br-*, veth*) are visible.  In bridge
-    mode the container is isolated and only sees its own veth (named eth0).
+    This used to be its own copy of the diagnostic's first rule only, so it
+    called a macvlan container bridge (#3417). Shells out to ``ip``: call it
+    off the event loop.
     """
-    try:
-        import socket
+    from backend.app.services.discovery import detect_container_runtime
+    from backend.app.services.printer_diagnostic import _detect_container_network_mode
 
-        for _idx, name in socket.if_nameindex():
-            if name.startswith(("docker", "br-", "veth", "virbr")):
-                return "host"
+    try:
+        return _detect_container_network_mode(detect_container_runtime()) or "unknown"
     except Exception:
-        pass
-    return "bridge"
+        return "unknown"
 
 
 def _mask_subnet(subnet: str) -> str:
@@ -365,6 +364,7 @@ def _collect_process_info() -> dict:
         out["connections"] = len(proc.net_connections(kind="inet"))
     except Exception:
         pass
+    out.update(_collect_fd_info(proc))
 
     # Children by executable name only. The count per name is what identifies a
     # leak; the arguments would leak credentials.
@@ -408,6 +408,72 @@ def _collect_process_info() -> dict:
     except Exception:
         pass
 
+    return out
+
+
+def _fd_kind(target: str) -> str:
+    """What an open descriptor points at, without saying where (#2883)."""
+    for prefix, kind in (("socket:", "socket"), ("pipe:", "pipe"), ("anon_inode:", "anon_inode")):
+        if target.startswith(prefix):
+            return kind
+    if target.endswith(".db"):
+        return "database"
+    if target.endswith(".db-wal"):
+        return "database_wal"
+    if target.endswith(".db-shm"):
+        return "database_shm"
+    if target.startswith("/dev/"):
+        return "device"
+    return "file"
+
+
+def _collect_fd_info(proc) -> dict:
+    """Descriptors in use, by kind, against the limit (#2883).
+
+    #2883 ran out of descriptors at a 1024 limit, and the SQLite pool could
+    account for only part of that. Nobody could say what held the rest, because
+    a bundle carried no count. ``fds_by_type`` answers it from the next report:
+    database, -wal and -shm separately (WAL keeps a closed connection's db fd
+    open), sockets, pipes and everything else. Kinds only, never paths. Linux
+    only for the breakdown; best-effort throughout.
+    """
+    import os
+
+    out: dict = {}
+    try:
+        out["num_fds"] = proc.num_fds()
+    except Exception:
+        pass
+    try:
+        import resource
+
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        infinity = resource.RLIM_INFINITY
+        out["fd_limit"] = {
+            "soft": "unlimited" if soft == infinity else soft,
+            "hard": "unlimited" if hard == infinity else hard,
+        }
+    except Exception:
+        pass
+    try:
+        from backend.app.core import fd_limit
+
+        if fd_limit.startup_status is not None:
+            out["fd_limit_at_startup"] = dict(fd_limit.startup_status)
+    except Exception:
+        pass
+    try:
+        kinds: dict[str, int] = {}
+        for name in os.listdir("/proc/self/fd"):
+            try:
+                kind = _fd_kind(os.readlink(f"/proc/self/fd/{name}"))
+            except OSError:
+                # Closed between listing and reading, which is normal.
+                continue
+            kinds[kind] = kinds.get(kind, 0) + 1
+        out["fds_by_type"] = dict(sorted(kinds.items(), key=lambda kv: -kv[1]))
+    except Exception:
+        pass
     return out
 
 
@@ -643,23 +709,6 @@ async def _collect_github_backup_info(db: AsyncSession) -> dict:
     }
 
 
-async def _check_url_reachable(url: str, timeout: float = 2.0) -> bool | None:
-    """Single HEAD/GET ping with a short timeout. Returns None if URL is empty."""
-    if not url or not url.strip():
-        return None
-    try:
-        import httpx
-
-        async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # nosec B501 — local sidecars often use self-signed; this is a reachability/health probe only, no secrets are sent
-            r = await client.get(url, follow_redirects=False)
-            # Anything that returned a status code counts as reachable, even 404
-            # (the API server is up, just the path was wrong) — separates network
-            # failure from configuration mistakes for the user.
-            return r.status_code is not None
-    except Exception:
-        return False
-
-
 async def _fetch_slicer_health(url: str, timeout: float = 2.0) -> dict | None:
     """Fetch ``/health`` from a slicer sidecar and extract the CLI version.
 
@@ -833,7 +882,7 @@ async def _collect_support_info() -> dict:
             info["docker"] = {
                 "container_memory_limit_bytes": mem_limit,
                 "container_memory_limit_formatted": _format_bytes(mem_limit) if mem_limit else None,
-                "network_mode_hint": _detect_docker_network_mode(),
+                "network_mode_hint": await asyncio.to_thread(_detect_docker_network_mode),
             }
         except Exception:
             logger.debug("Failed to collect Docker info", exc_info=True)
@@ -926,6 +975,7 @@ async def _collect_support_info() -> dict:
                     "ams_tray_count": ams_tray_count,
                     "has_vt_tray": has_vt_tray,
                     "external_camera_configured": bool(printer.external_camera_url),
+                    "camera_light_auto": bool(printer.camera_light_auto),
                     "plate_detection_enabled": printer.plate_detection_enabled,
                     "obico_enabled": obico_globally_enabled
                     and (obico_enabled_set is None or printer.id in obico_enabled_set),
@@ -992,6 +1042,7 @@ async def _collect_support_info() -> dict:
             "host",
             "broker",  # MQTT broker hostname / IP — network exposure
             "credential",
+            "client_id",  # e.g. manyfold_client_id (#1471): half of an OAuth login
         }
         # Value-based safety net: redact anything whose value carries an
         # unambiguous secret prefix, even if the key name didn't match.
@@ -1423,7 +1474,7 @@ async def _get_recent_sanitized_logs(max_lines: int = 200) -> str:
 
 @router.get("/bundle")
 async def generate_support_bundle(
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Generate a support bundle ZIP file for issue reporting."""
     # Check if debug logging is enabled and collect sensitive values for redaction

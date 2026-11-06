@@ -95,7 +95,7 @@ async def test_restore_drops_tables_with_cascade_not_metadata_drop_all():
             "backend.app.core.database._create_engine",
             new=MagicMock(return_value=mock_engine),
         ):
-            await settings_module._import_sqlite_to_postgres(sqlite_path, "postgresql+asyncpg://test/test")
+            await settings_module._import_sqlite_to_postgres(sqlite_path)
 
         # 1. CASCADE drop is emitted, hitting every public-schema table.
         cascade_drops = [s for s in executed_sql if "CASCADE" in s and "pg_tables" in s]
@@ -157,7 +157,7 @@ async def test_restore_cascade_drop_targets_only_public_schema():
             "backend.app.core.database._create_engine",
             new=MagicMock(return_value=mock_engine),
         ):
-            await settings_module._import_sqlite_to_postgres(sqlite_path, "postgresql+asyncpg://test/test")
+            await settings_module._import_sqlite_to_postgres(sqlite_path)
 
         cascade = next((s for s in executed_sql if "CASCADE" in s), None)
         assert cascade is not None
@@ -236,7 +236,7 @@ async def test_restore_drops_every_foreign_key_before_importing_rows():
             "backend.app.core.database._create_engine",
             new=MagicMock(return_value=_mock_pg_engine(executed_sql)),
         ):
-            await settings_module._import_sqlite_to_postgres(sqlite_path, "postgresql+asyncpg://test/test")
+            await settings_module._import_sqlite_to_postgres(sqlite_path)
 
         fk_drops = [i for i, s in enumerate(executed_sql) if "pg_constraint" in s and "DROP CONSTRAINT" in s]
         assert fk_drops, (
@@ -283,9 +283,9 @@ async def test_restore_never_mutates_the_process_wide_orm_metadata(create_all_fa
         with patch("backend.app.core.database._create_engine", new=MagicMock(return_value=engine)):
             if create_all_fails:
                 with pytest.raises(RuntimeError, match="create_all exploded"):
-                    await settings_module._import_sqlite_to_postgres(sqlite_path, "postgresql+asyncpg://test/test")
+                    await settings_module._import_sqlite_to_postgres(sqlite_path)
             else:
-                await settings_module._import_sqlite_to_postgres(sqlite_path, "postgresql+asyncpg://test/test")
+                await settings_module._import_sqlite_to_postgres(sqlite_path)
 
         assert _fk_names(table) == before, "The restore must not add or remove constraints on the shared ORM metadata"
     finally:
@@ -314,7 +314,7 @@ async def test_unrestorable_fk_is_reported_by_its_columns(caplog):
             patch("backend.app.core.database._create_engine", new=MagicMock(return_value=engine)),
             caplog.at_level(logging.INFO, logger="backend.app.api.routes.settings"),
         ):
-            await settings_module._import_sqlite_to_postgres(sqlite_path, "postgresql+asyncpg://test/test")
+            await settings_module._import_sqlite_to_postgres(sqlite_path)
 
         warning = next((r.getMessage() for r in caplog.records if r.levelno == logging.WARNING), None)
         assert warning is not None, "a failed FK restore must be reported"

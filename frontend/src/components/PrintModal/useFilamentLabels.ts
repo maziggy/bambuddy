@@ -38,6 +38,48 @@ interface FilamentReqLike {
 }
 
 /**
+ * Slicer preset id (``tray_info_idx``: GFA01, P-prefixed user presets) to its
+ * name ("Bambu PLA Matte"). The cloud user-preset map wins over the builtin
+ * entry for the same id. Shared by the print dialog and the queue page so both
+ * name a colour within the same product line.
+ */
+export function useFilamentNameByIdx(): Record<string, string> {
+  const { data: builtinFilaments } = useQuery({
+    queryKey: ['builtin-filaments'],
+    queryFn: () => api.getBuiltinFilaments(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: cloudFilamentIdMap } = useQuery({
+    queryKey: ['filament-id-map'],
+    queryFn: () => api.getFilamentIdMap(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  return useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const f of builtinFilaments || []) {
+      if (f.filament_id) map[f.filament_id] = f.name;
+    }
+    // Cloud user-preset map wins when both have the same id — the user-
+    // authored name is the more specific label.
+    for (const [fid, name] of Object.entries(cloudFilamentIdMap || {})) {
+      if (fid && name) map[fid] = name;
+    }
+    return map;
+  }, [builtinFilaments, cloudFilamentIdMap]);
+}
+
+/** The colour catalogue's material for a filament: the product line its
+ *  preset names ("PLA Matte"), else its bare type ("PLA"). */
+export function productLineOf(
+  trayInfoIdx: string | null | undefined,
+  type: string,
+  filamentNameByIdx: Record<string, string>,
+): string {
+  return extractMaterialHint((trayInfoIdx && filamentNameByIdx[trayInfoIdx]) || type);
+}
+
+/**
  * Resolve per-slot human-readable labels for the schedule modal's filament
  * panels (#1718). Both the model-mode ``FilamentOverride`` and the printer-
  * mode ``FilamentMapping`` consume this so the two panels render the same
@@ -59,29 +101,7 @@ interface FilamentReqLike {
  * index without a length check.
  */
 export function useFilamentLabels(reqs: readonly FilamentReqLike[] | undefined): FilamentLabel[] {
-  const { data: builtinFilaments } = useQuery({
-    queryKey: ['builtin-filaments'],
-    queryFn: () => api.getBuiltinFilaments(),
-    staleTime: 5 * 60 * 1000,
-  });
-  const { data: cloudFilamentIdMap } = useQuery({
-    queryKey: ['filament-id-map'],
-    queryFn: () => api.getFilamentIdMap(),
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const filamentNameByIdx = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const f of builtinFilaments || []) {
-      if (f.filament_id) map[f.filament_id] = f.name;
-    }
-    // Cloud user-preset map wins when both have the same id — the user-
-    // authored name is the more specific label.
-    for (const [fid, name] of Object.entries(cloudFilamentIdMap || {})) {
-      if (fid && name) map[fid] = name;
-    }
-    return map;
-  }, [builtinFilaments, cloudFilamentIdMap]);
+  const filamentNameByIdx = useFilamentNameByIdx();
 
   // Compute the per-slot (resolvedName, materialHint) pairs up-front so the
   // ``useQueries`` call below has a stable shape and the render path below

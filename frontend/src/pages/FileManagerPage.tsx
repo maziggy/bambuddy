@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect, useId, lazy, Suspense, type DragEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueries, useMutation, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -44,11 +44,13 @@ import {
   RefreshCw,
   Lock,
   FolderSymlink,
+  FolderInput,
   Tag as TagIcon,
   FileText,
   FileSpreadsheet,
   Info,
   Globe,
+  Users,
   StickyNote,
   Camera,
   Eye,
@@ -63,13 +65,13 @@ import type {
   LibraryFolderCreate,
   LibraryFolderUpdate,
   ExternalFolderCreate,
-  AppSettings,
   Archive,
   Permission,
 } from '../api/client';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
+import { LibraryTagFilterRail } from '../components/LibraryTagFilterRail';
 import { PrintModal } from '../components/PrintModal';
 import { ModelViewerModal } from '../components/ModelViewerModal';
 import { SliceModal } from '../components/SliceModal';
@@ -89,6 +91,8 @@ import { formatFileSize } from '../utils/file';
 import { assignableProjects } from '../utils/projectTree';
 import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import { isSlicedLibraryFile, isSliceableLibraryFile } from '../utils/libraryFiles';
+import { useUiSettings } from '../hooks/useUiSettings';
+import { FOLDER_DRAG_TYPE, isValidFolderMove, isWritableFolder, moveDisallowedFolderIds } from '../utils/libraryFolders';
 
 type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
 type SortDirection = 'asc' | 'desc';
@@ -276,6 +280,17 @@ function filterAndSortFiles(
 
   return result;
 }
+
+// Keep the filename useful when fixed columns consume the available width,
+// and give the header spacer and row checkbox one shared track so every later
+// column stays aligned. min-w-min lets each auth variant size itself to its
+// intrinsic grid width inside the overflow-x-auto wrapper (#3105). Tags get a
+// floor too: with a 0 minimum they took the squeeze the filename used to take,
+// hitting 0px right where the wrapper starts scrolling.
+const fileListGridColumns = (authEnabled: boolean) => authEnabled
+  ? 'grid-cols-[24px_minmax(240px,1fr)_120px_100px_100px_100px_minmax(96px,200px)_220px]'
+  : 'grid-cols-[24px_minmax(240px,1fr)_100px_100px_100px_minmax(96px,200px)_220px]';
+const fileListGridMinWidth = 'min-w-min';
 
 // New Folder Modal
 interface NewFolderModalProps {
@@ -512,6 +527,71 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
   );
 }
 
+// Destination picker shared by "Move files" and "Move folder" (#3305): the
+// root entry, then the tree flattened with indentation. `disabledIds` greys a
+// folder out with `disabledTitle`; `currentId` marks (and disables) the one
+// the items already live in.
+type MoveTarget = { id: number | null; name: string; depth: number; canWrite: boolean };
+
+interface FolderTargetListProps {
+  folders: LibraryFolderTree[];
+  rootLabel: string;
+  currentId: number | null;
+  disabledIds?: Set<number>;
+  disabledTitle?: string;
+  // undefined = nothing picked yet (null is the root entry).
+  value: number | null | undefined;
+  onChange: (id: number | null) => void;
+  t: TFunction;
+}
+
+function FolderTargetList({ folders, rootLabel, currentId, disabledIds, disabledTitle, value, onChange, t }: FolderTargetListProps) {
+  // can_write: a library:read_own user moves files only into their own and
+  // shared folders (#3201); the rest stay listed so the tree keeps its shape.
+  const flattenFolders = (items: LibraryFolderTree[], depth = 0): MoveTarget[] => {
+    const result: MoveTarget[] = [];
+    for (const item of items) {
+      result.push({ id: item.id, name: item.name, depth, canWrite: isWritableFolder(item) });
+      if (item.children.length > 0) {
+        result.push(...flattenFolders(item.children, depth + 1));
+      }
+    }
+    return result;
+  };
+
+  const flatFolders: MoveTarget[] = [{ id: null, name: rootLabel, depth: 0, canWrite: true }, ...flattenFolders(folders)];
+
+  return (
+    <div className="max-h-64 overflow-y-auto space-y-1">
+      {flatFolders.map((folder) => {
+        const isCurrent = folder.id === currentId;
+        const isExcluded = folder.id !== null && disabledIds?.has(folder.id) === true;
+        const disabled = isCurrent || isExcluded || !folder.canWrite;
+        return (
+          <button
+            key={folder.id ?? 'root'}
+            onClick={() => onChange(folder.id)}
+            disabled={disabled}
+            title={isExcluded ? disabledTitle : !folder.canWrite ? t('fileManager.folderNotWritable') : undefined}
+            className={`w-full text-left px-3 py-2 rounded transition-colors flex items-center gap-2 ${
+              value === folder.id
+                ? 'bg-bambu-green/20 text-bambu-green'
+                : disabled
+                ? 'opacity-50 cursor-not-allowed text-bambu-gray'
+                : 'hover:bg-bambu-dark text-white'
+            }`}
+            style={{ paddingLeft: `${12 + folder.depth * 16}px` }}
+          >
+            <FolderOpen className="w-4 h-4" />
+            {folder.name}
+            {isCurrent && <span className="text-xs text-bambu-gray ml-auto">({t('fileManager.current')})</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // Move Files Modal
 interface MoveFilesModalProps {
   folders: LibraryFolderTree[];
@@ -526,19 +606,6 @@ interface MoveFilesModalProps {
 function MoveFilesModal({ folders, selectedFiles, currentFolderId, onClose, onMove, isLoading, t }: MoveFilesModalProps) {
   const [targetFolder, setTargetFolder] = useState<number | null>(null);
 
-  const flattenFolders = (items: LibraryFolderTree[], depth = 0): { id: number | null; name: string; depth: number }[] => {
-    const result: { id: number | null; name: string; depth: number }[] = [];
-    for (const item of items) {
-      result.push({ id: item.id, name: item.name, depth });
-      if (item.children.length > 0) {
-        result.push(...flattenFolders(item.children, depth + 1));
-      }
-    }
-    return result;
-  };
-
-  const flatFolders = [{ id: null, name: t('fileManager.rootNoFolder'), depth: 0 }, ...flattenFolders(folders)];
-
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
       <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary">
@@ -546,32 +613,66 @@ function MoveFilesModal({ folders, selectedFiles, currentFolderId, onClose, onMo
           <h2 className="text-lg font-semibold text-white">{t('fileManager.moveFiles', { count: selectedFiles.length })}</h2>
         </div>
         <div className="p-4 space-y-4">
-          <div className="max-h-64 overflow-y-auto space-y-1">
-            {flatFolders.map((folder) => (
-              <button
-                key={folder.id ?? 'root'}
-                onClick={() => setTargetFolder(folder.id)}
-                disabled={folder.id === currentFolderId}
-                className={`w-full text-left px-3 py-2 rounded transition-colors flex items-center gap-2 ${
-                  targetFolder === folder.id
-                    ? 'bg-bambu-green/20 text-bambu-green'
-                    : folder.id === currentFolderId
-                    ? 'opacity-50 cursor-not-allowed text-bambu-gray'
-                    : 'hover:bg-bambu-dark text-white'
-                }`}
-                style={{ paddingLeft: `${12 + folder.depth * 16}px` }}
-              >
-                <FolderOpen className="w-4 h-4" />
-                {folder.name}
-                {folder.id === currentFolderId && <span className="text-xs text-bambu-gray ml-auto">({t('fileManager.current')})</span>}
-              </button>
-            ))}
-          </div>
+          <FolderTargetList
+            folders={folders}
+            rootLabel={t('fileManager.rootNoFolder')}
+            currentId={currentFolderId}
+            value={targetFolder}
+            onChange={setTargetFolder}
+            t={t}
+          />
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={onClose}>
               {t('common.cancel')}
             </Button>
             <Button onClick={() => onMove(targetFolder)} disabled={isLoading}>
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('common.move')}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Move Folder Modal (#3305). Same picker as files, minus the folder itself,
+// its subtree and every external folder; "Root" lifts it to the top level.
+interface MoveFolderModalProps {
+  folders: LibraryFolderTree[];
+  folder: LibraryFolderTree;
+  onClose: () => void;
+  onMove: (parentId: number | null) => void;
+  isLoading: boolean;
+  t: TFunction;
+}
+
+function MoveFolderModal({ folders, folder, onClose, onMove, isLoading, t }: MoveFolderModalProps) {
+  const [targetFolder, setTargetFolder] = useState<number | null | undefined>(undefined);
+  const disabledIds = useMemo(() => moveDisallowedFolderIds(folders, folder.id), [folders, folder.id]);
+  const canMove = targetFolder !== undefined && isValidFolderMove(folders, folder, targetFolder);
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary">
+        <div className="p-4 border-b border-bambu-dark-tertiary">
+          <h2 className="text-lg font-semibold text-white truncate">{t('fileManager.moveFolderTo', { name: folder.name })}</h2>
+        </div>
+        <div className="p-4 space-y-4">
+          <FolderTargetList
+            folders={folders}
+            rootLabel={t('fileManager.moveToRoot')}
+            currentId={folder.parent_id}
+            disabledIds={disabledIds}
+            disabledTitle={t('fileManager.moveFolderInvalidTarget')}
+            value={targetFolder}
+            onChange={setTargetFolder}
+            t={t}
+          />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={() => targetFolder !== undefined && onMove(targetFolder)} disabled={isLoading || !canMove}>
               {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('common.move')}
             </Button>
           </div>
@@ -751,6 +852,92 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading, t }: LinkFolderMo
   );
 }
 
+// Folder drag and drop (#3305). The page owns the dragged folder (so drop
+// targets can decide validity during dragover, when the payload is not yet
+// readable), the one highlighted target and the mutation; rows and columns
+// only report where it landed.
+interface FolderDragProps {
+  canDrag: (folder: LibraryFolderTree) => boolean;
+  onDragStart: (folder: LibraryFolderTree, e: DragEvent) => void;
+  onDragEnd: () => void;
+  // Would dropping the folder being dragged onto this destination (null =
+  // root) be a real, allowed move? False while nothing is being dragged.
+  canDropOn: (destinationId: number | null) => boolean;
+  onDrop: (destinationId: number | null) => void;
+  // The drop target under the pointer (a useId key), or null. Shared so a
+  // column stops highlighting the moment a row inside it takes over.
+  activeTarget: string | null;
+  setActiveTarget: (key: string | null) => void;
+}
+
+// Drop-target behaviour for one destination: accepts the drag only when the
+// page says the move is valid and highlights while it is the active target.
+// A folder drag never travels past the innermost target, accepted or not:
+// a row that refuses the drop (e.g. the folder's own parent) must not hand it
+// to the column around it, which would move the folder somewhere else. It
+// also keeps the drag away from the page-wide upload zone.
+function useFolderDropTarget(folderDrag: FolderDragProps | undefined, destinationId: number | null) {
+  const key = useId();
+  if (!folderDrag) return { isOver: false, handlers: {} };
+  const isFolderDrag = (e: DragEvent) => e.dataTransfer.types.includes(FOLDER_DRAG_TYPE);
+  const claim = (e: DragEvent) => {
+    e.stopPropagation();
+    const accepted = folderDrag.canDropOn(destinationId);
+    if (accepted) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    } else {
+      // Not cancelling the event is what makes the browser show "no drop".
+      e.dataTransfer.dropEffect = 'none';
+    }
+    const next = accepted ? key : null;
+    if (folderDrag.activeTarget !== next) folderDrag.setActiveTarget(next);
+  };
+  const handlers = {
+    onDragEnter: (e: DragEvent) => {
+      if (isFolderDrag(e)) claim(e);
+    },
+    onDragOver: (e: DragEvent) => {
+      if (isFolderDrag(e)) claim(e);
+    },
+    onDragLeave: (e: DragEvent) => {
+      const next = e.relatedTarget as Node | null;
+      if ((!next || !(e.currentTarget as Node).contains(next)) && folderDrag.activeTarget === key) {
+        folderDrag.setActiveTarget(null);
+      }
+    },
+    onDrop: (e: DragEvent) => {
+      if (!isFolderDrag(e)) return;
+      e.stopPropagation();
+      folderDrag.setActiveTarget(null);
+      if (!folderDrag.canDropOn(destinationId)) return;
+      e.preventDefault();
+      folderDrag.onDrop(destinationId);
+    },
+  };
+  return { isOver: folderDrag.activeTarget === key, handlers };
+}
+
+const FOLDER_DROP_TARGET_CLASS = 'ring-1 ring-inset ring-bambu-green bg-bambu-green/10';
+
+// A plain div that is also a folder drop target — for hosts that render rows
+// inside a `.map` and so cannot call the hook themselves.
+type FolderDropZoneProps = React.HTMLAttributes<HTMLDivElement> & {
+  folderDrag?: FolderDragProps;
+  destinationId: number | null;
+  // Accept drops at all; false renders a plain div (e.g. the external bucket).
+  enabled?: boolean;
+};
+
+function FolderDropZone({ folderDrag, destinationId, enabled = true, className = '', children, ...rest }: FolderDropZoneProps) {
+  const { isOver, handlers } = useFolderDropTarget(enabled ? folderDrag : undefined, destinationId);
+  return (
+    <div {...rest} {...handlers} className={`${className} ${isOver ? FOLDER_DROP_TARGET_CLASS : ''}`}>
+      {children}
+    </div>
+  );
+}
+
 // Folder Tree Item
 interface FolderTreeItemProps {
   folder: LibraryFolderTree;
@@ -759,6 +946,9 @@ interface FolderTreeItemProps {
   onDelete: (id: number) => void;
   onLink: (folder: LibraryFolderTree) => void;
   onRename: (folder: LibraryFolderTree) => void;
+  onMove?: (folder: LibraryFolderTree) => void;
+  onToggleShared?: (folder: LibraryFolderTree) => void;
+  folderDrag?: FolderDragProps;
   depth?: number;
   wrapNames?: boolean;
   defaultExpanded?: boolean;
@@ -777,6 +967,10 @@ interface FolderActionsMenuProps {
   onDelete: (id: number) => void;
   onLink: (folder: LibraryFolderTree) => void;
   onRename: (folder: LibraryFolderTree) => void;
+  // Move to root or into another folder (#3305). Not offered for external folders.
+  onMove?: (folder: LibraryFolderTree) => void;
+  // Share with every library:read_own user, or stop (#3201). library:update_all only.
+  onToggleShared?: (folder: LibraryFolderTree) => void;
   hasPermission: (permission: Permission) => boolean;
   // Hide the kebab until its `group` row is hovered or focused — only for
   // pointers that can hover (#2865). The menu is a DOM descendant, so the
@@ -787,7 +981,7 @@ interface FolderActionsMenuProps {
   t: TFunction;
 }
 
-function FolderActionsMenu({ folder, onDelete, onLink, onRename, hasPermission, revealOnHover = false, tabIndex, t }: FolderActionsMenuProps) {
+function FolderActionsMenu({ folder, onDelete, onLink, onRename, onMove, onToggleShared, hasPermission, revealOnHover = false, tabIndex, t }: FolderActionsMenuProps) {
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -801,18 +995,23 @@ function FolderActionsMenu({ folder, onDelete, onLink, onRename, hasPermission, 
   const hasChildren = folder.children.length > 0;
   const isLinked = folder.project_id || folder.archive_id;
   const isExternal = folder.is_external;
-  // #1781: users with only library:delete_own may delete empty, unlinked,
-  // non-external folders. The backend enforces the same rule and additionally
-  // counts trashed files (invisible here), so a 403 can still come back.
+  // The backend says what this user may do with the folder (#3201): delete
+  // their own folder when everything in it is theirs, or an ownerless empty
+  // one (#1781). The fallbacks cover a response without those fields.
   const canDeleteFolder =
-    hasPermission('library:delete_all') ||
-    (hasPermission('library:delete_own') && folder.file_count === 0 && !hasChildren && !isExternal && !isLinked);
+    folder.can_delete ??
+    (hasPermission('library:delete_all') ||
+      (hasPermission('library:delete_own') && folder.file_count === 0 && !hasChildren && !isExternal && !isLinked));
   const deleteDisabledTooltip = canDeleteFolder
     ? undefined
     : hasPermission('library:delete_own') && !isExternal && !isLinked
-      ? t('fileManager.onlyEmptyFoldersDeletable')
+      ? t('fileManager.onlyOwnFoldersDeletable')
       : t('fileManager.noPermissionDeleteFolder');
-  const canRename = hasPermission('library:update_all');
+  const canRename = folder.can_rename ?? hasPermission('library:update_all');
+  // Moving is the same backend update as renaming (#3305), so it follows the
+  // same gate; the picker handles where the folder may go.
+  const canMove = canRename;
+  const canLink = hasPermission('library:update_all');
 
   const items: ContextMenuItem[] = [
     {
@@ -822,13 +1021,34 @@ function FolderActionsMenu({ folder, onDelete, onLink, onRename, hasPermission, 
       disabled: !canRename,
       title: !canRename ? t('fileManager.noPermissionRenameFolder') : undefined,
     },
+    ...(onMove && !isExternal
+      ? [
+          {
+            label: t('fileManager.moveFolder'),
+            icon: <FolderInput className="w-3.5 h-3.5" />,
+            onClick: () => onMove(folder),
+            disabled: !canMove,
+            title: !canMove ? t('fileManager.noPermissionMoveFolder') : undefined,
+          },
+        ]
+      : []),
     {
       label: isLinked ? t('fileManager.changeLink') : t('fileManager.linkTo'),
       icon: <Link2 className="w-3.5 h-3.5" />,
       onClick: () => onLink(folder),
-      disabled: !canRename,
-      title: !canRename ? t('fileManager.noPermissionLinkFolder') : undefined,
+      disabled: !canLink,
+      title: !canLink ? t('fileManager.noPermissionLinkFolder') : undefined,
     },
+    ...(onToggleShared && canLink
+      ? [
+          {
+            label: folder.shared ? t('fileManager.unshareFolder') : t('fileManager.shareFolder'),
+            icon: <Users className="w-3.5 h-3.5" />,
+            onClick: () => onToggleShared(folder),
+            title: t('fileManager.shareFolderHint'),
+          },
+        ]
+      : []),
     {
       label: t('common.delete'),
       icon: <Trash2 className="w-3.5 h-3.5" />,
@@ -876,11 +1096,13 @@ function FolderActionsMenu({ folder, onDelete, onLink, onRename, hasPermission, 
   );
 }
 
-function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, onRename, depth = 0, wrapNames = false, defaultExpanded = true, showModified = false, hasPermission, t }: FolderTreeItemProps) {
+function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, onRename, onMove, onToggleShared, folderDrag, depth = 0, wrapNames = false, defaultExpanded = true, showModified = false, hasPermission, t }: FolderTreeItemProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const hasChildren = folder.children.length > 0;
   const isLinked = folder.project_id || folder.archive_id;
   const isExternal = folder.is_external;
+  const canDrag = folderDrag?.canDrag(folder) === true;
+  const { isOver, handlers: dropHandlers } = useFolderDropTarget(folderDrag, folder.id);
 
   return (
     <div>
@@ -889,9 +1111,13 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
           selectedFolderId === folder.id
             ? 'bg-bambu-green/20 text-bambu-green'
             : 'hover:bg-bambu-dark text-white'
-        }`}
+        } ${isOver ? FOLDER_DROP_TARGET_CLASS : ''}`}
         style={{ paddingLeft: `${8 + depth * 12}px` }}
         onClick={() => onSelect(folder.id)}
+        draggable={canDrag || undefined}
+        onDragStart={canDrag ? (e) => folderDrag?.onDragStart(folder, e) : undefined}
+        onDragEnd={canDrag ? folderDrag?.onDragEnd : undefined}
+        {...dropHandlers}
       >
         {hasChildren ? (
           <button
@@ -940,6 +1166,11 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
             )}
           </button>
         )}
+        {folder.shared && (
+          <span title={t('fileManager.sharedFolder')}>
+            <Users className="w-3 h-3 text-bambu-gray flex-shrink-0" />
+          </span>
+        )}
         {/* Read-only indicator for external folders */}
         {isExternal && folder.external_readonly && (
           <span title={t('fileManager.readOnly')}>
@@ -964,6 +1195,8 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
           onDelete={onDelete}
           onLink={onLink}
           onRename={onRename}
+          onMove={onMove}
+          onToggleShared={onToggleShared}
           hasPermission={hasPermission}
           revealOnHover={!wrapNames}
           t={t}
@@ -980,6 +1213,9 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
               onDelete={onDelete}
               onLink={onLink}
               onRename={onRename}
+              onMove={onMove}
+              onToggleShared={onToggleShared}
+              folderDrag={folderDrag}
               depth={depth + 1}
               wrapNames={wrapNames}
               defaultExpanded={defaultExpanded}
@@ -995,9 +1231,15 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
 }
 
 // File Card
+// The mark on a file a ?highlight= link points at; the Archives page's colour.
+const HIGHLIGHT_CARD_STYLE = { outline: '4px solid #facc15', outlineOffset: '2px' } as const;
+const HIGHLIGHT_ROW_STYLE = { outline: '2px solid #facc15', outlineOffset: '-2px' } as const;
+
 interface FileCardProps {
   file: LibraryFileListItem;
   isSelected: boolean;
+  /** The file a ?highlight= link points at, marked for a few seconds. */
+  isHighlighted?: boolean;
   onSelect: (id: number) => void;
   onDelete: (id: number) => void;
   onDownload: (id: number) => void;
@@ -1024,7 +1266,7 @@ interface FileCardProps {
   t: TFunction;
 }
 
-function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, desktopSlicer, canSlice, onPreview, onRename, onDetails, onGenerateThumbnail, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
+function FileCard({ file, isSelected, isHighlighted, onSelect, onDelete, onDownload, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, desktopSlicer, canSlice, onPreview, onRename, onDetails, onGenerateThumbnail, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
   // Viewport coordinates rather than a flag, because the menu is rendered by
   // `ContextMenu` at `position: fixed` and anchored to the button (#2846). The
   // card it belongs to is only ~270px tall for a bare STL, which is shorter
@@ -1130,6 +1372,8 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
 
   return (
     <div
+      data-file-id={file.id}
+      style={isHighlighted ? HIGHLIGHT_CARD_STYLE : undefined}
       className={`group relative bg-bambu-dark-secondary rounded-lg border transition-all cursor-pointer ${
         isSelected
           ? 'border-bambu-green ring-1 ring-bambu-green'
@@ -1145,6 +1389,7 @@ function FileCard({ file, isSelected, onSelect, onDelete, onDownload, onPrint, o
         {file.thumbnail_path ? (
           <img
             src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersion ? ((api.getLibraryFileThumbnailUrl(file.id).includes('?') ? '&' : '?') + `v=${thumbnailVersion}`) : ''}`}
+            loading="lazy"
             alt={file.filename}
             className="w-full h-full object-cover"
           />
@@ -1491,6 +1736,7 @@ function FileActionStrip({ file, onPrint, onSlice, onOpenInSlicer, onRunPipeline
 interface ColumnFileRowProps {
   file: LibraryFileListItem;
   isSelected: boolean;
+  isHighlighted?: boolean;
   isFocused: boolean;
   showModified: boolean;
   thumbnailVersion?: number;
@@ -1500,11 +1746,12 @@ interface ColumnFileRowProps {
   t: TFunction;
 }
 
-function ColumnFileRow({ file, isSelected, isFocused, showModified, thumbnailVersion, onSelect, onOpen, actionProps, t }: ColumnFileRowProps) {
+function ColumnFileRow({ file, isSelected, isHighlighted, isFocused, showModified, thumbnailVersion, onSelect, onOpen, actionProps, t }: ColumnFileRowProps) {
   const thumbnailUrl = api.getLibraryFileThumbnailUrl(file.id);
   return (
     <div
       data-file-id={file.id}
+      style={isHighlighted ? HIGHLIGHT_ROW_STYLE : undefined}
       onClick={() => onSelect(file)}
       onDoubleClick={() => onOpen(file)}
       className={`group flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${
@@ -1521,6 +1768,7 @@ function ColumnFileRow({ file, isSelected, isFocused, showModified, thumbnailVer
         {file.thumbnail_path ? (
           <img
             src={`${thumbnailUrl}${thumbnailVersion ? ((thumbnailUrl.includes('?') ? '&' : '?') + `v=${thumbnailVersion}`) : ''}`}
+            loading="lazy"
             alt=""
             className="w-full h-full object-cover"
           />
@@ -1591,6 +1839,13 @@ export function FileManagerPage() {
   const [showBulkTagsModal, setShowBulkTagsModal] = useState(false);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [linkFolder, setLinkFolder] = useState<LibraryFolderTree | null>(null);
+  // Folder being moved via the context menu picker / by drag (#3305).
+  const [moveFolder, setMoveFolder] = useState<LibraryFolderTree | null>(null);
+  const [draggingFolder, setDraggingFolder] = useState<LibraryFolderTree | null>(null);
+  // The one folder drop target under the pointer. A single page-level value
+  // (not one flag per target) so a column can never stay lit after a row
+  // inside it took the drag or the drop (#3305 review).
+  const [folderDropTarget, setFolderDropTarget] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'folder' | 'bulk'; id: number; count?: number } | null>(null);
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
   const [sliceFile, setSliceFile] = useState<LibraryFileListItem | null>(null);
@@ -1705,11 +1960,41 @@ export function FileManagerPage() {
     }
   }, [searchParams]);
 
+  // ?highlight=<file id> points at one file (the queue card's "View in File
+  // Manager"). The link carries only the id: the folder is looked up here, so
+  // a file moved since it was queued is still found. The folder's listing is
+  // refetched before the file is looked for in it, since a cached one may
+  // predate the move.
+  const highlightParam = searchParams.get('highlight');
+  const [pendingHighlight, setPendingHighlight] = useState<{ fileId: number; folderId: number | null; requestedAt: number } | null>(null);
+  const [highlightedFileId, setHighlightedFileId] = useState<number | null>(null);
+  const selectedFolderIdRef = useRef(selectedFolderId);
+  selectedFolderIdRef.current = selectedFolderId;
+  useEffect(() => {
+    const fileId = highlightParam ? parseInt(highlightParam, 10) : NaN;
+    if (!Number.isFinite(fileId)) return;
+    let cancelled = false;
+    const folderAtRequest = selectedFolderIdRef.current;
+    api.getLibraryFile(fileId).then(
+      (file) => {
+        // Someone who opened another folder meanwhile is not pulled back.
+        if (cancelled || selectedFolderIdRef.current !== folderAtRequest) return;
+        const requestedAt = Date.now();
+        queryClient.invalidateQueries({ queryKey: ['library-files'] });
+        setSelectedFolderId(file.folder_id);
+        setPendingHighlight({ fileId, folderId: file.folder_id, requestedAt });
+      },
+      () => {
+        if (!cancelled) showToast(t('fileManager.highlightedFileNotFound'), 'warning');
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [highlightParam, queryClient, showToast, t]);
+
   // Queries
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: () => api.getSettings() as Promise<AppSettings>,
-  });
+  const { data: settings } = useUiSettings();
 
   const preferredSlicer: SlicerType = resolveDesktopSlicer(settings?.open_in_slicer, settings?.preferred_slicer);
 
@@ -1857,7 +2142,7 @@ export function FileManagerPage() {
   // folder.
   const paneRootOnly = viewMode === 'columns' && selectedFolderId === null && !columnsFilterActive;
 
-  const { data: files, isLoading: filesLoading } = useQuery({
+  const { data: files, isLoading: filesLoading, dataUpdatedAt: filesUpdatedAt } = useQuery({
     queryKey: ['library-files', selectedFolderId, topLevelView, searchExpandsSubfolders, tagFilterKey, paneRootOnly],
     // When a specific folder is selected we list its contents directly; when
     // no folder is selected the topLevelView pseudo-node decides whether the
@@ -1906,6 +2191,31 @@ export function FileManagerPage() {
       }),
     [files, searchQuery, filterType, filterUsername, sortField, sortDirection],
   );
+
+  // Once the file's folder is listed afresh, mark the file; then scroll to it
+  // and drop the mark after a few seconds, as the Archives page does.
+  useEffect(() => {
+    if (!pendingHighlight || filesLoading || !files || selectedFolderId !== pendingHighlight.folderId) return;
+    if (filesUpdatedAt < pendingHighlight.requestedAt) return;
+    if (filteredAndSortedFiles.some((f) => f.id === pendingHighlight.fileId)) {
+      setHighlightedFileId(pendingHighlight.fileId);
+      if (viewMode === 'columns') setColumnsFocusedFileId(pendingHighlight.fileId);
+    } else {
+      showToast(t('fileManager.highlightedFileNotFound'), 'warning');
+    }
+    setPendingHighlight(null);
+  }, [pendingHighlight, filesLoading, files, filesUpdatedAt, selectedFolderId, filteredAndSortedFiles, viewMode, showToast, t]);
+  useEffect(() => {
+    if (highlightedFileId === null) return;
+    const scrollTimer = setTimeout(() => {
+      document.querySelector(`[data-file-id="${highlightedFileId}"]`)?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    }, 100);
+    const clearTimer = setTimeout(() => setHighlightedFileId(null), 5000);
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(clearTimer);
+    };
+  }, [highlightedFileId]);
 
   // Check if disk space is low
   const isDiskSpaceLow = useMemo(() => {
@@ -2048,6 +2358,51 @@ export function FileManagerPage() {
     onError: (error: Error) => showToast(error.message, 'error'),
   });
 
+  // Move a folder to root (parent_id 0) or under another folder (#3305). The
+  // server repeats the cycle check and 400s a move into the folder's own
+  // subtree, which the toast then shows verbatim.
+  const moveFolderMutation = useMutation({
+    mutationFn: ({ id, parentId }: { id: number; parentId: number | null }) =>
+      api.updateLibraryFolder(id, { parent_id: parentId ?? 0 }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['library-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['library-files'] });
+      queryClient.invalidateQueries({ queryKey: ['project-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['archive-folders'] });
+      setMoveFolder(null);
+      showToast(t('fileManager.toast.folderMoved'), 'success');
+    },
+    onError: (error: Error) => {
+      setMoveFolder(null);
+      showToast(error.message, 'error');
+    },
+  });
+
+  // Drag a folder onto another folder row, a column, or "All Files" (= root).
+  // Drops that would change nothing or that the server would refuse are not
+  // accepted, so no request leaves for them.
+  const folderDrag: FolderDragProps = {
+    canDrag: (folder) => !folder.is_external && (folder.can_rename ?? hasPermission('library:update_all')),
+    onDragStart: (folder, e) => {
+      e.dataTransfer.setData(FOLDER_DRAG_TYPE, String(folder.id));
+      e.dataTransfer.effectAllowed = 'move';
+      setDraggingFolder(folder);
+    },
+    onDragEnd: () => {
+      setDraggingFolder(null);
+      setFolderDropTarget(null);
+    },
+    canDropOn: (destinationId) =>
+      draggingFolder !== null && !!folders && isValidFolderMove(folders, draggingFolder, destinationId),
+    onDrop: (destinationId) => {
+      if (!draggingFolder || !folders || !isValidFolderMove(folders, draggingFolder, destinationId)) return;
+      moveFolderMutation.mutate({ id: draggingFolder.id, parentId: destinationId });
+      setDraggingFolder(null);
+    },
+    activeTarget: folderDropTarget,
+    setActiveTarget: setFolderDropTarget,
+  };
+
   const renameFileMutation = useMutation({
     mutationFn: ({ id, filename }: { id: number; filename: string }) =>
       api.updateLibraryFile(id, { filename }),
@@ -2077,6 +2432,19 @@ export function FileManagerPage() {
       showToast(error.message, 'error');
     },
   });
+
+  const shareFolderMutation = useMutation({
+    mutationFn: ({ id, shared }: { id: number; shared: boolean }) => api.updateLibraryFolder(id, { shared }),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['library-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['project-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['archive-folders'] });
+      showToast(variables.shared ? t('fileManager.toast.folderShared') : t('fileManager.toast.folderUnshared'), 'success');
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
+  const toggleFolderShared = (folder: LibraryFolderTree) =>
+    shareFolderMutation.mutate({ id: folder.id, shared: !folder.shared });
 
   const batchThumbnailMutation = useMutation({
     mutationFn: () => api.batchGenerateStlThumbnails({ all_missing: true }),
@@ -2183,7 +2551,29 @@ export function FileManagerPage() {
   // and also disabled while the upload modal itself is open so drags into
   // the modal's own drop zone don't bubble up and flash the page overlay
   // behind it.
-  const canUpload = hasPermission('library:upload');
+  // Find the selected folder in the tree to check external status
+  const selectedFolder = useMemo(() => {
+    if (!selectedFolderId || !folders) return null;
+    const findFolder = (items: LibraryFolderTree[]): LibraryFolderTree | null => {
+      for (const item of items) {
+        if (item.id === selectedFolderId) return item;
+        const found = findFolder(item.children);
+        if (found) return found;
+      }
+      return null;
+    };
+    return findFolder(folders);
+  }, [selectedFolderId, folders]);
+
+  // A library:read_own user may add only to their own folders and shared
+  // ones (#3201); a folder they merely pass through is read-only for them.
+  const canWriteHere = selectedFolder?.can_write !== false;
+  const canUpload = hasPermission('library:upload') && canWriteHere;
+  const addDisabledTitle = !hasPermission('library:upload')
+    ? undefined
+    : !canWriteHere
+      ? t('fileManager.folderNotWritable')
+      : undefined;
   const { isDraggingOver, dragHandlers } = usePageFileDrop({
     disabled: !canUpload || showUploadModal,
     onFiles: (files) => {
@@ -2262,20 +2652,6 @@ export function FileManagerPage() {
   };
 
   const isLoading = foldersLoading || filesLoading;
-
-  // Find the selected folder in the tree to check external status
-  const selectedFolder = useMemo(() => {
-    if (!selectedFolderId || !folders) return null;
-    const findFolder = (items: LibraryFolderTree[]): LibraryFolderTree | null => {
-      for (const item of items) {
-        if (item.id === selectedFolderId) return item;
-        const found = findFolder(item.children);
-        if (found) return found;
-      }
-      return null;
-    };
-    return findFolder(folders);
-  }, [selectedFolderId, folders]);
 
   // The chain of folders from a top-level folder down to the selected one.
   // Selection is the single source of truth — clicking a folder anywhere just
@@ -2669,7 +3045,10 @@ export function FileManagerPage() {
             {t('fileManager.subtitle')}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        {/* Wraps: up to nine controls, which pushed the page sideways on a
+            phone (#3295). Next to the title it takes only the room left over
+            (flex-1 from zero), so the title is not squeezed to fit it. */}
+        <div className="flex flex-wrap items-center sm:justify-end sm:flex-1 gap-2 min-w-0">
           {/* View mode toggle */}
           <div className="flex items-center bg-bambu-dark rounded-lg p-1">
             <button
@@ -2725,8 +3104,8 @@ export function FileManagerPage() {
           <Button
             variant="secondary"
             onClick={() => setShowNewFolderModal(true)}
-            disabled={!hasPermission('library:upload')}
-            title={!hasPermission('library:upload') ? t('fileManager.noPermissionCreateFolder') : undefined}
+            disabled={!canUpload}
+            title={!hasPermission('library:upload') ? t('fileManager.noPermissionCreateFolder') : addDisabledTitle}
           >
             <FolderPlus className="w-4 h-4 mr-2" />
             {t('fileManager.newFolder')}
@@ -2766,8 +3145,8 @@ export function FileManagerPage() {
           )}
           <Button
             onClick={() => setShowUploadModal(true)}
-            disabled={!hasPermission('library:upload')}
-            title={!hasPermission('library:upload') ? t('fileManager.noPermissionUpload') : undefined}
+            disabled={!canUpload}
+            title={!hasPermission('library:upload') ? t('fileManager.noPermissionUpload') : addDisabledTitle}
           >
             <Upload className="w-4 h-4 mr-2" />
             {t('common.upload')}
@@ -2954,7 +3333,9 @@ export function FileManagerPage() {
             {/* All Files = the user's own uploaded / managed-storage files
                 only. External folders are surfaced separately below to keep
                 a linked NAS from drowning the user's own uploads (#1621). */}
-            <div
+            <FolderDropZone
+              folderDrag={folderDrag}
+              destinationId={null}
               className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
                 selectedFolderId === null && topLevelView === 'internal'
                   ? 'bg-bambu-green/20 text-bambu-green'
@@ -2967,7 +3348,7 @@ export function FileManagerPage() {
             >
               <FileBox className="w-4 h-4" />
               <span className="text-sm">{t('fileManager.allFiles')}</span>
-            </div>
+            </FolderDropZone>
 
             {/* External (combined) — only shown when at least one external
                 folder is linked. Single folder users don't need a combined
@@ -3001,6 +3382,9 @@ export function FileManagerPage() {
                 onDelete={(id) => setDeleteConfirm({ type: 'folder', id })}
                 onLink={setLinkFolder}
                 onRename={(f) => setRenameItem({ type: 'folder', id: f.id, name: f.name })}
+                onMove={setMoveFolder}
+                onToggleShared={toggleFolderShared}
+                folderDrag={folderDrag}
                 wrapNames={wrapFolderNames}
                 defaultExpanded={!collapseFoldersByDefault}
                 showModified={showModified}
@@ -3018,46 +3402,15 @@ export function FileManagerPage() {
             via `order-first` and the page itself scrolls. */}
         <div className="flex-1 flex flex-col lg:flex-row min-w-0 min-h-0 gap-4 lg:gap-6">
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          {/* Tag filter rail (#1268). Lists every catalog tag as a togglable
-              chip — active chips are filled green and show an X, inactive
-              chips are outlined and toggle ON when clicked. Clicking an active
-              chip removes it from the filter. Hidden entirely when the
+          {/* Tag filter rail (#1268, #3411). Hidden entirely when the
               catalog is empty so brand-new installs don't see a stray rail. */}
           {tagCatalog.length > 0 && (
-            <div className="mb-3 flex flex-wrap items-center gap-2 p-2 sm:p-3 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary">
-              <span className="text-xs text-bambu-gray font-medium shrink-0">
-                {t('fileManager.tags.filterLabel')}
-              </span>
-              {tagCatalog.map((tg) => {
-                const active = selectedTagIds.includes(tg.id);
-                return (
-                  <button
-                    key={tg.id}
-                    type="button"
-                    onClick={() => toggleTagFilter(tg.id)}
-                    className={
-                      active
-                        ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-bambu-green/20 text-bambu-green border border-bambu-green/40 hover:bg-bambu-green/30 transition-colors'
-                        : 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-bambu-dark text-bambu-gray border border-bambu-dark-tertiary hover:text-white hover:border-bambu-green/40 transition-colors'
-                    }
-                    title={tg.name}
-                  >
-                    <TagIcon className="w-3 h-3" />
-                    <span>{tg.name}</span>
-                    {active && <X className="w-3 h-3" />}
-                  </button>
-                );
-              })}
-              {selectedTagIds.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedTagIds([])}
-                  className="ml-auto text-xs text-bambu-gray hover:text-white shrink-0"
-                >
-                  {t('fileManager.tags.clearAll')}
-                </button>
-              )}
-            </div>
+            <LibraryTagFilterRail
+              tags={tagCatalog}
+              selectedIds={selectedTagIds}
+              onToggle={toggleTagFilter}
+              onClear={() => setSelectedTagIds([])}
+            />
           )}
           {/* External folder info bar */}
           {selectedFolder?.is_external && (
@@ -3397,19 +3750,31 @@ export function FileManagerPage() {
                   // column that only lists folders keeps that narrow width.
                   const wide = Boolean(level && (level.loading || level.files.length > 0));
                   return (
-                  <div
+                  /* Dropping a dragged folder on a column's empty space moves
+                     it into that column's folder (#3305); the external bucket's
+                     root column is not a destination. */
+                  <FolderDropZone
                     key={col.key}
+                    folderDrag={folderDrag}
+                    destinationId={col.folderId}
+                    enabled={!(col.folderId === null && currentBucketIsExternal)}
                     data-testid={`columns-level-${col.key}`}
                     className={`${wide ? 'w-[26rem]' : 'w-64'} flex-shrink-0 overflow-y-auto py-1`}
                   >
                     {col.items.map((folder) => {
                       const isSelectedFolder = selectedFolderId === folder.id;
+                      const canDragFolder = folderDrag.canDrag(folder);
                       return (
                         /* The row is a div, not the button itself: the kebab
                            is a button of its own and buttons don't nest. */
-                        <div
+                        <FolderDropZone
                           key={folder.id}
+                          folderDrag={folderDrag}
+                          destinationId={folder.id}
                           data-folder-id={folder.id}
+                          draggable={canDragFolder || undefined}
+                          onDragStart={canDragFolder ? (e) => folderDrag.onDragStart(folder, e) : undefined}
+                          onDragEnd={canDragFolder ? folderDrag.onDragEnd : undefined}
                           className={`group flex items-center pr-1.5 transition-colors ${
                             col.activeId === folder.id
                               ? 'bg-bambu-green/20 text-bambu-green'
@@ -3445,6 +3810,11 @@ export function FileManagerPage() {
                             {(folder.project_id || folder.archive_id) && (
                               <Link2 className="w-3.5 h-3.5 flex-shrink-0 text-blue-700 dark:text-blue-400" />
                             )}
+                            {folder.shared && (
+                              <span title={t('fileManager.sharedFolder')}>
+                                <Users className="w-3.5 h-3.5 flex-shrink-0 text-bambu-gray" />
+                              </span>
+                            )}
                             {folder.is_external && folder.external_readonly && (
                               <Lock className="w-3.5 h-3.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
                             )}
@@ -3462,12 +3832,14 @@ export function FileManagerPage() {
                             onDelete={(id) => setDeleteConfirm({ type: 'folder', id })}
                             onLink={setLinkFolder}
                             onRename={(f) => setRenameItem({ type: 'folder', id: f.id, name: f.name })}
+                            onMove={setMoveFolder}
+                            onToggleShared={toggleFolderShared}
                             hasPermission={hasPermission}
                             revealOnHover={!isSelectedFolder}
                             tabIndex={isSelectedFolder ? 0 : -1}
                             t={t}
                           />
-                        </div>
+                        </FolderDropZone>
                       );
                     })}
                     {level?.loading && (
@@ -3478,6 +3850,7 @@ export function FileManagerPage() {
                         key={file.id}
                         file={file}
                         isSelected={selectedFiles.includes(file.id)}
+                        isHighlighted={highlightedFileId === file.id}
                         isFocused={columnsFocusedFileId === file.id}
                         showModified={showModified}
                         thumbnailVersion={thumbnailVersions[file.id]}
@@ -3492,7 +3865,7 @@ export function FileManagerPage() {
                         t={t}
                       />
                     ))}
-                  </div>
+                  </FolderDropZone>
                   );
                 })}
                 {/* Files pane — still the selected folder's contents, so a
@@ -3524,6 +3897,7 @@ export function FileManagerPage() {
                         key={file.id}
                         file={file}
                         isSelected={selectedFiles.includes(file.id)}
+                        isHighlighted={highlightedFileId === file.id}
                         isFocused={columnsFocusedFileId === file.id}
                         showModified={showModified}
                         thumbnailVersion={thumbnailVersions[file.id]}
@@ -3561,8 +3935,8 @@ export function FileManagerPage() {
               </p>
               <Button
                 onClick={() => setShowUploadModal(true)}
-                disabled={!hasPermission('library:upload')}
-                title={!hasPermission('library:upload') ? t('fileManager.noPermissionUpload') : undefined}
+                disabled={!canUpload}
+                title={!hasPermission('library:upload') ? t('fileManager.noPermissionUpload') : addDisabledTitle}
               >
                 <Plus className="w-4 h-4 mr-2" />
                 {t('fileManager.uploadFiles')}
@@ -3589,6 +3963,7 @@ export function FileManagerPage() {
                     key={file.id}
                     file={file}
                     isSelected={selectedFiles.includes(file.id)}
+                    isHighlighted={highlightedFileId === file.id}
                     t={t}
                     onSelect={handleFileSelect}
                     onDelete={(id) => setDeleteConfirm({ type: 'file', id })}
@@ -3628,7 +4003,10 @@ export function FileManagerPage() {
                     grids that compute `min-content` independently — the header's empty
                     trailing div resolved to 0px, leaving body columns shifted left of
                     their headers. Fixed width keeps header and body in lockstep. */}
-                <div className={`hidden sm:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_minmax(0,200px)_220px]' : 'grid-cols-[auto_1fr_100px_100px_100px_minmax(0,200px)_220px]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
+                <div
+                  data-testid="file-list-grid-header"
+                  className={`hidden sm:grid ${fileListGridColumns(authEnabled)} ${fileListGridMinWidth} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}
+                >
                   <div className="w-6" />
                   <div>{t('common.name')}</div>
                   {authEnabled && <div>{t('fileManager.uploadedBy', { defaultValue: 'Uploaded By' })}</div>}
@@ -3642,7 +4020,10 @@ export function FileManagerPage() {
                 {filteredAndSortedFiles.map((file) => (
                   <div
                     key={file.id}
-                    className={`grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_minmax(0,200px)_220px]' : 'grid-cols-[auto_1fr_100px_100px_100px_minmax(0,200px)_220px]'} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
+                    data-testid="file-list-grid-row"
+                    data-file-id={file.id}
+                    style={highlightedFileId === file.id ? HIGHLIGHT_ROW_STYLE : undefined}
+                    className={`grid ${fileListGridColumns(authEnabled)} ${fileListGridMinWidth} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
                       selectedFiles.includes(file.id) ? 'bg-bambu-green/10' : ''
                     }`}
                     onClick={() => handleFileSelect(file.id)}
@@ -3664,6 +4045,7 @@ export function FileManagerPage() {
                           {file.thumbnail_path ? (
                             <img
                               src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersions[file.id] ? ((api.getLibraryFileThumbnailUrl(file.id).includes('?') ? '&' : '?') + `v=${thumbnailVersions[file.id]}`) : ''}`}
+                              loading="lazy"
                               alt=""
                               className="w-full h-full object-cover"
                             />
@@ -3679,6 +4061,7 @@ export function FileManagerPage() {
                             <div className="w-48 h-48 rounded-lg bg-bambu-dark-secondary border border-bambu-dark-tertiary shadow-xl overflow-hidden">
                               <img
                                 src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersions[file.id] ? ((api.getLibraryFileThumbnailUrl(file.id).includes('?') ? '&' : '?') + `v=${thumbnailVersions[file.id]}`) : ''}`}
+                                loading="lazy"
                                 alt={file.filename}
                                 className="w-full h-full object-contain"
                               />
@@ -3749,9 +4132,9 @@ export function FileManagerPage() {
                     {/* Prints */}
                     <div className="text-sm text-bambu-gray">{file.print_count > 0 ? `${file.print_count}x` : '-'}</div>
                     {/* Tags (#1268) — clickable chips push into the active
-                        filter; minmax(0,200px) on the column lets the cell
-                        shrink/wrap on narrow viewports without pushing the
-                        Actions cell off-screen. */}
+                        filter; minmax(96px,200px) on the column lets the cell
+                        shrink/wrap on narrow viewports, and the 96px floor
+                        keeps chips readable once the wrapper scrolls (#3105). */}
                     <div className="min-w-0" {...stopRowActivation}>
                       {!file.tags || file.tags.length === 0 ? (
                         <span className="text-xs text-bambu-gray/50">-</span>
@@ -3814,6 +4197,17 @@ export function FileManagerPage() {
           onClose={() => setShowMoveModal(false)}
           onMove={(folderId) => moveFilesMutation.mutate({ fileIds: selectedFiles, folderId })}
           isLoading={moveFilesMutation.isPending}
+          t={t}
+        />
+      )}
+
+      {moveFolder && folders && (
+        <MoveFolderModal
+          folders={folders}
+          folder={moveFolder}
+          onClose={() => setMoveFolder(null)}
+          onMove={(parentId) => moveFolderMutation.mutate({ id: moveFolder.id, parentId })}
+          isLoading={moveFolderMutation.isPending}
           t={t}
         />
       )}

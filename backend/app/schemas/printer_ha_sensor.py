@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
+
 
 class PrinterHASensorBase(BaseModel):
     printer_id: int
@@ -58,9 +60,11 @@ class PrinterHASensorCreate(PrinterHASensorBase):
     pass
 
 
-class PrinterHASensorUpdate(BaseModel):
+class PrinterHASensorUpdate(IgnoresNullForRequiredColumns):
     """Partial update. Validated against the merged row in the route, because
     the per-kind rules above need fields this payload may not carry."""
+
+    __orm_table__ = "printer_ha_sensors"
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
     # Same column-width bound as the base schema; PATCH reaches the same row.

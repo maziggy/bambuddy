@@ -192,6 +192,21 @@ class TestMapSpoolmanSpool:
         result = _map_spoolman_spool(spool)
         assert result["cost_per_kg"] is None
 
+    @pytest.mark.parametrize(
+        ("spool_price", "filament_price", "own", "charged"),
+        [(None, 24.0, None, 24.0), (30.0, 24.0, 30.0, 30.0), (None, None, None, None)],
+        ids=["filament-only", "spool-wins", "unpriced"],
+    )
+    def test_the_rate_prints_are_charged_at(self, spool_price, filament_price, own, charged):
+        """SM-C8: with only a filament price, Cost/kg read "-" although every
+        print was charged at it. cost_per_kg stays the spool's own, which the
+        edit form writes back."""
+        filament = {**MINIMAL_SPOOL["filament"], "weight": 1000, "price": filament_price}
+        result = _map_spoolman_spool({**MINIMAL_SPOOL, "price": spool_price, "filament": filament})
+
+        assert result["cost_per_kg"] == (pytest.approx(own) if own is not None else None)
+        assert result["effective_cost_per_kg"] == (pytest.approx(charged) if charged is not None else None)
+
     def test_infinity_weight_falls_back(self):
         spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "weight": math.inf}}
         result = _map_spoolman_spool(spool)

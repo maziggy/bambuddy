@@ -12,6 +12,7 @@ it must not interfere with a session that is recovering on its own, and it must
 not churn clients for printers that are simply switched off.
 """
 
+import re
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -65,7 +66,10 @@ class TestRebuildsDeadSessions:
     async def test_reconnect_reason_names_the_duration(self):
         client = _client(connected=False, last_message_age=32718.0)
         await _sweep({1: client})
-        assert "32718" in client.force_reconnect_stale_session.call_args.args[0]
+        reason = client.force_reconnect_stale_session.call_args.args[0]
+        # The age is read from the clock, so a slow run may add a second or two
+        seconds = int(re.search(r"offline for (\d+)s", reason).group(1))
+        assert 32718 <= seconds <= 32728, reason
 
     @pytest.mark.asyncio
     async def test_sweeps_every_printer_in_the_farm(self):

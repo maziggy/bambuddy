@@ -217,3 +217,76 @@ class TestAvailableFilaments:
 
         assert response.status_code == 200
         assert response.json() == []
+
+
+class TestExternalSpoolsOnADualNozzlePrinterWithoutAms:
+    """``ams_extruder_map`` is derived from AMS info bits, so a dual-nozzle
+    printer without an AMS reports an empty one. The route took that as
+    "single nozzle": both external spools got ``extruder_id=None``, identical
+    spools merged into one, and the override picker offered it for both
+    nozzles. The scheduler fixed the same signal for #2771."""
+
+    @staticmethod
+    def _spool(vt_id: str) -> dict:
+        return {"id": vt_id, "tray_type": "PETG", "tray_color": "000000FF", "tray_sub_brands": "PETG HF"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_second_nozzle_routes_each_external_spool(self, async_client: AsyncClient, printer_factory):
+        from types import SimpleNamespace
+
+        await printer_factory(name="H2D", model="H2D")
+        status = _make_mock_status(ams_data=[], vt_tray=[self._spool("254"), self._spool("255")])
+        status.nozzles = [SimpleNamespace(nozzle_diameter="0.4"), SimpleNamespace(nozzle_diameter="0.4")]
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status.return_value = status
+            response = await async_client.get("/api/v1/printers/available-filaments?model=H2D")
+
+        assert response.status_code == 200
+        assert sorted(f["extruder_id"] for f in response.json()) == [0, 1]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_second_nozzle_alone_means_two_nozzles(self, async_client: AsyncClient, printer_factory):
+        """A firmware revision that lists only the loaded external feed."""
+        from types import SimpleNamespace
+
+        await printer_factory(name="H2D", model="H2D")
+        status = _make_mock_status(ams_data=[], vt_tray=[self._spool("254")])
+        status.nozzles = [SimpleNamespace(nozzle_diameter="0.4"), SimpleNamespace(nozzle_diameter="0.4")]
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status.return_value = status
+            response = await async_client.get("/api/v1/printers/available-filaments?model=H2D")
+
+        assert [f["extruder_id"] for f in response.json()] == [1]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_two_external_feeds_alone_mean_two_nozzles(self, async_client: AsyncClient, printer_factory):
+        await printer_factory(name="H2D", model="H2D")
+        status = _make_mock_status(ams_data=[], vt_tray=[self._spool("254"), self._spool("255")])
+        status.nozzles = []
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status.return_value = status
+            response = await async_client.get("/api/v1/printers/available-filaments?model=H2D")
+
+        assert sorted(f["extruder_id"] for f in response.json()) == [0, 1]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_single_nozzle_external_spool_has_no_extruder(self, async_client: AsyncClient, printer_factory):
+        from types import SimpleNamespace
+
+        await printer_factory(name="X1C", model="X1C")
+        status = _make_mock_status(ams_data=[], vt_tray=[self._spool("254")])
+        # The state always seeds two nozzle stubs; an empty second one is no nozzle.
+        status.nozzles = [SimpleNamespace(nozzle_diameter="0.4"), SimpleNamespace(nozzle_diameter="")]
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_status.return_value = status
+            response = await async_client.get("/api/v1/printers/available-filaments?model=X1C")
+
+        assert [f["extruder_id"] for f in response.json()] == [None]

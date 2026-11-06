@@ -26,6 +26,7 @@ per-model behaves identically before and after this feature.
 from __future__ import annotations
 
 import logging
+import time
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -125,3 +126,63 @@ async def resolve_spoolman_preset(
         select(SpoolmanFilamentPreset).where(SpoolmanFilamentPreset.spoolman_spool_id == spoolman_spool_id)
     )
     return _pick(list(result.scalars().all()), printer_model, nozzle_diameter, (fallback_filament, fallback_name))
+
+
+# A Spoolman spool's own preset lives in Spoolman (extra.bambu_slicer_filament),
+# so reading it costs a request. Kept briefly per spool: the K-profile drift
+# check asks on AMS pushes, and a preset changed in Spoolman itself applies
+# within a minute. Bambuddy's own edits drop the entry at once.
+_SPOOLMAN_OWN_PRESET_TTL_SECONDS = 60.0
+# What the cascade answers when no override row applies, as opposed to a
+# matching row left blank on purpose.
+_NO_OVERRIDE = "\x00no-override"
+_spoolman_own_presets: dict[int, tuple[float, PresetPair]] = {}
+
+
+def forget_spoolman_spool_own_preset(spoolman_spool_id: int) -> None:
+    _spoolman_own_presets.pop(spoolman_spool_id, None)
+
+
+async def spoolman_spool_own_preset(spoolman_spool_id: int) -> PresetPair:
+    """The preset set on the Spoolman spool itself; (None, None) when it has
+    none or Spoolman cannot be asked (not remembered, so asked again)."""
+    cached = _spoolman_own_presets.get(spoolman_spool_id)
+    if cached is not None and cached[0] > time.monotonic():
+        return cached[1]
+    try:
+        from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
+        from backend.app.services.spoolman import get_spoolman_client
+
+        client = await get_spoolman_client()
+        if client is None:
+            return (None, None)
+        mapped = _map_spoolman_spool(await client.get_spool(spoolman_spool_id))
+    except Exception as exc:  # noqa: BLE001 — a preset lookup must not fail its caller
+        logger.debug("Could not read the preset of Spoolman spool %s: %s", spoolman_spool_id, exc)
+        return (None, None)
+    pair: PresetPair = (mapped.get("slicer_filament"), mapped.get("slicer_filament_name"))
+    _spoolman_own_presets[spoolman_spool_id] = (time.monotonic() + _SPOOLMAN_OWN_PRESET_TTL_SECONDS, pair)
+    return pair
+
+
+async def resolve_spoolman_preset_with_own(
+    db: AsyncSession,
+    *,
+    spoolman_spool_id: int,
+    printer_model: str | None,
+    nozzle_diameter: str | None,
+) -> PresetPair:
+    """The cascade with the spool's own Spoolman preset as its fallback, read
+    only when no per-model override applies."""
+    pair = await resolve_spoolman_preset(
+        db,
+        spoolman_spool_id=spoolman_spool_id,
+        printer_model=printer_model,
+        nozzle_diameter=nozzle_diameter,
+        fallback_filament=_NO_OVERRIDE,
+        fallback_name=None,
+    )
+    if pair[0] != _NO_OVERRIDE:
+        # An override applies, also a deliberately blank one.
+        return pair
+    return await spoolman_spool_own_preset(spoolman_spool_id)

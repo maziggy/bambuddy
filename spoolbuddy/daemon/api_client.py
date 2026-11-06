@@ -11,6 +11,15 @@ logger = logging.getLogger(__name__)
 MAX_BUFFER_SIZE = 100
 
 
+def _says_unregistered(response: httpx.Response) -> bool:
+    """The backend's own answer for a device it does not know -- not a bare
+    404 from a reverse proxy while Bambuddy is restarting."""
+    try:
+        return response.json().get("detail") == "Device not registered"
+    except Exception:
+        return False
+
+
 class APIClient:
     def __init__(self, backend_url: str, api_key: str):
         self._base = backend_url.rstrip("/") + "/api/v1/spoolbuddy"
@@ -20,6 +29,10 @@ class APIClient:
         self._max_backoff = 30.0
         self._buffer: deque[dict] = deque(maxlen=MAX_BUFFER_SIZE)
         self._connected = False
+        # Set when a heartbeat is refused because the backend no longer knows
+        # this device (an admin unregistered it); the heartbeat loop registers
+        # again and clears it.
+        self.unregistered = False
 
     async def close(self):
         await self._client.aclose()
@@ -31,6 +44,19 @@ class APIClient:
             self._backoff = 1.0
             self._connected = True
             return resp.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code < 500:
+                # Refused, not lost: sending it again later changes nothing,
+                # and a buffered refusal would block every item behind it.
+                logger.warning("POST %s refused (%s)", path, e.response.status_code)
+                if e.response.status_code == 404 and path.endswith("/heartbeat") and _says_unregistered(e.response):
+                    self.unregistered = True
+                return None
+            if self._connected:
+                logger.warning("Backend connection lost: %s", e)
+                self._connected = False
+            self._buffer.append({"path": path, "data": data})
+            return None
         except Exception as e:
             if self._connected:
                 logger.warning("Backend connection lost: %s", e)
@@ -53,6 +79,11 @@ class APIClient:
             try:
                 resp = await self._client.post(f"{self._base}{item['path']}", json=item["data"])
                 resp.raise_for_status()
+                self._buffer.popleft()
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code >= 500:
+                    break
+                # Refused: dropped, so the items behind it still go out.
                 self._buffer.popleft()
             except Exception:
                 break
@@ -137,6 +168,7 @@ class APIClient:
         tray_uuid: str | None = None,
         sak: int | None = None,
         tag_type: str | None = None,
+        raw_blocks: dict[str, str] | None = None,
     ) -> dict | None:
         return await self._post(
             "/nfc/tag-scanned",
@@ -146,6 +178,7 @@ class APIClient:
                 "tray_uuid": tray_uuid,
                 "sak": sak,
                 "tag_type": tag_type,
+                "raw_blocks": raw_blocks,
             },
         )
 
@@ -189,12 +222,6 @@ class APIClient:
                 "success": success,
                 "message": message,
             },
-        )
-
-    async def report_update_status(self, device_id: str, status: str, message: str = "") -> dict | None:
-        return await self._post(
-            f"/devices/{device_id}/update-status",
-            {"status": status, "message": message},
         )
 
     async def diagnostic_result(

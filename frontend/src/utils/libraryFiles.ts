@@ -27,6 +27,18 @@ export function isSlicedLibraryFile(file: {
 }
 
 /**
+ * Can a file of this name be a sliced one, before it is uploaded and read?
+ *
+ * `.gcode` and `.gcode.3mf` are, by name. A plain `.3mf` may be too (a plate
+ * exported from Studio), which only its content tells: check
+ * `isSlicedLibraryFile` on the upload result.
+ */
+export function mayBeSlicedFileName(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  return lower.endsWith('.gcode') || lower.includes('.gcode.') || lower.endsWith('.3mf');
+}
+
+/**
  * Is a library file something a slicer can take as *input*?
  *
  * `isSliceableFilename` already refuses a `.gcode` / `.gcode.3mf` name — the

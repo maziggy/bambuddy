@@ -37,7 +37,7 @@ router = APIRouter(prefix="/local-presets", tags=["Local Presets"])
 @router.get("/", response_model=LocalPresetsResponse)
 async def list_local_presets(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """List all local presets grouped by type."""
     result = await db.execute(select(LocalPreset).order_by(LocalPreset.name))
@@ -60,7 +60,7 @@ async def list_local_presets(
 async def get_local_preset(
     preset_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get full detail for a local preset including the setting JSON."""
     result = await db.execute(select(LocalPreset).where(LocalPreset.id == preset_id))
@@ -81,7 +81,7 @@ async def get_local_preset(
 async def import_presets(
     file: UploadFile,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Import presets from an OrcaSlicer export file (.json, .orca_filament, .bbscfg, .bbsflmt, .zip)."""
     if not file.filename:
@@ -99,7 +99,7 @@ async def import_presets(
 async def create_local_preset(
     data: LocalPresetCreate,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Manually create a local preset."""
     if data.preset_type not in ("filament", "printer", "process"):
@@ -126,7 +126,7 @@ async def update_local_preset(
     preset_id: int,
     data: LocalPresetUpdate,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Update a local preset's name or settings."""
     result = await db.execute(select(LocalPreset).where(LocalPreset.id == preset_id))
@@ -161,7 +161,7 @@ async def update_local_preset(
 async def delete_local_preset(
     preset_id: int,
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Delete a local preset."""
     result = await db.execute(select(LocalPreset).where(LocalPreset.id == preset_id))
@@ -176,7 +176,7 @@ async def delete_local_preset(
 @router.get("/base-cache/status")
 async def base_cache_status(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Get the status of the OrcaSlicer base profile cache."""
     return await get_cache_status(db)
@@ -185,7 +185,7 @@ async def base_cache_status(
 @router.post("/base-cache/refresh")
 async def refresh_cache(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Force refresh all cached base profiles from GitHub."""
     return await refresh_base_cache(db)
@@ -194,7 +194,7 @@ async def refresh_cache(
 @router.post("/reclassify")
 async def reclassify(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
 ):
     """Re-evaluate preset types for all local presets using the improved heuristic."""
     return await reclassify_presets(db)

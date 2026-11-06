@@ -377,6 +377,84 @@ async def test_orca_cloud_unwraps_content():
 
 
 @pytest.mark.asyncio
+async def test_orca_cloud_string_lists_become_arrays():
+    """#3380: Orca Cloud returns list options INI-encoded. The sidecar only
+    adds a user printer preset's system parent to ``compatible_printers``
+    when it is an array, so they're forwarded as arrays, parsed the way the
+    slicer would: empty items keep their per-extruder positions. Other
+    options are left alone."""
+    db = MagicMock()
+    user = MagicMock()
+    user.has_permission = MagicMock(return_value=True)
+    svc_mock = MagicMock()
+    svc_mock.get_profile = AsyncMock(
+        return_value={
+            "content": {
+                "compatible_printers": '"Bambu Lab H2D 0.4 nozzle - Skew";"Bambu Lab X1 Carbon 0.4 nozzle"',
+                "compatible_prints": "",
+                "filament_type": "PLA",
+                "default_filament_colour": '"";"#FF0000"',
+                "compatible_printers_condition": '"bad" quote',
+            }
+        }
+    )
+    svc_mock.close = AsyncMock()
+    with patch.object(preset_resolver, "_build_orca_service", AsyncMock(return_value=svc_mock)):
+        out = await preset_resolver._resolve_orca_cloud(
+            db, user, PresetRef(source="orca_cloud", id="abc"), slot="filament"
+        )
+    payload = json.loads(out)
+    assert payload["compatible_printers"] == ["Bambu Lab H2D 0.4 nozzle - Skew", "Bambu Lab X1 Carbon 0.4 nozzle"]
+    assert payload["compatible_prints"] == ""
+    assert payload["filament_type"] == ["PLA"]
+    assert payload["default_filament_colour"] == ["", "#FF0000"]
+    assert payload["compatible_printers_condition"] == '"bad" quote'
+
+
+@pytest.mark.asyncio
+async def test_orca_cloud_unparseable_string_list_is_forwarded_as_is():
+    db = MagicMock()
+    user = MagicMock()
+    user.has_permission = MagicMock(return_value=True)
+    svc_mock = MagicMock()
+    svc_mock.get_profile = AsyncMock(return_value={"content": {"compatible_printers": '"X1C" junk'}})
+    svc_mock.close = AsyncMock()
+    with patch.object(preset_resolver, "_build_orca_service", AsyncMock(return_value=svc_mock)):
+        out = await preset_resolver._resolve_orca_cloud(
+            db, user, PresetRef(source="orca_cloud", id="abc"), slot="process"
+        )
+    assert json.loads(out)["compatible_printers"] == '"X1C" junk'
+
+
+@pytest.mark.asyncio
+async def test_orca_cloud_json_array_lists_are_forwarded_unchanged():
+    """Only a string is INI-parsed: an array that already is one must not be
+    re-read, or its names would merge into one and the slice be refused."""
+    db = MagicMock()
+    user = MagicMock()
+    user.has_permission = MagicMock(return_value=True)
+    svc_mock = MagicMock()
+    svc_mock.get_profile = AsyncMock(
+        return_value={
+            "content": {
+                "compatible_printers": ["X1C 0.4", "H2C 0.4"],
+                "filament_type": ["PLA", "PETG"],
+                "default_filament_colour": ["", "#FF0000"],
+            }
+        }
+    )
+    svc_mock.close = AsyncMock()
+    with patch.object(preset_resolver, "_build_orca_service", AsyncMock(return_value=svc_mock)):
+        out = await preset_resolver._resolve_orca_cloud(
+            db, user, PresetRef(source="orca_cloud", id="abc"), slot="filament"
+        )
+    payload = json.loads(out)
+    assert payload["compatible_printers"] == ["X1C 0.4", "H2C 0.4"]
+    assert payload["filament_type"] == ["PLA", "PETG"]
+    assert payload["default_filament_colour"] == ["", "#FF0000"]
+
+
+@pytest.mark.asyncio
 async def test_orca_cloud_auth_error_returns_401():
     db = MagicMock()
     user = MagicMock()
@@ -435,3 +513,30 @@ async def test_resolve_preset_ref_dispatches_by_source():
         db, user, PresetRef(source="standard", id="Some Bundled Name"), slot="printer"
     )
     assert json.loads(out)["inherits"] == "Some Bundled Name"
+
+
+# --- no user while auth is on ----------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "resolve,source,loader",
+    [
+        (preset_resolver._resolve_cloud, "cloud", "get_stored_token"),
+        (preset_resolver._resolve_orca_cloud, "orca_cloud", "_build_orca_service"),
+    ],
+)
+async def test_no_user_with_auth_on_borrows_no_stored_sign_in(resolve, source, loader):
+    """The sign-in stored without a user is the auth-off install's, and may be
+    left over after auth was turned on. A caller with no user while auth is
+    on (an API key without Allow Cloud Access) must not slice with it."""
+    load = AsyncMock(return_value=("global-tok", "admin@x.com", "global"))
+    with (
+        patch.object(preset_resolver, "is_auth_enabled", AsyncMock(return_value=True)),
+        patch.object(preset_resolver, loader, load),
+        pytest.raises(HTTPException) as exc,
+    ):
+        await resolve(MagicMock(), None, PresetRef(source=source, id="X"), slot="printer")
+
+    assert exc.value.status_code == 403
+    load.assert_not_awaited()

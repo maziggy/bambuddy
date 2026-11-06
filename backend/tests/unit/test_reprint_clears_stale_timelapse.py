@@ -24,6 +24,7 @@ from backend.app.main import (
     _expected_print_registered_at,
     _expected_prints,
     _print_ams_mappings,
+    _print_plate_ids,
     _timelapse_baselines,
     register_expected_print,
 )
@@ -35,6 +36,7 @@ def _clear_dicts():
     _expected_print_registered_at.clear()
     _expected_print_creators.clear()
     _print_ams_mappings.clear()
+    _print_plate_ids.clear()
     _active_prints.clear()
     _timelapse_baselines.clear()
     yield
@@ -42,6 +44,7 @@ def _clear_dicts():
     _expected_print_registered_at.clear()
     _expected_print_creators.clear()
     _print_ams_mappings.clear()
+    _print_plate_ids.clear()
     _active_prints.clear()
     _timelapse_baselines.clear()
 
@@ -124,8 +127,10 @@ async def test_reprint_clears_timelapse_path_and_unlinks_stale_file(tmp_path):
     mock_archive.file_path = "archives/42/MyModel.3mf"
     mock_archive.energy_start_kwh = None
     mock_archive.timelapse_path = relpath  # stale from the original run
+    mock_archive.timelapse_plate_id = 1  # ...which printed plate 1
 
-    register_expected_print(1, "MyModel.3mf", archive_id=42, ams_mapping=None)
+    # The queue always dispatches a plate; the same one is printing again.
+    register_expected_print(1, "MyModel.3mf", archive_id=42, ams_mapping=None, plate_id=1)
 
     mock_session = _build_mocks(mock_printer, mock_archive)
 

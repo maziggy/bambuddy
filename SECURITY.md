@@ -123,6 +123,13 @@ line; CI fails otherwise. (We use a standalone marker rather than
 `# noqa: ...` because ruff reserves the latter syntax for its own
 error codes.)
 
+One bounded exception: an open camera stream re-checks its viewer 30
+seconds after the last check that allowed it. Once a check is due, no
+frame goes out until it has run. If it cannot be read (it raises),
+frames continue for at most 5 seconds from when it began; then a second
+check runs (at once, if the first took longer), and the stream ends
+unless that one allows it.
+
 ### 3. No hardcoded fallback secrets
 
 Production secrets (JWT signing keys, encryption keys, OAuth client

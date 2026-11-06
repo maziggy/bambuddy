@@ -19,6 +19,7 @@ from backend.app.models.spool import Spool
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
 from backend.app.schemas.github_backup import GitHubRestoreRequest, RestoreCategory
+from backend.app.services.bambu_mqtt import KProfileReadError
 from backend.app.services.github_restore import (
     _COMPANION_CREDENTIAL_ENV,
     _COMPANION_CREDENTIALS,
@@ -235,13 +236,13 @@ class TestRestoreSettings:
     @pytest.mark.asyncio
     async def test_inserts_missing_keys(self, db_session):
         tally = _CategoryTally()
-        payload = {"version": "1.0", "settings": {"currency": "EUR", "theme": "dark"}}
+        payload = {"version": "1.0", "settings": {"currency": "EUR", "language": "de"}}
 
         await _service()._restore_settings(db_session, payload, overwrite=False, tally=tally)
         await db_session.commit()
 
         rows = {s.key: s.value for s in (await db_session.execute(select(Settings))).scalars().all()}
-        assert rows == {"currency": "EUR", "theme": "dark"}
+        assert rows == {"currency": "EUR", "language": "de"}
         assert tally.restored == 2
 
     @pytest.mark.asyncio
@@ -428,11 +429,11 @@ class TestCompanionCredentials:
     @pytest.mark.asyncio
     async def test_ha_toggle_is_refused_when_the_environment_has_no_token(self, db_session, monkeypatch):
         monkeypatch.delenv("HA_TOKEN", raising=False)
-        await self._restore(db_session, ha_enabled="true", ha_token="s3cret", ha_url="http://ha.local")
+        await self._restore(db_session, ha_enabled="true", ha_token="s3cret", currency="EUR")
 
         rows = await self._rows(db_session)
         assert "ha_enabled" not in rows
-        assert rows["ha_url"] == "http://ha.local"
+        assert rows["currency"] == "EUR"
 
     @pytest.mark.asyncio
     async def test_a_blank_local_credential_row_is_not_usable(self, db_session):
@@ -464,12 +465,12 @@ class TestCompanionCredentials:
         companion one were all counted as ``skipped`` despite never being in the
         preview's count.
         """
-        db_session.add(Settings(key="theme", value="light"))
+        db_session.add(Settings(key="language", value="en"))
         await db_session.commit()
 
         values = {
             "currency": "EUR",  # inserted    -> restored
-            "theme": "dark",  # exists, overwrite off -> skipped
+            "language": "de",  # exists, overwrite off -> skipped
             "low_stock_threshold": None,  # no value    -> skipped
             "": "junk",  # unusable key -> failed
             "bambu_cloud_token": "x",  # blocked     -> refused
@@ -594,11 +595,10 @@ class TestCompanionCredentials:
         rather than judged on availability. See
         ``test_the_whole_ldap_family_is_protected``.
         """
-        await self._restore(db_session, mqtt_enabled="true", virtual_printer_enabled="true")
+        await self._restore(db_session, mqtt_enabled="true")
 
         rows = await self._rows(db_session)
         assert rows["mqtt_enabled"] == "true"
-        assert rows["virtual_printer_enabled"] == "true"
 
     def test_every_exposure_toggle_is_a_companion_toggle(self):
         assert _COMPANION_EXPOSURE_TOGGLES.issubset(_COMPANION_CREDENTIALS)
@@ -666,9 +666,11 @@ class TestCompanionCredentials:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("value", ["1", "on", "yes"])
-    async def test_spellings_no_reader_treats_as_on_are_written(self, db_session, value):
+    async def test_spellings_the_editor_reads_as_on_are_judged_as_on(self, db_session, value):
+        """The restore writes them as the editor stores them, "true", so the
+        rule judges them as on: no usable token here, the switch stays off."""
         await self._restore(db_session, prometheus_enabled=value, prometheus_token="s3cret")
-        assert (await self._rows(db_session))["prometheus_enabled"] == value
+        assert "prometheus_enabled" not in await self._rows(db_session)
 
     @pytest.mark.asyncio
     async def test_ha_token_in_the_environment_counts_as_usable(self, db_session, monkeypatch):
@@ -708,7 +710,8 @@ class TestCompanionCredentials:
     async def test_plan_leaves_unusable_key_names_in_no_bucket(self, db_session):
         """They are the restore's ``failed``, not a refusal."""
         plan = await _service()._plan_settings(db_session, {"": "x", 7: "y", "currency": "EUR"})
-        assert plan == _SettingsPlan()
+        assert plan.refused == frozenset()
+        assert plan.stored == {"currency": "EUR"}
 
 
 class TestSpoolTagOverwrite:
@@ -856,6 +859,58 @@ class TestRestoreSpools:
         assert restored.material == "PLA"
 
     @pytest.mark.asyncio
+    async def test_restores_the_drying_record(self, db_session):
+        """#2863 — the date the backup writes with str() parses back."""
+        tally = _CategoryTally()
+        entry = self._spool_entry(last_dried_at="2026-10-06 12:30:00", last_dried_temp=55, last_dried_hours=7.5)
+
+        await _service()._restore_spools(db_session, {"spools": [entry]}, None, False, tally, {})
+        await db_session.commit()
+
+        restored = (await db_session.execute(select(Spool))).scalars().one()
+        assert restored.last_dried_at == datetime(2026, 10, 6, 12, 30)
+        assert restored.last_dried_temp == 55
+        assert restored.last_dried_hours == 7.5
+
+    @pytest.mark.asyncio
+    async def test_older_backup_keeps_the_live_drying_record(self, db_session):
+        """A backup written before #2863 has no drying keys and must not wipe them."""
+        db_session.add(
+            Spool(material="PLA", tag_uid="AABBCCDD", last_dried_at=datetime(2026, 9, 1, 8, 0), last_dried_temp=55)
+        )
+        await db_session.commit()
+        tally = _CategoryTally()
+
+        await _service()._restore_spools(db_session, {"spools": [self._spool_entry()]}, None, True, tally, {})
+        await db_session.commit()
+
+        spool = (await db_session.execute(select(Spool))).scalars().one()
+        assert spool.last_dried_at == datetime(2026, 9, 1, 8, 0)
+        assert spool.last_dried_temp == 55
+
+    @pytest.mark.asyncio
+    async def test_restores_when_the_spool_was_last_used(self, db_session):
+        """LU-4 -- written with str() like the drying date."""
+        tally = _CategoryTally()
+        entry = self._spool_entry(last_used="2026-10-18 09:15:00")
+
+        await _service()._restore_spools(db_session, {"spools": [entry]}, None, False, tally, {})
+        await db_session.commit()
+
+        assert (await db_session.execute(select(Spool))).scalars().one().last_used == datetime(2026, 10, 18, 9, 15)
+
+    @pytest.mark.asyncio
+    async def test_older_backup_keeps_the_live_last_used(self, db_session):
+        db_session.add(Spool(material="PLA", tag_uid="AABBCCDD", last_used=datetime(2026, 9, 1, 8, 0)))
+        await db_session.commit()
+        tally = _CategoryTally()
+
+        await _service()._restore_spools(db_session, {"spools": [self._spool_entry()]}, None, True, tally, {})
+        await db_session.commit()
+
+        assert (await db_session.execute(select(Spool))).scalars().one().last_used == datetime(2026, 9, 1, 8, 0)
+
+    @pytest.mark.asyncio
     async def test_matches_existing_spool_by_tag_uid(self, db_session):
         db_session.add(Spool(material="PLA", tag_uid="AABBCCDD", color_name="Old"))
         await db_session.commit()
@@ -930,6 +985,45 @@ class TestRestoreSpools:
         spools = (await db_session.execute(select(Spool))).scalars().all()
         assert len(spools) == 1
         assert spools[0].created_at == datetime(2026, 1, 5, 12, 0, 0)
+
+    @pytest.mark.asyncio
+    async def test_restores_the_total_consumed_reset_point(self, db_session):
+        """WU-7: a restore lost every "Reset Total Consumed"."""
+        await _service()._restore_spools(
+            db_session,
+            {"spools": [self._spool_entry(weight_used=500, weight_used_baseline=300)]},
+            None,
+            False,
+            _CategoryTally(),
+            {},
+        )
+        await db_session.commit()
+
+        assert (await db_session.execute(select(Spool))).scalar_one().weight_used_baseline == 300
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("backed_up", "expected"),
+        [({"weight_used_baseline": 300}, 300), ({}, 650), ({"weight_used_baseline": "300"}, 650)]
+        + [({"weight_used_baseline": bad}, 650) for bad in (-5, float("inf"), None, True)],
+    )
+    async def test_overwriting_a_spool_takes_the_backups_reset_point(self, db_session, backed_up, expected):
+        """Only a real amount: an older backup without one, or a damaged
+        value, keeps the live point."""
+        db_session.add(Spool(material="PLA", tag_uid="AABBCCDD", weight_used=700, weight_used_baseline=650))
+        await db_session.commit()
+
+        await _service()._restore_spools(
+            db_session,
+            {"spools": [self._spool_entry(weight_used=500, **backed_up)]},
+            None,
+            True,
+            _CategoryTally(),
+            {},
+        )
+        await db_session.commit()
+
+        assert (await db_session.execute(select(Spool))).scalar_one().weight_used_baseline == expected
 
     @pytest.mark.asyncio
     async def test_restores_the_owners_own_bookkeeping_fields(self, db_session):
@@ -1039,6 +1133,21 @@ class TestRestoreSpools:
 
         row = (await db_session.execute(select(SpoolUsageHistory))).scalar_one()
         assert row.archive_id == archive.id
+
+    @pytest.mark.asyncio
+    async def test_usage_of_a_spool_deleted_before_the_backup_is_restored_without_a_spool(self, db_session):
+        """A deleted spool's usage is kept (spool_id null); it is still the cost of its prints."""
+        tally = _CategoryTally()
+        usage = {
+            "usage_history": [{"spool_id": None, "weight_used": 4.0, "cost": 0.2, "created_at": "2026-02-01 09:00:00"}]
+        }
+
+        await _service()._restore_spools(db_session, {"spools": []}, usage, False, tally, {})
+        await db_session.commit()
+
+        row = (await db_session.execute(select(SpoolUsageHistory))).scalar_one()
+        assert (row.spool_id, row.weight_used, row.cost) == (None, 4.0, 0.2)
+        assert tally.skipped == 0
 
     @pytest.mark.asyncio
     async def test_usage_row_with_unresolvable_spool_is_skipped_and_explained(self, db_session):
@@ -1314,6 +1423,51 @@ class TestRestoreArchives:
         }
         entry.update(overrides)
         return entry
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status", ["printing", "paused"])
+    async def test_a_print_running_when_backed_up_comes_back_closed(self, db_session, status):
+        """ST/I7: restored as running, the next reconnect closed it as a print
+        that had just failed -- a failure notification and a Print Log row.
+        It is closed here the way the stale-archive cleanup closes one."""
+        tally = _CategoryTally()
+
+        entry = self._archive_entry(status=status, completed_at=None)
+        await _service()._restore_archives(db_session, {"archives": [entry]}, False, tally, {})
+        await db_session.commit()
+
+        row = (await db_session.execute(select(PrintArchive))).scalar_one()
+        assert (row.status, row.failure_reason) == ("cancelled", "noStatusUpdate")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("local_status", "local_reason"), [("printing", None), ("completed", None), ("failed", "nozzleClog")]
+    )
+    async def test_an_overwrite_keeps_what_the_local_row_knows_of_a_print_backed_up_mid_way(
+        self, db_session, local_status, local_reason
+    ):
+        """The local row is the same print, still running or since ended: the
+        backup's snapshot of it in flight has nothing better to say."""
+        db_session.add(
+            PrintArchive(
+                filename="benchy.3mf",
+                file_path="/data/benchy.3mf",
+                file_size=2048,
+                content_hash="abc123",
+                started_at=datetime(2026, 3, 1, 10, 0, 0),
+                status=local_status,
+                failure_reason=local_reason,
+            )
+        )
+        await db_session.commit()
+        tally = _CategoryTally()
+
+        entry = self._archive_entry(status="printing", completed_at=None)
+        await _service()._restore_archives(db_session, {"archives": [entry]}, True, tally, {})
+        await db_session.commit()
+
+        row = (await db_session.execute(select(PrintArchive))).scalar_one()
+        assert (row.status, row.failure_reason) == (local_status, local_reason)
 
     @pytest.mark.asyncio
     async def test_inserts_metadata_only_row_with_empty_file_path(self, db_session):
@@ -1643,7 +1797,7 @@ class TestRestoreKprofiles:
         # A refusal is now read and counted failed, so the caveat is narrowed to
         # what is genuinely left uncertain: a printer that never answers.
         assert any("verify the profiles on the printer" in note for note in _messages(tally))
-        assert any("does not answer still counts as restored" in note for note in _messages(tally))
+        assert any("does not confirm the write still counts as restored" in note for note in _messages(tally))
         assert not any("without acknowledgement" in note for note in _messages(tally))
         assert any("always overwrite" in note for note in _messages(tally))
 
@@ -1720,11 +1874,29 @@ class TestRestoreKprofiles:
         assert profiles[0]["cali_idx"] == -1
 
     @pytest.mark.asyncio
-    async def test_unreadable_live_index_degrades_to_adding(self, db_session, printer_factory):
-        # A failed read must not abort the restore.
+    async def test_unreadable_live_index_skips_the_nozzle(self, db_session, printer_factory):
+        # #3404: matching against an unread table sent every profile as a new
+        # one beside the originals. A failed read must not abort the restore
+        # either: the nozzle's profiles count failed and nothing is sent.
         await printer_factory(serial_number="00M09A123456789")
         client = self._client()
-        client.get_kprofiles = AsyncMock(side_effect=RuntimeError("mqtt timeout"))
+        client.get_kprofiles = AsyncMock(side_effect=KProfileReadError("no answer"))
+        tally = _CategoryTally()
+
+        with patch("backend.app.services.github_restore.printer_manager") as manager:
+            manager.get_client = MagicMock(return_value=client)
+            await _service()._restore_kprofiles(db_session, self._payload(), tally)
+
+        client.set_kprofiles_batch.assert_not_called()
+        assert (tally.restored, tally.failed) == (0, 1)
+        assert any(n["code"] == "kprofilesReadFailed" and n["params"]["nozzle"] == "0.4" for n in tally.notes)
+
+    @pytest.mark.asyncio
+    async def test_an_empty_live_table_still_adds(self, db_session, printer_factory):
+        """An answered read without profiles is a printer that has none: add them."""
+        await printer_factory(serial_number="00M09A123456789")
+        client = self._client()
+        client.get_kprofiles = AsyncMock(return_value=[])
         tally = _CategoryTally()
 
         with patch("backend.app.services.github_restore.printer_manager") as manager:
@@ -1733,7 +1905,6 @@ class TestRestoreKprofiles:
 
         profiles, _ = client.set_kprofiles_batch.call_args.args
         assert profiles[0]["cali_idx"] == -1
-        assert tally.restored == 1
 
     @pytest.mark.asyncio
     async def test_sole_profile_for_a_filament_matches_without_setting_id_or_name(self, db_session, printer_factory):
@@ -3050,12 +3221,12 @@ class TestMqttRelayReconfigure:
 
     @pytest.mark.asyncio
     async def test_restore_settings_reports_the_keys_it_wrote(self, db_session):
-        db_session.add(Settings(key="mqtt_broker", value="old.local"))
+        db_session.add(Settings(key="mqtt_topic_prefix", value="old.local"))
         await db_session.commit()
         written: set[str] = set()
         payload = {
             "settings": {
-                "mqtt_broker": "new.local",
+                "mqtt_topic_prefix": "new.local",
                 "currency": "EUR",
                 "mqtt_password": "leaked",
                 "auth_enabled": "false",
@@ -3068,17 +3239,17 @@ class TestMqttRelayReconfigure:
 
         # Skipped keys are not "written", or a blocked mqtt_password would
         # trigger a pointless reconnect.
-        assert written == {"mqtt_broker", "currency"}
+        assert written == {"mqtt_topic_prefix", "currency"}
 
     @pytest.mark.asyncio
     async def test_keys_skipped_for_overwrite_off_are_not_reported(self, db_session):
-        db_session.add(Settings(key="mqtt_broker", value="old.local"))
+        db_session.add(Settings(key="mqtt_topic_prefix", value="old.local"))
         await db_session.commit()
         written: set[str] = set()
 
         await _service()._restore_settings(
             db_session,
-            {"settings": {"mqtt_broker": "new.local"}},
+            {"settings": {"mqtt_topic_prefix": "new.local"}},
             overwrite=False,
             tally=_CategoryTally(),
             keys_written=written,
@@ -3099,13 +3270,13 @@ class TestMqttRelayReconfigure:
 
         await _service()._restore_settings(
             db_session,
-            {"settings": {"mqtt_enabled": "true", "mqtt_password": "refused", "mqtt_broker": "new.local"}},
+            {"settings": {"mqtt_enabled": "true", "mqtt_password": "refused", "mqtt_topic_prefix": "new.local"}},
             overwrite=True,
             tally=_CategoryTally(),
             keys_written=written,
         )
 
-        assert written == {"mqtt_broker"}
+        assert written == {"mqtt_topic_prefix"}
 
 
 class TestApplyOrdering:
@@ -3206,7 +3377,7 @@ class TestKprofilePhaseFailure:
     leaving the relay pointed at the pre-restore broker.
     """
 
-    _SETTINGS = {"version": "1.0", "settings": {"mqtt_broker": "restored.local", "currency": "EUR"}}
+    _SETTINGS = {"version": "1.0", "settings": {"mqtt_topic_prefix": "restored.local", "currency": "EUR"}}
 
     def _payload(self, profiles=None):
         return {
@@ -3248,7 +3419,9 @@ class TestKprofilePhaseFailure:
 
         assert results[RestoreCategory.SETTINGS.value].restored == 2
         rows = {s.key: s.value for s in (await db_session.execute(select(Settings))).scalars().all()}
-        assert rows == {"mqtt_broker": "restored.local", "currency": "EUR"}, "committed before the phase that failed"
+        assert rows == {"mqtt_topic_prefix": "restored.local", "currency": "EUR"}, (
+            "committed before the phase that failed"
+        )
 
     @pytest.mark.asyncio
     async def test_the_failure_is_counted_and_explained(self, db_session):
@@ -3285,7 +3458,7 @@ class TestKprofilePhaseFailure:
         assert result["results"][RestoreCategory.SETTINGS.value]["restored"] == 2
         assert result["results"][RestoreCategory.KPROFILES.value]["failed"] == 1
         relay.configure.assert_awaited_once()
-        assert relay.configure.await_args.args[0]["mqtt_broker"] == "restored.local"
+        assert relay.configure.await_args.args[0]["mqtt_topic_prefix"] == "restored.local"
 
     @pytest.mark.asyncio
     async def test_a_failure_before_the_commit_still_reports_nothing_restored(self, db_session):

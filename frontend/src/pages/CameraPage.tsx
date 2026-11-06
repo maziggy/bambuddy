@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, AlertTriangle, Camera, Maximize, Minimize, WifiOff, ZoomIn, ZoomOut, Stethoscope } from 'lucide-react';
+import { RefreshCw, AlertTriangle, ArrowLeft, Camera, Maximize, Minimize, WifiOff, ZoomIn, ZoomOut, Stethoscope, PictureInPicture2 } from 'lucide-react';
 import { api, getAuthToken, getStreamToken, withStreamToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,13 +10,36 @@ import { useStreamTokenSync } from '../hooks/useCameraStreamToken';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
 import { CameraDiagnoseModal } from '../components/CameraDiagnoseModal';
+import { useStreamImgRef } from '../hooks/useStreamImgRef';
+import { useCameraViewerId } from '../hooks/useCameraViewerId';
+import { isSideways, useSidewaysBox } from '../hooks/useSidewaysBox';
+import { isStandaloneWebApp, readOpenerTabId, requestCameraPopIn } from '../utils/camera';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
+// The server's Retry-After for a snapshot while a live view starts.
+const SNAPSHOT_RETRY_MS = 2000;
 const INITIAL_RECONNECT_DELAY = 2000; // 2 seconds
 const MAX_RECONNECT_DELAY = 30000; // 30 seconds
 const STALL_CHECK_INTERVAL = 5000; // Check every 5 seconds
 
 export function CameraPage() {
+  const { t } = useTranslation();
+  // Back into a Bambuddy tab as an overlay (#2737). The view unmounts, which
+  // stops its stream and every timer it runs, as closing the window would: a
+  // tab the user opened themselves cannot be closed by script, and is left
+  // saying where the camera went.
+  const [poppedIn, setPoppedIn] = useState(false);
+  if (poppedIn) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center p-4">
+        <p className="text-white text-center">{t('camera.poppedIn')}</p>
+      </div>
+    );
+  }
+  return <CameraView onPoppedIn={() => setPoppedIn(true)} />;
+}
+
+function CameraView({ onPoppedIn }: { onPoppedIn: () => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -56,7 +79,12 @@ export function CameraPage() {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
   const [lastTouchCenter, setLastTouchCenter] = useState<{ x: number; y: number } | null>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
+  // Every img the page drops (re-keyed by a reconnect or mode switch, left)
+  // has its stream closed.
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  // On its stream and its /camera/stop: the stop ends this page's stream only.
+  const viewerId = useCameraViewerId();
+  const attachImg = useStreamImgRef(imgRef);
   const containerRef = useRef<HTMLDivElement>(null);
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -67,6 +95,11 @@ export function CameraPage() {
   // that's about to deliver frames — the churn that stranded the P1S camera
   // black for ~20 min (#2521).
   const stallStrikesRef = useRef(0);
+  // A failed snapshot is retried once, a moment later: the server answers 503
+  // while a live view of this printer still holds the camera, e.g. the one
+  // this page just switched away from.
+  const snapshotRetriedRef = useRef(false);
+  const snapshotRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fetch printer info for the title
   const { data: printer } = useQuery({
@@ -123,7 +156,7 @@ export function CameraPage() {
   const stopSentRef = useRef(false);
 
   useEffect(() => {
-    const stopUrl = `/api/v1/printers/${id}/camera/stop`;
+    const stopUrl = `/api/v1/printers/${id}/camera/stop?viewer=${viewerId}`;
     stopSentRef.current = false;
 
     const sendStopOnce = () => {
@@ -143,20 +176,12 @@ export function CameraPage() {
 
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    // Store ref value for cleanup - ref may change by cleanup time
-    const imgElement = imgRef.current;
-
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-
-      // Clear the image source first to stop the stream
-      if (imgElement) {
-        imgElement.src = '';
-      }
       // Send stop signal only once
       sendStopOnce();
     };
-  }, [id]);
+  }, [id, viewerId]);
 
   // Auto-hide loading after timeout
   useEffect(() => {
@@ -230,6 +255,9 @@ export function CameraPage() {
       }
       if (stallCheckIntervalRef.current) {
         clearInterval(stallCheckIntervalRef.current);
+      }
+      if (snapshotRetryTimerRef.current) {
+        clearTimeout(snapshotRetryTimerRef.current);
       }
     };
   }, []);
@@ -329,18 +357,28 @@ export function CameraPage() {
     };
   }, [streamMode, streamLoading, streamError, isReconnecting, transitioning, id, attemptReconnect]);
 
-  const handleStreamError = () => {
+  const handleStreamError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    // Clearing the src (reconnect, restart, mode switch) fires error with an empty src.
+    if (!e.currentTarget.getAttribute('src')) return;
     setStreamLoading(false);
 
     // Only auto-reconnect for live stream mode
     if (streamMode === 'stream' && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
       attemptReconnect();
+    } else if (streamMode === 'snapshot' && !snapshotRetriedRef.current) {
+      snapshotRetriedRef.current = true;
+      if (snapshotRetryTimerRef.current) clearTimeout(snapshotRetryTimerRef.current);
+      snapshotRetryTimerRef.current = setTimeout(() => {
+        snapshotRetryTimerRef.current = null;
+        setImageKey(Date.now());
+      }, SNAPSHOT_RETRY_MS);
     } else {
       setStreamError(true);
     }
   };
 
   const handleStreamLoad = () => {
+    snapshotRetriedRef.current = false;
     setStreamLoading(false);
     setStreamError(false);
     // Reset reconnect attempts on successful connection
@@ -387,7 +425,7 @@ export function CameraPage() {
       const headers: Record<string, string> = {};
       const token = getAuthToken();
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      fetch(`/api/v1/printers/${id}/camera/stop`, { method: 'POST', headers }).catch(() => {});
+      fetch(`/api/v1/printers/${id}/camera/stop?viewer=${viewerId}`, { method: 'POST', headers }).catch(() => {});
     }
   };
 
@@ -398,6 +436,7 @@ export function CameraPage() {
     setStreamError(false);
     // Reset reconnect state on mode switch
     setReconnectAttempts(0);
+    snapshotRetriedRef.current = false;
     setIsReconnecting(false);
     // Reset zoom on mode switch
     setZoomLevel(1);
@@ -427,6 +466,7 @@ export function CameraPage() {
 
   const refresh = () => {
     if (transitioning) return;
+    snapshotRetriedRef.current = false;
     setTransitioning(true);
     setStreamLoading(true);
     setStreamError(false);
@@ -633,10 +673,53 @@ export function CameraPage() {
   const currentUrl = transitioning || waitingForStreamToken
     ? ''
     : streamMode === 'stream'
-      ? appendToken(`/api/v1/printers/${id}/camera/stream?fps=${fps}&t=${imageKey}`)
+      ? appendToken(`/api/v1/printers/${id}/camera/stream?fps=${fps}&t=${imageKey}&viewer=${viewerId}`)
       : appendToken(`/api/v1/printers/${id}/camera/snapshot?t=${imageKey}`);
 
   const isDisabled = streamLoading || transitioning || isReconnecting;
+
+  // A sideways camera is laid out with the video area's sides swapped. The
+  // viewport is the wrong box: the header and padding leave the area smaller,
+  // and a wide window cut the picture off at the top and bottom (#3362).
+  const videoAreaRef = useRef<HTMLDivElement>(null);
+  const sideways = isSideways(printer?.camera_rotation);
+  const videoArea = useSidewaysBox(videoAreaRef, sideways && id > 0);
+
+  // Read at load: the tab that opened this window is the one its
+  // sessionStorage was copied from.
+  const [openerTabId] = useState(readOpenerTabId);
+  // A window something opened can close itself. A page reached any other way
+  // -- a home-screen web app, which loads a popup's URL into the app itself
+  // (#3419), a bookmark, a link -- can't, so it gets a way back instead.
+  // A popup is known by its opener, or by the name openCameraWindow gives it
+  // when that tab has gone since. A web app counts as one whatever it reports.
+  const [openedAsWindow] = useState(() => {
+    try {
+      return (!!window.opener || window.name.startsWith('camera-')) && !isStandaloneWebApp();
+    } catch {
+      return false;
+    }
+  });
+  const navigate = useNavigate();
+  const location = useLocation();
+  // Back within Bambuddy only: the tab's history can start on another site.
+  const goBack = () => {
+    if (location.key !== 'default') navigate(-1);
+    else navigate('/', { replace: true });
+  };
+  const [popInPending, setPopInPending] = useState(false);
+  const popIn = async () => {
+    setPopInPending(true);
+    const moved = await requestCameraPopIn(id, printer?.name ?? '', openerTabId);
+    setPopInPending(false);
+    if (!moved) {
+      showToast(t('camera.popInNoTab'), 'warning');
+      return;
+    }
+    onPoppedIn();
+    if (openedAsWindow) window.close();
+    else goBack();
+  };
 
   if (!id) {
     return (
@@ -646,11 +729,22 @@ export function CameraPage() {
     );
   }
 
+
   return (
     <div ref={containerRef} className="min-h-screen bg-black flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary">
         <h1 className="text-sm font-medium text-white flex items-center gap-2">
+          {!openedAsWindow && (
+            <button
+              onClick={goBack}
+              className="p-1 -ml-1 hover:bg-bambu-dark-tertiary rounded"
+              title={t('common.back')}
+              aria-label={t('common.back')}
+            >
+              <ArrowLeft className="w-4 h-4 text-bambu-gray" />
+            </button>
+          )}
           <Camera className="w-4 h-4" />
           {printer?.name || `Printer ${id}`}
         </h1>
@@ -717,6 +811,18 @@ export function CameraPage() {
           >
             <Stethoscope className="w-4 h-4 text-bambu-gray" />
           </button>
+          {/* No other Bambuddy tab can take it in a home-screen web app. */}
+          {!isStandaloneWebApp() && (
+          <button
+            onClick={popIn}
+            disabled={popInPending}
+            className="p-1.5 hover:bg-bambu-dark-tertiary rounded disabled:opacity-50"
+            title={t('camera.popIn')}
+            aria-label={t('camera.popIn')}
+          >
+            <PictureInPicture2 className="w-4 h-4 text-bambu-gray" />
+          </button>
+          )}
           <button
             onClick={toggleFullscreen}
             className="p-1.5 hover:bg-bambu-dark-tertiary rounded"
@@ -743,7 +849,7 @@ export function CameraPage() {
         onTouchEnd={handleTouchEnd}
         style={{ touchAction: 'none' }}
       >
-        <div className="relative w-full h-full flex items-center justify-center">
+        <div ref={videoAreaRef} className="relative w-full h-full flex items-center justify-center">
           {(streamLoading || transitioning) && !isReconnecting && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
               <div className="text-center">
@@ -797,14 +903,18 @@ export function CameraPage() {
             </div>
           )}
           <img
-            ref={imgRef}
+            ref={attachImg}
             key={imageKey}
             src={currentUrl}
             alt={t('camera.cameraStream')}
             className="max-w-full max-h-full object-contain select-none"
             style={{
               transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px) rotate(${printer?.camera_rotation || 0}deg)`,
-              ...(printer?.camera_rotation === 90 || printer?.camera_rotation === 270 ? { maxWidth: '100vh', maxHeight: '100vw' } : {}),
+              ...(sideways
+                ? videoArea
+                  ? { maxWidth: videoArea.height, maxHeight: videoArea.width }
+                  : { maxWidth: '100vh', maxHeight: '100vw' }
+                : {}),
               cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
             }}
             onError={currentUrl ? handleStreamError : undefined}

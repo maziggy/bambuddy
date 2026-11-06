@@ -57,7 +57,7 @@ def _make_item(
     needed check pass without any AMS-derivation mocking. Set to ``None`` in
     tests that specifically want to exercise the derivation branch.
     """
-    archive = SimpleNamespace(bed_temperature=bed_temperature)
+    archive = SimpleNamespace(file_path=None, bed_temperature=bed_temperature)
     return SimpleNamespace(
         id=item_id,
         printer_id=printer_id,

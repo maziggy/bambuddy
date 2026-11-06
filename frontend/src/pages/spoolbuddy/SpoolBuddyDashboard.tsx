@@ -4,10 +4,11 @@ import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/rea
 import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { api, ApiError, type InventorySpool, type Printer, type PrinterStatus } from '../../api/client';
-import type { MatchedSpool } from '../../hooks/useSpoolBuddyState';
+import type { MatchedSpool, UnknownTagData } from '../../hooks/useSpoolBuddyState';
 import { useToast } from '../../contexts/ToastContext';
 import { SpoolIcon } from '../../components/spoolbuddy/SpoolIcon';
 import { SpoolInfoCard, UnknownTagCard } from '../../components/spoolbuddy/SpoolInfoCard';
+import { spoolColorString } from '../../utils/colors';
 import { AssignToAmsModal } from '../../components/spoolbuddy/AssignToAmsModal';
 import { LinkSpoolModal } from '../../components/spoolbuddy/LinkSpoolModal';
 
@@ -228,6 +229,13 @@ export function SpoolBuddyDashboard() {
 
   // Current Spool card state - persists until user closes or new tag detected
   const [displayedTagId, setDisplayedTagId] = useState<string | null>(null);
+  // Block-9 tray UUID of the displayed unknown tag. Kept with the card, like
+  // displayedTagId, so quick-add and link still save it after the spool is
+  // lifted off the reader (#984).
+  const [displayedTrayUuid, setDisplayedTrayUuid] = useState<string | null>(null);
+  // What the displayed unknown tag's own blocks say about the roll, kept with
+  // the card for the same reason, so Quick Add creates that spool (#2685).
+  const [displayedTagData, setDisplayedTagData] = useState<UnknownTagData | null>(null);
   const [displayedWeight, setDisplayedWeight] = useState<number | null>(null);
   const [hiddenTagId, setHiddenTagId] = useState<string | null>(null);
   const [showLinkModal, setShowLinkModal] = useState(false);
@@ -238,6 +246,8 @@ export function SpoolBuddyDashboard() {
 
   // Track current tag from state
   const currentTagId = sbState.matchedSpool?.tag_uid ?? sbState.unknownTagUid ?? null;
+  const currentTrayUuid = sbState.unknownTagUid ? sbState.unknownTrayUuid : null;
+  const currentTagData = sbState.unknownTagUid ? sbState.unknownTagData : null;
   const currentWeight = sbState.weight;
   const weightStable = sbState.weightStable;
 
@@ -260,6 +270,12 @@ export function SpoolBuddyDashboard() {
     if (!displayedTagId) return null;
     const byTag = spools.find((s) => tagsEquivalent(s.tag_uid, displayedTagId));
     if (byTag) return byTag;
+    // A Bambu spool quick-added or linked in Spoolman mode carries only the tray
+    // UUID: Spoolman has one extra.tag and the UUID wins over the tag UID (#984).
+    if (displayedTrayUuid) {
+      const byTrayUuid = spools.find((s) => s.tray_uuid?.toUpperCase() === displayedTrayUuid);
+      if (byTrayUuid) return byTrayUuid;
+    }
     // When a Bambu tray UUID (32-char) is linked, Spoolman stores it in extra.tag and
     // _map_spoolman_spool routes it to tray_uuid, not tag_uid. tagsEquivalent only
     // compares tag_uid, so it misses this spool until the device re-scans and
@@ -268,7 +284,7 @@ export function SpoolBuddyDashboard() {
     // present in MatchedSpool; AssignToAmsModal is guarded by !justLinkedSpool below.
     if (justLinkedSpool) return justLinkedSpool as unknown as InventorySpool;
     return null;
-  }, [displayedTagId, sbState.matchedSpool, spools, justLinkedSpool]);
+  }, [displayedTagId, displayedTrayUuid, sbState.matchedSpool, spools, justLinkedSpool]);
 
   // Effective spool for the Assign-to-AMS modal: prefer the fully-typed
   // InventorySpool from the local query cache, fall back to the
@@ -321,9 +337,17 @@ export function SpoolBuddyDashboard() {
 
       if (isDifferentTag || (!isHidden && displayedTagId !== currentTagId)) {
         setDisplayedTagId(currentTagId);
+        setDisplayedTrayUuid(currentTrayUuid);
+        setDisplayedTagData(currentTagData);
         setDisplayedWeight(null);
         setHiddenTagId(null);
         setJustLinkedSpool(null);
+      } else if (displayedTagId === currentTagId) {
+        // The same tag read again can carry what an earlier read missed: a
+        // failed Bambu read sends no tag data or tray UUID. Take them when this
+        // read has them, but never drop what a good read already gave (#2685).
+        if (currentTagData) setDisplayedTagData(currentTagData);
+        if (currentTrayUuid) setDisplayedTrayUuid(currentTrayUuid);
       }
 
       // Update weight when stable and card is visible
@@ -334,12 +358,14 @@ export function SpoolBuddyDashboard() {
       // Tag removed - clear hidden state so same tag can show when re-placed
       if (hiddenTagId) {
         setDisplayedTagId(null);
+        setDisplayedTrayUuid(null);
+        setDisplayedTagData(null);
         setHiddenTagId(null);
         setDisplayedWeight(null);
         setJustLinkedSpool(null);
       }
     }
-  }, [currentTagId, currentWeight, weightStable, displayedTagId, hiddenTagId]);
+  }, [currentTagId, currentTrayUuid, currentTagData, currentWeight, weightStable, displayedTagId, hiddenTagId]);
 
   // Auto-sync weight once when known spool first detected
 
@@ -351,13 +377,14 @@ export function SpoolBuddyDashboard() {
     if (!displayedTagId) return;
     try {
       if (spoolmanMode) {
-        const tag_uid = sbState.unknownTagUid || undefined;
-        const tray_uuid = (!sbState.unknownTagUid && sbState.unknownTrayUuid) ? sbState.unknownTrayUuid : undefined;
-        if (!tag_uid && !tray_uuid) {
-          showToast(t('spoolman.linkFailed'), 'error');
-          return;
-        }
-        const raw = await api.linkTagToSpoolmanSpool(spool.id, { tray_uuid, tag_uid });
+        // The tray UUID wins when both are sent: it is what the AMS stores in
+        // extra.tag, and the same on both tags of a Bambu spool (#984).
+        // Both come from the card, not the reader: the live tag state is
+        // cleared when the spool is lifted while the dialog is open.
+        const raw = await api.linkTagToSpoolmanSpool(spool.id, {
+          tag_uid: displayedTagId,
+          tray_uuid: displayedTrayUuid || undefined,
+        });
         const updated = raw as InventorySpool | undefined;
         if (!updated) {
           showToast(t('spoolman.linkFailed'), 'error');
@@ -383,7 +410,8 @@ export function SpoolBuddyDashboard() {
       } else {
         await api.linkTagToSpool(spool.id, {
           tag_uid: displayedTagId,
-          tag_type: 'generic',
+          ...(displayedTrayUuid ? { tray_uuid: displayedTrayUuid } : {}),
+          tag_type: displayedTrayUuid ? 'bambulab' : 'generic',
           data_origin: 'nfc_link',
         });
       }
@@ -412,6 +440,23 @@ export function SpoolBuddyDashboard() {
     setQuickAddBusy(true);
     try {
       const weight = liveWeight ?? displayedWeight;
+      // A decoded Bambu tag gives the spool AMS sync would create; without one
+      // it stays a basic PLA entry to edit later (#2685).
+      const td = displayedTagData;
+      const fromTag = {
+        material: td?.material ?? 'PLA',
+        subtype: td?.subtype ?? null,
+        color_name: td?.color_name ?? null,
+        rgba: td?.rgba ?? null,
+        extra_colors: td?.extra_colors ?? null,
+        effect_type: td?.effect_type ?? null,
+        brand: td?.brand ?? null,
+        label_weight: td?.label_weight ?? 1000,
+        slicer_filament: td?.slicer_filament ?? null,
+        slicer_filament_name: td?.slicer_filament_name ?? null,
+        nozzle_temp_min: td?.nozzle_temp_min ?? null,
+        nozzle_temp_max: td?.nozzle_temp_max ?? null,
+      };
       if (spoolmanMode) {
         // No tare is sent. The quick-create has no input for one, so the 250
         // that used to go here was a placeholder, not a user's choice -- and
@@ -419,19 +464,8 @@ export function SpoolBuddyDashboard() {
         // which would stamp every spool the kiosk creates and stop it
         // inheriting the filament type's.
         const created = await api.createSpoolmanInventorySpool({
-          material: 'PLA',
-          subtype: null,
-          color_name: null,
-          rgba: null,
-          extra_colors: null,
-          effect_type: null,
-          brand: null,
-          label_weight: 1000,
+          ...fromTag,
           weight_used: 0,
-          slicer_filament: null,
-          slicer_filament_name: null,
-          nozzle_temp_min: null,
-          nozzle_temp_max: null,
           note: null,
           added_full: null,
           last_used: null,
@@ -447,34 +481,23 @@ export function SpoolBuddyDashboard() {
           low_stock_threshold_pct: null,
         } as Parameters<typeof api.createSpoolmanInventorySpool>[0]);
         await api.linkTagToSpoolmanSpool(created.id, {
-          tag_uid: sbState.unknownTagUid || undefined,
-          tray_uuid: (!sbState.unknownTagUid && sbState.unknownTrayUuid) ? sbState.unknownTrayUuid : undefined,
+          tag_uid: displayedTagId,
+          tray_uuid: displayedTrayUuid || undefined,
         });
       } else {
         await api.createSpool({
-          material: 'PLA',
-          subtype: null,
-          color_name: null,
-          rgba: null,
-          extra_colors: null,
-          effect_type: null,
-          brand: null,
-          label_weight: 1000,
-          core_weight: 250,
-          core_weight_catalog_id: null,
+          ...fromTag,
+          core_weight: td?.core_weight ?? 250,
+          core_weight_catalog_id: td?.core_weight_catalog_id ?? null,
           weight_used: 0,
-          slicer_filament: null,
-          slicer_filament_name: null,
-          nozzle_temp_min: null,
-          nozzle_temp_max: null,
           note: null,
           added_full: null,
           last_used: null,
           encode_time: null,
           tag_uid: displayedTagId,
-          tray_uuid: null,
+          tray_uuid: displayedTrayUuid,
           data_origin: 'spoolbuddy',
-          tag_type: 'generic',
+          tag_type: displayedTrayUuid ? 'bambulab' : 'generic',
           cost_per_kg: null,
           last_scale_weight: weight !== null ? Math.round(weight) : null,
           last_weighed_at: weight !== null ? new Date().toISOString() : null,
@@ -672,6 +695,7 @@ export function SpoolBuddyDashboard() {
                 <UnknownTagCard
                   tagUid={displayedTagId}
                   scaleWeight={liveWeight ?? displayedWeight}
+                  tagData={displayedTagData}
                   onLinkSpool={untaggedSpools.length > 0 ? () => setShowLinkModal(true) : undefined}
                   onAddToInventory={() => setShowQuickAddModal(true)}
                   onClose={handleCloseSpoolCard}
@@ -719,6 +743,31 @@ export function SpoolBuddyDashboard() {
               {t('spoolbuddy.modal.addToInventory', 'Add to Inventory')}
             </h3>
 
+            {displayedTagData ? (
+              <>
+                <p className="text-sm text-zinc-400 mb-3">
+                  {t('spoolbuddy.modal.quickAddFromTag', 'Adds this spool with the details read from its Bambu tag. You can edit them later in Bambuddy.')}
+                </p>
+                <div className="flex items-center gap-3 p-3 bg-zinc-900/60 border border-zinc-700 rounded-lg mb-1">
+                  <SpoolIcon color={spoolColorString(displayedTagData.rgba)} isEmpty={false} size={40} spool={displayedTagData} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-zinc-100 truncate">
+                      {[displayedTagData.brand, displayedTagData.material, displayedTagData.subtype].filter(Boolean).join(' ')}
+                    </p>
+                    <p className="text-xs text-zinc-400 truncate">
+                      {[
+                        displayedTagData.color_name,
+                        `${displayedTagData.label_weight} g`,
+                        displayedTagData.diameter ? `${displayedTagData.diameter} mm` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
             {/* Hint */}
             <div className="flex gap-2.5 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg mb-4">
               <svg className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -732,6 +781,8 @@ export function SpoolBuddyDashboard() {
             <p className="text-sm text-zinc-400 mb-1">
               {t('spoolbuddy.modal.quickAddDesc', 'This will create a basic PLA spool entry with this NFC tag. You can edit the details later in Bambuddy.')}
             </p>
+              </>
+            )}
             <p className="text-xs text-zinc-500 font-mono mb-5">{displayedTagId}</p>
 
             <div className="flex gap-3">
@@ -746,7 +797,11 @@ export function SpoolBuddyDashboard() {
                 disabled={quickAddBusy}
                 className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors min-h-[44px]"
               >
-                {quickAddBusy ? t('common.saving', 'Saving...') : t('spoolbuddy.modal.addAnyway', 'Add Anyway')}
+                {quickAddBusy
+                  ? t('common.saving', 'Saving...')
+                  : displayedTagData
+                    ? t('common.add', 'Add')
+                    : t('spoolbuddy.modal.addAnyway', 'Add Anyway')}
               </button>
             </div>
           </div>

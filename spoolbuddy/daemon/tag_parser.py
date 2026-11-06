@@ -7,7 +7,8 @@ logger = logging.getLogger(__name__)
 # Bambu tag block layout (MIFARE Classic 1K):
 # Block 1: material type (bytes 0-7), color info (bytes 8-15)
 # Block 2: temperatures, weights
-# Block 4-5: tray UUID (32 hex chars across 2 blocks)
+# Block 4: detailed filament type ("PLA Matte")
+# Block 9: tray UUID (16 bytes), same on both tags, equals the AMS tray_uuid
 
 
 def parse_bambu_blocks(blocks: dict[int, bytes]) -> dict:
@@ -21,10 +22,9 @@ def parse_bambu_blocks(blocks: dict[int, bytes]) -> dict:
     """
     result = {}
 
-    # Extract tray UUID from blocks 4+5
-    if 4 in blocks and 5 in blocks:
-        uuid_raw = blocks[4] + blocks[5]
-        result["tray_uuid"] = uuid_raw[:16].hex().upper()
+    # Extract tray UUID from block 9
+    if 9 in blocks:
+        result["tray_uuid"] = blocks[9][:16].hex().upper()
 
     # Extract material info from block 1
     if 1 in blocks:

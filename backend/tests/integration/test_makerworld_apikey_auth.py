@@ -254,7 +254,7 @@ class TestImportEndpoint:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_api_key_without_cloud_scope_still_imports_but_owner_is_none(
+    async def test_api_key_without_cloud_scope_imports_anonymously_for_its_owner(
         self, async_client: AsyncClient, db_session: AsyncSession
     ):
         """Fail-closed parity: a key with can_manage_library but NOT
@@ -262,9 +262,9 @@ class TestImportEndpoint:
         the cloud-token resolver returns None, so the service is built
         without a token. The MakerWorldService itself would 401 on
         get_profile_download in production — here we just confirm the
-        route doesn't suddenly grant cloud identity from a non-cloud key,
-        and that the library row's owner_id stays NULL when there's no
-        resolved cloud-scoped owner.
+        route doesn't suddenly grant cloud identity from a non-cloud key.
+        The library row still belongs to the key's owner: crediting the file
+        is not a cloud question (#3256).
         """
         await _setup_auth_with_admin(async_client)
         admin = await _store_admin_cloud_token(db_session, "mwadmin", token="fake-bambu-token")
@@ -298,10 +298,9 @@ class TestImportEndpoint:
         assert jwt_user is None
         assert key_owner is None
 
-        # And owner_id is NULL because the cloud-scope fence said no.
         result = await db_session.execute(select(LibraryFile).where(LibraryFile.id == body["library_file_id"]))
         saved = result.scalar_one()
-        assert saved.created_by_id is None
+        assert saved.created_by_id == admin.id
 
 
 class TestJwtPathUnchanged:

@@ -92,6 +92,11 @@ def _track(poller: TelegramReactionPoller, *providers, token: str = BOT_TOKEN):
     poller._providers.setdefault(token, set()).update(p.id for p in providers)
 
 
+def _polling(poller: TelegramReactionPoller, provider_id: int) -> bool:
+    """Whether a running poll serves this provider."""
+    return any(provider_id in ids for token, ids in poller._providers.items() if token in poller._tasks)
+
+
 @pytest.fixture
 def telegram_provider(notification_provider_factory):
     async def _create(**kwargs):
@@ -740,9 +745,9 @@ class TestPoller:
         disabled = await telegram_provider(name="D", telegram_verdict_mode="both", enabled=False)
 
         await poller.sync()
-        assert poller.is_polling(reactions.id)
-        assert not poller.is_polling(buttons.id)
-        assert not poller.is_polling(disabled.id)
+        assert _polling(poller, reactions.id)
+        assert not _polling(poller, buttons.id)
+        assert not _polling(poller, disabled.id)
         assert set(poller._tasks) == {BOT_TOKEN}
 
         # The bot keeps its single poll while any provider wants it; the
@@ -752,8 +757,8 @@ class TestPoller:
         buttons.telegram_verdict_mode = "both"
         await db_session.commit()
         await poller.sync()
-        assert not poller.is_polling(reactions.id)
-        assert poller.is_polling(buttons.id)
+        assert not _polling(poller, reactions.id)
+        assert _polling(poller, buttons.id)
         assert poller._tasks[BOT_TOKEN] is first_task
         assert poller._providers[BOT_TOKEN] == {buttons.id}
 
@@ -764,7 +769,7 @@ class TestPoller:
         await poller.sync()
         assert first_task.cancelled() or first_task.cancelling()
         assert set(poller._tasks) == {"999:newtoken"}
-        assert poller.is_polling(buttons.id)
+        assert _polling(poller, buttons.id)
 
         await poller.aclose()
         assert poller._tasks == {}
@@ -786,7 +791,7 @@ class TestPoller:
 
         await poller.sync()
         assert len(poller._tasks) == 1
-        assert poller.is_polling(first.id) and poller.is_polling(second.id)
+        assert _polling(poller, first.id) and _polling(poller, second.id)
         poller.stop()
         _track(poller, first, second)
 
@@ -938,3 +943,63 @@ class TestProviderApi:
             assert (await async_client.delete(f"/api/v1/notifications/{provider.id}")).status_code == 200
 
         assert await _pending_count(db_session) == 0
+
+
+class TestAPromptForOnePlate:
+    """Plates of one archive each have their own prompt and token (#1898)."""
+
+    async def _two_runs(self, db_session, printer_factory, archive_factory):
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, confirm_requested=True, with_run=False)
+        runs = [
+            PrintLogEntry(
+                archive_id=archive.id, printer_id=printer.id, status="completed", confirm_requested=True, **fields
+            )
+            for fields in ({"confirm_token": "plate-1"}, {"confirm_token": "plate-2"})
+        ]
+        db_session.add_all(runs)
+        await db_session.commit()
+        return archive, runs
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_sent_prompt_remembers_its_runs_token(
+        self, db_session, printer_factory, archive_factory, telegram_provider
+    ):
+        archive, (first, _second) = await self._two_runs(db_session, printer_factory, archive_factory)
+        provider = await telegram_provider(telegram_verdict_mode="reactions")
+        service = NotificationService()
+        service._http_client = _SendCapture()
+
+        ok, _ = await service._send_to_provider(
+            provider,
+            "Outcome?",
+            "How did it go",
+            db_session,
+            event_type="print_confirm_request",
+            variables={**CONFIRM_VARIABLES, "archive_id": archive.id, "run_id": first.id},
+        )
+
+        assert ok
+        row = await db_session.scalar(select(TelegramPendingVerdict))
+        assert (row.archive_id, row.confirm_token) == (archive.id, "plate-1")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_reaction_answers_its_own_plate(
+        self, poller, db_session, printer_factory, archive_factory, telegram_provider, pending_factory
+    ):
+        archive, runs = await self._two_runs(db_session, printer_factory, archive_factory)
+        first_id, second_id = (r.id for r in runs)
+        provider = await telegram_provider()
+        _track(poller, provider)
+        await pending_factory(provider.id, archive.id, message_id=777, confirm_token="plate-1")
+        poller._http_client = _FakeBotApi([_updates(_reaction(10, 777, THUMBS_DOWN))])
+
+        assert await poller.poll_once(BOT_TOKEN) == "ok"
+
+        db_session.expire_all()
+        first = await db_session.get(PrintLogEntry, first_id)
+        assert (first.user_verdict, first.user_verdict_source) == ("reject", "reaction")
+        assert first.confirm_token_used_at is not None
+        assert (await db_session.get(PrintLogEntry, second_id)).user_verdict is None

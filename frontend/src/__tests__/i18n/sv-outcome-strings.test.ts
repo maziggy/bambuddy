@@ -13,12 +13,19 @@
  * is the first thing anyone sees after their first rejected print.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import i18n from '../../i18n';
 
 const t = i18n.getFixedT('sv');
 
 describe('sv stats.rejectedPrintsCount', () => {
+  // Only English is bundled (#3175); without this, t falls back to English
+  // and the checks below pass without reading a Swedish word.
+  beforeAll(async () => {
+    await i18n.loadLanguages('sv');
+    expect(i18n.hasResourceBundle('sv', 'translation')).toBe(true);
+  });
+
   it('reads grammatically when exactly one print was rejected', () => {
     const rendered = t('stats.rejectedPrintsCount', { rejected: 1 });
 

@@ -14,6 +14,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -90,14 +91,14 @@ class OIDCProvider(Base):
     # and is the recommended Azure configuration.
     # Has no interaction with require_email_verified when set to a non-"email" value:
     # custom claims never perform an email_verified check regardless of that setting.
-    email_claim: Mapped[str] = mapped_column(String(64), default="email")
+    email_claim: Mapped[str] = mapped_column(String(64), default="email", server_default="email")
     # When True (default), the "email" claim is only trusted when email_verified=True.
     # Set to False to accept the email even when email_verified is absent — required
     # for providers like Azure Entra ID that never send email_verified and where a
     # custom claim (email_claim != "email") is not preferred.
     # Has no effect when email_claim is not "email": the custom-claim path never
     # performs an email_verified check regardless of this setting.
-    require_email_verified: Mapped[bool] = mapped_column(Boolean, default=True)
+    require_email_verified: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     # Nullable FK — configurable default group for auto-created OIDC users.
     # Falls back to "Viewers" when None. ON DELETE SET NULL fires on PostgreSQL;
     # SQLite ignores it (no PRAGMA foreign_keys=ON), so runtime resolution handles dangling refs.

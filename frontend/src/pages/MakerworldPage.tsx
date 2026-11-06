@@ -19,6 +19,7 @@ import { SliceModal, type SliceSource } from '../components/SliceModal';
 import { Cog } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useUiSettings } from '../hooks/useUiSettings';
 
 // MakerWorld's API payloads are passed through as opaque dicts; these helpers
 // pull known fields out in a type-safe way so a missing/renamed field shows
@@ -107,7 +108,9 @@ function useElapsedSeconds(active: boolean): number {
   return elapsed;
 }
 
-export function MakerworldPage() {
+/** ``embedded`` renders it as the MakerWorld tab of the Model Sources page,
+ *  which brings its own page title. */
+export function MakerworldPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
@@ -171,10 +174,7 @@ export function MakerworldPage() {
     queryFn: () => api.getMakerworldRecentImports(10),
   });
 
-  const settingsQuery = useQuery({
-    queryKey: ['settings'],
-    queryFn: () => api.getSettings(),
-  });
+  const settingsQuery = useUiSettings();
   // MakerWorld plates are unsliced project files — they can't be sent
   // directly to a printer. The "slice in slicer" action below imports the
   // 3MF and hands it to the user's configured slicer; from there the
@@ -419,16 +419,20 @@ export function MakerworldPage() {
   const downloadCount = pickNumber(design, 'downloadCount');
 
   return (
-    <div className="p-4 md:p-8 max-w-screen-2xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-          <Globe className="w-7 h-7 text-bambu-green" />
-          {t('makerworld.title')}
-        </h1>
-        <p className="text-bambu-gray mt-1">
-          {t('makerworld.description')}
-        </p>
-      </div>
+    <div className={embedded ? 'space-y-6' : 'p-4 md:p-8 max-w-screen-2xl space-y-6'}>
+      {embedded ? (
+        <p className="text-bambu-gray">{t('makerworld.description')}</p>
+      ) : (
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <Globe className="w-7 h-7 text-bambu-green" />
+            {t('makerworld.title')}
+          </h1>
+          <p className="text-bambu-gray mt-1">
+            {t('makerworld.description')}
+          </p>
+        </div>
+      )}
 
       {/* Two-column layout: main flow on the left, sticky "Recent imports"
           sidebar on the right at lg+. Collapses to single column on narrow
@@ -570,7 +574,8 @@ export function MakerworldPage() {
                     .filter((f) => !(f.is_external && f.external_readonly))
                     .flatMap((f) => flattenFolderTree(f))
                     .map(({ folder, depth }) => (
-                      <option key={folder.id} value={folder.id}>
+                      // Listed for the tree's shape; only own and shared folders take imports (#3201).
+                      <option key={folder.id} value={folder.id} disabled={folder.can_write === false}>
                         {`${'— '.repeat(depth)}${folder.name}`}
                       </option>
                     ))}

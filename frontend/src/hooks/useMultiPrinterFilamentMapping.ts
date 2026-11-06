@@ -302,6 +302,14 @@ export function useMultiPrinterFilamentMapping(
   setPerPrinterConfigs: React.Dispatch<React.SetStateAction<Record<number, PerPrinterConfig>>>,
   preferLowest?: boolean,
   inventoryByTrayIdPerPrinter?: Map<number, Map<number, number>>,
+  /**
+   * The printer `defaultMappings` were resolved against — the single selected
+   * printer whose shared mapping panel produced them. Tray IDs are
+   * printer-relative, so they are applied only to that printer (#2799).
+   * `null`/`undefined` means no manual editing has happened, and the record is
+   * then empty anyway.
+   */
+  defaultMappingsPrinterId?: number | null,
 ): UseMultiPrinterFilamentMappingResult {
   // Fetch printer status for all selected printers in parallel
   const statusQueries = useQueries({
@@ -332,12 +340,32 @@ export function useMultiPrinterFilamentMapping(
       // Compute auto mapping for this printer
       const autoMapping = computeAmsMapping(filamentReqs, printerStatus, printerPreferLowest, inventoryByTrayId);
 
-      // Determine which mappings to use:
-      // If printer has override (useDefault=false), use its custom mappings
-      // Otherwise use the default mappings
+      // Which manual overrides apply to THIS printer.
+      //
+      // A mapping entry is a global tray ID, and those only mean something on
+      // the printer they were resolved against. The shared panel is only shown
+      // for a single selected printer, so `defaultMappings` belongs to that one
+      // printer and must not leak onto the others once the selection grows —
+      // doing so is the bug in #2799. It is still applied to its own printer,
+      // where the user's edits were correct and dropping them would be a silent
+      // regression.
+      //
+      // Everything downstream — `finalMapping`, the match badge and
+      // `allPrintersReady` — is derived from this one value, so what the panel
+      // reports and what is submitted cannot drift apart.
+      // An explicit match, never a default. `null` means we do not know which
+      // printer the shared mappings were resolved against — which happens when
+      // editing a model-based queue item, whose `printer_id` is null while its
+      // stored `ams_mapping` seeds them. Treating "unknown" as "yours" would
+      // hand those tray IDs to every selected printer, which is the bug this
+      // whole change is about.
+      const ownsDefaultMappings =
+        defaultMappingsPrinterId != null && printerId === defaultMappingsPrinterId;
       const effectiveMappings = !config.useDefault
         ? config.manualMappings
-        : defaultMappings;
+        : ownsDefaultMappings
+          ? defaultMappings
+          : {};
 
       // Compute final mapping with overrides
       const finalMapping = computeMappingWithOverrides(filamentReqs, printerStatus, effectiveMappings, printerPreferLowest, inventoryByTrayId);
@@ -368,7 +396,7 @@ export function useMultiPrinterFilamentMapping(
         inventoryByTrayId,
       };
     });
-  }, [selectedPrinterIds, statusQueries, printers, filamentReqs, perPrinterConfigs, defaultMappings, preferLowest, inventoryByTrayIdPerPrinter]);
+  }, [selectedPrinterIds, statusQueries, printers, filamentReqs, perPrinterConfigs, defaultMappings, preferLowest, inventoryByTrayIdPerPrinter, defaultMappingsPrinterId]);
 
   const isLoading = statusQueries.some((q) => q.isLoading);
 

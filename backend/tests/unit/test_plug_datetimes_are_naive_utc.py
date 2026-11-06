@@ -76,6 +76,9 @@ async def test_energy_snapshot_is_stamped_with_a_naive_datetime():
         async def execute(self, *_a, **_kw):
             result = MagicMock()
             result.scalars.return_value.all.return_value = [SimpleNamespace(id=1, plug_type="rest", enabled=True)]
+            # The plug's previous snapshot, which a new one carries its running
+            # totals on from (#1251): none yet.
+            result.scalar_one_or_none.return_value = None
             return result
 
         def add(self, obj):

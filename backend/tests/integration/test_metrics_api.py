@@ -129,7 +129,7 @@ class TestMetricsAPI:
         settings = response.json()
 
         assert settings["prometheus_enabled"] is True
-        assert settings["prometheus_token"] == "mytoken"
+        assert settings["prometheus_token"] == "********"  # write-only
 
         # Disable and verify
         await async_client.put("/api/v1/settings/", json={"prometheus_enabled": False})

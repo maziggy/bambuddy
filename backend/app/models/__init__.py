@@ -3,13 +3,20 @@ from backend.app.models.ams_label import AmsLabel
 from backend.app.models.announcement import Announcement, AnnouncementRead
 from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
+from backend.app.models.archive_alias import ArchiveAlias
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent
 from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.connected_app import ConnectedApp, ConnectedAppGrant
 from backend.app.models.filament import Filament
+from backend.app.models.filament_profile_default import (
+    FilamentProfileDefault,
+    FilamentProfileDefaultKProfile,
+    FilamentProfileDefaultPreset,
+)
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
-from backend.app.models.group import Group, user_groups
+from backend.app.models.group import Group, group_locations, group_printers, user_groups
 from backend.app.models.kprofile_note import KProfileNote
+from backend.app.models.label_template import LabelTemplate
 from backend.app.models.library import FileVariantGroup, LibraryFile, LibraryFolder
 from backend.app.models.local_preset import LocalPreset
 from backend.app.models.location import Location
@@ -17,6 +24,8 @@ from backend.app.models.location_ha_sensor import LocationHASensor
 from backend.app.models.long_lived_token import LongLivedToken
 from backend.app.models.maintenance import MaintenanceHistory, MaintenanceType, PrinterMaintenance
 from backend.app.models.notification import NotificationLog
+from backend.app.models.notification_live_activity import NotificationLiveActivity
+from backend.app.models.notification_lock_screen_widget import NotificationLockScreenWidget
 from backend.app.models.notification_template import NotificationTemplate
 from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
 from backend.app.models.orca_base_cache import OrcaBaseProfile
@@ -25,6 +34,7 @@ from backend.app.models.pipeline_run import PipelineJob, PipelineRun
 from backend.app.models.print_batch import PrintBatch, PrintBatchPlate
 from backend.app.models.printer import Printer
 from backend.app.models.printer_ha_sensor import PrinterHASensor
+from backend.app.models.printer_location import PrinterLocation
 from backend.app.models.printer_sensor_history import PrinterSensorHistory
 from backend.app.models.project import Project
 from backend.app.models.scheduled_drying import ScheduledDrying
@@ -48,7 +58,9 @@ from backend.app.models.user_totp import UserTOTP
 
 __all__ = [
     "Printer",
+    "PrinterLocation",
     "PrintArchive",
+    "ArchiveAlias",
     "Filament",
     "Settings",
     "SmartPlug",
@@ -59,6 +71,8 @@ __all__ = [
     "KProfileNote",
     "NotificationTemplate",
     "NotificationLog",
+    "NotificationLiveActivity",
+    "NotificationLockScreenWidget",
     "Project",
     "APIKey",
     "AMSSensorHistory",
@@ -72,10 +86,13 @@ __all__ = [
     "LibraryFolder",
     "LibraryFile",
     "FileVariantGroup",
+    "LabelTemplate",
     "Location",
     "User",
     "Group",
     "user_groups",
+    "group_locations",
+    "group_printers",
     "GitHubBackupConfig",
     "GitHubBackupLog",
     "LocalPreset",
@@ -87,6 +104,9 @@ __all__ = [
     "SlicerPipeline",
     "Spool",
     "SpoolFilamentPreset",
+    "FilamentProfileDefault",
+    "FilamentProfileDefaultKProfile",
+    "FilamentProfileDefaultPreset",
     "SpoolKProfile",
     "SpoolmanFilamentPreset",
     "SpoolAssignment",

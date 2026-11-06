@@ -81,6 +81,25 @@ describe('SmartPlugCard', () => {
       expect(screen.getByText('My Test Plug')).toBeInTheDocument();
     });
 
+    it('names a REST plug by its URL for an editor and by its type for a reader', () => {
+      const { unmount } = render(
+        <SmartPlugCard
+          plug={createMockPlug({ plug_type: 'rest', ip_address: null, rest_on_url: 'http://plug.example/on' })}
+          onEdit={mockOnEdit}
+        />,
+      );
+      expect(screen.getByText('http://plug.example/on')).toBeInTheDocument();
+      unmount();
+
+      render(
+        <SmartPlugCard
+          plug={createMockPlug({ plug_type: 'rest', ip_address: null, rest_on_url: null, rest_off_url: null })}
+          onEdit={mockOnEdit}
+        />,
+      );
+      expect(screen.getByText('REST')).toBeInTheDocument();
+    });
+
     it('renders plug IP address', () => {
       const plug = createMockPlug({ ip_address: '192.168.1.200' });
       render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);

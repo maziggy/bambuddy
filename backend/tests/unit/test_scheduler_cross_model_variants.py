@@ -353,7 +353,8 @@ async def test_first_matching_variant_wins_and_is_folded_onto_the_row(queue_db):
     assert item.printer_id == 2, "assigned to the H2C"
     assert item.target_model == "H2C"
     assert item.plate_id == 3
-    assert item.ams_mapping == "[4, 5]"
+    # A variant's mapping was not made for H2C-1; it is matched on the printer (#3239).
+    assert item.ams_mapping is None
     assert item.nozzle_mapping == "[0, 1]"
     assert item.print_time_seconds == 1200, "the estimate now describes what will actually run"
     assert item.waiting_reason is None
@@ -496,3 +497,43 @@ async def test_failed_candidate_steps_aside_for_the_alternative(queue_db):
     item = await _get_item(queue_db, item_id)
     assert item.printer_id == 2
     assert item.target_model == "H2C"
+
+
+@pytest.mark.asyncio
+async def test_printer_checks_read_the_candidates_own_file(queue_db):
+    """The low-filament (#3137) and matcher (#3280) checks a printer must pass
+    read the file off the row, so each must see the variant being tried."""
+    await _add_variant_item(queue_db, [{"model": "H2S"}, {"model": "H2C"}])
+    scheduler = PrintScheduler()
+    seen: dict[str, list] = {"short": [], "unmatched": []}
+
+    async def short(db, item, pid, **kwargs):
+        seen["short"].append(item.library_file_id)
+        return False
+
+    async def unmatched(db, item, pid):
+        seen["unmatched"].append(item.library_file_id)
+        return []
+
+    async def finder(db, model, exclude_ids, *args, is_short=None, unmatched_on=None, **kwargs):
+        # One check per variant, so neither can lean on the other having put
+        # the variant's file on the row already.
+        if model == "H2S":
+            await unmatched_on(1)
+            return None, "busy"
+        await is_short(2)
+        return 2, None
+
+    with (
+        patch.object(scheduler, "_filament_short_on", AsyncMock(side_effect=short)),
+        patch.object(scheduler, "_unmatched_on", AsyncMock(side_effect=unmatched)),
+    ):
+        await _run_check_queue(queue_db, scheduler, AsyncMock(side_effect=finder))
+
+    async with queue_db.session_maker() as db:
+        files = [
+            v.library_file_id
+            for v in (await db.execute(select(PrintQueueVariant).order_by(PrintQueueVariant.position))).scalars()
+        ]
+    assert seen["unmatched"] == files[:1]
+    assert seen["short"] == files[1:]

@@ -1,32 +1,7 @@
-import { Component, type ReactNode, type ErrorInfo } from 'react';
+import { Component, Suspense, type ReactNode, type ErrorInfo } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Layout } from './components/Layout';
-import { PrintersPage } from './pages/PrintersPage';
-import { ArchivesPage } from './pages/ArchivesPage';
-import { QueuePage } from './pages/QueuePage';
-import { StatsPage } from './pages/StatsPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { FinancePage } from './pages/FinancePage';
-import { ProfilesPage } from './pages/ProfilesPage';
-import { MaintenancePage } from './pages/MaintenancePage';
-import { ProjectsPage } from './pages/ProjectsPage';
-import { ProjectDetailPage } from './pages/ProjectDetailPage';
-import { FileManagerPage } from './pages/FileManagerPage';
-import { LibraryTrashPage } from './pages/LibraryTrashPage';
-import { CameraPage } from './pages/CameraPage';
-import { CamWallPage } from './pages/CamWallPage';
-import { StreamOverlayPage } from './pages/StreamOverlayPage';
-import { ExternalLinkPage } from './pages/ExternalLinkPage';
-import { GroupEditPage } from './pages/GroupEditPage';
-import InventoryPage from './pages/InventoryPage';
-import { MakerworldPage } from './pages/MakerworldPage';
-import { SystemInfoPage } from './pages/SystemInfoPage';
-import { LoginPage } from './pages/LoginPage';
-import { ConnectAuthorizePage } from './pages/ConnectAuthorizePage';
-import { SetupPage } from './pages/SetupPage';
-import { NotificationsPage } from './pages/NotificationsPage';
-import { GCodeViewerPage } from './pages/GCodeViewerPage';
 import { useWebSocket } from './hooks/useWebSocket';
 import { usePrintProgressTitle } from './hooks/usePrintProgressTitle';
 import { useStreamTokenSync } from './hooks/useCameraStreamToken';
@@ -35,13 +10,45 @@ import { ToastProvider } from './contexts/ToastContext';
 import { SliceJobTrackerProvider } from './contexts/SliceJobTrackerContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ColorCatalogProvider } from './contexts/ColorCatalogContext';
+import { EmbeddedCameraProvider } from './contexts/EmbeddedCameraContext';
 import { SpoolBuddyLayout } from './components/spoolbuddy/SpoolBuddyLayout';
-import { SpoolBuddyDashboard } from './pages/spoolbuddy/SpoolBuddyDashboard';
-import { SpoolBuddyAmsPage } from './pages/spoolbuddy/SpoolBuddyAmsPage';
-import { SpoolBuddySettingsPage } from './pages/spoolbuddy/SpoolBuddySettingsPage';
-import { SpoolBuddyCalibrationPage } from './pages/spoolbuddy/SpoolBuddyCalibrationPage';
-import { SpoolBuddyWriteTagPage } from './pages/spoolbuddy/SpoolBuddyWriteTagPage';
-import { SpoolBuddyInventoryPage } from './pages/spoolbuddy/SpoolBuddyInventoryPage';
+import { PageLoading } from './components/PageLoading';
+import { AuthRetrying } from './components/AuthRetrying';
+import { lazyPage } from './utils/lazyPage';
+
+// Every page loads as its own file when first opened (#3175).
+const PrintersPage = lazyPage(() => import('./pages/PrintersPage'), 'PrintersPage');
+const ArchivesPage = lazyPage(() => import('./pages/ArchivesPage'), 'ArchivesPage');
+const QueuePage = lazyPage(() => import('./pages/QueuePage'), 'QueuePage');
+const StatsPage = lazyPage(() => import('./pages/StatsPage'), 'StatsPage');
+const SettingsPage = lazyPage(() => import('./pages/SettingsPage'), 'SettingsPage');
+const FinancePage = lazyPage(() => import('./pages/FinancePage'), 'FinancePage');
+const ProfilesPage = lazyPage(() => import('./pages/ProfilesPage'), 'ProfilesPage');
+const MaintenancePage = lazyPage(() => import('./pages/MaintenancePage'), 'MaintenancePage');
+const ProjectsPage = lazyPage(() => import('./pages/ProjectsPage'), 'ProjectsPage');
+const ProjectDetailPage = lazyPage(() => import('./pages/ProjectDetailPage'), 'ProjectDetailPage');
+const FileManagerPage = lazyPage(() => import('./pages/FileManagerPage'), 'FileManagerPage');
+const LibraryTrashPage = lazyPage(() => import('./pages/LibraryTrashPage'), 'LibraryTrashPage');
+const CameraPage = lazyPage(() => import('./pages/CameraPage'), 'CameraPage');
+const CamWallPage = lazyPage(() => import('./pages/CamWallPage'), 'CamWallPage');
+const StreamOverlayPage = lazyPage(() => import('./pages/StreamOverlayPage'), 'StreamOverlayPage');
+const ExternalLinkPage = lazyPage(() => import('./pages/ExternalLinkPage'), 'ExternalLinkPage');
+const GroupEditPage = lazyPage(() => import('./pages/GroupEditPage'), 'GroupEditPage');
+const PrinterLocationsPage = lazyPage(() => import('./pages/PrinterLocationsPage'), 'PrinterLocationsPage');
+const InventoryPage = lazyPage(() => import('./pages/InventoryPage'), 'default');
+const ModelSourcesPage = lazyPage(() => import('./pages/ModelSourcesPage'), 'ModelSourcesPage');
+const SystemInfoPage = lazyPage(() => import('./pages/SystemInfoPage'), 'SystemInfoPage');
+const LoginPage = lazyPage(() => import('./pages/LoginPage'), 'LoginPage');
+const ConnectAuthorizePage = lazyPage(() => import('./pages/ConnectAuthorizePage'), 'ConnectAuthorizePage');
+const SetupPage = lazyPage(() => import('./pages/SetupPage'), 'SetupPage');
+const NotificationsPage = lazyPage(() => import('./pages/NotificationsPage'), 'NotificationsPage');
+const GCodeViewerPage = lazyPage(() => import('./pages/GCodeViewerPage'), 'GCodeViewerPage');
+const SpoolBuddyDashboard = lazyPage(() => import('./pages/spoolbuddy/SpoolBuddyDashboard'), 'SpoolBuddyDashboard');
+const SpoolBuddyAmsPage = lazyPage(() => import('./pages/spoolbuddy/SpoolBuddyAmsPage'), 'SpoolBuddyAmsPage');
+const SpoolBuddySettingsPage = lazyPage(() => import('./pages/spoolbuddy/SpoolBuddySettingsPage'), 'SpoolBuddySettingsPage');
+const SpoolBuddyWriteTagPage = lazyPage(() => import('./pages/spoolbuddy/SpoolBuddyWriteTagPage'), 'SpoolBuddyWriteTagPage');
+const SpoolBuddyInventoryPage = lazyPage(() => import('./pages/spoolbuddy/SpoolBuddyInventoryPage'), 'SpoolBuddyInventoryPage');
+
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null; errorInfo: ErrorInfo | null }> {
   state = { error: null as Error | null, errorInfo: null as ErrorInfo | null };
 
@@ -96,12 +103,18 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { authEnabled, loading, user } = useAuth();
+export function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { authEnabled, loading, user, authUnconfirmed } = useAuth();
   const location = useLocation();
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+
+  // A stored sign-in the server couldn't check yet: wait here, so a kiosk
+  // isn't left on a login page it can't use (#3360).
+  if (authUnconfirmed) {
+    return <AuthRetrying />;
   }
 
   if (authEnabled && !user) {
@@ -111,17 +124,21 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function PermissionRoute({ permission, children }: { permission: string; children: React.ReactNode }) {
+export function PermissionRoute({ permission, children }: { permission: string | string[]; children: React.ReactNode }) {
   // Permission-gated route: any user with the given permission can enter, not
   // just admins. Individual components below this guard apply their own
   // per-action permission checks. Used for pages where delegation is supported
   // (e.g. settings:read grants read-only access to Settings; specific tabs
   // require their own permissions like users:read, groups:update, etc.).
-  const { authEnabled, loading, user, hasPermission } = useAuth();
+  const { authEnabled, loading, user, hasPermission, authUnconfirmed } = useAuth();
   const location = useLocation();
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+
+  if (authUnconfirmed) {
+    return <AuthRetrying />;
   }
 
   // Auth disabled → open access (backward compatibility)
@@ -133,7 +150,9 @@ function PermissionRoute({ permission, children }: { permission: string; childre
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  if (!hasPermission(permission as Parameters<typeof hasPermission>[0])) {
+  // A list lets in anyone holding at least one of the permissions.
+  const required = (Array.isArray(permission) ? permission : [permission]) as Parameters<typeof hasPermission>[0][];
+  if (!required.some((p) => hasPermission(p))) {
     return <Navigate to="/" replace />;
   }
 
@@ -174,6 +193,9 @@ function App() {
             <SliceJobTrackerProvider>
             <StreamTokenSync />
             <BrowserRouter>
+              {/* Standalone pages (login, camera, overlay, ...) wait here; pages
+                  inside a layout wait in that layout, so its frame stays up. */}
+              <Suspense fallback={<PageLoading fullScreen />}>
               <Routes>
                 {/* Setup page - only accessible if auth not enabled */}
                 <Route path="/setup" element={<SetupRoute><SetupPage /></SetupRoute>} />
@@ -203,13 +225,16 @@ function App() {
                   <Route path="spoolbuddy/write-tag" element={<SpoolBuddyWriteTagPage />} />
                   <Route path="spoolbuddy/inventory" element={<SpoolBuddyInventoryPage />} />
                   <Route path="spoolbuddy/settings" element={<SpoolBuddySettingsPage />} />
-                  <Route path="spoolbuddy/calibration" element={<SpoolBuddyCalibrationPage />} />
+                  {/* Calibration moved into the settings page; old bookmarks land there. */}
+                  <Route path="spoolbuddy/calibration" element={<Navigate to="/spoolbuddy/settings" replace />} />
                 </Route>
 
                 {/* Main app with WebSocket for real-time updates */}
-                <Route element={<ProtectedRoute><WebSocketProvider><Layout /></WebSocketProvider></ProtectedRoute>}>
+                <Route element={<ProtectedRoute><WebSocketProvider><EmbeddedCameraProvider><Layout /></EmbeddedCameraProvider></WebSocketProvider></ProtectedRoute>}>
                   <Route index element={<PrintersPage />} />
                   <Route path="archives" element={<ArchivesPage />} />
+                  {/* An archive opens over the list (archive redesign P4). */}
+                  <Route path="archives/:id" element={<ArchivesPage />} />
                   <Route path="queue" element={<QueuePage />} />
                   {/* Slicer Pipelines (#1425) — Pipelines tab lives on the
                       Print Queue page (Queue + History + Timeline +
@@ -224,19 +249,23 @@ function App() {
                   <Route path="inventory" element={<InventoryPage />} />
                   <Route path="files" element={<FileManagerPage />} />
                   <Route path="files/trash" element={<LibraryTrashPage />} />
-                  <Route path="makerworld" element={<PermissionRoute permission="makerworld:view"><MakerworldPage /></PermissionRoute>} />
+                  <Route path="model-sources" element={<PermissionRoute permission={['makerworld:view', 'manyfold:view']}><ModelSourcesPage /></PermissionRoute>} />
+                  {/* The page was MakerWorld-only until Manyfold joined it (#1471); old links and bookmarks still land on that tab. */}
+                  <Route path="makerworld" element={<Navigate to="/model-sources?tab=makerworld" replace />} />
                   <Route path="settings" element={<PermissionRoute permission="settings:read"><SettingsPage /></PermissionRoute>} />
                   <Route path="groups/new" element={<PermissionRoute permission="groups:create"><GroupEditPage /></PermissionRoute>} />
                   <Route path="groups/:id/edit" element={<PermissionRoute permission="groups:update"><GroupEditPage /></PermissionRoute>} />
+                  <Route path="printer-locations" element={<PermissionRoute permission="printers:read"><PrinterLocationsPage /></PermissionRoute>} />
                   <Route path="users" element={<Navigate to="/settings?tab=users" replace />} />
                   <Route path="groups" element={<Navigate to="/settings?tab=users" replace />} />
                   <Route path="system" element={<SystemInfoPage />} />
                   <Route path="notifications" element={<NotificationsPage />} />
                   <Route path="gcode-viewer" element={<GCodeViewerPage />} />
                   <Route path="external/:id" element={<ExternalLinkPage />} />
-                  <Route path="camera-tokens" element={<Navigate to="/settings?tab=apikeys#card-camera-tokens" replace />} />
+                  <Route path="camera-tokens" element={<Navigate to="/settings?tab=camera#card-camera-tokens" replace />} />
                 </Route>
               </Routes>
+              </Suspense>
             </BrowserRouter>
             </SliceJobTrackerProvider>
             </ColorCatalogProvider>

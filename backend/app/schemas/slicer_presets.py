@@ -9,7 +9,9 @@ exactly once across the response.
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from backend.app.schemas.slicer import PresetRef
 
 CloudStatus = Literal["ok", "not_authenticated", "expired", "unreachable"]
 
@@ -40,6 +42,18 @@ class UnifiedPreset(BaseModel):
     process / filament dropdowns by the selected printer (#1325); when it is
     ``None`` the modal falls back to matching the preset name against the
     ``@BBL <code>`` printer-model registry.
+
+    ``inherits`` is the preset a printer preset was saved from, for the local
+    and OrcaSlicer Cloud tiers. A printer preset saved under a name of its own
+    ("Bambu Lab H2D 0.4 nozzle - Skew") is listed in no process's
+    ``compatible_printers`` and its name says nothing reliable about the
+    model, so the SliceModal matches against this parent as well (#3250).
+    OrcaSlicer Cloud filament presets carry it too: one saved with only the
+    keys the user changed takes its material from this parent (#3403).
+
+    ``stock`` marks a Bambu Cloud preset as one of Bambu's own (the cloud's
+    "public" list) rather than the user's. Internal only: the listing drops
+    the Standard presets of the same names (#3386).
     """
 
     id: str
@@ -48,6 +62,8 @@ class UnifiedPreset(BaseModel):
     filament_type: str | None = None
     filament_colour: str | None = None
     compatible_printers: list[str] | None = None
+    inherits: str | None = None
+    stock: bool = Field(default=False, exclude=True)
 
 
 class UnifiedPresetsBySlot(BaseModel):
@@ -59,7 +75,8 @@ class UnifiedPresetsBySlot(BaseModel):
 
 
 class UnifiedPresetsResponse(BaseModel):
-    """Every tier carries its full preset list — no cross-tier dedup.
+    """Every tier carries its full preset list — no cross-tier dedup, except
+    that Bambu Cloud's stock presets are listed once, under Bambu Cloud (#3386).
 
     Priority order: ``local > orca_cloud > cloud > standard``. The order
     drives auto-pick (first non-empty tier wins, name-lookup walks tiers
@@ -72,6 +89,10 @@ class UnifiedPresetsResponse(BaseModel):
     explaining why a cloud tier is empty when the user expected to see it
     (signed out / token expired / network down). Each tier has its own
     status because they can fail independently.
+
+    ``stock_aliases`` maps each dropped Standard preset (``"standard:<id>"``)
+    to its Bambu Cloud stock twin, so a pipeline or AMS slot saved with the
+    Standard copy still finds it.
     """
 
     orca_cloud: UnifiedPresetsBySlot = UnifiedPresetsBySlot()
@@ -80,3 +101,59 @@ class UnifiedPresetsResponse(BaseModel):
     standard: UnifiedPresetsBySlot = UnifiedPresetsBySlot()
     cloud_status: CloudStatus = "ok"
     orca_cloud_status: CloudStatus = "ok"
+    stock_aliases: dict[str, PresetRef] = {}
+
+
+class LoadedSpoolPreset(BaseModel):
+    """The filament profile Bambuddy recorded for a slot (``slot_preset_mappings``).
+
+    ``tray_info_idx`` is the filament id the slot was configured with alongside
+    it. The SliceModal compares it with the tray's live id the same way the
+    slot card does, so a row that outlived a spool swap isn't trusted (#3216).
+    """
+
+    preset_id: str
+    preset_name: str
+    preset_source: str
+    tray_info_idx: str | None = None
+
+
+class LoadedSpoolTray(BaseModel):
+    """One AMS slot or external holder, as the printer reports it right now."""
+
+    ams_id: int
+    tray_id: int
+    tray_type: str | None = None
+    tray_sub_brands: str | None = None
+    tray_color: str | None = None
+    tray_info_idx: str | None = None
+    # Firmware's presence bit. A non-RFID spool it can't identify is present
+    # (True) but has no tray_type, which reads as "loaded, unconfigured".
+    exists: bool | None = None
+    state: int | None = None
+    saved_preset: LoadedSpoolPreset | None = None
+
+
+class LoadedSpoolUnit(BaseModel):
+    id: int
+    is_ams_ht: bool
+    trays: list[LoadedSpoolTray]
+
+
+class LoadedSpoolPrinter(BaseModel):
+    id: int
+    name: str
+    # Short model name ("X1C", "H2D") — the form the slicer's @BBL tags use.
+    model: str | None = None
+    ams: list[LoadedSpoolUnit] = []
+    # Only holders that currently have a spool in them.
+    external: list[LoadedSpoolTray] = []
+    # How many holders the printer has, loaded or not: two on a dual-nozzle
+    # printer, whose holders are labelled left and right.
+    external_holders: int = 0
+
+
+class LoadedSpoolsResponse(BaseModel):
+    """Connected printers and what is loaded in them, for the SliceModal (#3172)."""
+
+    printers: list[LoadedSpoolPrinter] = []

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta, timezone, tzinfo
+from datetime import date, datetime, timedelta, timezone, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -51,8 +51,8 @@ def local_zone() -> tzinfo:
 def utcnow_naive() -> datetime:
     """Current UTC time, tzinfo stripped.
 
-    Bambuddy's ``DateTime`` columns are naive and hold UTC; only the few that
-    genuinely need an offset are declared ``DateTime(timezone=True)``. SQLite
+    Bambuddy's ``DateTime`` columns are naive and hold UTC; none is declared
+    ``DateTime(timezone=True)`` (test_code_quality.py enforces it). SQLite
     silently tolerates an aware value written to a naive column (its bind
     processor reads the fields and drops the offset), which is why aware writes
     survived here for so long — but **asyncpg rejects them outright** with
@@ -96,6 +96,48 @@ def local_day_start(now_utc: datetime, *, days_ago: int = 0) -> datetime:
             hour=0, minute=0, second=0, microsecond=0, fold=0
         )
     return local_midnight.astimezone(timezone.utc)
+
+
+def day_zone(name: str | None) -> tzinfo:
+    """The zone a caller's calendar dates are in: the IANA ``name`` it sent, or
+    the server's own (``TZ``) when it sent none or one that is not a zone.
+
+    The Stats page sends the browser's zone with its dates; read in the
+    server's instead, a browser away from it saw every day shifted -- for
+    one in Tokyo on a UTC server, "Today" stayed empty until 09:00 (DB-C12).
+    """
+    if name:
+        try:
+            return ZoneInfo(name)
+        # OSError too: on some Python builds a directory name ("America")
+        # raises PermissionError instead of ZoneInfoNotFoundError.
+        except (ZoneInfoNotFoundError, ValueError, OSError):
+            logger.debug("Unknown zone %r for a date filter; using the server's", name)
+    return local_zone()
+
+
+def local_date_start(day: date, zone: tzinfo | None = None) -> datetime:
+    """The start of a calendar date in ``zone`` (the server's by default), as a UTC instant.
+
+    What a date filter means: "16 October" is the user's 16 October, not the
+    UTC one, which in Berlin starts at 02:00 (DB-C12). Built from the date
+    itself, so a DST change day is its true 23 or 25 hours.
+    """
+    try:
+        return datetime(day.year, day.month, day.day, tzinfo=zone or local_zone()).astimezone(timezone.utc)
+    except OverflowError:
+        # 0001-01-01 in a zone ahead of UTC starts before the first datetime:
+        # an open-ended range must not 500.
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def local_date_end(day: date, zone: tzinfo | None = None) -> datetime:
+    """The last instant of a calendar date in ``zone``, as a UTC instant."""
+    try:
+        return local_date_start(day + timedelta(days=1), zone) - timedelta(microseconds=1)
+    except OverflowError:
+        # 9999-12-31 has no next day to stop before.
+        return datetime.max.replace(tzinfo=timezone.utc)
 
 
 def next_local_hour(now_utc: datetime) -> datetime:

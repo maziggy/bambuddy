@@ -10,9 +10,10 @@ opaque defaults — they come alive in PR B (single-target dispatch) and PR C
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from backend.app.schemas.slicer import PresetRef
+from backend.app.schemas.not_null import IgnoresNullForRequiredColumns
+from backend.app.schemas.slicer import PresetRef, canonical_bed_type, checked_bed_type
 
 
 class SlicerPipelineBase(BaseModel):
@@ -30,15 +31,28 @@ class SlicerPipelineBase(BaseModel):
     )
     bed_type: str | None = Field(default=None, max_length=64)
 
+    @field_validator("bed_type")
+    @classmethod
+    def slicer_bed_type(cls, value: str | None) -> str | None:
+        # A row saved with an old name reads back as the slicer's name (#3359).
+        return canonical_bed_type(value)
+
 
 class SlicerPipelineCreate(SlicerPipelineBase):
     """Payload for POST /slicer-pipelines."""
 
+    @field_validator("bed_type")
+    @classmethod
+    def slicer_bed_type(cls, value: str | None) -> str | None:
+        return checked_bed_type(value)
 
-class SlicerPipelineUpdate(BaseModel):
+
+class SlicerPipelineUpdate(IgnoresNullForRequiredColumns):
     """Payload for PUT /slicer-pipelines/{id}. All fields optional; only those
     present are written. Preset and filament list are replaced wholesale when
     set (we don't support partial filament-slot edits)."""
+
+    __orm_table__ = "slicer_pipelines"
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=1000)
@@ -46,6 +60,11 @@ class SlicerPipelineUpdate(BaseModel):
     process_preset: PresetRef | None = None
     filament_presets: list[PresetRef] | None = Field(default=None, min_length=1)
     bed_type: str | None = Field(default=None, max_length=64)
+
+    @field_validator("bed_type")
+    @classmethod
+    def slicer_bed_type(cls, value: str | None) -> str | None:
+        return checked_bed_type(value)
 
     # PR B target binding. ``target_kind='specific_printer'`` requires
     # ``target_printer_id`` to be set OR cleared in the same payload (route

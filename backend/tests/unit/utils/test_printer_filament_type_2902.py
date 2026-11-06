@@ -251,7 +251,7 @@ class TestIsMaterialName:
             assert not is_material_name(fid), fid
             assert not is_material_name(filament_id_to_setting_id(fid)), fid
 
-    @pytest.mark.parametrize("unknown", ["PCTG", "PPS-CF", "PPS-GF", "PEEK", "PA6-CF", "CPE HG100", "XT", "", None])
+    @pytest.mark.parametrize("unknown", ["PPS-CF", "PPS-GF", "PEEK", "PA6-CF", "CPE HG100", "XT", "", None])
     def test_anything_it_cannot_place_is_left_for_the_caller_to_use(self, unknown):
         """False means "keep it". A type the tables do not carry is not proof
         the value is junk, and discarding it would empty the slot's filament id

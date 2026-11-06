@@ -137,9 +137,14 @@ export function LibraryFileDetailsModal({ file, canEdit, onClose }: LibraryFileD
   }
   if (details?.sliced_for_model) facts.push({ label: t('fileManager.details.slicedFor'), value: details.sliced_for_model });
   if (details?.source_url) {
+    // Only web addresses are links. A Manyfold import (#1471) records
+    // `manyfold:<model>/<file>`, which a browser can't open.
+    const isWebLink = /^https?:\/\//i.test(details.source_url);
     facts.push({
       label: t('fileManager.details.source'),
-      value: (
+      value: !isWebLink ? (
+        <span className="truncate">{details.source_url}</span>
+      ) : (
         <a
           href={details.source_url}
           target="_blank"

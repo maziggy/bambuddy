@@ -31,7 +31,11 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ASSETS = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'static', 'assets');
+// The build's assets; another directory as the first argument, for a build
+// made elsewhere (test_frontend.sh builds into a temporary directory).
+const ASSETS = process.argv[2]
+  ? resolve(process.argv[2])
+  : resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'static', 'assets');
 
 /**
  * Every extension the build can emit executable JavaScript under. `.mjs`

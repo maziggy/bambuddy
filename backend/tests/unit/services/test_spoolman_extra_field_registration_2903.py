@@ -67,6 +67,10 @@ class FakeSpoolman:
         self.log.append(f"{request.method} {path}")
         body = json.loads(request.content) if request.content else {}
 
+        # A Spoolman before 0.27, which has no tag endpoints.
+        if path.startswith("/tag/"):
+            return httpx.Response(404, json={"detail": "Not Found"})
+
         if path == "/field/spool" and request.method == "GET":
             if self.field_status != 200:
                 return httpx.Response(self.field_status)
@@ -347,3 +351,21 @@ class TestWhenRegistrationItselfFails:
         result = await client.create_spool(filament_id=7, extra={"tag": json.dumps("B")})
 
         assert result["extra"]["tag"] == json.dumps("B")
+
+
+class TestAutoCreatedSpoolSize:
+    """A spool auto-created from the AMS is the size the tray reports. Left
+    off, Spoolman copies the filament's weight: a 250 g refill matched to a
+    1000 g filament was created as a 1000 g spool with 250 g left (#3194)."""
+
+    @pytest.mark.asyncio
+    async def test_the_spool_takes_the_trays_own_weight(self):
+        fake = FakeSpoolman()
+        client = _client(fake)
+        tray = _tray("D144798DEF394926ACAE9D69ABA910CC")
+        tray.tray_weight = 250
+
+        result = await client.sync_ams_tray(tray, "OJIMPO-X2D-01", _NoCatalog())
+
+        assert result["initial_weight"] == 250
+        assert result["remaining_weight"] == 250

@@ -129,6 +129,7 @@ async def test_deactivating_the_owner_disables_the_key(async_client: AsyncClient
     assert "deactivated" in response.json()["detail"]
 
 
+@pytest.mark.sqlite_only  # a dangling reference needs foreign keys off
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_a_deleted_owner_does_not_fall_back_to_anonymous(async_client: AsyncClient, db_session):

@@ -236,7 +236,11 @@ class TestTheBaselineCaptureItself:
             printer = await db.get(Printer, printer_id)
 
         try:
-            with _patches(main_module, maker, monkeypatch, tmp_path, lambda: []):
+            with (
+                _patches(main_module, maker, monkeypatch, tmp_path, lambda: []),
+                # The re-read it starts for an unread card is #3412's to test.
+                patch.object(main_module, "spawn_background_task", lambda coro, name=None: coro.close()),
+            ):
                 await main_module._capture_timelapse_baseline_at_start(
                     printer, printer_id, main_module.logging.getLogger(__name__), archive_id=archive_id
                 )
@@ -247,6 +251,7 @@ class TestTheBaselineCaptureItself:
             assert (await db.get(PrintArchive, archive_id)).timelapse_baseline == []
         assert main_module._timelapse_baselines[printer_id] == set()
         main_module._timelapse_baselines.pop(printer_id, None)
+        main_module._timelapse_baselines_unread.discard(printer_id)
 
     async def test_a_readable_card_is_captured_and_persisted(self, test_engine, tmp_path, monkeypatch):
         from backend.app import main as main_module

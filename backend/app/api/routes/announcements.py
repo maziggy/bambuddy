@@ -39,7 +39,7 @@ async def _may_see(db: AsyncSession, user: User | None) -> bool:
 
 @router.get("")
 async def list_announcements(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_auth_if_enabled),
 ) -> dict:
     """Whether this user may see announcements, and the live ones newest first,
@@ -55,7 +55,7 @@ async def list_announcements(
 @router.post("/{public_id}/read", status_code=status.HTTP_204_NO_CONTENT)
 async def mark_announcement_read(
     public_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_auth_if_enabled),
 ) -> None:
     if not await _may_see(db, current_user):

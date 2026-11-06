@@ -12,7 +12,9 @@ import { server } from '../mocks/server';
 
 // The reject flow can hand off into the full PrintModal — not under test here.
 vi.mock('../../components/PrintModal', () => ({
-  PrintModal: () => <div data-testid="print-modal" />,
+  PrintModal: ({ preselectPlateId }: { preselectPlateId?: number | null }) => (
+    <div data-testid="print-modal" data-plate={String(preselectPlateId)} />
+  ),
 }));
 
 const baseArchive = {
@@ -99,6 +101,27 @@ describe('ConfirmOutcomeDialog', () => {
     });
   });
 
+  it('answers the archive a merged one went into (archive redesign P2)', async () => {
+    const user = userEvent.setup();
+    let merged: Record<string, unknown> | null = null;
+    server.use(
+      // The merged id's lookup returns the archive it went into.
+      http.get('/api/v1/archives/31', () => HttpResponse.json(baseArchive)),
+      http.patch('/api/v1/archives/31', async ({ request }) => {
+        merged = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(baseArchive);
+      }),
+    );
+    render(<ConfirmOutcomeDialog archiveId={31} onClose={vi.fn()} />);
+
+    await screen.findByText('Bracket');
+    expect(screen.getByAltText('Bracket')).toHaveAttribute('src', expect.stringContaining('/archives/42/photos/'));
+    await user.click(screen.getByText('Good'));
+
+    await waitFor(() => expect(patchPayload).toEqual({ user_verdict: 'good', user_verdict_source: 'dialog' }));
+    expect(merged).toBeNull();
+  });
+
   it('records a reject with an optional reason', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
@@ -145,6 +168,17 @@ describe('ConfirmOutcomeDialog', () => {
     });
   });
 
+  it('reprints the plate the archive printed (#3395)', async () => {
+    server.use(http.get('/api/v1/archives/42', () => HttpResponse.json({ ...baseArchive, plate_id: 10 })));
+    const user = userEvent.setup();
+    render(<ConfirmOutcomeDialog archiveId={42} onClose={vi.fn()} />);
+
+    await user.click(await screen.findByText('Reject'));
+    await user.click(await screen.findByText('Print again'));
+
+    expect(await screen.findByTestId('print-modal')).toHaveAttribute('data-plate', '10');
+  });
+
   it('shows the already-decided state instead of the buttons', async () => {
     server.use(
       http.get('/api/v1/archives/42', () =>
@@ -175,5 +209,72 @@ describe('ConfirmOutcomeDialog', () => {
     expect(screen.getByTestId('verdict-source-hint')).toHaveTextContent(
       'Recorded when the plate was cleared.'
     );
+  });
+
+  it('asks about the plate it was opened for and answers that one', async () => {
+    // Plates of one archive each have their own question: the dialog reads
+    // and answers its run, not the archive's latest.
+    const user = userEvent.setup();
+    let requestedRun: string | null = null;
+    server.use(
+      http.get('/api/v1/archives/42', ({ request }) => {
+        requestedRun = new URL(request.url).searchParams.get('run_id');
+        return HttpResponse.json({ ...baseArchive, run_id: 7 });
+      }),
+    );
+    render(<ConfirmOutcomeDialog archiveId={42} runId={7} onClose={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Bracket')).toBeInTheDocument();
+    });
+    expect(requestedRun).toBe('7');
+
+    await user.click(screen.getByText('Good'));
+
+    await waitFor(() => {
+      expect(patchPayload).toEqual({ user_verdict: 'good', user_verdict_source: 'dialog', run_id: 7 });
+    });
+  });
+  it('opened to change a verdict, offers the choice again with the current one marked', async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get('/api/v1/archives/42', () =>
+        HttpResponse.json({ ...baseArchive, run_id: 7, user_verdict: 'good', user_verdict_source: 'dialog' })
+      ),
+    );
+    const onClose = vi.fn();
+    render(<ConfirmOutcomeDialog archiveId={42} runId={7} change onClose={onClose} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Good' })).toHaveAttribute('aria-pressed', 'true');
+    });
+    expect(screen.getByText('Change outcome')).toBeInTheDocument();
+    expect(screen.queryByText('How did your print come out?')).not.toBeInTheDocument();
+    expect(screen.queryByText('Already confirmed as a good part.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Good' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Reject' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByText('Ask me later')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Reject' }));
+    await user.click(screen.getByText('Save'));
+
+    await waitFor(() => {
+      expect(patchPayload).toEqual({ user_verdict: 'reject', user_verdict_source: 'dialog', run_id: 7 });
+    });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('closes without a change on Cancel', async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get('/api/v1/archives/42', () => HttpResponse.json({ ...baseArchive, user_verdict: 'reject' })),
+    );
+    const onClose = vi.fn();
+    render(<ConfirmOutcomeDialog archiveId={42} change onClose={onClose} />);
+
+    await user.click(await screen.findByText('Cancel'));
+
+    expect(onClose).toHaveBeenCalled();
+    expect(patchPayload).toBeNull();
   });
 });

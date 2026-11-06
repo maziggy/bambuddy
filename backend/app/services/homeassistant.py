@@ -2,15 +2,52 @@
 
 import asyncio
 import logging
+import ssl
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import httpx
 
+from backend.app.core.logging_filters import redact_refused_headers
+
 if TYPE_CHECKING:
     from backend.app.models.smart_plug import SmartPlug
 
 logger = logging.getLogger(__name__)
+
+
+def tls_failure(exc: BaseException) -> str | None:
+    """Why a TLS connection to Home Assistant failed, or None if it was not TLS (#3300).
+
+    httpx raises an untrusted certificate as ``ConnectError``, the same as an
+    address nothing answers on, so the connection test said "Could not connect"
+    for an HA that was up and answering over https.
+    """
+    seen: set[int] = set()
+    cause: BaseException | None = exc
+    while cause is not None and id(cause) not in seen:
+        seen.add(id(cause))
+        if isinstance(cause, ssl.SSLCertVerificationError):
+            reason = str(cause.verify_message or cause.reason or cause).rstrip(".")
+            if "mismatch" in reason:
+                hint = "Enter the hostname the certificate was issued for, not an IP address or another name."
+            elif "expired" in reason:
+                hint = "Renew the certificate Home Assistant serves."
+            else:
+                # Self-signed, or issued by a CA of the user's own: Bambuddy
+                # trusts certifi's bundle unless pointed at a trust store.
+                hint = (
+                    "Bambuddy does not trust the authority that issued it. To use your own certificate "
+                    "authority, add it to Bambuddy's trust store (see Smart Plugs > Home Assistant in the wiki)."
+                )
+            return f"Home Assistant's certificate is not trusted ({reason}). {hint}"
+        if isinstance(cause, ssl.SSLError):
+            return (
+                f"The secure connection to Home Assistant failed ({cause.reason or cause}). "
+                "Check that Home Assistant serves https at this address and port."
+            )
+        cause = cause.__cause__ or cause.__context__
+    return None
 
 
 class HomeAssistantService:
@@ -253,10 +290,11 @@ class HomeAssistantService:
             return {"success": False, "message": None, "error": f"HTTP {e.response.status_code}"}
         except httpx.TimeoutException:
             return {"success": False, "message": None, "error": "Connection timeout"}
-        except httpx.ConnectError:
-            return {"success": False, "message": None, "error": "Could not connect to Home Assistant"}
+        except httpx.ConnectError as e:
+            return {"success": False, "message": None, "error": tls_failure(e) or "Could not connect to Home Assistant"}
         except Exception as e:
-            return {"success": False, "message": None, "error": str(e)}
+            # May be the saved token's test: a refused header's value stays out.
+            return {"success": False, "message": None, "error": redact_refused_headers(str(e))}
 
     async def list_entities(self, url: str, token: str, search: str | None = None) -> list[dict]:
         """List available entities from HA.

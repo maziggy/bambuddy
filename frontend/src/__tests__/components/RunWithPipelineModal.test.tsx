@@ -137,6 +137,25 @@ describe('RunWithPipelineModal', () => {
     });
   });
 
+  it('shows why the eligibility check was refused instead of going back silently', async () => {
+    mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [makePipeline()] });
+    mockApi.checkPipelineEligibility.mockRejectedValue(new Error('Not allowed to print this archive again'));
+    const onClose = vi.fn();
+    render(
+      <SliceJobTrackerProvider>
+        <RunWithPipelineModal source={{ kind: 'archive', id: 7, filename: 'part.3mf' }} onClose={onClose} />
+      </SliceJobTrackerProvider>,
+    );
+    await waitFor(() => expect(screen.getByText('Production Batch')).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Production Batch/i }));
+
+    expect(await screen.findByText('Not allowed to print this archive again')).toBeInTheDocument();
+    expect(mockApi.runPipeline).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('threads source kind="archive" through eligibility + run', async () => {
     mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [makePipeline()] });
     mockApi.checkPipelineEligibility.mockResolvedValue({

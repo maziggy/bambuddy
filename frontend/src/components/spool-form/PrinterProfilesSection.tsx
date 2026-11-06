@@ -11,7 +11,7 @@ import { hotendKey, isMatchingCalibration, presetKey } from './utils';
 import { STANDARD_NOZZLE_DIAMETERS } from './constants';
 import { PresetPicker } from './PresetPicker';
 import { extractPresetModel, matchesPrinterModelSuffix } from '../../utils/slicerPrinterMatch';
-import { flowLabel, normaliseFlow } from '../../utils/nozzleFlow';
+import { flowApplies, flowLabel, normaliseFlow } from '../../utils/nozzleFlow';
 import type { NozzleFlow } from '../../utils/nozzleFlow';
 
 /**
@@ -588,7 +588,7 @@ export function PrinterProfilesSection({
                                 // look configured and quietly do nothing.
                                 const fitted = fittedFlow(entry, column.extruder);
                                 const chosenFlow = normaliseFlow(chosen?.nozzle_id);
-                                const flowMismatch = !!(fitted && chosenFlow && fitted !== chosenFlow);
+                                const flowMismatch = !!chosen && !flowApplies(chosen.nozzle_id, fitted);
                                 return (
                                   <select
                                     key={key}

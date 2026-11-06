@@ -20,6 +20,21 @@ from backend.app.services.usage_tracker import (
 )
 
 
+async def _charge_in_memory(_db, spool, grams):
+    """The fake session has no database for the tracker's UPDATE: add the
+    grams to the mock spool, which is what these tests check. The statement
+    itself is tested against a real database in test_usage_tracker_charge_race."""
+    spool.weight_used = (spool.weight_used or 0) + grams
+    spool.last_used = datetime.now(timezone.utc)
+    return True
+
+
+@pytest.fixture(autouse=True)
+def _charge_spools_in_memory():
+    with patch("backend.app.services.usage_tracker._charge_spool", _charge_in_memory):
+        yield
+
+
 def _make_spool(*, id=1, label_weight=1000, weight_used=0, tag_uid=None, tray_uuid=None, rgba=None):
     """Create a mock Spool object."""
     spool = MagicMock()
@@ -801,6 +816,9 @@ class TestSpoolAssignmentSnapshot:
                 MagicMock(scalar_one_or_none=MagicMock(return_value=spool)),
                 # Cost-update block re-selects the archive to mutate cost.
                 MagicMock(scalar_one_or_none=MagicMock(return_value=archive)),
+                # Priced at the default rate, so it asks whether this is the
+                # archive's first run before storing the cost.
+                MagicMock(scalar=MagicMock(return_value=0)),
             ]
         )
 

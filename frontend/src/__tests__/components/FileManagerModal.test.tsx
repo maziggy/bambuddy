@@ -438,6 +438,26 @@ describe('FileManagerModal', () => {
       expect(screen.getByText('1 selected')).toBeInTheDocument();
     });
 
+    it('says a slow listing is slow, and keeps the selection (TO-C13)', async () => {
+      render(
+        <FileManagerModal printerId={1} printerName="X1 Carbon" onClose={mockOnClose} />
+      );
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Select benchy.3mf' }));
+      expect(screen.getByText('1 selected')).toBeInTheDocument();
+
+      server.use(
+        http.get('/api/v1/printers/:id/files', () =>
+          HttpResponse.json({ files: [], warnings: ['listing_timed_out'] })
+        )
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+      expect(await screen.findByText(/listing this folder is taking too long/)).toBeInTheDocument();
+      expect(screen.queryByText(/file service is unavailable/)).not.toBeInTheDocument();
+      expect(screen.getByText('1 selected')).toBeInTheDocument();
+    });
+
     it('drops hidden selections when the filter changes', async () => {
       render(
         <FileManagerModal printerId={1} printerName="X1 Carbon" onClose={mockOnClose} />

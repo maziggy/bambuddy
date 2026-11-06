@@ -20,7 +20,9 @@ export function PrinterQueueWidget({ printerId, printerModel, loadedFilamentType
   const { t } = useTranslation();
   const { data: queue } = useQuery({
     queryKey: ['queue', printerId, 'pending', printerModel],
-    queryFn: () => api.getQueue(printerId, 'pending', printerModel || undefined),
+    // The printer's model is resolved on the server, as GET /queue/ does when
+    // no target_model is given; the key keeps it so a model change refetches.
+    queryFn: () => api.getPrinterQueue(printerId, 'pending'),
     refetchInterval: 30000,
   });
 

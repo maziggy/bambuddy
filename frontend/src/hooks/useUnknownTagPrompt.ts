@@ -6,6 +6,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { getAmsLabel } from '../utils/amsHelpers';
+import { useUiSettings } from './useUiSettings';
 
 export interface UnknownTagDetail {
   printer_id: number;
@@ -46,6 +47,7 @@ export function useUnknownTagPrompt() {
   const [queue, setQueue] = useState<UnknownSpoolPrompt[]>([]);
 
   const isAuthed = !authEnabled || !!user;
+  const { data: uiSettings } = useUiSettings({ enabled: isAuthed });
 
   const buildPrompt = useCallback(
     (detail: UnknownTagDetail): UnknownSpoolPrompt | null => {
@@ -55,13 +57,12 @@ export function useUnknownTagPrompt() {
       if (!detail.tray_type) return null;
       const printers = queryClient.getQueryData<Printer[]>(['printers']);
       const printer = printers?.find(p => p.id === detail.printer_id);
-      const trayCount = detail.tray_count ?? 4;
       return {
         printer_id: detail.printer_id,
         ams_id: detail.ams_id,
         tray_id: detail.tray_id,
         printer_name: printer?.name ?? `Printer ${detail.printer_id}`,
-        ams_label: getAmsLabel(detail.ams_id, trayCount),
+        ams_label: getAmsLabel(detail.ams_id),
         slot_label: `${t('inventory.unknownSpoolSlot', 'Slot')} ${detail.tray_id + 1}`,
         material: detail.tray_type ?? null,
         color_hex: detail.tray_color ?? null,
@@ -98,8 +99,7 @@ export function useUnknownTagPrompt() {
 
   const addMutation = useMutation({
     mutationFn: async (prompt: UnknownSpoolPrompt) => {
-      const settings = queryClient.getQueryData<{ spoolman_enabled?: boolean }>(['settings']);
-      if (settings?.spoolman_enabled) {
+      if (uiSettings?.spoolman_enabled) {
         await api.createSpoolmanSpoolFromSlot({
           printer_id: prompt.printer_id,
           ams_id: prompt.ams_id,

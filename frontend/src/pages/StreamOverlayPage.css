@@ -1,0 +1,36 @@
+/* Explicit layout URLs use a fixed canvas. Legacy URLs keep viewport styling. */
+.classic-overlay[data-layout] {
+  --text-primary: #fff;
+  height: var(--overlay-height);
+  min-height: var(--overlay-height);
+}
+.classic-overlay[data-layout='portrait'] {
+  --classic-scale: 1;
+}
+.classic-overlay[data-layout='portrait'][data-size='small'] {
+  --classic-scale: 0.8;
+}
+.classic-overlay[data-layout='portrait'][data-size='large'] {
+  --classic-scale: 1.2;
+}
+.classic-overlay[data-layout='portrait'] .classic-overlay__text {
+  font-size: calc(30px * var(--classic-scale));
+  line-height: 1.4;
+}
+.classic-overlay[data-layout='portrait'] .classic-overlay__filename {
+  font-size: calc(42px * var(--classic-scale));
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.classic-overlay[data-layout='portrait'] .classic-overlay__panel {
+  padding: 32px;
+}
+.classic-overlay[data-layout='portrait'] .classic-overlay__icon {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+}
+.classic-overlay[data-layout='portrait'] .classic-overlay__logo {
+  height: 120px;
+}

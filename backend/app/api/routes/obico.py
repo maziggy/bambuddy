@@ -2,13 +2,18 @@
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.api.routes.settings import get_setting
+from backend.app.core.auth import ApiKeyActor, RequestActor, RequestPrinterScope, RequirePermissionIfAuthEnabled
+from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.user import User
 from backend.app.services.obico_detection import obico_detection_service, pop_frame
+from backend.app.services.secret_fields import SECRET_PLACEHOLDER, same_value
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +22,8 @@ router = APIRouter(prefix="/obico", tags=["obico"])
 
 class TestConnectionRequest(BaseModel):
     url: str
-    # Omitted entirely = test with the saved token; "" = test with no token.
+    # Omitted entirely or the placeholder = test with the saved token (against
+    # the saved URL only); "" = test with no token.
     token: str | None = None
 
 
@@ -35,13 +41,15 @@ async def get_status(
         "sensitivity": settings["sensitivity"],
         "action": settings["action"],
         "poll_interval": settings["poll_interval"],
-        "external_url_configured": bool(settings["external_url"]),
+        "external_url_configured": bool(settings["snapshot_base_url"]),
     }
 
 
 @router.get("/printer-status")
 async def get_printer_status(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Per-printer live classification for the printer cards (#1546).
 
@@ -52,13 +60,17 @@ async def get_printer_status(
     enabled_printers = settings["enabled_printers"]
     # Error strings can embed configured URLs (ML API base, external URL), so
     # they stay behind settings:read like the rest of the configuration.
-    can_see_error = user is None or user.has_permission(Permission.SETTINGS_READ.value)
+    can_see_error = actor is None or actor.has_permission(Permission.SETTINGS_READ.value)
     per_printer = obico_detection_service.get_per_printer()
     if not can_see_error:
         # The "error" *class* is not configuration — a printers:read user still
         # needs to know their print is not being watched. Only the reason, which
         # can name a URL, is withheld.
         per_printer = {pid: {**entry, "error": None} for pid, entry in per_printer.items()}
+    # Only printers the caller may see (#1727)
+    per_printer = {pid: entry for pid, entry in per_printer.items() if printer_scope.allows(int(pid))}
+    if enabled_printers is not None:
+        enabled_printers = [pid for pid in enabled_printers if printer_scope.allows(int(pid))]
     return {
         "enabled": settings["enabled"],
         # None = all printers are monitored
@@ -71,16 +83,18 @@ async def get_printer_status(
 @router.post("/test-connection")
 async def test_connection(
     req: TestConnectionRequest,
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Ping the Obico ML API health endpoint and check the token. Returns ok + raw body."""
     if not req.url:
         return {"ok": False, "status_code": None, "body": None, "error": "URL is empty", "auth_ok": None}
     token = req.token
-    if token is None:
-        # Field omitted entirely — test what the service actually uses.
-        settings = await obico_detection_service._load_settings()
-        token = settings.get("ml_token") or ""
+    if token is None or token == SECRET_PLACEHOLDER:
+        # The saved token, which only goes to the saved URL.
+        if not same_value(req.url, await get_setting(db, "obico_ml_url")):
+            raise HTTPException(status_code=400, detail="Enter the token again: the URL changed")
+        token = await get_setting(db, "obico_ml_token") or ""
     return await obico_detection_service.test_connection(req.url, token)
 
 

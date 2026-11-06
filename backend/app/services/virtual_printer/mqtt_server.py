@@ -23,6 +23,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Slicer commands logged in full, not cut at 100 characters: they say how the
+# slicer addresses an AMS tray (see _handle_publish).
+_COMMANDS_LOGGED_WHOLE = frozenset(
+    {"extrusion_cali_sel", "extrusion_cali_set", "ams_filament_setting", "ams_change_filament"}
+)
+
 # Default MQTT port for Bambu printers (MQTT over TLS)
 MQTT_PORT = 8883
 
@@ -82,147 +88,11 @@ MODEL_PRODUCT_NAMES = {
 }
 
 
-class VirtualPrinterMQTTServer:
-    """MQTT broker that accepts connections from slicers.
-
-    This is a minimal MQTT broker implementation that:
-    - Accepts TLS connections on port 8883
-    - Authenticates with username 'bblp' and the configured access code
-    - Receives print commands on device/{serial}/request
-    - Can publish status on device/{serial}/report
-    """
-
-    def __init__(
-        self,
-        serial: str,
-        access_code: str,
-        cert_path: Path,
-        key_path: Path,
-        port: int = MQTT_PORT,
-        on_print_command: Callable[[str, dict], None] | None = None,
-    ):
-        """Initialize the MQTT server.
-
-        Args:
-            serial: Virtual printer serial number
-            access_code: Password for authentication
-            cert_path: Path to TLS certificate
-            key_path: Path to TLS private key
-            port: Port to listen on (default 8883)
-            on_print_command: Callback when print command received (filename, data)
-        """
-        self.serial = serial
-        self.access_code = access_code
-        self.cert_path = cert_path
-        self.key_path = key_path
-        self.port = port
-        self.on_print_command = on_print_command
-        self._running = False
-        self._broker = None
-        self._broker_task = None
-
-    async def start(self) -> None:
-        """Start the MQTT broker."""
-        if self._running:
-            return
-
-        # Try to import amqtt
-        try:
-            from amqtt.broker import Broker
-        except ImportError:
-            logger.error("amqtt not installed. Run: pip install amqtt")
-            return
-
-        logger.info("Starting virtual printer MQTT broker on port %s", self.port)
-
-        # Build broker configuration
-        config = {
-            "listeners": {
-                "default": {
-                    "type": "tcp",
-                    "bind": f"0.0.0.0:{self.port}",
-                    "ssl": "on",
-                    "certfile": str(self.cert_path),
-                    "keyfile": str(self.key_path),
-                },
-            },
-            "auth": {
-                "allow-anonymous": False,
-                "plugins": ["auth_custom"],
-            },
-            "topic-check": {
-                "enabled": False,  # Allow any topic
-            },
-        }
-
-        try:
-            self._running = True
-
-            # Create and start broker
-            self._broker = Broker(config)
-
-            # Register custom auth plugin
-            self._broker.plugins_manager.plugins_handlers["auth_custom"] = self._authenticate
-
-            # Start the broker
-            await self._broker.start()
-            logger.info("MQTT broker started on port %s", self.port)
-
-            # Keep running
-            while self._running:
-                await asyncio.sleep(1)
-
-        except OSError as e:
-            if e.errno == 98:  # Address already in use
-                logger.error("MQTT port %s is already in use", self.port)
-            else:
-                logger.error("MQTT broker error: %s", e)
-        except asyncio.CancelledError:
-            logger.debug("MQTT broker task cancelled")
-        except Exception as e:
-            logger.error("MQTT broker error: %s", e)
-        finally:
-            await self.stop()
-
-    async def _authenticate(self, session) -> bool:
-        """Authenticate MQTT connection.
-
-        Args:
-            session: MQTT session with username/password
-
-        Returns:
-            True if authentication successful
-        """
-        username = getattr(session, "username", None)
-        password = getattr(session, "password", None)
-
-        # Bambu slicers use 'bblp' as username and access code as password
-        if username == "bblp" and password == self.access_code:
-            logger.debug("MQTT client authenticated from %s", session.remote_address)
-            return True
-
-        logger.warning("MQTT auth failed for user '%s' from %s", username, session.remote_address)
-        return False
-
-    async def stop(self) -> None:
-        """Stop the MQTT broker."""
-        logger.info("Stopping MQTT broker")
-        self._running = False
-
-        if self._broker:
-            try:
-                await self._broker.shutdown()
-            except OSError as e:
-                logger.debug("Error shutting down MQTT broker: %s", e)
-            self._broker = None
-
-
 class SimpleMQTTServer:
-    """Simplified MQTT server using raw sockets.
+    """The virtual printer's MQTT server, on raw sockets.
 
-    This is a fallback implementation that handles basic MQTT protocol
-    without requiring the amqtt library. It's less feature-complete but
-    more lightweight.
+    Handles the part of the MQTT protocol slicers use with a printer; not a
+    general-purpose broker.
     """
 
     def __init__(
@@ -1365,6 +1235,16 @@ class SimpleMQTTServer:
                     message[:200],
                 )
                 return
+
+            # The line above stops at 100 characters, before the tray_id of a
+            # K-profile command: how BambuStudio numbers an A2L or AMS-HT tray,
+            # which support bundles are the only source for. These carry no
+            # credentials, so they are logged whole.
+            print_command = data.get("print") if isinstance(data, dict) else None
+            if isinstance(print_command, dict) and print_command.get("command") in _COMMANDS_LOGGED_WHOLE:
+                logger.info(
+                    "MQTT %s from slicer: %s", print_command["command"], json.dumps(print_command, sort_keys=True)
+                )
 
             # Env-flagged command trace (#1622): every slicer-originated publish
             # gets a line in vp_wire/<vp>_cmd.jsonl alongside the printer-side

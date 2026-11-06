@@ -284,16 +284,10 @@ class TestLeftAuxFanCommand:
         assert mqtt_client.set_fan_speed(10, 204) is True
         assert sent == ["M106 P10 S204"]
 
-    def test_set_left_aux_fan_helper(self, mqtt_client, monkeypatch):
-        sent = []
-        monkeypatch.setattr(mqtt_client, "send_gcode", lambda g: sent.append(g) or True)
-        assert mqtt_client.set_left_aux_fan(255) is True
-        assert sent == ["M106 P10 S255"]
-
     def test_speed_clamped_to_255(self, mqtt_client, monkeypatch):
         sent = []
         monkeypatch.setattr(mqtt_client, "send_gcode", lambda g: sent.append(g) or True)
-        mqtt_client.set_left_aux_fan(999)
+        mqtt_client.set_fan_speed(10, 999)
         assert sent == ["M106 P10 S255"]
 
     def test_invalid_fan_index_rejected(self, mqtt_client, monkeypatch):

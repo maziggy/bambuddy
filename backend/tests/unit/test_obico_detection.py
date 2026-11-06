@@ -161,7 +161,7 @@ class TestMlApiToken:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "snapshot_base_url": "http://bambuddy:8000",
         }
         base.update(overrides)
         return base
@@ -354,7 +354,7 @@ class TestPollOneStateLifecycle:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "snapshot_base_url": "http://bambuddy:8000",
         }
         status = MagicMock(state="RUNNING", task_name="new_task", subtask_name="")
 
@@ -387,7 +387,7 @@ class TestPollOneStateLifecycle:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "snapshot_base_url": "http://bambuddy:8000",
         }
         status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
 
@@ -416,7 +416,7 @@ class TestPollOneStateLifecycle:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "snapshot_base_url": "http://bambuddy:8000",
         }
         status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
 
@@ -451,22 +451,25 @@ class TestPollOneStateLifecycle:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "snapshot_base_url": "http://bambuddy:8000",
         }
         status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
 
-        # Seed state so the next frame crosses HIGH immediately
+        # Seed a clean print that then rises sharply, so the next frame is
+        # well past the pause level (a steady 1.0 would be baseline, #3459)
         from backend.app.services.obico_smoothing import PrintState
 
         seeded = PrintState()
         for _ in range(WARMUP_FRAMES + 500):
-            seeded.update(1.0)
+            seeded.update(0.0)
+        for _ in range(40):
+            seeded.update(3.0)
         svc._states[1] = seeded
         svc._state_keys[1] = "job"
         svc._action_fired[1] = False
 
         mock_response = MagicMock()
-        mock_response.json.return_value = {"detections": [["failure", 0.9, [0, 0, 1, 1]]]}
+        mock_response.json.return_value = {"detections": [["failure", 3.0, [0, 0, 1, 1]]]}
         mock_response.raise_for_status = MagicMock()
         mock_client = MagicMock()
         mock_client.get = AsyncMock(return_value=mock_response)
@@ -480,6 +483,7 @@ class TestPollOneStateLifecycle:
         ):
             await svc._check_printer(1, status, settings)
             assert mock_action.call_count == 1
+            assert mock_action.await_args.args[-1] == FAKE_JPEG
             await svc._check_printer(1, status, settings)
             # Second call must not dispatch again
             assert mock_action.call_count == 1
@@ -653,6 +657,28 @@ class TestFrameCache:
         assert await pop_frame("aging-nonce") is None
 
 
+class TestProviderSwitch:
+    async def test_refresh_cancels_inflight_poll_before_it_can_act(self):
+        import asyncio
+
+        svc = ObicoDetectionService()
+        started = asyncio.Event()
+        action = AsyncMock()
+
+        async def pending_poll():
+            started.set()
+            await asyncio.Future()
+            await action()
+
+        svc._task = asyncio.create_task(pending_poll())
+        await started.wait()
+        with patch.object(svc, "start", new_callable=AsyncMock) as restart:
+            await svc.refresh_settings()
+        action.assert_not_awaited()
+        restart.assert_awaited_once()
+        assert svc._task is None
+
+
 class TestCheckPrinterUsesCachedFrameUrl:
     """The URL sent to Obico must point at our nonce endpoint, not /camera/snapshot."""
 
@@ -669,7 +695,7 @@ class TestCheckPrinterUsesCachedFrameUrl:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "snapshot_base_url": "http://bambuddy:8000",
         }
         status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
 
@@ -709,7 +735,7 @@ class TestCheckPrinterUsesCachedFrameUrl:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "snapshot_base_url": "http://bambuddy:8000",
         }
         status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
 
@@ -729,8 +755,8 @@ class TestCheckPrinterUsesCachedFrameUrl:
         assert "Failed to capture snapshot" in svc._last_error
 
     @pytest.mark.asyncio
-    async def test_missing_external_url_skips_ml_call(self):
-        """Without external_url, Obico can't reach our cached-frame endpoint."""
+    async def test_missing_snapshot_address_skips_ml_call(self):
+        """Without a snapshot address, Obico can't reach our cached-frame endpoint."""
         svc = ObicoDetectionService()
         settings = {
             "enabled": True,
@@ -739,7 +765,7 @@ class TestCheckPrinterUsesCachedFrameUrl:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "",
+            "snapshot_base_url": "",
         }
         status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
 
@@ -756,7 +782,7 @@ class TestCheckPrinterUsesCachedFrameUrl:
 
         mock_client.get.assert_not_called()
         assert svc._last_error is not None
-        assert "external_url" in svc._last_error
+        assert "bambuddy_internal_url" in svc._last_error
 
     @pytest.mark.asyncio
     async def test_successful_cycle_clears_previous_error(self):
@@ -774,7 +800,7 @@ class TestCheckPrinterUsesCachedFrameUrl:
             "action": "notify",
             "poll_interval": 10,
             "enabled_printers": None,
-            "external_url": "http://bambuddy:8000",
+            "snapshot_base_url": "http://bambuddy:8000",
         }
         status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
 
@@ -822,7 +848,7 @@ class TestNoVerdictIsNotSafe:
         "action": "notify",
         "poll_interval": 10,
         "enabled_printers": None,
-        "external_url": "http://bambuddy:8000",
+        "snapshot_base_url": "http://bambuddy:8000",
     }
 
     @staticmethod
@@ -882,9 +908,9 @@ class TestNoVerdictIsNotSafe:
         assert "capture" in entry["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_missing_external_url_reports_error(self):
+    async def test_missing_snapshot_address_reports_error(self):
         svc = ObicoDetectionService()
-        settings = {**self.SETTINGS, "external_url": ""}
+        settings = {**self.SETTINGS, "snapshot_base_url": ""}
         with patch.object(svc, "_capture_frame", new=AsyncMock(return_value=FAKE_JPEG)):
             await svc._check_printer(1, self._status(), settings)
 

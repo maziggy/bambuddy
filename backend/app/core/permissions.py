@@ -50,6 +50,10 @@ class Permission(StrEnum):
     QUEUE_DELETE_OWN = "queue:delete_own"
     QUEUE_DELETE_ALL = "queue:delete_all"
     QUEUE_REORDER = "queue:reorder"
+    # Without it, every job the user queues waits until someone with
+    # queue:update_all starts it (#1620). Only the waiting is enforced here;
+    # queue:create still decides whether they may queue at all.
+    QUEUE_START_UNREVIEWED = "queue:start_unreviewed"
 
     # Library
     LIBRARY_READ = "library:read"
@@ -166,6 +170,10 @@ class Permission(StrEnum):
     MAKERWORLD_VIEW = "makerworld:view"  # Resolve MakerWorld URLs and view model metadata
     MAKERWORLD_IMPORT = "makerworld:import"  # Download 3MFs from MakerWorld into the library
 
+    # Manyfold Integration (#1471)
+    MANYFOLD_VIEW = "manyfold:view"  # Browse and search the connected Manyfold library
+    MANYFOLD_IMPORT = "manyfold:import"  # Download Manyfold files into the library
+
     # API Keys (admin-level)
     API_KEYS_READ = "api_keys:read"
     API_KEYS_CREATE = "api_keys:create"
@@ -233,6 +241,7 @@ PERMISSION_CATEGORIES = {
         Permission.QUEUE_DELETE_OWN,
         Permission.QUEUE_DELETE_ALL,
         Permission.QUEUE_REORDER,
+        Permission.QUEUE_START_UNREVIEWED,
     ],
     "Library": [
         Permission.LIBRARY_READ,  # legacy — kept for back-compat with custom roles
@@ -343,6 +352,10 @@ PERMISSION_CATEGORIES = {
         Permission.MAKERWORLD_VIEW,
         Permission.MAKERWORLD_IMPORT,
     ],
+    "Manyfold": [
+        Permission.MANYFOLD_VIEW,
+        Permission.MANYFOLD_IMPORT,
+    ],
     "API Keys": [
         Permission.API_KEYS_READ,
         Permission.API_KEYS_CREATE,
@@ -406,6 +419,7 @@ DEFAULT_GROUPS = {
             Permission.QUEUE_UPDATE_OWN.value,
             Permission.QUEUE_DELETE_OWN.value,
             Permission.QUEUE_REORDER.value,
+            Permission.QUEUE_START_UNREVIEWED.value,
             # Library - own items only
             Permission.LIBRARY_READ_OWN.value,
             Permission.LIBRARY_UPLOAD.value,
@@ -414,6 +428,9 @@ DEFAULT_GROUPS = {
             # MakerWorld integration
             Permission.MAKERWORLD_VIEW.value,
             Permission.MAKERWORLD_IMPORT.value,
+            # Manyfold integration
+            Permission.MANYFOLD_VIEW.value,
+            Permission.MANYFOLD_IMPORT.value,
             # Orca Cloud — needed for the Slice modal's Orca Cloud preset
             # picker to populate. Workshops that use Orca Cloud presets
             # need every operator to be able to authenticate. Bambu Cloud
@@ -522,6 +539,8 @@ DEFAULT_GROUPS = {
             Permission.WEBSOCKET_CONNECT.value,
             # MakerWorld browsing only (no import — that writes to library)
             Permission.MAKERWORLD_VIEW.value,
+            # Manyfold browsing only, for the same reason
+            Permission.MANYFOLD_VIEW.value,
         ],
         "is_system": True,
     },

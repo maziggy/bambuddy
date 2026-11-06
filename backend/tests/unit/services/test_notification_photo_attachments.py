@@ -166,6 +166,7 @@ class TestAttachPhotoOptOut:
         ("provider_type", "config", "sender"),
         [
             ("bark", {"device_key": "abc"}, "_send_bark"),
+            ("gotify", {"server": "https://g.example", "app_token": "t"}, "_send_gotify"),
             ("homeassistant", {"service": "notify.mobile_app_x"}, "_send_homeassistant"),
             ("webhook", {"webhook_url": "http://hook.local", "payload_format": "slack"}, "_send_webhook"),
         ],
@@ -233,6 +234,21 @@ class TestAttachPhotoOptOut:
 
         with (
             patch.object(service, "_send_bark", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_get_or_build_photo_url", new_callable=AsyncMock) as mock_build,
+        ):
+            mock_send.return_value = (True, "OK")
+            mock_build.return_value = "https://bambuddy.example/photo.jpg"
+            await service._send_to_provider(provider, "Title", "Body", db=AsyncMock(), image_data=b"jpeg")
+
+        assert mock_send.call_args.kwargs.get("image_url") == "https://bambuddy.example/photo.jpg"
+
+    @pytest.mark.asyncio
+    async def test_gotify_gets_photo_url_when_enabled(self, service):
+        """Gotify takes no uploads, so its photo has to be a URL its app fetches (#2743)."""
+        provider = _provider("gotify", {"server": "https://g.example", "app_token": "t"})
+
+        with (
+            patch.object(service, "_send_gotify", new_callable=AsyncMock) as mock_send,
             patch.object(service, "_get_or_build_photo_url", new_callable=AsyncMock) as mock_build,
         ):
             mock_send.return_value = (True, "OK")

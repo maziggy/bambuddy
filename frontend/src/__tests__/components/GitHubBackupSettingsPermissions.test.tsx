@@ -113,3 +113,56 @@ describe('GitHubBackupSettings - github:restore gate', () => {
     );
   });
 });
+
+describe('GitHubBackupSettings - a full backup is admin-only', () => {
+  // It holds every password hash and 2FA secret, and restoring one replaces
+  // the users: the server refuses both to a non-administrator.
+  it('offers a non-admin neither the download nor the restore of a full backup', async () => {
+    mockConfiguredBackup();
+    mockUserWith(['settings:read', 'settings:backup', 'settings:restore']);
+
+    render(<GitHubBackupSettings />);
+
+    const download = await screen.findByRole('button', { name: /^Download$/i });
+    expect(download).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Restore$/i })).toBeDisabled();
+    expect(screen.getAllByText('Only an administrator can change this.').length).toBeGreaterThan(0);
+  });
+
+  it('shows a non-admin the backup folder read-only', async () => {
+    // Pointed into a folder the web server hands out, a full backup could be
+    // fetched without signing in.
+    mockConfiguredBackup();
+    mockUserWith(['settings:read', 'settings:update', 'settings:backup']);
+    server.use(
+      http.get('*/api/v1/local-backup/status', () =>
+        HttpResponse.json({
+          enabled: true, schedule: 'daily', time: '03:00', retention: 5, path: '', default_path: '/data/backups',
+          is_running: false, last_backup_at: null, last_status: null, last_message: null, next_run: null, timezone: 'UTC',
+        }),
+      ),
+      http.get('*/api/v1/local-backup/backups', () => HttpResponse.json([])),
+      http.get('*/api/v1/local-backup/path-check', () => HttpResponse.json({ ok: true })),
+    );
+
+    render(<GitHubBackupSettings />);
+
+    const label = await screen.findByText('Output Path');
+    const input = label.parentElement?.querySelector('input') as HTMLInputElement;
+    expect(input).toBeDisabled();
+  });
+
+  it('keeps them for an admin', async () => {
+    mockConfiguredBackup();
+    setAuthToken('test-token', 'session');
+    server.use(
+      http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+      http.get('*/api/v1/auth/me', () => HttpResponse.json({ id: 1, username: 'admin', is_admin: true, permissions: [] })),
+    );
+
+    render(<GitHubBackupSettings />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Download$/i })).toBeEnabled());
+    expect(screen.getByRole('button', { name: /^Restore$/i })).toBeEnabled();
+  });
+});

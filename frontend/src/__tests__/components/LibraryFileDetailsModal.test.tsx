@@ -93,6 +93,15 @@ describe('LibraryFileDetailsModal', () => {
     expect(photo.src).toContain('/library/files/7/photos/abc123.jpg');
   });
 
+  it('shows a source that is not a web address as text, not a dead link (#1471)', async () => {
+    server.use(
+      http.get('/api/v1/library/files/7', () => HttpResponse.json({ ...details, source_url: 'manyfold:cube01/f1' })),
+    );
+    render(<LibraryFileDetailsModal file={listItem} canEdit onClose={onClose} />);
+    expect(await screen.findByText('manyfold:cube01/f1')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /manyfold:cube01/ })).toBeNull();
+  });
+
   it('saves edited notes and link through updateLibraryFile', async () => {
     const user = userEvent.setup();
     render(<LibraryFileDetailsModal file={listItem} canEdit onClose={onClose} />);

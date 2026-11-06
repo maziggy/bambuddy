@@ -41,6 +41,7 @@ def _client(*, healthy: bool = True, base_url: str = "http://localhost:7912") ->
     client = MagicMock()
     client.base_url = base_url
     client.health_check = AsyncMock(return_value=healthy)
+    client.has_tag_api = AsyncMock(return_value=False)
     return client
 
 
@@ -110,6 +111,7 @@ class TestItAsksSpoolmanRatherThanItself:
             "enabled": True,
             "connected": False,
             "url": "http://localhost:7912",
+            "native_tags": False,
         }
 
 

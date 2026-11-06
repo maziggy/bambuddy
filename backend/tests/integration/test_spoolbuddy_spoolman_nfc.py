@@ -70,6 +70,9 @@ def _spoolman_spool(spool_id: int) -> dict:
 
 def _mock_spoolman_client_local() -> MagicMock:
     client = MagicMock()
+    client.has_tag_api = AsyncMock(return_value=False)
+    client.add_native_tags = AsyncMock(return_value=0)
+    client.unlink_all_native_tags = AsyncMock()
     client.base_url = "http://spoolman.local:7912"
     client.get_spools = AsyncMock(return_value=[])
     client.find_spool_by_tag = AsyncMock(return_value=None)
@@ -83,7 +86,11 @@ def _mock_spoolman_client_local() -> MagicMock:
 
 
 class TestTagScannedBroadcastsTrayUuid:
-    """nfc/tag-scanned broadcasts include tray_uuid from the request payload."""
+    """nfc/tag-scanned broadcasts include tray_uuid from the request payload.
+
+    The values are real block-9 tray UUIDs: anything else is dropped as a
+    pre-#984 daemon value (see test_spoolbuddy.py).
+    """
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -116,7 +123,7 @@ class TestTagScannedBroadcastsTrayUuid:
                 json={
                     "device_id": "sb-test",
                     "tag_uid": "AABB1122334455FF",
-                    "tray_uuid": "DEADBEEFDEADBEEFDEADBEEFDEADBEEF",
+                    "tray_uuid": "9E0B0717BEE94D7887EB1D8DFD1A14F3",
                 },
             )
 
@@ -126,7 +133,7 @@ class TestTagScannedBroadcastsTrayUuid:
         msg = mock_ws.broadcast.call_args[0][0]
         assert msg["type"] == "spoolbuddy_tag_matched"
         assert msg["tag_uid"] == "AABB1122334455FF"
-        assert msg["tray_uuid"] == "DEADBEEFDEADBEEFDEADBEEFDEADBEEF"
+        assert msg["tray_uuid"] == "9E0B0717BEE94D7887EB1D8DFD1A14F3"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -135,7 +142,7 @@ class TestTagScannedBroadcastsTrayUuid:
     ):
         """Spoolman fallback match broadcasts tray_uuid alongside tag_uid."""
         sm_spool = _spoolman_spool(5)
-        sm_spool["extra"] = {"tag": '"DEADBEEFDEADBEEFDEADBEEFDEADBEEF"'}
+        sm_spool["extra"] = {"tag": '"9E0B0717BEE94D7887EB1D8DFD1A14F3"'}
         mock_client = _mock_spoolman_client_local()
         mock_client.find_spool_by_tag = AsyncMock(return_value=sm_spool)
 
@@ -161,7 +168,7 @@ class TestTagScannedBroadcastsTrayUuid:
                 json={
                     "device_id": "sb-test",
                     "tag_uid": "AABB1122334455FF",
-                    "tray_uuid": "DEADBEEFDEADBEEFDEADBEEFDEADBEEF",
+                    "tray_uuid": "9E0B0717BEE94D7887EB1D8DFD1A14F3",
                 },
             )
 
@@ -170,7 +177,7 @@ class TestTagScannedBroadcastsTrayUuid:
         mock_ws.broadcast.assert_called_once()
         msg = mock_ws.broadcast.call_args[0][0]
         assert msg["type"] == "spoolbuddy_tag_matched"
-        assert msg["tray_uuid"] == "DEADBEEFDEADBEEFDEADBEEFDEADBEEF"
+        assert msg["tray_uuid"] == "9E0B0717BEE94D7887EB1D8DFD1A14F3"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -201,7 +208,7 @@ class TestTagScannedBroadcastsTrayUuid:
                 json={
                     "device_id": "sb-test",
                     "tag_uid": "AABB1122334455FF",
-                    "tray_uuid": "CAFEBABECAFEBABECAFEBABECAFEBABE",
+                    "tray_uuid": "5E5498918CBF4B94A25EF669C24DECC3",
                 },
             )
 
@@ -210,7 +217,7 @@ class TestTagScannedBroadcastsTrayUuid:
         mock_ws.broadcast.assert_called_once()
         msg = mock_ws.broadcast.call_args[0][0]
         assert msg["type"] == "spoolbuddy_unknown_tag"
-        assert msg["tray_uuid"] == "CAFEBABECAFEBABECAFEBABECAFEBABE"
+        assert msg["tray_uuid"] == "5E5498918CBF4B94A25EF669C24DECC3"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -261,6 +268,9 @@ class TestLinkTagToSpoolmanSpool:
 
     def _mock_client(self, spool_id: int) -> MagicMock:
         client = MagicMock()
+        client.has_tag_api = AsyncMock(return_value=False)
+        client.add_native_tags = AsyncMock(return_value=0)
+        client.unlink_all_native_tags = AsyncMock()
         client.base_url = "http://localhost:7912"
         # get_all_spools returns empty list — no duplicate tags in Spoolman.
         client.get_all_spools = AsyncMock(return_value=[])
@@ -335,6 +345,9 @@ class TestLinkTagToSpoolmanSpool:
     async def test_spool_not_found_returns_404(self, async_client: AsyncClient):
         """404 when Spoolman reports the spool does not exist."""
         mock_client = MagicMock()
+        mock_client.has_tag_api = AsyncMock(return_value=False)
+        mock_client.add_native_tags = AsyncMock(return_value=0)
+        mock_client.unlink_all_native_tags = AsyncMock()
         mock_client.get_all_spools = AsyncMock(return_value=[])
         mock_client.get_spool = AsyncMock(side_effect=SpoolmanNotFoundError("Spool 999 not found"))
 

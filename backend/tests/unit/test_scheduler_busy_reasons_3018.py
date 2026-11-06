@@ -117,7 +117,9 @@ async def _scheduler(ctx, *, idle: bool):
         patch(
             "backend.app.services.print_scheduler.printer_manager.get_status",
             MagicMock(
-                return_value=SimpleNamespace(state="IDLE" if idle else "RUNNING", subtask_id=None, gcode_file=None)
+                return_value=SimpleNamespace(
+                    state="IDLE" if idle else "RUNNING", subtask_id=None, gcode_file=None, raw_data={}
+                )
             ),
         ),
         patch(

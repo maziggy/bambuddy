@@ -4,16 +4,22 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { SpoolBuddyLayout } from '../../../components/spoolbuddy/SpoolBuddyLayout';
 import { ToastProvider } from '../../../contexts/ToastContext';
 
+// The kiosk runs signed in; these tests render it without the auth provider.
+vi.mock('../../../contexts/AuthContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../contexts/AuthContext')>();
+  return { ...actual, useAuth: () => ({ hasPermission: () => true }) };
+});
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (_key: string, fallback: string) => fallback,
+    t: (key: string, fallback?: string) => fallback ?? key,
     i18n: { language: 'en', changeLanguage: vi.fn() },
   }),
 }));
@@ -71,6 +77,37 @@ function renderLayout() {
 }
 
 describe('SpoolBuddyLayout', () => {
+  it('says so in the status bar when a scanned tag could not be looked up', async () => {
+    renderLayout();
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('spoolman-unavailable', { detail: { type: 'spoolman_unavailable', device_id: 'sb-1' } }),
+      );
+    });
+
+    expect(await screen.findByText('spoolbuddy.status.spoolmanUnavailable')).toBeDefined();
+  });
+
+  it('clears the lookup notice after a while and gives the status bar back', async () => {
+    renderLayout();
+    expect(await screen.findByText('SpoolBuddy device disconnected')).toBeDefined();
+    vi.useFakeTimers();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('spoolbuddy-lookup-error', { detail: { device_id: 'sb-1' } }));
+    });
+    expect(screen.getByText('spoolbuddy.status.lookupFailed')).toBeDefined();
+    expect(screen.queryByText('SpoolBuddy device disconnected')).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(10000);
+    });
+    expect(screen.queryByText('spoolbuddy.status.lookupFailed')).toBeNull();
+    expect(screen.getByText('SpoolBuddy device disconnected')).toBeDefined();
+    vi.useRealTimers();
+  });
+
   it('renders without crashing', () => {
     const { container } = renderLayout();
     expect(container.firstChild).not.toBeNull();

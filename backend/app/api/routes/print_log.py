@@ -7,6 +7,9 @@ from sqlalchemy import delete, func, nullslast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import (
+    ApiKeyActor,
+    MediaOrRequestPrinterScope,
+    RequestPrinterScope,
     RequirePermissionIfAuthEnabled,
     require_media_token_ownership,
     require_ownership_permission,
@@ -14,6 +17,7 @@ from backend.app.core.auth import (
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.printer_scope import PrinterScope
 from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.user import User
 from backend.app.schemas.print_log import PrintLogEntrySchema, PrintLogEntryUpdate, PrintLogResponse
@@ -44,6 +48,7 @@ _SORTABLE_COLUMNS = {
     "cost": PrintLogEntry.cost,
     "energy": PrintLogEntry.energy_kwh,
     "energy_cost": PrintLogEntry.energy_cost,
+    "wear_cost": PrintLogEntry.wear_cost,
 }
 
 
@@ -59,13 +64,14 @@ async def get_print_log(
     offset: int = Query(default=0, ge=0),
     sort_by: str = Query(default="date"),
     sort_dir: str = Query(default="desc", pattern="^(asc|desc)$"),
-    db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_READ_ALL,
             Permission.ARCHIVES_READ_OWN,
         )
     ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Get the print log."""
     user, can_read_all = auth_result
@@ -74,6 +80,10 @@ async def get_print_log(
     if user is not None and not can_read_all:
         query = query.where(PrintLogEntry.created_by_id == user.id)
         count_query = count_query.where(PrintLogEntry.created_by_id == user.id)
+    # Only prints on printers the caller may see (#1727)
+    if (clause := printer_scope.where(PrintLogEntry.printer_id)) is not None:
+        query = query.where(clause)
+        count_query = count_query.where(clause)
 
     if printer_id is not None:
         query = query.where(PrintLogEntry.printer_id == printer_id)
@@ -126,22 +136,36 @@ async def get_print_log(
     # It lost failure_reason that way (#1687 part 4), then cost / energy_kwh /
     # energy_cost, which were written to the table but never sent — so the
     # Print Log's cost and energy columns read empty for every run (#2636).
+    # Archives of these prints that were deleted (soft, #1343: their prints
+    # stay logged), so the log doesn't link to an archive page that is gone.
+    from backend.app.models.archive import PrintArchive
+
+    archive_ids = {e.archive_id for e in entries if e.archive_id is not None}
+    deleted = (
+        await db.scalars(
+            select(PrintArchive.id).where(PrintArchive.id.in_(archive_ids), PrintArchive.deleted_at.is_not(None))
+        )
+        if archive_ids
+        else None
+    )
     return PrintLogResponse(
         items=[PrintLogEntrySchema.model_validate(e) for e in entries],
         total=total,
+        deleted_archive_ids=sorted(deleted.all()) if deleted is not None else [],
     )
 
 
 @router.get("/{entry_id}/thumbnail")
 async def get_print_log_thumbnail(
     entry_id: int,
-    db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_media_token_ownership(
             Permission.ARCHIVES_READ_ALL,
             Permission.ARCHIVES_READ_OWN,
         )
     ),
+    printer_scope: PrinterScope = MediaOrRequestPrinterScope,
 ):
     """Get the thumbnail for a print log entry.
 
@@ -159,7 +183,7 @@ async def get_print_log_thumbnail(
     """
     user, can_read_all = auth_result
     entry = await db.get(PrintLogEntry, entry_id)
-    if not entry or not entry.thumbnail_path:
+    if not entry or not entry.thumbnail_path or not printer_scope.allows(entry.printer_id):
         raise HTTPException(404, "Thumbnail not found")
     if not can_read_all and (user is None or entry.created_by_id != user.id):
         raise HTTPException(404, "Thumbnail not found")
@@ -179,14 +203,19 @@ async def get_print_log_thumbnail(
 
 @router.delete("/")
 async def clear_print_log(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_ALL),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Clear the print log.
 
     Only deletes log entries. Archives and queue items are never touched.
     """
-    result = await db.execute(delete(PrintLogEntry))
+    # Entries for printers the caller can't see stay (#1727)
+    statement = delete(PrintLogEntry)
+    if (clause := printer_scope.where(PrintLogEntry.printer_id)) is not None:
+        statement = statement.where(clause)
+    result = await db.execute(statement)
     deleted = result.rowcount
     await db.commit()
 
@@ -197,13 +226,14 @@ async def clear_print_log(
 @router.delete("/{entry_id}")
 async def delete_print_log_entry(
     entry_id: int,
-    db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_DELETE_ALL,
             Permission.ARCHIVES_DELETE_OWN,
         )
     ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Delete a single print-log entry (#1687).
 
@@ -216,7 +246,7 @@ async def delete_print_log_entry(
     user, can_modify_all = auth_result
 
     entry = await db.get(PrintLogEntry, entry_id)
-    if not entry:
+    if not entry or not printer_scope.allows(entry.printer_id):
         raise HTTPException(404, "Print log entry not found")
 
     if not can_modify_all:
@@ -254,6 +284,8 @@ _FAILURE_REASON_KEYS = frozenset(
         # recognise, so leaving it out would delete the classification on the
         # next save of such an archive.
         "noStatusUpdate",
+        # A print the printer kill switch stopped (written at its completion).
+        "killSwitch",
         "other",
     }
 )
@@ -266,13 +298,14 @@ _STATUS_KEYS = frozenset({"completed", "failed", "stopped", "cancelled", "skippe
 async def update_print_log_entry(
     entry_id: int,
     update: PrintLogEntryUpdate,
-    db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
             Permission.ARCHIVES_UPDATE_ALL,
             Permission.ARCHIVES_UPDATE_OWN,
         )
     ),
+    printer_scope: PrinterScope = RequestPrinterScope,
 ):
     """Edit a single Print Log row's classification (#1687 part 4, reporter
     IndividualGhost1905).
@@ -290,7 +323,7 @@ async def update_print_log_entry(
     user, can_modify_all = auth_result
 
     entry = await db.get(PrintLogEntry, entry_id)
-    if not entry:
+    if not entry or not printer_scope.allows(entry.printer_id):
         raise HTTPException(404, "Print log entry not found")
 
     if not can_modify_all:
@@ -316,6 +349,15 @@ async def update_print_log_entry(
         if new_status not in _STATUS_KEYS:
             raise HTTPException(400, f"Unknown status: {new_status!r}")
         entry.status = new_status
+
+    if "notes" in payload:
+        entry.notes = (payload["notes"] or "").strip() or None
+
+    if entry.archive_id is not None:
+        from backend.app.services.print_log import mirror_latest_run
+
+        # The archive card shows its latest run; this may be it.
+        await mirror_latest_run(db, entry.archive_id)
 
     await db.commit()
     await db.refresh(entry)

@@ -10,26 +10,19 @@ class TestParseBambuBlocks:
         result = parse_bambu_blocks({})
         assert result == {}
 
-    def test_tray_uuid_from_blocks_4_and_5(self):
-        # 16 bytes per block, UUID is first 16 bytes of block4+block5
-        block4 = bytes(range(16))  # 00010203...0f
-        block5 = bytes(range(16, 32))  # 10111213...1f
-        blocks = {4: block4, 5: block5}
+    def test_tray_uuid_from_block_9(self):
+        block9 = bytes.fromhex("9E0B0717BEE94D7887EB1D8DFD1A14F3")
+        result = parse_bambu_blocks({9: block9})
+        assert result["tray_uuid"] == "9E0B0717BEE94D7887EB1D8DFD1A14F3"
 
-        result = parse_bambu_blocks(blocks)
-
-        # UUID = first 16 bytes of (block4 + block5) = block4 itself
-        expected_uuid = block4.hex().upper()
-        assert result["tray_uuid"] == expected_uuid
-
-    def test_tray_uuid_missing_block_4(self):
-        blocks = {5: b"\x00" * 16}
-        result = parse_bambu_blocks(blocks)
+    def test_tray_uuid_not_taken_from_blocks_4_and_5(self):
+        """Blocks 4-5 hold the filament type, never the tray UUID (#984)."""
+        block4 = b"PLA Matte" + b"\x00" * 7
+        result = parse_bambu_blocks({4: block4, 5: b"\x00" * 16})
         assert "tray_uuid" not in result
 
-    def test_tray_uuid_missing_block_5(self):
-        blocks = {4: b"\x00" * 16}
-        result = parse_bambu_blocks(blocks)
+    def test_tray_uuid_missing_block_9(self):
+        result = parse_bambu_blocks({1: b"\x00" * 16, 2: b"\x00" * 16})
         assert "tray_uuid" not in result
 
     def test_material_raw_from_block_1(self):
@@ -53,7 +46,8 @@ class TestParseBambuBlocks:
         block2 = b"\x02" * 16
         block4 = b"\x04" * 16
         block5 = b"\x05" * 16
-        blocks = {1: block1, 2: block2, 4: block4, 5: block5}
+        block9 = b"\x09" * 16
+        blocks = {1: block1, 2: block2, 4: block4, 5: block5, 9: block9}
 
         result = parse_bambu_blocks(blocks)
 
@@ -62,15 +56,14 @@ class TestParseBambuBlocks:
         assert "block2_raw" in result
 
     def test_extra_blocks_ignored(self):
-        """Blocks not in {1, 2, 4, 5} don't affect output."""
-        blocks = {0: b"\x00" * 16, 3: b"\x03" * 16, 6: b"\x06" * 16}
+        """Blocks not in {1, 2, 9} don't affect output."""
+        blocks = {0: b"\x00" * 16, 3: b"\x03" * 16, 4: b"\x04" * 16, 5: b"\x05" * 16, 6: b"\x06" * 16}
         result = parse_bambu_blocks(blocks)
         assert result == {}
 
     def test_tray_uuid_hex_uppercase(self):
-        block4 = b"\xab\xcd\xef\x12\x34\x56\x78\x9a\xbc\xde\xf0\x11\x22\x33\x44\x55"
-        block5 = b"\x00" * 16
-        blocks = {4: block4, 5: block5}
+        block9 = b"\xab\xcd\xef\x12\x34\x56\x78\x9a\xbc\xde\xf0\x11\x22\x33\x44\x55"
+        blocks = {9: block9}
 
         result = parse_bambu_blocks(blocks)
 

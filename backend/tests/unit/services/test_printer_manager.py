@@ -152,6 +152,77 @@ class TestPrinterManager:
         manager._schedule_async(coro)
         coro.close()
 
+    @staticmethod
+    def _run_with_loop_thread(manager, coro_fn, cancel: bool):
+        """Schedule on a real loop in a thread, the way the MQTT thread does.
+
+        With ``cancel``, cancel the task once it runs, as stopping the loop
+        does at shutdown. Returns the future ``_schedule_async`` created,
+        settled, with its done-callback already run.
+        """
+        import asyncio
+        import concurrent.futures
+        import threading
+
+        loop = asyncio.new_event_loop()
+        thread = threading.Thread(target=loop.run_forever, daemon=True)
+        thread.start()
+        futures = []
+        real = asyncio.run_coroutine_threadsafe
+
+        def record(coro, target_loop):
+            future = real(coro, target_loop)
+            futures.append(future)
+            return future
+
+        started = threading.Event()
+
+        async def wrapped():
+            started.set()
+            return await coro_fn()
+
+        try:
+            manager._loop = loop
+            with patch("asyncio.run_coroutine_threadsafe", side_effect=record):
+                manager._schedule_async(wrapped())
+            assert len(futures) == 1
+            if cancel:
+                assert started.wait(timeout=5)
+                loop.call_soon_threadsafe(lambda: [t.cancel() for t in asyncio.all_tasks(loop)])
+            concurrent.futures.wait(futures, timeout=5)
+        finally:
+            # Callbacks run on the loop thread; joining it means they have run.
+            loop.call_soon_threadsafe(loop.stop)
+            thread.join(timeout=5)
+            loop.close()
+        return futures[0]
+
+    def test_schedule_async_cancelled_callback_is_not_an_error(self, manager, caplog):
+        """#3243: shutdown cancels pending callbacks; that must not log an ERROR."""
+        import asyncio
+        import logging
+
+        async def slow():
+            await asyncio.sleep(10)
+
+        with caplog.at_level(logging.DEBUG, logger="backend.app.services.printer_manager"):
+            future = self._run_with_loop_thread(manager, slow, cancel=True)
+
+        assert future.cancelled()
+        assert "Exception in scheduled callback" not in caplog.text
+
+    def test_schedule_async_failing_callback_is_still_logged(self, manager, caplog):
+        import logging
+
+        async def boom():
+            raise RuntimeError("callback failed")
+
+        with caplog.at_level(logging.ERROR, logger="backend.app.services.printer_manager"):
+            future = self._run_with_loop_thread(manager, boom, cancel=False)
+
+        assert isinstance(future.exception(), RuntimeError)
+        assert "Exception in scheduled callback: callback failed" in caplog.text
+
     def test_schedule_async_with_stopped_loop(self, manager):
         """Verify nothing happens when loop is not running."""
         mock_loop = MagicMock()
@@ -351,10 +422,21 @@ class TestPrinterManager:
         mock_loop.is_running.return_value = True
         manager._loop = mock_loop
 
-        manager.mark_printer_offline(1)
+        # The stand-in loop never runs the callback, so the scheduled
+        # coroutine is closed here instead of being reported in a later test.
+        def _close_and_stand_in(coro, loop):
+            coro.close()
+            return MagicMock()
+
+        with patch(
+            "backend.app.services.printer_manager.asyncio.run_coroutine_threadsafe",
+            side_effect=_close_and_stand_in,
+        ) as scheduled:
+            manager.mark_printer_offline(1)
 
         # Callback should be scheduled via run_coroutine_threadsafe
         mock_loop.is_running.assert_called()
+        scheduled.assert_called_once()
         # State should be updated
         assert mock_client.state.connected is False
 
@@ -396,8 +478,18 @@ class TestPrinterManager:
             nozzle_offset_cali="auto",
             nozzle_mapping=None,
             nozzle_slot_extruders=None,
+            plate_uses_only_external=False,
         )
         assert result is True
+
+    def test_start_print_passes_the_plates_external_spool_answer(self, manager, mock_client):
+        """The scheduler's exact use_ams=False for the plate (#3087) reaches the builder."""
+        mock_client.start_print.return_value = True
+        manager._clients[1] = mock_client
+
+        manager.start_print(1, "test.gcode", use_ams=False, plate_uses_only_external=True)
+
+        assert mock_client.start_print.call_args.kwargs["plate_uses_only_external"] is True
 
     def test_start_print_returns_false_for_unknown(self, manager):
         """Verify start_print returns False for unknown printer."""
@@ -446,51 +538,6 @@ class TestPrinterManager:
         """Verify stop_print returns False for unknown printer."""
         result = manager.stop_print(999)
         assert result is False
-
-    # ========================================================================
-    # Tests for wait_for_cooldown
-    # ========================================================================
-
-    @pytest.mark.asyncio
-    async def test_wait_for_cooldown_returns_true_when_cool(self, manager, mock_client):
-        """Verify wait_for_cooldown returns True when printer is cool."""
-        mock_client.state.connected = True
-        mock_client.state.temperatures = {"nozzle": 40, "bed": 30}
-        mock_client.check_staleness.return_value = True
-        manager._clients[1] = mock_client
-
-        result = await manager.wait_for_cooldown(1, target_temp=50)
-
-        assert result is True
-
-    @pytest.mark.asyncio
-    async def test_wait_for_cooldown_returns_false_on_disconnect(self, manager, mock_client):
-        """Verify wait_for_cooldown returns False when printer disconnects."""
-        mock_client.state.connected = False
-        mock_client.check_staleness.return_value = False
-        manager._clients[1] = mock_client
-
-        result = await manager.wait_for_cooldown(1, target_temp=50, timeout=1)
-
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_wait_for_cooldown_returns_false_for_unknown(self, manager):
-        """Verify wait_for_cooldown returns False for unknown printer."""
-        result = await manager.wait_for_cooldown(999, target_temp=50, timeout=1)
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_wait_for_cooldown_checks_both_nozzles(self, manager, mock_client):
-        """Verify wait_for_cooldown checks both nozzles for dual extruders."""
-        mock_client.state.connected = True
-        mock_client.state.temperatures = {"nozzle": 40, "nozzle_2": 45, "bed": 30}
-        mock_client.check_staleness.return_value = True
-        manager._clients[1] = mock_client
-
-        result = await manager.wait_for_cooldown(1, target_temp=50)
-
-        assert result is True
 
     # ========================================================================
     # Tests for is_print_active (#1890)
@@ -918,6 +965,12 @@ class TestPrinterStateToDict:
             "1": {"ams_id": None, "slot_id": None, "has_filament": False},
         }
 
+    def test_the_tray_change_log_rides_the_websocket(self, mock_state):
+        """The queue card reads the backup spool a print switched to from it."""
+        mock_state.tray_change_log = [(2, 0), (1, 350)]
+
+        assert printer_state_to_dict(mock_state)["tray_change_log"] == [[2, 0], [1, 350]]
+
     def test_extruder_slots_are_empty_when_unreported(self, mock_state):
         """Printers outside the H2/X2 series never send the block."""
         assert printer_state_to_dict(mock_state)["extruder_slots"] == {}
@@ -1231,12 +1284,12 @@ class TestPrinterStateToDict:
         assert result["cover_url"] is None
 
     def test_ams_ht_detection(self, mock_state):
-        """Verify AMS-HT is detected (1 tray vs 4)."""
+        """Verify AMS-HT is detected by its unit id (128-135)."""
         mock_state.raw_data = {
             "ams": [
                 {
-                    "id": 0,
-                    "tray": [{"id": 0}],  # Only 1 tray = AMS-HT
+                    "id": 128,
+                    "tray": [{"id": 0}],
                 }
             ]
         }

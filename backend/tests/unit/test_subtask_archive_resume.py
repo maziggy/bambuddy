@@ -114,51 +114,13 @@ class TestSubtaskIdResume:
             select(PrintArchive)
             .where(PrintArchive.printer_id == printer.id)
             .where(PrintArchive.subtask_id == "t-123")
-            .where(PrintArchive.status.in_(["printing", "cancelled"]))
+            .where(PrintArchive.status == "printing")
             .order_by(PrintArchive.created_at.desc())
             .limit(1)
         )
         found = result.scalar_one_or_none()
         assert found is not None
         assert found.id == archive.id
-
-    async def test_subtask_id_revives_stale_cancelled_row(self, archive_factory, db_session):
-        """If an older Bambuddy wrongly cancelled the archive (legacy 4h path),
-        the next print-start with the same subtask_id must revive it rather
-        than start a third row."""
-        printer, archive = await archive_factory(
-            subtask_id="t-456",
-            status="cancelled",
-            failure_reason="Stale - print likely cancelled or failed without status update",
-            age_hours=10,
-        )
-
-        result = await db_session.execute(
-            select(PrintArchive)
-            .where(PrintArchive.printer_id == printer.id)
-            .where(PrintArchive.subtask_id == "t-456")
-            .where(PrintArchive.status.in_(["printing", "cancelled"]))
-            .order_by(PrintArchive.created_at.desc())
-            .limit(1)
-        )
-        candidate = result.scalar_one_or_none()
-        assert candidate is not None
-
-        # Revival mirrors the main.py logic: only revive stale-cancelled rows,
-        # not user-cancelled ones. The failure_reason prefix is the signal.
-        is_stale_cancelled = (candidate.failure_reason or "").startswith("Stale")
-        assert is_stale_cancelled
-
-        candidate.status = "printing"
-        candidate.failure_reason = None
-        await db_session.commit()
-        await db_session.refresh(candidate)
-
-        assert candidate.status == "printing"
-        # Crucially, started_at is preserved — this is the whole point of the
-        # fix. A fresh archive would have started_at = now, losing continuity.
-        age_after = datetime.now(timezone.utc) - candidate.started_at.replace(tzinfo=timezone.utc)
-        assert age_after > timedelta(hours=9), "started_at must survive revival"
 
     async def test_subtask_id_null_does_not_match_other_nulls(self, archive_factory, db_session):
         """Two different non-cloud prints both have subtask_id=NULL. They
@@ -175,16 +137,18 @@ class TestSubtaskIdResume:
         found = result.scalar_one_or_none()
         assert found is None, "Empty string must not match NULL rows"
 
-    async def test_completed_archive_not_resumed(self, archive_factory, db_session):
-        """A completed archive with the same subtask_id must not be reopened
-        as printing — that subtask's job is done; a new run is a new row."""
-        printer, _ = await archive_factory(subtask_id="t-789", status="completed")
+    @pytest.mark.parametrize("status", ["completed", "cancelled"])
+    async def test_finished_archive_not_resumed(self, archive_factory, db_session, status):
+        """A finished archive with the same subtask_id must not be reopened
+        as printing: completion has already charged and logged it, so a new
+        run is a new row."""
+        printer, _ = await archive_factory(subtask_id="t-789", status=status, failure_reason="noStatusUpdate")
 
         result = await db_session.execute(
             select(PrintArchive)
             .where(PrintArchive.printer_id == printer.id)
             .where(PrintArchive.subtask_id == "t-789")
-            .where(PrintArchive.status.in_(["printing", "cancelled"]))
+            .where(PrintArchive.status == "printing")
         )
         found = result.scalar_one_or_none()
         assert found is None

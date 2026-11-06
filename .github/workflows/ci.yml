@@ -466,9 +466,14 @@ jobs:
           cache-from: type=gha,scope=backend-test
           cache-to: type=gha,scope=backend-test,mode=max
 
+      # Same as docker-compose.test.yml: some backend tests read the frontend
+      # sources and scripts/, and --init reaps the children some tests kill
+      # (with pytest as PID 1 they stay zombies that answer kill(pid, 0)).
       - name: Run backend tests in Docker (shard ${{ matrix.shard }}/4)
         run: |
-          docker run --rm \
+          docker run --rm --init \
+            -v "$PWD/frontend/src:/app/frontend/src:ro" \
+            -v "$PWD/scripts:/app/scripts:ro" \
             -e TESTING=1 \
             -e PYTHONUNBUFFERED=1 \
             bambuddy-backend-test:latest \

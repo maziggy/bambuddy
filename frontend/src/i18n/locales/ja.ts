@@ -378,10 +378,15 @@ export default {
       summary: 'ライブ {{live}}件、スナップ {{snap}}件、合計 {{total}}件',
       layer: 'レイヤー {{cur}}/{{total}}',
       timeLeft: '残り {{time}}',
+      eta: '完了予定 {{time}}',
       statusMode: {
         off: 'オフ',
         compact: 'コンパクト',
         full: 'フル',
+      },
+      controlsMode: {
+        hover: 'ホバー時',
+        always: '常に',
       },
       settings: {
         title: 'カメラウォール設定',
@@ -390,7 +395,9 @@ export default {
         snapshotInterval: 'スナップショット間隔（秒）',
         snapshotIntervalHint: '非ライブのタイルが新しいスナップショットを取得する頻度。',
         statusOverlay: 'ステータス表示',
-        statusOverlayHint: 'コンパクト：状態バッジのみ。フル：＋進捗・レイヤー・残り時間。',
+        statusOverlayHint: 'コンパクト：状態バッジのみ。フル：＋進捗・レイヤー・残り時間・完了予定時刻・温度。',
+        controls: 'タイルの操作',
+        controlsHint: '各タイルの一時停止・停止・庫内ライト：ホバー時または常に表示。タッチ画面では常に表示されます。',
       },
     },
     // Controls

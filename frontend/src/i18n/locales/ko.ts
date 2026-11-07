@@ -365,10 +365,15 @@ export default {
       summary: '라이브 {{live}}개, 스냅 {{snap}}개, 총 {{total}}개',
       layer: '레이어 {{cur}}/{{total}}',
       timeLeft: '{{time}} 남음',
+      eta: '완료 예정 {{time}}',
       statusMode: {
         off: '꺼짐',
         compact: '간단',
         full: '전체'
+      },
+      controlsMode: {
+        hover: '마우스를 올렸을 때',
+        always: '항상',
       },
       settings: {
         title: '카메라 월 설정',
@@ -377,7 +382,9 @@ export default {
         snapshotInterval: '스냅샷 간격(초)',
         snapshotIntervalHint: '비라이브 타일이 새 스냅샷을 가져오는 주기.',
         statusOverlay: '상태 표시',
-        statusOverlayHint: '간단: 상태 배지만 표시. 전체: + 진행률, 레이어, 남은 시간.'
+        statusOverlayHint: '간단: 상태 배지만 표시. 전체: + 진행률, 레이어, 남은 시간, 완료 예정 시각, 온도.',
+        controls: '타일 컨트롤',
+        controlsHint: '각 타일의 일시정지, 정지, 챔버 조명: 마우스를 올렸을 때 또는 항상. 터치스크린에서는 항상 표시됩니다.',
       }
     },
     hideOffline: '오프라인 숨기기',

@@ -379,10 +379,15 @@ export default {
       summary: '{{live}} live, {{snap}} Schnappschüsse, {{total}} insgesamt',
       layer: 'Schicht {{cur}}/{{total}}',
       timeLeft: 'noch {{time}}',
+      eta: 'fertig {{time}}',
       statusMode: {
         off: 'Aus',
         compact: 'Kompakt',
         full: 'Voll',
+      },
+      controlsMode: {
+        hover: 'Beim Überfahren',
+        always: 'Immer',
       },
       settings: {
         title: 'Kamera-Wand-Einstellungen',
@@ -391,7 +396,9 @@ export default {
         snapshotInterval: 'Schnappschuss-Intervall (Sekunden)',
         snapshotIntervalHint: 'Wie oft Nicht-Live-Kacheln einen neuen Schnappschuss abrufen.',
         statusOverlay: 'Status-Overlay',
-        statusOverlayHint: 'Kompakt: nur Status-Plakette. Voll: + Fortschritt, Schicht, Restzeit.',
+        statusOverlayHint: 'Kompakt: nur Status-Plakette. Voll: + Fortschritt, Schicht, Restzeit, Fertigstellung, Temperaturen.',
+        controls: 'Kachel-Steuerung',
+        controlsHint: 'Pause, Stopp und Kammerlicht auf jeder Kachel: beim Überfahren oder immer. Touchscreens zeigen sie immer.',
       },
     },
     // Controls

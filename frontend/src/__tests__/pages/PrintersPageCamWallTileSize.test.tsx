@@ -115,3 +115,32 @@ describe('Cam Wall tile size', () => {
     expect(screen.queryByTitle('Large tiles')).not.toBeInTheDocument();
   });
 });
+
+describe('Cam Wall tile controls (#3479)', () => {
+  it('gives the Printers page wall its tile controls', async () => {
+    store.set('printerPageView', 'camwall');
+    render(<PrintersPage />);
+
+    expect(await screen.findByRole('button', { name: 'Turn on chamber light' })).toBeInTheDocument();
+  });
+
+  it('keeps the choice to always show them in this browser', async () => {
+    store.set('printerPageView', 'camwall');
+    const user = userEvent.setup();
+    const view = render(<PrintersPage />);
+
+    await screen.findByRole('button', { name: 'Turn on chamber light' });
+    expect(screen.getByTestId('camwall-tile-controls').className).toContain('opacity-0');
+
+    await user.click(screen.getByRole('button', { name: 'Cam wall settings' }));
+    await user.click(screen.getByRole('radio', { name: 'Always' }));
+    expect(store.get('camWallControls')).toBe('always');
+    expect(screen.getByTestId('camwall-tile-controls').className).not.toContain('opacity-0');
+
+    // A later visit starts from the saved choice.
+    view.unmount();
+    render(<PrintersPage />);
+    await screen.findByRole('button', { name: 'Turn on chamber light' });
+    expect(screen.getByTestId('camwall-tile-controls').className).not.toContain('opacity-0');
+  });
+});

@@ -381,10 +381,15 @@ export default {
       summary: '{{live}} live, {{snap}} snapshots, {{total}} total',
       layer: 'Layer {{cur}}/{{total}}',
       timeLeft: '{{time}} left',
+      eta: 'ETA {{time}}',
       statusMode: {
         off: 'Off',
         compact: 'Compact',
         full: 'Full',
+      },
+      controlsMode: {
+        hover: 'On hover',
+        always: 'Always',
       },
       settings: {
         title: 'Cam wall settings',
@@ -393,7 +398,9 @@ export default {
         snapshotInterval: 'Snapshot interval (seconds)',
         snapshotIntervalHint: 'How often non-live tiles fetch a fresh snapshot.',
         statusOverlay: 'Status overlay',
-        statusOverlayHint: 'Compact: state badge only. Full: + progress, layer, time left.',
+        statusOverlayHint: 'Compact: state badge only. Full: + progress, layer, time left, finish time, temperatures.',
+        controls: 'Tile controls',
+        controlsHint: 'Pause, stop and the chamber light on each tile: on hover, or always. Touch screens always show them.',
       },
     },
     // Controls

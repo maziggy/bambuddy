@@ -379,10 +379,15 @@ export default {
       summary: '直播 {{live}} 個，快照 {{snap}} 個，共 {{total}} 個',
       layer: '第 {{cur}}/{{total}} 層',
       timeLeft: '剩餘 {{time}}',
+      eta: '預計完成 {{time}}',
       statusMode: {
         off: '關閉',
         compact: '精簡',
         full: '完整',
+      },
+      controlsMode: {
+        hover: '懸停時',
+        always: '一律',
       },
       settings: {
         title: '攝影機牆設定',
@@ -391,7 +396,9 @@ export default {
         snapshotInterval: '快照重新整理間隔（秒）',
         snapshotIntervalHint: '非直播畫面取得新快照的頻率。',
         statusOverlay: '狀態疊加',
-        statusOverlayHint: '精簡：僅顯示狀態標籤。完整：加上進度、層數、剩餘時間。',
+        statusOverlayHint: '精簡：僅顯示狀態標籤。完整：加上進度、層數、剩餘時間、預計完成時間、溫度。',
+        controls: '圖塊控制',
+        controlsHint: '每個圖塊上的暫停、停止和腔體燈：懸停時顯示或一律顯示。觸控螢幕一律顯示。',
       },
     },
     // Controls

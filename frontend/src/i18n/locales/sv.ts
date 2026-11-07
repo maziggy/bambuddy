@@ -379,10 +379,15 @@ export default {
       summary: '{{live}} live, {{snap}} ögonblicksbilder, {{total}} totalt',
       layer: 'Skikt {{cur}}/{{total}}',
       timeLeft: '{{time}} kvar',
+      eta: 'klar {{time}}',
       statusMode: {
         off: 'Av',
         compact: 'Kompakt',
         full: 'Fullständig',
+      },
+      controlsMode: {
+        hover: 'Vid hovring',
+        always: 'Alltid',
       },
       settings: {
         title: 'Inställningar för kameravägg',
@@ -391,7 +396,9 @@ export default {
         snapshotInterval: 'Intervall för ögonblicksbilder (sekunder)',
         snapshotIntervalHint: 'Hur ofta icke-live-rutor hämtar en ny ögonblicksbild.',
         statusOverlay: 'Statusöverlägg',
-        statusOverlayHint: 'Kompakt: Endast statusmärke. Fullständig: + framsteg, skikt, tid kvar.',
+        statusOverlayHint: 'Kompakt: Endast statusmärke. Fullständig: + framsteg, skikt, tid kvar, sluttid, temperaturer.',
+        controls: 'Rutkontroller',
+        controlsHint: 'Paus, stopp och kammarbelysning på varje ruta: vid hovring eller alltid. Pekskärmar visar dem alltid.',
       },
     },
     // Controls

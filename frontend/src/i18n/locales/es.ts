@@ -379,10 +379,15 @@ export default {
       summary: '{{live}} en vivo, {{snap}} fotos, {{total}} en total',
       layer: 'Capa {{cur}}/{{total}}',
       timeLeft: 'quedan {{time}}',
+      eta: 'termina {{time}}',
       statusMode: {
         off: 'Apagado',
         compact: 'Compacto',
         full: 'Completo',
+      },
+      controlsMode: {
+        hover: 'Al pasar el cursor',
+        always: 'Siempre',
       },
       settings: {
         title: 'Ajustes del muro de cámaras',
@@ -391,7 +396,9 @@ export default {
         snapshotInterval: 'Intervalo de fotos (segundos)',
         snapshotIntervalHint: 'Con qué frecuencia los mosaicos no en vivo obtienen una nueva foto.',
         statusOverlay: 'Superposición de estado',
-        statusOverlayHint: 'Compacto: solo insignia de estado. Completo: + progreso, capa, tiempo restante.',
+        statusOverlayHint: 'Compacto: solo insignia de estado. Completo: + progreso, capa, tiempo restante, hora de fin, temperaturas.',
+        controls: 'Controles del mosaico',
+        controlsHint: 'Pausa, detener y luz de cámara en cada mosaico: al pasar el cursor o siempre. Las pantallas táctiles siempre los muestran.',
       },
     },
     // Controls

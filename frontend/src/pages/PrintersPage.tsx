@@ -175,6 +175,7 @@ import { FileManagerModal } from '../components/FileManagerModal';
 import { useEmbeddedCameras } from '../contexts/EmbeddedCameraContext';
 import { CameraWall } from '../components/CameraWall';
 import { DEFAULT_CAM_WALL_TILE_SIZE } from '../components/camWallTileSize';
+import { savedCamWallControlsMode, saveCamWallControlsMode, type CamWallControlsMode } from '../components/camWallControls';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 import { MQTTDebugModal } from '../components/MQTTDebugModal';
 import { HMSErrorModal, filterKnownHMSErrors, isSevereHMSError } from '../components/HMSErrorModal';
@@ -8951,6 +8952,7 @@ export function PrintersPage() {
     const saved = parseInt(localStorage.getItem('camWallTileSize') || '', 10);
     return saved >= 1 && saved <= 4 ? saved : DEFAULT_CAM_WALL_TILE_SIZE;
   });
+  const [camWallControlsMode, setCamWallControlsMode] = useState<CamWallControlsMode>(savedCamWallControlsMode);
   const [camWallStatusMode, setCamWallStatusMode] = useState<'off' | 'compact' | 'full'>(() => {
     const saved = localStorage.getItem('camWallStatusMode');
     return saved === 'off' || saved === 'compact' || saved === 'full' ? saved : 'full';
@@ -10014,6 +10016,13 @@ export function PrintersPage() {
             }
           }}
           statusMode={camWallStatusMode}
+          showControls
+          controlsMode={camWallControlsMode}
+          onChangeControlsMode={(next) => {
+            setCamWallControlsMode(next);
+            saveCamWallControlsMode(next);
+          }}
+          timeFormat={settings?.time_format || 'system'}
           onChangeMaxLive={(next) => {
             setCamWallMaxLive(next);
             localStorage.setItem('camWallMaxLive', String(next));

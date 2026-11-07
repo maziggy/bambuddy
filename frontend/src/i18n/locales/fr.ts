@@ -379,10 +379,15 @@ export default {
       summary: '{{live}} en direct, {{snap}} captures, {{total}} au total',
       layer: 'Couche {{cur}}/{{total}}',
       timeLeft: '{{time}} restantes',
+      eta: 'fin {{time}}',
       statusMode: {
         off: 'Arrêt',
         compact: 'Compact',
         full: 'Complet',
+      },
+      controlsMode: {
+        hover: 'Au survol',
+        always: 'Toujours',
       },
       settings: {
         title: 'Paramètres du mur de caméras',
@@ -391,7 +396,9 @@ export default {
         snapshotInterval: 'Intervalle de capture (secondes)',
         snapshotIntervalHint: 'À quelle fréquence les vignettes hors direct récupèrent une nouvelle capture.',
         statusOverlay: 'Overlay de statut',
-        statusOverlayHint: 'Compact : badge de statut seul. Complet : + progression, couche, temps restant.',
+        statusOverlayHint: 'Compact : badge de statut seul. Complet : + progression, couche, temps restant, heure de fin, températures.',
+        controls: 'Commandes des tuiles',
+        controlsHint: 'Pause, arrêt et éclairage de la chambre sur chaque tuile : au survol ou toujours. Les écrans tactiles les affichent toujours.',
       },
     },
     // Controls

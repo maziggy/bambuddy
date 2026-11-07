@@ -5,6 +5,7 @@ All notable changes to Bambuddy will be documented in this file.
 ## [1.3.1b1] - Unreleased
 
 ### Added
+- **Cam Wall tiles show temperatures and finish time, and can pause, stop and switch the light (#3479, sponsor vote Q4 2026)** — With the **Full** status overlay, every connected tile shows its nozzle (both on a dual-nozzle printer), bed and chamber temperatures, and a printing tile adds its finish time beside the time left. Hovering over a tile shows **Pause/Resume** and **Stop**, with the same confirmations as the printer card, and a **chamber light** switch; **Tile controls: Always** in the wall settings keeps them on screen, and a touch screen always shows them. The controls need the `printers:control` permission; a user without it, an offline printer and a Cam Wall token (kiosk) wall get none.
 
 ### Changed
 

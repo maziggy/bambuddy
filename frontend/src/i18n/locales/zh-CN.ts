@@ -379,10 +379,15 @@ export default {
       summary: '直播 {{live}} 个，快照 {{snap}} 个，共 {{total}} 个',
       layer: '第 {{cur}}/{{total}} 层',
       timeLeft: '剩余 {{time}}',
+      eta: '预计完成 {{time}}',
       statusMode: {
         off: '关闭',
         compact: '简洁',
         full: '完整',
+      },
+      controlsMode: {
+        hover: '悬停时',
+        always: '始终',
       },
       settings: {
         title: '摄像头墙设置',
@@ -391,7 +396,9 @@ export default {
         snapshotInterval: '快照刷新间隔（秒）',
         snapshotIntervalHint: '非直播画面获取新快照的频率。',
         statusOverlay: '状态叠加',
-        statusOverlayHint: '简洁：仅显示状态标签。完整：加上进度、层数、剩余时间。',
+        statusOverlayHint: '简洁：仅显示状态标签。完整：加上进度、层数、剩余时间、预计完成时间、温度。',
+        controls: '磁贴控制',
+        controlsHint: '每个磁贴上的暂停、停止和腔体灯：悬停时显示或始终显示。触摸屏始终显示。',
       },
     },
     // Controls

@@ -379,10 +379,15 @@ export default {
       summary: '{{live}} canlı, {{snap}} fotoğraf, toplam {{total}}',
       layer: 'Katman {{cur}}/{{total}}',
       timeLeft: '{{time}} kaldı',
+      eta: 'bitiş {{time}}',
       statusMode: {
         off: 'Kapalı',
         compact: 'Sade',
         full: 'Tam',
+      },
+      controlsMode: {
+        hover: 'Üzerine gelince',
+        always: 'Her zaman',
       },
       settings: {
         title: 'Kamera duvarı ayarları',
@@ -391,7 +396,9 @@ export default {
         snapshotInterval: 'Foto aralığı (saniye)',
         snapshotIntervalHint: 'Canlı olmayan döşemelerin ne sıklıkla yeni bir foto aldığı.',
         statusOverlay: 'Durum kaplaması',
-        statusOverlayHint: 'Sade: yalnızca durum rozeti. Tam: + ilerleme, katman, kalan süre.',
+        statusOverlayHint: 'Sade: yalnızca durum rozeti. Tam: + ilerleme, katman, kalan süre, bitiş saati, sıcaklıklar.',
+        controls: 'Kutucuk denetimleri',
+        controlsHint: 'Her kutucukta duraklat, durdur ve hazne ışığı: üzerine gelince veya her zaman. Dokunmatik ekranlar bunları her zaman gösterir.',
       },
     },
     // Kontroller

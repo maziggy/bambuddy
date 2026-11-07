@@ -379,10 +379,15 @@ export default {
       summary: '{{live}} live, {{snap}} momentopnamen, {{total}} totaal',
       layer: 'Laag {{cur}}/{{total}}',
       timeLeft: '{{time}} resterend',
+      eta: 'klaar {{time}}',
       statusMode: {
         off: 'Uit',
         compact: 'Compact',
         full: 'Volledig',
+      },
+      controlsMode: {
+        hover: 'Bij aanwijzen',
+        always: 'Altijd',
       },
       settings: {
         title: 'Instellingen camerawand',
@@ -391,7 +396,9 @@ export default {
         snapshotInterval: 'Interval momentopnamen (seconden)',
         snapshotIntervalHint: 'Hoe vaak niet-live tegels een nieuwe momentopname ophalen.',
         statusOverlay: 'Statusoverlay',
-        statusOverlayHint: 'Compact: alleen statusbadge. Volledig: + voortgang, laag, resterende tijd.',
+        statusOverlayHint: 'Compact: alleen statusbadge. Volledig: + voortgang, laag, resterende tijd, eindtijd, temperaturen.',
+        controls: 'Tegelbediening',
+        controlsHint: 'Pauzeren, stoppen en kamerlicht op elke tegel: bij aanwijzen of altijd. Touchscreens tonen ze altijd.',
       },
     },
     // Controls

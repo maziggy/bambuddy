@@ -379,10 +379,15 @@ export default {
       summary: '{{live}} live, {{snap}} foto, {{total}} totali',
       layer: 'Strato {{cur}}/{{total}}',
       timeLeft: '{{time}} rimanenti',
+      eta: 'fine {{time}}',
       statusMode: {
         off: 'Off',
         compact: 'Compatto',
         full: 'Completo',
+      },
+      controlsMode: {
+        hover: 'Al passaggio del mouse',
+        always: 'Sempre',
       },
       settings: {
         title: 'Impostazioni muro telecamere',
@@ -391,7 +396,9 @@ export default {
         snapshotInterval: 'Intervallo foto (secondi)',
         snapshotIntervalHint: 'Con quale frequenza le tessere non live scaricano una nuova foto.',
         statusOverlay: 'Overlay di stato',
-        statusOverlayHint: 'Compatto: solo badge di stato. Completo: + avanzamento, strato, tempo residuo.',
+        statusOverlayHint: 'Compatto: solo badge di stato. Completo: + avanzamento, strato, tempo residuo, ora di fine, temperature.',
+        controls: 'Controlli del riquadro',
+        controlsHint: 'Pausa, stop e luce della camera su ogni riquadro: al passaggio del mouse o sempre. Gli schermi touch li mostrano sempre.',
       },
     },
     // Controls

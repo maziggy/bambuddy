@@ -381,10 +381,15 @@ export default {
       summary: 'Na żywo: {{live}}, zdjęcia: {{snap}}, razem: {{total}}',
       layer: 'Warstwa {{cur}}/{{total}}',
       timeLeft: 'Pozostało {{time}}',
+      eta: 'koniec {{time}}',
       statusMode: {
         off: 'Wył.',
         compact: 'Kompaktowy',
         full: 'Pełny',
+      },
+      controlsMode: {
+        hover: 'Po najechaniu',
+        always: 'Zawsze',
       },
       settings: {
         title: 'Ustawienia ściany kamer',
@@ -393,7 +398,9 @@ export default {
         snapshotInterval: 'Interwał zdjęć (sekundy)',
         snapshotIntervalHint: 'Jak często kafelki bez obrazu na żywo pobierają nowe zdjęcie.',
         statusOverlay: 'Nakładka stanu',
-        statusOverlayHint: 'Kompaktowa: tylko znacznik stanu. Pełna: + postęp, warstwa, pozostały czas.',
+        statusOverlayHint: 'Kompaktowa: tylko znacznik stanu. Pełna: + postęp, warstwa, pozostały czas, godzina zakończenia, temperatury.',
+        controls: 'Sterowanie na kafelku',
+        controlsHint: 'Pauza, zatrzymanie i oświetlenie komory na każdym kafelku: po najechaniu kursorem lub zawsze. Ekrany dotykowe pokazują je zawsze.',
       },
     },
     // Controls

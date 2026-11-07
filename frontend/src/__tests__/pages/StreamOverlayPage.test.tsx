@@ -13,6 +13,7 @@ import { ThemeProvider } from '../../contexts/ThemeContext';
 import { ToastProvider } from '../../contexts/ToastContext';
 import { AuthProvider } from '../../contexts/AuthContext';
 import { setStreamToken } from '../../api/client';
+import { spyOnStreamSrc } from '../streamImgSpy';
 
 const mockPrinter = {
   id: 1,
@@ -577,6 +578,26 @@ describe('StreamOverlayPage', () => {
         // Status text should be hidden when not in show list
         expect(screen.queryByText('Printing')).not.toBeInTheDocument();
       });
+    });
+  });
+
+  describe('stream src at commit (#3431)', () => {
+    // Set while rendering, a src opens a stream for every render React throws
+    // away, on an img nothing can close.
+    it.each([
+      ['classic', ''],
+      ['updated artwork', '?artwork=2'],
+    ])('the %s overlay gives it only to an img already on the page', async (_name, query) => {
+      const spy = spyOnStreamSrc();
+      try {
+        renderOverlayPage(1, query);
+        await waitFor(() => {
+          expect(screen.getByAltText('Camera stream').getAttribute('src')).toContain('/camera/stream');
+        });
+        expect(spy.detached()).toEqual([]);
+      } finally {
+        spy.restore();
+      }
     });
   });
 

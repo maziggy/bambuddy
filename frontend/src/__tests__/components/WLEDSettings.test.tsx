@@ -45,6 +45,17 @@ const printer = {
   },
 };
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+const enabledPrinter = { ...printer, wled_config: { ...printer.wled_config, enabled: true } };
+const secondPrinter = { ...enabledPrinter, id: 2, name: 'A1 Mini', wled_config: {
+  ...enabledPrinter.wled_config, base_url: 'http://second.local',
+} };
+
 function RefetchableWLEDSettings() {
   const queryClient = useQueryClient();
   return <>
@@ -54,6 +65,293 @@ function RefetchableWLEDSettings() {
 }
 
 describe('WLEDSettings', () => {
+  it('ignores a late A result after B has loaded its presets', async () => {
+    const oldA = deferred();
+    const calls: number[] = [];
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter, secondPrinter])),
+      http.post('/api/v1/printers/:id/wled/presets', async ({ params }) => {
+        const id = Number(params.id);
+        calls.push(id);
+        if (id === 1) await oldA.promise;
+        return HttpResponse.json([{ id, name: id === 1 ? 'Old A' : 'Current B' }]);
+      }),
+    );
+    render(<WLEDSettings />);
+    await waitFor(() => expect(calls).toContain(1));
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '2');
+    await waitFor(() => expect(within(screen.getByLabelText('Printing')).getByRole('option', { name: 'Current B (2)' })).toBeInTheDocument());
+    oldA.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(() => expect(within(screen.getByLabelText('Printing')).queryByRole('option', { name: 'Old A (1)' })).toBeNull());
+    expect(within(screen.getByLabelText('Printing')).getByRole('option', { name: 'Current B (2)' })).toBeInTheDocument();
+  });
+
+  it('ignores an older A request after A to B to A and keeps the newest same-context result', async () => {
+    const firstA = deferred();
+    const calls: number[] = [];
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter, secondPrinter])),
+      http.post('/api/v1/printers/:id/wled/presets', async ({ params }) => {
+        const id = Number(params.id);
+        calls.push(id);
+        const sequence = calls.length;
+        if (id === 1 && sequence === 1) await firstA.promise;
+        return HttpResponse.json([{ id: sequence, name: `Request ${sequence}` }]);
+      }),
+    );
+    render(<WLEDSettings />);
+    await waitFor(() => expect(calls).toEqual([1]));
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '2');
+    await waitFor(() => expect(calls).toEqual([1, 2]));
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '1');
+    await waitFor(() => expect(within(screen.getByLabelText('Printing')).getByRole('option', { name: 'Request 3 (3)' })).toBeInTheDocument());
+    firstA.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(() => expect(within(screen.getByLabelText('Printing')).queryByRole('option', { name: 'Request 1 (1)' })).toBeNull());
+    expect(within(screen.getByLabelText('Printing')).getByRole('option', { name: 'Request 3 (3)' })).toBeInTheDocument();
+  });
+
+  it('ignores a late preset error after switching printer or URL', async () => {
+    const oldRequest = deferred();
+    let calls = 0;
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter, secondPrinter])),
+      http.post('/api/v1/printers/:id/wled/presets', async ({ params }) => {
+        calls += 1;
+        if (Number(params.id) === 1) {
+          await oldRequest.promise;
+          return HttpResponse.json({ detail: 'Old URL rejected' }, { status: 422 });
+        }
+        return HttpResponse.json([{ id: 2, name: 'Current B' }]);
+      }),
+    );
+    render(<WLEDSettings />);
+    await waitFor(() => expect(calls).toBe(1));
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '2');
+    await waitFor(() => expect(within(screen.getByLabelText('Printing')).getByRole('option', { name: 'Current B (2)' })).toBeInTheDocument());
+    oldRequest.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(() => expect(screen.queryByText('Old URL rejected')).toBeNull());
+    expect(screen.queryByText('WLED is unavailable. Saved preset IDs are kept.')).toBeNull();
+  });
+
+  it('ignores a response for the previous URL on the same printer', async () => {
+    const oldRequest = deferred();
+    let calls = 0;
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter])),
+      http.post('/api/v1/printers/1/wled/presets', async () => {
+        calls += 1;
+        if (calls === 1) await oldRequest.promise;
+        return HttpResponse.json([{ id: calls, name: `Request ${calls}` }]);
+      }),
+    );
+    render(<WLEDSettings />);
+    await waitFor(() => expect(calls).toBe(1));
+    await userEvent.clear(screen.getByLabelText('WLED URL'));
+    await userEvent.type(screen.getByLabelText('WLED URL'), 'http://new.local');
+    oldRequest.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(() => expect(within(screen.getByLabelText('Printing')).queryByRole('option', { name: 'Request 1 (1)' })).toBeNull());
+    await userEvent.click(screen.getByRole('button', { name: 'Load presets' }));
+    await waitFor(() => expect(within(screen.getByLabelText('Printing')).getByRole('option', { name: 'Request 2 (2)' })).toBeInTheDocument());
+  });
+
+  it('keeps the newest preset request for the same printer and URL', async () => {
+    const oldRequest = deferred();
+    let calls = 0;
+    let printerReads = 0;
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([{
+        ...enabledPrinter, name: `Printer read ${++printerReads}`,
+      }])),
+      http.post('/api/v1/printers/1/wled/presets', async () => {
+        const sequence = ++calls;
+        if (sequence === 1) await oldRequest.promise;
+        return HttpResponse.json([{ id: sequence, name: `Request ${sequence}` }]);
+      }),
+    );
+    render(<RefetchableWLEDSettings />);
+    await waitFor(() => expect(calls).toBe(1));
+    await userEvent.click(screen.getByRole('button', { name: 'Refetch printers' }));
+    await waitFor(() => expect(within(screen.getByLabelText('Printing')).getByRole('option', { name: 'Request 2 (2)' })).toBeInTheDocument());
+    oldRequest.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(within(screen.getByLabelText('Printing')).queryByRole('option', { name: 'Request 1 (1)' })).toBeNull();
+  });
+
+  it('does not apply a pending result after unmount', async () => {
+    const pending = deferred();
+    let started = false;
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter])),
+      http.post('/api/v1/printers/1/wled/presets', async () => {
+        started = true;
+        await pending.promise;
+        return HttpResponse.json({ detail: 'Old request failed' }, { status: 422 });
+      }),
+    );
+    const view = render(<WLEDSettings />);
+    await waitFor(() => expect(started).toBe(true));
+    view.unmount();
+    pending.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText('Old request failed')).toBeNull();
+  });
+
+  it('does not replace newer local edits when an older save completes', async () => {
+    const pending = deferred();
+    let started = false;
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter])),
+      http.post('/api/v1/printers/1/wled/presets', () => HttpResponse.json([])),
+      http.patch('/api/v1/printers/1', async () => {
+        started = true;
+        await pending.promise;
+        return HttpResponse.json(enabledPrinter);
+      }),
+    );
+    render(<RefetchableWLEDSettings />);
+    await screen.findByDisplayValue('http://wled.local');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(started).toBe(true));
+    await userEvent.clear(screen.getByLabelText('WLED URL'));
+    await userEvent.type(screen.getByLabelText('WLED URL'), 'http://new.local');
+    pending.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await userEvent.click(screen.getByRole('button', { name: 'Refetch printers' }));
+    expect(screen.getByLabelText('WLED URL')).toHaveValue('http://new.local');
+  });
+
+  it('does not reload presets from the saved URL after a local URL edit and printer refetch', async () => {
+    let printerReads = 0;
+    let presetRequests = 0;
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([{
+        ...enabledPrinter, name: `Printer read ${++printerReads}`,
+      }])),
+      http.post('/api/v1/printers/1/wled/presets', () => {
+        presetRequests += 1;
+        return HttpResponse.json([{ id: 3, name: 'Saved URL' }]);
+      }),
+    );
+    render(<RefetchableWLEDSettings />);
+    await screen.findByText('1 presets loaded');
+    await userEvent.clear(screen.getByLabelText('WLED URL'));
+    await userEvent.type(screen.getByLabelText('WLED URL'), 'http://new.local');
+    await userEvent.click(screen.getByRole('button', { name: 'Refetch printers' }));
+    await waitFor(() => expect(printerReads).toBe(2));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(presetRequests).toBe(1);
+    expect(screen.getByLabelText('WLED URL')).toHaveValue('http://new.local');
+  });
+
+  const validationError = () => HttpResponse.json({
+    detail: [{ msg: 'Value error, Invalid WLED URL' }],
+  }, { status: 422 });
+
+  it('shows the backend 422 message for Save without losing the input', async () => {
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter])),
+      http.post('/api/v1/printers/1/wled/presets', () => HttpResponse.json([])),
+      http.patch('/api/v1/printers/1', validationError),
+    );
+    render(<WLEDSettings />);
+    await screen.findByDisplayValue('http://wled.local');
+    await userEvent.clear(screen.getByLabelText('WLED URL'));
+    await userEvent.type(screen.getByLabelText('WLED URL'), 'http://invalid.local');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('Invalid WLED URL')).toBeInTheDocument();
+    expect(screen.getByLabelText('WLED URL')).toHaveValue('http://invalid.local');
+    expect(screen.queryByText('Could not save WLED settings')).toBeNull();
+    expect(screen.queryByText('Unable to connect to WLED.')).toBeNull();
+    expect(screen.queryByText('WLED is unavailable. Saved preset IDs are kept.')).toBeNull();
+  });
+
+  it('shows the backend 422 message for Load presets without marking WLED unavailable', async () => {
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter])),
+      http.post('/api/v1/printers/1/wled/presets', validationError),
+    );
+    render(<WLEDSettings />);
+    expect(await screen.findByText('Invalid WLED URL')).toBeInTheDocument();
+    expect(screen.queryByText('WLED is unavailable. Saved preset IDs are kept.')).toBeNull();
+    expect(screen.getByLabelText('Printing')).toHaveValue('99');
+    expect(screen.getByLabelText('WLED URL')).toHaveValue('http://wled.local');
+  });
+
+  it('shows the backend 422 message for Test connection without marking WLED unreachable', async () => {
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter])),
+      http.post('/api/v1/printers/1/wled/presets', () => HttpResponse.json([])),
+      http.post('/api/v1/printers/1/wled/test-connection', validationError),
+    );
+    render(<WLEDSettings />);
+    await screen.findByDisplayValue('http://wled.local');
+    await userEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    expect(await screen.findByText('Invalid WLED URL')).toBeInTheDocument();
+    expect(screen.getByText('Not tested')).toBeInTheDocument();
+    expect(screen.queryByText('Unable to connect to WLED.')).toBeNull();
+  });
+
+  it('shows the backend 422 message for Test preset without a generic error', async () => {
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter])),
+      http.post('/api/v1/printers/1/wled/presets', () => HttpResponse.json([{ id: 99, name: 'Printing' }])),
+      http.post('/api/v1/printers/1/wled/test-preset', validationError),
+    );
+    render(<WLEDSettings />);
+    await screen.findByText('1 presets loaded');
+    await userEvent.click(screen.getByRole('button', { name: 'Test Printing' }));
+    expect(await screen.findByText('Invalid WLED URL')).toBeInTheDocument();
+    expect(screen.queryByText('Could not activate preset')).toBeNull();
+    expect(screen.getByLabelText('Printing')).toHaveValue('99');
+    expect(screen.queryByText('Unable to connect to WLED.')).toBeNull();
+    expect(screen.queryByText('WLED is unavailable. Saved preset IDs are kept.')).toBeNull();
+  });
+
+  it('ignores a late 422 from an old URL while showing the new URL', async () => {
+    const pending = deferred();
+    let calls = 0;
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter])),
+      http.post('/api/v1/printers/1/wled/presets', async () => {
+        calls += 1;
+        if (calls === 1) {
+          await pending.promise;
+          return validationError();
+        }
+        return HttpResponse.json([{ id: 2, name: 'New URL' }]);
+      }),
+    );
+    render(<WLEDSettings />);
+    await waitFor(() => expect(calls).toBe(1));
+    await userEvent.clear(screen.getByLabelText('WLED URL'));
+    await userEvent.type(screen.getByLabelText('WLED URL'), 'http://new.local');
+    pending.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText('Invalid WLED URL')).toBeNull();
+    expect(screen.queryByText('WLED is unavailable. Saved preset IDs are kept.')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Load presets' }));
+    await waitFor(() => expect(within(screen.getByLabelText('Printing')).getByRole('option', { name: 'New URL (2)' })).toBeInTheDocument());
+  });
+
+  it('keeps generic 502 errors for Save and Test preset', async () => {
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter])),
+      http.post('/api/v1/printers/1/wled/presets', () => HttpResponse.json([{ id: 99, name: 'Printing' }])),
+      http.post('/api/v1/printers/1/wled/test-preset', () => HttpResponse.json({}, { status: 502 })),
+      http.patch('/api/v1/printers/1', () => HttpResponse.json({}, { status: 502 })),
+    );
+    render(<WLEDSettings />);
+    await screen.findByText('1 presets loaded');
+    await userEvent.click(screen.getByRole('button', { name: 'Test Printing' }));
+    expect(await screen.findByText('Could not activate preset')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('Could not save WLED settings')).toBeInTheDocument();
+  });
+
   it('keeps unsaved edits when the printers query refetches', async () => {
     let requests = 0;
     server.use(

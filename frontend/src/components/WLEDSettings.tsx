@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Circle, Lightbulb, Loader2, Play, RefreshCw, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type { WLEDConfig, WLEDPreset, WLEDPresets } from '../api/client';
 import { Button } from './Button';
 import { Card, CardContent, CardHeader } from './Card';
@@ -49,12 +49,30 @@ const mappingKeys: (keyof WLEDPresets)[] = [
   'offline',
 ];
 
+type RequestKind = 'save' | 'presets' | 'connection' | 'presetTest';
+type RequestTicket = { printerId: number; url: string; context: number; sequence: number };
+
 export function WLEDSettings() {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const { data: printers = [], isLoading } = useQuery({ queryKey: ['printers'], queryFn: api.getPrinters });
   const [printerId, setPrinterId] = useState<number | null>(null);
+  const selectedPrinterId = useRef(printerId);
+  selectedPrinterId.current = printerId;
+  const contextGeneration = useRef(0);
+  const currentUrl = useRef('');
+  const requestSequence = useRef<Record<RequestKind, number>>({ save: 0, presets: 0, connection: 0, presetTest: 0 });
+  const nextRequest = useCallback((kind: RequestKind, url: string): RequestTicket => ({
+    printerId: selectedPrinterId.current!, url, context: contextGeneration.current,
+    sequence: ++requestSequence.current[kind],
+  }), []);
+  const isCurrentRequest = useCallback((kind: RequestKind, request: RequestTicket) =>
+    request.printerId === selectedPrinterId.current
+    && request.url === currentUrl.current
+    && request.context === contextGeneration.current
+    && request.sequence === requestSequence.current[kind], []);
+  useEffect(() => () => { contextGeneration.current += 1; }, []);
   const initializedPrinterId = useRef<number | null>(null);
   const [config, setConfig] = useState<WLEDConfig>(emptyConfig);
   const [presets, setPresets] = useState<WLEDPreset[]>([]);
@@ -70,30 +88,43 @@ export function WLEDSettings() {
   useEffect(() => {
     if (!printer || initializedPrinterId.current === printer.id) return;
     initializedPrinterId.current = printer.id;
-    setConfig(printer?.wled_config ? structuredClone(printer.wled_config) : emptyConfig());
+    const savedConfig = printer.wled_config ? structuredClone(printer.wled_config) : emptyConfig();
+    currentUrl.current = savedConfig.base_url?.trim() ?? '';
+    setConfig(savedConfig);
     setPresets([]);
     setPresetState('idle');
     setConnection({ state: 'idle' });
   }, [printer]);
 
   const saveMutation = useMutation({
-    mutationFn: () => api.updatePrinter(printerId!, { wled_config: config }),
-    onSuccess: (updated) => {
+    mutationFn: (request: RequestTicket & { config: WLEDConfig }) =>
+      api.updatePrinter(request.printerId, { wled_config: request.config }),
+    onSuccess: (updated, request) => {
+      if (!isCurrentRequest('save', request)) return;
       queryClient.setQueryData<typeof printers>(['printers'], (old = []) =>
         old.map((item) => (item.id === updated.id ? updated : item)),
       );
       showToast(t('wled.saved'), 'success');
     },
-    onError: () => showToast(t('wled.saveError'), 'error'),
+    onError: (error, request) => {
+      if (!isCurrentRequest('save', request)) return;
+      showToast(error instanceof ApiError && error.status === 422 ? error.message : t('wled.saveError'), 'error');
+    },
   });
 
   const presetsMutation = useMutation({
-    mutationFn: (baseUrl: string) => api.getWledPresets(printerId!, baseUrl),
-    onSuccess: (loaded) => {
+    mutationFn: (request: RequestTicket) => api.getWledPresets(request.printerId, request.url),
+    onSuccess: (loaded, request) => {
+      if (!isCurrentRequest('presets', request)) return;
       setPresets(loaded);
       setPresetState('online');
     },
-    onError: () => {
+    onError: (error, request) => {
+      if (!isCurrentRequest('presets', request)) return;
+      if (error instanceof ApiError && error.status === 422) {
+        showToast(error.message, 'error');
+        return;
+      }
       setPresetState('offline');
       showToast(t('wled.offlineHint'), 'error');
     },
@@ -103,19 +134,33 @@ export function WLEDSettings() {
 
   useEffect(() => {
     const savedConfig = printer?.wled_config;
-    if (savedConfig?.enabled && savedConfig.base_url) loadPresets(savedConfig.base_url);
-  }, [printer, loadPresets]);
+    if (savedConfig?.enabled && savedConfig.base_url && savedConfig.base_url === currentUrl.current) {
+      loadPresets(nextRequest('presets', savedConfig.base_url));
+    }
+  }, [printer, loadPresets, nextRequest]);
 
   const connectionMutation = useMutation({
-    mutationFn: () => api.testWledConnection(printerId!, config.base_url?.trim() ?? ''),
-    onSuccess: (info) => setConnection({ state: 'online', ...info }),
-    onError: () => setConnection({ state: 'offline' }),
+    mutationFn: (request: RequestTicket) => api.testWledConnection(request.printerId, request.url),
+    onSuccess: (info, request) => {
+      if (isCurrentRequest('connection', request)) setConnection({ state: 'online', ...info });
+    },
+    onError: (error, request) => {
+      if (!isCurrentRequest('connection', request)) return;
+      if (error instanceof ApiError && error.status === 422) showToast(error.message, 'error');
+      else setConnection({ state: 'offline' });
+    },
   });
 
   const presetTestMutation = useMutation({
-    mutationFn: (presetId: number) => api.testWledPreset(printerId!, config.base_url?.trim() ?? '', presetId),
-    onSuccess: () => showToast(t('wled.presetTested'), 'success'),
-    onError: () => showToast(t('wled.presetTestFailed'), 'error'),
+    mutationFn: (request: RequestTicket & { presetId: number }) =>
+      api.testWledPreset(request.printerId, request.url, request.presetId),
+    onSuccess: (_result, request) => {
+      if (isCurrentRequest('presetTest', request)) showToast(t('wled.presetTested'), 'success');
+    },
+    onError: (error, request) => {
+      if (!isCurrentRequest('presetTest', request)) return;
+      showToast(error instanceof ApiError && error.status === 422 ? error.message : t('wled.presetTestFailed'), 'error');
+    },
   });
 
   const setPreset = (key: keyof WLEDPresets, value: string) => {
@@ -162,7 +207,11 @@ export function WLEDSettings() {
                   <select
                     aria-label={t('wled.printer')}
                     value={printerId ?? ''}
-                    onChange={(event) => setPrinterId(Number(event.target.value))}
+                    onChange={(event) => {
+                      contextGeneration.current += 1;
+                      selectedPrinterId.current = Number(event.target.value);
+                      setPrinterId(selectedPrinterId.current);
+                    }}
                     className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded-lg px-3 py-2 text-white"
                   >
                     {printers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -189,6 +238,8 @@ export function WLEDSettings() {
                       type="url"
                       value={config.base_url ?? ''}
                       onChange={(event) => {
+                        contextGeneration.current += 1;
+                        currentUrl.current = event.target.value.trim();
                         setConfig((current) => ({ ...current, base_url: event.target.value }));
                         setConnection({ state: 'idle' });
                       }}
@@ -199,7 +250,7 @@ export function WLEDSettings() {
                   <div className="flex flex-wrap gap-2">
                     <Button
                       variant="secondary"
-                      onClick={() => connectionMutation.mutate()}
+                      onClick={() => connectionMutation.mutate(nextRequest('connection', config.base_url?.trim() ?? ''))}
                       disabled={!config.base_url?.trim() || connectionMutation.isPending}
                     >
                       {connectionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
@@ -207,7 +258,7 @@ export function WLEDSettings() {
                     </Button>
                     <Button
                       variant="secondary"
-                      onClick={() => presetsMutation.mutate(config.base_url?.trim() ?? '')}
+                      onClick={() => presetsMutation.mutate(nextRequest('presets', config.base_url?.trim() ?? ''))}
                       disabled={!config.base_url?.trim() || presetsMutation.isPending}
                     >
                       {presetsMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
@@ -267,7 +318,9 @@ export function WLEDSettings() {
                               size="sm"
                               variant="secondary"
                               aria-label={`${t('wled.testPreset')} ${t(`wled.status.${key}`)}`}
-                              onClick={() => selected !== null && presetTestMutation.mutate(selected)}
+                              onClick={() => selected !== null && presetTestMutation.mutate({
+                                ...nextRequest('presetTest', config.base_url?.trim() ?? ''), presetId: selected,
+                              })}
                               disabled={selected === null || presetTestMutation.isPending}
                             >
                               <Play className="w-3 h-3" />
@@ -303,7 +356,9 @@ export function WLEDSettings() {
 
           <div className="flex justify-end">
             <Button
-              onClick={() => saveMutation.mutate()}
+              onClick={() => saveMutation.mutate({
+                ...nextRequest('save', config.base_url?.trim() ?? ''), config,
+              })}
               disabled={saveMutation.isPending || (config.enabled && !config.base_url?.trim())}
             >
               {saveMutation.isPending ? t('common.saving') : t('common.save')}

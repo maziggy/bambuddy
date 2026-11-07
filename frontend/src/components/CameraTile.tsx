@@ -99,7 +99,6 @@ export function CameraTile({
   const imgRef = useRef<HTMLImageElement | null>(null);
   // On its stream and its /camera/stop: the stop ends this tile's stream only.
   const viewerId = useCameraViewerId();
-  const attachImg = useStreamImgRef(imgRef);
   // 'renewed': the current img is a renewal not yet showing a frame; 'retried':
   // it is the one retry of a renewal that failed.
   const renewalRef = useRef<'none' | 'renewed' | 'retried'>('none');
@@ -230,6 +229,8 @@ export function CameraTile({
   const snapshotUrl = withStreamToken(
     `/api/v1/printers/${printerId}/camera/snapshot?t=${bust}`,
   );
+  // The img gets its src from here, at commit, never from a prop (#3431).
+  const attachImg = useStreamImgRef(imgRef, reopening ? undefined : mode === 'live' ? liveUrl : snapshotUrl);
 
   // A kiosk wall passes no onClick — there is no pointer at a TV, and the page
   // is authenticated by a token that cannot open the single-camera view. Render
@@ -292,7 +293,6 @@ export function CameraTile({
         <img
           ref={attachImg}
           key={`${mode}-${bust}`}
-          src={reopening ? undefined : mode === 'live' ? liveUrl : snapshotUrl}
           alt={printerName}
           draggable={false}
           loading="lazy"

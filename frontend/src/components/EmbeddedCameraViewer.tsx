@@ -120,7 +120,6 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   const imgRef = useRef<HTMLImageElement | null>(null);
   // On its stream and its /camera/stop: the stop ends this viewer's stream only.
   const viewerId = useCameraViewerId();
-  const attachImg = useStreamImgRef(imgRef);
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const stallCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -586,6 +585,8 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   }, [isDragging, isResizing, dragOffset, minY]);
 
   const streamUrl = withStreamToken(`/api/v1/printers/${printerId}/camera/stream?fps=15&t=${imageKey}&viewer=${viewerId}`);
+  // The img gets its src from here, at commit, never from a prop (#3431).
+  const attachImg = useStreamImgRef(imgRef, streamUrl);
 
   return (
     <div
@@ -747,7 +748,6 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
           <img
             ref={attachImg}
             key={imageKey}
-            src={streamUrl}
             alt="Camera stream"
             className="max-w-full max-h-full object-contain select-none"
             style={{

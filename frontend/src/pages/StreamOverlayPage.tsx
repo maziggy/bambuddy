@@ -14,6 +14,7 @@ import { formatDuration, formatETA, type TimeFormat } from '../utils/date';
 import { mapModelCode } from '../utils/printerModel';
 import { useOverlayCameraRecovery } from '../hooks/useOverlayCameraRecovery';
 import { isSideways, useSidewaysBox } from '../hooks/useSidewaysBox';
+import { useStreamImgRef } from '../hooks/useStreamImgRef';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
@@ -335,6 +336,17 @@ export function StreamOverlayPage() {
   const fitsWindow = sideways && !config.layout && !config.updatedArtwork && config.showCamera && status != null;
   const windowBox = useSidewaysBox(artworkRef, fitsWindow);
 
+  // Append the kiosk token directly rather than leaning on withStreamToken's
+  // module cache — the cache is populated by an effect and would miss the first
+  // render (a 401 flash before the retry). The logged-in path keeps the cache.
+  const camPath = `/api/v1/printers/${id}/camera/stream?fps=${config.fps}&t=${imageKey}`;
+  const streamUrl = kiosk && token
+    ? `${camPath}&token=${encodeURIComponent(token)}`
+    : withStreamToken(camPath);
+  // The classic overlay's img gets its src from here, at commit, never from a
+  // prop (#3431). Called above the early returns, as every hook must be.
+  const attachImg = useStreamImgRef(imgRef, closing ? undefined : streamUrl);
+
   if (!id) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -411,13 +423,6 @@ export function StreamOverlayPage() {
       });
     }
   }
-  // Append the kiosk token directly rather than leaning on withStreamToken's
-  // module cache — the cache is populated by an effect and would miss the first
-  // render (a 401 flash before the retry). The logged-in path keeps the cache.
-  const camPath = `/api/v1/printers/${id}/camera/stream?fps=${config.fps}&t=${imageKey}`;
-  const streamUrl = kiosk && token
-    ? `${camPath}&token=${encodeURIComponent(token)}`
-    : withStreamToken(camPath);
 
   if (config.updatedArtwork) {
     const active = status.connected && isPrinting;
@@ -451,9 +456,8 @@ export function StreamOverlayPage() {
       {/* Camera feed - fullscreen background (optional) */}
       {config.showCamera && (
         <img
-          ref={imgRef}
+          ref={attachImg}
           key={imageKey}
-          src={closing ? undefined : streamUrl}
           alt={t('streamOverlay.cameraStream')}
           className="absolute inset-0 w-full h-full object-contain"
           style={dimensions ? {

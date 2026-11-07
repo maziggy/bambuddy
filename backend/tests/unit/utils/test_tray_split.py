@@ -177,3 +177,52 @@ class TestComputeTraySplitGrams:
         )
         # Seg 0 gcode delta on filament_id=1 is non-zero → not 0g.
         assert segments[0][2] > 0
+
+    def test_gcode_split_proportional_prevents_backup_starvation(self):
+        # When G-code extrusion length converts to more weight than the slicer's
+        # total_weight (e.g., retractions or density mismatch), an absolute mm_to_grams
+        # split would overcharge segment 0 and leave segment 1 with <= 0g.
+        # Proportional splitting ensures both segments receive their fair share
+        # and sum exactly to total_weight.
+        layer_usage = {
+            10: {0: 10000.0},
+            20: {0: 20000.0},
+        }
+        segments = compute_tray_split_grams(
+            tray_changes=[(0, 0), (1, 10)],
+            total_weight=10.0,
+            slot_id=1,
+            layer_usage=layer_usage,
+            density=1.24,
+            diameter=1.75,
+            total_layers=20,
+            last_layer_num=20,
+        )
+        assert len(segments) == 2
+        # Seg 0: 10000 / 20000 = 50% -> 5.0g
+        # Seg 1: remainder -> 5.0g
+        assert round(segments[0][2], 4) == 5.0
+        assert round(segments[1][2], 4) == 5.0
+        assert round(segments[0][2] + segments[1][2], 6) == 10.0
+
+    def test_gcode_split_with_zero_extrusion_falls_back_to_linear(self):
+        # layer_usage is present, but this filament has 0mm extruded
+        # (e.g. empty or unreferenced slot). Should fall back to linear ratio.
+        layer_usage = {
+            10: {0: 100.0},
+            20: {0: 200.0},
+        }
+        segments = compute_tray_split_grams(
+            tray_changes=[(0, 0), (1, 10)],
+            total_weight=20.0,
+            slot_id=2,  # filament_id=1, not in layer_usage
+            layer_usage=layer_usage,
+            density=1.24,
+            diameter=1.75,
+            total_layers=20,
+            last_layer_num=20,
+        )
+        assert len(segments) == 2
+        # 10 of 20 layers = 50% linear fallback
+        assert round(segments[0][2], 4) == 10.0
+        assert round(segments[1][2], 4) == 10.0

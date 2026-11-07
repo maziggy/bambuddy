@@ -45,9 +45,9 @@ def compute_tray_split_grams(
     both inventory backends split identically:
 
     1. **G-code cumulative extrusion** (``layer_usage``, indexed by 0-based
-       filament id). Precise: uses the mm actually consumed between
-       ``seg_start_layer`` and the next segment's start, then converts via
-       Spoolman-authoritative ``density`` / ``diameter``.
+       filament id). Precise: calculates each segment's proportional share
+       of ``total_weight`` using the mm extruded between ``seg_start_layer``
+       and the next segment's start relative to total extrusion.
     2. **Linear layer-ratio** — ``total_weight * segment_layers / denom``,
        with ``denom = total_layers or last_layer_num``. Firmware on P1S
        (observed) resets ``total_layer_num`` to 0 at print end, so the
@@ -71,16 +71,27 @@ def compute_tray_split_grams(
     results: list[tuple[int, int, float]] = []
     sum_previous = 0.0
 
+    # Total extrusion for this filament across the print (up to print end or last layer)
+    total_layer = denom or (max(layer_usage.keys()) if layer_usage else 0)
+    total_mm = (
+        threemf_tools.get_cumulative_usage_at_layer(layer_usage, total_layer).get(filament_id, 0.0)
+        if layer_usage
+        else 0.0
+    )
+
     for seg_idx, (tray_global, seg_start_layer) in enumerate(tray_changes):
         is_last = seg_idx + 1 >= n_segments
 
         if is_last:
-            segment_grams = total_weight - sum_previous
-        elif layer_usage:
+            segment_grams = max(0.0, total_weight - sum_previous)
+        elif layer_usage and total_mm > 0:
             seg_end_layer = tray_changes[seg_idx + 1][1]
-            mm_at_start = threemf_tools.get_cumulative_usage_at_layer(layer_usage, seg_start_layer).get(filament_id, 0)
-            mm_at_end = threemf_tools.get_cumulative_usage_at_layer(layer_usage, seg_end_layer).get(filament_id, 0)
-            segment_grams = threemf_tools.mm_to_grams(mm_at_end - mm_at_start, diameter, density)
+            mm_at_start = threemf_tools.get_cumulative_usage_at_layer(layer_usage, seg_start_layer).get(
+                filament_id, 0.0
+            )
+            mm_at_end = threemf_tools.get_cumulative_usage_at_layer(layer_usage, seg_end_layer).get(filament_id, 0.0)
+            seg_mm = max(0.0, mm_at_end - mm_at_start)
+            segment_grams = total_weight * (seg_mm / total_mm)
         else:
             seg_end_layer = tray_changes[seg_idx + 1][1]
             if denom > 0:

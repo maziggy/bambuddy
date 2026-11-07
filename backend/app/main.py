@@ -5206,9 +5206,8 @@ async def on_print_start(printer_id: int, data: dict):
         from backend.app.api.routes.settings import get_setting
 
         _global_auto_archive = await get_setting(db, "auto_archive")
-        archives_prints = printer.auto_archive and (
-            _global_auto_archive is None or _global_auto_archive.lower() == "true"
-        )
+        _global_archives = _global_auto_archive is None or _global_auto_archive.lower() == "true"
+        archives_prints = printer.auto_archive and _global_archives
         if not archives_prints:
             # auto-archive disabled — check if there's an expected print (dispatched
             # by BamBuddy via queue/reprint) that already has an archive to promote.
@@ -5235,8 +5234,21 @@ async def on_print_start(printer_id: int, data: dict):
             _has_expected = any(k in _expected_prints for k in _check_keys)
 
             if not _has_expected:
-                # No expected print — truly external print (started from slicer/touchscreen)
-                logger.info("[CALLBACK] Skipping archive - auto_archive: False, no expected print")
+                # No expected print — truly external print (started from slicer/touchscreen).
+                # Say which switch it was: before 1.3.0 the global one was saved
+                # and never read, so an install upgraded with it off stopped
+                # archiving with nothing to point at it (#3477).
+                if not _global_archives:
+                    logger.info(
+                        "[CALLBACK] Skipping archive: the global 'Auto-archive prints' switch "
+                        "(Settings > General > Archive Settings) is off, and Bambuddy did not start this print"
+                    )
+                else:
+                    logger.info(
+                        "[CALLBACK] Skipping archive: auto-archive is off for printer %s, "
+                        "and Bambuddy did not start this print",
+                        printer_id,
+                    )
                 if not notification_sent:
                     _no_archive_creator: int | None = None
                     for _key in _check_keys:

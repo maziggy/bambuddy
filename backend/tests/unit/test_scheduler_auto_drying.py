@@ -2495,3 +2495,62 @@ class TestAmbientDryingSustainedDelay(_DryingTestBase):
         messages = [rec.getMessage() for rec in caplog.records]
         assert any("cannot dry reasons" in m for m in messages)
         assert not any("waiting" in m for m in messages)
+
+
+class TestParkedCountdownReachesAutoDrying(_DryingTestBase):
+    """#3478: a parked AMS countdown is not a running dry.
+
+    Firmware can accept the command and leave the heater off, with dry_time
+    stuck at the full duration. Once dry_countdown_stalled is set, auto-drying
+    must send a start instead of treating that timer as already running.
+    """
+
+    @pytest.fixture
+    def scheduler(self):
+        return PrintScheduler()
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_parked_ht_with_no_prior_cycle_sends_a_start(self, mock_sd, mock_pm, scheduler):
+        """AMS HT 128 parked at dry_time=720, dry_status Off, stalled, humidity
+        above threshold, nothing owned yet: send a start. Before the fix this
+        pass sent nothing.
+        """
+        state = MagicMock()
+        state.raw_data = {
+            "ams": [
+                {
+                    "id": 128,
+                    "module_type": "n3s",
+                    "dry_time": 720,
+                    "dry_status": 0,
+                    "dry_countdown_stalled": True,
+                    "humidity_raw": "75",
+                    "dry_sf_reason": [],
+                    "tray": [{"tray_type": "PLA"}],
+                }
+            ]
+        }
+        state.firmware_version = "01.09.00.00"
+        mock_pm.get_status.return_value = state
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+        mock_pm.send_drying_command.return_value = True
+
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+        db = AsyncMock()
+
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("false"),
+            "ambient_drying_enabled": self._make_setting("true"),
+            "ams_humidity_fair": self._make_setting("60"),
+            "queue_drying_block": self._make_setting("false"),
+            "drying_presets": None,
+        }
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+
+        await scheduler._check_auto_drying(db, [], set())
+
+        mock_pm.send_drying_command.assert_called_once_with(1, 128, 45, 12, mode=1, filament="PLA")
+        assert 1 in scheduler._drying_in_progress

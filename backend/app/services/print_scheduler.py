@@ -6333,7 +6333,18 @@ class PrintScheduler:
                 # The firmware stops when the configured duration elapses; scheduling
                 # stops (print takes priority, queue no longer needs drying) are
                 # handled separately via _stop_drying().
-                if dry_time > 0:
+                #
+                # A parked countdown is not a running cycle (#3478). Firmware can
+                # accept the command and still leave the heater off, with dry_time
+                # stuck at its full duration and dry_status Off. The MQTT layer
+                # reports that as dry_countdown_stalled — the same predicate the
+                # UI and scheduled drying already use. Only a countdown that is
+                # actually running takes this branch, so a parked unit falls
+                # through to the cycle-end, cooldown, suspension, humidity, and
+                # cannot-dry guards below instead of being told to keep going.
+                # Telemetry with no stall flag, including an Off sample the
+                # detector has not classified yet, still lets the timer run.
+                if dry_time > 0 and not is_countdown_parked(ams_data):
                     if pid not in self._drying_in_progress:
                         # Drying we didn't start (manual or from before restart) —
                         # track it so scheduling stops still apply; never auto-stop it.
@@ -6349,8 +6360,9 @@ class PrintScheduler:
                     )
                     continue
 
-                # Nothing is drying. Close out a cycle we armed ourselves and
-                # judge whether it achieved anything (#2770).
+                # Nothing is drying — a parked countdown included (#3478). Close
+                # out a cycle we armed ourselves and judge whether it achieved
+                # anything (#2770).
                 #
                 # "Achieved anything" is measured against the LOWEST reading any
                 # cycle on this unit has ended at, not against the threshold and

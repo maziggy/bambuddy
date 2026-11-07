@@ -274,11 +274,21 @@ class TestTheWording:
 
         The reporter of this issue restarted a printer on the strength of the
         user-facing string, so the string has to carry the same restraint.
+
+        Except where the printer said why: "421 too many connections" stayed
+        until the printer was restarted, and nothing else cleared it (#3474).
         """
         for kind in FtpFailureKind:
+            if kind is FtpFailureKind.SESSIONS:
+                continue
             message = describe_upload_failure(FtpFailure(kind, "detail"))
             assert "restart the printer" not in message.lower(), kind
             assert "reboot" not in message.lower(), kind
+
+    def test_a_printer_out_of_sessions_is_told_to_be_restarted_if_it_stays(self):
+        message = describe_upload_failure(FtpFailure(FtpFailureKind.SESSIONS, "421 There are too many", "421"))
+        assert "421" in message
+        assert "restart the printer" in message.lower()
 
     def test_an_unclassified_failure_points_at_the_log_rather_than_guessing(self):
         for failure in (None, FtpFailure(FtpFailureKind.UNKNOWN, "500 what")):

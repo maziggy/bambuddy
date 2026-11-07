@@ -107,7 +107,7 @@ def _ftp(main_module, maker, monkeypatch, tmp_path, listing, *, state="RUNNING",
         files = listing()
         return FileListResult(files=files or [], available=files is not None)
 
-    status = SimpleNamespace(connected=True, state=state, sdcard=True, sdcard_reported=True)
+    status = SimpleNamespace(connected=True, state=state, sdcard=True, sdcard_reported=True, timelapse=True)
     monkeypatch.setattr(bambu_ftp, "list_files_async", _list)
     monkeypatch.setattr(bambu_ftp, "list_files_result_async", _list_result)
     monkeypatch.setattr(bambu_ftp, "download_file_bytes_async", AsyncMock(return_value=b"x" * 1024))
@@ -327,23 +327,30 @@ class TestTheCaptureAtPrintStart:
             assert (await db.get(PrintArchive, archive_id)).timelapse_baseline_unread is False
         assert spawned == []
 
-    async def test_an_empty_first_listing_is_replaced_by_the_one_that_answered(
-        self, test_engine, tmp_path, monkeypatch
-    ):
-        """The first listing fails, the second reads the card: its names are the
-        baseline, not the empty set the first one returned."""
+    async def test_a_failed_listing_is_not_walked_again_at_once(self, test_engine, tmp_path, monkeypatch):
+        """One walk of the card: a /timelapse that does not answer leaves the
+        baseline unread for the re-read, rather than being asked again on the
+        spot. Against a hung file service that second walk was four more dead
+        connections (#3474)."""
         from backend.app import main
 
         maker, printer, archive_id = await _seed(test_engine)
+        asked: list[str] = []
         rounds = iter([None])
-        _, session = _ftp(main, maker, monkeypatch, tmp_path, lambda: next(rounds, [_entry(OLD_A), _entry(OLD_B)]))
+
+        def listing():
+            asked.append("/timelapse")
+            return next(rounds, [_entry(OLD_A), _entry(OLD_B)])
+
+        _, session = _ftp(main, maker, monkeypatch, tmp_path, listing)
 
         with session:
             await self._capture(main, printer, archive_id)
 
+        assert asked == ["/timelapse"]
         async with maker() as db:
             archive = await db.get(PrintArchive, archive_id)
-            assert (archive.timelapse_baseline, archive.timelapse_baseline_unread) == ([OLD_A, OLD_B], False)
+            assert (archive.timelapse_baseline, archive.timelapse_baseline_unread) == ([], True)
 
 
 class TestTheCardIsReadAgainDuringThePrint:

@@ -319,6 +319,7 @@ export function SettingsPage() {
   // Camera tokens and the overlay builder used to live under API Keys; links
   // to them (bookmarks, the wiki, /camera-tokens) open the Camera tab instead.
   const canSeeApiKeysTab = hasPermission('api_keys:read') || hasPermission('settings:update');
+  const canManageWled = !authLoading && hasPermission('printers:update');
   const isLegacyCameraLink = tabParam === 'apikeys'
     && ['#card-camera-tokens', '#card-stream-overlay'].includes(window.location.hash);
   const initialTab = isLegacyEmailTab ? 'users'
@@ -375,8 +376,9 @@ export function SettingsPage() {
   // Waits for the session so a permission not loaded yet doesn't count as none.
   useEffect(() => {
     if (!authLoading && activeTab === 'apikeys' && !canSeeApiKeysTab) handleTabChange('camera');
+    if (!authLoading && activeTab === 'wled' && !canManageWled) handleTabChange('general');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, activeTab, canSeeApiKeysTab]);
+  }, [authLoading, activeTab, canSeeApiKeysTab, canManageWled]);
 
   // Switch the Workflow tab's sub-tab and reflect it in the URL so deep-links work.
   const handleQueueSubTabChange = (sub: 'dispatch' | 'pipelines') => {
@@ -1630,7 +1632,7 @@ export function SettingsPage() {
 
   // Cross-tab search is powered by the module-level registry in lib/settingsSearch.
   // Resolve i18n labels here so language changes take effect without re-registering.
-  const searchIndex = getSettingsSearchEntries().map(e => ({
+  const searchIndex = getSettingsSearchEntries().filter(e => e.tab !== 'wled' || canManageWled).map(e => ({
     ...e,
     label: t(e.labelKey, e.labelFallback ?? e.labelKey),
   }));
@@ -1698,7 +1700,7 @@ export function SettingsPage() {
     { tab: 'filament', icon: Cylinder, label: t('settings.tabs.filament') },
     { tab: 'camera', icon: Video, label: t('settings.tabs.camera') },
     { tab: 'network', icon: Wifi, label: t('settings.tabs.network'), extra: statusDot(!!mqttStatus?.enabled) },
-    { tab: 'wled', icon: Lightbulb, label: t('settings.tabs.wled') },
+    ...(canManageWled ? [{ tab: 'wled', icon: Lightbulb, label: t('settings.tabs.wled') }] : []),
     // API Keys holds API keys, webhooks, the API browser and Connected Apps;
     // a user who may see none of them would land on an empty tab.
     ...(canSeeApiKeysTab
@@ -4363,7 +4365,7 @@ export function SettingsPage() {
         </div>
       )}
 
-      {activeTab === 'wled' && <WLEDSettings />}
+      {activeTab === 'wled' && canManageWled && <WLEDSettings />}
 
       {/* API Keys Tab */}
       {activeTab === 'camera' && (

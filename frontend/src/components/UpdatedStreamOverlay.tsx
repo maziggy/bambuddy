@@ -1,9 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type Ref, type SyntheticEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MutableRefObject, type ReactNode, type SyntheticEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Clock, Layers, Printer, Timer } from 'lucide-react';
 import './UpdatedStreamOverlay.css';
 import { overlayProgressTextStyle } from '../utils/overlayBranding';
 import { useSidewaysBox } from '../hooks/useSidewaysBox';
+import { useStreamImgRef } from '../hooks/useStreamImgRef';
 
 import type { OverlayLayout } from '../utils/overlayLayout';
 
@@ -18,7 +19,7 @@ interface UpdatedStreamOverlayProps {
     url: string | undefined;
     rotation: number;
     onError: (event: SyntheticEvent<HTMLImageElement>) => void;
-    imgRef?: Ref<HTMLImageElement>;
+    imgRef?: MutableRefObject<HTMLImageElement | null>;
   } | null;
   name: string | null;
   model: string | null;
@@ -48,6 +49,9 @@ function useOverlayOrientation(layout?: OverlayLayout): OverlayLayout {
 
 export function UpdatedStreamOverlay(props: UpdatedStreamOverlayProps) {
   const { t } = useTranslation();
+  // The camera img gets its src from here, at commit, never from a prop (#3431).
+  const ownImgRef = useRef<HTMLImageElement | null>(null);
+  const attachCamera = useStreamImgRef(props.camera?.imgRef ?? ownImgRef, props.camera?.url);
   const backgroundAlpha = 1 - (props.backgroundTransparency ?? 0) / 100;
   const backgroundStyle: CSSProperties & {
     '--overlay-background-alpha': number;
@@ -108,8 +112,7 @@ export function UpdatedStreamOverlay(props: UpdatedStreamOverlayProps) {
       {camera && (
         <div className="updated-overlay__camera" ref={cameraRef}>
           <img
-            ref={camera.imgRef}
-            src={camera.url}
+            ref={attachCamera}
             alt={t('streamOverlay.cameraStream')}
             style={{
               transform: `translate(-50%, -50%) rotate(${rotation}deg)`,

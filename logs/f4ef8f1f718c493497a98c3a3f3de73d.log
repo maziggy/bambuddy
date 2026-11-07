@@ -1,0 +1,56 @@
+2026-11-07 19:33:06,888 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/20P90A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20097","version":1}}...
+2026-11-07 19:33:06,888 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-11-07 19:33:06,888 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-11-07 19:33:33,676 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/20P90A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20008","version":1}}...
+2026-11-07 19:33:33,676 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-11-07 19:33:33,676 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-11-07 19:34:03,775 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:50417
+2026-11-07 19:34:03,775 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:50426
+2026-11-07 19:34:03,775 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:56527
+2026-11-07 19:34:03,775 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:64912
+2026-11-07 19:34:34,939 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-11-07 19:35:03,939 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:50417
+2026-11-07 19:35:03,940 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:50426
+2026-11-07 19:35:03,940 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:56527
+2026-11-07 19:35:03,940 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:64912
+2026-11-07 19:36:04,110 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:50417
+2026-11-07 19:36:04,110 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:50426
+2026-11-07 19:36:04,110 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:56527
+2026-11-07 19:36:04,110 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [The Virtual Construct] 1Hz status push: 60 pushes/min to [IP]:64912
+2026-11-07 19:36:26,242 INFO [backend.app.api.routes.support] [4f514dc3] Log level changed to DEBUG
+2026-11-07 19:36:26,242 INFO [backend.app.api.routes.bug_report] [4f514dc3] Bug report: enabled debug logging
+2026-11-07 19:36:26,242 DEBUG [backend.app.services.bambu_mqtt] [4f514dc3] [[SERIAL]] Requesting status update (pushall)
+2026-11-07 19:36:26,242 INFO [uvicorn.access] [-] [IP]:57638 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-11-07 19:36:26,688 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP NOTIFY for The Virtual Construct (Location=[IP], USN=20P90A391800001, bind=[IP])
+2026-11-07 19:36:27,192 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'cfg': 8088999, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-11-07 19:36:27,192 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-11-07 19:36:27,192 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8088999 (binary: 0b11110110110110110100111)
+2026-11-07 19:36:27,192 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_5.gcode, subtask_name: Toolbox_für_X2D_Erweitert(3)_plate_5
+2026-11-07 19:36:27,192 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 255, 'cali_stat': 0, 'cfs': [2, 3, 4], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_hall_out_bits': '0', 'tray_is_bbl_bits': 'f', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 51}
+2026-11-07 19:36:27,192 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-11-07 19:36:27,192 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-11-07 19:36:27,192 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x11001103 -> extruder 1
+2026-11-07 19:36:27,192 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1}
+2026-11-07 19:36:27,192 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-11-07 19:36:27,192 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-07 19:36:27,192 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=274 (switch_state bits 12-14: 0)
+2026-11-07 19:36:27,192 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 28°C (heater OFF)
+2026-11-07 19:36:27,192 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-11-07 19:36:27,192 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=28.0, heating=False, respect_local=False
+2026-11-07 19:36:27,193 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 28.0, target: 0.0, heating: False
+2026-11-07 19:36:27,193 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-07 19:36:27,193 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'liveview_preview': True, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_external_free_kb': 15034240, 'tl_external_total_kb': 60077952, 'tl_internal_free_kb': 950929, 'tl_internal_total_kb': 962560, 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-11-07 19:36:27,193 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -58dBm
+2026-11-07 19:36:27,193 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-11-07 19:36:27,193 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [0]
+2026-11-07 19:36:27,193 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_5.gcode, subtask: Toolbox_für_X2D_Erweitert(3)_plate_5
+2026-11-07 19:36:28,222 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'cfg': 8088999, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-11-07 19:36:28,222 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-11-07 19:36:28,222 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 8088999 (binary: 0b11110110110110110100111)
+2026-11-07 19:36:28,222 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: /data/Metadata/plate_5.gcode, subtask_name: Toolbox_für_X2D_Erweitert(3)_plate_5
+2026-11-07 19:36:28,222 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 1}
+2026-11-07 19:36:28,222 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-11-07 19:36:28,222 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-11-07 19:36:28,222 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-11-07 19:36:28,222 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [0]
+2026-11-07 19:36:28,222 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: /data/Metadata/plate_5.gcode, subtask: Toolbox_für_X2D_Erweitert(3)_plate_5

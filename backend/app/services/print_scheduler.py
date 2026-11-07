@@ -391,6 +391,7 @@ DISPATCH_MAX_ATTEMPTS = 3
 _UPLOAD_REQUEUE_KINDS: frozenset[FtpFailureKind] = frozenset(
     {
         FtpFailureKind.HANDSHAKE,
+        FtpFailureKind.SESSIONS,
         FtpFailureKind.COOLOFF,
         FtpFailureKind.TIMEOUT,
         FtpFailureKind.NETWORK,
@@ -404,7 +405,8 @@ def _refused_upload_hold_reason(printer_label: str, kind: FtpFailureKind | None)
     """What a job waiting on a printer that refused its last upload shows.
 
     Storage and the access code need the user to do something, so they say
-    what; the rest clear on their own.
+    what, and so does a printer out of FTP sessions: those have been seen to
+    stay until the printer restarts (#3474). The rest clear on their own.
     """
     if kind is FtpFailureKind.STORAGE:
         return f"{printer_label} refused to store the file — check its SD card or USB drive. {_REFUSED_UPLOAD_TAIL}"
@@ -412,6 +414,11 @@ def _refused_upload_hold_reason(printer_label: str, kind: FtpFailureKind | None)
         return (
             f"{printer_label} refused the file transfer — check its access code on the Printers page. "
             f"{_REFUSED_UPLOAD_TAIL}"
+        )
+    if kind is FtpFailureKind.SESSIONS:
+        return (
+            f"{printer_label} has no file-transfer sessions left (421 too many connections) — "
+            f"if this does not clear within a few minutes, restart the printer. {_REFUSED_UPLOAD_TAIL}"
         )
     return f"{printer_label} is not accepting files — {_REFUSED_UPLOAD_TAIL}"
 

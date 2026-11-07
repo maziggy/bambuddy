@@ -323,7 +323,10 @@ class TestScanForTimelapseWithRetries:
         with (
             patch("backend.app.main.async_session", return_value=mock_session),
             patch("backend.app.main._list_timelapse_videos", side_effect=mock_list_mp4s),
-            patch(f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult([], True))),
+            # The baseline is one walk of its own (#3474), so it reads the card here.
+            patch(
+                f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult(baseline_files, True))
+            ),
             patch("backend.app.main.ws_manager") as mock_ws,
             patch("backend.app.main.asyncio.sleep", new_callable=AsyncMock),
             patch("backend.app.main.ArchiveService", return_value=mock_service),
@@ -369,7 +372,10 @@ class TestScanForTimelapseWithRetries:
         with (
             patch("backend.app.main.async_session", return_value=mock_session),
             patch("backend.app.main._list_timelapse_videos", side_effect=mock_list_mp4s),
-            patch(f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult([], True))),
+            # The baseline is one walk of its own (#3474), so it reads the card here.
+            patch(
+                f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult(baseline_files, True))
+            ),
             patch("backend.app.main.ws_manager") as mock_ws,
             patch("backend.app.main.asyncio.sleep", new_callable=AsyncMock),
             patch("backend.app.main.ArchiveService", return_value=mock_service),
@@ -422,7 +428,10 @@ class TestScanForTimelapseWithRetries:
         with (
             patch("backend.app.main.async_session", return_value=mock_session),
             patch("backend.app.main._list_timelapse_videos", side_effect=mock_list_mp4s),
-            patch(f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult([], True))),
+            # The baseline is one walk of its own (#3474), so it reads the card here.
+            patch(
+                f"{_FTP_MODULE}.list_files_result_async", AsyncMock(return_value=FileListResult(baseline_files, True))
+            ),
             patch("backend.app.main.ws_manager") as mock_ws,
             patch("backend.app.main.asyncio.sleep", new_callable=AsyncMock),
             patch("backend.app.main.ArchiveService", return_value=mock_service),

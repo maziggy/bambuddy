@@ -110,7 +110,14 @@ def _patches(main_module, maker, monkeypatch, tmp_path, listing):
             return []
         return listing()
 
+    async def _list_result(ip, code, path, timeout=30.0, socket_timeout=None, printer_model=None):
+        # The baseline reads the card with this one (#3474).
+        if path != "/timelapse":
+            return bambu_ftp.FileListResult(files=[], available=False, missing=True)
+        return bambu_ftp.FileListResult(files=listing(), available=True)
+
     monkeypatch.setattr(bambu_ftp, "list_files_async", _list)
+    monkeypatch.setattr(bambu_ftp, "list_files_result_async", _list_result)
     monkeypatch.setattr(bambu_ftp, "download_file_bytes_async", AsyncMock(return_value=b"x" * 1024))
     monkeypatch.setattr(bambu_ftp, "remote_file_settled", AsyncMock(return_value=True))
     monkeypatch.setattr(bambu_ftp, "delete_archived_timelapse", AsyncMock(return_value=True))

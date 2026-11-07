@@ -9,6 +9,7 @@ All notable changes to Bambuddy will be documented in this file.
 ### Changed
 
 ### Fixed
+- **A printer whose file service hangs during a print is no longer asked again and again until it refuses every upload (#3474, reported by @F9mm)** — When the card could not be read at print start, the timelapse baseline was read again every two minutes for the whole print, and each round walked the card twice: up to eight new FTPS connections, each hanging for 30 s against a hung printer. An H2S kept a session for every one of them, then answered every connection with "421 There are too many connections", and no queued job could reach it until the printer was restarted. The card is now read once per round. It is read again only while the print records a timelapse, the wait doubles after each failed round (up to 30 minutes), and it stops after five. A connection or listing that times out now pauses the background timelapse scans of that printer for five minutes. Opening files and sending prints are not held up by this. A printer that answers "421 too many connections" now gets its own message in the queue, saying it may need a restart, instead of "Bambuddy will retry automatically". Wiki updated.
 
 ### Security
 

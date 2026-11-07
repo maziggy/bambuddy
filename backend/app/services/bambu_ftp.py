@@ -343,12 +343,56 @@ class DeleteResult(Enum):
 # times a minute.
 _HANDSHAKE_COOLOFF_SECONDS = 300.0
 
+# A printer whose file service accepted a connection and then went silent --
+# a TLS handshake or a listing that ran out its timeout -- is left alone by
+# the background timelapse scans for this long (#3474). Only those scans read
+# this gate: a user browsing files or a dispatch still connects, and any
+# listing that completes lifts it. A connect alone does not: the reporter's
+# printer connected fine and then never answered LIST. Each connection to a hung vsFTPd can leave a
+# session behind on the printer, and enough of them make it answer every
+# connection with "421 too many connections" until it is restarted.
+_STALL_COOLOFF_SECONDS = 300.0
+
+# Printers in that cool-off, mapped to when it ends. Module-level rather than
+# on the client: the async wrappers record a stall from outside any client.
+_stalled_until: dict[str, float] = {}
+
+
+def _ftps_stalled(ip_address: str) -> bool:
+    """True while *ip_address*'s file service is in its stall cool-off (#3474)."""
+    deadline = _stalled_until.get(ip_address)
+    if deadline is None:
+        return False
+    if time.monotonic() >= deadline:
+        # pop, not del: executor threads write this dict too.
+        _stalled_until.pop(ip_address, None)
+        return False
+    return True
+
+
+def _record_ftps_stall(ip_address: str, what: str) -> None:
+    """Open the stall cool-off: the printer accepted a connection and then went silent."""
+    if not _ftps_stalled(ip_address):
+        logger.warning(
+            "Printer %s stopped answering on its file service (%s). Background timelapse scans "
+            "leave it alone for %.0fs.",
+            ip_address,
+            what,
+            _STALL_COOLOFF_SECONDS,
+        )
+    _stalled_until[ip_address] = time.monotonic() + _STALL_COOLOFF_SECONDS
+
 
 # How long to wait for a printer to say something in cleartext on the TLS port.
 # The failing case answers immediately -- the banner is the first thing a
 # vsFTPd refusal sends -- so this only ever elapses in full when the service has
 # gone back to speaking TLS and is waiting for a ClientHello that will not come.
 _CLEARTEXT_PROBE_TIMEOUT = 2.0
+
+
+def _is_too_many_connections(reply: str) -> bool:
+    """vsFTPd's per-address session limit: ``421 There are too many connections ...``."""
+    return reply.startswith("421") and "too many" in reply.lower()
 
 
 def _read_cleartext_reply(ip_address: str, port: int) -> str | None:
@@ -427,6 +471,9 @@ class FtpFailureKind(Enum):
 
     COOLOFF = "cooloff"  # skipped without contacting the printer (#2780)
     HANDSHAKE = "handshake"  # port 990 answered with something that is not TLS
+    # Port 990 answered in cleartext "421 ... too many connections": the
+    # printer has no FTP session left for Bambuddy's address (#3474).
+    SESSIONS = "sessions"
     AUTH = "auth"  # permanent refusal, typically a rejected access code
     TIMEOUT = "timeout"
     STORAGE = "storage"  # 553/552 -- the case the SD-card advice was written for
@@ -569,6 +616,11 @@ class BambuFTPClient:
     # logged for, so the warning is said once per cool-off. See ``connect``.
     _handshake_skip_logged: dict[str, float] = {}
 
+    # What each printer answered port 990 with in cleartext, kept for its
+    # handshake cool-off: only the first failure in a window probes, and the
+    # attempts after it still need to know it was a 421 (#3474).
+    _cleartext_reply: dict[str, str] = {}
+
     def __init__(
         self,
         ip_address: str,
@@ -649,8 +701,13 @@ class BambuFTPClient:
             # this process has ever failed against.
             del cls._handshake_blocked_until[ip_address]
             cls._handshake_skip_logged.pop(ip_address, None)
+            cls._cleartext_reply.pop(ip_address, None)
             return False
         return True
+
+    def _record_stall(self, what: str) -> None:
+        if self.records_handshake_cooloff:
+            _record_ftps_stall(self.ip_address, what)
 
     def connect(self) -> bool:
         """Connect to the printer FTP server (implicit FTPS on port 990).
@@ -737,6 +794,7 @@ class BambuFTPClient:
             logger.warning("FTP connection timed out to %s: %s", self.ip_address, e)
             self.last_failure = FtpFailure(FtpFailureKind.TIMEOUT, str(e))
             self._abandon_connection("connect timed out")
+            self._record_stall("connect timed out")
             return False
         except ssl.SSLError as e:
             # Not a transient failure and not something another path or another
@@ -774,27 +832,36 @@ class BambuFTPClient:
             # asked -- which keeps a dispatch that ignores the cool-off from
             # probing on each of its four attempts.
             detail = str(e)
-            if getattr(e, "reason", None) == "WRONG_VERSION_NUMBER" and not self.handshake_blocked(self.ip_address):
-                reply = _read_cleartext_reply(self.ip_address, self.FTP_PORT)
-                if reply:
-                    logger.warning(
-                        "Printer %s answered port %s in cleartext with: %s — that is what the TLS "
-                        "handshake read as a malformed record. Please include this line if you report it.",
-                        self.ip_address,
-                        self.FTP_PORT,
-                        reply,
-                    )
-                    detail = f"{e} (printer answered in cleartext: {reply})"
+            reply: str | None = None
+            if getattr(e, "reason", None) == "WRONG_VERSION_NUMBER":
+                if not self.handshake_blocked(self.ip_address):
+                    reply = _read_cleartext_reply(self.ip_address, self.FTP_PORT)
+                    if reply:
+                        logger.warning(
+                            "Printer %s answered port %s in cleartext with: %s — that is what the TLS "
+                            "handshake read as a malformed record. Please include this line if you report it.",
+                            self.ip_address,
+                            self.FTP_PORT,
+                            reply,
+                        )
+                        self._cleartext_reply[self.ip_address] = reply
+                    else:
+                        logger.warning(
+                            "Printer %s sent nothing readable in cleartext on port %s, so its file service "
+                            "was speaking TLS again by the time we asked — the refusal was momentary.",
+                            self.ip_address,
+                            self.FTP_PORT,
+                        )
+                        self._cleartext_reply.pop(self.ip_address, None)
                 else:
-                    logger.warning(
-                        "Printer %s sent nothing readable in cleartext on port %s, so its file service "
-                        "was speaking TLS again by the time we asked — the refusal was momentary.",
-                        self.ip_address,
-                        self.FTP_PORT,
-                    )
+                    # Asked already in this window; what it said then still holds.
+                    reply = self._cleartext_reply.get(self.ip_address)
+                if reply:
+                    detail = f"{e} (printer answered in cleartext: {reply})"
             if self.records_handshake_cooloff:
                 self._handshake_blocked_until[self.ip_address] = time.monotonic() + _HANDSHAKE_COOLOFF_SECONDS
-            self.last_failure = FtpFailure(FtpFailureKind.HANDSHAKE, detail)
+            kind = FtpFailureKind.SESSIONS if reply and _is_too_many_connections(reply) else FtpFailureKind.HANDSHAKE
+            self.last_failure = FtpFailure(kind, detail, "421" if kind is FtpFailureKind.SESSIONS else None)
             return False
         except (OSError, ftplib.Error) as e:
             logger.warning("FTP connection failed to %s: %s (type: %s)", self.ip_address, e, type(e).__name__)
@@ -909,8 +976,12 @@ class BambuFTPClient:
                         file_entry["mtime"] = mtime
                     files.append(file_entry)
             logger.debug("Listed %s files in %s", len(files), path)
+            # It answers again, so the background scans may ask again.
+            _stalled_until.pop(self.ip_address, None)
         except (OSError, ftplib.Error) as e:
             logger.info("FTP list_files failed for %s: %s", path, e)
+            if isinstance(e, TimeoutError):
+                self._record_stall(f"listing {path} timed out")
             if raise_on_error:
                 raise
 
@@ -1456,6 +1527,12 @@ def describe_upload_failure(failure: FtpFailure | None) -> str:
             f"The printer refused to store the file ({failure.code or 'storage error'}). Check that its SD card "
             "or USB drive is inserted, has space free, and is formatted FAT32 or exFAT."
         )
+    if failure.kind is FtpFailureKind.SESSIONS:
+        return (
+            "The printer refused the connection: it has no file-transfer sessions left for Bambuddy "
+            "(421 too many connections). Printers have been seen to keep this state until they are "
+            "restarted, so if it does not clear within a few minutes, restart the printer."
+        )
     if failure.kind is FtpFailureKind.HANDSHAKE:
         return (
             "The printer's file service answered, but not with TLS, so no file could be sent to it. "
@@ -1486,6 +1563,16 @@ def describe_upload_failure(failure: FtpFailure | None) -> str:
         "Could not upload the file to the printer. See the server log for the reason — "
         "it records what the printer's file service said."
     )
+
+
+def ftps_background_blocked(ip_address: str) -> bool:
+    """Whether a background timelapse scan should leave this printer alone.
+
+    The handshake cool-off, or the printer's file service having gone silent
+    on a connection it accepted (#3474). Only for unattended scans: a user
+    browsing files is not held off by a stall.
+    """
+    return BambuFTPClient.handshake_blocked(ip_address) or _ftps_stalled(ip_address)
 
 
 def ftps_handshake_blocked(ip_address: str) -> bool:
@@ -2155,6 +2242,10 @@ async def list_files_async(
         return await asyncio.wait_for(loop.run_in_executor(_ftp_executor, _list), timeout=timeout)
     except TimeoutError:
         logger.warning("FTP list_files timed out after %ss for %s", timeout, path)
+        # Here, not when the worker's own socket gives up: the two timeouts
+        # are the same length and this one starts first, so a caller walking
+        # several directories would open the next connection in between.
+        _record_ftps_stall(ip_address, f"listing {path} timed out")
         return []
 
 
@@ -2206,6 +2297,10 @@ async def list_files_result_async(
         result = await asyncio.wait_for(asyncio.shield(future), timeout=timeout)
     except TimeoutError:
         logger.warning("FTP list_files timed out after %ss for %s", timeout, path)
+        # Here, not when the worker's own socket gives up: the two timeouts
+        # are the same length and this one starts first, so a caller walking
+        # several directories would open the next connection in between.
+        _record_ftps_stall(ip_address, f"listing {path} timed out")
         return FileListResult(files=[], available=False, timed_out=connected.is_set())
     # Joined callers share the listing; each gets entries of its own to edit.
     return FileListResult(files=[dict(f) for f in result.files], available=result.available, missing=result.missing)

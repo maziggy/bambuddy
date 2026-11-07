@@ -102,6 +102,8 @@ describe('WLEDSettings', () => {
     );
     render(<WLEDSettings />);
     await waitFor(() => expect(calls).toEqual([1]));
+    await userEvent.clear(screen.getByLabelText('Finished timeout (seconds)'));
+    await userEvent.type(screen.getByLabelText('Finished timeout (seconds)'), '77');
     await userEvent.selectOptions(screen.getByLabelText('Printer'), '2');
     await waitFor(() => expect(calls).toEqual([1, 2]));
     await userEvent.selectOptions(screen.getByLabelText('Printer'), '1');
@@ -110,6 +112,7 @@ describe('WLEDSettings', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     await waitFor(() => expect(within(screen.getByLabelText('Printing')).queryByRole('option', { name: 'Request 1 (1)' })).toBeNull());
     expect(within(screen.getByLabelText('Printing')).getByRole('option', { name: 'Request 3 (3)' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Finished timeout (seconds)')).toHaveValue(77);
   });
 
   it('ignores a late preset error after switching printer or URL', async () => {
@@ -386,7 +389,7 @@ describe('WLEDSettings', () => {
     expect(screen.getByLabelText('Finished timeout (seconds)')).toHaveValue(45);
   });
 
-  it('loads the selected printers saved configuration when the printer changes', async () => {
+  it('loads each printers saved configuration once and keeps unsaved edits across switches', async () => {
     const second = {
       ...printer,
       id: 2,
@@ -415,10 +418,166 @@ describe('WLEDSettings', () => {
     expect(screen.getByLabelText('Finished timeout (seconds)')).toHaveValue(60);
 
     await userEvent.selectOptions(screen.getByLabelText('Printer'), '1');
-    await screen.findByDisplayValue('http://wled.local');
-    expect(screen.getByLabelText('Enable WLED integration')).not.toBeChecked();
+    await screen.findByDisplayValue('http://unsaved.local');
+    expect(screen.getByLabelText('Enable WLED integration')).toBeChecked();
     expect(screen.getByLabelText('Printing')).toHaveValue('99');
     expect(screen.getByLabelText('Finished timeout (seconds)')).toHaveValue(120);
+  });
+
+  it('keeps different unsaved drafts for A and B through repeated switches', async () => {
+    server.use(http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter, secondPrinter])));
+    render(<WLEDSettings />);
+    await screen.findByDisplayValue('http://wled.local');
+    await userEvent.clear(screen.getByLabelText('Finished timeout (seconds)'));
+    await userEvent.type(screen.getByLabelText('Finished timeout (seconds)'), '11');
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '2');
+    await screen.findByDisplayValue('http://second.local');
+    await userEvent.clear(screen.getByLabelText('Finished timeout (seconds)'));
+    await userEvent.type(screen.getByLabelText('Finished timeout (seconds)'), '22');
+    for (let i = 0; i < 2; i += 1) {
+      await userEvent.selectOptions(screen.getByLabelText('Printer'), '1');
+      expect(screen.getByLabelText('Finished timeout (seconds)')).toHaveValue(11);
+      await userEvent.selectOptions(screen.getByLabelText('Printer'), '2');
+      expect(screen.getByLabelText('Finished timeout (seconds)')).toHaveValue(22);
+    }
+  });
+
+  it('uses newer server values after a successful save clears the unchanged draft', async () => {
+    let saved = enabledPrinter;
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([saved])),
+      http.post('/api/v1/printers/1/wled/presets', () => HttpResponse.json([])),
+      http.patch('/api/v1/printers/1', async ({ request }) => {
+        const body = await request.json() as { wled_config: typeof enabledPrinter.wled_config };
+        saved = { ...enabledPrinter, wled_config: body.wled_config };
+        return HttpResponse.json(saved);
+      }),
+    );
+    render(<RefetchableWLEDSettings />);
+    await screen.findByDisplayValue('http://wled.local');
+    await userEvent.clear(screen.getByLabelText('WLED URL'));
+    await userEvent.type(screen.getByLabelText('WLED URL'), 'http://saved.local');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByText('WLED settings saved');
+    saved = { ...saved, wled_config: { ...saved.wled_config, base_url: 'http://external.local' } };
+    await userEvent.click(screen.getByRole('button', { name: 'Refetch printers' }));
+    await waitFor(() => expect(screen.getByLabelText('WLED URL')).toHaveValue('http://external.local'));
+  });
+
+  it('keeps a newer A draft after the older save succeeds', async () => {
+    const pending = deferred();
+    let saved: typeof enabledPrinter | null = null;
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([saved ?? enabledPrinter, secondPrinter])),
+      http.post('/api/v1/printers/:id/wled/presets', () => HttpResponse.json([])),
+      http.patch('/api/v1/printers/1', async ({ request }) => {
+        const body = await request.json() as { wled_config: typeof enabledPrinter.wled_config };
+        await pending.promise;
+        saved = { ...enabledPrinter, wled_config: body.wled_config };
+        return HttpResponse.json(saved);
+      }),
+    );
+    render(<WLEDSettings />);
+    await screen.findByDisplayValue('http://wled.local');
+    await userEvent.clear(screen.getByLabelText('WLED URL'));
+    await userEvent.type(screen.getByLabelText('WLED URL'), 'http://version-one.local');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await userEvent.clear(screen.getByLabelText('WLED URL'));
+    await userEvent.type(screen.getByLabelText('WLED URL'), 'http://version-two.local');
+    pending.resolve();
+    await waitFor(() => expect(saved?.wled_config.base_url).toBe('http://version-one.local'));
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '2');
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '1');
+    expect(screen.getByLabelText('WLED URL')).toHaveValue('http://version-two.local');
+  });
+
+  it('keeps a newer non-URL edit unsaved when the older snapshot finishes saving', async () => {
+    const pending = deferred();
+    let sentTimeout: number | undefined;
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter, secondPrinter])),
+      http.post('/api/v1/printers/:id/wled/presets', () => HttpResponse.json([])),
+      http.patch('/api/v1/printers/1', async ({ request }) => {
+        const body = await request.json() as { wled_config: typeof enabledPrinter.wled_config };
+        sentTimeout = body.wled_config.finished_timeout_seconds;
+        await pending.promise;
+        return HttpResponse.json({ ...enabledPrinter, wled_config: body.wled_config });
+      }),
+    );
+    render(<WLEDSettings />);
+    await screen.findByDisplayValue('http://wled.local');
+    await userEvent.clear(screen.getByLabelText('Finished timeout (seconds)'));
+    await userEvent.type(screen.getByLabelText('Finished timeout (seconds)'), '10');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(sentTimeout).toBe(10));
+    await userEvent.clear(screen.getByLabelText('Finished timeout (seconds)'));
+    await userEvent.type(screen.getByLabelText('Finished timeout (seconds)'), '20');
+    pending.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText('WLED settings saved')).toBeNull();
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '2');
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '1');
+    expect(screen.getByLabelText('Finished timeout (seconds)')).toHaveValue(20);
+  });
+
+  it('does not change B when a save for A completes after switching', async () => {
+    const pending = deferred();
+    let saveStarted = false;
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter, secondPrinter])),
+      http.post('/api/v1/printers/:id/wled/presets', () => HttpResponse.json([])),
+      http.patch('/api/v1/printers/1', async ({ request }) => {
+        saveStarted = true;
+        const body = await request.json() as { wled_config: typeof enabledPrinter.wled_config };
+        await pending.promise;
+        return HttpResponse.json({ ...enabledPrinter, wled_config: body.wled_config });
+      }),
+    );
+    render(<WLEDSettings />);
+    await screen.findByDisplayValue('http://wled.local');
+    await userEvent.clear(screen.getByLabelText('WLED URL'));
+    await userEvent.type(screen.getByLabelText('WLED URL'), 'http://saved-a.local');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saveStarted).toBe(true));
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '2');
+    await screen.findByDisplayValue('http://second.local');
+    pending.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByLabelText('WLED URL')).toHaveValue('http://second.local');
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '1');
+    expect(screen.getByLabelText('WLED URL')).toHaveValue('http://saved-a.local');
+  });
+
+  it('retains A draft after a failed save and switching away and back', async () => {
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter, secondPrinter])),
+      http.post('/api/v1/printers/:id/wled/presets', () => HttpResponse.json([])),
+      http.patch('/api/v1/printers/1', () => HttpResponse.json({}, { status: 502 })),
+    );
+    render(<WLEDSettings />);
+    await screen.findByDisplayValue('http://wled.local');
+    await userEvent.clear(screen.getByLabelText('WLED URL'));
+    await userEvent.type(screen.getByLabelText('WLED URL'), 'http://unsaved-a.local');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByText('Could not save WLED settings');
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '2');
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '1');
+    expect(screen.getByLabelText('WLED URL')).toHaveValue('http://unsaved-a.local');
+  });
+
+  it('selects another printer when the current one disappears from the query', async () => {
+    let listed = [enabledPrinter, secondPrinter];
+    server.use(http.get('/api/v1/printers/', () => HttpResponse.json(listed)));
+    render(<RefetchableWLEDSettings />);
+    await screen.findByDisplayValue('http://wled.local');
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '2');
+    await screen.findByDisplayValue('http://second.local');
+    await userEvent.clear(screen.getByLabelText('WLED URL'));
+    await userEvent.type(screen.getByLabelText('WLED URL'), 'http://draft-b.local');
+    listed = [enabledPrinter];
+    await userEvent.click(screen.getByRole('button', { name: 'Refetch printers' }));
+    await waitFor(() => expect(screen.getByLabelText('Printer')).toHaveValue('1'));
+    expect(screen.getByLabelText('WLED URL')).toHaveValue('http://wled.local');
   });
 
   it('keeps the integration card and disabled toggle visible without printers', async () => {

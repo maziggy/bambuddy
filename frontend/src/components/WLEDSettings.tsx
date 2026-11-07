@@ -74,37 +74,57 @@ export function WLEDSettings() {
     && request.sequence === requestSequence.current[kind], []);
   useEffect(() => () => { contextGeneration.current += 1; }, []);
   const initializedPrinterId = useRef<number | null>(null);
-  const [config, setConfig] = useState<WLEDConfig>(emptyConfig);
+  const [draftsByPrinterId, setDraftsByPrinterId] = useState<Record<number, WLEDConfig>>({});
+  const printer = useMemo(() => printers.find((item) => item.id === printerId), [printers, printerId]);
+  const config = printerId === null ? emptyConfig() : draftsByPrinterId[printerId] ?? printer?.wled_config ?? emptyConfig();
+  const currentConfig = useRef(config);
+  currentConfig.current = config;
+  if (printer && draftsByPrinterId[printer.id] === undefined) currentUrl.current = config.base_url?.trim() ?? '';
+  const setConfig = (change: (current: WLEDConfig) => WLEDConfig) => {
+    if (printerId === null) return;
+    setDraftsByPrinterId((drafts) => ({
+      ...drafts,
+      [printerId]: change(drafts[printerId] ?? config),
+    }));
+  };
   const [presets, setPresets] = useState<WLEDPreset[]>([]);
   const [presetState, setPresetState] = useState<'idle' | 'online' | 'offline'>('idle');
   const [connection, setConnection] = useState<{ state: 'idle' | 'online' | 'offline'; name?: string | null; version?: string | null }>({ state: 'idle' });
 
-  const printer = useMemo(() => printers.find((item) => item.id === printerId), [printers, printerId]);
-
   useEffect(() => {
-    if (printerId === null && printers.length) setPrinterId(printers[0].id);
+    if (printerId === null ? !printers.length : printers.some((item) => item.id === printerId)) return;
+    contextGeneration.current += 1;
+    selectedPrinterId.current = printers[0]?.id ?? null;
+    setPrinterId(selectedPrinterId.current);
   }, [printerId, printers]);
 
   useEffect(() => {
     if (!printer || initializedPrinterId.current === printer.id) return;
     initializedPrinterId.current = printer.id;
-    const savedConfig = printer.wled_config ? structuredClone(printer.wled_config) : emptyConfig();
-    currentUrl.current = savedConfig.base_url?.trim() ?? '';
-    setConfig(savedConfig);
+    currentUrl.current = config.base_url?.trim() ?? '';
     setPresets([]);
     setPresetState('idle');
     setConnection({ state: 'idle' });
-  }, [printer]);
+  }, [printer, config.base_url]);
 
   const saveMutation = useMutation({
     mutationFn: (request: RequestTicket & { config: WLEDConfig }) =>
       api.updatePrinter(request.printerId, { wled_config: request.config }),
     onSuccess: (updated, request) => {
-      if (!isCurrentRequest('save', request)) return;
-      queryClient.setQueryData<typeof printers>(['printers'], (old = []) =>
-        old.map((item) => (item.id === updated.id ? updated : item)),
-      );
-      showToast(t('wled.saved'), 'success');
+      const isCurrent = isCurrentRequest('save', request);
+      const draftUnchanged = currentConfig.current === request.config;
+      if (request.sequence === requestSequence.current.save) {
+        queryClient.setQueryData<typeof printers>(['printers'], (old = []) =>
+          old.map((item) => (item.id === request.printerId ? updated : item)),
+        );
+        setDraftsByPrinterId((drafts) => {
+          if (drafts[request.printerId] !== request.config) return drafts;
+          const next = { ...drafts };
+          delete next[request.printerId];
+          return next;
+        });
+      }
+      if (isCurrent && draftUnchanged) showToast(t('wled.saved'), 'success');
     },
     onError: (error, request) => {
       if (!isCurrentRequest('save', request)) return;

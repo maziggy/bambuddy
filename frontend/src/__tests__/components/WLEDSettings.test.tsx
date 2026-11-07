@@ -272,6 +272,59 @@ describe('WLEDSettings', () => {
     expect(screen.queryByText('WLED is unavailable. Saved preset IDs are kept.')).toBeNull();
   });
 
+  it('ignores a late Save 422 for an older draft snapshot', async () => {
+    const pending = deferred();
+    let sentTimeout: number | undefined;
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter, secondPrinter])),
+      http.post('/api/v1/printers/1/wled/presets', () => HttpResponse.json([])),
+      http.patch('/api/v1/printers/1', async ({ request }) => {
+        const body = await request.json() as { wled_config: typeof enabledPrinter.wled_config };
+        sentTimeout = body.wled_config.finished_timeout_seconds;
+        await pending.promise;
+        return HttpResponse.json({ detail: 'Invalid finished timeout' }, { status: 422 });
+      }),
+    );
+    render(<WLEDSettings />);
+    await screen.findByDisplayValue('http://wled.local');
+    await userEvent.clear(screen.getByLabelText('Finished timeout (seconds)'));
+    await userEvent.type(screen.getByLabelText('Finished timeout (seconds)'), '10');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(sentTimeout).toBe(10));
+    await userEvent.clear(screen.getByLabelText('Finished timeout (seconds)'));
+    await userEvent.type(screen.getByLabelText('Finished timeout (seconds)'), '20');
+    pending.resolve();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
+    expect(screen.queryByText('Invalid finished timeout')).toBeNull();
+    expect(screen.queryByText('WLED settings saved')).toBeNull();
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '2');
+    await userEvent.selectOptions(screen.getByLabelText('Printer'), '1');
+    expect(screen.getByLabelText('Finished timeout (seconds)')).toHaveValue(20);
+  });
+
+  it('shows a delayed Save 422 when the draft has not changed', async () => {
+    const pending = deferred();
+    let saveStarted = false;
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter])),
+      http.post('/api/v1/printers/1/wled/presets', () => HttpResponse.json([])),
+      http.patch('/api/v1/printers/1', async () => {
+        saveStarted = true;
+        await pending.promise;
+        return HttpResponse.json({ detail: 'Invalid finished timeout' }, { status: 422 });
+      }),
+    );
+    render(<WLEDSettings />);
+    await screen.findByDisplayValue('http://wled.local');
+    await userEvent.clear(screen.getByLabelText('Finished timeout (seconds)'));
+    await userEvent.type(screen.getByLabelText('Finished timeout (seconds)'), '10');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saveStarted).toBe(true));
+    pending.resolve();
+    expect(await screen.findByText('Invalid finished timeout')).toBeInTheDocument();
+    expect(screen.getByLabelText('Finished timeout (seconds)')).toHaveValue(10);
+  });
+
   it('shows the backend 422 message for Load presets without marking WLED unavailable', async () => {
     server.use(
       http.get('/api/v1/printers/', () => HttpResponse.json([enabledPrinter])),

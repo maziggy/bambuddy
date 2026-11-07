@@ -127,7 +127,7 @@ export function WLEDSettings() {
       if (isCurrent && draftUnchanged) showToast(t('wled.saved'), 'success');
     },
     onError: (error, request) => {
-      if (!isCurrentRequest('save', request)) return;
+      if (!isCurrentRequest('save', request) || currentConfig.current !== request.config) return;
       showToast(error instanceof ApiError && error.status === 422 ? error.message : t('wled.saveError'), 'error');
     },
   });

@@ -84,7 +84,6 @@ function CameraView({ onPoppedIn }: { onPoppedIn: () => void }) {
   const imgRef = useRef<HTMLImageElement | null>(null);
   // On its stream and its /camera/stop: the stop ends this page's stream only.
   const viewerId = useCameraViewerId();
-  const attachImg = useStreamImgRef(imgRef);
   const containerRef = useRef<HTMLDivElement>(null);
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -675,6 +674,8 @@ function CameraView({ onPoppedIn }: { onPoppedIn: () => void }) {
     : streamMode === 'stream'
       ? appendToken(`/api/v1/printers/${id}/camera/stream?fps=${fps}&t=${imageKey}&viewer=${viewerId}`)
       : appendToken(`/api/v1/printers/${id}/camera/snapshot?t=${imageKey}`);
+  // The img gets its src from here, at commit, never from a prop (#3431).
+  const attachImg = useStreamImgRef(imgRef, currentUrl);
 
   const isDisabled = streamLoading || transitioning || isReconnecting;
 
@@ -905,7 +906,6 @@ function CameraView({ onPoppedIn }: { onPoppedIn: () => void }) {
           <img
             ref={attachImg}
             key={imageKey}
-            src={currentUrl}
             alt={t('camera.cameraStream')}
             className="max-w-full max-h-full object-contain select-none"
             style={{

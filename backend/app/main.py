@@ -5206,9 +5206,8 @@ async def on_print_start(printer_id: int, data: dict):
         from backend.app.api.routes.settings import get_setting
 
         _global_auto_archive = await get_setting(db, "auto_archive")
-        archives_prints = printer.auto_archive and (
-            _global_auto_archive is None or _global_auto_archive.lower() == "true"
-        )
+        _global_archives = _global_auto_archive is None or _global_auto_archive.lower() == "true"
+        archives_prints = printer.auto_archive and _global_archives
         if not archives_prints:
             # auto-archive disabled — check if there's an expected print (dispatched
             # by BamBuddy via queue/reprint) that already has an archive to promote.
@@ -5235,8 +5234,21 @@ async def on_print_start(printer_id: int, data: dict):
             _has_expected = any(k in _expected_prints for k in _check_keys)
 
             if not _has_expected:
-                # No expected print — truly external print (started from slicer/touchscreen)
-                logger.info("[CALLBACK] Skipping archive - auto_archive: False, no expected print")
+                # No expected print — truly external print (started from slicer/touchscreen).
+                # Say which switch it was: before 1.3.0 the global one was saved
+                # and never read, so an install upgraded with it off stopped
+                # archiving with nothing to point at it (#3477).
+                if not _global_archives:
+                    logger.info(
+                        "[CALLBACK] Skipping archive: the global 'Auto-archive prints' switch "
+                        "(Settings > General > Archive Settings) is off, and Bambuddy did not start this print"
+                    )
+                else:
+                    logger.info(
+                        "[CALLBACK] Skipping archive: auto-archive is off for printer %s, "
+                        "and Bambuddy did not start this print",
+                        printer_id,
+                    )
                 if not notification_sent:
                     _no_archive_creator: int | None = None
                     for _key in _check_keys:
@@ -6687,11 +6699,18 @@ _TIMELAPSE_DIRECTORIES = ("/timelapse", "/timelapse/video", "/record", "/recordi
 # A baseline that could not be read at print start is read again on this
 # schedule while the print runs (#3412). The printer writes the video only once
 # the print has ended, so a reading taken mid-print is as good as one taken at
-# the start. The interval is shorter than the FTPS handshake cool-off (300 s),
-# which is what usually makes the card unreadable, so the first reading after
-# it ends is not long behind; while the cool-off runs a round costs nothing, as
-# no connection is opened. The cap bounds a print that never reports an end.
+# the start. The interval is shorter than the FTPS cool-offs (300 s), which are
+# what usually makes the card unreadable, so the first reading after one ends
+# is not long behind; while a cool-off runs a round costs nothing, as no
+# connection is opened. The cap bounds a print that never reports an end.
+#
+# A round that could not read the card doubles the wait before the next, up to
+# the ceiling, and after that many failed rounds in a row the re-read gives up
+# and leaves the baseline unread for the completion scan to handle (#3474). Each
+# connection to a hung file service can leave a session behind on the printer.
 _TIMELAPSE_BASELINE_REREAD_INTERVAL_SECONDS = 120.0
+_TIMELAPSE_BASELINE_REREAD_MAX_INTERVAL_SECONDS = 1800.0
+_TIMELAPSE_BASELINE_REREAD_MAX_FAILED_ROUNDS = 5
 _TIMELAPSE_BASELINE_REREAD_MAX_ATTEMPTS = 720
 
 # Poll schedule for the post-print timelapse scan (#2704). Module-level so
@@ -6738,16 +6757,18 @@ async def _read_timelapse_baseline(printer) -> tuple[set[str], bool]:
     "the card held nothing" for a card that was never read means every video on
     it counts as new, and the completion scan then attaches a stale video to
     this print and deletes it from the printer (#2957 follow-up, #3412). So an
-    empty listing is asked again here in a way that tells the two apart: the
     card counts as read only when every directory walked answered, with a
     listing or with "no such directory". One that failed may be the one
     holding the videos.
-    """
-    from backend.app.services.bambu_ftp import ftps_handshake_blocked, list_files_result_async
 
-    files, _ = await _list_timelapse_videos(printer)
-    if files:
-        return {f.get("name", "") for f in files}, True
+    One walk, one connection per directory. It used to list the card with
+    ``_list_timelapse_videos`` first and walk the same directories again when
+    that came back empty, which against a hung file service was eight dead
+    connections a round instead of one (#3474). A directory that fails does
+    not end the walk unless the failure put the printer in a cool-off: a later
+    one holding videos still answers the question.
+    """
+    from backend.app.services.bambu_ftp import ftps_background_blocked, list_files_result_async
 
     ip_address = getattr(printer, "ip_address", None)
     printer_id = getattr(printer, "id", None)
@@ -6757,15 +6778,17 @@ async def _read_timelapse_baseline(printer) -> tuple[set[str], bool]:
     if printer_id is not None and not external_storage_present(printer_manager.get_status(printer_id)):
         return set(), True
 
+    read = True
     for timelapse_path in _TIMELAPSE_DIRECTORIES:
-        if ftps_handshake_blocked(ip_address):
+        if ftps_background_blocked(ip_address):
             # Below any path: every remaining one would fail the same way.
             return set(), False
         listing = await list_files_result_async(
             ip_address, printer.access_code, timelapse_path, printer_model=printer.model
         )
         if not (listing.available or listing.missing):
-            return set(), False
+            read = False
+            continue
         videos = [
             f
             for f in listing.files
@@ -6773,7 +6796,7 @@ async def _read_timelapse_baseline(printer) -> tuple[set[str], bool]:
         ]
         if videos:
             return {f.get("name", "") for f in videos}, True
-    return set(), True
+    return set(), read
 
 
 async def _list_timelapse_videos(printer) -> tuple[list[dict], str | None]:
@@ -6787,7 +6810,7 @@ async def _list_timelapse_videos(printer) -> tuple[list[dict], str | None]:
     card" — see :func:`_read_timelapse_baseline`, which the two baseline
     callers use instead.
     """
-    from backend.app.services.bambu_ftp import list_files_async
+    from backend.app.services.bambu_ftp import ftps_background_blocked, list_files_async
 
     logger = logging.getLogger(__name__)
 
@@ -6805,6 +6828,11 @@ async def _list_timelapse_videos(printer) -> tuple[list[dict], str | None]:
         return [], None
 
     for timelapse_path in _TIMELAPSE_DIRECTORIES:
+        if ftps_background_blocked(getattr(printer, "ip_address", None) or ""):
+            # The printer's file service is refusing or hung: every remaining
+            # path is another connection it may keep a session for (#3474).
+            logger.debug("[TIMELAPSE] Skipping the scan for printer %s: its file service is cooling off", printer_id)
+            return [], None
         try:
             found_files = await list_files_async(
                 printer.ip_address, printer.access_code, timelapse_path, printer_model=printer.model
@@ -6957,13 +6985,20 @@ def _unread_baseline_round(printer_id: int, names: set[str]) -> bool | None:
     it and the next print records a new one, so identity marks the run. A
     printer that is momentarily disconnected says nothing about its print, so
     that only skips the round.
+
+    So does a print that is not recording a timelapse: completion only looks
+    for a video when one was recorded, so reading the card for it is a
+    connection for nothing (#3474). Skipped rather than ended, as the flag can
+    arrive after the print has started.
     """
     if _timelapse_baselines.get(printer_id) is not names or printer_id not in _timelapse_baselines_unread:
         return False
     state = printer_manager.get_status(printer_id)
     if state is None or not state.connected:
         return None
-    return state.state in _BASELINE_REREAD_STATES
+    if state.state not in _BASELINE_REREAD_STATES:
+        return False
+    return True if state.timelapse else None
 
 
 async def _reread_unread_timelapse_baseline(
@@ -6980,14 +7015,20 @@ async def _reread_unread_timelapse_baseline(
     start. Each round stops once the print is no longer the one the baseline
     was taken for or has stopped printing, and checks that again after the
     listing returns, before anything is recorded.
+
+    A round that cannot read the card doubles the wait before the next one,
+    and enough of them in a row end the re-read (#3474): see
+    ``_TIMELAPSE_BASELINE_REREAD_MAX_FAILED_ROUNDS``.
     """
     from backend.app.models.archive import PrintArchive
     from backend.app.models.printer import Printer
     from backend.app.services.print_log import run_of
 
     logger = logging.getLogger(__name__)
+    interval = _TIMELAPSE_BASELINE_REREAD_INTERVAL_SECONDS
+    failed_rounds = 0
     for _ in range(_TIMELAPSE_BASELINE_REREAD_MAX_ATTEMPTS):
-        await asyncio.sleep(_TIMELAPSE_BASELINE_REREAD_INTERVAL_SECONDS)
+        await asyncio.sleep(interval)
         now = _unread_baseline_round(printer_id, names)
         if now is False:
             return
@@ -7001,8 +7042,18 @@ async def _reread_unread_timelapse_baseline(
             fresh, read = await _read_timelapse_baseline(printer)
         except Exception as e:
             logger.debug("[TIMELAPSE] Re-reading the baseline for printer %s failed: %s", printer_id, e)
-            continue
+            fresh, read = set(), False
         if not read:
+            failed_rounds += 1
+            if failed_rounds >= _TIMELAPSE_BASELINE_REREAD_MAX_FAILED_ROUNDS:
+                logger.warning(
+                    "[TIMELAPSE] Card of printer %s still unreadable after %s tries; no longer reading "
+                    "the baseline for this print, it stays unread",
+                    printer_id,
+                    failed_rounds,
+                )
+                return
+            interval = min(interval * 2, _TIMELAPSE_BASELINE_REREAD_MAX_INTERVAL_SECONDS)
             continue
         now = _unread_baseline_round(printer_id, names)
         if now is False:

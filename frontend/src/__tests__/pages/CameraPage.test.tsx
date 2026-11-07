@@ -16,6 +16,7 @@ import { AuthProvider } from '../../contexts/AuthContext';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '../../i18n';
 import { listenForCameraPopIn } from '../../utils/camera';
+import { spyOnStreamSrc } from '../streamImgSpy';
 
 // Mock navigator.sendBeacon which isn't available in jsdom
 vi.stubGlobal('navigator', {
@@ -197,6 +198,27 @@ describe('CameraPage', () => {
       });
       return document.querySelector('img') as HTMLImageElement;
     }
+
+    it('gives the stream src only to an img already on the page (#3431)', async () => {
+      // Set while rendering, a src opens a stream for every render React throws
+      // away, on an img nothing can close.
+      const spy = spyOnStreamSrc();
+      try {
+        renderCameraPage(1);
+        const first = await streamImg();
+        // A restart mounts a new img (a new key), which is where a src prop
+        // would land before the img is on the page.
+        fireEvent.load(first);
+        await waitFor(() => expect(screen.getByTitle('Restart stream')).not.toBeDisabled());
+        fireEvent.click(screen.getByTitle('Restart stream'));
+        await waitFor(() => expect(document.querySelector('img')).not.toBe(first));
+        await streamImg();
+        expect(spy.records.length).toBeGreaterThan(1);
+        expect(spy.detached()).toEqual([]);
+      } finally {
+        spy.restore();
+      }
+    });
 
     async function snapshotImg() {
       const stream = await streamImg();

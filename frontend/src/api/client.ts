@@ -3589,6 +3589,8 @@ export interface LocalBackupStatus {
   last_backup_at: string | null;
   last_status: string | null;
   last_message: string | null;
+  /** Files the last backup could not copy; last_status is 'warning' then. */
+  last_missing_files: number;
   next_run: string | null;
   timezone: string;
 }
@@ -6478,7 +6480,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
   getMQTTStatus: () => request<MQTTStatus>('/settings/mqtt/status'),
-  exportBackup: async (): Promise<{ blob: Blob; filename: string }> => {
+  exportBackup: async (): Promise<{ blob: Blob; filename: string; missingFiles: number }> => {
     // New simplified backup - complete database + all files
     const url = `${API_BASE}/settings/backup`;
     const headers: Record<string, string> = {};
@@ -6489,8 +6491,12 @@ export const api = {
 
     // Check for errors
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || `Backup failed with status ${response.status}`);
+      // {detail} from an HTTPException, {message} from the route's own 500.
+      const error = await response.json().catch(() => null);
+      throw new ApiError(
+        error?.detail || error?.message || `Backup failed with status ${response.status}`,
+        response.status,
+      );
     }
 
     // Get filename from Content-Disposition header
@@ -6502,7 +6508,9 @@ export const api = {
     }
 
     const blob = await response.blob();
-    return { blob, filename };
+    // Files that could not be copied; the ZIP is good but they aren't in it.
+    const missingFiles = Number(response.headers.get('X-Backup-Missing-Files')) || 0;
+    return { blob, filename, missingFiles };
   },
   importBackup: async (file: File) => {
     // New simplified restore - replaces database + all directories
@@ -8403,7 +8411,7 @@ export const api = {
     request<LocalBackupStatus>('/local-backup/status'),
 
   triggerLocalBackup: () =>
-    request<{ success: boolean; message: string; filename?: string }>('/local-backup/run', { method: 'POST' }),
+    request<{ success: boolean; message: string; filename?: string; missing_files?: number }>('/local-backup/run', { method: 'POST' }),
 
   checkLocalBackupPath: () =>
     request<LocalBackupPathCheck>('/local-backup/path-check'),

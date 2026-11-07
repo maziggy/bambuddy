@@ -1953,7 +1953,7 @@ class TestBackupKeyFiles:
         key_path = tmp_path / ".mfa_encryption_key"
         key_path.write_text("test-key-content")
 
-        zip_path, _filename = await create_backup_zip(output_path=tmp_path)
+        zip_path, _filename, _warnings = await create_backup_zip(output_path=tmp_path)
         try:
             with zipfile.ZipFile(zip_path) as zf:
                 names = zf.namelist()
@@ -1974,7 +1974,7 @@ class TestBackupKeyFiles:
         monkeypatch.setattr(app_settings, "base_dir", tmp_path)
         # No .mfa_encryption_key written — must not crash.
 
-        zip_path, _filename = await create_backup_zip(output_path=tmp_path)
+        zip_path, _filename, _warnings = await create_backup_zip(output_path=tmp_path)
         try:
             with zipfile.ZipFile(zip_path) as zf:
                 names = zf.namelist()
@@ -2369,7 +2369,7 @@ class TestBackupKeyFiles:
         assert provider._client_secret_enc.startswith("fernet:")
 
         # 2. Create a backup ZIP (must include .mfa_encryption_key).
-        zip_path, _ = await create_backup_zip(output_path=tmp_path)
+        zip_path, *_ = await create_backup_zip(output_path=tmp_path)
         try:
             with zipfile.ZipFile(zip_path) as zf:
                 names = zf.namelist()

@@ -5927,6 +5927,8 @@ export default {
     downloadingFile: '正在下載備份檔案...',
     backupDownloaded: '備份下載成功',
     failedToCreateBackup: '建立備份失敗：{{message}}',
+    backupAlreadyRunning: '已有備份正在執行，請稍後再試。',
+    backupMissingFiles: '備份已完成，但部分檔案無法複製（未複製：{{count}}）。詳情請查看記錄。',
     restore: '恢復',
     restoreReplacesAll: '恢復將替換所有資料。',
     restoreReplacesAllDetail: '您目前的資料庫和檔案將被完全替換。恢復後需要重新啟動。',

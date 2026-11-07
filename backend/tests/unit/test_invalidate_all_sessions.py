@@ -62,7 +62,7 @@ async def test_restore_ends_by_invalidating_all_sessions(async_client, monkeypat
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setattr(app_settings, "base_dir", tmp_path)
     monkeypatch.setattr(app_settings, "database_url", f"sqlite+aiosqlite:///{db_path}")
-    zip_path, _ = await create_backup_zip(output_path=tmp_path)
+    zip_path, *_ = await create_backup_zip(output_path=tmp_path)
 
     invalidate = AsyncMock()
     with (

@@ -480,6 +480,99 @@ async def test_status_change_during_manual_send_restores_new_mapping(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_offline_lifecycle_send_and_reconnect_restore_mapping():
+    sent = []
+
+    def handler(request: httpx.Request):
+        sent.append(request.content)
+        return httpx.Response(200, json={"success": True})
+
+    manager, client = _manager(handler)
+    manager.configure_printer(
+        1, {"enabled": True, "base_url": "http://wled.local", "presets": {"printing": 3, "offline": 9}}
+    )
+    manager.handle_status(1, _state("RUNNING"))
+    await manager._runtime[1].send_task
+    manager.handle_offline(1)
+    await manager._runtime[1].send_task
+    assert (manager._runtime[1].status, manager._runtime[1].preset_id) == ("offline", 9)
+    manager.handle_status(1, _state("RUNNING"))
+    await manager._runtime[1].send_task
+    manager.handle_status(1, _state("RUNNING"))
+    await asyncio.sleep(0)
+    assert sent == [b'{"ps":3}', b'{"ps":9}', b'{"ps":3}']
+    await manager.shutdown()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_offline_lifecycle_skips_disabled_or_missing_preset():
+    sent = []
+
+    def handler(request: httpx.Request):
+        sent.append(request.content)
+        return httpx.Response(200, json={"success": True})
+
+    manager, client = _manager(handler)
+    manager.handle_offline(1)
+    manager.configure_printer(1, {"enabled": False, "base_url": "http://wled.local", "presets": {"offline": 9}})
+    manager.handle_offline(1)
+    manager.configure_printer(1, {"enabled": True, "base_url": "http://wled.local", "presets": {"printing": 3}})
+    manager.handle_offline(1)
+    await asyncio.sleep(0)
+    assert sent == []
+    await manager.shutdown()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_offline_lifecycle_http_failure_does_not_block_and_is_retryable(caplog):
+    manager, client = _manager(lambda request: httpx.Response(503, json={"error": "offline"}))
+    manager.configure_printer(1, {"enabled": True, "base_url": "http://wled.local", "presets": {"offline": 9}})
+    manager.handle_offline(1)
+    await manager._runtime[1].send_task
+    assert manager._runtime[1].confirmed_generation is None
+    assert "state=offline -> preset=9 failed (HTTP 503)" in caplog.text
+    manager.handle_offline(1)
+    await manager._runtime[1].send_task
+    await manager.shutdown()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_late_automatic_send_cannot_confirm_over_offline(monkeypatch):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    sent = []
+
+    async def delayed_send(printer_id, base_url, preset_id, *, status=None):
+        sent.append(preset_id)
+        if preset_id == 3:
+            started.set()
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                await release.wait()
+        return True
+
+    manager = WLEDManager()
+    monkeypatch.setattr(manager, "send_preset", delayed_send)
+    manager.configure_printer(
+        1, {"enabled": True, "base_url": "http://wled.local", "presets": {"printing": 3, "offline": 9}}
+    )
+    manager.handle_status(1, _state("RUNNING"))
+    old_task = manager._runtime[1].send_task
+    await asyncio.wait_for(started.wait(), 1)
+    manager.handle_offline(1)
+    await manager._runtime[1].send_task
+    release.set()
+    await old_task
+    assert sent == [3, 9]
+    assert (manager._runtime[1].status, manager._runtime[1].preset_id) == ("offline", 9)
+    await manager.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_late_old_send_cannot_confirm_over_new_state(monkeypatch):
     started = asyncio.Event()
     release = asyncio.Event()

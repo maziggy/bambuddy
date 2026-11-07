@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import delete, func, inspect as sa_inspect, or_, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
 
 from backend.app.api.routes import (
@@ -11085,6 +11086,19 @@ def stop_auth_cleanup() -> None:
         logging.getLogger(__name__).info("Auth periodic cleanup stopped")
 
 
+async def initialize_wled_printers(db: AsyncSession) -> None:
+    """Seed WLED settings and apply offline presets before MQTT connections start."""
+    from backend.app.api.routes.settings import get_setting, setting_is_true
+    from backend.app.models.printer import Printer
+
+    wled_manager.require_plate_clear = setting_is_true(await get_setting(db, "require_plate_clear"))
+    result = await db.execute(select(Printer.id, Printer.wled_config, Printer.is_active))
+    for printer_id, config, is_active in result.all():
+        wled_manager.configure_printer(printer_id, config)
+        if not is_active and config:
+            wled_manager.handle_offline(printer_id)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -11196,13 +11210,7 @@ async def lifespan(app: FastAPI):
     # WLED is entirely optional. Seed its in-memory per-printer configuration
     # before MQTT connections begin emitting status callbacks.
     async with async_session() as db:
-        from backend.app.api.routes.settings import get_setting, setting_is_true
-        from backend.app.models.printer import Printer
-
-        wled_manager.require_plate_clear = setting_is_true(await get_setting(db, "require_plate_clear"))
-        result = await db.execute(select(Printer.id, Printer.wled_config))
-        for printer_id, config in result.all():
-            wled_manager.configure_printer(printer_id, config)
+        await initialize_wled_printers(db)
 
     # Layer change callback for external camera timelapse
     async def on_layer_change(printer_id: int, layer_num: int):

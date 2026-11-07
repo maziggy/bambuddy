@@ -254,6 +254,36 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_deactivate_printer_requests_wled_offline(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(is_active=True)
+        with (
+            patch("backend.app.api.routes.printers.printer_manager.disconnect_printer") as disconnect,
+            patch("backend.app.api.routes.printers.wled_manager.handle_offline") as offline,
+        ):
+            response = await async_client.patch(f"/api/v1/printers/{printer.id}", json={"is_active": False})
+        assert response.status_code == 200
+        disconnect.assert_called_once_with(printer.id)
+        offline.assert_called_once_with(printer.id)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_manual_disconnect_requests_wled_offline_without_status_callback(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        printer = await printer_factory(is_active=True)
+        with (
+            patch("backend.app.api.routes.printers.printer_manager.disconnect_printer") as disconnect,
+            patch("backend.app.api.routes.printers.wled_manager.handle_offline") as offline,
+            patch("backend.app.api.routes.printers.printer_manager._on_status_change") as status_callback,
+        ):
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/disconnect")
+        assert response.status_code == 200
+        disconnect.assert_called_once_with(printer.id)
+        offline.assert_called_once_with(printer.id)
+        status_callback.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_update_printer_auto_archive(self, async_client: AsyncClient, printer_factory, db_session):
         """Verify auto_archive setting can be updated."""
         printer = await printer_factory(auto_archive=True)

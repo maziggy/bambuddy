@@ -125,9 +125,20 @@ class WLEDManager:
             None,
         )
         preset_id = getattr(config.presets, status, None) if status else None
-        runtime = self._runtime.setdefault(printer_id, _WLEDRuntime())
         if state.connected and (state.state or "").upper() in {"PREPARE", "SLICING", "RUNNING", "PRINTING"}:
-            runtime.finished_timeout_expired = False
+            self._runtime.setdefault(printer_id, _WLEDRuntime()).finished_timeout_expired = False
+        self._apply_status(printer_id, config, status, preset_id)
+
+    def handle_offline(self, printer_id: int) -> None:
+        """Apply the offline mapping for an explicit printer lifecycle transition."""
+        config = self._configs.get(printer_id)
+        if not config or not config.enabled or not config.base_url:
+            return
+        preset_id = config.presets.offline
+        self._apply_status(printer_id, config, "offline" if preset_id is not None else None, preset_id)
+
+    def _apply_status(self, printer_id: int, config: WLEDConfig, status: str | None, preset_id: int | None) -> None:
+        runtime = self._runtime.setdefault(printer_id, _WLEDRuntime())
         expired_finished = runtime.finished_timeout_expired and status == "finished" and config.presets.idle is not None
         target = (status, preset_id)
         if runtime.target == target:

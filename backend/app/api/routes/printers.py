@@ -530,7 +530,7 @@ async def update_printer(
     if "wled_config" in update_data:
         wled_manager.configure_printer(printer_id, printer.wled_config)
         state = printer_manager.get_status(printer_id)
-        if state:
+        if state and printer.is_active:
             wled_manager.handle_status(
                 printer_id,
                 state,
@@ -542,6 +542,8 @@ async def update_printer(
         printer_manager.disconnect_printer(printer_id)
         if printer.is_active:
             await printer_manager.connect_printer(printer)
+        elif "is_active" in update_data:
+            wled_manager.handle_offline(printer_id)
 
     return printer
 
@@ -1107,6 +1109,7 @@ async def disconnect_printer(
         raise HTTPException(404, "Printer not found")
 
     printer_manager.disconnect_printer(printer_id)
+    wled_manager.handle_offline(printer_id)
     return {"connected": False}
 
 

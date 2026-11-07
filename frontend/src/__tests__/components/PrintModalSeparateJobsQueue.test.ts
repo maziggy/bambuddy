@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { queueSeparateJobs } from '../../components/PrintModal/separateJobs';
+import { fileHasQueuedPair, queueSeparateJobs } from '../../components/PrintModal/separateJobs';
 import type { VariantCandidate } from '../../components/PrintModal/VariantCandidates';
 import type { PrintQueueItemCreate } from '../../api/client';
 
@@ -45,7 +45,56 @@ describe('queueSeparateJobs', () => {
       [12, 1],
       [12, 2],
     ]);
-    expect(result).toEqual({ itemsCreated: 4, queuedFileIds: [11, 12], failure: null });
+    expect(result).toEqual({
+      itemsCreated: 4,
+      queuedFileIds: [11, 12],
+      queuedPairs: ['11:1', '11:2', '12:1', '12:2'],
+      failure: null,
+    });
+  });
+
+  it('skips file and printer pairs a previous submit already queued', async () => {
+    const { calls, addToQueue } = setup();
+    const progress: Array<[number, number]> = [];
+    const result = await queueSeparateJobs({
+      files: [file(11), file(12)],
+      plateByFile: {},
+      printerIds: [1, 2],
+      alreadyQueued: new Set(['11:1']),
+      quantity: 1,
+      asap: false,
+      buildItem,
+      addToQueue,
+      onProgress: (c, t) => progress.push([c, t]),
+    });
+    expect(calls.map((c) => [c.library_file_id, c.printer_id])).toEqual([
+      [11, 2],
+      [12, 1],
+      [12, 2],
+    ]);
+    expect(result.itemsCreated).toBe(3);
+    expect(result.queuedFileIds).toEqual([11, 12]);
+    expect(result.queuedPairs).toEqual(['11:2', '12:1', '12:2']);
+    expect(progress).toEqual([[1, 3], [2, 3], [3, 3]]);
+  });
+
+  it('reports the pairs queued before a refusal', async () => {
+    const calls: PrintQueueItemCreate[] = [];
+    const result = await queueSeparateJobs({
+      files: [file(11), file(12)],
+      plateByFile: {},
+      printerIds: [1, 2],
+      quantity: 1,
+      asap: false,
+      buildItem,
+      addToQueue: async (data) => {
+        if (data.library_file_id === 11 && data.printer_id === 2) throw new Error('nope');
+        calls.push(data);
+      },
+    });
+    expect(result.queuedPairs).toEqual(['11:1']);
+    expect(result.queuedFileIds).toEqual([]);
+    expect(result.failure?.file.id).toBe(11);
   });
 
   it('passes the chosen plate, null when the file has none', async () => {
@@ -136,5 +185,15 @@ describe('queueSeparateJobs', () => {
       onProgress: (c, t) => progress.push([c, t]),
     });
     expect(progress).toEqual([[1, 4], [2, 4], [3, 4], [4, 4]]);
+  });
+});
+
+describe('fileHasQueuedPair', () => {
+  it('finds a file on any printer, and only that file', () => {
+    const pairs = new Set(['11:2', '112:1']);
+    expect(fileHasQueuedPair(pairs, 11)).toBe(true);
+    expect(fileHasQueuedPair(pairs, 1)).toBe(false);
+    expect(fileHasQueuedPair(pairs, 12)).toBe(false);
+    expect(fileHasQueuedPair(new Set(['13:null']), 13)).toBe(true);
   });
 });

@@ -40,7 +40,7 @@ import {
   filesNotSlicedFor,
   type MultiFileMode,
 } from './multiFile';
-import { queueSeparateJobs } from './separateJobs';
+import { fileHasQueuedPair, queueSeparateJobs } from './separateJobs';
 import { CostCenterSelect } from './CostCenterSelect';
 import type {
   AssignmentMode,
@@ -141,6 +141,10 @@ export function PrintModal({
   // as alternatives it could be a job of one candidate, or one whose filament
   // panel describes a file that has already been queued and left the list.
   const [partlyQueued, setPartlyQueued] = useState(false);
+  // File and printer pairs earlier submits of a partly queued run got into the
+  // queue. The next submit skips them, so a file one printer took and another
+  // refused is not queued on the first printer again.
+  const [queuedPairs, setQueuedPairs] = useState<ReadonlySet<string>>(() => new Set());
   const showModeToggle = isMultiFile && !!separateJobsAllowed && !partlyQueued;
   // Editing an already-queued cross-model item. The candidates are shown so the
   // dialog doesn't misrepresent the job as a plain "Any H2D" — which is what it
@@ -1504,6 +1508,7 @@ export function PrintModal({
           files: candidates,
           plateByFile: candidatePlates,
           printerIds,
+          alreadyQueued: queuedPairs,
           quantity: effectiveQuantity,
           asap: scheduleOptions.scheduleType === 'asap',
           buildItem: (file, plateId, printerId, printerIndex) => {
@@ -1539,13 +1544,15 @@ export function PrintModal({
         });
 
         if (outcome.failure) {
-          // What is in the queue from this run: the files queued on every
-          // printer, and the refused file itself when a printer before the
-          // refusing one took it. Files run outside and printers inside, so
-          // any items beyond the finished files' are the refused file's.
-          const refusedFileQueued = outcome.itemsCreated > outcome.queuedFileIds.length * printerIds.length;
+          const allQueued = new Set([...queuedPairs, ...outcome.queuedPairs]);
+          setQueuedPairs(allQueued);
+          // What is in the queue: the files queued on every printer, and the
+          // refused file itself when a printer took it, in this submit or an
+          // earlier one, also on a printer that has been deselected since.
+          const refusedId = outcome.failure.file.id;
+          const refusedFileQueued = fileHasQueuedPair(allQueued, refusedId);
           const queuedIds = refusedFileQueued
-            ? [...outcome.queuedFileIds, outcome.failure.file.id]
+            ? [...outcome.queuedFileIds, refusedId]
             : outcome.queuedFileIds;
           const queued = candidates.filter((c) => queuedIds.includes(c.id)).map((c) => c.filename);
           showToast(

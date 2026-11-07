@@ -274,6 +274,17 @@ describe('PrintModal with several selected files (#3462)', () => {
     await waitFor(() =>
       expect(screen.queryByRole('radiogroup', { name: 'What the selected files become' })).not.toBeInTheDocument(),
     );
+
+    // A second Print sends part-a only to the printer that refused it: the A1
+    // already has it, and queuing it there again would print it twice.
+    respond = () => HttpResponse.json({ id: 2, status: 'pending' });
+    await user.click(printButton());
+    await waitFor(() => expect(posted).toHaveLength(5));
+    expect(posted.slice(2).map((b) => [b.library_file_id, b.printer_id])).toEqual([
+      [11, 2],
+      [13, 1],
+      [13, 2],
+    ]);
   });
 
   it('follows the reordered list', async () => {

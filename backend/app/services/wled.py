@@ -184,7 +184,12 @@ class WLEDManager:
     ) -> None:
         if await self.send_preset(printer_id, base_url, preset_id, status=status):
             runtime = self._runtime.get(printer_id)
-            if runtime and runtime.generation == generation and runtime.target == (status, preset_id):
+            if (
+                runtime
+                and runtime.generation == generation
+                and runtime.target == (status, preset_id)
+                and runtime.send_task is asyncio.current_task()
+            ):
                 runtime.status = status
                 runtime.preset_id = preset_id
                 runtime.confirmed_generation = generation
@@ -202,6 +207,23 @@ class WLEDManager:
                 runtime.status = "idle"
                 runtime.preset_id = idle_preset_id
                 runtime.confirmed_generation = generation
+
+    async def test_preset(self, printer_id: int, base_url: str, preset_id: int) -> bool:
+        """Test a preset while forcing the next status update to restore automatic control."""
+        self._invalidate_automatic(printer_id)
+        try:
+            return await self.send_preset(printer_id, base_url, preset_id)
+        finally:
+            self._invalidate_automatic(printer_id)
+
+    def _invalidate_automatic(self, printer_id: int) -> None:
+        runtime = self._runtime.get(printer_id)
+        if runtime:
+            self._cancel_task(runtime.send_task)
+            runtime.send_task = None
+            runtime.status = None
+            runtime.preset_id = None
+            runtime.confirmed_generation = None
 
     async def send_preset(self, printer_id: int, base_url: str, preset_id: int, *, status: str | None = None) -> bool:
         """Activate a preset. Failures are isolated from all printer work."""

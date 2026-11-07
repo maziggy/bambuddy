@@ -362,6 +362,124 @@ async def test_failed_return_to_previously_confirmed_state_still_retries():
 
 
 @pytest.mark.asyncio
+async def test_manual_preset_restores_automatic_mapping_once_on_next_status():
+    sent = []
+
+    def handler(request: httpx.Request):
+        sent.append(request.content)
+        return httpx.Response(200, json={"success": True})
+
+    manager, client = _manager(handler)
+    manager.configure_printer(1, {"enabled": True, "base_url": "http://wled.local", "presets": {"printing": 3}})
+    manager.handle_status(1, _state("RUNNING"))
+    await manager._runtime[1].send_task
+    assert (manager._runtime[1].status, manager._runtime[1].preset_id) == ("printing", 3)
+
+    assert await manager.test_preset(1, "http://wled.local", 11) is True
+    manager.handle_status(1, _state("RUNNING"))
+    await manager._runtime[1].send_task
+    manager.handle_status(1, _state("RUNNING"))
+    await asyncio.sleep(0)
+    assert sent == [b'{"ps":3}', b'{"ps":11}', b'{"ps":3}']
+    assert (manager._runtime[1].status, manager._runtime[1].preset_id) == ("printing", 3)
+    await manager.shutdown()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_failed_manual_preset_keeps_automatic_mapping_retryable():
+    sent = []
+
+    def handler(request: httpx.Request):
+        sent.append(request.content)
+        return httpx.Response(503 if request.content == b'{"ps":11}' else 200, json={"success": True})
+
+    manager, client = _manager(handler)
+    manager.configure_printer(1, {"enabled": True, "base_url": "http://wled.local", "presets": {"printing": 3}})
+    manager.handle_status(1, _state("RUNNING"))
+    await manager._runtime[1].send_task
+
+    assert await manager.test_preset(1, "http://wled.local", 11) is False
+    manager.handle_status(1, _state("RUNNING"))
+    await manager._runtime[1].send_task
+    assert sent == [b'{"ps":3}', b'{"ps":11}', b'{"ps":3}']
+    assert (manager._runtime[1].status, manager._runtime[1].preset_id) == ("printing", 3)
+    await manager.shutdown()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_manual_preset_invalidates_slow_automatic_send(monkeypatch):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    sent = []
+
+    async def delayed_send(printer_id, base_url, preset_id, *, status=None):
+        sent.append(preset_id)
+        if preset_id == 3 and sent.count(3) == 1:
+            started.set()
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                await release.wait()
+        return True
+
+    manager = WLEDManager()
+    monkeypatch.setattr(manager, "send_preset", delayed_send)
+    manager.configure_printer(1, {"enabled": True, "base_url": "http://wled.local", "presets": {"printing": 3}})
+    manager.handle_status(1, _state("RUNNING"))
+    old_task = manager._runtime[1].send_task
+    await asyncio.wait_for(started.wait(), 1)
+
+    assert await manager.test_preset(1, "http://wled.local", 11) is True
+    release.set()
+    await old_task
+    assert manager._runtime[1].status is None
+    manager.handle_status(1, _state("RUNNING"))
+    await manager._runtime[1].send_task
+    assert sent == [3, 11, 3]
+    assert manager._runtime[1].status == "printing"
+    await manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_status_change_during_manual_send_restores_new_mapping(monkeypatch):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    sent = []
+
+    async def delayed_send(printer_id, base_url, preset_id, *, status=None):
+        sent.append(preset_id)
+        if preset_id == 11:
+            started.set()
+            await release.wait()
+        return True
+
+    manager = WLEDManager()
+    monkeypatch.setattr(manager, "send_preset", delayed_send)
+    manager.configure_printer(
+        1,
+        {"enabled": True, "base_url": "http://wled.local", "presets": {"printing": 3, "paused": 7}},
+    )
+    manager.handle_status(1, _state("RUNNING"))
+    await manager._runtime[1].send_task
+
+    manual_task = asyncio.create_task(manager.test_preset(1, "http://wled.local", 11))
+    await asyncio.wait_for(started.wait(), 1)
+    manager.handle_status(1, _state("PAUSE"))
+    await manager._runtime[1].send_task
+    assert manager._runtime[1].status == "paused"
+
+    release.set()
+    assert await manual_task is True
+    manager.handle_status(1, _state("PAUSE"))
+    await manager._runtime[1].send_task
+    assert sent == [3, 11, 7, 7]
+    assert (manager._runtime[1].status, manager._runtime[1].preset_id) == ("paused", 7)
+    await manager.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_late_old_send_cannot_confirm_over_new_state(monkeypatch):
     started = asyncio.Event()
     release = asyncio.Event()

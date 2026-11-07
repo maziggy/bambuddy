@@ -287,7 +287,7 @@ async def test_wled_preset(
     """Activate one validated preset without changing stored configuration."""
     if not await db.scalar(select(Printer.id).where(Printer.id == printer_id)):
         raise HTTPException(404, "Printer not found")
-    if not await wled_manager.send_preset(printer_id, request.base_url, request.preset_id):
+    if not await wled_manager.test_preset(printer_id, request.base_url, request.preset_id):
         raise HTTPException(502, "Could not activate WLED preset")
     return {"success": True}
 

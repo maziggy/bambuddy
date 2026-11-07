@@ -166,7 +166,7 @@ import { ConfirmOutcomeDialog } from '../components/ConfirmOutcomeDialog';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withMediaToken, ApiError } from '../api/client';
 import { formatDateOnly, formatDateTime, formatETA, formatDuration, formatDurationFromHours, parseUTCDate } from '../utils/date';
-import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
+import type { Archive, Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -2186,6 +2186,10 @@ function PrinterCard({
   const [showDiagnostic, setShowDiagnostic] = useState(false);
   const closePrinterInfo = useCallback(() => setShowPrinterInfo(false), []);
   const [printAfterUpload, setPrintAfterUpload] = useState<{ id: number; filename: string } | null>(null);
+  // Reprint of this printer's last print. Holds the archive whose plate the
+  // footer's Reprint button opened in the PrintModal; null when nothing is
+  // being reprinted.
+  const [reprintArchive, setReprintArchive] = useState<Archive | null>(null);
   // AMS drying popover state: which AMS unit has the popover open
   const [dryingPopoverAmsId, setDryingPopoverAmsId] = useState<number | null>(null);
   const [dryingPopoverModuleType, setDryingPopoverModuleType] = useState<string>('n3f');
@@ -2642,6 +2646,19 @@ function PrinterCard({
     lastPrint.confirm_requested &&
     lastPrint.user_verdict == null &&
     canModify('archives', 'update', lastPrint.created_by_id)
+      ? lastPrint
+      : null;
+  // Reprint the plate this printer last ran, straight from its card. Offered
+  // only while the machine is free and the archive still has its file: a print
+  // logged without a 3MF (internal history) has nothing to re-send, and while
+  // a job runs the "last print" is that running job. Same gates as the
+  // Archives page: queue:create to enqueue, archives:reprint for the owner.
+  const canReprintLast =
+    lastPrint &&
+    !isPrintingOrPaused &&
+    lastPrint.file_path &&
+    hasPermission('queue:create') &&
+    canModify('archives', 'reprint', lastPrint.created_by_id)
       ? lastPrint
       : null;
   // Not gated on `connected`: the plate-clear gate is Bambuddy-side state, and with
@@ -6785,6 +6802,22 @@ function PrinterCard({
                 >
                   <HardDrive className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
                 </Button>
+                {/* Reprint the plate this printer last ran. Opens the usual
+                    PrintModal preloaded with that archive and this printer, so
+                    plates, filament mapping and scheduling are reviewed before
+                    anything is queued — the same path the Archives page uses. */}
+                {canReprintLast && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setReprintArchive(canReprintLast)}
+                    title={t('archivePage.reprintThis')}
+                    className={footerActionButtonClass}
+                  >
+                    <Repeat className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
+                    {t('archivePage.reprintThis')}
+                  </Button>
+                )}
                 {/* Shown whatever the printer is doing (#2849): this uploads a
                     file and queues it, which a busy or offline printer is no
                     reason to refuse -- it only means the item waits. Hiding it
@@ -6871,6 +6904,21 @@ function PrinterCard({
           onClose={() => setPrintAfterUpload(null)}
           onSuccess={() => setPrintAfterUpload(null)}
           cleanupLibraryAfterDispatch
+        />
+      )}
+
+      {/* Reprint of this printer's last print: the footer button opens the
+          standard PrintModal on the archive's own plate, pre-selected for this
+          printer. */}
+      {reprintArchive && (
+        <PrintModal
+          mode="create"
+          archiveId={reprintArchive.id}
+          archiveName={reprintArchive.print_name || reprintArchive.filename || 'reprint'}
+          initialSelectedPrinterIds={[printer.id]}
+          preselectPlateId={reprintArchive.plate_id}
+          onClose={() => setReprintArchive(null)}
+          onSuccess={() => setReprintArchive(null)}
         />
       )}
 

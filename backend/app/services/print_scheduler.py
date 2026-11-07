@@ -1229,6 +1229,17 @@ def _effective_plate_id(explicit_plate_id: int | None, file_path: Path) -> int:
     return resolved if resolved is not None else 1
 
 
+def _wear_order(printer: Printer) -> tuple[float, int]:
+    """Sort key for printers a model job could run on: fewest print hours, then id (#3480).
+
+    The same hours as maintenance's ``get_printer_total_hours``: the runtime
+    counter plus the baseline offset a user set for a second-hand or reset
+    machine.
+    """
+    hours = (printer.runtime_seconds or 0) / 3600.0 + (printer.print_hours_offset or 0.0)
+    return hours, printer.id
+
+
 class PrintScheduler:
     """Background scheduler that processes the print queue."""
 
@@ -3247,6 +3258,13 @@ class PrintScheduler:
         answer "which printers can this job run on" from one query — a job can
         only be woken onto a printer the matcher would also have considered.
         ``printer_scope`` is the job creator's (#1727).
+
+        Fewest print hours first (#3480): both take the first printer that
+        fits, so an "Any" job goes to the least worn machine and a farm's jobs
+        spread by wear instead of all landing on the lowest id. The hours are
+        the maintenance counter's (runtime plus the baseline offset), which
+        counts every print, wherever it was started. Ties (printers still at
+        zero) go by id, so the order is stable.
         """
         normalized_model = normalize_printer_model(model) or model
         query = (
@@ -3259,7 +3277,7 @@ class PrintScheduler:
         if (clause := printer_scope.where_strict(Printer.id)) is not None:
             query = query.where(clause)
         result = await db.execute(query)
-        return list(result.scalars().all())
+        return sorted(result.scalars().all(), key=_wear_order)
 
     async def _wakeable_printer_ids(self, db: AsyncSession) -> set[int]:
         """Printer IDs that at least one enabled ``auto_on`` plug can power on.
@@ -3333,7 +3351,8 @@ class PrintScheduler:
                 continue
             required_types, filament_overrides = _filament_constraints(candidate)
             printers = await self._printers_for_model(db, candidate.target_model, target_location, printer_scope)
-            for printer in sorted(printers, key=lambda p: p.id):
+            # Fewest print hours first, as the matcher picks (#3480).
+            for printer in printers:
                 if printer.id in exclude_ids or printer.id not in wakeable_ids:
                     continue
                 if printer_manager.is_connected(printer.id):
@@ -3595,8 +3614,9 @@ class PrintScheduler:
                     logger.debug("Skipping printer %s (%s) - no matching override colors", printer.id, printer.name)
                     continue
             else:
-                # No preference ordering needed: the first eligible printer
-                # wins, unless its spools are too light for the job (#3137).
+                # The first eligible printer wins, which is the one with the
+                # fewest print hours (#3480, see _printers_for_model), unless
+                # its spools are too light for the job (#3137).
                 if is_short is not None and await is_short(printer.id):
                     if short_fallback is None:
                         short_fallback = printer.id
@@ -3608,7 +3628,8 @@ class PrintScheduler:
                     continue
                 return printer.id, None
 
-        # If we have candidates from preference override matching, pick the one with most color matches
+        # If we have candidates from preference override matching, pick the one with most color matches.
+        # The sort is stable: among equal matches the fewest print hours still go first (#3480).
         if candidates:
             candidates.sort(key=lambda c: c[1], reverse=True)
             if is_short is not None:

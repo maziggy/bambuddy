@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.app.main import _timelapse_baselines
+from backend.app.services.bambu_ftp import FileListResult
 
 
 @pytest.fixture(autouse=True)
@@ -59,8 +60,8 @@ async def test_running_observed_captures_baseline_on_restart_recovery():
     with (
         patch("backend.app.main.async_session") as mock_session_maker,
         patch(
-            "backend.app.main._list_timelapse_videos",
-            new=AsyncMock(return_value=(existing_videos, "/timelapse")),
+            "backend.app.services.bambu_ftp.list_files_result_async",
+            new=AsyncMock(return_value=FileListResult(existing_videos, True)),
         ),
     ):
         mock_session_maker.return_value = mock_session
@@ -104,7 +105,7 @@ async def test_running_observed_skips_when_baseline_already_present():
 
     with (
         patch("backend.app.main.async_session") as mock_session_maker,
-        patch("backend.app.main._list_timelapse_videos", new=AsyncMock()) as mock_list,
+        patch("backend.app.main._read_timelapse_baseline", new=AsyncMock()) as mock_list,
     ):
         from backend.app.main import on_print_running_observed
 
@@ -139,7 +140,7 @@ async def test_running_observed_skips_when_printer_row_missing():
 
     with (
         patch("backend.app.main.async_session") as mock_session_maker,
-        patch("backend.app.main._list_timelapse_videos", new=AsyncMock()) as mock_list,
+        patch("backend.app.main._read_timelapse_baseline", new=AsyncMock()) as mock_list,
     ):
         mock_session_maker.return_value = mock_session
 

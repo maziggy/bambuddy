@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.app.core.printer_scope import ALL_PRINTERS
+from backend.app.services.bambu_ftp import FileListResult
 
 logger = logging.getLogger(__name__)
 
@@ -317,8 +318,8 @@ class TestBaselineIsPersisted:
         with (
             patch("backend.app.main.async_session", return_value=session),
             patch(
-                "backend.app.main._list_timelapse_videos",
-                new=AsyncMock(return_value=([_video("a.avi"), _video("b.avi")], "/timelapse")),
+                "backend.app.services.bambu_ftp.list_files_result_async",
+                new=AsyncMock(return_value=FileListResult([_video("a.avi"), _video("b.avi")], True)),
             ),
         ):
             await _capture_timelapse_baseline_at_start(_printer(), 1, logger, archive_id=7)
@@ -336,8 +337,8 @@ class TestBaselineIsPersisted:
         with (
             patch("backend.app.main.async_session", return_value=session),
             patch(
-                "backend.app.main._list_timelapse_videos",
-                new=AsyncMock(return_value=([_video("a.avi")], "/timelapse")),
+                "backend.app.services.bambu_ftp.list_files_result_async",
+                new=AsyncMock(return_value=FileListResult([_video("a.avi")], True)),
             ),
         ):
             await _capture_timelapse_baseline_at_start(_printer(), 1, logger)
@@ -357,7 +358,9 @@ class TestBaselineIsPersisted:
 
         with (
             patch("backend.app.main.async_session", return_value=session),
-            patch("backend.app.main._list_timelapse_videos", new=AsyncMock(side_effect=OSError("ftp down"))),
+            patch(
+                "backend.app.services.bambu_ftp.list_files_result_async", new=AsyncMock(side_effect=OSError("ftp down"))
+            ),
         ):
             await _capture_timelapse_baseline_at_start(_printer(), 1, logger, archive_id=7)
 
@@ -706,7 +709,9 @@ class TestStaleBaselineCannotSurvive:
 
         with (
             patch("backend.app.main.async_session", return_value=session),
-            patch("backend.app.main._list_timelapse_videos", new=AsyncMock(side_effect=OSError("ftp down"))),
+            patch(
+                "backend.app.services.bambu_ftp.list_files_result_async", new=AsyncMock(side_effect=OSError("ftp down"))
+            ),
         ):
             await _capture_timelapse_baseline_at_start(_printer(), 1, logger, archive_id=7)
 
@@ -724,8 +729,8 @@ class TestStaleBaselineCannotSurvive:
         with (
             patch("backend.app.main.async_session", return_value=session),
             patch(
-                "backend.app.main._list_timelapse_videos",
-                new=AsyncMock(return_value=([_video("now_on_the_printer.avi")], "/timelapse")),
+                "backend.app.services.bambu_ftp.list_files_result_async",
+                new=AsyncMock(return_value=FileListResult([_video("now_on_the_printer.avi")], True)),
             ),
         ):
             await _capture_timelapse_baseline_at_start(_printer(), 1, logger, archive_id=7)

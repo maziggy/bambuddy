@@ -5,6 +5,8 @@ printer's own switch decides. The global switch used to be saved and never
 read, so turning it off changed nothing.
 """
 
+import logging
+
 import pytest
 from sqlalchemy import select
 
@@ -24,14 +26,19 @@ async def _archives(db_session) -> list:
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_global_off_archives_nothing(test_engine, db_session, printer_factory):
+async def test_global_off_archives_nothing(test_engine, db_session, printer_factory, caplog):
     printer = await printer_factory()
     db_session.add(Settings(key="auto_archive", value="false"))
     await db_session.commit()
 
-    await _drive_print_start(test_engine, printer, download_ok=False)
+    with caplog.at_level(logging.INFO, logger="backend.app.main"):
+        await _drive_print_start(test_engine, printer, download_ok=False)
 
     assert await _archives(db_session) == []
+    # The log names the switch: upgraded installs had it off without knowing,
+    # as it did nothing before 1.3.0 (#3477).
+    assert "global 'Auto-archive prints' switch" in caplog.text
+    assert "auto-archive is off for printer" not in caplog.text
 
 
 @pytest.mark.asyncio
@@ -48,12 +55,16 @@ async def test_global_on_lets_the_printer_decide(test_engine, db_session, printe
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_a_printer_switched_off_stays_off_under_global_on(test_engine, db_session, printer_factory):
+async def test_a_printer_switched_off_stays_off_under_global_on(test_engine, db_session, printer_factory, caplog):
     printer = await printer_factory(auto_archive=False)
+    printer_id = printer.id
 
-    await _drive_print_start(test_engine, printer, download_ok=False)
+    with caplog.at_level(logging.INFO, logger="backend.app.main"):
+        await _drive_print_start(test_engine, printer, download_ok=False)
 
     assert await _archives(db_session) == []
+    assert f"auto-archive is off for printer {printer_id}" in caplog.text
+    assert "global 'Auto-archive prints' switch" not in caplog.text
 
 
 @pytest.mark.asyncio

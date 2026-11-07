@@ -4236,8 +4236,8 @@ export default {
       groupAction: 'Agrupar como versiones',
       groupTooltip: 'Marcar estos archivos como el mismo trabajo laminado para distintas impresoras',
       grouped: '{{count}} archivos agrupados como versiones',
-      printAlternatives: 'Imprimir ({{count}} alternativas)',
     },
+    printFiles: 'Imprimir ({{count}} archivos)',
     title: 'Gestor de archivos',
     subtitle: 'Organice y gestione sus archivos de impresión',
     uploadFiles: 'Subir archivos',
@@ -5666,6 +5666,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: 'En qué se convierten los archivos seleccionados',
+      alternatives: 'Alternativas',
+      separate: 'Trabajos separados',
+      alternativesHint: 'Un solo trabajo. La primera impresora compatible que quede libre imprime su archivo.',
+      separateHint: 'Un elemento de cola por archivo, añadidos en el orden de abajo. Las opciones se aplican a todos los elementos.',
+      alternativesBlocked: 'Hay más de un archivo laminado para {{model}}. Las alternativas necesitan un modelo de impresora distinto para cada archivo.',
+      orderTitle: 'Orden de la cola',
+      incompatible: 'No se puede enviar a impresoras {{model}}: {{files}}',
+      notSlicedFor: 'No laminado para {{model}}: {{files}}',
+      failed: 'No añadido a la cola: {{filename}} ({{message}}). Añadidos antes: {{queued}}.',
+    },
     variants: {
       editNote: 'Estas alternativas se fijaron al poner el trabajo en cola. Cancela y vuelve a encolar para cambiarlas.',
       title: 'Alternativas de impresora',

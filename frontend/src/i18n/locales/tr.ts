@@ -4229,8 +4229,8 @@ export default {
       groupAction: 'Sürüm olarak grupla',
       groupTooltip: 'Bu dosyaları farklı yazıcılar için dilimlenmiş aynı iş olarak işaretle',
       grouped: '{{count}} dosya sürüm olarak gruplandı',
-      printAlternatives: 'Yazdır ({{count}} alternatif)',
     },
+    printFiles: 'Yazdır ({{count}} dosya)',
     title: 'Dosya Yöneticisi',
     subtitle: 'Baskı dosyalarınızı organize edin ve yönetin',
     uploadFiles: 'Dosya Yükle',
@@ -5635,6 +5635,18 @@ export default {
 
   // Baskı modali
   printModal: {
+    multiFile: {
+      groupLabel: 'Seçilen dosyalar neye dönüşür',
+      alternatives: 'Alternatifler',
+      separate: 'Ayrı işler',
+      alternativesHint: 'Tek iş. Boşa çıkan ilk uygun yazıcı kendi dosyasını yazdırır.',
+      separateHint: 'Dosya başına bir kuyruk öğesi, aşağıdaki sırayla eklenir. Seçenekler her öğeye uygulanır.',
+      alternativesBlocked: '{{model}} için birden fazla dosya dilimlenmiş. Alternatifler için her dosyada farklı bir yazıcı modeli gerekir.',
+      orderTitle: 'Kuyruk sırası',
+      incompatible: '{{model}} yazıcılarına gönderilemez: {{files}}',
+      notSlicedFor: '{{model}} için dilimlenmemiş: {{files}}',
+      failed: 'Kuyruğa eklenmedi: {{filename}} ({{message}}). Önce eklenenler: {{queued}}.',
+    },
     variants: {
       editNote: 'Bu alternatifler iş kuyruğa alınırken belirlendi. Değiştirmek için iptal edip yeniden kuyruğa alın.',
       title: 'Yazıcı alternatifleri',

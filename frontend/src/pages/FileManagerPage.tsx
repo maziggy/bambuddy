@@ -3632,7 +3632,7 @@ export function FileManagerPage() {
                         <Printer className="w-4 h-4 sm:mr-1" />
                         <span className="hidden sm:inline">
                           {selectedSlicedFiles.length > 1
-                            ? t('fileManager.variants.printAlternatives', { count: selectedSlicedFiles.length })
+                            ? t('fileManager.printFiles', { count: selectedSlicedFiles.length })
                             : t('common.print')}
                         </span>
                       </Button>
@@ -4287,6 +4287,10 @@ export function FileManagerPage() {
           mode="create"
           libraryFileId={printVariantFiles?.[0]?.id ?? printFile.id}
           variantFiles={printVariantFiles}
+          // A version group is by definition alternatives; only an explicit
+          // selection (the same one printVariantFiles prefers) may mean separate
+          // jobs (#3462).
+          separateJobsAllowed={selectedSlicedFiles.length > 1}
           // Naming a cross-model job after one of its files reads as though the
           // others aren't part of it.
           archiveName={

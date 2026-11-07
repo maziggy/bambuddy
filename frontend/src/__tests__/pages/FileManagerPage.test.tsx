@@ -1069,7 +1069,7 @@ describe('FileManagerPage', () => {
 
       // A second one makes it one job for either file.
       await user.click(root.getByText('Cube'));
-      expect(await within(toolbar()).findByRole('button', { name: 'Print (2 alternatives)' })).toBeInTheDocument();
+      expect(await within(toolbar()).findByRole('button', { name: 'Print (2 files)' })).toBeInTheDocument();
     });
 
     it('offers Combine to 3MF for STLs ticked across columns', async () => {
@@ -1325,6 +1325,56 @@ describe('FileManagerPage', () => {
       await waitFor(() => {
         expect(screen.queryByRole('button', { name: /^Print$/ })).not.toBeInTheDocument();
       });
+    });
+
+    // #3462: an explicit multi-selection may mean several jobs, so the dialog
+    // offers the choice; a version group is by definition alternatives.
+    it('lets a multi-selection become alternatives or separate jobs (#3462)', async () => {
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
+
+      await user.click(screen.getByText('Benchy').closest('div[class*="cursor-pointer"]') as HTMLElement);
+      await user.click(screen.getByText('Cube').closest('div[class*="cursor-pointer"]') as HTMLElement);
+
+      await user.click(await screen.findByRole('button', { name: 'Print (2 files)' }));
+
+      const group = await screen.findByRole('radiogroup', { name: 'What the selected files become' });
+      expect(within(group).getByRole('radio', { name: /Alternatives/ })).toBeInTheDocument();
+      expect(within(group).getByRole('radio', { name: /Separate jobs/ })).toBeInTheDocument();
+    });
+
+    it('shows a version group as alternatives only, without the choice (#3462)', async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.get('/api/v1/library/files', ({ request }) =>
+          HttpResponse.json(
+            filesForRequest(request).map((f: { id: number }) =>
+              f.id === 1 || f.id === 3 ? { ...f, variant_group_id: 7 } : f
+            )
+          )
+        ),
+        http.get('/api/v1/library/variant-groups/7', () =>
+          HttpResponse.json({
+            id: 7,
+            name: 'Benchy',
+            members: [
+              { library_file_id: 1, filename: 'benchy.gcode.3mf', target_model: 'X1C', position: 0 },
+              { library_file_id: 3, filename: 'cube.gcode.3mf', target_model: 'P1S', position: 1 },
+            ],
+          })
+        )
+      );
+      render(<FileManagerPage />);
+      await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
+
+      await user.click(screen.getByText('Benchy').closest('div[class*="cursor-pointer"]') as HTMLElement);
+      await user.click(await screen.findByRole('button', { name: /^Print$/ }));
+
+      // The dialog is the multi-file one (the archive name lists both files) ...
+      expect(await screen.findByText(/benchy\.gcode\.3mf \+1 more/)).toBeInTheDocument();
+      // ... but a group has no "separate jobs" choice.
+      expect(screen.queryByRole('radiogroup', { name: 'What the selected files become' })).not.toBeInTheDocument();
     });
   });
 

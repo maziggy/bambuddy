@@ -4264,8 +4264,8 @@ export default {
       groupAction: 'Als versies groeperen',
       groupTooltip: 'Markeer deze bestanden als dezelfde taak, gesliced voor verschillende printers',
       grouped: '{{count}} bestanden als versies gegroepeerd',
-      printAlternatives: 'Afdrukken ({{count}} alternatieven)',
     },
+    printFiles: 'Afdrukken ({{count}} bestanden)',
     title: 'Bestandsbeheer',
     subtitle: 'Organiseer en beheer je afdrukbestanden',
     uploadFiles: 'Bestanden uploaden',
@@ -5704,6 +5704,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: 'Wat er van de geselecteerde bestanden wordt',
+      alternatives: 'Alternatieven',
+      separate: 'Aparte opdrachten',
+      alternativesHint: 'Eén opdracht. De eerste passende printer die vrijkomt print zijn bestand.',
+      separateHint: 'Eén wachtrij-item per bestand, toegevoegd in de volgorde hieronder. De opties gelden voor elk item.',
+      alternativesBlocked: 'Meer dan één bestand is gesliced voor {{model}}. Alternatieven vragen om een ander printermodel per bestand.',
+      orderTitle: 'Volgorde in de wachtrij',
+      incompatible: 'Kan niet worden verzonden naar {{model}}-printers: {{files}}',
+      notSlicedFor: 'Niet gesliced voor {{model}}: {{files}}',
+      failed: 'Niet in de wachtrij gezet: {{filename}} ({{message}}). Eerder in de wachtrij gezet: {{queued}}.',
+    },
     variants: {
       editNote: 'Deze alternatieven zijn ingesteld toen de taak in de wachtrij werd geplaatst. Annuleer en plaats opnieuw in de wachtrij om ze te wijzigen.',
       title: 'Printeralternatieven',

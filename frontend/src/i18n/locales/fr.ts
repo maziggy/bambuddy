@@ -4222,8 +4222,8 @@ export default {
       groupAction: 'Grouper comme versions',
       groupTooltip: 'Marquer ces fichiers comme le même travail tranché pour différentes imprimantes',
       grouped: '{{count}} fichiers groupés comme versions',
-      printAlternatives: 'Imprimer ({{count}} alternatives)',
     },
+    printFiles: 'Imprimer ({{count}} fichiers)',
     title: 'Gestionnaire de fichiers',
     subtitle: 'Organisez vos fichiers d\'impression',
     uploadFiles: 'Téléverser fichiers',
@@ -5646,6 +5646,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: 'Ce que deviennent les fichiers sélectionnés',
+      alternatives: 'Alternatives',
+      separate: 'Tâches séparées',
+      alternativesHint: 'Une seule tâche. La première imprimante compatible qui se libère imprime son fichier.',
+      separateHint: 'Un élément de file par fichier, ajouté dans l\'ordre ci-dessous. Les options s\'appliquent à chaque élément.',
+      alternativesBlocked: 'Plusieurs fichiers sont tranchés pour {{model}}. Les alternatives exigent un modèle d\'imprimante différent pour chaque fichier.',
+      orderTitle: 'Ordre dans la file',
+      incompatible: 'Impossible d\'envoyer aux imprimantes {{model}} : {{files}}',
+      notSlicedFor: 'Non tranché pour {{model}} : {{files}}',
+      failed: 'Non mis en file : {{filename}} ({{message}}). Mis en file avant : {{queued}}.',
+    },
     variants: {
       editNote: 'Ces alternatives ont été définies lors de la mise en file. Annulez et remettez en file pour les modifier.',
       title: 'Alternatives d\'imprimante',

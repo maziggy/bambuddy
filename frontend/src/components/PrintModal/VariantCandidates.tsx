@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, Layers, Printer as PrinterIcon } from 'lucide-react
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 
-/** One sliced file offered as an alternative for a cross-model job (#671). */
+/** One sliced file of the list: an alternative of a cross-model job (#671), or one of the separate jobs (#3462). */
 export interface VariantCandidate {
   id: number;
   filename: string;
@@ -22,23 +22,34 @@ interface VariantCandidatesProps {
   readOnly?: boolean;
   /** Replaces the help line under the heading when read-only. */
   readOnlyNote?: string;
+  /** Replaces the heading (default: the cross-model alternatives title). */
+  title?: string;
+  /** Replaces the help line (default: the cross-model alternatives help).
+   *  An empty string drops the line, for when something above the list
+   *  already explains it (the mode toggle, #3462). */
+  help?: string;
 }
 
 /**
- * The ordered candidate list for a cross-model print (#671).
+ * The ordered list of several sliced files, in one of two uses: the candidates
+ * of a cross-model print (#671), or the queue order of separate jobs (#3462).
  *
- * Only two things are configured per candidate: its order, and — when the file
+ * Only two things are configured per file: its order, and — when the file
  * holds more than one plate — which plate to run. Everything else on the modal
- * (filament overrides, print options, schedule) stays shared, because that is
- * already how model-based assignment works: the printer is unknown at queue
- * time, so there is nothing per-machine to configure. The AMS mapping in
- * particular is deliberately absent — the scheduler computes it against the
- * printer it actually picks, exactly as it does for a single-model job.
+ * (print options, schedule, and for alternatives the filament overrides) stays
+ * shared. For alternatives that is already how model-based assignment works:
+ * the printer is unknown at queue time, so there is nothing per-machine to
+ * configure. Separate jobs do know the printer, but the modal's filament panels
+ * describe the first file only, so they are hidden and no job carries them.
+ * The AMS mapping in particular is deliberately absent in both uses — the
+ * scheduler computes it against the printer and the file each item runs,
+ * exactly as it does for a single-model job.
  *
- * Order is the answer to "which would you rather have when both are free", so
- * it is explicit rather than left to whichever printer the matcher saw first.
- * Move buttons instead of drag: the list is two or three rows, and buttons work
- * from the keyboard without a drag-and-drop dependency.
+ * For alternatives, order is the answer to "which would you rather have when
+ * both are free", so it is explicit rather than left to whichever printer the
+ * matcher saw first. For separate jobs it is the order the items join the
+ * queue. Move buttons instead of drag: the list is two or three rows, and
+ * buttons work from the keyboard without a drag-and-drop dependency.
  */
 export function VariantCandidates({
   candidates,
@@ -47,6 +58,8 @@ export function VariantCandidates({
   onPlateChange,
   readOnly = false,
   readOnlyNote,
+  title,
+  help,
 }: VariantCandidatesProps) {
   const { t } = useTranslation();
 
@@ -84,6 +97,9 @@ export function VariantCandidates({
     }
   }, [platesByFile, plateByFile, onPlateChange, readOnly]);
 
+  const defaultHelp = help ?? t('printModal.variants.help');
+  const helpText = readOnly ? (readOnlyNote ?? defaultHelp) : defaultHelp;
+
   const move = (from: number, to: number) => {
     if (to < 0 || to >= candidates.length) return;
     const next = [...candidates];
@@ -96,11 +112,9 @@ export function VariantCandidates({
     <div className="mb-4">
       <div className="flex items-center gap-2 mb-2">
         <PrinterIcon className="w-4 h-4 text-bambu-gray" />
-        <span className="text-sm text-bambu-gray">{t('printModal.variants.title')}</span>
+        <span className="text-sm text-bambu-gray">{title ?? t('printModal.variants.title')}</span>
       </div>
-      <p className="text-xs text-bambu-gray mb-2">
-        {readOnly ? (readOnlyNote ?? t('printModal.variants.help')) : t('printModal.variants.help')}
-      </p>
+      {helpText !== '' && <p className="text-xs text-bambu-gray mb-2">{helpText}</p>}
 
       <div className="space-y-2">
         {candidates.map((candidate, index) => {

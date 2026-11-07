@@ -47,17 +47,32 @@ export interface PrintModalProps {
    *  so transient uploads don't linger in File Manager. Only applies to library-file prints. */
   cleanupLibraryAfterDispatch?: boolean;
   /**
-   * Cross-model alternatives (#671): the same job sliced for several printers,
-   * to be queued as ONE item that runs on whichever frees up first.
+   * Several sliced files to print at once, in the order given.
    *
    * Supplied by the File Manager when the user multi-selects sliced files, or
-   * when the clicked file belongs to a variant group. Two or more entries put
-   * the modal in cross-model mode: the printer picker is replaced by the ordered
-   * candidate list, and submit posts `variants` instead of a single file.
+   * when the clicked file belongs to a variant group. Two or more entries show
+   * the ordered candidate list, where each file's plate is chosen, and become
+   * one of two things:
+   * - Cross-model alternatives (#671): the same job sliced for several
+   *   printers, queued as ONE item that runs on whichever frees up first. The
+   *   printer picker is replaced by the list, and submit posts `variants`
+   *   instead of a single file. Without `separateJobsAllowed` this is the only
+   *   mode.
+   * - Separate jobs (#3462), only with `separateJobsAllowed`: one queue item
+   *   per file, in list order, and the printer picker stays.
    * `libraryFileId` must still be the first candidate — the shared filament and
    * plate preview reads from it.
    */
   variantFiles?: VariantCandidate[];
+  /**
+   * Let the user queue `variantFiles` as separate jobs instead (#3462): one
+   * queue item per file, in list order, on the printer or model picked as for
+   * a single file. Set only for files the user marked together in the File
+   * Manager, never for a version group (#2570): a group is by definition the
+   * same job sliced for different printers, which only alternatives express.
+   * Without it the modal offers the alternatives alone, as before.
+   */
+  separateJobsAllowed?: boolean;
 }
 
 /**

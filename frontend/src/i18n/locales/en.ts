@@ -4266,8 +4266,8 @@ export default {
       groupAction: 'Group as versions',
       groupTooltip: 'Mark these files as the same job sliced for different printers',
       grouped: 'Grouped {{count}} files as versions',
-      printAlternatives: 'Print ({{count}} alternatives)',
     },
+    printFiles: 'Print ({{count}} files)',
     title: 'File Manager',
     subtitle: 'Organize and manage your print files',
     uploadFiles: 'Upload Files',
@@ -5706,6 +5706,18 @@ export default {
 
   // Print modal
   printModal: {
+    multiFile: {
+      groupLabel: 'What the selected files become',
+      alternatives: 'Alternatives',
+      separate: 'Separate jobs',
+      alternativesHint: 'One job. The first matching printer to free up prints its file.',
+      separateHint: 'One queue item per file, added in the order below. The options apply to every item.',
+      alternativesBlocked: 'More than one file is sliced for {{model}}. Alternatives need a different printer model for each file.',
+      orderTitle: 'Queue order',
+      incompatible: 'Cannot be dispatched to {{model}} printers: {{files}}',
+      notSlicedFor: 'Not sliced for {{model}}: {{files}}',
+      failed: 'Not queued: {{filename}} ({{message}}). Queued before it: {{queued}}.',
+    },
     variants: {
       editNote: 'These alternatives were set when the job was queued. Cancel and re-queue to change them.',
       title: 'Printer alternatives',

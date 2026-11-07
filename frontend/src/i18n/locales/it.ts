@@ -1640,6 +1640,7 @@ export default {
       startPrint: 'Avvia Stampa',
       stopPrint: 'Ferma Stampa',
       requeue: 'Rimetti in coda',
+      duplicate: 'Duplica (aggiungi un\'altra copia alla coda)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1668,6 +1669,7 @@ export default {
       selected: '{{count}} selezionati',
       editSelected: 'Modifica selezionati',
       cancelSelected: 'Annulla selezionati',
+      duplicateSelected: 'Duplica',
     },
     // Confirmations
     confirm: {
@@ -1705,6 +1707,8 @@ export default {
       bulkUpdatedNone: 'Nessun lavoro aggiornato',
       bulkCancelled: 'Annullati {{count}} elementi',
       bulkCancelFailed: 'Annullamento elementi non riuscito',
+      duplicated: 'Aggiunti {{count}} lavori in fondo alla coda',
+      duplicateFailed: 'Impossibile duplicare gli elementi',
       batchCreated: 'Lotto «{{name}}» creato',
       batchCreateFailed: 'Creazione lotto non riuscita',
       batchUngrouped: '{{count}} elemento/i separato/i',

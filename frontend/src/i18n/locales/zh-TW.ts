@@ -1640,6 +1640,7 @@ export default {
       startPrint: '開始列印',
       stopPrint: '停止列印',
       requeue: '重新佇列',
+      duplicate: '複製（再加入一份到佇列）',
     },
     // Bulk edit
     bulkEdit: {
@@ -1668,6 +1669,7 @@ export default {
       selected: '已選擇 {{count}} 個',
       editSelected: '編輯所選',
       cancelSelected: '取消所選',
+      duplicateSelected: '複製',
     },
     // Confirmations
     confirm: {
@@ -1705,6 +1707,8 @@ export default {
       bulkUpdatedNone: '沒有更新任何工作',
       bulkCancelled: '已取消 {{count}} 個項目',
       bulkCancelFailed: '批次取消項目失敗',
+      duplicated: '已將 {{count}} 個工作加入佇列末尾',
+      duplicateFailed: '複製失敗',
       batchCreated: '已建立批次「{{name}}」',
       batchCreateFailed: '建立批次失敗',
       batchUngrouped: '已取消分組 {{count}} 項',

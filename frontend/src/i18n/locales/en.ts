@@ -1658,6 +1658,7 @@ export default {
       startPrint: 'Start Print',
       stopPrint: 'Stop Print',
       requeue: 'Re-queue',
+      duplicate: 'Duplicate (add another copy to the queue)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1686,6 +1687,7 @@ export default {
       selected: '{{count}} selected',
       editSelected: 'Edit Selected',
       cancelSelected: 'Cancel Selected',
+      duplicateSelected: 'Duplicate',
     },
     // Confirmations
     confirm: {
@@ -1723,6 +1725,8 @@ export default {
       bulkUpdatedNone: 'No jobs were updated',
       bulkCancelled: 'Cancelled {{count}} item(s)',
       bulkCancelFailed: 'Failed to cancel items',
+      duplicated: 'Added {{count}} job(s) to the end of the queue',
+      duplicateFailed: 'Failed to duplicate items',
       batchCreated: 'Batch "{{name}}" created',
       batchCreateFailed: 'Failed to create batch',
       batchUngrouped: 'Ungrouped {{count}} item(s)',

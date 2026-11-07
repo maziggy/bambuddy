@@ -1656,6 +1656,7 @@ export default {
       startPrint: 'Starta utskrift',
       stopPrint: 'Stoppa utskrift',
       requeue: 'Lägg tillbaka i kö',
+      duplicate: 'Duplicera (lägg till en kopia till i kön)',
     },
     // Bulk edit
     bulkEdit: {
@@ -1684,6 +1685,7 @@ export default {
       selected: '{{count}} valda',
       editSelected: 'Redigera valda',
       cancelSelected: 'Avbryt valda',
+      duplicateSelected: 'Duplicera',
     },
     // Confirmations
     confirm: {
@@ -1721,6 +1723,8 @@ export default {
       bulkUpdatedNone: 'Inga jobb uppdaterades',
       bulkCancelled: 'Avbröt {{count}} post(er)',
       bulkCancelFailed: 'Kunde inte avbryta poster',
+      duplicated: 'Lade till {{count}} jobb sist i kön',
+      duplicateFailed: 'Det gick inte att duplicera objekten',
       batchCreated: 'Batch "{{name}}" skapad',
       batchCreateFailed: 'Kunde inte skapa batch',
       batchUngrouped: 'Avgrupperade {{count}} post(er)',

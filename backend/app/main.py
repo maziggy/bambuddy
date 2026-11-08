@@ -10795,8 +10795,12 @@ async def _close_out_print(printer_id: int, data: dict):
 
     log_timing("All background tasks scheduled")
 
-    # Auto-scan for timelapse if recording was active during the print
-    if archive_id and data.get("timelapse_was_active") and data.get("status") == "completed":
+    # Auto-scan for timelapse if recording was active during the print. A
+    # failed or cancelled print gets one too: the printer writes the video of
+    # the run so far when it stops (measured on an H2C, #3481), and that video
+    # is how the user sees what went wrong. A model that writes none costs one
+    # poll that finds nothing new.
+    if archive_id and data.get("timelapse_was_active"):
         logger.info("[TIMELAPSE] Timelapse was active during print, scheduling auto-scan for archive %s", archive_id)
         # Schedule timelapse scan as background task with retries
         # The printer needs time to encode the video after print completion

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -12,6 +13,10 @@ from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.hms_errors import hms_fault_counts
 
 logger = logging.getLogger(__name__)
+
+# While WLED does not answer, the same preset is retried at most this often
+# instead of on every printer status update.
+WLED_RETRY_SECONDS = 30.0
 
 
 class WLEDResponseError(ValueError):
@@ -66,6 +71,10 @@ class _WLEDRuntime:
     generation: int = 0
     confirmed_generation: int | None = None
     finished_timeout_expired: bool = False
+    # Monotonic time before which a failed send is not retried, and whether
+    # the last automatic send failed (so an outage logs once, not per retry).
+    retry_after: float = 0.0
+    unreachable: bool = False
     send_task: asyncio.Task | None = None
     finished_task: asyncio.Task | None = None
 
@@ -77,6 +86,7 @@ class WLEDManager:
         self._client = client
         self._owns_client = client is None
         self.require_plate_clear = False
+        self.retry_seconds = WLED_RETRY_SECONDS
         self._configs: dict[int, WLEDConfig] = {}
         self._runtime: dict[int, _WLEDRuntime] = {}
 
@@ -138,8 +148,12 @@ class WLEDManager:
         self._apply_status(printer_id, config, "offline" if preset_id is not None else None, preset_id)
 
     def _apply_status(self, printer_id: int, config: WLEDConfig, status: str | None, preset_id: int | None) -> None:
+        base_url = config.base_url
+        if not base_url:
+            return
+        idle_preset_id = config.presets.idle
         runtime = self._runtime.setdefault(printer_id, _WLEDRuntime())
-        expired_finished = runtime.finished_timeout_expired and status == "finished" and config.presets.idle is not None
+        expired_finished = runtime.finished_timeout_expired and status == "finished" and idle_preset_id is not None
         target = (status, preset_id)
         if runtime.target == target:
             if expired_finished:
@@ -151,6 +165,8 @@ class WLEDManager:
                 or (runtime.send_task is not None and not runtime.send_task.done())
             ):
                 return
+            if time.monotonic() < runtime.retry_after:
+                return
         else:
             runtime.generation += 1
             self._cancel_task(runtime.finished_task)
@@ -159,32 +175,32 @@ class WLEDManager:
             runtime.target = target
 
         generation = runtime.generation
-        if expired_finished:
-            if runtime.status == "idle" and runtime.preset_id == config.presets.idle:
+        if expired_finished and idle_preset_id is not None:
+            if runtime.status == "idle" and runtime.preset_id == idle_preset_id:
                 return
             runtime.finished_task = spawn_background_task(
-                self._send_finished_idle(printer_id, generation, config.base_url, config.presets.idle),
+                self._send_finished_idle(printer_id, generation, base_url, idle_preset_id),
                 name=f"wled-finished-idle-{printer_id}",
             )
             return
         if preset_id is not None:
             runtime.send_task = spawn_background_task(
-                self._send_status(printer_id, config.base_url, status, preset_id, generation),
+                self._send_status(printer_id, base_url, status, preset_id, generation),
                 name=f"wled-preset-{printer_id}",
             )
 
         if (
             status == "finished"
             and config.finished_timeout_seconds
-            and config.presets.idle is not None
+            and idle_preset_id is not None
             and runtime.finished_task is None
         ):
             runtime.finished_task = spawn_background_task(
                 self._finish_timeout(
                     printer_id,
                     generation,
-                    config.base_url,
-                    config.presets.idle,
+                    base_url,
+                    idle_preset_id,
                     config.finished_timeout_seconds,
                 ),
                 name=f"wled-finished-timeout-{printer_id}",
@@ -193,7 +209,8 @@ class WLEDManager:
     async def _send_status(
         self, printer_id: int, base_url: str, status: str | None, preset_id: int, generation: int
     ) -> None:
-        if await self.send_preset(printer_id, base_url, preset_id, status=status):
+        ok = await self._send_automatic(printer_id, base_url, preset_id, status)
+        if ok:
             runtime = self._runtime.get(printer_id)
             if (
                 runtime
@@ -206,7 +223,7 @@ class WLEDManager:
                 runtime.confirmed_generation = generation
 
     async def _send_finished_idle(self, printer_id: int, generation: int, base_url: str, idle_preset_id: int) -> None:
-        if await self.send_preset(printer_id, base_url, idle_preset_id, status="idle"):
+        if await self._send_automatic(printer_id, base_url, idle_preset_id, "idle"):
             runtime = self._runtime.get(printer_id)
             if (
                 runtime
@@ -218,6 +235,27 @@ class WLEDManager:
                 runtime.status = "idle"
                 runtime.preset_id = idle_preset_id
                 runtime.confirmed_generation = generation
+
+    async def _send_automatic(self, printer_id: int, base_url: str, preset_id: int, status: str | None) -> bool:
+        """Send a mapped preset; on failure hold retries back and log once per outage."""
+        runtime = self._runtime.get(printer_id)
+        quiet = runtime is not None and runtime.unreachable
+        ok = await self.send_preset(printer_id, base_url, preset_id, status=status, quiet=quiet)
+        if runtime is None or self._runtime.get(printer_id) is not runtime:
+            return ok
+        if ok:
+            runtime.retry_after = 0.0
+            if runtime.unreachable:
+                runtime.unreachable = False
+                logger.info("[WLED] Printer %d: WLED answers again", printer_id)
+        else:
+            runtime.retry_after = time.monotonic() + self.retry_seconds
+            if not runtime.unreachable:
+                runtime.unreachable = True
+                logger.info(
+                    "[WLED] Printer %d: retrying every %ds until WLED answers", printer_id, int(self.retry_seconds)
+                )
+        return ok
 
     async def test_preset(self, printer_id: int, base_url: str, preset_id: int) -> bool:
         """Test a preset while forcing the next status update to restore automatic control."""
@@ -236,8 +274,15 @@ class WLEDManager:
             runtime.preset_id = None
             runtime.confirmed_generation = None
 
-    async def send_preset(self, printer_id: int, base_url: str, preset_id: int, *, status: str | None = None) -> bool:
-        """Activate a preset. Failures are isolated from all printer work."""
+    async def send_preset(
+        self, printer_id: int, base_url: str, preset_id: int, *, status: str | None = None, quiet: bool = False
+    ) -> bool:
+        """Activate a preset. Failures are isolated from all printer work.
+
+        ``quiet`` logs a failure at debug level: a retry during an outage that
+        was already reported.
+        """
+        log_failure = logger.debug if quiet else logger.warning
         try:
             response = await self.client.post(f"{base_url}/json/state", json={"ps": preset_id})
             response.raise_for_status()
@@ -248,7 +293,7 @@ class WLEDManager:
         except asyncio.CancelledError:
             raise
         except httpx.HTTPStatusError as exc:
-            logger.warning(
+            log_failure(
                 "[WLED] Printer %d state=%s -> preset=%d failed (HTTP %d)",
                 printer_id,
                 status or "manual",
@@ -256,7 +301,7 @@ class WLEDManager:
                 exc.response.status_code,
             )
         except (httpx.HTTPError, ValueError):
-            logger.warning("[WLED] Printer %d state=%s -> preset=%d failed", printer_id, status or "manual", preset_id)
+            log_failure("[WLED] Printer %d state=%s -> preset=%d failed", printer_id, status or "manual", preset_id)
         return False
 
     async def list_presets(self, base_url: str) -> list[dict[str, int | str]]:

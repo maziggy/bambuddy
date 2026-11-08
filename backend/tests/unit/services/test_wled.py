@@ -261,13 +261,15 @@ async def test_status_changes_are_deduplicated_and_missing_or_disabled_mappings_
 
 
 @pytest.mark.asyncio
-async def test_failed_status_send_retries_then_deduplicates_success(caplog):
+async def test_failed_status_send_retries_after_the_interval_then_deduplicates_success(caplog, monkeypatch):
     caplog.set_level(logging.INFO, logger="backend.app.services.wled")
+    now = [1000.0]
+    monkeypatch.setattr("backend.app.services.wled.time.monotonic", lambda: now[0])
     sent = []
 
     def handler(request: httpx.Request):
         sent.append(request)
-        return httpx.Response(503 if len(sent) == 1 else 200, json={"success": True})
+        return httpx.Response(503 if len(sent) <= 2 else 200, json={"success": True})
 
     manager, client = _manager(handler)
     manager.configure_printer(1, {"enabled": True, "base_url": "http://wled.local", "presets": {"printing": 3}})
@@ -278,22 +280,64 @@ async def test_failed_status_send_retries_then_deduplicates_success(caplog):
     assert manager._runtime[1].status is None
     assert manager._runtime[1].preset_id is None
 
+    # Status updates arrive every second or so: none of them retries before
+    # the interval is over.
+    for _ in range(5):
+        now[0] += 1
+        manager.handle_status(1, _state("RUNNING"))
+        await asyncio.sleep(0)
+    assert len(sent) == 1
+
+    now[0] += 30
     manager.handle_status(1, _state("RUNNING"))
     await manager._runtime[1].send_task
     assert len(sent) == 2
+
+    now[0] += 30
+    manager.handle_status(1, _state("RUNNING"))
+    await manager._runtime[1].send_task
+    assert len(sent) == 3
     assert (manager._runtime[1].status, manager._runtime[1].preset_id) == ("printing", 3)
 
     manager.handle_status(1, _state("RUNNING"))
     await asyncio.sleep(0)
-    assert len(sent) == 2
+    assert len(sent) == 3
     messages = [
         (record.levelno, record.message) for record in caplog.records if record.name == "backend.app.services.wled"
     ]
+    # One warning for the whole outage, not one per retry.
     assert messages == [
         (logging.WARNING, "[WLED] Printer 1 state=printing -> preset=3 failed (HTTP 503)"),
+        (logging.INFO, "[WLED] Printer 1: retrying every 30s until WLED answers"),
         (logging.INFO, "[WLED] Printer 1 state=printing -> preset=3"),
+        (logging.INFO, "[WLED] Printer 1: WLED answers again"),
     ]
     assert all("wled.local" not in message for _, message in messages)
+    await manager.shutdown()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_a_new_state_is_sent_at_once_during_an_outage_without_a_new_warning(caplog, monkeypatch):
+    caplog.set_level(logging.INFO, logger="backend.app.services.wled")
+    monkeypatch.setattr("backend.app.services.wled.time.monotonic", lambda: 1000.0)
+    sent = []
+
+    def handler(request: httpx.Request):
+        sent.append(request.content)
+        return httpx.Response(503)
+
+    manager, client = _manager(handler)
+    manager.configure_printer(
+        1, {"enabled": True, "base_url": "http://wled.local", "presets": {"printing": 3, "paused": 7}}
+    )
+    manager.handle_status(1, _state("RUNNING"))
+    await manager._runtime[1].send_task
+    manager.handle_status(1, _state("PAUSE"))
+    await manager._runtime[1].send_task
+    assert sent == [b'{"ps":3}', b'{"ps":7}']
+    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warnings) == 1
     await manager.shutdown()
     await client.aclose()
 
@@ -338,6 +382,7 @@ async def test_failed_return_to_previously_confirmed_state_still_retries():
         return httpx.Response(503 if len(sent) == 2 else 200, json={"success": True})
 
     manager, client = _manager(handler)
+    manager.retry_seconds = 0
     manager.configure_printer(
         1,
         {"enabled": True, "base_url": "http://wled.local", "presets": {"printing": 3, "paused": 7}},
@@ -414,7 +459,7 @@ async def test_manual_preset_invalidates_slow_automatic_send(monkeypatch):
     release = asyncio.Event()
     sent = []
 
-    async def delayed_send(printer_id, base_url, preset_id, *, status=None):
+    async def delayed_send(printer_id, base_url, preset_id, *, status=None, quiet=False):
         sent.append(preset_id)
         if preset_id == 3 and sent.count(3) == 1:
             started.set()
@@ -448,7 +493,7 @@ async def test_status_change_during_manual_send_restores_new_mapping(monkeypatch
     release = asyncio.Event()
     sent = []
 
-    async def delayed_send(printer_id, base_url, preset_id, *, status=None):
+    async def delayed_send(printer_id, base_url, preset_id, *, status=None, quiet=False):
         sent.append(preset_id)
         if preset_id == 11:
             started.set()
@@ -528,6 +573,7 @@ async def test_offline_lifecycle_skips_disabled_or_missing_preset():
 @pytest.mark.asyncio
 async def test_offline_lifecycle_http_failure_does_not_block_and_is_retryable(caplog):
     manager, client = _manager(lambda request: httpx.Response(503, json={"error": "offline"}))
+    manager.retry_seconds = 0
     manager.configure_printer(1, {"enabled": True, "base_url": "http://wled.local", "presets": {"offline": 9}})
     manager.handle_offline(1)
     await manager._runtime[1].send_task
@@ -545,7 +591,7 @@ async def test_late_automatic_send_cannot_confirm_over_offline(monkeypatch):
     release = asyncio.Event()
     sent = []
 
-    async def delayed_send(printer_id, base_url, preset_id, *, status=None):
+    async def delayed_send(printer_id, base_url, preset_id, *, status=None, quiet=False):
         sent.append(preset_id)
         if preset_id == 3:
             started.set()
@@ -577,7 +623,7 @@ async def test_late_old_send_cannot_confirm_over_new_state(monkeypatch):
     started = asyncio.Event()
     release = asyncio.Event()
 
-    async def delayed_send(printer_id, base_url, preset_id, *, status=None):
+    async def delayed_send(printer_id, base_url, preset_id, *, status=None, quiet=False):
         if preset_id == 3:
             started.set()
             try:
@@ -744,6 +790,7 @@ async def test_failed_finished_timeout_idle_send_is_retryable():
         return httpx.Response(503 if request.content == b'{"ps":1}' and len(sent) == 2 else 200, json={"success": True})
 
     manager, client = _manager(handler)
+    manager.retry_seconds = 0
     manager.configure_printer(
         1,
         {
@@ -776,7 +823,7 @@ async def test_late_finished_timeout_idle_cannot_confirm_over_new_printing(monke
     started = asyncio.Event()
     release = asyncio.Event()
 
-    async def delayed_send(printer_id, base_url, preset_id, *, status=None):
+    async def delayed_send(printer_id, base_url, preset_id, *, status=None, quiet=False):
         if preset_id == 1:
             started.set()
             try:

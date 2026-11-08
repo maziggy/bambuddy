@@ -139,7 +139,6 @@ class PrinterBase(BaseModel):
     external_camera_snapshot_url: str | None = None  # Optional single-frame override; #1177
     camera_rotation: int = 0  # 0, 90, 180, 270 degrees
     camera_light_auto: bool = False  # #1655, used when camera_light_mode is "selected"
-    wled_config: WLEDConfig | None = None
 
 
 class PrinterCreate(PrinterBase):
@@ -147,6 +146,9 @@ class PrinterCreate(PrinterBase):
     # PrinterResponse. Direct exposure on PRINTERS_READ would let a Viewer
     # connect to the printer's MQTT and bypass Bambuddy's RBAC.
     access_code: str = Field(..., min_length=1, max_length=20)
+    # Input shape validates the URL; PrinterResponse serialises stored rows
+    # with WLEDStoredConfig so one bad stored URL cannot break GET /printers.
+    wled_config: WLEDConfig | None = None
 
     # Input only, not on PrinterBase: SQLite never enforced the column width,
     # so a stored location may be longer, and the response must still read it.

@@ -6978,7 +6978,7 @@ export default {
     amsTemperatureHigh: 'AMS Temperature High',
     amsTemperatureHighDescription: 'Regular AMS temperature exceeds threshold',
     amsDryingSuspendedTitle: 'Auto-Drying Suspended',
-    amsDryingSuspendedDescription: 'Automatic drying gave up on an AMS unit because humidity never fell below the threshold',
+    amsDryingSuspendedDescription: 'Automatic drying gave up on an AMS unit: humidity never fell below the threshold, or the unit never started heating',
     amsHtHumidityHigh: 'AMS-HT Humidity High',
     amsHtHumidityHighDescription: 'AMS-HT humidity exceeds threshold',
     amsHtTemperatureHigh: 'AMS-HT Temperature High',

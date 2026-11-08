@@ -6926,7 +6926,7 @@ export default {
     amsTemperatureHigh: 'AMS温度高',
     amsTemperatureHighDescription: '通常AMSの温度がしきい値を超過',
     amsDryingSuspendedTitle: '自動乾燥の停止',
-    amsDryingSuspendedDescription: '湿度がしきい値を下回らなかったため、AMS ユニットの自動乾燥を中止しました',
+    amsDryingSuspendedDescription: 'AMS ユニットの自動乾燥を中止しました：湿度がしきい値を下回らなかったか、ユニットが加熱を開始しませんでした',
     amsHtHumidityHigh: 'AMS-HT湿度高',
     amsHtHumidityHighDescription: 'AMS-HTの湿度がしきい値を超過',
     amsHtTemperatureHigh: 'AMS-HT温度高',

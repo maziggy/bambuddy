@@ -6912,7 +6912,7 @@ export default {
     amsTemperatureHigh: 'Temperatura Alta do AMS',
     amsTemperatureHighDescription: 'Temperatura do AMS regular excede o limite',
     amsDryingSuspendedTitle: 'Secagem automática suspensa',
-    amsDryingSuspendedDescription: 'A secagem automática desistiu de uma unidade AMS porque a umidade nunca ficou abaixo do limite',
+    amsDryingSuspendedDescription: 'A secagem automática desistiu de uma unidade AMS: a umidade nunca ficou abaixo do limite ou a unidade nunca começou a aquecer',
     amsHtHumidityHigh: 'Umidade Alta do AMS-HT',
     amsHtHumidityHighDescription: 'Umidade do AMS-HT excede o limite',
     amsHtTemperatureHigh: 'Temperatura Alta do AMS-HT',

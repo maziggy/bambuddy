@@ -2428,8 +2428,14 @@ class NotificationService:
         threshold: float,
         cycles: int,
         db: AsyncSession,
+        *,
+        never_heated: bool = False,
     ):
         """Handle automatic drying giving up on one AMS unit (#2770).
+
+        ``never_heated`` sends the message for a unit whose printer accepted
+        the drying commands but never heated (#3478). Same provider switch:
+        either way Bambuddy has stopped drying that unit.
 
         Worth sending immediately (as every notification is; a daily digest only
         repeats it): it reports that
@@ -2448,7 +2454,8 @@ class NotificationService:
             "cycles": str(cycles),
         }
 
-        title, message = await self._build_message_from_template(db, "ams_drying_suspended", variables)
+        template = "ams_drying_not_heating" if never_heated else "ams_drying_suspended"
+        title, message = await self._build_message_from_template(db, template, variables)
         await self._send_to_providers(
             providers,
             title,

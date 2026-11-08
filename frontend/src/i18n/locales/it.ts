@@ -6912,7 +6912,7 @@ export default {
     amsTemperatureHigh: 'Temperatura AMS elevata',
     amsTemperatureHighDescription: 'La temperatura dell\'AMS standard supera la soglia',
     amsDryingSuspendedTitle: 'Asciugatura automatica sospesa',
-    amsDryingSuspendedDescription: 'L\'asciugatura automatica ha rinunciato a un\'unità AMS perché l\'umidità non è mai scesa sotto la soglia',
+    amsDryingSuspendedDescription: "L'asciugatura automatica ha rinunciato a un'unità AMS: l'umidità non è mai scesa sotto la soglia, oppure l'unità non ha mai iniziato a riscaldare",
     amsHtHumidityHigh: 'Umidità AMS-HT elevata',
     amsHtHumidityHighDescription: 'L\'umidità dell\'AMS-HT supera la soglia',
     amsHtTemperatureHigh: 'Temperatura AMS-HT elevata',

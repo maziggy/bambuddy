@@ -6966,7 +6966,7 @@ export default {
     amsTemperatureHigh: "AMS Висока температура",
     amsTemperatureHighDescription: "Звичайна AMS температура перевищує порогове значення",
     amsDryingSuspendedTitle: "Автоматичне сушіння призупинено",
-    amsDryingSuspendedDescription: "Автоматичне сушіння блока AMS припинено: вологість так і не опустилася нижче порога",
+    amsDryingSuspendedDescription: 'Автоматичне сушіння блока AMS припинено: вологість так і не опустилася нижче порога або блок так і не почав нагрівання',
     amsHtHumidityHigh: "AMS-HT Висока вологість",
     amsHtHumidityHighDescription: "AMS-HT вологість перевищує порогове значення",
     amsHtTemperatureHigh: "Висока температура AMS-HT",

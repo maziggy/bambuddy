@@ -6978,7 +6978,7 @@ export default {
     amsTemperatureHigh: 'Wysoka temperatura AMS',
     amsTemperatureHighDescription: 'Temperatura zwykłego AMS przekracza próg',
     amsDryingSuspendedTitle: 'Automatyczne suszenie wstrzymane',
-    amsDryingSuspendedDescription: 'Automatyczne suszenie zrezygnowało z jednostki AMS, ponieważ wilgotność nigdy nie spadła poniżej progu',
+    amsDryingSuspendedDescription: 'Automatyczne suszenie zrezygnowało z jednostki AMS: wilgotność nigdy nie spadła poniżej progu albo jednostka nigdy nie zaczęła grzać',
     amsHtHumidityHigh: 'Wysoka wilgotność AMS-HT',
     amsHtHumidityHighDescription: 'Wilgotność AMS-HT przekracza próg',
     amsHtTemperatureHigh: 'Wysoka temperatura AMS-HT',

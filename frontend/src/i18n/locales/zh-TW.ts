@@ -6911,7 +6911,7 @@ export default {
     amsTemperatureHigh: 'AMS 溫度過高',
     amsTemperatureHighDescription: '普通 AMS 溫度超過閾值',
     amsDryingSuspendedTitle: '自動乾燥已暫停',
-    amsDryingSuspendedDescription: '濕度始終未降到閾值以下，已放棄對某個 AMS 單元的自動乾燥',
+    amsDryingSuspendedDescription: '已放棄對某個 AMS 單元的自動乾燥：濕度始終未降到閾值以下，或該單元從未開始加熱',
     amsHtHumidityHigh: 'AMS-HT 濕度過高',
     amsHtHumidityHighDescription: 'AMS-HT 濕度超過閾值',
     amsHtTemperatureHigh: 'AMS-HT 溫度過高',

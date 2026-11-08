@@ -6933,7 +6933,7 @@ export default {
     amsTemperatureHigh: 'Temperatura alta del AMS',
     amsTemperatureHighDescription: 'La temperatura del AMS normal supera el umbral',
     amsDryingSuspendedTitle: 'Secado automático suspendido',
-    amsDryingSuspendedDescription: 'El secado automático se rindió con una unidad AMS porque la humedad nunca bajó del umbral',
+    amsDryingSuspendedDescription: 'El secado automático se rindió con una unidad AMS: la humedad nunca bajó del umbral o la unidad nunca empezó a calentar',
     amsHtHumidityHigh: 'Humedad alta del AMS-HT',
     amsHtHumidityHighDescription: 'La humedad del AMS-HT supera el umbral',
     amsHtTemperatureHigh: 'Temperatura alta del AMS-HT',

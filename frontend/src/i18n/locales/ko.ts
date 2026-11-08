@@ -6645,7 +6645,7 @@ export default {
     amsTemperatureHigh: 'AMS 온도 높음',
     amsTemperatureHighDescription: '일반 AMS 온도가 임계값 초과',
     amsDryingSuspendedTitle: '자동 건조 중단',
-    amsDryingSuspendedDescription: '습도가 임계값 아래로 내려가지 않아 AMS 유닛의 자동 건조를 중단했습니다',
+    amsDryingSuspendedDescription: 'AMS 유닛의 자동 건조를 중단했습니다: 습도가 임계값 아래로 내려가지 않았거나 유닛이 가열을 시작하지 않았습니다',
     amsHtHumidityHigh: 'AMS-HT 습도 높음',
     amsHtHumidityHighDescription: 'AMS-HT 습도가 임계값 초과',
     amsHtTemperatureHigh: 'AMS-HT 온도 높음',

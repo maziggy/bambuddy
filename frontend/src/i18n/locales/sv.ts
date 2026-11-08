@@ -6974,7 +6974,7 @@ errors: {
     amsTemperatureHigh: 'Hög AMS-temperatur',
     amsTemperatureHighDescription: 'AMS-temperatur överskrider tröskelvärdet',
     amsDryingSuspendedTitle: 'Auto-torkning pausad',
-    amsDryingSuspendedDescription: 'Automatisk torkning avbröts för en AMS-enhet eftersom luftfuktigheten aldrig sjönk under tröskelvärdet',
+    amsDryingSuspendedDescription: 'Automatisk torkning avbröts för en AMS-enhet: luftfuktigheten sjönk aldrig under tröskelvärdet, eller enheten började aldrig värma',
     amsHtHumidityHigh: 'Hög AMS-HT-luftfuktighet',
     amsHtHumidityHighDescription: 'AMS-HT-luftfuktighet överskrider tröskelvärdet',
     amsHtTemperatureHigh: 'Hög AMS-HT-temperatur',

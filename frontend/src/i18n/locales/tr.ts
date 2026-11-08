@@ -6881,7 +6881,7 @@ export default {
     amsTemperatureHigh: 'AMS Sıcaklığı Yüksek',
     amsTemperatureHighDescription: 'Normal AMS sıcaklığı eşiği aşıyor',
     amsDryingSuspendedTitle: 'Otomatik kurutma askıya alındı',
-    amsDryingSuspendedDescription: 'Nem hiçbir zaman eşiğin altına inmediği için bir AMS ünitesinde otomatik kurutmadan vazgeçildi',
+    amsDryingSuspendedDescription: 'Bir AMS ünitesinde otomatik kurutmadan vazgeçildi: nem hiçbir zaman eşiğin altına inmedi veya ünite hiç ısıtmaya başlamadı',
     amsHtHumidityHigh: 'AMS-HT Nemi Yüksek',
     amsHtHumidityHighDescription: 'AMS-HT nemi eşiği aşıyor',
     amsHtTemperatureHigh: 'AMS-HT Sıcaklığı Yüksek',

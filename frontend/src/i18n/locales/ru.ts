@@ -6632,7 +6632,7 @@ export default {
     amsTemperatureHigh: "Высокая температура в AMS",
     amsTemperatureHighDescription: "Температура в обычной AMS превысила заданный порог",
     amsDryingSuspendedTitle: "Автоматическая сушка приостановлена",
-    amsDryingSuspendedDescription: "Автоматическая сушка блока AMS прекращена: влажность так и не опустилась ниже порога",
+    amsDryingSuspendedDescription: 'Автоматическая сушка блока AMS прекращена: влажность так и не опустилась ниже порога или блок так и не начал нагрев',
     amsHtHumidityHigh: "Высокая влажность в AMS-HT",
     amsHtHumidityHighDescription: "Влажность в AMS-HT превысила заданный порог",
     amsHtTemperatureHigh: "Высокая температура в AMS-HT",

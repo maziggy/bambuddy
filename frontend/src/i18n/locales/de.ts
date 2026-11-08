@@ -6925,7 +6925,7 @@ export default {
     amsTemperatureHigh: 'AMS-Temperatur hoch',
     amsTemperatureHighDescription: 'Normale AMS-Temperatur überschreitet Schwellenwert',
     amsDryingSuspendedTitle: 'Automatische Trocknung ausgesetzt',
-    amsDryingSuspendedDescription: 'Automatische Trocknung wurde für eine AMS-Einheit aufgegeben, weil die Luftfeuchtigkeit nie unter den Schwellenwert fiel',
+    amsDryingSuspendedDescription: 'Automatische Trocknung wurde für eine AMS-Einheit aufgegeben: Die Luftfeuchtigkeit fiel nie unter den Schwellenwert, oder die Einheit hat nie zu heizen begonnen',
     amsHtHumidityHigh: 'AMS-HT-Feuchtigkeit hoch',
     amsHtHumidityHighDescription: 'AMS-HT-Feuchtigkeit überschreitet Schwellenwert',
     amsHtTemperatureHigh: 'AMS-HT-Temperatur hoch',

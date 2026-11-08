@@ -6976,7 +6976,7 @@ export default {
     amsTemperatureHigh: 'AMS-temperatuur hoog',
     amsTemperatureHighDescription: 'Temperatuur van normale AMS overschrijdt drempel',
     amsDryingSuspendedTitle: 'Automatisch drogen gestopt',
-    amsDryingSuspendedDescription: 'Automatisch drogen heeft een AMS-eenheid opgegeven omdat de luchtvochtigheid niet onder de drempel kwam',
+    amsDryingSuspendedDescription: 'Automatisch drogen heeft een AMS-eenheid opgegeven: de luchtvochtigheid kwam niet onder de drempel, of de eenheid is nooit begonnen met verwarmen',
     amsHtHumidityHigh: 'AMS-HT-luchtvochtigheid hoog',
     amsHtHumidityHighDescription: 'AMS-HT-luchtvochtigheid overschrijdt drempel',
     amsHtTemperatureHigh: 'AMS-HT-temperatuur hoog',

@@ -836,6 +836,26 @@ class HMSError:
         }
 
 
+def _is_print_error_entry(error: HMSError) -> bool:
+    """Whether this entry came from the 32-bit `print_error` field, whose
+    full code has 8 hex digits; an `hms[]` entry's has 16."""
+    return len(error.full_code) == 8
+
+
+def _hms_short_code(error: HMSError) -> str:
+    """The MMMM_EEEE short code of an entry from either source."""
+    module = (error.attr >> 16) & 0xFFFF
+    # The low half only: an hms[] code carries its alert level above it
+    # (0x18061 for 0500_8061), and read whole it never matched, listing the
+    # fault twice (M-U9).
+    number = (int(error.code.replace("0x", ""), 16) & 0xFFFF) if error.code else 0
+    return f"{module:04X}_{number:04X}"
+
+
+def _hms_short_codes(errors: list) -> set[str]:
+    return {_hms_short_code(e) for e in errors}
+
+
 # HMS short codes the firmware emits during normal user-cancel sequences.
 # These aren't faults — they're status echoes that confirm the cancel happened.
 # Filtering them at parse-time keeps them out of state.hms_errors entirely,
@@ -5298,6 +5318,9 @@ class BambuMQTTClient:
         if "hms" in data:
             hms_list = data["hms"]
             logger.debug("[%s] HMS data received: %s", self.serial_number, hms_list)
+            # A `print_error` fault is not in `hms[]` and its field only comes
+            # when it changes, so a list rebuilt from `hms[]` keeps it (#3487).
+            print_error_entries = [e for e in self.state.hms_errors if _is_print_error_entry(e)]
             self.state.hms_errors = []
             verify_failed = False
             if isinstance(hms_list, list):
@@ -5361,6 +5384,8 @@ class BambuMQTTClient:
                                 description=describe_fault(full_code, self.serial_number[:3]),
                             )
                         )
+            hms_short_codes = _hms_short_codes(self.state.hms_errors)
+            self.state.hms_errors.extend(e for e in print_error_entries if _hms_short_code(e) not in hms_short_codes)
             self._apply_mqtt_verify_state(verify_failed)
 
         # Parse print_error - this is a different error format than HMS
@@ -5370,6 +5395,13 @@ class BambuMQTTClient:
         # Format on printer screen: [0500-8061] -> short code: 0500_8061
         if "print_error" in data:
             print_error = data["print_error"]
+            # The field holds the one current fault, and 0 once it is resolved,
+            # for example when the filament-load prompt is answered on the
+            # printer. The entry of a code that is no longer reported goes
+            # (#3487); the entry of the same code is kept as it is.
+            self.state.hms_errors = [
+                e for e in self.state.hms_errors if not _is_print_error_entry(e) or e.attr == print_error
+            ]
             if print_error and print_error != 0:
                 # Extract components: MMMMEEEE -> MMMM_EEEE
                 module = (print_error >> 16) & 0xFFFF  # High 16 bits (e.g., 0x0500)
@@ -5397,17 +5429,7 @@ class BambuMQTTClient:
                         pass  # cancel echo — silently drop
                     else:
                         # Only add if not already in HMS errors (avoid duplicates)
-                        existing_short_codes = set()
-                        for e in self.state.hms_errors:
-                            # Extract short code from existing errors
-                            e_module = (e.attr >> 16) & 0xFFFF
-                            # The low half only: an hms[] code carries its alert
-                            # level above it (0x18061 for 0500_8061), and read
-                            # whole it never matched, listing the fault twice (M-U9).
-                            e_error = (int(e.code.replace("0x", ""), 16) & 0xFFFF) if e.code else 0
-                            existing_short_codes.add(f"{e_module:04X}_{e_error:04X}")
-
-                        if short_code not in existing_short_codes:
+                        if short_code not in _hms_short_codes(self.state.hms_errors):
                             # Bambu's HMS catalog keys by 3-letter device code (the SN
                             # prefix) and a 16-char short error code without the
                             # underscore separator we store internally.

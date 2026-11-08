@@ -6353,6 +6353,7 @@ export default {
     },
     accessCode: {
       title: 'Código de acceso',
+      personalHint: 'Con la autenticación activada, los usuarios también pueden introducir su código de acceso personal (barra lateral, icono de impresora): lo que envíen será suyo.',
       isSet: 'El código de acceso está establecido',
       notSet: 'No hay código de acceso establecido - necesario para activarla',
       placeholder: 'Introduzca un código de 8 caracteres',
@@ -7330,6 +7331,22 @@ export default {
   },
 
   // Pending Uploads Panel
+  slicerAccessCode: {
+    title: 'Código de acceso del laminador',
+    description: 'Introduce este código en Bambu Studio u OrcaSlicer en lugar del código de acceso de la impresora virtual. Lo que envíes a la impresora virtual será tuyo.',
+    show: 'Mostrar código',
+    hide: 'Ocultar código',
+    copy: 'Copiar código',
+    copyFailed: 'No se pudo copiar el código',
+    loadFailed: 'No se pudo cargar tu código de acceso',
+    renew: 'Nuevo código',
+    renewTitle: '¿Reemplazar tu código de acceso?',
+    renewConfirm: 'Tu código actual dejará de funcionar. Vuelve a vincular la impresora virtual en el laminador con el nuevo código.',
+    renewed: 'Nuevo código de acceso listo',
+    hintChecked: 'Cada inicio de sesión comprueba que puedes enviar a esa impresora virtual y a su impresora.',
+    hintCamera: 'Con este código la vista de cámara del laminador no funciona; la cámara de Bambuddy sí.',
+    hintSecret: 'Funciona como una contraseña: no lo compartas.',
+  },
   pendingUploads: {
     title: 'Subidas pendientes ({{count}})',
     noApprovePermission: 'Añadir al gestor de archivos requiere los permisos queue:create y library:upload',

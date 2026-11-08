@@ -2880,6 +2880,19 @@ async def _run_migrations(conn):
     )
     await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN slicer_ams_mapping TEXT")
 
+    # Migration: personal virtual-printer access codes (#1430). The code a
+    # slicer signs in with names the user an upload belongs to; the pending
+    # upload keeps that user until it is approved.
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN slicer_access_code VARCHAR(8)")
+    await _safe_execute(
+        conn,
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_slicer_access_code ON users (slicer_access_code)",
+    )
+    await _safe_execute(
+        conn,
+        "ALTER TABLE pending_uploads ADD COLUMN uploaded_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL",
+    )
+
     # Migration: nozzle_mapping + nozzles_info on print_queue for H2C rack-swap
     # slicer-pick preservation (#1780). Opaque JSON-string column carrying
     # BambuStudio's per-filament physical nozzle position IDs, forwarded

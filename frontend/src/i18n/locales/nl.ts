@@ -6396,6 +6396,7 @@ export default {
     },
     accessCode: {
       title: 'Toegangscode',
+      personalHint: 'Met aanmelding aan kunnen gebruikers ook hun persoonlijke toegangscode invoeren (zijbalk, printerpictogram): wat ze sturen is dan van hen.',
       isSet: 'Toegangscode is ingesteld',
       notSet: 'Geen toegangscode ingesteld - vereist om in te schakelen',
       placeholder: 'Voer een code van 8 tekens in',
@@ -7373,6 +7374,22 @@ export default {
   },
 
   // Pending Uploads Panel
+  slicerAccessCode: {
+    title: 'Slicer-toegangscode',
+    description: 'Voer deze code in Bambu Studio of OrcaSlicer in in plaats van de toegangscode van de virtuele printer. Wat je naar de virtuele printer stuurt, is dan van jou.',
+    show: 'Code tonen',
+    hide: 'Code verbergen',
+    copy: 'Code kopiëren',
+    copyFailed: 'De code kon niet worden gekopieerd',
+    loadFailed: 'Je toegangscode kon niet worden geladen',
+    renew: 'Nieuwe code',
+    renewTitle: 'Toegangscode vervangen?',
+    renewConfirm: 'Je huidige code werkt dan niet meer. Koppel de virtuele printer in de slicer opnieuw met de nieuwe code.',
+    renewed: 'Nieuwe toegangscode klaar',
+    hintChecked: 'Bij elke aanmelding wordt gecontroleerd of je naar die virtuele printer en zijn printer mag sturen.',
+    hintCamera: 'Met deze code werkt het camerabeeld van de slicer niet; de camera van Bambuddy wel.',
+    hintSecret: 'Hij werkt als een wachtwoord: deel hem niet.',
+  },
   pendingUploads: {
     title: 'Wachtende uploads ({{count}})',
     noApprovePermission: 'Toevoegen aan bestandsbeheer vereist de rechten queue:create en library:upload',

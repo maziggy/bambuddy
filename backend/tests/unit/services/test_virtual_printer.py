@@ -210,7 +210,7 @@ class TestVirtualPrinterInstance:
         with patch.object(instance, "_store_in_library", new_callable=AsyncMock) as mock_archive:
             await instance.on_file_received(file_path, "192.168.1.100")
 
-            mock_archive.assert_called_once_with(file_path, "192.168.1.100")
+            mock_archive.assert_called_once_with(file_path, "192.168.1.100", user_id=None)
 
     @pytest.mark.asyncio
     async def test_on_file_received_signals_FINISH_to_slicer(self, instance):
@@ -1292,6 +1292,97 @@ class TestVirtualPrinterInstance:
         assert file_path.name not in inst._pending_files
         assert not file_path.exists()
 
+    # Personal access codes (#1430): the user the FTP sign-in named.
+
+    @staticmethod
+    def _mock_factory(added=None):
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=(added.append if added is not None else None))
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return MagicMock(return_value=ctx)
+
+    def _inst(self, tmp_path, mode, **kwargs):
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        return VirtualPrinterInstance(
+            vp_id=50,
+            name="Codes",
+            mode=mode,
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800050",
+            base_dir=tmp_path,
+            session_factory=self._mock_factory(kwargs.pop("added", None)),
+            **kwargs,
+        )
+
+    @pytest.mark.asyncio
+    async def test_library_mode_stores_the_file_as_the_senders(self, tmp_path, _fake_file_manager_store):
+        inst = self._inst(tmp_path, "library")
+        file_path = tmp_path / "plate.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        await inst.on_file_received(file_path, "192.168.1.100", user_id=7)
+
+        assert _fake_file_manager_store.await_args.kwargs["owner_id"] == 7
+
+    @pytest.mark.asyncio
+    async def test_review_mode_records_the_sender(self, tmp_path):
+        added = []
+        inst = self._inst(tmp_path, "review", added=added)
+        file_path = tmp_path / "plate.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        await inst.on_file_received(file_path, "192.168.1.100", user_id=7)
+
+        assert added[0].uploaded_by_id == 7
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("review_required", "manual_start"), [(False, False), (True, True)])
+    async def test_queue_mode_jobs_are_the_senders_and_wait_for_review_if_theirs_must(
+        self, tmp_path, _fake_file_manager_store, review_required, manual_start
+    ):
+        added = []
+        inst = self._inst(tmp_path, "queue", added=added, auto_dispatch=True)
+        file_path = tmp_path / "plate.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        with (
+            patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
+            patch("backend.app.core.auth.queue_review_required_for", return_value=review_required),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100", user_id=7)
+
+        assert _fake_file_manager_store.await_args.kwargs["owner_id"] == 7
+        assert added[0].created_by_id == 7
+        assert added[0].manual_start is manual_start
+
+    @pytest.mark.asyncio
+    async def test_a_personal_code_is_looked_up_for_this_vps_mode_and_target(self, tmp_path):
+        inst = self._inst(tmp_path, "queue", target_printer_id=3)
+        lookup = AsyncMock(return_value=MagicMock(id=7))
+
+        with patch("backend.app.services.virtual_printer.user_codes.user_for_code", lookup):
+            assert await inst.authenticate_user_code("87654321") == 7
+
+        assert lookup.await_args.kwargs == {"mode": "queue", "target_printer_id": 3}
+
+    @pytest.mark.asyncio
+    async def test_no_personal_codes_for_a_proxy_or_when_the_lookup_fails(self, tmp_path):
+        proxy = self._inst(tmp_path, "proxy")
+        lookup = AsyncMock(return_value=MagicMock(id=7))
+        with patch("backend.app.services.virtual_printer.user_codes.user_for_code", lookup):
+            assert await proxy.authenticate_user_code("87654321") is None
+        lookup.assert_not_awaited()
+
+        broken = self._inst(tmp_path, "library")
+        with patch(
+            "backend.app.services.virtual_printer.user_codes.user_for_code", AsyncMock(side_effect=RuntimeError("db"))
+        ):
+            assert await broken.authenticate_user_code("87654321") is None
+
     @pytest.mark.asyncio
     async def test_queue_file_records_the_virtual_printer(self, tmp_path):
         """Review mode: the pending upload names the VP it came in on, so
@@ -1319,10 +1410,19 @@ class TestVirtualPrinterInstance:
         file_path.write_bytes(b"fake3mf")
 
         await inst._queue_file(file_path, "192.168.1.100")
+        # The slicer sends the next plate under the same name, to the same place.
+        file_path.write_bytes(b"other3mf")
+        await inst._queue_file(file_path, "192.168.1.100")
 
-        assert len(added) == 1
+        assert len(added) == 2
         assert added[0].virtual_printer_id == 42
-        assert file_path.exists(), "the file waits for the review"
+        assert [a.filename for a in added] == ["review.3mf", "review.3mf"]
+        # Each waits in a folder of its own, so neither replaced the other.
+        first, second = Path(added[0].file_path), Path(added[1].file_path)
+        assert first != second
+        assert first.read_bytes() == b"fake3mf"
+        assert second.read_bytes() == b"other3mf"
+        assert not file_path.exists()
 
     @pytest.mark.asyncio
     async def test_queue_file_failure_path_pops_pending_and_unlinks(self, tmp_path):

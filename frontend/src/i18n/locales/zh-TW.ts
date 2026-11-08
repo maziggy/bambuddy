@@ -6332,6 +6332,7 @@ export default {
     },
     accessCode: {
       title: '存取碼',
+      personalHint: '啟用身分驗證後,使用者也可以輸入自己的個人存取碼(側邊欄的印表機圖示):他們傳送的內容就屬於他們。',
       isSet: '存取碼已設定',
       notSet: '未設定存取碼 - 需要設定才能啟用',
       placeholder: '輸入 8 位字元程式碼',
@@ -7307,6 +7308,22 @@ export default {
   },
 
   // Pending Uploads Panel
+  slicerAccessCode: {
+    title: '切片軟體存取碼',
+    description: '在 Bambu Studio 或 OrcaSlicer 中輸入此存取碼,取代虛擬印表機本身的存取碼。這樣你傳送到虛擬印表機的內容就屬於你。',
+    show: '顯示存取碼',
+    hide: '隱藏存取碼',
+    copy: '複製存取碼',
+    copyFailed: '無法複製存取碼',
+    loadFailed: '無法載入你的存取碼',
+    renew: '新存取碼',
+    renewTitle: '要更換存取碼嗎?',
+    renewConfirm: '目前的存取碼將失效。請在切片軟體中用新存取碼重新綁定虛擬印表機。',
+    renewed: '新存取碼已就緒',
+    hintChecked: '每次登入都會檢查你是否可以傳送到該虛擬印表機及其印表機。',
+    hintCamera: '使用此存取碼時,切片軟體的攝影機畫面無法使用;Bambuddy 的攝影機可以。',
+    hintSecret: '它相當於密碼:請勿分享。',
+  },
   pendingUploads: {
     title: '待處理上傳({{count}})',
     noApprovePermission: '加入檔案管理器需要 queue:create 與 library:upload 權限',

@@ -6332,6 +6332,7 @@ export default {
     },
     accessCode: {
       title: '访问码',
+      personalHint: '启用身份验证后,用户也可以输入自己的个人访问码(侧边栏的打印机图标):他们发送的内容就属于他们。',
       isSet: '访问码已设置',
       notSet: '未设置访问码 - 需要设置才能启用',
       placeholder: '输入 8 位字符代码',
@@ -7307,6 +7308,22 @@ export default {
   },
 
   // Pending Uploads Panel
+  slicerAccessCode: {
+    title: '切片软件访问码',
+    description: '在 Bambu Studio 或 OrcaSlicer 中输入此访问码,代替虚拟打印机自身的访问码。这样你发送到虚拟打印机的内容就属于你。',
+    show: '显示访问码',
+    hide: '隐藏访问码',
+    copy: '复制访问码',
+    copyFailed: '无法复制访问码',
+    loadFailed: '无法加载你的访问码',
+    renew: '新访问码',
+    renewTitle: '要更换访问码吗?',
+    renewConfirm: '当前访问码将失效。请在切片软件中用新访问码重新绑定虚拟打印机。',
+    renewed: '新访问码已就绪',
+    hintChecked: '每次登录都会检查你是否可以发送到该虚拟打印机及其打印机。',
+    hintCamera: '使用此访问码时,切片软件的摄像头画面无法使用;Bambuddy 的摄像头可以。',
+    hintSecret: '它相当于密码:请勿分享。',
+  },
   pendingUploads: {
     title: '待处理上传({{count}})',
     noApprovePermission: '加入文件管理器需要 queue:create 和 library:upload 权限',

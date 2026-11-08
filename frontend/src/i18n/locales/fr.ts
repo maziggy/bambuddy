@@ -6333,6 +6333,7 @@ export default {
     },
     accessCode: {
       title: 'Code d\'accès',
+      personalHint: 'Avec l\'authentification activée, les utilisateurs peuvent aussi saisir leur code d\'accès personnel (barre latérale, icône d\'imprimante) : ce qu\'ils envoient est alors à eux.',
       isSet: 'Code défini',
       notSet: 'Code requis pour activer',
       placeholder: 'Code 8 char',
@@ -7310,6 +7311,22 @@ export default {
   },
 
   // Pending Uploads Panel
+  slicerAccessCode: {
+    title: 'Code d\'accès du trancheur',
+    description: 'Saisissez ce code dans Bambu Studio ou OrcaSlicer à la place du code d\'accès de l\'imprimante virtuelle. Ce que vous envoyez à l\'imprimante virtuelle est alors à vous.',
+    show: 'Afficher le code',
+    hide: 'Masquer le code',
+    copy: 'Copier le code',
+    copyFailed: 'Impossible de copier le code',
+    loadFailed: 'Impossible de charger votre code d\'accès',
+    renew: 'Nouveau code',
+    renewTitle: 'Remplacer votre code d\'accès ?',
+    renewConfirm: 'Votre code actuel ne fonctionnera plus. Reliez à nouveau l\'imprimante virtuelle dans le trancheur avec le nouveau code.',
+    renewed: 'Nouveau code d\'accès prêt',
+    hintChecked: 'Chaque connexion vérifie que vous pouvez envoyer à cette imprimante virtuelle et à son imprimante.',
+    hintCamera: 'Avec ce code, la vue caméra du trancheur ne fonctionne pas ; celle de Bambuddy, si.',
+    hintSecret: 'Il agit comme un mot de passe : ne le partagez pas.',
+  },
   pendingUploads: {
     title: 'Envois en attente ({{count}})',
     noApprovePermission: 'L\'ajout au gestionnaire de fichiers nécessite les permissions queue:create et library:upload',

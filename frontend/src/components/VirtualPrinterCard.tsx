@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import {
@@ -89,6 +89,12 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   const tailscaleFqdn = tailscaleStatus?.available ? tailscaleStatus.fqdn : '';
   const tailscaleIp = tailscaleStatus?.available ? tailscaleStatus.tailscale_ips?.[0] ?? '' : '';
 
+  // Cleared on unmount: a timer left running sets state on a card that is gone.
+  const fqdnCopiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (fqdnCopiedTimer.current) clearTimeout(fqdnCopiedTimer.current);
+  }, []);
+
   const handleCopyFqdn = async (e: React.MouseEvent) => {
     e.stopPropagation();
     const fqdn = tailscaleFqdn;
@@ -97,7 +103,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
     if (ok) {
       setFqdnCopied(true);
       showToast(t('printers.copied'));
-      setTimeout(() => setFqdnCopied(false), 2000);
+      if (fqdnCopiedTimer.current) clearTimeout(fqdnCopiedTimer.current);
+      fqdnCopiedTimer.current = setTimeout(() => setFqdnCopied(false), 2000);
     } else {
       showToast(t('virtualPrinter.toast.copyFailed'), 'error');
     }
@@ -765,6 +772,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                     )}
                   </>
                 )}
+                {/* Personal access codes (#1430): users can sign in with their own. */}
+                <p className="text-xs text-bambu-gray mt-1">{t('virtualPrinter.accessCode.personalHint')}</p>
               </div>
             )}
 

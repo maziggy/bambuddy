@@ -126,6 +126,7 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         ("library_files", "created_by_id"),
         ("library_folders", "created_by_id"),
         ("long_lived_tokens", "user_id"),
+        ("pending_uploads", "uploaded_by_id"),
         ("pipeline_runs", "created_by"),
         ("print_archives", "created_by_id"),
         ("print_batches", "created_by_id"),

@@ -6332,6 +6332,7 @@ export default {
     },
     accessCode: {
       title: 'Código de acesso',
+      personalHint: 'Com a autenticação ativa, os usuários também podem digitar seu código de acesso pessoal (barra lateral, ícone de impressora): o que enviarem passa a ser deles.',
       isSet: 'O código de acesso está definido',
       notSet: 'Nenhum código de acesso definido — necessário para ativar.',
       placeholder: 'Digite um código de 8 caracteres',
@@ -7309,6 +7310,22 @@ export default {
   },
 
   // Pending Uploads Panel
+  slicerAccessCode: {
+    title: 'Código de acesso do fatiador',
+    description: 'Digite este código no Bambu Studio ou OrcaSlicer no lugar do código de acesso da impressora virtual. O que você enviar à impressora virtual passa a ser seu.',
+    show: 'Mostrar código',
+    hide: 'Ocultar código',
+    copy: 'Copiar código',
+    copyFailed: 'Não foi possível copiar o código',
+    loadFailed: 'Não foi possível carregar seu código de acesso',
+    renew: 'Novo código',
+    renewTitle: 'Substituir seu código de acesso?',
+    renewConfirm: 'Seu código atual deixará de funcionar. Vincule a impressora virtual no fatiador de novo com o novo código.',
+    renewed: 'Novo código de acesso pronto',
+    hintChecked: 'Cada login verifica se você pode enviar para essa impressora virtual e a impressora dela.',
+    hintCamera: 'Com este código a visualização de câmera do fatiador não funciona; a câmera do Bambuddy funciona.',
+    hintSecret: 'Funciona como uma senha: não compartilhe.',
+  },
   pendingUploads: {
     title: 'Envios pendentes ({{count}})',
     noApprovePermission: 'Adicionar ao Gerenciador de Arquivos exige as permissões queue:create e library:upload',

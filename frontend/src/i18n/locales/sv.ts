@@ -6427,6 +6427,7 @@ errors: {
     },
     accessCode: {
       title: 'Åtkomstkod',
+      personalHint: 'Med inloggning på kan användare också ange sin personliga åtkomstkod (sidofältet, skrivarikonen): det de skickar blir då deras.',
       isSet: 'Åtkomstkod är inställd',
       notSet: 'Ingen åtkomstkod inställd — krävs för att aktivera',
       placeholder: 'Ange 8-teckens kod',
@@ -7404,6 +7405,22 @@ errors: {
   },
 
   // Pending Uploads Panel
+  slicerAccessCode: {
+    title: 'Åtkomstkod för slicern',
+    description: 'Ange den här koden i Bambu Studio eller OrcaSlicer i stället för den virtuella skrivarens åtkomstkod. Det du skickar till den virtuella skrivaren blir då ditt.',
+    show: 'Visa kod',
+    hide: 'Dölj kod',
+    copy: 'Kopiera kod',
+    copyFailed: 'Koden kunde inte kopieras',
+    loadFailed: 'Din åtkomstkod kunde inte läsas in',
+    renew: 'Ny kod',
+    renewTitle: 'Ersätta din åtkomstkod?',
+    renewConfirm: 'Din nuvarande kod slutar fungera. Koppla den virtuella skrivaren i slicern igen med den nya koden.',
+    renewed: 'Ny åtkomstkod klar',
+    hintChecked: 'Varje inloggning kontrollerar att du får skicka till den virtuella skrivaren och dess skrivare.',
+    hintCamera: 'Med den här koden fungerar inte slicerns kameravy; Bambuddys kamera gör det.',
+    hintSecret: 'Den fungerar som ett lösenord: dela den inte.',
+  },
   pendingUploads: {
     title: 'Väntande uppladdningar ({{count}})',
     noApprovePermission: 'Att lägga i filhanteraren kräver behörigheterna queue:create och library:upload',

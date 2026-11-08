@@ -6346,6 +6346,7 @@ export default {
     },
     accessCode: {
       title: 'アクセスコード',
+      personalHint: '認証が有効なとき、ユーザーは個人用アクセスコード(サイドバーのプリンターアイコン)も入力できます。送ったものはそのユーザーのものになります。',
       isSet: 'アクセスコードが設定されています',
       notSet: 'アクセスコード未設定 - 有効化に必要です',
       placeholder: '8文字のコードを入力',
@@ -7323,6 +7324,22 @@ export default {
   },
 
   // Pending Uploads Panel
+  slicerAccessCode: {
+    title: 'スライサー用アクセスコード',
+    description: '仮想プリンター自体のアクセスコードの代わりに、このコードを Bambu Studio または OrcaSlicer に入力してください。仮想プリンターに送ったものはあなたのものになります。',
+    show: 'コードを表示',
+    hide: 'コードを隠す',
+    copy: 'コードをコピー',
+    copyFailed: 'コードをコピーできませんでした',
+    loadFailed: 'アクセスコードを読み込めませんでした',
+    renew: '新しいコード',
+    renewTitle: 'アクセスコードを置き換えますか?',
+    renewConfirm: '現在のコードは使えなくなります。新しいコードでスライサーの仮想プリンターを再度バインドしてください。',
+    renewed: '新しいアクセスコードを用意しました',
+    hintChecked: 'サインインのたびに、その仮想プリンターとプリンターに送信できるか確認されます。',
+    hintCamera: 'このコードではスライサーのカメラ表示は使えません。Bambuddy のカメラは使えます。',
+    hintSecret: 'パスワードと同じように扱い、共有しないでください。',
+  },
   pendingUploads: {
     title: '保留中のアップロード ({{count}})',
     noApprovePermission: 'ファイル管理への追加には queue:create と library:upload の権限が必要です',

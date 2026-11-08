@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -378,8 +379,49 @@ class VirtualPrinterInstance:
 
     # -- File handling callbacks --
 
-    async def on_file_received(self, file_path: Path, source_ip: str) -> None:
-        """Handle file upload completion from FTP."""
+    async def authenticate_user_code(self, code: str) -> int | None:
+        """The user whose personal access code ``code`` is, if they may send here (#1430).
+
+        Asked by the FTP and MQTT servers when a sign-in is not the VP's own
+        code. Checked fresh at each sign-in; see ``user_codes.user_for_code``.
+        """
+        if not self._session_factory or self.is_proxy:
+            return None
+        from backend.app.services.virtual_printer.user_codes import user_for_code
+
+        try:
+            async with self._session_factory() as db:
+                user = await user_for_code(db, code, mode=self.mode, target_printer_id=self.target_printer_id)
+        except Exception as e:  # noqa: BLE001 -- a lookup error refuses the sign-in, never crashes it
+            logger.error("[VP %s] Personal access code check failed: %s", self.name, e)
+            return None
+        return user.id if user is not None else None
+
+    async def user_may_control_target(self, user_id: int) -> bool:
+        """Whether a personal-code user may send commands to the target printer now (#1430).
+
+        Asked for every command the bridge would pass to the real printer for
+        a connection that signed in with a personal code: sending files does
+        not include stopping prints or sending G-code. Fresh each time, so it
+        follows the user's account and permissions while the slicer stays on.
+        """
+        if not self._session_factory or self.target_printer_id is None:
+            return False
+        from backend.app.services.virtual_printer.user_codes import may_control_printer
+
+        try:
+            async with self._session_factory() as db:
+                return await may_control_printer(db, user_id, self.target_printer_id)
+        except Exception as e:  # noqa: BLE001 -- a lookup error refuses the command
+            logger.error("[VP %s] Printer control check failed: %s", self.name, e)
+            return False
+
+    async def on_file_received(self, file_path: Path, source_ip: str, user_id: int | None = None) -> None:
+        """Handle file upload completion from FTP.
+
+        ``user_id``: who sent it, when the slicer signed in with a personal
+        access code (#1430); the File Manager file and queue jobs are theirs.
+        """
         logger.info("[VP %s] Received file: %s from %s", self.name, file_path.name, source_ip)
 
         self._pending_files[file_path.name] = file_path
@@ -390,11 +432,11 @@ class VirtualPrinterInstance:
         # `core/database.py` rewrites existing rows once at boot.
         mode = normalize_vp_mode(self.mode)
         if mode == VP_MODE_LIBRARY:
-            await self._store_in_library(file_path, source_ip)
+            await self._store_in_library(file_path, source_ip, user_id=user_id)
         elif mode == VP_MODE_QUEUE:
-            await self._add_to_print_queue(file_path, source_ip)
+            await self._add_to_print_queue(file_path, source_ip, user_id=user_id)
         else:
-            await self._queue_file(file_path, source_ip)
+            await self._queue_file(file_path, source_ip, user_id=user_id)
 
         # Signal job completion to the slicer. Send-flow slicers don't watch the
         # post-upload state and would be happy with anything; the Print flow
@@ -767,7 +809,7 @@ class VirtualPrinterInstance:
         self._mqtt.set_gcode_state("FINISH", filename=filename, prepare_percent="100")
         logger.debug("[VP %s] Re-set gcode_state=FINISH after project_file ack (%s)", self.name, filename)
 
-    async def _store_in_library(self, file_path: Path, source_ip: str) -> None:
+    async def _store_in_library(self, file_path: Path, source_ip: str, user_id: int | None = None) -> None:
         """Store the upload in the File Manager (library mode)."""
         if not self._session_factory:
             logger.error("Cannot store upload: no database session factory configured")
@@ -783,7 +825,7 @@ class VirtualPrinterInstance:
             async with self._session_factory() as db:
                 folder_id, _ = await upload_settings(db, self.id)
                 library_file, reused = await store_upload(
-                    db, source_path=file_path, filename=file_path.name, folder_id=folder_id
+                    db, source_path=file_path, filename=file_path.name, folder_id=folder_id, owner_id=user_id
                 )
             logger.info(
                 "[VP %s] %s File Manager file %s (%s) from %s",
@@ -806,7 +848,7 @@ class VirtualPrinterInstance:
             except OSError:
                 pass
 
-    async def _queue_file(self, file_path: Path, source_ip: str) -> None:
+    async def _queue_file(self, file_path: Path, source_ip: str, user_id: int | None = None) -> None:
         """Queue file for user review."""
         if not self._session_factory:
             logger.error("Cannot queue: no database session factory configured")
@@ -837,6 +879,24 @@ class VirtualPrinterInstance:
         except Exception as e:
             logger.debug("[VP %s] Metadata title peek failed for %s: %s", self.name, file_path.name, e)
 
+        # The upload waits for its review in a folder of its own: the slicer
+        # sends the next file under the same name to the same place, which
+        # would replace this one, so it would be approved with someone else's
+        # content and owner (#1430).
+        received_name = file_path.name
+        waiting = (
+            self.upload_dir / "pending" / uuid.uuid4().hex / received_name
+        )  # SEC-PATH-OK: received_name = the FTP upload's Path(arg).name (a basename), folder a fresh uuid4
+        try:
+            waiting.parent.mkdir(parents=True, exist_ok=True)
+            file_path.replace(waiting)
+            file_path = waiting
+        except OSError as e:
+            logger.error("[VP %s] Could not keep %s for review: %s", self.name, received_name, e)
+            self._pending_files.pop(received_name, None)
+            file_path.unlink(missing_ok=True)
+            return
+
         try:
             from backend.app.models.pending_upload import PendingUpload
 
@@ -847,6 +907,7 @@ class VirtualPrinterInstance:
                     file_size=file_path.stat().st_size,
                     source_ip=source_ip,
                     virtual_printer_id=self.id,
+                    uploaded_by_id=user_id,
                     status="pending",
                     uploaded_at=datetime.now(timezone.utc),
                     metadata_print_name=metadata_print_name,
@@ -865,9 +926,9 @@ class VirtualPrinterInstance:
         finally:
             # Always drop it from the pending count, also after a queue
             # failure.
-            self._pending_files.pop(file_path.name, None)
+            self._pending_files.pop(received_name, None)
 
-    async def _add_to_print_queue(self, file_path: Path, source_ip: str) -> None:
+    async def _add_to_print_queue(self, file_path: Path, source_ip: str, user_id: int | None = None) -> None:
         """Store the file in the File Manager and queue it, for the target printer or model."""
         if not self._session_factory:
             logger.error("Cannot add to print queue: no database session factory configured")
@@ -988,6 +1049,22 @@ class VirtualPrinterInstance:
                 # without this the setting could never reach it (#1898).
                 confirm_outcome = await confirm_outcome_for_new_queue_item(db, started_outside_bambuddy=True)
 
+                # Sent with a personal access code (#1430): the jobs are that
+                # user's, and wait for a reviewer if their jobs must (#1620),
+                # as when they queue from Bambuddy itself.
+                review_required = False
+                if user_id is not None:
+                    from sqlalchemy import select as _select
+                    from sqlalchemy.orm import selectinload
+
+                    from backend.app.core.auth import queue_review_required_for
+                    from backend.app.models.user import User
+
+                    sender = (
+                        await db.execute(_select(User).where(User.id == user_id).options(selectinload(User.groups)))
+                    ).scalar_one_or_none()
+                    review_required = queue_review_required_for(sender)
+
                 # H2C dual-nozzle-rack slicer-pick preservation (#1780).
                 # BambuStudio's project_file MQTT command for rack-swap models
                 # (O1C2 today) carries `nozzle_mapping` — a per-filament array
@@ -1094,6 +1171,7 @@ class VirtualPrinterInstance:
                     source_path=file_path,
                     filename=file_path.name,
                     folder_id=folder_id,
+                    owner_id=user_id,
                     reuse=not remove_after_print,
                 )
                 if library_file:
@@ -1211,13 +1289,15 @@ class VirtualPrinterInstance:
                             printer_id=self.target_printer_id,
                             target_model=target_model,
                             library_file_id=library_file.id,
+                            # Theirs when a personal access code signed in (#1430).
+                            created_by_id=user_id,
                             # "Remove from File Manager once it prints": the
                             # dispatch moves the file into the archive.
                             cleanup_library_after_dispatch=remove_after_print,
                             plate_id=plate_id,
                             position=max_pos + offset,
                             status="pending",
-                            manual_start=not self.auto_dispatch,
+                            manual_start=not self.auto_dispatch or review_required,
                             required_filament_types=required_filament_types_json,
                             filament_overrides=filament_overrides_json,
                             bed_levelling=bed_levelling,
@@ -1410,6 +1490,7 @@ class VirtualPrinterInstance:
             vp_name=self.name,
             passive_port_min=passive_port_min,
             passive_port_max=passive_port_max,
+            authenticate_user=self.authenticate_user_code,
         )
         self._tasks.append(
             asyncio.create_task(
@@ -1428,6 +1509,8 @@ class VirtualPrinterInstance:
             model=self.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
             bind_address=bind_addr,
             vp_name=self.name,
+            authenticate_user=self.authenticate_user_code,
+            authorize_control=self.user_may_control_target,
         )
         self._tasks.append(
             asyncio.create_task(

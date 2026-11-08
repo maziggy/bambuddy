@@ -6082,6 +6082,7 @@ export default {
     },
     accessCode: {
       title: '액세스 코드',
+      personalHint: '인증이 켜져 있으면 사용자는 개인 액세스 코드(사이드바의 프린터 아이콘)도 입력할 수 있습니다. 보낸 것은 해당 사용자의 것이 됩니다.',
       isSet: '액세스 코드가 설정됨',
       notSet: '액세스 코드가 설정되지 않음 - 활성화하려면 필요',
       placeholder: '8자리 코드 입력',
@@ -7015,6 +7016,22 @@ export default {
     includeAccessCodesDescription: '다른 기기로 전송하는 경우',
     includeAccessCodesWarning: '액세스 코드가 평문으로 포함됩니다. 이 백업 파일을 안전하게 보관하세요!',
     categoriesSelected: '{{selectedCount}}개 카테고리 선택됨'
+  },
+  slicerAccessCode: {
+    title: '슬라이서 액세스 코드',
+    description: '가상 프린터 자체의 액세스 코드 대신 이 코드를 Bambu Studio 또는 OrcaSlicer에 입력하세요. 가상 프린터로 보낸 것은 당신의 것이 됩니다.',
+    show: '코드 표시',
+    hide: '코드 숨기기',
+    copy: '코드 복사',
+    copyFailed: '코드를 복사할 수 없습니다',
+    loadFailed: '액세스 코드를 불러올 수 없습니다',
+    renew: '새 코드',
+    renewTitle: '액세스 코드를 바꿀까요?',
+    renewConfirm: '현재 코드는 더 이상 작동하지 않습니다. 새 코드로 슬라이서에서 가상 프린터를 다시 연결하세요.',
+    renewed: '새 액세스 코드가 준비되었습니다',
+    hintChecked: '로그인할 때마다 해당 가상 프린터와 프린터로 보낼 수 있는지 확인합니다.',
+    hintCamera: '이 코드로는 슬라이서의 카메라 보기가 작동하지 않습니다. Bambuddy의 카메라는 작동합니다.',
+    hintSecret: '비밀번호처럼 다루고 공유하지 마세요.',
   },
   pendingUploads: {
     title: '대기 중인 업로드 ({{count}})',

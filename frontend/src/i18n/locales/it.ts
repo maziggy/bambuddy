@@ -6332,6 +6332,7 @@ export default {
     },
     accessCode: {
       title: 'Codice accesso',
+      personalHint: 'Con l\'autenticazione attiva, gli utenti possono inserire anche il loro codice di accesso personale (barra laterale, icona della stampante): ciò che inviano sarà loro.',
       isSet: 'Codice accesso impostato',
       notSet: 'Nessun codice accesso impostato - richiesto per abilitare',
       placeholder: 'Inserisci codice 8 caratteri',
@@ -7309,6 +7310,22 @@ export default {
   },
 
   // Pending Uploads Panel
+  slicerAccessCode: {
+    title: 'Codice di accesso dello slicer',
+    description: 'Inserisci questo codice in Bambu Studio o OrcaSlicer al posto del codice di accesso della stampante virtuale. Ciò che invii alla stampante virtuale sarà tuo.',
+    show: 'Mostra codice',
+    hide: 'Nascondi codice',
+    copy: 'Copia codice',
+    copyFailed: 'Impossibile copiare il codice',
+    loadFailed: 'Impossibile caricare il tuo codice di accesso',
+    renew: 'Nuovo codice',
+    renewTitle: 'Sostituire il codice di accesso?',
+    renewConfirm: 'Il codice attuale smetterà di funzionare. Collega di nuovo la stampante virtuale nello slicer con il nuovo codice.',
+    renewed: 'Nuovo codice di accesso pronto',
+    hintChecked: 'A ogni accesso si controlla che tu possa inviare a quella stampante virtuale e alla sua stampante.',
+    hintCamera: 'Con questo codice la vista della fotocamera nello slicer non funziona; quella di Bambuddy sì.',
+    hintSecret: 'Funziona come una password: non condividerlo.',
+  },
   pendingUploads: {
     title: 'Caricamenti in attesa ({{count}})',
     noApprovePermission: 'Per aggiungere al gestore file servono i permessi queue:create e library:upload',

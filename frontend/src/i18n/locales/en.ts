@@ -6398,6 +6398,7 @@ export default {
     },
     accessCode: {
       title: 'Access Code',
+      personalHint: 'With auth on, users can also enter their personal access code (sidebar, printer icon): what they send is then theirs.',
       isSet: 'Access code is set',
       notSet: 'No access code set - required to enable',
       placeholder: 'Enter 8-char code',
@@ -7375,6 +7376,22 @@ export default {
   },
 
   // Pending Uploads Panel
+  slicerAccessCode: {
+    title: 'Slicer access code',
+    description: 'Enter this code in Bambu Studio or OrcaSlicer instead of the virtual printer\'s own access code. What you send to the virtual printer is then yours.',
+    show: 'Show code',
+    hide: 'Hide code',
+    copy: 'Copy code',
+    copyFailed: 'Could not copy the code',
+    loadFailed: 'Could not load your access code',
+    renew: 'New code',
+    renewTitle: 'Replace your access code?',
+    renewConfirm: 'Your current code stops working. Bind the virtual printer in your slicer again with the new code.',
+    renewed: 'New access code ready',
+    hintChecked: 'Every sign-in checks that you may send to that virtual printer and its printer.',
+    hintCamera: 'With this code the slicer\'s own camera view of the printer does not work; Bambuddy\'s camera does.',
+    hintSecret: 'It works like a password: don\'t share it.',
+  },
   pendingUploads: {
     title: 'Pending uploads ({{count}})',
     noApprovePermission: 'Adding to the File Manager needs the queue:create and library:upload permissions',

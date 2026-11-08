@@ -132,6 +132,22 @@ async def get_pending_count(
 # to prevent FastAPI from matching /archive-all as /{upload_id}
 
 
+def _remove_waiting_file(file_path: str) -> None:
+    """Delete an upload's waiting file, and the folder of its own it waited in.
+
+    Best effort: the record is updated either way. Uploads wait in
+    ``uploads/<vp>/pending/<id>/<name>`` (older ones directly in the upload
+    folder), so a later upload of the same name can't replace them.
+    """
+    path = Path(file_path)
+    try:
+        path.unlink(missing_ok=True)
+        if path.parent.parent.name == "pending":
+            path.parent.rmdir()
+    except OSError:
+        pass
+
+
 async def _store_pending(db: AsyncSession, pending: PendingUpload, request: "ArchiveRequest | None"):
     """Store an approved upload in its virtual printer's File Manager folder.
 
@@ -150,6 +166,8 @@ async def _store_pending(db: AsyncSession, pending: PendingUpload, request: "Arc
         source_path=Path(pending.file_path),
         filename=pending.filename,
         folder_id=folder_id,
+        # The sender's, not the approver's (#1430).
+        owner_id=pending.uploaded_by_id,
         notes=request.notes if request else None,
         project_id=(request.project_id or None) if request else None,
         tags=request.tags if request else None,
@@ -161,10 +179,7 @@ async def _store_pending(db: AsyncSession, pending: PendingUpload, request: "Arc
         pending.notes = request.notes
         pending.project_id = request.project_id or None
     await db.commit()
-    try:
-        Path(pending.file_path).unlink()
-    except OSError:
-        pass  # Best-effort temp file cleanup; the File Manager has its copy
+    _remove_waiting_file(pending.file_path)  # the File Manager has its copy
     return library_file
 
 
@@ -217,12 +232,7 @@ async def discard_all_pending(
     discarded = 0
 
     for pending in pending_uploads:
-        # Delete file from disk
-        try:
-            file_path = Path(pending.file_path)
-            file_path.unlink(missing_ok=True)
-        except OSError:
-            pass  # Best-effort file deletion; record is still marked discarded
+        _remove_waiting_file(pending.file_path)
 
         pending.status = "discarded"
         discarded += 1
@@ -307,12 +317,7 @@ async def discard_pending_upload(
     if not pending:
         raise HTTPException(status_code=404, detail="Upload not found")
 
-    # Delete file from disk
-    file_path = Path(pending.file_path)
-    try:
-        file_path.unlink(missing_ok=True)
-    except OSError:
-        pass  # Best-effort file deletion on discard
+    _remove_waiting_file(pending.file_path)
 
     # Update status
     pending.status = "discarded"

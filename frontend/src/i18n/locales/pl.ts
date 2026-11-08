@@ -6398,6 +6398,7 @@ export default {
     },
     accessCode: {
       title: 'Kod dostępu',
+      personalHint: 'Przy włączonym uwierzytelnianiu użytkownicy mogą też wpisać swój osobisty kod dostępu (pasek boczny, ikona drukarki): to, co wyślą, będzie ich.',
       isSet: 'Kod dostępu jest ustawiony',
       notSet: 'Brak kodu dostępu — wymagany do włączenia',
       placeholder: 'Wpisz 8-znakowy kod',
@@ -7375,6 +7376,22 @@ export default {
   },
 
   // Pending Uploads Panel
+  slicerAccessCode: {
+    title: 'Kod dostępu slicera',
+    description: 'Wpisz ten kod w Bambu Studio lub OrcaSlicer zamiast kodu dostępu wirtualnej drukarki. To, co wyślesz do wirtualnej drukarki, będzie wtedy twoje.',
+    show: 'Pokaż kod',
+    hide: 'Ukryj kod',
+    copy: 'Kopiuj kod',
+    copyFailed: 'Nie udało się skopiować kodu',
+    loadFailed: 'Nie udało się wczytać twojego kodu dostępu',
+    renew: 'Nowy kod',
+    renewTitle: 'Zastąpić kod dostępu?',
+    renewConfirm: 'Obecny kod przestanie działać. Połącz ponownie wirtualną drukarkę w slicerze, używając nowego kodu.',
+    renewed: 'Nowy kod dostępu gotowy',
+    hintChecked: 'Przy każdym logowaniu sprawdzane jest, czy możesz wysyłać do tej wirtualnej drukarki i jej drukarki.',
+    hintCamera: 'Z tym kodem podgląd kamery w slicerze nie działa; kamera w Bambuddy działa.',
+    hintSecret: 'Działa jak hasło: nie udostępniaj go.',
+  },
   pendingUploads: {
     title: 'Oczekujące przesłania ({{count}})',
     noApprovePermission: 'Dodawanie do menedżera plików wymaga uprawnień queue:create i library:upload',

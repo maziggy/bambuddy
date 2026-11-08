@@ -2,13 +2,19 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import ApiKeyActor, RequestActor, RequestPrinterScope, RequirePermissionIfAuthEnabled
+from backend.app.core.auth import (
+    ApiKeyActor,
+    RequestActor,
+    RequestPrinterScope,
+    RequirePermissionIfAuthEnabled,
+    get_current_active_user,
+)
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope
@@ -386,6 +392,40 @@ async def get_ca_certificate_installer(
         return JSONResponse(status_code=500, content={"detail": "Could not generate the CA certificate"})
     installer = build_slicer_cert_installer(platform, info["pem"], info["fingerprint_sha256"])
     return {"filename": installer.filename, "content": installer.content}
+
+
+@router.get("/my-access-code")
+async def get_my_access_code(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """The signed-in user's personal access code for virtual printers (#1430).
+
+    Entered in their slicer instead of a virtual printer's own code, it marks
+    what they send as theirs. Made on first use. Only for a signed-in user (an
+    API key has no slicer); a virtual printer checks at every sign-in whether
+    the user may send to it.
+    """
+    from backend.app.services.virtual_printer.user_codes import code_for
+
+    user = await db.get(User, current_user.id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not signed in")
+    return {"code": await code_for(db, user)}
+
+
+@router.post("/my-access-code")
+async def renew_my_access_code(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Replace the signed-in user's personal access code; the old one stops working."""
+    from backend.app.services.virtual_printer.user_codes import code_for
+
+    user = await db.get(User, current_user.id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not signed in")
+    return {"code": await code_for(db, user, renew=True)}
 
 
 @router.get("/{vp_id}/diagnostic", response_model=VPDiagnosticResult)

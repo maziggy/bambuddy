@@ -121,7 +121,9 @@ async def store_upload(
     file already there (``reused``), so sending a plate twice does not leave
     two copies; a queue gets a job for each send all the same. Only files a
     virtual printer stored count: a file someone put there by hand is never
-    taken over. Notes, project and tags are applied to the file either way.
+    taken over, and neither is another sender's (``owner_id``, the user whose
+    personal access code sent it, #1430). Notes, project and tags are applied
+    to the file either way.
 
     A file a queue job removes once it prints ("Remove from File Manager once
     it prints") is never shared: such a job asks for a file of its own
@@ -150,6 +152,8 @@ async def store_upload(
                     LibraryFile.file_hash == file_hash,
                     LibraryFile.source_type == SOURCE_TYPE,
                     ~removed_on_print,
+                    # Only the same sender's: someone else's copy stays theirs.
+                    LibraryFile.created_by_id.is_(None) if owner_id is None else LibraryFile.created_by_id == owner_id,
                 )
                 .order_by(LibraryFile.id)
                 .limit(1)

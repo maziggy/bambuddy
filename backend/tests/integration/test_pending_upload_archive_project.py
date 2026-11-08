@@ -217,3 +217,35 @@ async def test_approving_needs_library_upload_as_well(
 
     assert single.status_code == status, single.text
     assert every.status_code == status, every.text
+
+
+async def test_the_approved_file_is_the_senders(async_client: AsyncClient, db_session, tmp_path):
+    # Sent with a personal access code (#1430): the file is the student's,
+    # not the teacher's who approves it.
+    from backend.app.models.user import User
+
+    student = User(username="student", password_hash="x", is_active=True)
+    db_session.add(student)
+    await db_session.flush()
+    upload_id = (await _pending(db_session, tmp_path, uploaded_by_id=student.id)).id
+
+    response = await async_client.post(f"/api/v1/pending-uploads/{upload_id}/archive")
+
+    assert response.status_code == 200, response.text
+    library_file = await db_session.get(LibraryFile, response.json()["id"])
+    assert library_file.created_by_id == student.id
+
+
+async def test_approving_removes_the_folder_the_upload_waited_in(async_client: AsyncClient, db_session, tmp_path):
+    waiting = tmp_path / "uploads" / "3" / "pending" / "abc123" / "part.3mf"
+    waiting.parent.mkdir(parents=True)
+    waiting.write_bytes(b"3mf")
+    upload = PendingUpload(filename="part.3mf", file_path=str(waiting), file_size=3, source_ip=None, status="pending")
+    db_session.add(upload)
+    await db_session.commit()
+
+    response = await async_client.post(f"/api/v1/pending-uploads/{upload.id}/archive")
+
+    assert response.status_code == 200, response.text
+    assert not waiting.parent.exists()
+    assert waiting.parent.parent.exists()

@@ -6345,6 +6345,7 @@ export default {
     },
     accessCode: {
       title: 'Zugangscode',
+      personalHint: 'Mit aktivierter Anmeldung können Benutzer auch ihren persönlichen Zugangscode eingeben (Seitenleiste, Druckersymbol): Was sie senden, gehört dann ihnen.',
       isSet: 'Zugangscode ist gesetzt',
       notSet: 'Kein Zugangscode gesetzt - erforderlich zum Aktivieren',
       placeholder: '8-Zeichen-Code eingeben',
@@ -7322,6 +7323,22 @@ export default {
   },
 
   // Pending Uploads Panel
+  slicerAccessCode: {
+    title: 'Slicer-Zugangscode',
+    description: 'Gib diesen Code in Bambu Studio oder OrcaSlicer statt des Zugangscodes des virtuellen Druckers ein. Was du an den virtuellen Drucker sendest, gehört dann dir.',
+    show: 'Code anzeigen',
+    hide: 'Code verbergen',
+    copy: 'Code kopieren',
+    copyFailed: 'Der Code konnte nicht kopiert werden',
+    loadFailed: 'Dein Zugangscode konnte nicht geladen werden',
+    renew: 'Neuer Code',
+    renewTitle: 'Zugangscode ersetzen?',
+    renewConfirm: 'Dein bisheriger Code funktioniert dann nicht mehr. Verbinde den virtuellen Drucker im Slicer mit dem neuen Code neu.',
+    renewed: 'Neuer Zugangscode bereit',
+    hintChecked: 'Bei jeder Anmeldung wird geprüft, ob du an diesen virtuellen Drucker und seinen Drucker senden darfst.',
+    hintCamera: 'Mit diesem Code funktioniert die Kameraansicht des Slicers nicht; die Kamera in Bambuddy schon.',
+    hintSecret: 'Er wirkt wie ein Passwort: gib ihn nicht weiter.',
+  },
   pendingUploads: {
     title: 'Ausstehende Uploads ({{count}})',
     noApprovePermission: 'Zum Ablegen im Dateimanager brauchst du die Berechtigungen queue:create und library:upload',

@@ -6309,6 +6309,7 @@ export default {
     },
     accessCode: {
       title: 'Erişim Kodu',
+      personalHint: 'Kimlik doğrulama açıkken kullanıcılar kişisel erişim kodlarını da girebilir (kenar çubuğu, yazıcı simgesi): gönderdikleri böylece onların olur.',
       isSet: 'Erişim kodu ayarlandı',
       notSet: 'Erişim kodu ayarlanmadı - etkinleştirmek için gerekli',
       placeholder: '8 karakterli kodu girin',
@@ -7266,6 +7267,22 @@ export default {
   },
 
   // Bekleyen Yüklemeler Paneli
+  slicerAccessCode: {
+    title: 'Dilimleyici erişim kodu',
+    description: 'Sanal yazıcının kendi erişim kodu yerine bu kodu Bambu Studio veya OrcaSlicer\'a girin. Sanal yazıcıya gönderdikleriniz böylece sizin olur.',
+    show: 'Kodu göster',
+    hide: 'Kodu gizle',
+    copy: 'Kodu kopyala',
+    copyFailed: 'Kod kopyalanamadı',
+    loadFailed: 'Erişim kodunuz yüklenemedi',
+    renew: 'Yeni kod',
+    renewTitle: 'Erişim kodunuz değiştirilsin mi?',
+    renewConfirm: 'Mevcut kodunuz artık çalışmaz. Dilimleyicide sanal yazıcıyı yeni kodla yeniden bağlayın.',
+    renewed: 'Yeni erişim kodu hazır',
+    hintChecked: 'Her girişte o sanal yazıcıya ve yazıcısına gönderme izniniz olup olmadığı kontrol edilir.',
+    hintCamera: 'Bu kodla dilimleyicinin kamera görünümü çalışmaz; Bambuddy\'nin kamerası çalışır.',
+    hintSecret: 'Bir parola gibidir: paylaşmayın.',
+  },
   pendingUploads: {
     title: 'Bekleyen yüklemeler ({{count}})',
     noApprovePermission: 'Dosya Yöneticisine eklemek için queue:create ve library:upload izinleri gerekir',

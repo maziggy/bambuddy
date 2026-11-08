@@ -34,6 +34,9 @@ class PendingUpload(Base):
     virtual_printer_id: Mapped[int | None] = mapped_column(
         ForeignKey("virtual_printers.id", ondelete="SET NULL"), nullable=True
     )
+    # Who sent it, when the slicer signed in with a personal access code
+    # (#1430): the File Manager file it becomes on approval is theirs.
+    uploaded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Status: pending, archived, discarded
     status: Mapped[str] = mapped_column(String(20), default="pending")

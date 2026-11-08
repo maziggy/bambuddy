@@ -9354,6 +9354,10 @@ export const multiVirtualPrinterApi = {
 
   // A script that adds the CA to Bambu Studio and OrcaSlicer, with the CA
   // written into it: 'windows' (.cmd) or 'unix' (.sh, Linux and macOS).
+  // The signed-in user's personal access code (#1430); renewing replaces it.
+  getMyAccessCode: () => request<{ code: string }>('/virtual-printers/my-access-code'),
+  renewMyAccessCode: () => request<{ code: string }>('/virtual-printers/my-access-code', { method: 'POST' }),
+
   getCaCertificateInstaller: (platform: 'windows' | 'unix') =>
     request<{ filename: string; content: string }>(`/virtual-printers/ca-certificate/installer/${platform}`),
 

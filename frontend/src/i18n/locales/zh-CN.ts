@@ -5322,6 +5322,13 @@ export default {
       deleteTitle: '删除配置文件默认值',
       deleteMessage: '删除 {{product}} 的配置文件默认值?已有其配置文件的料盘会保留它们。',
       deleteFailed: '无法删除配置文件默认值',
+      search: '按产品、颜色或预设搜索',
+      noMatch: '没有匹配的配置默认值',
+      presetsCount: '打印机预设：{{count}}',
+      kProfilesCount: 'K 配置：{{count}}',
+      applyAll: '全部应用',
+      applyAllHelp: '用所有配置默认值为使用中的料盘填入尚未设置的项。已有的内容不会更改。',
+      applyAllFailed: '{{failed}} 个配置默认值无法应用；已为 {{updated}} 个料盘填入',
     },
     suppliers: {
       label: '供应商',

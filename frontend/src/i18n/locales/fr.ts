@@ -5323,6 +5323,13 @@ export default {
       deleteTitle: 'Supprimer le profil par défaut',
       deleteMessage: 'Supprimer le profil par défaut de {{product}} ? Les bobines qui ont déjà ses profils les gardent.',
       deleteFailed: 'Impossible de supprimer le profil par défaut',
+      search: 'Rechercher par produit, couleur ou profil',
+      noMatch: 'Aucun profil par défaut ne correspond',
+      presetsCount: 'Profils d\'imprimante : {{count}}',
+      kProfilesCount: 'Profils K : {{count}}',
+      applyAll: 'Tout appliquer',
+      applyAllHelp: 'Complète ce qui manque aux bobines actives à partir de tous les profils par défaut. Rien de ce qu\'elles ont déjà n\'est modifié.',
+      applyAllFailed: '{{failed}} profils par défaut n\'ont pas pu être appliqués ; complété sur {{updated}} bobines',
     },
     suppliers: {
       label: 'Fournisseurs',

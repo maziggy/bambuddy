@@ -5339,6 +5339,13 @@ export default {
       deleteTitle: 'Eliminar perfil predeterminado',
       deleteMessage: '¿Eliminar el perfil predeterminado de {{product}}? Las bobinas que ya tienen sus perfiles los conservan.',
       deleteFailed: 'No se pudo eliminar el perfil predeterminado',
+      search: 'Buscar por producto, color o perfil',
+      noMatch: 'Ningún perfil predeterminado coincide',
+      presetsCount: 'Perfiles de impresora: {{count}}',
+      kProfilesCount: 'Perfiles K: {{count}}',
+      applyAll: 'Aplicar todo',
+      applyAllHelp: 'Completa lo que les falta a las bobinas activas con todos los perfiles predeterminados. No se cambia nada de lo que ya tienen.',
+      applyAllFailed: 'No se pudieron aplicar {{failed}} perfiles predeterminados; completado en {{updated}} bobinas',
     },
     suppliers: {
       label: 'Proveedores',

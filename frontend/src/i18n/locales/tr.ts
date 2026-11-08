@@ -5323,6 +5323,13 @@ export default {
       deleteTitle: 'Profil varsayılanını sil',
       deleteMessage: '{{product}} için profil varsayılanı silinsin mi? Profillerine zaten sahip makaralar onları korur.',
       deleteFailed: 'Profil varsayılanı silinemedi',
+      search: 'Ürün, renk veya profile göre ara',
+      noMatch: 'Eşleşen profil varsayılanı yok',
+      presetsCount: 'Yazıcı profilleri: {{count}}',
+      kProfilesCount: 'K profilleri: {{count}}',
+      applyAll: 'Tümünü uygula',
+      applyAllHelp: 'Tüm profil varsayılanlarından etkin makaralarda eksik olanları doldurur. Zaten olanlar değiştirilmez.',
+      applyAllFailed: '{{failed}} profil varsayılanı uygulanamadı; {{updated}} makarada dolduruldu',
     },
     suppliers: {
       label: 'Tedarikçiler',

@@ -5378,6 +5378,13 @@ export default {
       deleteTitle: 'Usuń domyślne profile',
       deleteMessage: 'Usunąć domyślne profile dla {{product}}? Szpule, które już mają te profile, zachowają je.',
       deleteFailed: 'Nie udało się usunąć domyślnych profili',
+      search: 'Szukaj według produktu, koloru lub profilu',
+      noMatch: 'Brak pasujących domyślnych profili',
+      presetsCount: 'Profile drukarek: {{count}}',
+      kProfilesCount: 'Profile K: {{count}}',
+      applyAll: 'Zastosuj wszystkie',
+      applyAllHelp: 'Uzupełnia brakujące dane aktywnych szpul ze wszystkich domyślnych profili. To, co już mają, nie jest zmieniane.',
+      applyAllFailed: 'Nie udało się zastosować domyślnych profili: {{failed}}; uzupełnione szpule: {{updated}}',
     },
     suppliers: {
       label: 'Dostawcy',

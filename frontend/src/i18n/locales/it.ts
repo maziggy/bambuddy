@@ -5322,6 +5322,13 @@ export default {
       deleteTitle: 'Elimina profilo predefinito',
       deleteMessage: 'Eliminare il profilo predefinito di {{product}}? Le bobine che hanno già i suoi profili li mantengono.',
       deleteFailed: 'Impossibile eliminare il profilo predefinito',
+      search: 'Cerca per prodotto, colore o profilo',
+      noMatch: 'Nessun profilo predefinito corrisponde',
+      presetsCount: 'Profili stampante: {{count}}',
+      kProfilesCount: 'Profili K: {{count}}',
+      applyAll: 'Applica tutti',
+      applyAllHelp: 'Completa ciò che manca alle bobine attive da tutti i profili predefiniti. Nulla di ciò che hanno già viene modificato.',
+      applyAllFailed: 'Impossibile applicare {{failed}} profili predefiniti; completato su {{updated}} bobine',
     },
     suppliers: {
       label: 'Fornitori',

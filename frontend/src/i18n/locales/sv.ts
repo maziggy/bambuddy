@@ -5407,6 +5407,13 @@ errors: {
       deleteTitle: 'Ta bort profilstandard',
       deleteMessage: 'Ta bort profilstandarden för {{product}}? Spolar som redan har dess profiler behåller dem.',
       deleteFailed: 'Kunde inte ta bort profilstandarden',
+      search: 'Sök på produkt, färg eller profil',
+      noMatch: 'Ingen profilstandard matchar',
+      presetsCount: 'Skrivarprofiler: {{count}}',
+      kProfilesCount: 'K-profiler: {{count}}',
+      applyAll: 'Tillämpa alla',
+      applyAllHelp: 'Fyller i det som aktiva spolar saknar, från alla profilstandarder. Inget de redan har ändras.',
+      applyAllFailed: '{{failed}} profilstandarder kunde inte tillämpas; ifyllt på {{updated}} spolar',
     },
     suppliers: {
       label: 'Leverantörer',

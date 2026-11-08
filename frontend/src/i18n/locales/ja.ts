@@ -5336,6 +5336,13 @@ export default {
       deleteTitle: 'プロファイルの既定値を削除',
       deleteMessage: '{{product}} のプロファイル既定値を削除しますか? 既にそのプロファイルを持つスプールはそのまま保持します。',
       deleteFailed: 'プロファイルの既定値を削除できませんでした',
+      search: '製品、色、プリセットで検索',
+      noMatch: '一致するプロファイル既定値はありません',
+      presetsCount: 'プリンタープリセット: {{count}}',
+      kProfilesCount: 'K プロファイル: {{count}}',
+      applyAll: 'すべて適用',
+      applyAllHelp: 'すべてのプロファイル既定値から、使用中のスプールに未設定の項目を入力します。既に設定済みの項目は変更しません。',
+      applyAllFailed: '{{failed}} 件のプロファイル既定値を適用できませんでした。{{updated}} 本のスプールに入力しました',
     },
     suppliers: {
       label: 'サプライヤー',

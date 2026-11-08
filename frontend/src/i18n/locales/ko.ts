@@ -5121,6 +5121,13 @@ export default {
       deleteTitle: '프로필 기본값 삭제',
       deleteMessage: '{{product}}의 프로필 기본값을 삭제할까요? 이미 해당 프로필이 있는 스풀은 그대로 유지합니다.',
       deleteFailed: '프로필 기본값을 삭제하지 못했습니다',
+      search: '제품, 색상 또는 프리셋으로 검색',
+      noMatch: '일치하는 프로필 기본값이 없습니다',
+      presetsCount: '프린터 프리셋: {{count}}',
+      kProfilesCount: 'K 프로필: {{count}}',
+      applyAll: '모두 적용',
+      applyAllHelp: '모든 프로필 기본값으로 활성 스풀에 아직 없는 항목을 채웁니다. 이미 있는 항목은 변경하지 않습니다.',
+      applyAllFailed: '프로필 기본값 {{failed}}개를 적용하지 못했습니다. 스풀 {{updated}}개에 채웠습니다',
     },
     suppliers: {
       label: '공급업체',

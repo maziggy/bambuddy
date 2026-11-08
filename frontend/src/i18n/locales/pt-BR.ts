@@ -5322,6 +5322,13 @@ export default {
       deleteTitle: 'Excluir perfil padrão',
       deleteMessage: 'Excluir o perfil padrão de {{product}}? Carretéis que já têm os perfis os mantêm.',
       deleteFailed: 'Não foi possível excluir o perfil padrão',
+      search: 'Buscar por produto, cor ou perfil',
+      noMatch: 'Nenhum padrão de perfil corresponde',
+      presetsCount: 'Perfis de impressora: {{count}}',
+      kProfilesCount: 'Perfis K: {{count}}',
+      applyAll: 'Aplicar todos',
+      applyAllHelp: 'Preenche o que falta nos carretéis ativos com todos os padrões de perfil. Nada do que eles já têm é alterado.',
+      applyAllFailed: 'Não foi possível aplicar {{failed}} padrões de perfil; preenchido em {{updated}} carretéis',
     },
     suppliers: {
       label: 'Fornecedores',

@@ -5336,6 +5336,13 @@ export default {
       deleteTitle: 'Profil-Standard löschen',
       deleteMessage: 'Profil-Standard für {{product}} löschen? Spulen, die seine Profile schon haben, behalten sie.',
       deleteFailed: 'Profil-Standard konnte nicht gelöscht werden',
+      search: 'Nach Produkt, Farbe oder Profil suchen',
+      noMatch: 'Kein Profil-Standard passt',
+      presetsCount: 'Druckerprofile: {{count}}',
+      kProfilesCount: 'K-Profile: {{count}}',
+      applyAll: 'Alle anwenden',
+      applyAllHelp: 'Bei aktiven Spulen aus allen Profil-Standards ergänzen, was noch fehlt. Vorhandenes wird nicht geändert.',
+      applyAllFailed: '{{failed}} Profil-Standards konnten nicht angewendet werden; bei {{updated}} Spulen ergänzt',
     },
     suppliers: {
       label: 'Lieferanten',

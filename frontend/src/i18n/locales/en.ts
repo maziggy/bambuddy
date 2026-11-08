@@ -5378,6 +5378,13 @@ export default {
       deleteTitle: 'Delete profile default',
       deleteMessage: 'Delete the profile default for {{product}}? Spools that already have its profiles keep them.',
       deleteFailed: 'Could not delete the profile default',
+      search: 'Search by product, colour or preset',
+      noMatch: 'No profile default matches',
+      presetsCount: 'Printer presets: {{count}}',
+      kProfilesCount: 'K profiles: {{count}}',
+      applyAll: 'Apply all',
+      applyAllHelp: 'Fill in what active spools don\'t have yet, from every profile default. Nothing they already have is changed.',
+      applyAllFailed: '{{failed}} profile defaults could not be applied; filled in on {{updated}} spools',
     },
     suppliers: {
       label: 'Suppliers',

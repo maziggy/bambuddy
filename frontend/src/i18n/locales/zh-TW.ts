@@ -5322,6 +5322,13 @@ export default {
       deleteTitle: '刪除設定檔預設值',
       deleteMessage: '刪除 {{product}} 的設定檔預設值?已有其設定檔的料盤會保留它們。',
       deleteFailed: '無法刪除設定檔預設值',
+      search: '依產品、顏色或預設搜尋',
+      noMatch: '沒有符合的設定檔預設值',
+      presetsCount: '印表機預設：{{count}}',
+      kProfilesCount: 'K 設定檔：{{count}}',
+      applyAll: '全部套用',
+      applyAllHelp: '以所有設定檔預設值為使用中的料盤填入尚未設定的項目。已有的內容不會變更。',
+      applyAllFailed: '{{failed}} 個設定檔預設值無法套用；已為 {{updated}} 個料盤填入',
     },
     suppliers: {
       label: '供應商',

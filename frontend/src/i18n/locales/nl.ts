@@ -5376,6 +5376,13 @@ export default {
       deleteTitle: 'Profielstandaard verwijderen',
       deleteMessage: 'Profielstandaard voor {{product}} verwijderen? Spoelen die de profielen al hebben, houden ze.',
       deleteFailed: 'Profielstandaard kon niet worden verwijderd',
+      search: 'Zoeken op product, kleur of profiel',
+      noMatch: 'Geen profielstandaard komt overeen',
+      presetsCount: 'Printerprofielen: {{count}}',
+      kProfilesCount: 'K-profielen: {{count}}',
+      applyAll: 'Alles toepassen',
+      applyAllHelp: 'Vul bij actieve spoelen aan wat nog ontbreekt, uit alle profielstandaarden. Wat ze al hebben blijft ongewijzigd.',
+      applyAllFailed: '{{failed}} profielstandaarden konden niet worden toegepast; aangevuld bij {{updated}} spoelen',
     },
     suppliers: {
       label: 'Leveranciers',

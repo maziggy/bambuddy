@@ -2,7 +2,6 @@ import { Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'rea
 import { PageLoading } from './PageLoading';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Printer, Archive, ListOrdered, BarChart3, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, Github, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Globe, Bell, Receipt, Megaphone, type LucideIcon } from 'lucide-react';
-import { SlicerAccessCodeModal } from './SlicerAccessCodeModal';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -115,7 +114,6 @@ export function Layout() {
   const { user, authEnabled, logout, hasPermission, hasAnyPermission, loading: authLoading } = useAuth();
   const { showToast } = useToast();
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
-  const [showSlicerCodeModal, setShowSlicerCodeModal] = useState(false);
   const [changePasswordData, setChangePasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [changePasswordLoading, setChangePasswordLoading] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(() => {
@@ -833,10 +831,9 @@ export function Layout() {
         <div className="flex-shrink-0 p-2 border-t border-bambu-dark-tertiary">
           {isSidebarCompact || sidebarExpanded ? (
             <div className="flex flex-col gap-2">
-              {/* Top row: icons, 32px each with no gap: seven fit the 239px of
-                  an expanded sidebar -- announcements, System, GitHub,
-                  shortcuts, theme, password, logout. Signed in, the slicer
-                  access code (#1430) makes eight, which wrap to a second row. */}
+              {/* Top row: icons. 32px each with no gap so seven fit the 239px
+                  of an expanded sidebar -- announcements, System, GitHub,
+                  shortcuts, theme, password, logout -- without wrapping. */}
               <div className="flex items-center justify-center flex-wrap [&>a]:p-1.5 [&>button]:p-1.5 [&>span]:p-1.5 [&>div>button]:p-1.5">
                 {hasSwitchbarPlugs && (
                   <div className="relative">
@@ -925,13 +922,6 @@ export function Layout() {
                       title={t('changePassword.title')}
                     >
                       <Key className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => setShowSlicerCodeModal(true)}
-                      className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                      title={t('slicerAccessCode.title')}
-                    >
-                      <Printer className="w-5 h-5" />
                     </button>
                     <button
                       onClick={logout}
@@ -1054,13 +1044,6 @@ export function Layout() {
                     title={t('changePassword.title')}
                   >
                     <Key className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={() => setShowSlicerCodeModal(true)}
-                    className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                    title={t('slicerAccessCode.title')}
-                  >
-                    <Printer className="w-5 h-5" />
                   </button>
                   <button
                     onClick={logout}
@@ -1242,8 +1225,6 @@ export function Layout() {
       )}
 
       {/* Change Password Modal */}
-      {showSlicerCodeModal && <SlicerAccessCodeModal onClose={() => setShowSlicerCodeModal(false)} />}
-
       {showChangePasswordModal && (
         <div
           className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"

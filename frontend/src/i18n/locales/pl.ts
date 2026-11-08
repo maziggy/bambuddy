@@ -6398,7 +6398,7 @@ export default {
     },
     accessCode: {
       title: 'Kod dostępu',
-      personalHint: 'Przy włączonym uwierzytelnianiu użytkownicy mogą też wpisać swój osobisty kod dostępu (pasek boczny, ikona drukarki): to, co wyślą, będzie ich.',
+      personalHint: 'Przy włączonym uwierzytelnianiu użytkownicy mogą też wpisać swój osobisty kod dostępu, widoczny na górze tej strony: to, co wyślą, będzie ich.',
       isSet: 'Kod dostępu jest ustawiony',
       notSet: 'Brak kodu dostępu — wymagany do włączenia',
       placeholder: 'Wpisz 8-znakowy kod',

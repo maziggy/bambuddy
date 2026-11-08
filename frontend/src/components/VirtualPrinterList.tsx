@@ -10,6 +10,7 @@ import { useToast } from '../contexts/ToastContext';
 import { copyTextToClipboard, downloadTextFile } from '../utils/clipboard';
 import { VirtualPrinterCard } from './VirtualPrinterCard';
 import { VirtualPrinterAddDialog } from './VirtualPrinterAddDialog';
+import { SlicerAccessCodeCard } from './SlicerAccessCodeCard';
 
 // Operating system names, the same in every language.
 const INSTALLER_PLATFORMS = [
@@ -141,6 +142,9 @@ export function VirtualPrinterList() {
           </CardContent>
         </Card>
       </div>
+
+      {/* The signed-in user's own access code (#1430); nothing while auth is off. */}
+      <SlicerAccessCodeCard />
 
       {/* Global VP behavior settings — two side-by-side cards, not full width */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">

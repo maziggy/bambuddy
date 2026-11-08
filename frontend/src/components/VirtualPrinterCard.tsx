@@ -48,14 +48,16 @@ function uploadFolderOptions(tree: LibraryFolderTree[] | undefined, depth = 0): 
 interface VirtualPrinterCardProps {
   printer: VirtualPrinterConfig;
   models: Record<string, string>;
+  // Collapsed by default: with several virtual printers the page stays a list.
+  defaultExpanded?: boolean;
 }
 
-export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps) {
+export function VirtualPrinterCard({ printer, models, defaultExpanded = false }: VirtualPrinterCardProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
 
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [localEnabled, setLocalEnabled] = useState(printer.enabled);
   const [localName, setLocalName] = useState(printer.name);
   const [localAccessCode, setLocalAccessCode] = useState('');
@@ -299,7 +301,11 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
           className="px-4 py-3 flex items-center gap-3 cursor-pointer select-none"
           onClick={() => setExpanded(!expanded)}
         >
-          <button className="text-bambu-gray flex-shrink-0">
+          <button
+            className="text-bambu-gray flex-shrink-0"
+            aria-expanded={expanded}
+            aria-label={expanded ? t('common.collapse') : t('common.expand')}
+          >
             {expanded
               ? <ChevronDown className="w-4 h-4" />
               : <ChevronRight className="w-4 h-4" />

@@ -6427,7 +6427,7 @@ errors: {
     },
     accessCode: {
       title: 'Åtkomstkod',
-      personalHint: 'Med inloggning på kan användare också ange sin personliga åtkomstkod (sidofältet, skrivarikonen): det de skickar blir då deras.',
+      personalHint: 'Med inloggning på kan användare också ange sin personliga åtkomstkod, som visas överst på den här sidan: det de skickar blir då deras.',
       isSet: 'Åtkomstkod är inställd',
       notSet: 'Ingen åtkomstkod inställd — krävs för att aktivera',
       placeholder: 'Ange 8-teckens kod',

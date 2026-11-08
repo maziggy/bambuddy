@@ -6353,7 +6353,7 @@ export default {
     },
     accessCode: {
       title: 'Código de acceso',
-      personalHint: 'Con la autenticación activada, los usuarios también pueden introducir su código de acceso personal (barra lateral, icono de impresora): lo que envíen será suyo.',
+      personalHint: 'Con la autenticación activada, los usuarios también pueden introducir su código de acceso personal, que aparece arriba en esta página: lo que envíen será suyo.',
       isSet: 'El código de acceso está establecido',
       notSet: 'No hay código de acceso establecido - necesario para activarla',
       placeholder: 'Introduzca un código de 8 caracteres',

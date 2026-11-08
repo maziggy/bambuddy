@@ -6345,7 +6345,7 @@ export default {
     },
     accessCode: {
       title: 'Zugangscode',
-      personalHint: 'Mit aktivierter Anmeldung können Benutzer auch ihren persönlichen Zugangscode eingeben (Seitenleiste, Druckersymbol): Was sie senden, gehört dann ihnen.',
+      personalHint: 'Mit aktivierter Anmeldung können Benutzer auch ihren persönlichen Zugangscode eingeben, der oben auf dieser Seite steht: Was sie senden, gehört dann ihnen.',
       isSet: 'Zugangscode ist gesetzt',
       notSet: 'Kein Zugangscode gesetzt - erforderlich zum Aktivieren',
       placeholder: '8-Zeichen-Code eingeben',

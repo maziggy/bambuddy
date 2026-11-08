@@ -6332,7 +6332,7 @@ export default {
     },
     accessCode: {
       title: 'Codice accesso',
-      personalHint: 'Con l\'autenticazione attiva, gli utenti possono inserire anche il loro codice di accesso personale (barra laterale, icona della stampante): ciò che inviano sarà loro.',
+      personalHint: 'Con l\'autenticazione attiva, gli utenti possono inserire anche il loro codice di accesso personale, mostrato in cima a questa pagina: ciò che inviano sarà loro.',
       isSet: 'Codice accesso impostato',
       notSet: 'Nessun codice accesso impostato - richiesto per abilitare',
       placeholder: 'Inserisci codice 8 caratteri',

@@ -72,7 +72,7 @@ describe('VirtualPrinterCard - auto-dispatch toggle', () => {
 
   it('renders auto-dispatch toggle when mode is print_queue', async () => {
     const printer = createMockPrinter({ mode: 'queue' });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByText('Auto-dispatch')).toBeInTheDocument();
@@ -81,7 +81,7 @@ describe('VirtualPrinterCard - auto-dispatch toggle', () => {
 
   it('does not render auto-dispatch toggle when mode is immediate', async () => {
     const printer = createMockPrinter({ mode: 'archive' });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     // Wait for the card to render fully (check for something that should be there)
     await waitFor(() => {
@@ -93,7 +93,7 @@ describe('VirtualPrinterCard - auto-dispatch toggle', () => {
 
   it('does not render auto-dispatch toggle when mode is proxy', async () => {
     const printer = createMockPrinter({ mode: 'proxy' });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByText('Test VP')).toBeInTheDocument();
@@ -104,7 +104,7 @@ describe('VirtualPrinterCard - auto-dispatch toggle', () => {
 
   it('auto-dispatch toggle defaults to on', async () => {
     const printer = createMockPrinter({ mode: 'queue', auto_dispatch: true });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByText('Auto-dispatch')).toBeInTheDocument();
@@ -126,7 +126,7 @@ describe('VirtualPrinterCard - auto-dispatch toggle', () => {
       createMockPrinter({ mode: 'queue', auto_dispatch: false })
     );
 
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByText('Auto-dispatch')).toBeInTheDocument();
@@ -160,7 +160,7 @@ describe('VirtualPrinterCard - force color match toggle (#1188)', () => {
 
   it('renders force-color-match toggle when mode is print_queue', async () => {
     const printer = createMockPrinter({ mode: 'queue' });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByText('Force color match')).toBeInTheDocument();
@@ -169,7 +169,7 @@ describe('VirtualPrinterCard - force color match toggle (#1188)', () => {
 
   it('does not render force-color-match toggle when mode is immediate', async () => {
     const printer = createMockPrinter({ mode: 'archive' });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByText('Test VP')).toBeInTheDocument();
@@ -179,7 +179,7 @@ describe('VirtualPrinterCard - force color match toggle (#1188)', () => {
 
   it('does not render force-color-match toggle when mode is proxy', async () => {
     const printer = createMockPrinter({ mode: 'proxy' });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByText('Test VP')).toBeInTheDocument();
@@ -189,7 +189,7 @@ describe('VirtualPrinterCard - force color match toggle (#1188)', () => {
 
   it('force-color-match toggle defaults off (not green) — preserves pre-fix behaviour', async () => {
     const printer = createMockPrinter({ mode: 'queue', queue_force_color_match: false });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByText('Force color match')).toBeInTheDocument();
@@ -205,7 +205,7 @@ describe('VirtualPrinterCard - force color match toggle (#1188)', () => {
 
   it('force-color-match toggle renders enabled (green) when queue_force_color_match is true', async () => {
     const printer = createMockPrinter({ mode: 'queue', queue_force_color_match: true });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByText('Force color match')).toBeInTheDocument();
@@ -224,7 +224,7 @@ describe('VirtualPrinterCard - force color match toggle (#1188)', () => {
       createMockPrinter({ mode: 'queue', queue_force_color_match: true })
     );
 
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByText('Force color match')).toBeInTheDocument();
@@ -250,7 +250,7 @@ describe('VirtualPrinterCard - tailscale toggle', () => {
 
   it('renders tailscale toggle as enabled (green) when tailscale_disabled is false', async () => {
     const printer = createMockPrinter({ tailscale_disabled: false });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByText('Tailscale integration')).toBeInTheDocument();
@@ -266,7 +266,7 @@ describe('VirtualPrinterCard - tailscale toggle', () => {
 
   it('renders tailscale toggle as disabled (not green) when tailscale_disabled is true', async () => {
     const printer = createMockPrinter({ tailscale_disabled: true });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByText('Tailscale integration')).toBeInTheDocument();
@@ -287,7 +287,7 @@ describe('VirtualPrinterCard - tailscale toggle', () => {
       createMockPrinter({ tailscale_disabled: true })
     );
 
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByText('Tailscale integration')).toBeInTheDocument();
@@ -344,7 +344,7 @@ describe('VirtualPrinterCard - Tailscale FQDN copy', () => {
     });
 
     const printer = createMockPrinter({ tailscale_disabled: false });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     const copyBtn = await waitFor(() => {
       const btn = getCopyButton();
@@ -368,7 +368,7 @@ describe('VirtualPrinterCard - Tailscale FQDN copy', () => {
     document.execCommand = execCommandMock;
 
     const printer = createMockPrinter({ tailscale_disabled: false });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     const copyBtn = await waitFor(() => {
       const btn = getCopyButton();
@@ -395,7 +395,7 @@ describe('VirtualPrinterCard - Tailscale FQDN copy', () => {
     });
 
     const printer = createMockPrinter({ tailscale_disabled: false });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     const copyBtn = await waitFor(() => {
       const btn = getCopyButton();
@@ -440,7 +440,7 @@ describe('VirtualPrinterCard - access code inherits from target', () => {
 
   it('shows target printer access code read-only when target is set on a non-proxy VP', async () => {
     const printer = createMockPrinter({ mode: 'queue', target_printer_id: 7 });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     // Wait for the inheritance badge AND the actual code value to appear —
     // the badge renders synchronously from local state, but the value
@@ -462,7 +462,7 @@ describe('VirtualPrinterCard - access code inherits from target', () => {
   it('toggles the access code to plaintext via the Eye button', async () => {
     const user = userEvent.setup();
     const printer = createMockPrinter({ mode: 'queue', target_printer_id: 7 });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByText('Inherited from target')).toBeInTheDocument();
@@ -477,7 +477,7 @@ describe('VirtualPrinterCard - access code inherits from target', () => {
 
   it('keeps the editable input + Save button when no target is set', async () => {
     const printer = createMockPrinter({ mode: 'archive', target_printer_id: null });
-    render(<VirtualPrinterCard printer={printer} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={printer} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByPlaceholderText('Enter 8-char code')).toBeInTheDocument();
@@ -531,7 +531,7 @@ describe('VirtualPrinterCard - header does not overflow the card', () => {
   });
 
   it('keeps both IPs visible instead of truncating them away', async () => {
-    render(<VirtualPrinterCard printer={twoVlanPrinter()} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={twoVlanPrinter()} models={models} />);
 
     await waitFor(() => {
       expect(screen.getByText('192.168.20.175')).toBeInTheDocument();
@@ -542,7 +542,7 @@ describe('VirtualPrinterCard - header does not overflow the card', () => {
   });
 
   it('puts the metadata in a shrinkable, wrapping group', async () => {
-    render(<VirtualPrinterCard printer={twoVlanPrinter()} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={twoVlanPrinter()} models={models} />);
 
     const bindIp = await screen.findByText('192.168.20.175');
     const group = bindIp.parentElement as HTMLElement;
@@ -555,7 +555,7 @@ describe('VirtualPrinterCard - header does not overflow the card', () => {
   });
 
   it('has no header item that is both unshrinkable and truncating', async () => {
-    render(<VirtualPrinterCard printer={twoVlanPrinter()} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={twoVlanPrinter()} models={models} />);
 
     const bindIp = await screen.findByText('192.168.20.175');
     const group = bindIp.parentElement as HTMLElement;
@@ -567,7 +567,7 @@ describe('VirtualPrinterCard - header does not overflow the card', () => {
   });
 
   it('clips at the card border as a backstop', async () => {
-    const { container } = render(<VirtualPrinterCard printer={twoVlanPrinter()} models={models} />);
+    const { container } = render(<VirtualPrinterCard defaultExpanded printer={twoVlanPrinter()} models={models} />);
 
     await screen.findByText('192.168.20.175');
     // Scoped to this card on purpose: cards elsewhere render menus that paint
@@ -596,7 +596,7 @@ describe('VirtualPrinterCard - target printer can be cleared', () => {
     screen.getAllByRole('combobox').find((el) => (el as HTMLSelectElement).querySelector('option[value="7"]')) as HTMLSelectElement;
 
   it('queue mode without a target offers any printer of the model', async () => {
-    render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'queue' })} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={createMockPrinter({ mode: 'queue' })} models={models} />);
 
     await waitFor(() => expect(targetSelect()).toBeTruthy());
     expect(targetSelect().selectedOptions[0].textContent).toBe('Any available X1C');
@@ -605,7 +605,7 @@ describe('VirtualPrinterCard - target printer can be cleared', () => {
 
   it('choosing "any" in queue mode clears the target', async () => {
     const user = userEvent.setup();
-    render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'queue', target_printer_id: 7 })} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={createMockPrinter({ mode: 'queue', target_printer_id: 7 })} models={models} />);
     await waitFor(() => expect(targetSelect().value).toBe('7'));
     expect(screen.getByText('Every job goes to this printer.')).toBeInTheDocument();
 
@@ -618,7 +618,7 @@ describe('VirtualPrinterCard - target printer can be cleared', () => {
 
   it('proxy mode keeps the empty entry as a prompt', async () => {
     const user = userEvent.setup();
-    render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'proxy', target_printer_id: 7 })} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={createMockPrinter({ mode: 'proxy', target_printer_id: 7 })} models={models} />);
     await waitFor(() => expect(targetSelect().value).toBe('7'));
     expect(targetSelect().options[0].textContent).toBe('Select a printer...');
 
@@ -628,7 +628,7 @@ describe('VirtualPrinterCard - target printer can be cleared', () => {
   });
 
   it('archive mode calls the empty entry none', async () => {
-    render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'archive' })} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={createMockPrinter({ mode: 'archive' })} models={models} />);
     await waitFor(() => expect(targetSelect()).toBeTruthy());
     expect(targetSelect().selectedOptions[0].textContent).toBe('None');
   });
@@ -656,7 +656,7 @@ describe('VirtualPrinterCard - File Manager folder', () => {
   const folderSelect = () => screen.getByRole('combobox', { name: 'File Manager folder' }) as HTMLSelectElement;
 
   it('offers internal folders the user can add to, nested, and the shared default', async () => {
-    render(<VirtualPrinterCard printer={createMockPrinter()} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={createMockPrinter()} models={models} />);
 
     await waitFor(() => expect(folderSelect().options).toHaveLength(3));
     const labels = Array.from(folderSelect().options).map((o) => o.textContent);
@@ -666,7 +666,7 @@ describe('VirtualPrinterCard - File Manager folder', () => {
 
   it('choosing a folder saves it, and the default clears it', async () => {
     const user = userEvent.setup();
-    render(<VirtualPrinterCard printer={createMockPrinter()} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={createMockPrinter()} models={models} />);
     await waitFor(() => expect(folderSelect().options).toHaveLength(3));
 
     await user.selectOptions(folderSelect(), '4');
@@ -677,7 +677,7 @@ describe('VirtualPrinterCard - File Manager folder', () => {
   });
 
   it('a proxy keeps no files, so it has no folder', async () => {
-    render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'proxy' })} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={createMockPrinter({ mode: 'proxy' })} models={models} />);
 
     await screen.findByText('Target Printer');
     expect(screen.queryByRole('combobox', { name: 'File Manager folder' })).toBeNull();
@@ -685,7 +685,7 @@ describe('VirtualPrinterCard - File Manager folder', () => {
 
   it('queue mode can remove the file from the File Manager once it prints', async () => {
     const user = userEvent.setup();
-    render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'queue' })} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={createMockPrinter({ mode: 'queue' })} models={models} />);
 
     const toggle = await screen.findByRole('switch', { name: 'Remove from File Manager once it prints' });
     expect(toggle.getAttribute('aria-checked')).toBe('false');
@@ -697,9 +697,27 @@ describe('VirtualPrinterCard - File Manager folder', () => {
   });
 
   it('an old "archive" printer shows as File Manager mode', async () => {
-    render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'archive' })} models={models} />);
+    render(<VirtualPrinterCard defaultExpanded printer={createMockPrinter({ mode: 'archive' })} models={models} />);
 
     const button = await screen.findByText('Store files in the File Manager');
     expect(button.closest('button')?.className).toContain('border-bambu-green');
+  });
+});
+
+
+// With several virtual printers the settings page stays a list: each card
+// opens on a click of its header.
+describe('VirtualPrinterCard - collapsed by default', () => {
+  it('shows only the header until opened', async () => {
+    const user = userEvent.setup();
+    render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'queue' })} models={models} />);
+
+    expect(screen.getByText('Test VP')).toBeInTheDocument();
+    expect(screen.queryByText('Target Printer')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Expand' }));
+
+    expect(await screen.findByText('Target Printer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Collapse' }).getAttribute('aria-expanded')).toBe('true');
   });
 });

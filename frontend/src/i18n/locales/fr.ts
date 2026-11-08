@@ -6333,7 +6333,7 @@ export default {
     },
     accessCode: {
       title: 'Code d\'accès',
-      personalHint: 'Avec l\'authentification activée, les utilisateurs peuvent aussi saisir leur code d\'accès personnel (barre latérale, icône d\'imprimante) : ce qu\'ils envoient est alors à eux.',
+      personalHint: 'Avec l\'authentification activée, les utilisateurs peuvent aussi saisir leur code d\'accès personnel, affiché en haut de cette page : ce qu\'ils envoient est alors à eux.',
       isSet: 'Code défini',
       notSet: 'Code requis pour activer',
       placeholder: 'Code 8 char',

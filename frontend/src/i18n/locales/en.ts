@@ -6398,7 +6398,7 @@ export default {
     },
     accessCode: {
       title: 'Access Code',
-      personalHint: 'With auth on, users can also enter their personal access code (sidebar, printer icon): what they send is then theirs.',
+      personalHint: 'With auth on, users can also enter their personal access code, shown at the top of this page: what they send is then theirs.',
       isSet: 'Access code is set',
       notSet: 'No access code set - required to enable',
       placeholder: 'Enter 8-char code',

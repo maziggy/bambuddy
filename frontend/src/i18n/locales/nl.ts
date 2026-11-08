@@ -6396,7 +6396,7 @@ export default {
     },
     accessCode: {
       title: 'Toegangscode',
-      personalHint: 'Met aanmelding aan kunnen gebruikers ook hun persoonlijke toegangscode invoeren (zijbalk, printerpictogram): wat ze sturen is dan van hen.',
+      personalHint: 'Met aanmelding aan kunnen gebruikers ook hun persoonlijke toegangscode invoeren, bovenaan deze pagina: wat ze sturen is dan van hen.',
       isSet: 'Toegangscode is ingesteld',
       notSet: 'Geen toegangscode ingesteld - vereist om in te schakelen',
       placeholder: 'Voer een code van 8 tekens in',

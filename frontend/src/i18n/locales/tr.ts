@@ -6309,7 +6309,7 @@ export default {
     },
     accessCode: {
       title: 'Erişim Kodu',
-      personalHint: 'Kimlik doğrulama açıkken kullanıcılar kişisel erişim kodlarını da girebilir (kenar çubuğu, yazıcı simgesi): gönderdikleri böylece onların olur.',
+      personalHint: 'Kimlik doğrulama açıkken kullanıcılar bu sayfanın üstünde görünen kişisel erişim kodlarını da girebilir: gönderdikleri böylece onların olur.',
       isSet: 'Erişim kodu ayarlandı',
       notSet: 'Erişim kodu ayarlanmadı - etkinleştirmek için gerekli',
       placeholder: '8 karakterli kodu girin',

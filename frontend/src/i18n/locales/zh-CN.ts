@@ -6332,7 +6332,7 @@ export default {
     },
     accessCode: {
       title: '访问码',
-      personalHint: '启用身份验证后,用户也可以输入自己的个人访问码(侧边栏的打印机图标):他们发送的内容就属于他们。',
+      personalHint: '启用身份验证后,用户也可以输入显示在本页顶部的个人访问码:他们发送的内容就属于他们。',
       isSet: '访问码已设置',
       notSet: '未设置访问码 - 需要设置才能启用',
       placeholder: '输入 8 位字符代码',

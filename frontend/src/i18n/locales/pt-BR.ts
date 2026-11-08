@@ -6332,7 +6332,7 @@ export default {
     },
     accessCode: {
       title: 'Código de acesso',
-      personalHint: 'Com a autenticação ativa, os usuários também podem digitar seu código de acesso pessoal (barra lateral, ícone de impressora): o que enviarem passa a ser deles.',
+      personalHint: 'Com a autenticação ativa, os usuários também podem digitar seu código de acesso pessoal, mostrado no topo desta página: o que enviarem passa a ser deles.',
       isSet: 'O código de acesso está definido',
       notSet: 'Nenhum código de acesso definido — necessário para ativar.',
       placeholder: 'Digite um código de 8 caracteres',

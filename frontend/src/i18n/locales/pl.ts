@@ -6411,6 +6411,10 @@ export default {
     targetPrinter: {
       title: 'Drukarka docelowa',
       placeholder: 'Wybierz drukarkę...',
+      anyOfModel: 'Dowolna dostępna {{model}}',
+      none: 'Brak',
+      queueFixedHint: 'Każde zadanie trafia do tej drukarki.',
+      queueAnyHint: 'Każde zadanie trafia do pierwszej wolnej {{model}}. Wybierz drukarkę, aby wysyłać wszystkie zadania do niej.',
     },
     remoteInterface: {
       title: 'Wymuszenie interfejsu sieciowego',
@@ -6466,6 +6470,9 @@ export default {
       copied: 'Skopiowano',
       download: 'Pobierz',
       fingerprint: 'SHA-256',
+      installerTitle: 'Dodaj automatycznie do slicera:',
+      installerHint: 'Pobiera skrypt dla Bambu Studio i OrcaSlicer. Windows: kliknij go dwukrotnie i potwierdź monit; potem dodaje certyfikat ponownie po każdej aktualizacji slicera. Linux / macOS: uruchom go przez bash, i ponownie po aktualizacji slicera.',
+      installerFailed: 'Nie udało się utworzyć skryptu',
     },
     howItWorks: {
       title: 'Jak to działa',

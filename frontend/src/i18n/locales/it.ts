@@ -6345,6 +6345,10 @@ export default {
     targetPrinter: {
       title: 'Stampante target',
       placeholder: 'Seleziona una stampante...',
+      anyOfModel: 'Qualsiasi {{model}} disponibile',
+      none: 'Nessuna',
+      queueFixedHint: 'Ogni lavoro va a questa stampante.',
+      queueAnyHint: 'Ogni lavoro va alla prima {{model}} libera. Scegli una stampante per inviare tutti i lavori a quella.',
     },
     remoteInterface: {
       title: 'Sovrascrittura interfaccia di rete',
@@ -6445,6 +6449,9 @@ export default {
       copied: 'Copiato',
       download: 'Scarica',
       fingerprint: 'SHA-256',
+      installerTitle: 'Aggiungilo automaticamente allo slicer:',
+      installerHint: 'Scarica uno script per Bambu Studio e OrcaSlicer. Windows: fai doppio clic e conferma la richiesta; poi aggiunge di nuovo il certificato dopo ogni aggiornamento dello slicer. Linux / macOS: eseguilo con bash, e di nuovo dopo un aggiornamento dello slicer.',
+      installerFailed: 'Impossibile creare lo script',
     },
   },
 

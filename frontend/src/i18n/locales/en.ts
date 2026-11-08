@@ -6411,6 +6411,10 @@ export default {
     targetPrinter: {
       title: 'Target Printer',
       placeholder: 'Select a printer...',
+      anyOfModel: 'Any available {{model}}',
+      none: 'None',
+      queueFixedHint: 'Every job goes to this printer.',
+      queueAnyHint: 'Each job goes to the first free {{model}}. Choose a printer to send all jobs to that one.',
     },
     remoteInterface: {
       title: 'Network Interface Override',
@@ -6466,6 +6470,9 @@ export default {
       copied: 'Copied',
       download: 'Download',
       fingerprint: 'SHA-256',
+      installerTitle: 'Add it to the slicer automatically:',
+      installerHint: 'Downloads a script for Bambu Studio and OrcaSlicer. Windows: double-click it and confirm the prompt; it then adds the certificate again after every slicer update. Linux / macOS: run it with bash, and again after a slicer update.',
+      installerFailed: 'Could not create the script',
     },
     howItWorks: {
       title: 'How it works',

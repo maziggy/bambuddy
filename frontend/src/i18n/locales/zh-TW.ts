@@ -6345,6 +6345,10 @@ export default {
     targetPrinter: {
       title: '目標印表機',
       placeholder: '選擇印表機...',
+      anyOfModel: '任一閒置的 {{model}}',
+      none: '無',
+      queueFixedHint: '所有工作都傳送到這台印表機。',
+      queueAnyHint: '每個工作傳送到第一台閒置的 {{model}}。選擇一台印表機可將所有工作傳送到該印表機。',
     },
     remoteInterface: {
       title: '網路介面覆蓋',
@@ -6400,6 +6404,9 @@ export default {
       copied: '已複製',
       download: '下載',
       fingerprint: 'SHA-256',
+      installerTitle: '自動加入切片軟體:',
+      installerHint: '下載適用於 Bambu Studio 與 OrcaSlicer 的指令碼。Windows:按兩下並確認提示;之後每次切片軟體更新後都會重新加入憑證。Linux / macOS:用 bash 執行,切片軟體更新後再執行一次。',
+      installerFailed: '無法建立指令碼',
     },
     howItWorks: {
       title: '工作原理',

@@ -6359,6 +6359,10 @@ export default {
     targetPrinter: {
       title: 'ターゲットプリンター',
       placeholder: 'プリンターを選択...',
+      anyOfModel: '空いている任意の{{model}}',
+      none: 'なし',
+      queueFixedHint: 'すべてのジョブがこのプリンターに送られます。',
+      queueAnyHint: '各ジョブは最初に空いた{{model}}に送られます。プリンターを選ぶと、すべてのジョブがそのプリンターに送られます。',
     },
     remoteInterface: {
       title: 'ネットワークインターフェース上書き',
@@ -6459,6 +6463,9 @@ export default {
       copied: 'コピーしました',
       download: 'ダウンロード',
       fingerprint: 'SHA-256',
+      installerTitle: 'スライサーに自動で追加:',
+      installerHint: 'Bambu Studio と OrcaSlicer 用のスクリプトをダウンロードします。Windows: ダブルクリックして確認に応じてください。以降、スライサーの更新ごとに証明書を再度追加します。Linux / macOS: bash で実行し、スライサーの更新後にも再度実行してください。',
+      installerFailed: 'スクリプトを作成できませんでした',
     },
   },
 

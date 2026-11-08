@@ -6409,6 +6409,10 @@ export default {
     targetPrinter: {
       title: 'Doelprinter',
       placeholder: 'Selecteer een printer...',
+      anyOfModel: 'Elke beschikbare {{model}}',
+      none: 'Geen',
+      queueFixedHint: 'Elke taak gaat naar deze printer.',
+      queueAnyHint: 'Elke taak gaat naar de eerste vrije {{model}}. Kies een printer om alle taken naar die printer te sturen.',
     },
     remoteInterface: {
       title: 'Overschrijving netwerkinterface',
@@ -6464,6 +6468,9 @@ export default {
       copied: 'Gekopieerd',
       download: 'Downloaden',
       fingerprint: 'SHA-256',
+      installerTitle: 'Automatisch aan de slicer toevoegen:',
+      installerHint: 'Downloadt een script voor Bambu Studio en OrcaSlicer. Windows: dubbelklik erop en bevestig de vraag; daarna voegt het het certificaat na elke slicer-update opnieuw toe. Linux / macOS: voer het uit met bash, en opnieuw na een slicer-update.',
+      installerFailed: 'Het script kon niet worden gemaakt',
     },
     howItWorks: {
       title: 'Hoe het werkt',

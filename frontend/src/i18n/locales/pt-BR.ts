@@ -6345,6 +6345,10 @@ export default {
     targetPrinter: {
       title: 'Impressora Alvo',
       placeholder: 'Selecione uma impressora...',
+      anyOfModel: 'Qualquer {{model}} disponível',
+      none: 'Nenhuma',
+      queueFixedHint: 'Todo trabalho vai para esta impressora.',
+      queueAnyHint: 'Cada trabalho vai para a primeira {{model}} livre. Escolha uma impressora para enviar todos os trabalhos para ela.',
     },
     remoteInterface: {
       title: 'Substituição da Interface de Rede',
@@ -6445,6 +6449,9 @@ export default {
       copied: 'Copiado',
       download: 'Baixar',
       fingerprint: 'SHA-256',
+      installerTitle: 'Adicionar ao fatiador automaticamente:',
+      installerHint: 'Baixa um script para o Bambu Studio e o OrcaSlicer. Windows: clique duas vezes e confirme o aviso; depois ele adiciona o certificado de novo após cada atualização do fatiador. Linux / macOS: execute com bash, e de novo após uma atualização do fatiador.',
+      installerFailed: 'Não foi possível criar o script',
     },
   },
 

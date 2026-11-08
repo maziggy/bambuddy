@@ -6095,6 +6095,10 @@ export default {
     targetPrinter: {
       title: '대상 프린터',
       placeholder: '프린터 선택...',
+      anyOfModel: '사용 가능한 모든 {{model}}',
+      none: '없음',
+      queueFixedHint: '모든 작업이 이 프린터로 전송됩니다.',
+      queueAnyHint: '각 작업은 처음 비어 있는 {{model}}(으)로 전송됩니다. 프린터를 선택하면 모든 작업이 해당 프린터로 전송됩니다.',
     },
     remoteInterface: {
       title: '네트워크 인터페이스 재정의',
@@ -6194,7 +6198,10 @@ export default {
       copy: '복사',
       copied: '복사됨',
       download: '다운로드',
-      fingerprint: 'SHA-256'
+      fingerprint: 'SHA-256',
+      installerTitle: '슬라이서에 자동으로 추가:',
+      installerHint: 'Bambu Studio와 OrcaSlicer용 스크립트를 다운로드합니다. Windows: 더블클릭하고 확인 창을 승인하세요. 이후 슬라이서가 업데이트될 때마다 인증서를 다시 추가합니다. Linux / macOS: bash로 실행하고, 슬라이서 업데이트 후 다시 실행하세요.',
+      installerFailed: '스크립트를 만들 수 없습니다'
     }
   },
   modelViewer: {

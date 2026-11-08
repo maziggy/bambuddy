@@ -6346,6 +6346,10 @@ export default {
     targetPrinter: {
       title: 'Imprimante cible',
       placeholder: 'Choisir imprimante...',
+      anyOfModel: 'N\'importe quelle {{model}} disponible',
+      none: 'Aucune',
+      queueFixedHint: 'Chaque tâche va à cette imprimante.',
+      queueAnyHint: 'Chaque tâche va à la première {{model}} libre. Choisissez une imprimante pour y envoyer toutes les tâches.',
     },
     remoteInterface: {
       title: 'Exception Interface Réseau',
@@ -6446,6 +6450,9 @@ export default {
       copied: 'Copié',
       download: 'Télécharger',
       fingerprint: 'SHA-256',
+      installerTitle: 'L\'ajouter automatiquement au trancheur :',
+      installerHint: 'Télécharge un script pour Bambu Studio et OrcaSlicer. Windows : double-cliquez dessus et confirmez la demande ; il rajoute ensuite le certificat après chaque mise à jour du trancheur. Linux / macOS : lancez-le avec bash, et à nouveau après une mise à jour du trancheur.',
+      installerFailed: 'Impossible de créer le script',
     },
   },
 

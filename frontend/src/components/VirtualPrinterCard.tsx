@@ -215,12 +215,12 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
     updateMutation.mutate({ model });
   };
 
-  const handleTargetPrinterChange = (printerId: number) => {
+  const handleTargetPrinterChange = (printerId: number | null) => {
     // The new target's access code becomes this VP's access code on the
     // backend write. If the slicer was already bound with the old code,
     // it has to rebind; flag this so the user doesn't sit there confused.
     const previousCode = targetPrinter?.access_code;
-    const nextCode = printers?.find(p => p.id === printerId)?.access_code;
+    const nextCode = printerId === null ? undefined : printers?.find(p => p.id === printerId)?.access_code;
     setLocalTargetPrinterId(printerId);
     setPendingAction('targetPrinter');
     updateMutation.mutate(
@@ -686,19 +686,37 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                 <select
                   value={localTargetPrinterId ?? ''}
                   onChange={(e) => {
+                    if (e.target.value === '') {
+                      // Proxy mode needs a printer, so its empty entry is only a prompt.
+                      if (localMode !== 'proxy' && localTargetPrinterId !== null) handleTargetPrinterChange(null);
+                      return;
+                    }
                     const id = parseInt(e.target.value, 10);
                     if (!isNaN(id)) handleTargetPrinterChange(id);
                   }}
                   disabled={pendingAction === 'targetPrinter'}
                   className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-md px-3 py-1.5 text-white text-sm appearance-none cursor-pointer disabled:opacity-50 pr-10"
                 >
-                  <option value="">{t('virtualPrinter.targetPrinter.placeholder')}</option>
+                  <option value="">
+                    {localMode === 'proxy'
+                      ? t('virtualPrinter.targetPrinter.placeholder')
+                      : localMode === 'queue'
+                        ? t('virtualPrinter.targetPrinter.anyOfModel', { model: models[localModel] || localModel })
+                        : t('virtualPrinter.targetPrinter.none')}
+                  </option>
                   {printers?.map((p) => (
                     <option key={p.id} value={p.id}>{p.name} ({p.ip_address})</option>
                   ))}
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
               </div>
+              {localMode === 'queue' && (
+                <p className="text-xs text-bambu-gray mt-1">
+                  {localTargetPrinterId !== null
+                    ? t('virtualPrinter.targetPrinter.queueFixedHint')
+                    : t('virtualPrinter.targetPrinter.queueAnyHint', { model: models[localModel] || localModel })}
+                </p>
+              )}
             </div>
 
             {/* Bind Interface */}

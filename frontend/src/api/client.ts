@@ -9315,7 +9315,8 @@ export const multiVirtualPrinterApi = {
     mode?: string;
     model?: string;
     access_code?: string;
-    target_printer_id?: number;
+    // null clears the target (a queue VP then sends to any printer of its model).
+    target_printer_id?: number | null;
     auto_dispatch?: boolean;
     queue_force_color_match?: boolean;
     save_ams_mapping?: boolean;
@@ -9339,6 +9340,11 @@ export const multiVirtualPrinterApi = {
 
   getCaCertificate: () =>
     request<VPCaCertificate>('/virtual-printers/ca-certificate'),
+
+  // A script that adds the CA to Bambu Studio and OrcaSlicer, with the CA
+  // written into it: 'windows' (.cmd) or 'unix' (.sh, Linux and macOS).
+  getCaCertificateInstaller: (platform: 'windows' | 'unix') =>
+    request<{ filename: string; content: string }>(`/virtual-printers/ca-certificate/installer/${platform}`),
 
   diagnose: (id: number) =>
     request<VPDiagnosticResult>(`/virtual-printers/${id}/diagnostic`),

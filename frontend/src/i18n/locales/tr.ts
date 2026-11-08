@@ -6322,6 +6322,10 @@ export default {
     targetPrinter: {
       title: 'Hedef Yazıcı',
       placeholder: 'Bir yazıcı seçin...',
+      anyOfModel: 'Herhangi bir uygun {{model}}',
+      none: 'Yok',
+      queueFixedHint: 'Her iş bu yazıcıya gider.',
+      queueAnyHint: 'Her iş ilk boştaki {{model}} yazıcısına gider. Tüm işleri ona göndermek için bir yazıcı seçin.',
     },
     remoteInterface: {
       title: 'Ağ Arayüzü Geçersiz Kılma',
@@ -6377,6 +6381,9 @@ export default {
       copied: 'Kopyalandı',
       download: 'İndir',
       fingerprint: 'SHA-256',
+      installerTitle: 'Dilimleyiciye otomatik ekle:',
+      installerHint: 'Bambu Studio ve OrcaSlicer için bir betik indirir. Windows: çift tıklayın ve istemi onaylayın; ardından her dilimleyici güncellemesinden sonra sertifikayı yeniden ekler. Linux / macOS: bash ile çalıştırın ve dilimleyici güncellemesinden sonra tekrar çalıştırın.',
+      installerFailed: 'Betik oluşturulamadı',
     },
     howItWorks: {
       title: 'Nasıl çalışır',

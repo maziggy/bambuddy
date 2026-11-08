@@ -408,6 +408,30 @@ class TestVirtualPrinterCaCertificateAPI:
         # A 200 (not 422 from int-parsing "ca-certificate") proves route ordering.
         assert response.status_code == 200
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(("platform", "filename"), [("windows", ".cmd"), ("unix", ".sh")])
+    async def test_installer_carries_this_instance_ca(self, async_client: AsyncClient, platform, filename):
+        ca = (await async_client.get("/api/v1/virtual-printers/ca-certificate")).json()
+
+        response = await async_client.get(f"/api/v1/virtual-printers/ca-certificate/installer/{platform}")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["filename"].endswith(filename)
+        body = ca["pem"].strip().splitlines()[1]
+        assert body in result["content"]
+        assert ca["fingerprint_sha256"] in result["content"]
+        assert "__BAMBUDDY_" not in result["content"]
+        assert "PRIVATE KEY" not in result["content"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_installer_for_an_unknown_platform_is_404(self, async_client: AsyncClient):
+        response = await async_client.get("/api/v1/virtual-printers/ca-certificate/installer/amiga")
+
+        assert response.status_code == 404
+
 
 class TestVirtualPrinterDiagnosticAPI:
     """Integration tests for GET /api/v1/virtual-printers/{vp_id}/diagnostic."""
@@ -584,6 +608,67 @@ class TestVirtualPrinterAccessCodeInheritance:
 
         vp = (await db_session.execute(select(VirtualPrinter).where(VirtualPrinter.id == vp_id))).scalar_one()
         assert vp.access_code == "REALCODE"
+
+
+class TestVirtualPrinterClearTarget:
+    """A null target_printer_id clears the target (queue VP: any printer of
+    its model); leaving the field out keeps it."""
+
+    @staticmethod
+    async def _queue_vp(async_client: AsyncClient, target_id: int, **extra) -> int:
+        response = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={"name": "QueueVP", "mode": "queue", "target_printer_id": target_id, **extra},
+        )
+        assert response.status_code == 200
+        return response.json()["id"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_null_clears_the_target_and_keeps_the_code(self, async_client: AsyncClient, printer_factory):
+        target = await printer_factory(name="Real X1C", access_code="REALCODE")
+        vp_id = await self._queue_vp(async_client, target.id)
+
+        response = await async_client.put(f"/api/v1/virtual-printers/{vp_id}", json={"target_printer_id": None})
+
+        assert response.status_code == 200
+        assert response.json()["target_printer_id"] is None
+        assert response.json()["access_code_set"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_leaving_the_field_out_keeps_the_target(self, async_client: AsyncClient, printer_factory):
+        target = await printer_factory(name="Real X1C", access_code="REALCODE")
+        vp_id = await self._queue_vp(async_client, target.id)
+
+        response = await async_client.put(f"/api/v1/virtual-printers/{vp_id}", json={"auto_dispatch": False})
+
+        assert response.status_code == 200
+        assert response.json()["target_printer_id"] == target.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_clearing_a_proxy_target_turns_the_proxy_off(self, async_client: AsyncClient, printer_factory):
+        target = await printer_factory(name="Real X1C", access_code="REALCODE")
+        response = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "ProxyVP",
+                "mode": "proxy",
+                "target_printer_id": target.id,
+                "bind_ip": "192.168.1.52",
+                "enabled": True,
+            },
+        )
+        assert response.status_code == 200
+        vp_id = response.json()["id"]
+
+        with patch("backend.app.services.virtual_printer.virtual_printer_manager.sync_from_db", AsyncMock()):
+            response = await async_client.put(f"/api/v1/virtual-printers/{vp_id}", json={"target_printer_id": None})
+
+        assert response.status_code == 200
+        assert response.json()["target_printer_id"] is None
+        assert response.json()["enabled"] is False
 
 
 class TestVirtualPrinterSerialSurface:

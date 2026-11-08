@@ -6366,6 +6366,10 @@ export default {
     targetPrinter: {
       title: 'Impresora de destino',
       placeholder: 'Seleccionar una impresora...',
+      anyOfModel: 'Cualquier {{model}} disponible',
+      none: 'Ninguna',
+      queueFixedHint: 'Cada trabajo va a esta impresora.',
+      queueAnyHint: 'Cada trabajo va a la primera {{model}} libre. Elige una impresora para enviar todos los trabajos a ella.',
     },
     remoteInterface: {
       title: 'Anulación de la interfaz de red',
@@ -6421,6 +6425,9 @@ export default {
       copied: 'Copiado',
       download: 'Descargar',
       fingerprint: 'SHA-256',
+      installerTitle: 'Añadirlo al laminador automáticamente:',
+      installerHint: 'Descarga un script para Bambu Studio y OrcaSlicer. Windows: haz doble clic y confirma el aviso; después vuelve a añadir el certificado tras cada actualización del laminador. Linux / macOS: ejecútalo con bash, y de nuevo tras una actualización del laminador.',
+      installerFailed: 'No se pudo crear el script',
     },
     howItWorks: {
       title: 'Cómo funciona',

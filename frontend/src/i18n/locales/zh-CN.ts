@@ -6345,6 +6345,10 @@ export default {
     targetPrinter: {
       title: '目标打印机',
       placeholder: '选择打印机...',
+      anyOfModel: '任意空闲的 {{model}}',
+      none: '无',
+      queueFixedHint: '所有任务都发送到这台打印机。',
+      queueAnyHint: '每个任务发送到第一台空闲的 {{model}}。选择一台打印机可将所有任务发送到该打印机。',
     },
     remoteInterface: {
       title: '网络接口覆盖',
@@ -6400,6 +6404,9 @@ export default {
       copied: '已复制',
       download: '下载',
       fingerprint: 'SHA-256',
+      installerTitle: '自动添加到切片软件:',
+      installerHint: '下载适用于 Bambu Studio 和 OrcaSlicer 的脚本。Windows:双击并确认提示;之后每次切片软件更新后它都会重新添加证书。Linux / macOS:用 bash 运行,切片软件更新后再运行一次。',
+      installerFailed: '无法创建脚本',
     },
     howItWorks: {
       title: '工作原理',

@@ -6440,6 +6440,10 @@ errors: {
     targetPrinter: {
       title: 'Målskrivare',
       placeholder: 'Välj en skrivare...',
+      anyOfModel: 'Valfri ledig {{model}}',
+      none: 'Ingen',
+      queueFixedHint: 'Varje jobb går till den här skrivaren.',
+      queueAnyHint: 'Varje jobb går till den första lediga {{model}}. Välj en skrivare för att skicka alla jobb dit.',
     },
     remoteInterface: {
       title: 'Åsidosättning för nätverksgränssnitt',
@@ -6495,6 +6499,9 @@ errors: {
       copied: 'Kopierad',
       download: 'Ladda ner',
       fingerprint: 'SHA-256',
+      installerTitle: 'Lägg till i slicern automatiskt:',
+      installerHint: 'Laddar ner ett skript för Bambu Studio och OrcaSlicer. Windows: dubbelklicka och bekräfta frågan; sedan lägger det till certifikatet igen efter varje slicer-uppdatering. Linux / macOS: kör det med bash, och igen efter en slicer-uppdatering.',
+      installerFailed: 'Skriptet kunde inte skapas',
     },
     howItWorks: {
       title: 'Hur det fungerar',

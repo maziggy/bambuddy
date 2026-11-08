@@ -573,3 +573,60 @@ describe('VirtualPrinterCard - header does not overflow the card', () => {
     expect(card.className).toContain('overflow-hidden');
   });
 });
+
+// The empty entry of the target picker used to be a prompt that could not be
+// chosen, so a target once set could never be cleared. In queue mode it now
+// reads "Any available <model>" and clears the target (null); proxy mode
+// needs a printer, so there it stays a prompt.
+describe('VirtualPrinterCard - target printer can be cleared', () => {
+  const printers = [
+    { id: 7, name: 'Workshop X1C', ip_address: '192.168.1.50', access_code: 'TGTCODE1', model: 'X1C', is_active: true },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(multiVirtualPrinterApi.update).mockResolvedValue(createMockPrinter());
+    vi.mocked(api.getPrinters).mockResolvedValue(printers as unknown as Awaited<ReturnType<typeof api.getPrinters>>);
+  });
+
+  const targetSelect = () =>
+    screen.getAllByRole('combobox').find((el) => (el as HTMLSelectElement).querySelector('option[value="7"]')) as HTMLSelectElement;
+
+  it('queue mode without a target offers any printer of the model', async () => {
+    render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'queue' })} models={models} />);
+
+    await waitFor(() => expect(targetSelect()).toBeTruthy());
+    expect(targetSelect().selectedOptions[0].textContent).toBe('Any available X1C');
+    expect(screen.getByText(/first free X1C/)).toBeInTheDocument();
+  });
+
+  it('choosing "any" in queue mode clears the target', async () => {
+    const user = userEvent.setup();
+    render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'queue', target_printer_id: 7 })} models={models} />);
+    await waitFor(() => expect(targetSelect().value).toBe('7'));
+    expect(screen.getByText('Every job goes to this printer.')).toBeInTheDocument();
+
+    await user.selectOptions(targetSelect(), '');
+
+    await waitFor(() =>
+      expect(multiVirtualPrinterApi.update).toHaveBeenCalledWith(1, { target_printer_id: null }),
+    );
+  });
+
+  it('proxy mode keeps the empty entry as a prompt', async () => {
+    const user = userEvent.setup();
+    render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'proxy', target_printer_id: 7 })} models={models} />);
+    await waitFor(() => expect(targetSelect().value).toBe('7'));
+    expect(targetSelect().options[0].textContent).toBe('Select a printer...');
+
+    await user.selectOptions(targetSelect(), '');
+
+    expect(multiVirtualPrinterApi.update).not.toHaveBeenCalled();
+  });
+
+  it('archive mode calls the empty entry none', async () => {
+    render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'archive' })} models={models} />);
+    await waitFor(() => expect(targetSelect()).toBeTruthy());
+    expect(targetSelect().selectedOptions[0].textContent).toBe('None');
+  });
+});

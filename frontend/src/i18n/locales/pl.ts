@@ -2912,7 +2912,7 @@ export default {
     tabDisplayTime: 'Pozostały czas',
     // Archive
     autoArchivePrints: 'Automatycznie archiwizuj wydruki',
-    autoArchiveDescription: 'Automatycznie zapisuj pliki 3MF po ukończeniu wydruków. Po wyłączeniu wydruki uruchomione poza Bambuddy nie są archiwizowane na żadnej drukarce.',
+    autoArchiveDescription: 'Archiwizuj wydruki uruchomione poza Bambuddy (ze slicera lub z drukarki): plik 3MF, historia wydruków, statystyki i koszt. Po wyłączeniu takich wydruków nie ma w archiwum ani w statystykach; magazyn szpul nadal liczy ich filament.',
     captureFinishPhotoDescription: 'Zrób zdjęcie kamerą drukarki po ukończeniu wydruku. Podczas wydruku Bambuddy nagrywa krótki timelapse, aby zdjęcie mogło pochodzić z chwili przed opuszczeniem stołu; plik timelapse zostaje zachowany, jeśli włączono timelapse dla tego wydruku, w przeciwnym razie jest automatycznie usuwany po zrobieniu zdjęcia.',
     finishPhotoRestorePlate: 'Przywróć płytę do zdjęcia końcowego',
     finishPhotoRestorePlateDescription: 'Po zakończeniu wydruku drukarka opuszcza płytę roboczą o około 100 mm, przez co gotowy wydruk znajduje się poniżej kadru kamery. Bambuddy podnosi ją z powrotem tuż nad ostatnią wydrukowaną warstwę, robi zdjęcie, a potem znów ją opuszcza. Pomijane, gdy wysokość wydruku jest nieznana lub w kolejce czeka inne zadanie.',

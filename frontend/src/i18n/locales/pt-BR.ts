@@ -2842,7 +2842,7 @@ export default {
     tabDisplayPercentage: 'Porcentagem',
     tabDisplayTime: 'Tempo restante',
     autoArchivePrints: 'Arquivar impressões automaticamente',
-    autoArchiveDescription: 'Salvar automaticamente arquivos 3MF quando impressões forem concluídas. Desativado: nenhuma impressora arquiva impressões iniciadas fora do Bambuddy.',
+    autoArchiveDescription: 'Arquivar impressões iniciadas fora do Bambuddy (pelo fatiador ou pela impressora): arquivo 3MF, histórico, estatísticas e custo. Desativado: essas impressões ficam fora do arquivo e das estatísticas; o estoque de carretéis continua contando o filamento delas.',
     captureFinishPhotoDescription: 'Tirar foto da câmera da impressora quando a impressão for concluída. Bambuddy grava um timelapse curto durante a impressão para que a foto possa ser obtida do momento antes da mesa descer; o arquivo do timelapse é mantido se você habilitou o timelapse para esta impressão, caso contrário ele é excluído automaticamente após a captura da foto.',
     finishPhotoRestorePlate: 'Elevar a mesa para a foto final',
     finishPhotoRestorePlateDescription: 'A impressora baixa a mesa cerca de 100 mm ao fim de uma impressão, deixando a peça pronta abaixo do enquadramento da câmera. O Bambuddy a eleva novamente até logo acima da última camada impressa, tira a foto e depois a baixa de novo. Ignorado quando a altura da impressão é desconhecida ou há outro trabalho na fila.',

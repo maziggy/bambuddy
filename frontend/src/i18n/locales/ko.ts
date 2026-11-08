@@ -2754,7 +2754,7 @@ export default {
     tabDisplayPercentage: '진행률',
     tabDisplayTime: '남은 시간',
     autoArchivePrints: '인쇄 자동 아카이브',
-    autoArchiveDescription: '인쇄 완료 시 3MF 파일 자동 저장. 끄면 Bambuddy 외부에서 시작된 인쇄는 어떤 프린터에서도 보관되지 않습니다.',
+    autoArchiveDescription: 'Bambuddy 외부(슬라이서 또는 프린터)에서 시작된 인쇄를 보관합니다: 3MF 파일, 인쇄 기록, 통계 및 비용. 끄면 이러한 인쇄는 보관함과 통계에 나타나지 않으며, 스풀 재고는 여전히 필라멘트 사용량을 집계합니다.',
     captureFinishPhotoDescription: '인쇄 완료 시 프린터 카메라로 사진 촬영. Bambuddy는 인쇄 중 짧은 타임랩스를 기록하여 베드가 내려가기 전 순간에서 사진을 가져올 수 있도록 합니다. 이 인쇄에 대해 타임랩스를 활성화한 경우 타임랩스 파일이 보관되며, 그렇지 않으면 사진 촬영 후 자동으로 삭제됩니다.',
     finishPhotoRestorePlate: '완료 사진을 위해 베드 올리기',
     finishPhotoRestorePlateDescription: '프린터는 인쇄가 끝나면 베드를 약 100 mm 내리므로 완성된 출력물이 카메라 화각 아래에 놓입니다. Bambuddy는 베드를 마지막 인쇄 레이어 바로 위까지 다시 올려 사진을 찍은 뒤 다시 내립니다. 출력 높이를 알 수 없거나 다른 작업이 대기 중이면 건너뜁니다.',

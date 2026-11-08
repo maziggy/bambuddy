@@ -2893,7 +2893,7 @@ export default {
     tabDisplayTime: 'Kalan süre',
     // Arşiv
     autoArchivePrints: 'Baskıları otomatik arşivle',
-    autoArchiveDescription: 'Baskılar tamamlandığında 3MF dosyalarını otomatik olarak kaydet. Kapalıyken hiçbir yazıcı Bambuddy dışında başlatılan baskıları arşivlemez.',
+    autoArchiveDescription: 'Bambuddy dışında (dilimleyiciden veya yazıcıdan) başlatılan baskıları arşivle: 3MF dosyası, baskı geçmişi, istatistikler ve maliyet. Kapalıyken bu baskılar arşivde ve istatistiklerde yer almaz; makara envanteri filamentlerini yine sayar.',
     captureFinishPhotoDescription: 'Baskı tamamlandığında yazıcı kamerasından bir fotoğraf çek. Bambuddy, baskı sırasında kısa bir zaman atlamalı kayıt yapar, böylece fotoğraf tabla inmeden önceki andan alınabilir. Bu baskı için zaman atlamalı kaydı etkinleştirdiyseniz dosya saklanır, aksi takdirde fotoğraf çekildikten sonra otomatik olarak silinir.',
     finishPhotoRestorePlate: 'Bitiş fotoğrafı için tablayı yükselt',
     finishPhotoRestorePlateDescription: 'Yazıcı, baskı bittiğinde tablayı yaklaşık 100 mm aşağı indirir ve tamamlanmış baskı kameranın çerçevesinin altında kalır. Bambuddy tablayı son basılan katmanın hemen üzerine geri kaldırır, fotoğrafı çeker ve ardından tekrar indirir. Baskı yüksekliği bilinmiyorsa veya kuyrukta başka bir iş varsa atlanır.',

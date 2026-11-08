@@ -2887,7 +2887,7 @@ export default {
     tabDisplayPercentage: '百分比',
     tabDisplayTime: '剩餘時間',
     autoArchivePrints: '自動歸檔列印',
-    autoArchiveDescription: '列印完成時自動儲存3MF檔案。關閉時，所有印表機都不會歸檔在 Bambuddy 之外啟動的列印。',
+    autoArchiveDescription: '歸檔在 Bambuddy 之外（從切片軟體或印表機）啟動的列印：3MF 檔案、列印歷史、統計和成本。關閉時，這些列印不會出現在歸檔和統計中；線材庫存仍會計入其線材用量。',
     captureFinishPhotoDescription: '列印完成時從印表機攝影機拍照。Bambuddy 會在列印期間錄製一段短縮時攝影，以便從熱床下降前的瞬間取得照片；如果您為本次列印啟用了縮時攝影，檔案將保留，否則會在拍照完成後自動刪除。',
     finishPhotoRestorePlate: '為完成照片抬升熱床',
     finishPhotoRestorePlateDescription: '列印結束時印表機會將熱床下降約 100 mm，使完成的模型落在相機取景範圍之下。Bambuddy 會將熱床抬回到最後一層列印高度略上方，拍攝照片後再次下降。若列印高度未知或佇列中還有其他任務，則跳過此步驟。',

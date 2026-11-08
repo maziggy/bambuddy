@@ -2842,7 +2842,7 @@ export default {
     tabDisplayPercentage: 'Percentuale',
     tabDisplayTime: 'Tempo rimanente',
     autoArchivePrints: 'Archiviazione automatica stampe',
-    autoArchiveDescription: 'Salva automaticamente i file 3MF al completamento delle stampe. Disattivato: nessuna stampante archivia le stampe avviate al di fuori di Bambuddy.',
+    autoArchiveDescription: "Archivia le stampe avviate al di fuori di Bambuddy (dallo slicer o dalla stampante): file 3MF, cronologia, statistiche e costo. Disattivato: queste stampe mancano dall'archivio e dalle statistiche; l'inventario delle bobine conta comunque il loro filamento.",
     captureFinishPhotoDescription: 'Scatta una foto dalla fotocamera della stampante al completamento della stampa. Bambuddy registra un breve timelapse durante la stampa in modo che la foto possa essere ricavata dal momento precedente all\'abbassamento del piatto; il file del timelapse viene mantenuto se hai abilitato il timelapse per questa stampa, altrimenti viene eliminato automaticamente dopo l\'acquisizione della foto.',
     finishPhotoRestorePlate: 'Solleva il piatto per la foto finale',
     finishPhotoRestorePlateDescription: 'La stampante abbassa il piatto di circa 100 mm al termine di una stampa, lasciando l\'oggetto finito sotto l\'inquadratura della fotocamera. Bambuddy lo risolleva fino a poco sopra l\'ultimo strato stampato, scatta la foto e poi lo riabbassa. Ignorato se l\'altezza di stampa è sconosciuta o se un altro lavoro è in coda.',

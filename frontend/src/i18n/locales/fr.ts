@@ -2843,7 +2843,7 @@ export default {
     tabDisplayPercentage: 'Pourcentage',
     tabDisplayTime: 'Temps restant',
     autoArchivePrints: 'Archiver automatiquement les impressions',
-    autoArchiveDescription: 'Sauvegarder automatiquement les fichiers 3MF à la fin des impressions. Désactivé : aucune imprimante n\'archive les impressions lancées en dehors de Bambuddy.',
+    autoArchiveDescription: "Archiver les impressions lancées en dehors de Bambuddy (depuis le trancheur ou l'imprimante) : fichier 3MF, historique, statistiques et coût. Désactivé : ces impressions manquent dans l'archive et les statistiques ; l'inventaire des bobines compte toujours leur filament.",
     captureFinishPhotoDescription: 'Prendre une photo avec la caméra de l\'imprimante à la fin de l\'impression. Bambuddy enregistre un court timelapse pendant l\'impression afin que la photo puisse provenir du moment précédant l\'abaissement du plateau ; le fichier du timelapse est conservé si vous avez activé le timelapse pour cette impression, sinon il est supprimé automatiquement après la capture de la photo.',
     finishPhotoRestorePlate: 'Remonter le plateau pour la photo finale',
     finishPhotoRestorePlateDescription: 'L\'imprimante abaisse le plateau d\'environ 100 mm à la fin d\'une impression, plaçant l\'objet terminé sous le cadrage de la caméra. Bambuddy le remonte juste au-dessus de la dernière couche imprimée, prend la photo, puis le rabaisse. Ignoré si la hauteur d\'impression est inconnue ou si un autre travail est en file d\'attente.',

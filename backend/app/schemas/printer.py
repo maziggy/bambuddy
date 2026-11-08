@@ -330,7 +330,12 @@ class AMSUnit(BaseModel):
     dry_sf_reason: list[int] = []  # Cannot-dry reasons from firmware (see CannotDryReason)
     dry_target_temp: int | None = None  # Active-cycle target °C (Bambu doesn't echo this)
     dry_filament: str | None = None  # Active-cycle filament name we sent
-    module_type: str = ""  # "ams", "ams_f1", "n3f", "n3s"
+    module_type: str = ""  # "ams", "ams_f1", "n3f", "n3s", "n10a" (the H3C's AMS 3H)
+    ams_type: int | None = None  # Studio's AMS type (utils.tray_ids.AmsType); decides the global tray ids
+    # The AMS 3H's dryer: its drying zone's two slots and readings. Empty elsewhere.
+    dryer_slots: list[int] = []
+    dryer_humidity: int | None = None
+    dryer_temp: float | None = None
 
 
 class NozzleInfoResponse(BaseModel):
@@ -351,6 +356,7 @@ class NozzleRackSlot(BaseModel):
     filament_color: str = ""  # RGBA hex ("00000000" = no filament)
     filament_id: str = ""  # Bambu filament ID
     filament_type: str = ""  # Material type (e.g. "PLA", "PETG")
+    addr_id: int | None = None  # H3C: home rack position 0-8 (the mounted hotend reports id 0)
 
 
 class AmsLabelBody(BaseModel):

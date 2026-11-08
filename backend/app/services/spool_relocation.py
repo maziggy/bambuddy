@@ -30,6 +30,7 @@ from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.services.ams_assignment_lock import get_ams_assignment_lock, get_spool_move_lock
 from backend.app.utils.tag_normalization import normalize_tag_uid, normalize_tray_uuid
+from backend.app.utils.tray_ids import external_tray_id
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ def _live_tray(printer_id: int, ams_id: int, tray_id: int) -> dict | None:
     if ams_id == 255:
         vt_trays = raw.get("vt_tray") or []
         for tray in [vt_trays] if isinstance(vt_trays, dict) else vt_trays:
-            if isinstance(tray, dict) and str(tray.get("id", 254)) == str(254 + tray_id):
+            if isinstance(tray, dict) and str(tray.get("id", 254)) == str(external_tray_id(tray_id)):
                 return tray
         return None
     units = raw.get("ams") or []

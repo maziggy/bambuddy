@@ -159,6 +159,7 @@ from backend.app.services.printer_manager import (
     parse_plate_id,
     printer_manager,
     printer_state_to_dict,
+    printer_tray_layout,
     resolve_plate_id,
 )
 from backend.app.services.slot_kprofile import find_slot_kprofile_for_extruder
@@ -186,6 +187,7 @@ from backend.app.utils.filament_types import printer_filament_type
 from backend.app.utils.fts_routing import extruder_for_inlet
 from backend.app.utils.local_time import to_naive_utc, utcnow_naive
 from backend.app.utils.print_jobs import is_internal_printer_job
+from backend.app.utils.tray_ids import AmsType, TrayLayout, external_tray_id, unit_ams_type, unit_label
 
 
 # =============================================================================
@@ -1808,7 +1810,8 @@ def _extract_filament_data_from_mqtt(data: dict, ams_mapping: list[int] | None =
     from backend.app.services.print_scheduler import _global_tray_id
 
     # Map global tray id → (type, color), addressed as the print's ams_mapping
-    # is: unit * 4 + tray, or the bare unit id for an AMS-HT (from 128).
+    # is (utils.tray_ids).
+    layout = TrayLayout.from_units(ams_units)
     loaded: dict[int, tuple[str, str]] = {}
     for unit in ams_units:
         if not isinstance(unit, dict):
@@ -1831,7 +1834,7 @@ def _extract_filament_data_from_mqtt(data: dict, ams_mapping: list[int] | None =
             tcolor = f"#{hex_color}" if re.fullmatch(r"[0-9A-F]{6}", hex_color) else ""
             if not ttype:
                 continue  # Empty / unloaded slot.
-            loaded[_global_tray_id(unit_id, tray_id)] = (ttype, tcolor)
+            loaded[_global_tray_id(unit_id, tray_id, layout)] = (ttype, tcolor)
 
     if not loaded:
         return result
@@ -2736,12 +2739,7 @@ def _slot_feeds_print(printer_id: int, ams_id: int, tray_id: int) -> bool:
     status = printer_manager.get_status(printer_id)
     if status is None:
         return False
-    if ams_id == 255:
-        global_id = 254 + tray_id
-    elif ams_id >= 128:
-        global_id = ams_id
-    else:
-        global_id = ams_id * 4 + tray_id
+    global_id = printer_tray_layout(printer_id, printer_manager).tray_from_slot_key(ams_id, tray_id)
     if getattr(status, "tray_now", None) == global_id:
         return True
     slots = getattr(status, "extruder_slots", None) or {}
@@ -2796,7 +2794,7 @@ async def _unlink_stale_assignments(printer_id: int, ams_data: list, printing_no
                 if assignment.ams_id == 255:
                     ps = printer_manager.get_status(printer_id)
                     vt_tray_raw = ps.raw_data.get("vt_tray", []) if ps else []
-                    ext_id = assignment.tray_id + 254  # 0→254, 1→255
+                    ext_id = external_tray_id(assignment.tray_id)  # 0→254, 1→255, rack 2-8→247-253
                     current_tray = None
                     for vt in vt_tray_raw:
                         if isinstance(vt, dict) and int(vt.get("id", 254)) == ext_id:
@@ -8234,8 +8232,16 @@ async def reconcile_stale_active_prints(printer_id: int) -> int:
         if outcome != "aborted":
             # The printer's progress and layer are this job's, so a partial
             # run is charged what it printed rather than nothing.
-            if state.progress:
-                payload["last_progress"] = state.progress
+            from backend.app.utils.printer_models import usage_progress
+
+            run_progress = usage_progress(
+                printer_manager.get_model(printer_id),
+                state.progress,
+                getattr(state, "layer_num", None),
+                getattr(state, "total_layers", None),
+            )
+            if run_progress:
+                payload["last_progress"] = run_progress
             if state.layer_num:
                 payload["last_layer_num"] = state.layer_num
         if outcome == "failed":
@@ -11117,11 +11123,9 @@ async def record_ams_history():
                         recorded_count += 1
 
                         # Generate AMS label and determine if it's AMS-HT (A, B, C, D or HT-A for AMS-Lite/Hub)
-                        is_ams_ht = ams_id >= 128
-                        if is_ams_ht:
-                            ams_label = f"HT-{chr(65 + (ams_id - 128))}"
-                        else:
-                            ams_label = f"AMS-{chr(65 + ams_id)}"
+                        ams_type = unit_ams_type(ams_id, ams_data.get("info"))
+                        is_ams_ht = ams_type == AmsType.N3S
+                        ams_label = unit_label(ams_id, ams_type)
 
                         # Skip alarm dispatch for empty AMS units — humidity /
                         # temperature readings are ambient with no filament to
@@ -12231,13 +12235,9 @@ async def lifespan(app: FastAPI):
                 _slot_label_from_global_tray,
             )
 
-            if ams_id == 255:
-                global_id = 254 + tray_id
-            elif ams_id >= 128:
-                global_id = ams_id
-            else:
-                global_id = ams_id * 4 + tray_id
-            slot_label = _slot_label_from_global_tray(global_id)
+            layout = printer_tray_layout(printer_id, printer_manager)
+            global_id = layout.tray_from_slot_key(ams_id, tray_id)
+            slot_label = _slot_label_from_global_tray(global_id, layout)
 
             printer_info = printer_manager.get_printer(printer_id)
             printer_name = printer_info.name if printer_info else f"Printer {printer_id}"

@@ -104,6 +104,28 @@ describe('QrAssignTargetModal', () => {
     expect(screen.getByText(/Target: X1C · A1/)).toBeInTheDocument();
   });
 
+  it('lists an H3C as its AMS 3H slots and its per-hotend inputs Ext-1..Ext-9', async () => {
+    server.use(
+      http.get('/api/v1/printers/1/status', () =>
+        HttpResponse.json({
+          ams: [{ id: 32, ams_type: 6, is_ams_ht: false, tray: Array.from({ length: 9 }, (_, k) => ({ id: k })) }],
+          vt_tray: Array.from({ length: 9 }, (_, k) => ({ id: 247 + k })),
+        }),
+      ),
+    );
+    render(<QrAssignTargetModal isOpen onClose={noop} spoolmanMode={false} />);
+
+    expect(await screen.findByRole('button', { name: /^3H-9\b/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^3H-1\b/ })).toBeInTheDocument();
+    for (let n = 1; n <= 9; n++) expect(screen.getByRole('button', { name: new RegExp(`^Ext-${n}\\b`) })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Ext-L\b/ })).not.toBeInTheDocument();
+
+    // Input 250 feeds hotend 5: Ext-6.
+    fireEvent.click(screen.getByRole('button', { name: /^Ext-6\b/ }));
+    fireEvent.click(screen.getByRole('button', { name: /set target & scan/i }));
+    expect(await screen.findByText(/Target: X1C · Ext-6/)).toBeInTheDocument();
+  });
+
   it('storage tab: scan button enables only after a structured location is picked', async () => {
     render(<QrAssignTargetModal isOpen onClose={noop} spoolmanMode={false} />);
 

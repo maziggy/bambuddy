@@ -1163,6 +1163,53 @@ describe('QueuePage', () => {
         expect(await within(row).findByText('Caramel')).toBeInTheDocument();
         expect(within(row).queryByText(/Empty/)).not.toBeInTheDocument();
       });
+
+      // The H3C: its AMS 3H is unit 32 (type 6), slot k is global tray 28 + k,
+      // and it has one external input per hotend, 247-255.
+      const h3cAms = [
+        {
+          id: 32,
+          ams_type: 6,
+          tray: Array.from({ length: 9 }, (_, k) =>
+            k === 6 ? { id: k, tray_type: null, exists: false, state: 160 } : { id: k, tray_type: 'PLA', tray_color: 'DE4343FF', remain: -1 },
+          ),
+        },
+      ];
+      const h3cInputs = Array.from({ length: 9 }, (_, k) => ({ id: 247 + k, tray_type: '' }));
+
+      it('says a mapped AMS 3H slot (28 + slot) is empty, as 3H-n', async () => {
+        useMappedPrinter([34], { connected: true, ams: h3cAms, vt_tray: h3cInputs });
+        const row = await mappedRow();
+
+        await waitFor(() => {
+          expect(within(row).getByText('3H-7 · Empty · Caramel')).toBeInTheDocument();
+        });
+      });
+
+      it('resolves a mapping to a loaded AMS 3H slot', async () => {
+        useMappedPrinter([28], { connected: true, ams: h3cAms, vt_tray: h3cInputs });
+        const row = await mappedRow();
+
+        await waitFor(() => {
+          expect(within(row).getByText(/^3H-1 · PLA · /)).toBeInTheDocument();
+        });
+      });
+
+      it('never calls a rack printer\'s external input empty', async () => {
+        let statusServed = false;
+        useMappedPrinter([250], { connected: true, ams: h3cAms, vt_tray: h3cInputs });
+        server.use(
+          http.get('/api/v1/printers/:id/status', () => {
+            statusServed = true;
+            return HttpResponse.json({ id: 1, name: 'Test Printer', state: 'IDLE', connected: true, ams: h3cAms, vt_tray: h3cInputs, nozzles: [], ams_extruder_map: {} });
+          }),
+        );
+        const row = await mappedRow();
+
+        await waitFor(() => expect(statusServed).toBe(true));
+        expect(await within(row).findByText('Caramel')).toBeInTheDocument();
+        expect(within(row).queryByText(/Empty/)).not.toBeInTheDocument();
+      });
     });
 
     it('shows one if-started-now ETA for an eligible pending item', async () => {

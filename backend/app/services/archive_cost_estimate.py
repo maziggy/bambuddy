@@ -36,10 +36,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings as app_settings
+from backend.app.utils.tray_ids import RACK_EXTERNAL_IDS
 
 logger = logging.getLogger(__name__)
 
-_EXTERNAL_TRAY_IDS = (254, 255)
+# Every external input id, 254/255 first (a rack printer's 247-253 after).
+_EXTERNAL_TRAY_IDS = (254, 255, *RACK_EXTERNAL_IDS[:-2])
 
 
 def _mapped_tray(slot_id: int, slot_to_tray: list, ams_trays: dict[int, dict]) -> int | None:
@@ -85,11 +87,13 @@ async def _internal_rates(
     """
     from backend.app.models.spool import Spool
     from backend.app.models.spool_assignment import SpoolAssignment
+    from backend.app.services.printer_manager import printer_tray_layout
     from backend.app.services.spoolman_tracking import _global_tray_id_to_ams_slot
 
     rates: dict[int, float] = {}
+    layout = printer_tray_layout(printer_id)
     for tray in trays:
-        ams_id, tray_id = _global_tray_id_to_ams_slot(tray)
+        ams_id, tray_id = _global_tray_id_to_ams_slot(tray, layout)
         spool = (
             await db.execute(
                 select(Spool)
@@ -115,6 +119,7 @@ async def _spoolman_rates(printer_id: int, trays: set[int], ams_trays: dict[int,
     slot assignment, #1459) and prices it with ``_spool_cost_per_gram``, so the
     estimate and the completion figure read the same price fields.
     """
+    from backend.app.services.printer_manager import printer_tray_layout
     from backend.app.services.spoolman import get_spoolman_client
     from backend.app.services.spoolman_tracking import (
         _get_printer_serial,
@@ -131,6 +136,7 @@ async def _spoolman_rates(printer_id: int, trays: set[int], ams_trays: dict[int,
     if client is None:
         return {}
     serial = await _get_printer_serial(printer_id)
+    layout = printer_tray_layout(printer_id)
 
     rates: dict[int, float] = {}
     for tray in trays:
@@ -138,11 +144,11 @@ async def _spoolman_rates(printer_id: int, trays: set[int], ams_trays: dict[int,
         try:
             tray_info = ams_trays.get(tray)
             if tray_info:
-                tag = _resolve_spool_tag(tray_info, serial, tray)
+                tag = _resolve_spool_tag(tray_info, serial, tray, layout)
                 if tag:
                     spool = await client.find_spool_by_tag(tag)
             if spool is None:
-                ams_id, tray_id = _global_tray_id_to_ams_slot(tray)
+                ams_id, tray_id = _global_tray_id_to_ams_slot(tray, layout)
                 spool_id = await _resolve_spool_id_via_slot_assignment(printer_id, ams_id, tray_id)
                 if spool_id is not None:
                     spool = await client.get_spool(spool_id)

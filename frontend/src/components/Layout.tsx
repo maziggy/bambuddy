@@ -138,6 +138,8 @@ export function Layout() {
   // Post-print outcome confirmation (#1898): archive waiting for a verdict,
   // set by the print_confirm_request WebSocket event.
   const [confirmOutcomeArchiveId, setConfirmOutcomeArchiveId] = useState<number | null>(null);
+  // The run the prompt asks about (a plate of the archive), when it names one.
+  const [confirmOutcomeRunId, setConfirmOutcomeRunId] = useState<number | null>(null);
 
   // Check for updates
   const { data: versionInfo } = useQuery({
@@ -528,6 +530,7 @@ export function Layout() {
       const detail = (event as CustomEvent).detail;
       if (typeof detail?.archive_id === 'number') {
         setConfirmOutcomeArchiveId(detail.archive_id);
+        setConfirmOutcomeRunId(typeof detail.run_id === 'number' ? detail.run_id : null);
       }
     };
     window.addEventListener('print-confirm-request', handleConfirmRequest);
@@ -546,8 +549,11 @@ export function Layout() {
     if (!confirmId || !/^\d+$/.test(confirmId)) {
       return;
     }
+    const runId = params.get('run');
     setConfirmOutcomeArchiveId(Number(confirmId));
+    setConfirmOutcomeRunId(runId && /^\d+$/.test(runId) ? Number(runId) : null);
     params.delete('confirm');
+    params.delete('run');
     const rest = params.toString();
     navigate({ pathname: location.pathname, search: rest ? `?${rest}` : '' }, { replace: true });
   }, [location.pathname, location.search, navigate]);
@@ -1212,6 +1218,7 @@ export function Layout() {
       {canConfirmOutcome && confirmOutcomeArchiveId !== null && (
         <ConfirmOutcomeDialog
           archiveId={confirmOutcomeArchiveId}
+          runId={confirmOutcomeRunId}
           onClose={() => setConfirmOutcomeArchiveId(null)}
         />
       )}

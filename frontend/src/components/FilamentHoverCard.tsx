@@ -592,9 +592,13 @@ interface EmptySlotHoverCardProps {
   // surfaces the user-cleared label; undefined / "physical" keeps the
   // historical "Empty slot" wording.
   kind?: 'physical' | 'reset';
+  /** A spool assigned in Bambuddy to a slot the printer reports loaded but
+   *  blank -- typically one swapped in mid-print, which the printer will not
+   *  take a configuration for until the print is over (#3434). */
+  assigned?: { label: string; colorHex?: string | null; onUnassign?: () => void };
 }
 
-export function EmptySlotHoverCard({ children, className = '', configureSlot, onAssignSpool, actions, kind }: EmptySlotHoverCardProps) {
+export function EmptySlotHoverCard({ children, className = '', configureSlot, onAssignSpool, actions, kind, assigned }: EmptySlotHoverCardProps) {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   // Screen-space coords for the portaled card — same pattern as
@@ -657,6 +661,7 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot, on
     <div
       ref={triggerRef}
       className={`relative ${className}`}
+      data-testid="empty-slot"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
@@ -678,18 +683,40 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot, on
             bg-bambu-dark-secondary border border-bambu-dark-tertiary
             rounded-md shadow-lg overflow-hidden
           ">
-            <div className="px-3 py-1.5 text-xs text-bambu-gray whitespace-nowrap">
-              {kind === 'reset' ? t('ams.emptySlotReset') : t('ams.emptySlot')}
-            </div>
+            {assigned ? (
+              <div className="px-3 py-1.5 text-xs space-y-1">
+                <div className="flex items-center gap-1.5 text-white whitespace-nowrap">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full border border-amber-500 border-dashed flex-shrink-0"
+                    style={{ backgroundColor: assigned.colorHex ? `#${assigned.colorHex.slice(0, 6)}` : 'transparent' }}
+                  />
+                  {assigned.label}
+                </div>
+                <div className="text-amber-400 max-w-[14rem]">{t('ams.assignedNotConfigured')}</div>
+              </div>
+            ) : (
+              <div className="px-3 py-1.5 text-xs text-bambu-gray whitespace-nowrap">
+                {kind === 'reset' ? t('ams.emptySlotReset') : t('ams.emptySlot')}
+              </div>
+            )}
             {/* Configure slot button */}
-            {(configureSlot?.enabled || onAssignSpool || actions) && (
+            {(configureSlot?.enabled || onAssignSpool || assigned?.onUnassign || actions) && (
               <div className="px-2 pb-2 space-y-1">
                 {/* Assign before Configure, matching the filled-slot card
                     above (#2791).  The two cards are separate render paths
                     and had drifted into opposite orders, so the menu
                     reshuffled itself depending on whether the slot happened
                     to hold filament. */}
-                {onAssignSpool && (
+                {assigned?.onUnassign && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); dismiss(); assigned.onUnassign?.(); }}
+                    className="w-full flex items-center justify-start gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-red-100 dark:bg-red-500/20 hover:bg-red-200 dark:hover:bg-red-500/40 text-red-700 dark:text-red-400"
+                  >
+                    <Unlink className="w-3.5 h-3.5" />
+                    {t('inventory.unassignSpool')}
+                  </button>
+                )}
+                {onAssignSpool && !assigned && (
                   <button
                     onClick={(e) => { e.stopPropagation(); dismiss(); onAssignSpool(); }}
                     className="w-full flex items-center justify-start gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/40 text-bambu-blue"

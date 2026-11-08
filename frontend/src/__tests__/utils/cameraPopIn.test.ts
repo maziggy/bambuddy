@@ -4,7 +4,13 @@
  * is told so it can stay open.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { listenForCameraPopIn, readOpenerTabId, registerCameraTab, requestCameraPopIn } from '../../utils/camera';
+import {
+  isStandaloneWebApp,
+  listenForCameraPopIn,
+  readOpenerTabId,
+  registerCameraTab,
+  requestCameraPopIn,
+} from '../../utils/camera';
 
 const cleanups: Array<() => void> = [];
 
@@ -138,5 +144,28 @@ describe('the opener tab id', () => {
     const first = registerCameraTab();
     sessionStorage.clear();
     expect(registerCameraTab()).not.toBe(first);
+  });
+});
+
+describe('isStandaloneWebApp (#3419)', () => {
+  afterEach(() => {
+    delete (navigator as Navigator & { standalone?: boolean }).standalone;
+    vi.restoreAllMocks();
+  });
+
+  it('is false in a browser tab', () => {
+    expect(isStandaloneWebApp()).toBe(false);
+  });
+
+  it('reads iOS Safari home-screen apps by navigator.standalone', () => {
+    Object.defineProperty(navigator, 'standalone', { value: true, configurable: true });
+    expect(isStandaloneWebApp()).toBe(true);
+  });
+
+  it('leaves an app installed on a desktop or Android alone: window.open works there', () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query: string) => ({ matches: query === '(display-mode: standalone)' }) as MediaQueryList,
+    );
+    expect(isStandaloneWebApp()).toBe(false);
   });
 });

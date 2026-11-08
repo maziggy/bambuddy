@@ -274,11 +274,21 @@ class TestTheWording:
 
         The reporter of this issue restarted a printer on the strength of the
         user-facing string, so the string has to carry the same restraint.
+
+        Except where the printer said why: "421 too many connections" stayed
+        until the printer was restarted, and nothing else cleared it (#3474).
         """
         for kind in FtpFailureKind:
+            if kind is FtpFailureKind.SESSIONS:
+                continue
             message = describe_upload_failure(FtpFailure(kind, "detail"))
             assert "restart the printer" not in message.lower(), kind
             assert "reboot" not in message.lower(), kind
+
+    def test_a_printer_out_of_sessions_is_told_to_be_restarted_if_it_stays(self):
+        message = describe_upload_failure(FtpFailure(FtpFailureKind.SESSIONS, "421 There are too many", "421"))
+        assert "421" in message
+        assert "restart the printer" in message.lower()
 
     def test_an_unclassified_failure_points_at_the_log_rather_than_guessing(self):
         for failure in (None, FtpFailure(FtpFailureKind.UNKNOWN, "500 what")):
@@ -291,6 +301,11 @@ class TestTheWording:
         message = describe_upload_failure(FtpFailure(FtpFailureKind.STORAGE, "553 Could not create file.", "553"))
         assert "553" in message
         assert "FAT32" in message
+
+    def test_the_storage_message_names_the_usb_drive_too(self):
+        """An H2D's external storage is a USB drive, not a card (#3409)."""
+        message = describe_upload_failure(FtpFailure(FtpFailureKind.STORAGE, "553 Could not create file.", "553"))
+        assert "SD card or USB drive" in message
 
 
 # ---------------------------------------------------------------------------
@@ -403,20 +418,17 @@ class TestWhatTheQueueEntrySays:
     # A handshake failure used to be this class's lead case. Since #3210 it no
     # longer fails the item at all -- the file never reached the printer, so the
     # item goes back in the queue (test_scheduler_upload_requeue_3210.py). Its
-    # wording is still pinned by TestTheWording above.
+    # wording is still pinned by TestTheWording above. Since #3409 the same
+    # goes for a 553: the job waits for the card instead of failing.
 
-    async def test_a_553_still_gets_the_card_advice(self, dispatch_case):
-        """The advice was written for this case and belongs to it.
-
-        Removing it everywhere would trade one wrong message for a vaguer one;
-        the point is to attach it where the printer actually said storage.
-        """
+    async def test_a_550_says_what_it_is_and_not_the_card(self, dispatch_case):
+        """A failure that still fails the item gets its own sentence, on the row and in the notification."""
         message, reason = await _dispatch_failing_with(
-            dispatch_case, FtpFailure(FtpFailureKind.STORAGE, "553 Could not create file.", "553")
+            dispatch_case, FtpFailure(FtpFailureKind.NOT_FOUND, "550 Permission denied.", "550")
         )
 
-        assert "FAT32" in message, message
-        assert "553" in message, message
+        assert "Bambuddy-side" in message, message
+        assert "FAT32" not in message, message
         assert reason == message
 
     async def test_an_unclassified_failure_points_at_the_log(self, dispatch_case):
@@ -454,7 +466,7 @@ class TestAnOwnerDeletedDuringTheUpload:
                 await admin_db.commit()
                 admin_db.add(User(id=alice_id, username="bob", password_hash="x", role="user"))
                 await admin_db.commit()
-            kwargs["failure"].failure = FtpFailure(FtpFailureKind.STORAGE, "553 Could not create file.", "553")
+            kwargs["failure"].failure = FtpFailure(FtpFailureKind.NOT_FOUND, "550 Permission denied.", "550")
             return False
 
         failed = AsyncMock()

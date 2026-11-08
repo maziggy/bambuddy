@@ -222,21 +222,20 @@ def _sanitize_path(path: str) -> str:
 
 
 def _detect_docker_network_mode() -> str:
-    """Detect Docker network mode by checking for host-level interfaces.
+    """The container's network mode as the connection diagnostic reads it:
+    "host", "bridge", "macvlan", "ipvlan", "ipvlan_l3", or "unknown".
 
-    In host mode the container shares the host network namespace, so Docker
-    infrastructure interfaces (docker0, br-*, veth*) are visible.  In bridge
-    mode the container is isolated and only sees its own veth (named eth0).
+    This used to be its own copy of the diagnostic's first rule only, so it
+    called a macvlan container bridge (#3417). Shells out to ``ip``: call it
+    off the event loop.
     """
-    try:
-        import socket
+    from backend.app.services.discovery import detect_container_runtime
+    from backend.app.services.printer_diagnostic import _detect_container_network_mode
 
-        for _idx, name in socket.if_nameindex():
-            if name.startswith(("docker", "br-", "veth", "virbr")):
-                return "host"
+    try:
+        return _detect_container_network_mode(detect_container_runtime()) or "unknown"
     except Exception:
-        pass
-    return "bridge"
+        return "unknown"
 
 
 def _mask_subnet(subnet: str) -> str:
@@ -883,7 +882,7 @@ async def _collect_support_info() -> dict:
             info["docker"] = {
                 "container_memory_limit_bytes": mem_limit,
                 "container_memory_limit_formatted": _format_bytes(mem_limit) if mem_limit else None,
-                "network_mode_hint": _detect_docker_network_mode(),
+                "network_mode_hint": await asyncio.to_thread(_detect_docker_network_mode),
             }
         except Exception:
             logger.debug("Failed to collect Docker info", exc_info=True)

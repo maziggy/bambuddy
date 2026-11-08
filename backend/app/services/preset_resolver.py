@@ -42,6 +42,7 @@ from backend.app.services.bambu_cloud import (
 )
 from backend.app.services.bambu_cloud_credentials import get_stored_token
 from backend.app.services.orca_cloud import OrcaCloudAuthError, OrcaCloudError
+from backend.app.utils.slicer_strings import unescape_strings_cstyle
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,12 @@ _SLOT_TO_PROFILE_TYPE = {
     "process": "process",
     "filament": "filament",
 }
+
+# String-list options Orca Cloud can return INI-encoded (#3380). The sidecar
+# only fixes up `compatible_printers` when it is an array (#3250), so a
+# process made for a user printer preset passes the Slice dialog's check and
+# is then refused by the CLI.
+_ORCA_STRING_LIST_FIELDS = ("compatible_printers", "filament_type", "default_filament_colour")
 
 
 async def resolve_preset_ref(
@@ -259,6 +266,14 @@ async def _resolve_orca_cloud(db: AsyncSession, user: User | None, ref: PresetRe
         # same forced pin to `"system"` for the same reason — see the
         # Bambu Cloud branch above.
         content = {**content, "type": _SLOT_TO_PROFILE_TYPE[slot], "from": "system"}
+        for key in _ORCA_STRING_LIST_FIELDS:
+            raw = content.get(key)
+            # Parsed the way the slicer would, empty items included, so
+            # per-extruder positions survive. A string it can't parse is
+            # forwarded as is.
+            items = unescape_strings_cstyle(raw) if isinstance(raw, str) else None
+            if items is not None:
+                content[key] = items
     return json.dumps(content)
 
 

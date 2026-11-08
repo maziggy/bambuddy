@@ -16,6 +16,7 @@ import { AuthProvider } from '../../contexts/AuthContext';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '../../i18n';
 import { listenForCameraPopIn } from '../../utils/camera';
+import { spyOnStreamSrc } from '../streamImgSpy';
 
 // Mock navigator.sendBeacon which isn't available in jsdom
 vi.stubGlobal('navigator', {
@@ -33,8 +34,21 @@ const mockPrinter = {
   enabled: true,
 };
 
+/** As a window.open popup: something opened it, so it can close itself. */
+function asPopup() {
+  Object.defineProperty(window, 'opener', { value: {}, configurable: true, writable: true });
+}
+
+/** As a web app started from the iOS home screen. */
+function asWebApp(): () => void {
+  Object.defineProperty(navigator, 'standalone', { value: true, configurable: true });
+  return () => {
+    delete (navigator as Navigator & { standalone?: boolean }).standalone;
+  };
+}
+
 // Custom render for CameraPage which needs specific route params
-function renderCameraPage(printerId: number, search = '', strict = false) {
+function renderCameraPage(printerId: number, search = '', strict = false, entries?: string[]) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
@@ -45,12 +59,14 @@ function renderCameraPage(printerId: number, search = '', strict = false) {
   const tree = (
     <QueryClientProvider client={queryClient}>
       <I18nextProvider i18n={i18n}>
-        <MemoryRouter initialEntries={[`/cameras/${printerId}${search}`]}>
+        <MemoryRouter initialEntries={entries ?? [`/cameras/${printerId}${search}`]}>
           <AuthProvider>
             <ThemeProvider>
               <ToastProvider>
                 <Routes>
                   <Route path="/cameras/:printerId" element={<CameraPage />} />
+                  <Route path="/" element={<p>Bambuddy home</p>} />
+                  <Route path="/printers" element={<p>printers page</p>} />
                 </Routes>
               </ToastProvider>
             </ThemeProvider>
@@ -88,6 +104,7 @@ describe('CameraPage', () => {
 
   afterEach(() => {
     document.title = originalTitle;
+    Object.defineProperty(window, 'opener', { value: null, configurable: true, writable: true });
   });
 
   describe('rendering', () => {
@@ -181,6 +198,27 @@ describe('CameraPage', () => {
       });
       return document.querySelector('img') as HTMLImageElement;
     }
+
+    it('gives the stream src only to an img already on the page (#3431)', async () => {
+      // Set while rendering, a src opens a stream for every render React throws
+      // away, on an img nothing can close.
+      const spy = spyOnStreamSrc();
+      try {
+        renderCameraPage(1);
+        const first = await streamImg();
+        // A restart mounts a new img (a new key), which is where a src prop
+        // would land before the img is on the page.
+        fireEvent.load(first);
+        await waitFor(() => expect(screen.getByTitle('Restart stream')).not.toBeDisabled());
+        fireEvent.click(screen.getByTitle('Restart stream'));
+        await waitFor(() => expect(document.querySelector('img')).not.toBe(first));
+        await streamImg();
+        expect(spy.records.length).toBeGreaterThan(1);
+        expect(spy.detached()).toEqual([]);
+      } finally {
+        spy.restore();
+      }
+    });
 
     async function snapshotImg() {
       const stream = await streamImg();
@@ -456,6 +494,7 @@ describe('CameraPage', () => {
     });
 
     it('moves into the open tab as an overlay and closes the window', async () => {
+      asPopup();
       const open = vi.fn();
       const stop = listenForCameraPopIn('t1', open);
       const close = vi.spyOn(window, 'close').mockImplementation(() => {});
@@ -511,6 +550,83 @@ describe('CameraPage', () => {
         expect(other).not.toHaveBeenCalled();
       } finally {
         stops.forEach(s => s());
+      }
+    });
+  });
+
+  describe('a page no window opened (#3419)', () => {
+    afterEach(() => {
+      sessionStorage.clear();
+    });
+
+    it('offers a way back to Bambuddy', async () => {
+      renderCameraPage(1);
+      await screen.findByText('X1 Carbon');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+
+      expect(await screen.findByText('Bambuddy home')).toBeInTheDocument();
+    });
+
+    it('goes back instead of closing itself once the camera moved to a tab', async () => {
+      const open = vi.fn();
+      const stop = listenForCameraPopIn('t1', open);
+      const close = vi.spyOn(window, 'close').mockImplementation(() => {});
+      try {
+        renderCameraPage(1);
+        await screen.findByText('X1 Carbon');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Show as an overlay in Bambuddy' }));
+
+        expect(await screen.findByText('Bambuddy home')).toBeInTheDocument();
+        expect(open).toHaveBeenCalledExactlyOnceWith(1, 'X1 Carbon');
+        expect(close).not.toHaveBeenCalled();
+      } finally {
+        stop();
+      }
+    });
+
+    it('goes back to the Bambuddy page it came from', async () => {
+      renderCameraPage(1, '', false, ['/printers', '/cameras/1']);
+      await screen.findByText('X1 Carbon');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+
+      expect(await screen.findByText('printers page')).toBeInTheDocument();
+    });
+
+    it('a popup whose tab has gone still closes rather than navigating', async () => {
+      window.name = 'camera-1';
+      try {
+        renderCameraPage(1);
+        await screen.findByText('X1 Carbon');
+
+        expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
+      } finally {
+        window.name = '';
+      }
+    });
+
+    it('a popup has no back button: it closes', async () => {
+      asPopup();
+      renderCameraPage(1);
+      await screen.findByText('X1 Carbon');
+
+      expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
+    });
+
+    it('in a home-screen web app, has a way back and no tab to pop into', async () => {
+      // iOS may report an opener for the page it loaded into the app itself.
+      asPopup();
+      const restore = asWebApp();
+      try {
+        renderCameraPage(1);
+        await screen.findByText('X1 Carbon');
+
+        expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Show as an overlay in Bambuddy' })).toBeNull();
+      } finally {
+        restore();
       }
     });
   });

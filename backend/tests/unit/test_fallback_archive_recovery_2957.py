@@ -601,9 +601,11 @@ class TestARecoveredArchiveIsPricedAsAtStart:
             patch.object(main_module, "async_session", maker),
             patch.object(main_module, "_schedule_archive_cost_estimate", estimate),
             patch.dict(main_module._active_prints, {(printer_id, DISPATCH_FILENAME): archive_id}, clear=True),
-            patch.dict(main_module._print_ams_mappings, {archive_id: [2]}, clear=True),
+            patch.dict(main_module._print_ams_mappings, {(printer_id, archive_id): [2]}, clear=True),
             patch.dict(
-                main_module._print_plate_ids, {archive_id: 1} if start_plates is None else start_plates, clear=True
+                main_module._print_plate_ids,
+                {(printer_id, archive_id): 1} if start_plates is None else start_plates,
+                clear=True,
             ),
         ):
             assert await main_module.try_recover_fallback_archive(printer_id, DISPATCH_FILENAME, source) is True

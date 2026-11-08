@@ -80,6 +80,7 @@ from backend.app.utils.printer_models import (
 from backend.app.utils.threemf_tools import (
     extract_plate_metadata_from_3mf,
     extract_print_time_from_3mf,
+    is_unsliced_3mf,
 )
 
 logger = logging.getLogger(__name__)
@@ -178,7 +179,7 @@ def _extract_filament_types_from_3mf(file_path: Path, plate_id: int | None = Non
 _extract_print_time_from_3mf = extract_print_time_from_3mf
 
 
-def _assert_can_queue_archive(
+async def _assert_can_queue_archive(
     archive: PrintArchive, current_user: User | ApiKeyActor | None, printer_scope: PrinterScope
 ) -> None:
     """Gate turning *archive* into a print. Raises rather than returning a verdict.
@@ -189,8 +190,9 @@ def _assert_can_queue_archive(
 
     Three checks:
 
-    * The archive must not be deleted, and its printer must be one the caller
-      may use; otherwise it reads as missing, as the archive routes answer.
+    * The archive must not be deleted, and one the caller sees: on a printer
+      they may use, or printed on one (archive redesign); otherwise it reads
+      as missing, as the archive routes answer.
     * IDOR fix (maziggy/bambuddy-security #2): without this, a caller with
       QUEUE_CREATE could queue any user's archive even without ARCHIVES_READ on
       it — Landon's PoC enumerated this on admin's archives as operator1. Gate
@@ -206,8 +208,15 @@ def _assert_can_queue_archive(
     """
     # A deleted archive, or one from a printer the caller can't use, reads as
     # missing, like the archive routes answer for it.
-    if archive.deleted_at is not None or not printer_scope.allows(archive.printer_id):
+    if archive.deleted_at is not None:
         raise HTTPException(404, "Archive not found")
+    if not printer_scope.allows(archive.printer_id):
+        from backend.app.core import database
+        from backend.app.services.archive_scope import printed_in_scope
+
+        async with database.async_session() as db:
+            if not await printed_in_scope(db, archive, printer_scope):
+                raise HTTPException(404, "Archive not found")
     # None is auth off (for an API key too).
     if current_user is None:
         return
@@ -350,7 +359,7 @@ async def _assert_can_dispatch_batch_sources(
         archive = (await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))).scalar_one_or_none()
         # A deleted source can't be printed; dispatch will fail on it anyway.
         if archive is not None:
-            _assert_can_queue_archive(archive, current_user, printer_scope)
+            await _assert_can_queue_archive(archive, current_user, printer_scope)
 
     for library_file_id in library_file_ids:
         library_file = (
@@ -652,6 +661,29 @@ def saved_slicer_ams_mapping(archive: PrintArchive | None, printer_id: int | Non
     ):
         return json.dumps(saved["mapping"])
     return None
+
+
+def unsliced_file_message(filename: str) -> str:
+    return f"{filename} isn't sliced yet. Slice it first, then print the sliced file."
+
+
+def ensure_sliced(file_path: Path | None, filename: str) -> None:
+    """Refuse a 3MF that holds no G-code, whatever its name says (#3435).
+
+    A project saved from Studio as ``Foo.gcode.3mf`` without slicing was taken
+    for a printable file. With a cost centre it was refused for the missing
+    estimate -- "Estimated cost is required for cost center prints", which
+    says nothing about the cause -- and without one it went to the printer.
+    """
+    if file_path is not None and file_path.name.lower().endswith(".3mf") and is_unsliced_3mf(file_path):
+        raise HTTPException(400, unsliced_file_message(filename))
+
+
+def library_file_disk_path(library_file: LibraryFile) -> Path:
+    """Where a library file is on disk: rows store it relative to base_dir,
+    older ones absolute."""
+    lib_path = Path(library_file.file_path)
+    return lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
 
 
 def printed_plate_of_multi_plate_file(file_path: Path | None) -> int | None:
@@ -1062,6 +1094,8 @@ async def _resolve_queue_variants(
         except InvalidFilenameError as e:
             raise HTTPException(400, str(e)) from e
 
+        ensure_sliced(library_file_disk_path(library_file), library_file.filename)
+
         model = resolve_variant_model(library_file, spec.target_model)
         if not model:
             raise HTTPException(
@@ -1232,7 +1266,7 @@ async def add_to_queue(
         # Missing answers like hidden (404 from the gate below).
         if not archive:
             raise HTTPException(404, "Archive not found")
-        _assert_can_queue_archive(archive, actor, printer_scope)
+        await _assert_can_queue_archive(archive, actor, printer_scope)
 
     # Validate library file exists (if provided) and get it for filament extraction
     library_file = None
@@ -1276,8 +1310,11 @@ async def add_to_queue(
     if archive:
         file_path = settings.base_dir / archive.file_path
     elif library_file:
-        lib_path = Path(library_file.file_path)
-        file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+        file_path = library_file_disk_path(library_file)
+    if library_file is not None:
+        ensure_sliced(file_path, library_file.filename)
+    elif archive is not None:
+        ensure_sliced(file_path, archive.filename)
     plate_id = data.plate_id or printed_plate_of_multi_plate_file(file_path)
     if target_model_norm:
         if file_path and file_path.exists():
@@ -1390,25 +1427,7 @@ async def add_to_queue(
         start_position = await max_queue_position(db) + 1
 
     # Resolve print_time_seconds for SJF scheduling (cache on item at creation)
-    cached_print_time = None
-    if archive:
-        cached_print_time = archive.print_time_seconds
-        if data.plate_id:
-            archive_path = settings.base_dir / archive.file_path
-            if archive_path.exists():
-                plate_time = _extract_print_time_from_3mf(archive_path, data.plate_id)
-                if plate_time is not None:
-                    cached_print_time = plate_time
-    elif library_file:
-        if library_file.file_metadata:
-            cached_print_time = library_file.file_metadata.get("print_time_seconds")
-        if data.plate_id:
-            lib_path = Path(library_file.file_path)
-            library_file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
-            if library_file_path.exists():
-                plate_time = _extract_print_time_from_3mf(library_file_path, data.plate_id)
-                if plate_time is not None:
-                    cached_print_time = plate_time
+    cached_print_time = _cached_print_time(archive, library_file, data.plate_id)
 
     # Validate project exists before insert so a bogus ID yields 404, not an FK-constraint 500
     if data.project_id is not None:
@@ -1834,7 +1853,7 @@ async def create_batch(
         batch_archive = await db.get(PrintArchive, data.archive_id)
         if batch_archive is None:
             raise HTTPException(404, "Archive not found")
-        _assert_can_queue_archive(batch_archive, actor, printer_scope)
+        await _assert_can_queue_archive(batch_archive, actor, printer_scope)
     if data.library_file_id is not None:
         batch_file = (
             await db.execute(LibraryFile.active().where(LibraryFile.id == data.library_file_id))
@@ -2560,6 +2579,15 @@ async def update_queue_item(
         exclude_queue_item_id=item.id,
     )
 
+    # Another plate takes another time: shortest-job-first orders by it (#3375).
+    # An item with alternatives keeps theirs, the shortest (create).
+    if "plate_id" in update_data and update_data["plate_id"] != item.plate_id and not item.variants:
+        update_data["print_time_seconds"] = _cached_print_time(
+            await db.get(PrintArchive, item.archive_id) if item.archive_id else None,
+            await db.get(LibraryFile, item.library_file_id) if item.library_file_id else None,
+            update_data["plate_id"],
+        )
+
     # Re-check the dispatch claim right before mutating (#2615). Several awaited
     # validations ran since the guard above, and a scheduler worker may have
     # claimed the row in that gap. A fresh read (item isn't dirty yet, so no
@@ -2578,6 +2606,33 @@ async def update_queue_item(
 
     logger.info("Updated queue item %s", item_id)
     return _enrich_response(item)
+
+
+def _cached_print_time(
+    archive: PrintArchive | None, library_file: LibraryFile | None, plate_id: int | None
+) -> int | None:
+    """The slicer's time for the plate a queue item prints, cached on it for
+    shortest-job-first: the plate's own from the 3MF, else the whole file's."""
+    cached_print_time = None
+    if archive:
+        cached_print_time = archive.print_time_seconds
+        if plate_id:
+            archive_path = settings.base_dir / archive.file_path
+            if archive_path.exists():
+                plate_time = _extract_print_time_from_3mf(archive_path, plate_id)
+                if plate_time is not None:
+                    cached_print_time = plate_time
+    elif library_file:
+        if library_file.file_metadata:
+            cached_print_time = library_file.file_metadata.get("print_time_seconds")
+        if plate_id:
+            lib_path = Path(library_file.file_path)
+            library_file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+            if library_file_path.exists():
+                plate_time = _extract_print_time_from_3mf(library_file_path, plate_id)
+                if plate_time is not None:
+                    cached_print_time = plate_time
+    return cached_print_time
 
 
 async def _remove_queue_item(db: AsyncSession, item: PrintQueueItem) -> bool:
@@ -2944,6 +2999,7 @@ async def stop_queue_item(
                 archive_id=archive.id,
                 queue_item_id=item.id,
                 print_name=archive.print_name,
+                plate_id=item.plate_id if item.plate_id is not None else archive.plate_id,
                 printer_name=await db.scalar(select(Printer.name).where(Printer.id == printer_id)),
                 printer_id=printer_id,
                 started_at=archive.started_at,
@@ -2953,6 +3009,7 @@ async def stop_queue_item(
                 failure_reason=archive.failure_reason,
                 thumbnail_path=archive.thumbnail_path,
                 created_by_id=archive.created_by_id,
+                ended_offline=True,
             )
             closed_archive_id = archive.id
     if not stop_sent:
@@ -2965,6 +3022,13 @@ async def stop_queue_item(
     await refresh_batches_after([item.id])
     if closed_archive_id is not None:
         await ws_manager.send_archive_updated({"id": closed_archive_id, "status": "cancelled"})
+    if closed_archive_id is not None and printer_id is not None:
+        # Its run ended here, not at a print's end (archive redesign).
+        from backend.app.main import _publish_run_completed
+        from backend.app.services.print_log import run_being_ended
+
+        ended = await run_being_ended(db, closed_archive_id, printer_id, None)
+        await _publish_run_completed(ended.id if ended is not None else None, printer_id)
 
     logger.info("Stopped printing queue item %s (stop command sent: %s)", item_id, stop_sent)
 

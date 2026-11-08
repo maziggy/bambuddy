@@ -411,6 +411,26 @@ class TestOrcaCloudIsTheFirstSource:
         svc.close.assert_awaited()
 
     @pytest.mark.asyncio
+    async def test_an_ini_quoted_filament_type_is_read_like_the_slicer(self):
+        """#3380: Orca Cloud can return ``filament_type`` INI-quoted."""
+        db = MagicMock()
+        svc = self._svc(
+            {"id": self.ORCA_ID, "name": "My PETG", "content": {"filament_id": "P56e1be0", "filament_type": '"PETG"'}}
+        )
+        with patch(
+            "backend.app.api.routes.orca_cloud._build_authenticated_service",
+            AsyncMock(return_value=svc),
+        ):
+            _idx, _sid, _brand, type_override = await resolve_slicer_filament(
+                db=db,
+                current_user=None,
+                slicer_filament=self.ORCA_ID,
+                slicer_filament_name=None,
+                material="PETG",
+            )
+        assert type_override == "PETG"
+
+    @pytest.mark.asyncio
     async def test_a_profile_with_no_filament_id_leaves_the_caller_its_fallback(self):
         db = MagicMock()
         svc = self._svc({"id": self.ORCA_ID, "name": "My PLA", "content": {"filament_type": ["PLA"]}})

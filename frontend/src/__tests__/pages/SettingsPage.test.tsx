@@ -92,6 +92,25 @@ describe('SettingsPage', () => {
   });
 
   describe('rendering', () => {
+    it('opens notification settings from the OctoEverywhere readiness link', async () => {
+      window.history.replaceState({}, '', '/settings?tab=failure-detection');
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json({
+          ...mockSettings,
+          octoeverywhere_enabled: true,
+          octoeverywhere_api_key: '',
+          octoeverywhere_api_key_configured: true,
+        })),
+      );
+      render(<SettingsPage />);
+
+      await userEvent.click(await screen.findByRole('link', { name: 'Configure notifications' }));
+
+      expect(await screen.findByRole('button', { name: /add provider/i })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'OctoEverywhere AI Detection' })).not.toBeInTheDocument();
+      expect(window.location.search).toBe('?tab=notifications');
+    });
+
     it('renders the page title', async () => {
       render(<SettingsPage />);
 

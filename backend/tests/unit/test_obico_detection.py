@@ -455,18 +455,21 @@ class TestPollOneStateLifecycle:
         }
         status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
 
-        # Seed state so the next frame crosses HIGH immediately
+        # Seed a clean print that then rises sharply, so the next frame is
+        # well past the pause level (a steady 1.0 would be baseline, #3459)
         from backend.app.services.obico_smoothing import PrintState
 
         seeded = PrintState()
         for _ in range(WARMUP_FRAMES + 500):
-            seeded.update(1.0)
+            seeded.update(0.0)
+        for _ in range(40):
+            seeded.update(3.0)
         svc._states[1] = seeded
         svc._state_keys[1] = "job"
         svc._action_fired[1] = False
 
         mock_response = MagicMock()
-        mock_response.json.return_value = {"detections": [["failure", 0.9, [0, 0, 1, 1]]]}
+        mock_response.json.return_value = {"detections": [["failure", 3.0, [0, 0, 1, 1]]]}
         mock_response.raise_for_status = MagicMock()
         mock_client = MagicMock()
         mock_client.get = AsyncMock(return_value=mock_response)
@@ -480,6 +483,7 @@ class TestPollOneStateLifecycle:
         ):
             await svc._check_printer(1, status, settings)
             assert mock_action.call_count == 1
+            assert mock_action.await_args.args[-1] == FAKE_JPEG
             await svc._check_printer(1, status, settings)
             # Second call must not dispatch again
             assert mock_action.call_count == 1
@@ -651,6 +655,28 @@ class TestFrameCache:
 
         _frame_cache["aging-nonce"] = (FAKE_JPEG, time_module.monotonic() - FRAME_CACHE_TTL - 1)
         assert await pop_frame("aging-nonce") is None
+
+
+class TestProviderSwitch:
+    async def test_refresh_cancels_inflight_poll_before_it_can_act(self):
+        import asyncio
+
+        svc = ObicoDetectionService()
+        started = asyncio.Event()
+        action = AsyncMock()
+
+        async def pending_poll():
+            started.set()
+            await asyncio.Future()
+            await action()
+
+        svc._task = asyncio.create_task(pending_poll())
+        await started.wait()
+        with patch.object(svc, "start", new_callable=AsyncMock) as restart:
+            await svc.refresh_settings()
+        action.assert_not_awaited()
+        restart.assert_awaited_once()
+        assert svc._task is None
 
 
 class TestCheckPrinterUsesCachedFrameUrl:

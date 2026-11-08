@@ -536,6 +536,9 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         "note": spool.get("comment") or None,
         "added_full": None,
         "last_used": spool.get("last_used"),
+        # When the spool was first printed with; the stock forecast spreads
+        # its consumption from here (#3407).
+        "first_used": spool.get("first_used"),
         "last_dried_at": _extract_extra_str(extra, BAMBU_LAST_DRIED_AT_KEY) or None,
         "last_dried_temp": _last_dried_temp(extra),
         "last_dried_hours": _extract_extra_float(extra, BAMBU_LAST_DRIED_HOURS_KEY),

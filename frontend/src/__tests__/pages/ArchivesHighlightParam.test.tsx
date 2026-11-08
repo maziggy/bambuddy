@@ -99,10 +99,21 @@ describe('ArchivesPage ?highlight=', () => {
   });
 
   it('warns when the linked archive is not in the list', async () => {
+    // Not merged into another either: its own lookup finds nothing.
+    server.use(http.get('/api/v1/archives/99', () => HttpResponse.json({ detail: 'Archive not found' }, { status: 404 })));
     window.history.pushState({}, '', '/archives?highlight=99');
     render(<ArchivesPage />);
 
     expect(await screen.findByText('Linked archive not visible - try clearing filters')).toBeInTheDocument();
+  });
+
+  it('marks the archive a merged one went into (archive redesign P2)', async () => {
+    server.use(http.get('/api/v1/archives/31', () => HttpResponse.json(archive(2, 'Bracket'))));
+    window.history.pushState({}, '', '/archives?highlight=31');
+    render(<ArchivesPage />);
+
+    await waitFor(() => expect(card('Bracket').style.outline).toContain('solid'));
+    expect(screen.queryByText(/not visible - try clearing filters/)).not.toBeInTheDocument();
   });
 
   it('looks for the archive in a fresh list, not one cached before it existed', async () => {

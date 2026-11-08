@@ -214,6 +214,21 @@ def mfa_encryption_isolation(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def reset_archive_work():
+    """Drop archives held or being merged between tests (services/archive_work).
+
+    Every test database hands out the same archive ids, and a dispatch driven
+    without ``_dispatch_one`` never releases its hold."""
+    from backend.app.services import archive_work
+
+    archive_work._held.clear()
+    archive_work._merging.clear()
+    yield
+    archive_work._held.clear()
+    archive_work._merging.clear()
+
+
+@pytest.fixture(autouse=True)
 def reset_printer_file_cache():
     """A fresh file-browser preview cache per test.
 
@@ -267,6 +282,22 @@ def reset_usage_tracker_sessions():
     _active_sessions.clear()
     yield
     _active_sessions.clear()
+
+
+@pytest.fixture(autouse=True)
+def reset_ftp_stall_gate():
+    """Drop the FTP client's per-printer stall cool-off and cleartext replies.
+
+    Class-level dicts keyed by IP, and most tests share one printer IP: a
+    listing that timed out in one test would keep the next one's timelapse
+    scan from connecting at all (#3474)."""
+    from backend.app.services.bambu_ftp import BambuFTPClient, _stalled_until
+
+    _stalled_until.clear()
+    BambuFTPClient._cleartext_reply.clear()
+    yield
+    _stalled_until.clear()
+    BambuFTPClient._cleartext_reply.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -549,6 +580,7 @@ async def async_client(test_engine, db_session) -> AsyncGenerator[AsyncClient, N
         # Obico endpoints load settings through the service's module-level binding;
         # without this patch they'd read whatever DB the cwd resolves to (#1546).
         patch("backend.app.services.obico_detection.async_session", test_async_session),
+        patch("backend.app.services.octoeverywhere_detection.async_session", test_async_session),
         patch("backend.app.main.init_printer_connections", mock_init_printer_connections),
     ):
         # Seed default groups for tests that need them

@@ -43,14 +43,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
+from backend.app.utils.filament_finish import different_finish
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
+    GENERIC_IDS_REPLACED_ON_REUSE,
     filament_id_to_setting_id,
     normalize_slicer_filament,
     orca_to_bambu_filament_id,
     setting_id_to_filament_id,
 )
 from backend.app.utils.filament_types import is_material_name
+from backend.app.utils.slicer_strings import first_slicer_string
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +240,8 @@ def _preset_filament_type(raw: object) -> str | None:
     """Read a slicer preset's ``filament_type`` field.
 
     Bambu Studio and OrcaSlicer both store it as a one-element array
-    (``["PLA"]``); some hand-written and older profiles store a bare string.
+    (``["PLA"]``); some hand-written and older profiles store a bare string,
+    and Orca Cloud can return it INI-quoted (``'"PLA"'``, #3380).
     ``orca_profiles._extract_filament_fields`` accepts both and this has to
     agree with it, since that is what fills ``LocalPreset.filament_type``.
 
@@ -248,11 +252,42 @@ def _preset_filament_type(raw: object) -> str | None:
     ``filament_type`` is a product line, which is the case this whole module
     exists to keep out of an AMS slot.
     """
-    if isinstance(raw, list):
-        raw = raw[0] if raw else None
-    if isinstance(raw, str) and raw.strip():
-        return raw.strip()
-    return None
+    return first_slicer_string(raw)
+
+
+def reusable_slot_filament_id(
+    current_tray_info_idx: str | None,
+    current_tray_type: str | None,
+    current_tray_sub_brands: str | None,
+    tray_type: str,
+    spool_text: str,
+) -> str:
+    """The slot's own filament id, when a spool without a preset may keep it.
+
+    A spool whose preset is empty or unresolvable would otherwise get the
+    generic id for its material, which turns a genuine Bambu PLA Basic into
+    Generic PLA. When the slot already holds a specific filament id of the same
+    type, keeping it is closer. Shared by both inventory modes (#3433): the
+    Spoolman route went straight to the generic id.
+
+    Not kept: a generic id, a cloud user preset (PFUS/PFCN), a material name
+    left in that field by a Bambuddy from before #2902, another type, and
+    another finish when both name one (a Silk spool does not take a Matte id).
+    ``spool_text`` is the spool's material and subtype.
+    """
+    current = (current_tray_info_idx or "").strip()
+    if (
+        current
+        and current not in GENERIC_IDS_REPLACED_ON_REUSE
+        and not current.startswith("PFUS")
+        and not current.startswith("PFCN")
+        and not is_material_name(current)
+        and current_tray_type
+        and current_tray_type.upper() == tray_type.upper()
+        and not different_finish(spool_text, current_tray_sub_brands)
+    ):
+        return current
+    return ""
 
 
 async def resolve_slicer_filament(

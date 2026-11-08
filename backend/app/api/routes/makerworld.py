@@ -374,11 +374,11 @@ async def import_instance(
 
     service = await _build_service(db, provider, current_user, api_key_cloud_owner)
 
-    # YASTL#51's iot-service endpoint needs the *alphanumeric* modelId
-    # (e.g. "US2bb73b106683e5"), not the integer design id from /models/{N} —
-    # resolving that, plus picking a default profile when the frontend didn't
-    # specify one, lives inside ``get_download``. The route only orchestrates
-    # dedupe + persistence so every provider shares those concerns here.
+    # Finding the download link (the instance behind the profile, or the
+    # profile endpoint with the alphanumeric modelId as a fallback, #3447),
+    # plus picking a default profile when the frontend didn't specify one,
+    # lives inside ``get_download``. The route only orchestrates dedupe +
+    # persistence so every provider shares those concerns here.
     ref = ProviderResourceRef(
         source_type=provider.source_type,
         external_id=str(body.model_id),

@@ -123,9 +123,11 @@ export function SpoolBuddyAmsPage() {
 
   // Build fill-level override map from inventory assignments
   // Key: "amsId-trayId", Value: fill percentage (0-100)
+  // Built-in rows only in built-in mode: kept through a switch to Spoolman
+  // (#2812), they would give a slot a fill from the other inventory (#3430).
   const fillOverrides = useMemo(() => {
     const map: Record<string, number> = {};
-    if (!assignments) return map;
+    if (!assignments || spoolmanStatus?.enabled) return map;
     for (const a of assignments) {
       const sp = a.spool;
       if (sp && sp.label_weight > 0 && sp.weight_used != null) {
@@ -134,7 +136,7 @@ export function SpoolBuddyAmsPage() {
       }
     }
     return map;
-  }, [assignments]);
+  }, [assignments, spoolmanStatus?.enabled]);
 
   // Look up Spoolman fill level for a given tray
   const printerSerial = printer?.serial_number ?? '';

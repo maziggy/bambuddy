@@ -76,7 +76,9 @@ class _StubArchiveService:
         return archive
 
 
-async def _drive_print_start(test_engine, printer, *, download_ok: bool, extra_patches=(), state_fields=None) -> dict:
+async def _drive_print_start(
+    test_engine, printer, *, download_ok: bool, extra_patches=(), state_fields=None, raw_data=None
+) -> dict:
     """Run ``on_print_start`` against the test database.
 
     ``download_ok`` picks the branch: False leaves the 3MF unreachable and the
@@ -142,7 +144,10 @@ async def _drive_print_start(test_engine, printer, *, download_ok: bool, extra_p
 
         from backend.app.main import on_print_start
 
-        await on_print_start(printer.id, {"filename": DISPATCH, "subtask_name": SUBTASK})
+        data = {"filename": DISPATCH, "subtask_name": SUBTASK}
+        if raw_data is not None:
+            data["raw_data"] = raw_data
+        await on_print_start(printer.id, data)
     return mocks
 
 

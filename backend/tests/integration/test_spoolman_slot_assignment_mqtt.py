@@ -1098,3 +1098,98 @@ class TestSlicerFilamentResolutionParity:
         call_kwargs = mqtt_mock.ams_set_filament_setting.call_args[1]
         assert call_kwargs["tray_info_idx"] == expected
         assert call_kwargs["setting_id"] == "GFS" + expected[2:]
+
+
+class TestSpoolWithoutPresetKeepsTheSlotsFilament:
+    """#3433: a Spoolman spool without a preset went straight to the generic id
+    for its material, so a genuine Bambu PLA Basic on the external slot became
+    Generic PLA. Internal mode first keeps the slot's own filament id when it
+    fits; the Spoolman route now asks the same shared rule."""
+
+    async def _assign(self, async_client, printer, *, ams_id, tray_id, raw_data, spool=None, client=None):
+        if spool is not None:
+            client.get_spool = AsyncMock(return_value=spool)
+        mqtt_mock = MagicMock()
+        state = MagicMock()
+        state.raw_data = raw_data
+        with patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock:
+            pm_mock.get_client = MagicMock(return_value=mqtt_mock)
+            pm_mock.get_status = MagicMock(return_value=state)
+            pm_mock.get_model = MagicMock(return_value="X2D")
+            response = await async_client.post(
+                "/api/v1/spoolman/inventory/slot-assignments",
+                json={"spoolman_spool_id": 10, "printer_id": printer.id, "ams_id": ams_id, "tray_id": tray_id},
+            )
+        assert response.status_code == 200
+        return mqtt_mock.ams_set_filament_setting.call_args[1]["tray_info_idx"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_reporters_external_slot_keeps_pla_basic(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
+    ):
+        raw = {"vt_tray": [{"id": "255", "tray_type": "PLA", "tray_info_idx": "GFA00", "tray_sub_brands": "PLA Basic"}]}
+        assert await self._assign(async_client, test_printer, ams_id=255, tray_id=1, raw_data=raw) == "GFA00"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_ams_slot_keeps_its_filament_too(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
+    ):
+        raw = {"ams": [{"id": "0", "tray": [{"id": "1", "tray_type": "PLA", "tray_info_idx": "GFA00"}]}]}
+        assert await self._assign(async_client, test_printer, ams_id=0, tray_id=1, raw_data=raw) == "GFA00"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        ("current", "expected"),
+        [
+            ({"tray_type": "PETG", "tray_info_idx": "GFG00"}, "GFL99"),  # another type
+            ({"tray_type": "PLA", "tray_info_idx": "PFUS1234abcd"}, "GFL99"),  # a cloud user preset
+            ({"tray_type": "PLA", "tray_info_idx": "GFL99"}, "GFL99"),  # already generic
+            ({"tray_type": "PLA", "tray_info_idx": "PLA+"}, "GFL99"),  # a material name, pre-#2902
+            ({}, "GFL99"),  # nothing reported
+        ],
+    )
+    async def test_falls_back_to_the_generic_id_when_the_slot_does_not_fit(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client, current, expected
+    ):
+        raw = {"ams": [{"id": "0", "tray": [{"id": "1", **current}]}]}
+        assert await self._assign(async_client, test_printer, ams_id=0, tray_id=1, raw_data=raw) == expected
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_another_finish_is_not_kept(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
+    ):
+        silk = {**SAMPLE_SPOOL, "filament": {**SAMPLE_SPOOL["filament"], "name": "PLA Silk+"}}
+        raw = {
+            "ams": [
+                {
+                    "id": "0",
+                    "tray": [{"id": "1", "tray_type": "PLA", "tray_info_idx": "GFA01", "tray_sub_brands": "PLA Matte"}],
+                }
+            ]
+        }
+        tray_info_idx = await self._assign(
+            async_client, test_printer, ams_id=0, tray_id=1, raw_data=raw, spool=silk, client=mock_spoolman_client
+        )
+        assert tray_info_idx == "GFL96"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_spools_own_preset_still_wins(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
+    ):
+        with_preset = {**SAMPLE_SPOOL, "extra": {"bambu_slicer_filament": json.dumps("GFA01")}}
+        raw = {"ams": [{"id": "0", "tray": [{"id": "1", "tray_type": "PLA", "tray_info_idx": "GFA00"}]}]}
+        tray_info_idx = await self._assign(
+            async_client,
+            test_printer,
+            ams_id=0,
+            tray_id=1,
+            raw_data=raw,
+            spool=with_preset,
+            client=mock_spoolman_client,
+        )
+        assert tray_info_idx == "GFA01"

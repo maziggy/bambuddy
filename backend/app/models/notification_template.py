@@ -97,7 +97,7 @@ DEFAULT_TEMPLATES = [
         "event_type": "ai_failure_detection",
         "name": "AI Failure Detection",
         "title_template": "Possible Print Failure Detected",
-        "body_template": "{printer}: {task_name}\nConfidence: {confidence}\nAction taken: {action}",
+        "body_template": "{printer}: {task_name}\nProvider: {provider}\nPrint quality: {print_quality}\nConfidence: {confidence}\nAction taken: {action}",
     },
     {
         "event_type": "plate_not_empty",
@@ -143,6 +143,17 @@ DEFAULT_TEMPLATES = [
             "{printer} {ams_label}: stopped automatic drying after {cycles} cycles left humidity at "
             "{humidity}%, still above the {threshold}% threshold. An AMS reads higher while it is warm, "
             "so raise the threshold or dry the spools off the printer."
+        ),
+    },
+    {
+        "event_type": "ams_drying_not_heating",
+        "name": "Auto-Drying Not Heating",
+        "title_template": "Auto-Drying Suspended",
+        "body_template": (
+            "{printer} {ams_label}: stopped automatic drying. The printer accepted {cycles} drying commands "
+            "in a row, but each time the drying timer stood still and the unit did not heat. Clear the timer "
+            "with Stop on the printer card and check the AMS power; automatic drying resumes once humidity "
+            "is back at or below {threshold}%."
         ),
     },
     {

@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import AsyncClient
 
-from backend.app.services.bambu_mqtt import CALI_ACK_UNCONFIRMED, KProfile
+from backend.app.services.bambu_mqtt import CALI_ACK_UNCONFIRMED, KProfile, KProfileReadError
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
@@ -128,13 +128,22 @@ class TestASingleNozzleEditIsReadBack:
         assert response.status_code == 502
 
     async def test_an_unreadable_table_leaves_it_to_the_ack(self, async_client, printer_factory):
-        """An empty answer is also what a read that timed out returns."""
-        client = _client((True, CALI_ACK_UNCONFIRMED), table=[])
+        """The write has gone out: a read the printer did not answer is no error."""
+        client = _client((True, CALI_ACK_UNCONFIRMED))
+        client.get_kprofiles = AsyncMock(side_effect=KProfileReadError("no answer"))
 
         response = await _post(async_client, printer_factory, client, body=self.EDIT)
 
         assert response.status_code == 200
         assert response.json()["confirmed"] is False
+
+    async def test_an_empty_table_is_a_lost_profile(self, async_client, printer_factory):
+        """#3404: an answered read without profiles is proof now, not a timeout."""
+        client = _client((True, ""), table=[])
+
+        response = await _post(async_client, printer_factory, client, body=self.EDIT)
+
+        assert response.status_code == 502
 
     async def test_an_unanswered_delete_leaves_it_unconfirmed(self, async_client, printer_factory):
         """The edited profile landed, but the old one may still be there too."""
@@ -145,3 +154,28 @@ class TestASingleNozzleEditIsReadBack:
 
         assert response.status_code == 200
         assert response.json()["confirmed"] is False
+
+
+class TestTheTableRead:
+    """#3404: a printer that did not answer is not a printer without profiles."""
+
+    async def _get(self, async_client, printer_factory, client):
+        printer = await printer_factory(model="X1C")
+        with patch("backend.app.api.routes.kprofiles.printer_manager") as pm:
+            pm.get_client.return_value = client
+            return await async_client.get(f"/api/v1/printers/{printer.id}/kprofiles/?nozzle_diameter=0.4")
+
+    async def test_no_answer_is_504(self, async_client, printer_factory):
+        client = _client((True, ""))
+        client.get_kprofiles = AsyncMock(side_effect=KProfileReadError("no answer"))
+
+        response = await self._get(async_client, printer_factory, client)
+
+        assert response.status_code == 504
+        assert response.json()["detail"] == "The printer did not answer the K-profile request"
+
+    async def test_no_profiles_is_an_empty_list(self, async_client, printer_factory):
+        response = await self._get(async_client, printer_factory, _client((True, ""), table=[]))
+
+        assert response.status_code == 200
+        assert response.json() == {"profiles": [], "nozzle_diameter": "0.4"}

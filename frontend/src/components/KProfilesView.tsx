@@ -19,7 +19,7 @@ import {
   Square,
   StickyNote,
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type { KProfile, KProfileCreate, KProfileDelete, Permission } from '../api/client';
 import {
   buildFilamentPresetOptions,
@@ -931,6 +931,9 @@ export function KProfilesView() {
 
   // Check if error is due to printer not being connected
   const isOfflineError = kprofilesError?.message?.includes('not connected');
+  // Any other failed read, mostly a printer that didn't answer (504): not a
+  // printer without profiles, so no "Create first profile" (#3404).
+  const isNoAnswerError = kprofilesError instanceof ApiError && kprofilesError.status === 504;
 
   // Auto-select first connected printer
   useEffect(() => {
@@ -1508,6 +1511,20 @@ export function KProfilesView() {
             <h3 className="text-lg font-semibold text-white mb-2">{t('kProfiles.printerOffline')}</h3>
             <p className="text-bambu-gray mb-4">
               {t('kProfiles.printerOfflineDesc')}
+            </p>
+            <Button variant="secondary" onClick={() => refetchProfiles()}>
+              <RefreshCw className="w-4 h-4" />
+              {t('common.refresh')}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : kprofilesError ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <AlertCircle className="w-12 h-12 text-amber-700 dark:text-amber-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-white mb-2">{t('kProfiles.readFailed')}</h3>
+            <p className="text-bambu-gray mb-4">
+              {isNoAnswerError ? t('kProfiles.noAnswerDesc') : kprofilesError.message}
             </p>
             <Button variant="secondary" onClick={() => refetchProfiles()}>
               <RefreshCw className="w-4 h-4" />

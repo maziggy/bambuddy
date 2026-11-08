@@ -922,6 +922,7 @@ export interface Archive {
   print_time_seconds: number | null;
   actual_time_seconds: number | null;  // Computed from started_at/completed_at
   time_accuracy: number | null;  // Percentage: 100 = perfect, >100 = faster than estimated
+  time_estimate_seconds?: number | null;  // The latest print's plate estimate, what time_accuracy compares with
   filament_used_grams: number | null;
   filament_type: string | null;
   filament_color: string | null;
@@ -952,6 +953,14 @@ export interface Archive {
   user_verdict_source: VerdictSource | null;
   user_verdict_at: string | null;
   confirm_requested: boolean;
+  // The run whose outcome this shows, when it shows one run of the archive
+  // (a plate printed on its own) rather than its latest (#1898).
+  run_id?: number | null;
+  // The latest print of the archive (among those the caller may see), whose
+  // figures the per-print fields show (archive redesign).
+  latest_run_id?: number | null;
+  // How many videos its prints have; timelapse_path is the latest print's only.
+  timelapse_count?: number;
   quantity: number;
   energy_kwh: number | null;
   energy_cost: number | null;
@@ -991,6 +1000,7 @@ export interface PrintLogEntry {
   id: number;
   archive_id: number | null;
   print_name: string | null;
+  plate_id?: number | null;
   printer_name: string | null;
   printer_id: number | null;
   status: string;
@@ -1005,6 +1015,18 @@ export interface PrintLogEntry {
   energy_cost: number | null;
   wear_cost: number | null;  // Printer wear (#694)
   failure_reason: string | null;
+  user_verdict?: 'good' | 'reject' | null;
+  user_verdict_source?: string | null;
+  confirm_requested?: boolean | null;
+  duration_unmeasured?: boolean | null;
+  quantity?: number | null;
+  // This print's own (archive redesign): note, finish photos, video.
+  notes?: string | null;
+  photos?: string[] | null;
+  timelapse_path?: string | null;
+  // The slicer's estimate for the plate it printed; in an archive's runs list.
+  estimate_seconds?: number | null;
+  estimate_grams?: number | null;
   thumbnail_path: string | null;
   created_by_id: number | null;
   created_by_username: string | null;
@@ -1014,6 +1036,8 @@ export interface PrintLogEntry {
 export interface PrintLogResponse {
   items: PrintLogEntry[];
   total: number;
+  // The print log only: archives of its prints that were deleted.
+  deleted_archive_ids?: number[];
 }
 
 export interface ArchiveStats {
@@ -1647,6 +1671,13 @@ export interface AppSettings {
   obico_action: 'notify' | 'pause' | 'pause_and_off';
   obico_poll_interval: number;
   obico_enabled_printers: string;
+  octoeverywhere_enabled: boolean;
+  octoeverywhere_api_key: string;
+  octoeverywhere_api_key_configured: boolean;
+  octoeverywhere_confidence: OctoEverywhereConfidence;
+  octoeverywhere_action: 'notify' | 'pause' | 'pause_and_off';
+  octoeverywhere_enabled_printers: string;
+  octoeverywhere_poll_interval: number;
   // Inventory forecasting global lead time
   forecast_global_lead_time_days: number;
   location_sensor_poll_interval: number;
@@ -1657,7 +1688,7 @@ export interface AppSettings {
   location_sensor_alert_defaults: string;
 }
 
-export type AppSettingsUpdate = Partial<AppSettings>;
+export type AppSettingsUpdate = Partial<Omit<AppSettings, 'octoeverywhere_api_key_configured'>>;
 
 // Settings as a page sees them: everything from GET /settings for a user who
 // may read it, otherwise the subset /settings/ui-preferences and
@@ -2094,14 +2125,17 @@ export interface LoadedSpoolsResponse {
 }
 export interface UnifiedPresetsResponse {
   // Priority order: local > orca_cloud > cloud > standard. No cross-tier
-  // dedup — every tier surfaces its full list so the user can pick from
-  // any source. The order drives auto-pick + visual group rendering only.
+  // dedup (apart from stock_aliases below) — every tier surfaces its full
+  // list so the user can pick from any source. The order drives auto-pick + visual group rendering only.
   orca_cloud: UnifiedPresetsBySlot;
   cloud: UnifiedPresetsBySlot;
   local: UnifiedPresetsBySlot;
   standard: UnifiedPresetsBySlot;
   cloud_status: SlicerCloudStatus;
   orca_cloud_status: SlicerCloudStatus;
+  // Standard presets that Bambu Cloud's stock list also has are left out of
+  // the standard tier (#3386); each "standard:<id>" maps to its cloud twin.
+  stock_aliases?: Record<string, PresetRef>;
 }
 
 // Slicer Pipelines (#1425) — named bundles of preset slots the SliceModal
@@ -3626,7 +3660,7 @@ export interface ObicoStatus {
   is_running: boolean;
   last_error: string | null;
   per_printer: Record<string, { class: string; frame_count: number; score: number }>;
-  thresholds: { low: number; high: number };
+  thresholds: { low: number; high: number; pause?: number };
   history: ObicoDetectionEvent[];
   enabled: boolean;
   ml_url: string;
@@ -3654,6 +3688,54 @@ export interface ObicoTestConnection {
   // Whether the ML API accepted the token. null = not determined (the health
   // check failed first, or the token probe itself errored).
   auth_ok: boolean | null;
+}
+
+// How sure Gadget must be before suggesting a warning or pause (API levels 1-5).
+export type OctoEverywhereConfidence = 'lowest' | 'low' | 'medium' | 'high' | 'highest';
+
+export interface OctoEverywhereDetection {
+  class: 'safe' | 'warning' | 'failure' | 'error' | 'unknown';
+  print_quality: number | null;
+  frame_count: number;
+  error?: string | null;
+  error_code: string | null;
+}
+
+export interface OctoEverywhereDetectionEvent {
+  timestamp: string;
+  printer_id: number;
+  class: OctoEverywhereDetection['class'];
+  print_quality: number | null;
+}
+
+export interface OctoEverywhereStatus {
+  enabled: boolean;
+  api_key_configured: boolean;
+  confidence: OctoEverywhereConfidence;
+  action: 'notify' | 'pause' | 'pause_and_off';
+  poll_interval: number;
+  is_running: boolean;
+  last_error: string | null;
+  last_error_code: string | null;
+  per_printer: Record<string, OctoEverywhereDetection>;
+  history: OctoEverywhereDetectionEvent[];
+  notifications: { configured: boolean; uncovered_printers: number[] };
+}
+
+export interface OctoEverywherePrinterStatus {
+  enabled: boolean;
+  // null = all printers are monitored
+  monitored_printers: number[] | null;
+  per_printer: Record<string, OctoEverywhereDetection>;
+  last_error: string | null;
+  last_error_code: string | null;
+}
+
+export interface OctoEverywhereTestConnection {
+  ok: boolean;
+  status_code: number | null;
+  error: string | null;
+  error_code: string | null;
 }
 
 export interface GitHubTestConnectionResponse {
@@ -3900,9 +3982,37 @@ export const DEFAULT_SPOOL_LABEL_FIELDS: SpoolLabelField[] = [
   'spool_id',
 ];
 
+// A sheet of identical labels in a grid, in millimetres (#3296). Mirror of
+// backend.app.schemas.label_template.SheetLayoutSpec.
+export type LabelPageSize = 'a4' | 'letter';
+export interface LabelSheetLayout {
+  page: LabelPageSize;
+  label_w_mm: number;
+  label_h_mm: number;
+  cols: number;
+  rows: number;
+  top_mm: number;
+  left_mm: number;
+  col_gap_mm: number;
+  row_gap_mm: number;
+}
+
+// A custom sheet saved under a name, shared by everyone on the install.
+export interface SavedLabelTemplate {
+  id: number;
+  name: string;
+  layout: LabelSheetLayout;
+  created_at: string;
+  updated_at: string;
+}
+
+// A built-in template, or "custom" with the sheet itself in ``layout``.
+export type SpoolLabelRequestTemplate = SpoolLabelTemplate | 'custom';
+
 export interface PrintSpoolLabelsRequest {
   spool_ids: number[];
-  template: SpoolLabelTemplate;
+  template: SpoolLabelRequestTemplate;
+  layout?: LabelSheetLayout;
   monochrome: boolean;
   starting_position: number;
   fields?: SpoolLabelField[];
@@ -3912,7 +4022,8 @@ export interface PrintSpoolLabelsRequest {
 
 export interface PreviewSpoolLabelRequest {
   spool_id: number;
-  template: SpoolLabelTemplate;
+  template: SpoolLabelRequestTemplate;
+  layout?: LabelSheetLayout;
   monochrome: boolean;
   fields: SpoolLabelField[];
 }
@@ -3953,6 +4064,8 @@ export interface InventorySpool {
   note: string | null;
   added_full: boolean | null;
   last_used: string | null;
+  // Spoolman mode: when the spool was first printed with (#3407).
+  first_used?: string | null;
   // Last drying (#2863): stamped when an AMS drying run of at least half its
   // length ends, or set by hand. Temperature and hours are null when unknown.
   last_dried_at?: string | null;
@@ -4096,6 +4209,8 @@ export interface SpoolUsageRecord {
   id: number;
   // null: the spool was deleted, its usage kept
   spool_id: number | null;
+  // Spoolman mode: the Spoolman spool charged (#3407); spool_id is null then.
+  spoolman_spool_id?: number | null;
   printer_id: number | null;
   print_name: string | null;
   weight_used: number;
@@ -5710,8 +5825,19 @@ export const api = {
     const qs = params.toString();
     return request<ArchiveSlim[]>(`/archives/slim${qs ? `?${qs}` : ''}`);
   },
-  getArchive: (id: number) => request<Archive>(`/archives/${id}`),
+  getArchive: (id: number, runId?: number | null) =>
+    request<Archive>(`/archives/${id}${runId != null ? `?run_id=${runId}` : ''}`),
   getArchiveRuns: (id: number) => request<PrintLogResponse>(`/archives/${id}/runs`),
+  // The prints of the archives the caller sees that ended between two days
+  // (archive redesign P4: the calendar), in id order.
+  getArchivePrints: (params: { dateFrom: string; dateTo: string; printerId?: number; limit?: number; offset?: number }) => {
+    const search = new URLSearchParams({ date_from: params.dateFrom, date_to: params.dateTo });
+    if (params.printerId) search.set('printer_id', String(params.printerId));
+    if (params.limit) search.set('limit', String(params.limit));
+    if (params.offset) search.set('offset', String(params.offset));
+    addDayZone(search);
+    return request<PrintLogResponse>(`/archives/prints?${search}`);
+  },
   /**
    * Pre-flight for the delete-confirm modal (#1734). Returns the number of
    * related queue items that will be removed along with the archive AND how
@@ -5752,6 +5878,8 @@ export const api = {
     // Which surface answered. The backend only accepts the sources a client
     // can honestly claim and defaults to 'api' when none is given.
     user_verdict_source?: 'dialog' | 'printer_card';
+    // The run the verdict / outcome is for; omitted means the latest run.
+    run_id?: number;
   }) =>
     request<Archive>(`/archives/${id}`, {
       method: 'PATCH',
@@ -5779,6 +5907,15 @@ export const api = {
     request<{ deleted: number; purge_stats: boolean }>('/archives/purge', {
       method: 'POST',
       body: JSON.stringify({ older_than_days: olderThanDays, purge_stats: purgeStats }),
+    }),
+  // Archives of one file merge into the oldest (archive redesign P2).
+  previewArchiveMerge: () => request<ArchiveMergePreview>('/archives/merge-preview'),
+  /** How many duplicate groups there are; cheap, for offering the merge. */
+  getArchiveMergeCount: () => request<{ groups: number }>('/archives/merge-count'),
+  mergeArchives: (survivorIds: number[]) =>
+    request<ArchiveMergeResult>('/archives/merge', {
+      method: 'POST',
+      body: JSON.stringify({ survivor_ids: survivorIds }),
     }),
   getArchivePurgeSettings: () =>
     request<ArchivePurgeSettings>('/archives/purge/settings'),
@@ -5809,7 +5946,13 @@ export const api = {
       method: 'DELETE',
     }),
   recalculateCosts: () =>
-    request<{ message: string; updated: number }>('/archives/recalculate-costs', { method: 'POST' }),
+    request<{
+      message: string;
+      updated: number;
+      preserved: number;
+      usage_repriced: number;
+      spoolman_unreachable: number;
+    }>('/archives/recalculate-costs', { method: 'POST' }),
   getFailureAnalysis: (options?: { days?: number; dateFrom?: string; dateTo?: string; printerId?: number; projectId?: number; createdById?: number }) => {
     const params = new URLSearchParams();
     if (options?.days) params.set('days', String(options.days));
@@ -5927,6 +6070,8 @@ export const api = {
   },
   getArchiveGcode: (id: number) => `${API_BASE}/archives/${id}/gcode`,
   getArchiveTimelapse: (id: number) => withMediaToken(`${API_BASE}/archives/${id}/timelapse?v=${Date.now()}`),
+  getArchiveRunTimelapse: (id: number, runId: number) =>
+    withMediaToken(`${API_BASE}/archives/${id}/runs/${runId}/timelapse?v=${Date.now()}`),
   downloadArchiveTimelapse: async (id: number, filename: string): Promise<void> => {
     const prepared = await request<{ token: string; filename: string }>(
       `/archives/${id}/media-download-token`,
@@ -6327,7 +6472,7 @@ export const api = {
   // archive to reach through and this is the only path to classify them.
   updatePrintLogEntry: (
     id: number,
-    body: { failure_reason?: string | null; status?: string },
+    body: { failure_reason?: string | null; status?: string; notes?: string | null },
   ) =>
     request<PrintLogEntry>(`/print-log/${id}`, {
       method: 'PATCH',
@@ -7252,6 +7397,12 @@ export const api = {
     postForBlob('/inventory/labels/preview', data, signal),
   previewSpoolmanSpoolLabel: (data: PreviewSpoolLabelRequest, signal?: AbortSignal): Promise<Blob> =>
     postForBlob('/spoolman/labels/preview', data, signal),
+  getLabelTemplates: () => request<SavedLabelTemplate[]>('/label-templates'),
+  createLabelTemplate: (data: { name: string; layout: LabelSheetLayout }) =>
+    request<SavedLabelTemplate>('/label-templates', { method: 'POST', body: JSON.stringify(data) }),
+  updateLabelTemplate: (id: number, data: { name: string; layout: LabelSheetLayout }) =>
+    request<SavedLabelTemplate>(`/label-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteLabelTemplate: (id: number) => request<void>(`/label-templates/${id}`, { method: 'DELETE' }),
   getSpoolCatalog: () =>
     request<SpoolCatalogEntry[]>('/inventory/catalog'),
   addCatalogEntry: (data: { name: string; weight: number }) =>
@@ -7361,8 +7512,15 @@ export const api = {
   },
   getSpoolUsageHistory: (spoolId: number, limit = 50) =>
     request<SpoolUsageRecord[]>(`/inventory/spools/${spoolId}/usage?limit=${limit}`),
-  getAllUsageHistory: (limit = 100, printerId?: number) =>
-    request<SpoolUsageRecord[]>(`/inventory/usage?limit=${limit}${printerId ? `&printer_id=${printerId}` : ''}`),
+  // One inventory's at a time: ``spoolman`` for the Spoolman spools' (#3407).
+  getAllUsageHistory: (limit = 100, printerId?: number, spoolman = false) =>
+    request<SpoolUsageRecord[]>(
+      `/inventory/usage?limit=${limit}${printerId ? `&printer_id=${printerId}` : ''}${spoolman ? '&spoolman=true' : ''}`,
+    ),
+  getSpoolmanSpoolUsageHistory: (spoolId: number, limit = 50) =>
+    request<SpoolUsageRecord[]>(`/spoolman/inventory/spools/${spoolId}/usage?limit=${limit}`),
+  clearSpoolmanSpoolUsageHistory: (spoolId: number) =>
+    request<{ status: string }>(`/spoolman/inventory/spools/${spoolId}/usage`, { method: 'DELETE' }),
   clearSpoolUsageHistory: (spoolId: number) =>
     request<{ status: string }>(`/inventory/spools/${spoolId}/usage`, { method: 'DELETE' }),
   syncWeightsFromAms: () =>
@@ -8330,6 +8488,20 @@ export const api = {
       body: JSON.stringify(token === undefined ? { url } : { url, token }),
     }),
 
+  // OctoEverywhere AI failure detection
+  getOctoEverywhereStatus: () =>
+    request<OctoEverywhereStatus>('/octoeverywhere/status'),
+
+  getOctoEverywherePrinterStatus: () =>
+    request<OctoEverywherePrinterStatus>('/octoeverywhere/printer-status'),
+
+  // An omitted key uses the saved key; an explicit empty key is rejected.
+  testOctoEverywhereConnection: (apiKey?: string, confidence?: OctoEverywhereConfidence) =>
+    request<OctoEverywhereTestConnection>('/octoeverywhere/test-connection', {
+      method: 'POST',
+      body: JSON.stringify({ api_key: apiKey, confidence }),
+    }),
+
   // Slicer API — slice in the background. Both endpoints return 202 + a
   // job_id; poll /slice-jobs/{id} until status is `completed` or `failed`.
   sliceLibraryFile: (fileId: number, body: SliceRequest) =>
@@ -8864,6 +9036,32 @@ export interface ArchivePurgePreview {
   total_bytes: number;
   sample_filenames: string[];
   older_than_days: number;
+}
+
+export interface ArchiveMergeMember {
+  id: number;
+  print_name: string | null;
+  filename: string;
+  created_at: string | null;
+  run_count: number;
+}
+
+/** Why a group is left out: at work now, or holding files only one can keep. */
+export type ArchiveMergeSkip = 'busy' | 'conflicting_files' | 'failed' | 'not_a_group';
+
+export interface ArchiveMergeGroup {
+  survivor: ArchiveMergeMember;
+  merged: ArchiveMergeMember[];
+  skipped: ArchiveMergeSkip | null;
+}
+
+export interface ArchiveMergePreview {
+  groups: ArchiveMergeGroup[];
+}
+
+export interface ArchiveMergeResult {
+  merged: { survivor_id: number; merged_ids: number[] }[];
+  skipped: { survivor_id: number; reason: ArchiveMergeSkip }[];
 }
 
 export interface ArchivePurgeSettings {

@@ -1453,7 +1453,8 @@ async def camera_stream(
     )
 
 
-@router.api_route("/{printer_id}/camera/stop", methods=["GET", "POST"])
+@router.get("/{printer_id}/camera/stop")
+@router.post("/{printer_id}/camera/stop")
 async def stop_camera_stream(
     printer_id: int,
     _: User | None = RequirePrinterPermissionIfAuthEnabled(Permission.CAMERA_VIEW),

@@ -342,10 +342,13 @@ export function ConfigureAmsSlotModal({
   });
 
   // Fetch K profiles
-  const { data: kprofilesData, isLoading: kprofilesLoading } = useQuery({
+  // A printer that doesn't answer is an error (#3404), after the backend has
+  // already asked it three times: asking again only keeps the dialog loading.
+  const { data: kprofilesData, isLoading: kprofilesLoading, isError: kprofilesUnread } = useQuery({
     queryKey: ['kprofiles', printerId, nozzleDiameter],
     queryFn: () => api.getKProfiles(printerId, nozzleDiameter),
     enabled: isOpen && !!printerId,
+    retry: false,
   });
 
   // Fetch color catalog
@@ -1445,6 +1448,10 @@ export function ConfigureAmsSlotModal({
                       </select>
                       <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                     </div>
+                  ) : kprofilesUnread ? (
+                    <p className="text-sm text-amber-700 dark:text-amber-400 py-2">
+                      {t('configureAmsSlot.kProfilesUnread')}
+                    </p>
                   ) : selectedPresetId ? (
                     <p className="text-sm text-bambu-gray italic py-2">
                       {t('configureAmsSlot.noMatchingKProfiles')}
@@ -1690,6 +1697,10 @@ export function ConfigureAmsSlotModal({
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                   </div>
+                ) : kprofilesUnread ? (
+                  <p className="text-sm text-amber-700 dark:text-amber-400 py-2">
+                    {t('configureAmsSlot.kProfilesUnread')}
+                  </p>
                 ) : selectedPresetId ? (
                   <p className="text-sm text-bambu-gray italic py-2">
                     {t('configureAmsSlot.noMatchingKProfiles')}

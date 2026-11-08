@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.finance import BudgetReservation, CostCenter, CostCenterMember, WalletTransaction
@@ -281,9 +281,19 @@ async def release_budget_reservation(
     print_archive_id: int | None = None,
     status: str = "released",
 ) -> int:
+    """By the archive, the reservations of its queue items that are over: one
+    still pending or printing is another print's (another plate of it)."""
     conditions = [BudgetReservation.status == "active"]
     if print_archive_id is not None:
         conditions.append(BudgetReservation.print_archive_id == print_archive_id)
+        conditions.append(
+            or_(
+                BudgetReservation.source_type != "print_queue",
+                BudgetReservation.source_id.not_in(
+                    select(PrintQueueItem.id).where(PrintQueueItem.status.in_(("pending", "printing")))
+                ),
+            )
+        )
     else:
         conditions.extend(
             [

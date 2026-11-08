@@ -11,7 +11,7 @@ import { CameraDiagnoseModal } from './CameraDiagnoseModal';
 import { useStreamImgRef } from '../hooks/useStreamImgRef';
 import { useCameraViewerId } from '../hooks/useCameraViewerId';
 import { isSideways, useSidewaysBox } from '../hooks/useSidewaysBox';
-import { openCameraWindow } from '../utils/camera';
+import { isStandaloneWebApp, openCameraWindow } from '../utils/camera';
 import { useIsSidebarCompact } from '../hooks/useIsSidebarCompact';
 
 export interface EmbeddedCameraViewerProps {
@@ -120,7 +120,6 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   const imgRef = useRef<HTMLImageElement | null>(null);
   // On its stream and its /camera/stop: the stop ends this viewer's stream only.
   const viewerId = useCameraViewerId();
-  const attachImg = useStreamImgRef(imgRef);
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const stallCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -586,6 +585,8 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
   }, [isDragging, isResizing, dragOffset, minY]);
 
   const streamUrl = withStreamToken(`/api/v1/printers/${printerId}/camera/stream?fps=15&t=${imageKey}&viewer=${viewerId}`);
+  // The img gets its src from here, at commit, never from a prop (#3431).
+  const attachImg = useStreamImgRef(imgRef, streamUrl);
 
   return (
     <div
@@ -658,17 +659,20 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
               <Fullscreen className="w-3.5 h-3.5 text-bambu-gray" />
             )}
           </button>
-          <button
-            onClick={() => {
-              // The overlay stays when a popup blocker stopped the window.
-              if (openCameraWindow(printerId)) onClose();
-            }}
-            className="p-1 hover:bg-bambu-dark-tertiary rounded"
-            title={t('camera.popOut')}
-            aria-label={t('camera.popOut')}
-          >
-            <ExternalLink className="w-3.5 h-3.5 text-bambu-gray" />
-          </button>
+          {/* No window to pop out to in a home-screen web app (#3419). */}
+          {!isStandaloneWebApp() && (
+            <button
+              onClick={() => {
+                // The overlay stays when a popup blocker stopped the window.
+                if (openCameraWindow(printerId)) onClose();
+              }}
+              className="p-1 hover:bg-bambu-dark-tertiary rounded"
+              title={t('camera.popOut')}
+              aria-label={t('camera.popOut')}
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-bambu-gray" />
+            </button>
+          )}
           <button
             onClick={() => setIsMinimized(!isMinimized)}
             className="p-1 hover:bg-bambu-dark-tertiary rounded"
@@ -744,7 +748,6 @@ export function EmbeddedCameraViewer({ printerId, printerName, viewerIndex = 0, 
           <img
             ref={attachImg}
             key={imageKey}
-            src={streamUrl}
             alt="Camera stream"
             className="max-w-full max-h-full object-contain select-none"
             style={{

@@ -439,6 +439,156 @@ async def test_get_spool_by_tag_no_false_positive_different_suffix(db_session):
     assert found is None, "Should not match when suffix differs"
 
 
+# -- get_spool_by_tag: cascade level 1 links (#3258) ------------------------
+#
+# SpoolBuddy daemons before #3258 read only cascade level 1 and reported the
+# NTAG 04ECE673D32A81 as 8804ECE6 (cascade tag 88 + its first three bytes).
+
+NTAG_UID = "04ECE673D32A81"
+NTAG_LEVEL1 = "8804ECE6"
+
+
+async def _add_spool(db_session, tag_uid: str, archived: bool = False) -> int:
+    from datetime import datetime
+
+    spool = Spool(
+        material="PLA",
+        tag_uid=tag_uid,
+        label_weight=1000,
+        core_weight=250,
+        archived_at=datetime.now() if archived else None,
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    return spool.id
+
+
+async def _stored_tag_uid(db_session, spool_id: int) -> str | None:
+    db_session.expire_all()
+    return (await db_session.execute(select(Spool.tag_uid).where(Spool.id == spool_id))).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_get_spool_by_tag_full_uid_rewrites_cascade_level_1_link(db_session):
+    """A full read finds the spool linked by a level-1 read and stores the full UID."""
+    spool_id = await _add_spool(db_session, NTAG_LEVEL1)
+
+    found = await get_spool_by_tag(db_session, NTAG_UID, "")
+    await db_session.commit()
+
+    assert found is not None
+    assert found.id == spool_id
+    assert await _stored_tag_uid(db_session, spool_id) == NTAG_UID
+    # The next read is an exact match.
+    assert (await get_spool_by_tag(db_session, NTAG_UID, "")).id == spool_id
+
+
+@pytest.mark.asyncio
+async def test_get_spool_by_tag_full_uid_two_cascade_level_1_links_no_match(db_session):
+    """Two spools linked as 8804ECE6 may hold two different tags: no guess, nothing rewritten."""
+    first_id = await _add_spool(db_session, NTAG_LEVEL1)
+    second_id = await _add_spool(db_session, NTAG_LEVEL1)
+
+    found = await get_spool_by_tag(db_session, NTAG_UID, "")
+    await db_session.commit()
+
+    assert found is None
+    assert await _stored_tag_uid(db_session, first_id) == NTAG_LEVEL1
+    assert await _stored_tag_uid(db_session, second_id) == NTAG_LEVEL1
+
+
+@pytest.mark.asyncio
+async def test_get_spool_by_tag_full_uid_exact_match_wins_over_cascade_level_1_link(db_session):
+    exact_id = await _add_spool(db_session, NTAG_UID)
+    linked_id = await _add_spool(db_session, NTAG_LEVEL1)
+
+    found = await get_spool_by_tag(db_session, NTAG_UID, "")
+    await db_session.commit()
+
+    assert found.id == exact_id
+    assert await _stored_tag_uid(db_session, linked_id) == NTAG_LEVEL1
+
+
+@pytest.mark.asyncio
+async def test_get_spool_by_tag_cascade_level_1_skips_archived(db_session):
+    """An archived spool with the same link neither matches nor makes the match ambiguous."""
+    archived_id = await _add_spool(db_session, NTAG_LEVEL1, archived=True)
+    active_id = await _add_spool(db_session, NTAG_LEVEL1)
+
+    found = await get_spool_by_tag(db_session, NTAG_UID, "")
+    await db_session.commit()
+
+    assert found.id == active_id
+    assert await _stored_tag_uid(db_session, archived_id) == NTAG_LEVEL1
+
+
+@pytest.mark.asyncio
+async def test_get_spool_by_tag_ten_byte_uid_rewrites_cascade_level_1_link(db_session):
+    spool_id = await _add_spool(db_session, "88041122")
+
+    found = await get_spool_by_tag(db_session, "04112233445566778899", "")
+    await db_session.commit()
+
+    assert found.id == spool_id
+    # tag_uid keeps the last 16 hex characters, as every lookup normalizes it.
+    assert await _stored_tag_uid(db_session, spool_id) == "2233445566778899"
+    assert (await get_spool_by_tag(db_session, "04112233445566778899", "")).id == spool_id
+
+
+@pytest.mark.asyncio
+async def test_get_spool_by_tag_cascade_level_1_read_finds_full_uid(db_session):
+    """A daemon not updated yet still finds a spool linked by the full UID."""
+    spool_id = await _add_spool(db_session, NTAG_UID)
+
+    found = await get_spool_by_tag(db_session, NTAG_LEVEL1, "")
+    await db_session.commit()
+
+    assert found.id == spool_id
+    assert await _stored_tag_uid(db_session, spool_id) == NTAG_UID
+
+
+@pytest.mark.asyncio
+async def test_get_spool_by_tag_cascade_level_1_read_with_its_sak_finds_full_uid(db_session):
+    """An old daemon reports the SAK of level 1, which says the UID goes on."""
+    spool_id = await _add_spool(db_session, NTAG_UID)
+
+    found = await get_spool_by_tag(db_session, NTAG_LEVEL1, "", sak=0x04)
+
+    assert found.id == spool_id
+
+
+@pytest.mark.asyncio
+async def test_get_spool_by_tag_complete_uid_beginning_with_88_is_no_level_1_read(db_session):
+    """A 4-byte UID that begins with 88 (a non-ISO clone card) ended there: no fallback."""
+    await _add_spool(db_session, NTAG_UID)
+
+    assert await get_spool_by_tag(db_session, NTAG_LEVEL1, "", sak=0x08) is None
+
+
+@pytest.mark.asyncio
+async def test_get_spool_by_tag_cascade_level_1_read_two_full_uids_no_match(db_session):
+    """Two stored 7-byte UIDs beginning with the same three bytes: no guess."""
+    await _add_spool(db_session, NTAG_UID)
+    await _add_spool(db_session, "04ECE6AABBCCDD")
+
+    assert await get_spool_by_tag(db_session, NTAG_LEVEL1, "") is None
+
+
+@pytest.mark.asyncio
+async def test_get_spool_by_tag_cascade_level_1_read_ignores_other_uid_lengths(db_session):
+    """Only a stored 7-byte UID can be what a level-1 read begins."""
+    await _add_spool(db_session, "04ECE673D32A8100")
+
+    assert await get_spool_by_tag(db_session, NTAG_LEVEL1, "") is None
+
+
+@pytest.mark.asyncio
+async def test_get_spool_by_tag_four_byte_uid_ignores_cascade_level_1_links(db_session):
+    await _add_spool(db_session, "8804ECE6")
+
+    assert await get_spool_by_tag(db_session, "04ECE673", "") is None
+
+
 # -- auto_assign_spool (SpoolAssignment creation) ---------------------------
 
 

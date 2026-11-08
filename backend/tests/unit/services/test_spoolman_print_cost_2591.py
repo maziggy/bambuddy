@@ -157,6 +157,8 @@ class TestReportUsagePricesTheArchive:
             side_effect=lambda sid: next((s for s in spools_by_tag.values() if s["id"] == sid), None)
         )
         client.use_spool = AsyncMock()
+        # For the usage-history test: what the run wrote (#3407).
+        client.test_db = db
 
         pm = MagicMock()
         pm.get_status.return_value = state
@@ -218,6 +220,32 @@ class TestReportUsagePricesTheArchive:
 
         client.use_spool.assert_awaited_once_with(41, 100.0)
         assert archive.cost == pytest.approx(4.0)
+
+    @pytest.mark.asyncio
+    async def test_each_charge_is_recorded_in_the_usage_history(self):
+        """Spoolman keeps per-spool totals only; Bambuddy now keeps the print's
+        usage per spool, as the built-in inventory does (#3407)."""
+        from backend.app.models.spool_usage_history import SpoolUsageHistory
+
+        tracking = SimpleNamespace(
+            filament_usage=[{"slot_id": 1, "used_g": 100.0, "type": "PLA", "color": "#888888"}],
+            ams_trays={"0": {"tray_uuid": "TRAY0", "tag_uid": "", "tray_type": "PLA"}},
+            slot_to_tray=[0],
+            tray_remain_start=None,
+            layer_usage=None,
+            filament_properties=None,
+            tray_now_at_start=0,
+        )
+        archive = SimpleNamespace(filament_color="#888888", filament_type="PLA", filament_used_grams=100.0, cost=2.5)
+
+        run, client = self._run(tracking, self._state(), {"TRAY0": _spool(41, price=40.0, weight=1000)}, archive)
+        await run()
+
+        rows = [c.args[0] for c in client.test_db.add.call_args_list if isinstance(c.args[0], SpoolUsageHistory)]
+        assert [(r.spool_id, r.spoolman_spool_id, r.weight_used, r.percent_used, r.status, r.cost) for r in rows] == [
+            (None, 41, 100.0, 10, "completed", 4.0)
+        ]
+        assert rows[0].printer_id == 1 and rows[0].archive_id == 7
 
     @pytest.mark.asyncio
     async def test_multi_material_bills_each_slot_at_its_own_price(self):

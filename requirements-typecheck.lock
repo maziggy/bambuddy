@@ -176,7 +176,7 @@ propcache==0.5.4
     #   yarl
 psutil==7.2.2
     # via -r requirements.lock
-pyasn1==0.6.4
+pyasn1==0.6.5
     # via
     #   -r requirements.lock
     #   ldap3

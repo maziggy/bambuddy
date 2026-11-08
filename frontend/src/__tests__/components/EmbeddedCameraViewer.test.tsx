@@ -188,6 +188,18 @@ describe('EmbeddedCameraViewer pop-out (#2737)', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('offers no window to pop out to in a home-screen web app (#3419)', async () => {
+    Object.defineProperty(navigator, 'standalone', { value: true, configurable: true });
+    try {
+      render(<EmbeddedCameraViewer printerId={7} printerName="P1S" onClose={vi.fn()} />);
+      await settle();
+
+      expect(screen.queryByRole('button', { name: 'Open in its own window' })).toBeNull();
+    } finally {
+      delete (navigator as Navigator & { standalone?: boolean }).standalone;
+    }
+  });
+
   it('keeps the overlay when a popup blocker stopped the window', async () => {
     vi.spyOn(window, 'open').mockReturnValue(null);
     const onClose = vi.fn();

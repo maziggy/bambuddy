@@ -3,6 +3,7 @@ from backend.app.models.ams_label import AmsLabel
 from backend.app.models.announcement import Announcement, AnnouncementRead
 from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
+from backend.app.models.archive_alias import ArchiveAlias
 from backend.app.models.auth_ephemeral import AuthEphemeralToken, AuthRateLimitEvent
 from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.connected_app import ConnectedApp, ConnectedAppGrant
@@ -15,6 +16,7 @@ from backend.app.models.filament_profile_default import (
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
 from backend.app.models.group import Group, group_locations, group_printers, user_groups
 from backend.app.models.kprofile_note import KProfileNote
+from backend.app.models.label_template import LabelTemplate
 from backend.app.models.library import FileVariantGroup, LibraryFile, LibraryFolder
 from backend.app.models.local_preset import LocalPreset
 from backend.app.models.location import Location
@@ -58,6 +60,7 @@ __all__ = [
     "Printer",
     "PrinterLocation",
     "PrintArchive",
+    "ArchiveAlias",
     "Filament",
     "Settings",
     "SmartPlug",
@@ -83,6 +86,7 @@ __all__ = [
     "LibraryFolder",
     "LibraryFile",
     "FileVariantGroup",
+    "LabelTemplate",
     "Location",
     "User",
     "Group",

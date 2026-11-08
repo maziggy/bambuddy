@@ -17,11 +17,13 @@ These tests pin the parts that make the diff dependable:
 """
 
 import logging
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from backend.app.core.printer_scope import ALL_PRINTERS
+from backend.app.services.bambu_ftp import FileListResult
 
 logger = logging.getLogger(__name__)
 
@@ -316,8 +318,8 @@ class TestBaselineIsPersisted:
         with (
             patch("backend.app.main.async_session", return_value=session),
             patch(
-                "backend.app.main._list_timelapse_videos",
-                new=AsyncMock(return_value=([_video("a.avi"), _video("b.avi")], "/timelapse")),
+                "backend.app.services.bambu_ftp.list_files_result_async",
+                new=AsyncMock(return_value=FileListResult([_video("a.avi"), _video("b.avi")], True)),
             ),
         ):
             await _capture_timelapse_baseline_at_start(_printer(), 1, logger, archive_id=7)
@@ -335,8 +337,8 @@ class TestBaselineIsPersisted:
         with (
             patch("backend.app.main.async_session", return_value=session),
             patch(
-                "backend.app.main._list_timelapse_videos",
-                new=AsyncMock(return_value=([_video("a.avi")], "/timelapse")),
+                "backend.app.services.bambu_ftp.list_files_result_async",
+                new=AsyncMock(return_value=FileListResult([_video("a.avi")], True)),
             ),
         ):
             await _capture_timelapse_baseline_at_start(_printer(), 1, logger)
@@ -356,7 +358,9 @@ class TestBaselineIsPersisted:
 
         with (
             patch("backend.app.main.async_session", return_value=session),
-            patch("backend.app.main._list_timelapse_videos", new=AsyncMock(side_effect=OSError("ftp down"))),
+            patch(
+                "backend.app.services.bambu_ftp.list_files_result_async", new=AsyncMock(side_effect=OSError("ftp down"))
+            ),
         ):
             await _capture_timelapse_baseline_at_start(_printer(), 1, logger, archive_id=7)
 
@@ -393,15 +397,16 @@ class TestManualScanUsesTheBaseline:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock()
         session.execute = AsyncMock(
-            return_value=MagicMock(
-                scalar_one_or_none=MagicMock(return_value=_printer()),
-                # Videos other archives of this printer hold
-                scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=list(claimed)))),
-            )
+            return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=_printer())),
         )
 
         with (
             patch("backend.app.core.database.async_session", return_value=session),
+            # Videos other prints of this printer hold
+            patch(
+                "backend.app.api.routes.archives._claimed_timelapse_stems",
+                AsyncMock(return_value={Path(p).stem for p in claimed}),
+            ),
             patch("backend.app.api.routes.archives.ArchiveService", return_value=service),
             patch("backend.app.services.bambu_ftp.list_files_async", AsyncMock(return_value=listing)),
             patch(
@@ -517,9 +522,66 @@ class TestFinishPhotoUpgrade:
     bed, which is the worse of the two photos. The upgrade runs afterwards."""
 
     @pytest.mark.asyncio
-    async def test_puts_the_timelapse_frame_first_and_keeps_the_live_grab(self):
-        """First, because the gallery opens at index 0. Kept, because the
-        notification that already went out links to that exact file."""
+    async def test_replaces_the_live_grab_in_place(self, tmp_path):
+        """Archive 454 ended up with two finish photos of the same moment. The
+        frame now goes over the live grab's file, under its name: one photo,
+        and the archive link a notification already sent (auth off) keeps
+        working and shows the better photo."""
+        from backend.app.main import _upgrade_finish_photo_from_timelapse
+
+        photos = tmp_path / "photos"
+        photos.mkdir()
+        (photos / "finish_live_grab.jpg").write_bytes(b"live")
+        (photos / "finish_from_timelapse.jpg").write_bytes(b"frame")
+        archive = MagicMock()
+        archive.photos = ["finish_upload.jpg", "finish_live_grab.jpg"]
+        session = _session(archive)
+
+        with (
+            patch(
+                "backend.app.main._capture_finish_photo_from_timelapse",
+                AsyncMock(return_value=("finish_from_timelapse.jpg", False)),
+            ),
+            patch("backend.app.main.async_session", return_value=session),
+            patch("backend.app.main.ws_manager", MagicMock(send_archive_updated=AsyncMock())) as ws,
+        ):
+            await _upgrade_finish_photo_from_timelapse(7, tmp_path, replace="finish_live_grab.jpg")
+
+        assert archive.photos == ["finish_live_grab.jpg", "finish_upload.jpg"]
+        assert (photos / "finish_live_grab.jpg").read_bytes() == b"frame"
+        assert sorted(f.name for f in photos.iterdir()) == ["finish_live_grab.jpg"]
+        session.commit.assert_awaited()
+        assert ws.send_archive_updated.await_args.args[0]["photo_added"] == "finish_live_grab.jpg"
+
+    @pytest.mark.asyncio
+    async def test_adds_the_frame_when_the_live_grab_was_deleted_meanwhile(self, tmp_path):
+        """Nothing to replace: the user removed it from the gallery. Writing
+        over a name the archive no longer lists would hide the frame."""
+        from backend.app.main import _upgrade_finish_photo_from_timelapse
+
+        photos = tmp_path / "photos"
+        photos.mkdir()
+        (photos / "finish_from_timelapse.jpg").write_bytes(b"frame")
+        archive = MagicMock()
+        archive.photos = []
+        session = _session(archive)
+
+        with (
+            patch(
+                "backend.app.main._capture_finish_photo_from_timelapse",
+                AsyncMock(return_value=("finish_from_timelapse.jpg", False)),
+            ),
+            patch("backend.app.main.async_session", return_value=session),
+            patch("backend.app.main.ws_manager", MagicMock(send_archive_updated=AsyncMock())),
+        ):
+            await _upgrade_finish_photo_from_timelapse(7, tmp_path, replace="finish_live_grab.jpg")
+
+        assert archive.photos == ["finish_from_timelapse.jpg"]
+        assert (photos / "finish_from_timelapse.jpg").read_bytes() == b"frame"
+
+    @pytest.mark.asyncio
+    async def test_puts_the_timelapse_frame_first_without_a_live_grab_to_replace(self):
+        """First, because the gallery opens at index 0."""
         from backend.app.main import _upgrade_finish_photo_from_timelapse
 
         archive = MagicMock()
@@ -647,7 +709,9 @@ class TestStaleBaselineCannotSurvive:
 
         with (
             patch("backend.app.main.async_session", return_value=session),
-            patch("backend.app.main._list_timelapse_videos", new=AsyncMock(side_effect=OSError("ftp down"))),
+            patch(
+                "backend.app.services.bambu_ftp.list_files_result_async", new=AsyncMock(side_effect=OSError("ftp down"))
+            ),
         ):
             await _capture_timelapse_baseline_at_start(_printer(), 1, logger, archive_id=7)
 
@@ -665,8 +729,8 @@ class TestStaleBaselineCannotSurvive:
         with (
             patch("backend.app.main.async_session", return_value=session),
             patch(
-                "backend.app.main._list_timelapse_videos",
-                new=AsyncMock(return_value=([_video("now_on_the_printer.avi")], "/timelapse")),
+                "backend.app.services.bambu_ftp.list_files_result_async",
+                new=AsyncMock(return_value=FileListResult([_video("now_on_the_printer.avi")], True)),
             ),
         ):
             await _capture_timelapse_baseline_at_start(_printer(), 1, logger, archive_id=7)

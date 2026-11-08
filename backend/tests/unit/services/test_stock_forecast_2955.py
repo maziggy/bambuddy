@@ -106,7 +106,8 @@ SCENARIOS = {
         SkuSettings(lead_time_days=6, safety_margin_value=3),
         0,
     ),
-    # Two spools of one SKU: the delta rate divides by the age of the oldest.
+    # Two spools of one SKU: the delta rate counts what falls inside the last 90
+    # days -- 90 of the older spool's 400 g, all of the newer one's 100 (#3407).
     "J": ([_spool(1, 400, 400), _spool(2, 100, 5)], {}, SkuSettings(lead_time_days=10), 0),
 }
 
@@ -203,11 +204,11 @@ EXPECTED = {
     },
     "J": {
         "remaining_g": 1500,
-        "daily_rate_g": 1.25,
+        "daily_rate_g": 2.111111111111111,
         "effective_lead_time_days": 10,
-        "reorder_point_g": 31.304439534819455,
-        "days_remaining": 1200,
-        "days_until_reorder_point": 1174,
+        "reorder_point_g": 52.86972010325064,
+        "days_remaining": 710,
+        "days_until_reorder_point": 685,
         "stock_break_alert": False,
         "reorder_alert": False,
     },
@@ -251,27 +252,30 @@ def test_a_recently_archived_spool_counts_towards_the_rate_not_the_stock():
 
     forecast, named_by = forecast_all(spools, {}, {}, 0, NOW)[KEY]
 
-    # (16 + 900) g over the 100 days since the older spool, not 16 g over 20.
-    assert forecast.daily_rate_g == pytest.approx(9.16)
+    # 16 g plus the 800 of the 900 g that fall inside the last 90 days, over
+    # those 90 days (#3407), not 16 g over 20.
+    assert forecast.daily_rate_g == pytest.approx(816 / 90)
     # The archived spool's 100 g left are not stock.
     assert forecast.remaining_g == pytest.approx(984)
     assert named_by.id == 1
 
 
-def test_a_spool_archived_over_90_days_ago_does_not_count():
+def test_a_spool_archived_over_90_days_ago_adds_no_grams():
+    """But it was in use before the window, so the window counts in full (#3407):
+    16 g over 90 days, not over the 20 since the newer spool was added."""
     spools = [_spool(1, 16, 20), _archived(2, 1000, 200, 91)]
 
     forecast, _ = forecast_all(spools, {}, {}, 0, NOW)[KEY]
 
-    assert forecast.daily_rate_g == pytest.approx(0.8)
+    assert forecast.daily_rate_g == pytest.approx(16 / 90)
 
 
-def test_the_window_includes_its_last_day():
+def test_a_spool_whose_use_ended_at_the_windows_start_adds_no_grams():
     spools = [_spool(1, 16, 20), _archived(2, 1000, 100, 90)]
 
     forecast, _ = forecast_all(spools, {}, {}, 0, NOW)[KEY]
 
-    assert forecast.daily_rate_g == pytest.approx(10.16)
+    assert forecast.daily_rate_g == pytest.approx(16 / 90)
 
 
 def test_a_sku_with_only_archived_spools_is_not_forecast():
@@ -289,5 +293,6 @@ def test_a_recently_archived_spools_history_counts():
     assert with_archived.daily_rate_g == pytest.approx(
         history_rate([r for records in history.values() for r in records], NOW)[0]
     )
-    # With only the stock spool's single day there is no history rate at all.
-    assert alone.daily_rate_g == pytest.approx(delta_rate(spools[:1], NOW))
+    # With only the stock spool's single day there is no history rate at all;
+    # that day is still when its use began (#3407).
+    assert alone.daily_rate_g == pytest.approx(delta_rate(spools[:1], NOW, {1: _ago(2)}))

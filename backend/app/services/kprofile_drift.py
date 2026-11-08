@@ -28,6 +28,7 @@ from backend.app.services.slot_kprofile import find_slot_kprofile_for_extruder
 from backend.app.services.slot_nozzle import resolve_slot_nozzle
 from backend.app.services.spool_filament_preset import printer_safe_filament_id
 from backend.app.utils.printer_models import is_dual_nozzle_model
+from backend.app.utils.tray_ids import EXTERNAL_AMS_ID, TrayLayout, external_slot_index
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,7 @@ def _loaded_trays(state) -> list[tuple[int, int, int, dict]]:
     raw = getattr(state, "raw_data", None) or {}
     ams_raw = raw.get("ams")
     units = ams_raw.get("ams", []) if isinstance(ams_raw, dict) else ams_raw if isinstance(ams_raw, list) else []
+    layout = TrayLayout.from_state(state)
     trays: list[tuple[int, int, int, dict]] = []
     for unit in units:
         if not isinstance(unit, dict):
@@ -125,8 +127,7 @@ def _loaded_trays(state) -> list[tuple[int, int, int, dict]]:
                 tray_id = int(tray.get("id", 0))
             except (TypeError, ValueError):
                 continue
-            global_id = ams_id if ams_id >= 128 else ams_id * 4 + tray_id
-            trays.append((ams_id, tray_id, global_id, tray))
+            trays.append((ams_id, tray_id, layout.global_tray_id(ams_id, tray_id), tray))
 
     vt_raw = raw.get("vt_tray")
     if isinstance(vt_raw, dict):
@@ -138,8 +139,8 @@ def _loaded_trays(state) -> list[tuple[int, int, int, dict]]:
             vt_id = int(vt.get("id", 254))
         except (TypeError, ValueError):
             continue
-        if vt_id in (254, 255):
-            trays.append((255, vt_id - 254, vt_id, vt))
+        if layout.is_external(vt_id):
+            trays.append((EXTERNAL_AMS_ID, external_slot_index(vt_id), vt_id, vt))
     return trays
 
 

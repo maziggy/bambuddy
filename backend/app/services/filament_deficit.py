@@ -44,7 +44,9 @@ from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.services.filament_requirements import extract_filament_requirements
+from backend.app.services.printer_manager import printer_tray_layout
 from backend.app.utils.filament_ids import normalize_slicer_filament
+from backend.app.utils.tray_ids import TrayLayout
 
 logger = logging.getLogger(__name__)
 
@@ -69,29 +71,6 @@ class FilamentDeficit:
             "required_grams": self.required_grams,
             "remaining_grams": self.remaining_grams,
         }
-
-
-def _global_to_ams_key(global_tray_id: int) -> tuple[int, int]:
-    """Inverse of ``ams_id * 4 + tray_id`` — matches ``usage_tracker``."""
-    if global_tray_id >= 254:
-        return (255, global_tray_id - 254)
-    if global_tray_id >= 128:
-        return (global_tray_id, 0)
-    return (global_tray_id // 4, global_tray_id % 4)
-
-
-def _ams_key_to_global(ams_id: int, tray_id: int) -> int:
-    """Inverse of ``_global_to_ams_key``.
-
-    Mirrors the frontend ``getGlobalTrayId``: external / VT slots (``ams_id``
-    255) land at ``254 + tray_id``, AMS-HT units (``ams_id`` >= 128) use the
-    unit id directly, regular AMS slots use ``ams_id * 4 + tray_id``.
-    """
-    if ams_id >= 255:
-        return 254 + tray_id
-    if ams_id >= 128:
-        return ams_id
-    return ams_id * 4 + tray_id
 
 
 def _resolve_source_3mf(item: PrintQueueItem) -> Path | None:
@@ -296,6 +275,7 @@ def _live_tray_keys(printer_id: int) -> dict[int, str]:
     units = raw.get("ams") or []
     if isinstance(units, dict):  # also stored as the push's {"ams": [...]}
         units = units.get("ams") or []
+    layout = TrayLayout.from_state(state)
     for unit in units:
         if not isinstance(unit, dict):
             continue
@@ -306,7 +286,7 @@ def _live_tray_keys(printer_id: int) -> dict[int, str]:
                 ams_id, tray_id = int(unit.get("id", "")), int(tray.get("id", ""))
             except (TypeError, ValueError):
                 continue
-            _add(_ams_key_to_global(ams_id, tray_id), tray)
+            _add(layout.tray_from_slot_key(ams_id, tray_id), tray)
     vt_trays = raw.get("vt_tray") or []
     for tray in [vt_trays] if isinstance(vt_trays, dict) else vt_trays:
         if not isinstance(tray, dict):
@@ -547,6 +527,7 @@ async def build_slot_materials(
     # so a status push in between cannot put them in different pools.
     if live_keys is None:
         live_keys = _live_tray_keys(printer_id)
+    layout = printer_tray_layout(printer_id)
     materials: list[SlotMaterial] = []
 
     def _append(
@@ -557,7 +538,7 @@ async def build_slot_materials(
         spool: SlotSpoolIdentity | None = None,
         cost_per_kg: float | None = None,
     ) -> None:
-        global_tray_id = _ams_key_to_global(ams_id, tray_id)
+        global_tray_id = layout.tray_from_slot_key(ams_id, tray_id)
         materials.append(
             SlotMaterial(
                 ams_id=ams_id,
@@ -733,6 +714,7 @@ async def compute_deficit_for_queue_item(
     spoolman_mode = await _is_spoolman_mode(db)
     backup_on, ams_extruder_map, is_dual = await _get_printer_backup_context(printer_id)
     live_keys = _live_tray_keys(printer_id) if backup_on else {}
+    layout = printer_tray_layout(printer_id)
 
     # ------------------------------------------------------------------ phase 1
     # Resolve each requirement to (ams_id, tray_id, identity, remaining_grams).
@@ -784,7 +766,7 @@ async def compute_deficit_for_queue_item(
         if global_tray_id is None or global_tray_id < 0:
             _undetermined(req)
             continue
-        ams_id, tray_id = _global_to_ams_key(global_tray_id)
+        ams_id, tray_id = layout.slot_key(global_tray_id)
 
         identity = "attrs:|||"
         remaining: float | None = None

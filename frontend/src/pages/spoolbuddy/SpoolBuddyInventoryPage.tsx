@@ -8,7 +8,7 @@ import type { InventorySpool } from '../../api/client';
 import { resolveSpoolColorName, getSwatchStyle, spoolColorString } from '../../utils/colors';
 import { SpoolPaint, SpoolShade } from '../../components/spoolbuddy/SpoolIcon';
 import { hasFilamentPaint, spoolSwatchStyle } from '../../components/spoolbuddy/spoolPaint';
-import { formatSlotLabel } from '../../utils/amsHelpers';
+import { formatAssignmentSlotLabel } from '../../utils/amsHelpers';
 import { filterSpoolsByQuery } from '../../utils/inventorySearch';
 import { useColorCatalogVersion } from '../../hooks/useColorCatalogVersion';
 import { InventorySpoolInfoCard } from '../../components/spoolbuddy/InventorySpoolInfoCard';
@@ -17,7 +17,7 @@ import { QrAssignTargetModal } from '../../components/QrAssignTargetModal';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { useToast } from '../../contexts/ToastContext';
 
-type SlotInfo = { ams_id: number; tray_id: number; printer_name?: string | null };
+type SlotInfo = { ams_id: number; tray_id: number; printer_name?: string | null; printer_model?: string | null };
 
 type FilterMode = 'all' | 'in_ams' | string; // string = material name
 
@@ -41,9 +41,7 @@ function spoolDisplayName(spool: InventorySpool): string {
 }
 
 function assignmentLabel(a: SlotInfo): string {
-  const isExternal = a.ams_id === 254 || a.ams_id === 255;
-  const isHt = !isExternal && a.ams_id >= 128;
-  return formatSlotLabel(a.ams_id, a.tray_id, isHt, isExternal);
+  return formatAssignmentSlotLabel(a);
 }
 
 /* Spool circle — same style as AMS page tray slots */
@@ -137,11 +135,11 @@ export function SpoolBuddyInventoryPage() {
   const assignmentMap = useMemo((): Record<number, SlotInfo> => {
     if (spoolmanMode) {
       const map: Record<number, SlotInfo> = {};
-      spoolmanAssignments.forEach(a => { map[a.spoolman_spool_id] = { ams_id: a.ams_id, tray_id: a.tray_id }; });
+      spoolmanAssignments.forEach(a => { map[a.spoolman_spool_id] = { ams_id: a.ams_id, tray_id: a.tray_id, printer_model: a.printer_model }; });
       return map;
     }
     const map: Record<number, SlotInfo> = {};
-    assignments.forEach(a => { map[a.spool_id] = { ams_id: a.ams_id, tray_id: a.tray_id, printer_name: a.printer_name }; });
+    assignments.forEach(a => { map[a.spool_id] = { ams_id: a.ams_id, tray_id: a.tray_id, printer_name: a.printer_name, printer_model: a.printer_model }; });
     return map;
   }, [spoolmanMode, assignments, spoolmanAssignments]);
 

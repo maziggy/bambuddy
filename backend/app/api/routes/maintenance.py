@@ -32,7 +32,7 @@ from backend.app.schemas.maintenance import (
     PrinterMaintenanceUpdate,
 )
 from backend.app.services.notification_service import notification_service
-from backend.app.utils.printer_models import get_rod_type
+from backend.app.utils.printer_models import get_rod_type, normalize_printer_model_id
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +102,147 @@ DEFAULT_MAINTENANCE_TYPES = [
     },
 ]
 
+# H3C tasks, from Bambu's H3C and AMS 3H maintenance guides. Those give an
+# interval only for the air filter (1440 h of printing); the others follow
+# Bambu's H2C table (/en/h2c/maintenance/period-maintenance), and the AMS 3H
+# ones, which have none published, use conservative defaults. All intervals are
+# editable per printer.
+_H3C_WIKI = "https://wiki.bambulab.com/en/h3c"
+H3C_MAINTENANCE_TYPES = [
+    {
+        "name": "Lubricate X/Y Rails (H3C)",
+        "description": "Wipe old oil and dust off the X and Y guide rails, put a drop of lubricant oil along "
+        "each (oil only, no grease), then run Vibration Compensation",
+        "default_interval_hours": 30.0,
+        "interval_type": "days",
+        "icon": "Droplet",
+        "wiki_url": f"{_H3C_WIKI}/maintenance/lubricate-x-y-z-axis",
+    },
+    {
+        "name": "Grease Z Screws (H3C)",
+        "description": "Wipe and lightly grease all three Z lead screws, wipe and oil the Z linear rods, "
+        "then run Vibration Compensation",
+        "default_interval_hours": 90.0,
+        "interval_type": "days",
+        "icon": "Droplet",
+        "wiki_url": f"{_H3C_WIKI}/maintenance/lubricate-x-y-z-axis",
+    },
+    {
+        "name": "Oil XY Idler Pulleys (H3C)",
+        "description": "Wipe the 12 XY idler pulleys and oil their bearings; sooner if the toolhead gets noisy",
+        "default_interval_hours": 90.0,
+        "interval_type": "days",
+        "icon": "Cog",
+        "wiki_url": f"{_H3C_WIKI}/maintenance/idle-gear",
+    },
+    {
+        "name": "Grease Toolhead (H3C)",
+        "description": "Take off the toolhead front-left cover, grease the pitch change cam and the ToolLock pin, "
+        "and turn both motors with the release socket to spread it",
+        "default_interval_hours": 90.0,
+        "interval_type": "days",
+        "icon": "Wrench",
+        "wiki_url": f"{_H3C_WIKI}/maintenance/periodic-maintenance",
+    },
+    {
+        "name": "Oil SwapTek Rack (H3C)",
+        "description": "Wipe both ends of the SwapTek rack hanger, add a drop of lubricating oil to each bearing "
+        "and push the hanger up and down",
+        "default_interval_hours": 30.0,
+        "interval_type": "days",
+        "icon": "Layers",
+        "wiki_url": f"{_H3C_WIKI}/maintenance/periodic-maintenance",
+    },
+    {
+        "name": "Clean Hotends (H3C)",
+        "description": "Fetch each hotend, heat it above the filament's softening point and wipe it "
+        "with the nozzle cleaning sponge",
+        "default_interval_hours": 100.0,
+        "interval_type": "hours",
+        "icon": "Flame",
+        "wiki_url": f"{_H3C_WIKI}/maintenance/periodic-maintenance",
+    },
+    {
+        "name": "Clean Extruder Wheel (H3C)",
+        "description": "Check the toolhead extruder wheel for filament debris and brush it clean",
+        "default_interval_hours": 7.0,
+        "interval_type": "days",
+        "icon": "CircleDot",
+        "wiki_url": f"{_H3C_WIKI}/troubleshooting/extruder-cleaning-guide",
+    },
+    {
+        "name": "Clean Cameras (H3C)",
+        "description": "Wipe the live view, toolhead and BirdsEye camera lenses with a cleaning wipe",
+        "default_interval_hours": 90.0,
+        "interval_type": "days",
+        "icon": "Target",
+        "wiki_url": f"{_H3C_WIKI}/maintenance/periodic-maintenance",
+    },
+    {
+        "name": "Clean Fans (H3C)",
+        "description": "Brush the dust off the part cooling, hotend cooling and chamber cooling fans",
+        "default_interval_hours": 90.0,
+        "interval_type": "days",
+        "icon": "Fan",
+        "wiki_url": f"{_H3C_WIKI}/maintenance/periodic-maintenance",
+    },
+    {
+        "name": "Replace Air Filter (H3C)",
+        "description": "Bambu rates the filter for 1440 hours of printing (about 60 days)",
+        "default_interval_hours": 1440.0,
+        "interval_type": "hours",
+        "icon": "Filter",
+        "wiki_url": f"{_H3C_WIKI}/maintenance/replace-air-filter",
+    },
+    {
+        "name": "Check Filament Tubes (H3C)",
+        "description": "Look for tubes bent out of shape behind the purge wiper and for worn AMS 3H tubes; "
+        "straighten or replace them",
+        "default_interval_hours": 500.0,
+        "interval_type": "hours",
+        "icon": "Cable",
+        "wiki_url": f"{_H3C_WIKI}/maintenance/periodic-maintenance",
+    },
+    {
+        "name": "AMS 3H: Check Desiccant",
+        "description": "Check the desiccant on the drying chamber cover; dry or replace it when it is spent",
+        "default_interval_hours": 30.0,
+        "interval_type": "days",
+        "icon": "Wind",
+        "wiki_url": f"{_H3C_WIKI}/maintenance/ams_3h",
+    },
+    {
+        "name": "AMS 3H: Inlets & Gears",
+        "description": "Clear filament debris from the inlet funnels, grease the loading gears and the "
+        "air inlet/outlet flap gears",
+        "default_interval_hours": 90.0,
+        "interval_type": "days",
+        "icon": "Box",
+        "wiki_url": f"{_H3C_WIKI}/maintenance/ams_3h",
+    },
+    {
+        "name": "AMS 3H: Clean Dryer Fans",
+        "description": "Unload all filament, lift the AMS 3H off and brush the dust off the heating unit fans",
+        "default_interval_hours": 180.0,
+        "interval_type": "days",
+        "icon": "Thermometer",
+        "wiki_url": f"{_H3C_WIKI}/maintenance/ams_3h",
+    },
+]
+# System types of one model (short name): seeded and listed only while a
+# printer of that model exists, so other installs see just the defaults above.
+MODEL_MAINTENANCE_TYPES: dict[str, list[dict]] = {"H3C": H3C_MAINTENANCE_TYPES}
+_MODEL_ONLY_TYPES: dict[str, str] = {t["name"]: m for m, types in MODEL_MAINTENANCE_TYPES.items() for t in types}
+
+_H3C_MODELS = frozenset(["H3C"])
+# Generic system types a model's own one replaces there.
+_REPLACED_ON_MODELS: dict[str, frozenset[str]] = {
+    "Lubricate Linear Rails": _H3C_MODELS,  # -> X/Y rails + Z lead screws
+    "Clean Linear Rails": _H3C_MODELS,  # -> X/Y rails (wiped before oiling)
+    "Clean Nozzle/Hotend": _H3C_MODELS,  # -> Clean Hotends
+    "Check PTFE Tube": _H3C_MODELS,  # -> Check Filament Tubes
+}
+
 # System types that only apply to printers with a specific rod/rail type.
 # "carbon" = X1/P1 series (carbon rods), "steel_rod" = P2S (steel rods),
 # "linear_rail" = A1/H2 series. Types not listed here apply to all printers.
@@ -114,8 +255,23 @@ _ROD_TYPE_REQUIREMENTS: dict[str, str] = {
 }
 
 
+def _short_model(printer_model: str | None) -> str:
+    """ "N10" or "H3C" -> "H3C": the short name, uppercase, no spaces or dashes."""
+    if not printer_model:
+        return ""
+    short = normalize_printer_model_id(printer_model.strip()) or ""
+    return short.upper().replace(" ", "").replace("-", "")
+
+
 def _should_apply_to_printer(type_name: str, printer_model: str | None) -> bool:
     """Check if a system maintenance type should apply to a given printer model."""
+    model = _short_model(printer_model)
+    only_on = _MODEL_ONLY_TYPES.get(type_name)
+    if only_on is not None:
+        return model == only_on
+    if model in _REPLACED_ON_MODELS.get(type_name, frozenset()):
+        return False
+
     rod_requirement = _ROD_TYPE_REQUIREMENTS.get(type_name)
     if rod_requirement is None:
         return True  # Not model-specific, applies to all
@@ -150,6 +306,18 @@ async def get_printer_total_hours(db: AsyncSession, printer_id: int) -> float:
     return runtime_hours + offset
 
 
+async def _printer_models_present(db: AsyncSession) -> set[str]:
+    """The short model names of the printers this install has."""
+    models = (await db.execute(select(Printer.model).distinct())).scalars().all()
+    return {_short_model(m) for m in models if m}
+
+
+def _hidden_model_type(maint_type: MaintenanceType, models_present: set[str]) -> bool:
+    """A model's own system type while no printer of that model exists."""
+    model = _MODEL_ONLY_TYPES.get(maint_type.name)
+    return bool(maint_type.is_system) and model is not None and model not in models_present
+
+
 async def ensure_default_types(db: AsyncSession) -> None:
     """Ensure default maintenance types exist, remove stale/duplicate ones."""
     result = await db.execute(
@@ -157,7 +325,12 @@ async def ensure_default_types(db: AsyncSession) -> None:
     )
     existing = result.scalars().all()
 
-    default_names = {t["name"] for t in DEFAULT_MAINTENANCE_TYPES}
+    models_present = await _printer_models_present(db)
+    wanted = DEFAULT_MAINTENANCE_TYPES + [
+        type_def for model, types in MODEL_MAINTENANCE_TYPES.items() if model in models_present for type_def in types
+    ]
+    # A model's types are kept (hidden) while no printer of it exists.
+    default_names = {t["name"] for t in DEFAULT_MAINTENANCE_TYPES} | set(_MODEL_ONLY_TYPES)
 
     # Remove stale system types no longer in defaults (e.g. renamed types)
     # and deduplicate: if concurrent requests created the same type twice,
@@ -170,13 +343,15 @@ async def ensure_default_types(db: AsyncSession) -> None:
             seen_names.add(t.name)
 
     # Create any missing default types
-    for type_def in DEFAULT_MAINTENANCE_TYPES:
+    for type_def in wanted:
         if type_def["name"] not in seen_names:
             new_type = MaintenanceType(
                 name=type_def["name"],
                 description=type_def["description"],
                 default_interval_hours=type_def["default_interval_hours"],
+                interval_type=type_def.get("interval_type", "hours"),
                 icon=type_def["icon"],
+                wiki_url=type_def.get("wiki_url"),
                 is_system=True,
             )
             db.add(new_type)
@@ -199,7 +374,8 @@ async def get_maintenance_types(
         .where(MaintenanceType.is_deleted.is_(False))
         .order_by(MaintenanceType.is_system.desc(), MaintenanceType.name)
     )
-    return result.scalars().all()
+    models_present = await _printer_models_present(db)
+    return [t for t in result.scalars().all() if not _hidden_model_type(t, models_present)]
 
 
 @router.post("/types", response_model=MaintenanceTypeResponse)
@@ -330,6 +506,16 @@ async def _get_or_create_maintenance_item(db: AsyncSession, printer_id: int, typ
         return existing
 
 
+def _start_model_task_clock(item: PrinterMaintenance, maint_type: MaintenanceType, printer: Printer, now) -> None:
+    """Count a model's own task from when the printer was added, not from "never".
+
+    Otherwise a new printer's calendar tasks all open as overdue. Fills only an
+    empty last_performed_at and writes no history row.
+    """
+    if maint_type.name in _MODEL_ONLY_TYPES and item.last_performed_at is None:
+        item.last_performed_at = printer.created_at or now.replace(tzinfo=None)
+
+
 async def _get_printer_maintenance_internal(
     printer_id: int,
     db: AsyncSession,
@@ -374,6 +560,7 @@ async def _get_printer_maintenance_internal(
         default_interval_type = getattr(maint_type, "interval_type", "hours") or "hours"
 
         if item:
+            _start_model_task_clock(item, maint_type, printer, now)
             interval = item.custom_interval_hours or maint_type.default_interval_hours
             # Use custom interval type if set, otherwise use type's default
             interval_type = getattr(item, "custom_interval_type", None) or default_interval_type
@@ -390,6 +577,7 @@ async def _get_printer_maintenance_internal(
             # Create default entry for this printer/type, or take the one a
             # concurrent read just created.
             item = await _get_or_create_maintenance_item(db, printer_id, maint_type.id)
+            _start_model_task_clock(item, maint_type, printer, now)
 
             interval = item.custom_interval_hours or maint_type.default_interval_hours
             interval_type = getattr(item, "custom_interval_type", None) or default_interval_type

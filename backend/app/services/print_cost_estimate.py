@@ -17,8 +17,10 @@ from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.services.inventory_mode import spoolman_owns_assignments
+from backend.app.services.printer_manager import printer_tray_layout
 from backend.app.utils import threemf_tools
 from backend.app.utils.safe_path import safe_join_under
+from backend.app.utils.tray_ids import TrayLayout
 
 logger = logging.getLogger(__name__)
 
@@ -161,12 +163,8 @@ def _parse_mapping(mapping: list[int] | str | None) -> list[int] | None:
     return None
 
 
-def _global_tray_id(assignment) -> int:
-    if assignment.ams_id == 255:
-        return 254 + assignment.tray_id
-    if assignment.ams_id >= 128:
-        return assignment.ams_id
-    return assignment.ams_id * 4 + assignment.tray_id
+def _global_tray_id(assignment, layout: TrayLayout) -> int:
+    return layout.tray_from_slot_key(assignment.ams_id, assignment.tray_id)
 
 
 async def _spoolman_cost_by_tray(db: AsyncSession, printer_id: int, trays: set[int]) -> dict[int, float | None]:
@@ -178,6 +176,7 @@ async def _spoolman_cost_by_tray(db: AsyncSession, printer_id: int, trays: set[i
     from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
     from backend.app.services.spoolman_tracking import _get_spoolman_client_with_fallback, _spool_cost_per_gram
 
+    layout = printer_tray_layout(printer_id)
     rows = [
         row
         for row in (
@@ -185,7 +184,7 @@ async def _spoolman_cost_by_tray(db: AsyncSession, printer_id: int, trays: set[i
         )
         .scalars()
         .all()
-        if _global_tray_id(row) in trays
+        if _global_tray_id(row, layout) in trays
     ]
     if not rows:
         return {}
@@ -196,7 +195,7 @@ async def _spoolman_cost_by_tray(db: AsyncSession, printer_id: int, trays: set[i
             return {}
         for row in rows:
             per_gram = _spool_cost_per_gram(await client.get_spool(row.spoolman_spool_id))
-            by_tray[_global_tray_id(row)] = per_gram * 1000.0 if per_gram is not None else None
+            by_tray[_global_tray_id(row, layout)] = per_gram * 1000.0 if per_gram is not None else None
     except Exception as exc:  # noqa: BLE001 — an estimate falls back to the default rate
         logger.debug("Spoolman prices unavailable for the queue estimate: %s", exc)
     return by_tray
@@ -315,7 +314,8 @@ async def estimate_queue_source_cost(
             .scalars()
             .all()
         )
-        cost_by_tray = {_global_tray_id(a): a.spool.cost_per_kg for a in assignments}
+        layout = printer_tray_layout(printer_id)
+        cost_by_tray = {_global_tray_id(a, layout): a.spool.cost_per_kg for a in assignments}
 
     total = 0.0
     for filament in usage:

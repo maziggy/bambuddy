@@ -14,6 +14,7 @@ describe('mapModelCode', () => {
     ['N7', 'P2S'],
     ['N6', 'X2D'],
     ['O1D', 'H2D'],
+    ['N10', 'H3C'],
     ['N2S', 'A1'],
     ['N1', 'A1 Mini'],
     ['A11', 'A1'],

@@ -49,6 +49,23 @@ async def test_every_real_slot_is_accepted(async_client: AsyncClient, printer_id
     assert response.status_code == 200, response.text
 
 
+@pytest.mark.parametrize(("ams_id", "tray_id"), [(32, 8), (255, 8)])
+async def test_slots_4_to_8_of_the_ams3h_and_the_external_inputs_are_accepted(
+    async_client: AsyncClient, printer_id, ams_id, tray_id
+):
+    # The H3C's AMS 3H has nine slots; its per-hotend external inputs 247-253 are (255, 2-8).
+    response = await _assign(async_client, printer_id, ams_id=ams_id, tray_id=tray_id)
+
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.parametrize(("ams_id", "tray_id"), [(0, 4), (7, 8), (128, 4)])
+async def test_slots_4_to_8_of_any_other_unit_are_refused(async_client: AsyncClient, printer_id, ams_id, tray_id):
+    response = await _assign(async_client, printer_id, ams_id=ams_id, tray_id=tray_id)
+
+    assert response.status_code == 422, response.text
+
+
 async def test_an_archived_spool_is_refused(async_client: AsyncClient, printer_id):
     response = await _assign(async_client, printer_id, spool={**SPOOL, "archived": True})
 

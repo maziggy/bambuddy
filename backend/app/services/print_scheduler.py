@@ -64,6 +64,7 @@ from backend.app.services.notification_service import notification_service
 from backend.app.services.print_cost_estimate import estimate_queue_source_cost
 from backend.app.services.printer_manager import (
     printer_manager,
+    printer_tray_layout,
     supports_airduct,
     supports_chamber_heater,
     supports_chamber_temp,
@@ -97,6 +98,12 @@ from backend.app.utils.threemf_tools import (
     extract_slot_extruders_from_3mf,
     plate_bed_temperature,
     select_plate_gcode_name,
+)
+from backend.app.utils.tray_ids import (
+    TrayLayout,
+    is_ams_ht_id,
+    is_external_tray,
+    unit_label,
 )
 
 logger = logging.getLogger(__name__)
@@ -789,15 +796,16 @@ def _consumed_mapping_entries(mapping: list | None, required: list[dict] | None)
     return entries or None
 
 
-def _is_external_tray(tray_id) -> bool:
-    """True for an explicit external-spool selection (254/255), not for an
-    unresolved slot and not for an AMS tray."""
+def _is_external_tray(tray_id, rack: bool = False) -> bool:
+    """True for an explicit external-spool selection (254/255, and 247-253 on a
+    ``rack`` printer), not for an unresolved slot and not for an AMS tray."""
     if tray_id is None:
         return False
     try:
-        return int(tray_id) >= _EXTERNAL_TRAY_ID_MIN
+        value = int(tray_id)
     except (TypeError, ValueError):
         return False
+    return value >= _EXTERNAL_TRAY_ID_MIN or is_external_tray(value, rack)
 
 
 def _might_be_dual_nozzle(printer_model: str | None, status) -> bool:
@@ -826,7 +834,8 @@ def _might_be_dual_nozzle(printer_model: str | None, status) -> bool:
     if raw.get("ams_extruder_map"):
         return True
     vt_trays = raw.get("vt_tray") or []
-    return isinstance(vt_trays, list) and len(vt_trays) > 1
+    # Not a nozzle-rack printer's one external input per hotend (H3C, 247-255).
+    return isinstance(vt_trays, list) and len(vt_trays) > 1 and not TrayLayout.from_units(None, vt_trays).rack
 
 
 def _int_or(value, default: int) -> int:
@@ -877,15 +886,14 @@ async def _edited_since_loaded(db: AsyncSession, item: PrintQueueItem) -> bool:
     return True
 
 
-def _global_tray_id(ams_id: int, tray_id: int) -> int:
-    """Bambu's flat tray addressing: ``ams_id * 4 + tray_id`` for a four-slot
-    unit, and the bare unit id for an AMS-HT (ids from 128, one tray each).
+def _global_tray_id(ams_id: int, tray_id: int, layout: TrayLayout | None = None) -> int:
+    """Bambu Studio's global tray id (``utils.tray_ids``) of a slot on the printer ``layout`` describes.
 
     Mirrors the calculation in ``_build_loaded_filaments``, which is what
     produces the ids stored in ``PrintQueueItem.ams_mapping`` — the two must
     agree or a mapping cannot be read back against live tray telemetry.
     """
-    return ams_id if ams_id >= 128 else ams_id * 4 + tray_id
+    return (layout or TrayLayout()).global_tray_id(ams_id, tray_id)
 
 
 def _used_global_tray_ids(item: PrintQueueItem | None) -> set[int] | None:
@@ -4307,6 +4315,7 @@ class PrintScheduler:
             # place.
             return None
         by_tray = {f["global_tray_id"]: f for f in loaded}
+        layout = TrayLayout.from_state(status)
 
         # Cheap pass first, on live status alone: every tray the mapping names
         # has to exist here. This catches a foreign mapping without opening the
@@ -4317,7 +4326,7 @@ class PrintScheduler:
                 continue
             if tray in by_tray:
                 continue
-            if tray >= 254:
+            if tray >= 254 or layout.is_external(tray):
                 # An external feed we have not heard about is absence of
                 # evidence about *that slot* — the rest of the mapping is still
                 # worth judging, so skip it rather than abandoning the pass.
@@ -4366,7 +4375,7 @@ class PrintScheduler:
                 # has to match too: with only another colour in the AMS, the
                 # printer asking for the spool beats printing in that colour.
                 want = canonical_filament_type(req.get("type"))
-                if tray >= 254 and tray in empty_external and want:
+                if (tray >= 254 or layout.is_external(tray)) and tray in empty_external and want:
                     ams_tray = next(
                         (
                             f
@@ -4747,10 +4756,11 @@ class PrintScheduler:
 
         # Parse AMS units from raw_data
         ams_data = status.raw_data.get("ams", [])
+        layout = TrayLayout.from_state(status)
         for ams_unit in ams_data:
             ams_id = int(ams_unit.get("id", 0))
             trays = ams_unit.get("tray", [])
-            is_ht = 128 <= ams_id <= 135  # AMS-HT unit ids; a regular AMS may list fewer trays
+            is_ht = is_ams_ht_id(ams_id)  # AMS-HT unit ids; a regular AMS may list fewer trays
 
             for tray in trays:
                 tray_type = tray.get("tray_type")
@@ -4763,7 +4773,7 @@ class PrintScheduler:
                     color = self._normalize_color(tray_color)
                     # Calculate global tray ID
                     # AMS-HT units have IDs starting at 128 with a single tray
-                    global_tray_id = ams_id if ams_id >= 128 else ams_id * 4 + tray_id
+                    global_tray_id = layout.global_tray_id(ams_id, tray_id)
 
                     filaments.append(
                         {
@@ -6693,7 +6703,7 @@ class PrintScheduler:
         Never raises: a notification provider being down must not stop the
         suspension itself from taking effect.
         """
-        ams_label = f"HT-{chr(65 + (ams_id - 128))}" if ams_id >= 128 else f"AMS-{chr(65 + ams_id)}"
+        ams_label = unit_label(ams_id, printer_tray_layout(printer.id, printer_manager).ams_type(ams_id))
         try:
             await notification_service.on_ams_drying_suspended(
                 printer.id,
@@ -7229,6 +7239,7 @@ class PrintScheduler:
         if not isinstance(ams_list, list):
             ams_list = []
         best = 0
+        layout = TrayLayout.from_state(state)
         for ams in ams_list:
             if not isinstance(ams, dict):
                 continue
@@ -7241,10 +7252,10 @@ class PrintScheduler:
                 # contract, so step over it instead.
                 if not isinstance(tray, dict):
                     continue
-                if used is not None and _global_tray_id(ams_id, _int_or(tray.get("id"), 0)) not in used:
+                if used is not None and _global_tray_id(ams_id, _int_or(tray.get("id"), 0), layout) not in used:
                     continue
                 best = max(best, self._target_for_tray_type(tray.get("tray_type"), targets))
-        if used is not None and any(t >= _EXTERNAL_TRAY_ID_MIN for t in used):
+        if used is not None and any(t >= _EXTERNAL_TRAY_ID_MIN or layout.is_external(t) for t in used):
             for vt in raw_data.get("vt_tray") or []:
                 if not isinstance(vt, dict):
                     continue
@@ -10026,7 +10037,7 @@ class PrintScheduler:
             # from a hand-edited row) failing where it always failed, in the
             # command builder, rather than here.
             and isinstance(ams_mapping, list)
-            and any(_is_external_tray(t) for t in ams_mapping)
+            and any(_is_external_tray(t, TrayLayout.from_state(pre_status).rack) for t in ams_mapping)
             and not _might_be_dual_nozzle(printer.model, pre_status)
         ):
             from backend.app.services.filament_requirements import extract_filament_requirements
@@ -10034,7 +10045,7 @@ class PrintScheduler:
             consumed = _consumed_mapping_entries(
                 ams_mapping, extract_filament_requirements(file_path, plate_id=effective_plate_id)
             )
-            if consumed and all(_is_external_tray(t) for t in consumed):
+            if consumed and all(_is_external_tray(t, TrayLayout.from_state(pre_status).rack) for t in consumed):
                 # Exact for this plate: the command builder must not turn the
                 # AMS back on for a real tray another plate of the file uses,
                 # whether the job asked for the AMS or already had it off.

@@ -476,4 +476,41 @@ describe('SpoolBuddyAmsPage Phase 14 — SlotActionPicker BL-detection in local 
 
     await screen.findByText('Track a spool from your inventory');
   });
+
+  describe('the H3C (AMS 3H unit 32, per-hotend external inputs)', () => {
+    function h3cStatus(trayNow: number) {
+      return {
+        connected: true,
+        state: 'IDLE',
+        ams: [{
+          id: 32, ams_type: 6, module_type: 'n10a', humidity: 33, temp: 25,
+          tray: Array.from({ length: 9 }, (_, k) => ({ id: k, tray_type: 'PLA', tray_color: 'DE4343FF', remain: -1 })),
+        }],
+        vt_tray: Array.from({ length: 9 }, (_, k) => ({ id: 247 + k, tray_type: k === 3 ? 'PETG' : '' })),
+        tray_now: trayNow,
+        active_extruder: 0,
+      };
+    }
+
+    it('rings the slot tray_now names as 28 + slot', async () => {
+      apiResponses.getPrinterStatus = h3cStatus(34);
+      renderPage();
+
+      const slots = await screen.findAllByTestId('ams-slot');
+      expect(slots).toHaveLength(9);
+      expect(slots[6]).toHaveAttribute('aria-pressed', 'true');
+      expect(slots.filter((slot) => slot.getAttribute('aria-pressed') === 'true')).toHaveLength(1);
+    });
+
+    it('names a slot "AMS 3H Slot n" and the external inputs Ext-n', async () => {
+      apiResponses.getPrinterStatus = h3cStatus(255);
+      renderPage();
+
+      fireEvent.click(await findAmsSlot(7));
+      expect(await screen.findByRole('heading', { name: 'AMS 3H Slot 7' })).toBeInTheDocument();
+      // Input 250 feeds hotend 5: Ext-6. No Ext-L / Ext-R on a single-extruder rack printer.
+      for (let n = 1; n <= 9; n++) expect(screen.getByText(`Ext-${n}`)).toBeInTheDocument();
+      expect(screen.queryByText('Ext-L')).not.toBeInTheDocument();
+    });
+  });
 });

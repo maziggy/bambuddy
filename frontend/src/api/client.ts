@@ -557,7 +557,12 @@ export interface AMSUnit {
   dry_sf_reason: number[]; // Cannot-dry reasons (1=InsufficientPower, 8=NeedPluginPower)
   dry_target_temp: number | null; // Active-cycle target °C (Bambu does not echo)
   dry_filament: string | null;    // Active-cycle filament name we sent
-  module_type: string;    // "ams", "ams_f1", "n3f", "n3s"
+  module_type: string;    // "ams", "ams_f1", "n3f", "n3s", "n10a" (H3C AMS 3H)
+  ams_type?: number | null;  // Bambu Studio's AMS type (utils/trayIds AmsType), 6 = AMS 3H
+  // The AMS 3H dryer: its two slots (tray ids 0-8) and that zone's humidity (%) and temperature.
+  dryer_slots?: number[];
+  dryer_humidity?: number | null;
+  dryer_temp?: number | null;
 }
 
 export interface ScheduledDrying {
@@ -602,6 +607,7 @@ export interface NozzleRackSlot {
   filament_color: string;  // RGBA hex ("00000000" = no filament)
   filament_id: string;
   filament_type: string;  // Material type (e.g. "PLA", "PETG")
+  addr_id?: number | null;  // H3C: home rack position 0-8 (the mounted hotend reports id 0)
 }
 
 export interface PrintOptions {
@@ -748,7 +754,7 @@ export interface PrinterStatus {
   // switched to (AMS Filament Backup). Reset at the start of each print.
   tray_change_log?: [number, number][];
   // Runout / filament-replacement guidance (#2587). Populated only while PAUSED.
-  // Global tray IDs (ams_id*4+slot, 128-135 = AMS-HT, 254 = external), matching
+  // Global tray IDs (ams_id*4+slot, 28-36 = H3C AMS 3H, 128-135 = AMS-HT, 254 = external; utils/trayIds), matching
   // the same numbering as tray_now so the AMS graphic can highlight them.
   //   expected_tray = the slot the firmware now expects filament in (null = idle,
   //                   not paused, or unresolvable → "check the printer").
@@ -4375,6 +4381,7 @@ export interface SpoolAssignment {
   pending_config?: boolean;  // Slot was empty at assign time; will configure on insert
   created_at: string;
   ams_label?: string | null;  // User-defined friendly name for the AMS unit
+  printer_model?: string | null;  // names a rack printer's external inputs "Ext-n" (utils/trayIds)
 }
 
 export interface FilamentSkuSettings {
@@ -5642,7 +5649,7 @@ export const api = {
       { method: 'POST' }
     ),
 
-  // Load filament from a tray. trayId: 0-15 for AMS (amsId*4+slotId), 128-135 for an
+  // Load filament from a tray. trayId: 0-15 for AMS (amsId*4+slotId), 28-36 for the H3C AMS 3H, 128-135 for an
   // AMS-HT (its unit id), 254 for external spool.
   // extruderId (0 = right, 1 = left) names the hotend to feed. Pass it only on a
   // printer with a Filament Track Switch — there the AMS is bound to a switch
@@ -7639,6 +7646,7 @@ export const api = {
       tray_id: number;
       spoolman_spool_id: number;
       ams_label: string | null;
+      printer_model?: string | null;
     }>>(
       printerId !== undefined
         ? `/spoolman/inventory/slot-assignments/all?printer_id=${printerId}`

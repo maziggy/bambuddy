@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import { AmsUnitCard } from '../../../components/spoolbuddy/AmsUnitCard';
 import type { AMSUnit, AMSTray } from '../../../api/client';
@@ -169,5 +169,34 @@ describe('AmsUnitCard', () => {
     );
     const activeSlot = container.querySelector('.ring-2.ring-bambu-green');
     expect(activeSlot).not.toBeNull();
+  });
+
+  describe('the H3C AMS 3H (unit 32, nine slots)', () => {
+    const ams3h = () => makeUnit({
+      id: 32,
+      ams_type: 6,
+      module_type: 'n10a',
+      tray: Array.from({ length: 9 }, (_, k) => makeTray({ id: k, tray_type: k === 7 ? '' : 'PLA', remain: -1 })),
+    });
+
+    it('draws one card named AMS 3H with nine slots', () => {
+      const { container } = render(<AmsUnitCard unit={ams3h()} activeSlot={null} />);
+      expect(screen.getByText('AMS 3H')).toBeDefined();
+      for (let n = 1; n <= 9; n++) expect(screen.getByText(String(n))).toBeDefined();
+      expect(container.querySelector('.grid-cols-5')).not.toBeNull();
+      expect(container.querySelector('.grid-cols-4')).toBeNull();
+    });
+
+    it('hands the slot (tray id 0-8) of the AMS 3H to the configure callback', () => {
+      const onConfigureSlot = vi.fn();
+      render(<AmsUnitCard unit={ams3h()} activeSlot={null} onConfigureSlot={onConfigureSlot} />);
+      fireEvent.click(screen.getByRole('button', { name: 'AMS 3H Slot 9' }));
+      expect(onConfigureSlot).toHaveBeenCalledWith(32, 8, expect.objectContaining({ id: 8 }));
+    });
+
+    it('rings the active slot past the fourth', () => {
+      const { container } = render(<AmsUnitCard unit={ams3h()} activeSlot={6} />);
+      expect(container.querySelectorAll('.ring-2.ring-bambu-green')).toHaveLength(1);
+    });
   });
 });

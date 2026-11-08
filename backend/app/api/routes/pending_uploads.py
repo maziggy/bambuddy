@@ -1,5 +1,6 @@
-"""API routes for pending uploads (virtual printer queue mode)."""
+"""API routes for pending uploads (virtual printer review mode)."""
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -11,10 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.auth import ApiKeyActor, RequirePermissionIfAuthEnabled, require_ownership_permission
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.websocket import ws_manager
 from backend.app.models.pending_upload import PendingUpload
 from backend.app.models.project import Project
 from backend.app.models.user import User
-from backend.app.services.archive import ArchiveService, resolve_display_stem
+from backend.app.services.archive import resolve_display_stem
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/pending-uploads", tags=["pending-uploads"])
 
@@ -128,64 +132,74 @@ async def get_pending_count(
 # to prevent FastAPI from matching /archive-all as /{upload_id}
 
 
+async def _store_pending(db: AsyncSession, pending: PendingUpload, request: "ArchiveRequest | None"):
+    """Store an approved upload in its virtual printer's File Manager folder.
+
+    The file, its notes, project and tags go to the File Manager; the archive
+    gets it once it prints (an archive is a print that happened). An upload
+    from before the virtual printer was recorded, or whose virtual printer is
+    gone, goes to the shared "Virtual Printer" folder. Commits.
+    """
+    from backend.app.services.virtual_printer.library_store import store_upload, upload_settings
+
+    folder_id = None
+    if pending.virtual_printer_id is not None:
+        folder_id, _ = await upload_settings(db, pending.virtual_printer_id)
+    library_file, _ = await store_upload(
+        db,
+        source_path=Path(pending.file_path),
+        filename=pending.filename,
+        folder_id=folder_id,
+        notes=request.notes if request else None,
+        project_id=(request.project_id or None) if request else None,
+        tags=request.tags if request else None,
+    )
+    pending.status = "approved"
+    pending.archived_at = datetime.now(timezone.utc)
+    if request:
+        pending.tags = request.tags
+        pending.notes = request.notes
+        pending.project_id = request.project_id or None
+    await db.commit()
+    try:
+        Path(pending.file_path).unlink()
+    except OSError:
+        pass  # Best-effort temp file cleanup; the File Manager has its copy
+    return library_file
+
+
 @router.post("/archive-all")
 async def archive_all_pending(
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
 ):
-    """Archive all pending uploads."""
-    from backend.app.api.routes.settings import get_setting
+    """Approve every pending upload: each goes to the File Manager."""
+    # By id, each loaded fresh: a failed one is rolled back, and a rollback
+    # expires every row the session holds.
+    pending_ids = (await db.execute(select(PendingUpload.id).where(PendingUpload.status == "pending"))).scalars().all()
 
-    result = await db.execute(select(PendingUpload).where(PendingUpload.status == "pending"))
-    pending_uploads = result.scalars().all()
-
-    archived = 0
+    stored = 0
     failed = 0
-
-    service = ArchiveService(db)
-    prefer_filename = (await get_setting(db, "virtual_printer_archive_name_source")) == "filename"
-
-    for pending in pending_uploads:
-        file_path = Path(pending.file_path)
-        if not file_path.exists():
+    for pending_id in pending_ids:
+        pending = await db.get(PendingUpload, pending_id)
+        if pending is None or pending.status != "pending":
+            continue
+        if not Path(pending.file_path).exists():
             pending.status = "discarded"
+            await db.commit()
             failed += 1
             continue
-
         try:
-            archive = await service.archive_print(
-                printer_id=None,
-                source_file=file_path,
-                print_data={
-                    "status": "archived",
-                    "source": "virtual_printer",
-                    "source_ip": pending.source_ip,
-                },
-                prefer_filename_for_name=prefer_filename,
-            )
-
-            if archive:
-                pending.status = "archived"
-                pending.archived_id = archive.id
-                pending.archived_at = datetime.now(timezone.utc)
-                archived += 1
-
-                # Clean up temp file
-                try:
-                    file_path.unlink()
-                except OSError:
-                    pass  # Best-effort temp file cleanup after archiving
-            else:
-                failed += 1
-        except Exception:  # Mixed async DB + archive operations
+            await _store_pending(db, pending, None)
+            stored += 1
+        except Exception:  # noqa: BLE001 -- one bad file must not stop the rest
+            logger.exception("Could not store pending upload %s in the File Manager", pending_id)
+            await db.rollback()
             failed += 1
 
-    await db.commit()
-
-    return {
-        "archived": archived,
-        "failed": failed,
-    }
+    if stored:
+        await ws_manager.send_library_files_changed()
+    return {"stored": stored, "failed": failed}
 
 
 @router.delete("/discard-all")
@@ -243,7 +257,7 @@ async def archive_pending_upload(
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
 ):
-    """Archive a pending upload."""
+    """Approve a pending upload: it goes to the File Manager."""
     result = await db.execute(select(PendingUpload).where(PendingUpload.id == upload_id))
     pending = result.scalar_one_or_none()
 
@@ -252,65 +266,25 @@ async def archive_pending_upload(
     if pending.status != "pending":
         raise HTTPException(status_code=400, detail="Upload already processed")
 
-    # Check file exists
-    file_path = Path(pending.file_path)
-    if not file_path.exists():
+    if not Path(pending.file_path).exists():
         raise HTTPException(status_code=404, detail="Upload file not found on disk")
 
-    # The project must exist before anything is archived; 0 means none.
+    # The project must exist before anything is stored; 0 means none.
     project_id = (request.project_id or None) if request else None
     if project_id is not None and await db.get(Project, project_id) is None:
         raise HTTPException(status_code=400, detail="Project not found")
 
-    # Archive the file
-    from backend.app.api.routes.settings import get_setting
-
-    prefer_filename = (await get_setting(db, "virtual_printer_archive_name_source")) == "filename"
-    service = ArchiveService(db)
-    archive = await service.archive_print(
-        printer_id=None,
-        source_file=file_path,
-        print_data={
-            "status": "archived",
-            "source": "virtual_printer",
-            "source_ip": pending.source_ip,
-        },
-        prefer_filename_for_name=prefer_filename,
-    )
-
-    if not archive:
-        raise HTTPException(status_code=500, detail="Failed to archive file")
-
-    # Apply tags/notes/project from request
-    if request:
-        if request.tags:
-            archive.tags = request.tags
-        if request.notes:
-            archive.notes = request.notes
-        if project_id is not None:
-            archive.project_id = project_id
-
-    # Update pending record
-    pending.status = "archived"
-    pending.archived_id = archive.id
-    pending.archived_at = datetime.now(timezone.utc)
-    if request:
-        pending.tags = request.tags
-        pending.notes = request.notes
-        pending.project_id = project_id
-
-    await db.commit()
-
-    # Clean up temp file
     try:
-        file_path.unlink()
-    except OSError:
-        pass  # Best-effort temp file cleanup after successful archive
+        library_file = await _store_pending(db, pending, request)
+    except Exception as e:
+        logger.exception("Could not store pending upload %s in the File Manager", upload_id)
+        raise HTTPException(status_code=500, detail="Failed to store the file in the File Manager") from e
+    await ws_manager.send_library_files_changed()
 
     return {
-        "id": archive.id,
-        "print_name": archive.print_name,
-        "filename": archive.filename,
+        "id": library_file.id,
+        "filename": library_file.filename,
+        "folder_id": library_file.folder_id,
     }
 
 

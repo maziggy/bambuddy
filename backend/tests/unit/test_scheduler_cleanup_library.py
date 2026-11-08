@@ -1,3 +1,4 @@
+import json
 import logging
 from contextlib import ExitStack
 from pathlib import Path
@@ -31,7 +32,16 @@ async def queue_factory(tmp_path):
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
     case_counter = 0
 
-    async def make_case(*, cleanup=True, is_external=False, thumbnail_path=None, siblings=(), photos=()):
+    async def make_case(
+        *,
+        cleanup=True,
+        is_external=False,
+        thumbnail_path=None,
+        siblings=(),
+        photos=(),
+        source_type=None,
+        slicer_ams_mapping=None,
+    ):
         nonlocal case_counter
         case_counter += 1
 
@@ -76,6 +86,7 @@ async def queue_factory(tmp_path):
                 file_metadata=None,
                 is_external=is_external,
                 photos=list(photos) or None,
+                source_type=source_type,
             )
             db.add_all([printer, library_file])
             await db.flush()
@@ -102,6 +113,10 @@ async def queue_factory(tmp_path):
                 timelapse=False,
                 use_ams=True,
                 nozzle_offset_cali="on",
+                # A callable gets the printer's id (only known here).
+                slicer_ams_mapping=(
+                    slicer_ams_mapping(printer.id) if callable(slicer_ams_mapping) else slicer_ams_mapping
+                ),
             )
             db.add(item)
             await db.flush()
@@ -179,6 +194,7 @@ async def queue_factory(tmp_path):
                 sibling_ids=sibling_ids,
                 other_library_file_id=other_file.id if other_file is not None else None,
                 archive_path=None,
+                archive_kwargs=None,
                 upload=AsyncMock(return_value=True),
                 start_print=MagicMock(return_value=True),
             )
@@ -210,7 +226,9 @@ async def _dispatch_library_item(
         cost_center_id=None,
         plate_id=None,
         library_file_id=None,
+        **extra,
     ):
+        ctx.archive_kwargs = extra
         if archive_failure:
             raise RuntimeError("archive copy failed")
 
@@ -745,3 +763,49 @@ async def test_a_failing_k_profile_check_does_not_stop_the_print(queue_factory):
         await _dispatch_library_item(ctx)
 
     ctx.start_print.assert_called_once()
+
+
+# A virtual printer's upload is a File Manager file (source_type
+# "virtual_printer") that its queue items print. The archive is made at
+# dispatch, so that is where the upload's slicer AMS pick (#2700) and the
+# virtual printer's archive-name setting reach it.
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("moved", [False, True], ids=["same-printer", "moved-to-another"])
+async def test_a_vp_upload_hands_its_slicer_pick_to_the_archive(queue_factory, moved):
+    # The pick stays tagged with the printer the slicer resolved it on, also
+    # when the job was moved to another printer before it printed: its tray
+    # numbers mean nothing there, so a reprint there must not reuse it.
+    resolved_on = 4242 if moved else None
+    ctx = await queue_factory(
+        cleanup=False,
+        source_type="virtual_printer",
+        slicer_ams_mapping=lambda printer_id: json.dumps(
+            {"mapping": [4, -1, 12], "printer_id": resolved_on or printer_id}
+        ),
+    )
+
+    await _dispatch_library_item(ctx)
+
+    assert ctx.archive_kwargs["slicer_ams_mapping"] == [4, -1, 12]
+    assert ctx.archive_kwargs["slicer_ams_mapping_printer_id"] == (resolved_on or ctx.printer_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source_type", "setting", "expected"),
+    [
+        ("virtual_printer", "filename", {"prefer_filename_for_name": True}),
+        ("virtual_printer", "metadata", {}),
+        (None, "filename", {}),
+    ],
+    ids=["vp-filename", "vp-metadata", "other-file"],
+)
+async def test_the_vp_name_setting_names_the_archive_of_its_uploads_only(queue_factory, source_type, setting, expected):
+    ctx = await queue_factory(cleanup=False, source_type=source_type)
+
+    with patch("backend.app.api.routes.settings.get_setting", AsyncMock(return_value=setting)):
+        await _dispatch_library_item(ctx)
+
+    assert ctx.archive_kwargs == expected

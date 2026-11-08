@@ -209,7 +209,7 @@ class TestPendingUploadsAPI:
 
         assert response.status_code == 200
         result = response.json()
-        assert "archived" in result
+        assert "stored" in result
         assert "failed" in result
 
     @pytest.mark.asyncio
@@ -750,3 +750,63 @@ class TestVirtualPrinterSerialSurface:
         body = get_resp.json()
         assert body["serial"]  # non-empty
         assert len(body["serial"]) >= 8
+
+
+class TestVirtualPrinterUploadFolder:
+    """Uploads land in a File Manager folder set per virtual printer."""
+
+    @staticmethod
+    async def _folder(db_session, **fields) -> int:
+        from backend.app.models.library import LibraryFolder
+
+        folder = LibraryFolder(**({"name": "Class 7b", "shared": True} | fields))
+        db_session.add(folder)
+        await db_session.commit()
+        return folder.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_set_on_create_and_cleared_with_null(self, async_client: AsyncClient, db_session):
+        folder_id = await self._folder(db_session)
+
+        response = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={"name": "Lab", "mode": "library", "library_folder_id": folder_id, "queue_remove_after_print": True},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["library_folder_id"] == folder_id
+        assert response.json()["queue_remove_after_print"] is True
+        vp_id = response.json()["id"]
+
+        response = await async_client.put(f"/api/v1/virtual-printers/{vp_id}", json={"auto_dispatch": False})
+        assert response.json()["library_folder_id"] == folder_id
+
+        response = await async_client.put(f"/api/v1/virtual-printers/{vp_id}", json={"library_folder_id": None})
+        assert response.status_code == 200
+        assert response.json()["library_folder_id"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_external_folder_is_refused(self, async_client: AsyncClient, db_session, tmp_path):
+        folder_id = await self._folder(db_session, name="NAS", is_external=True, external_path=str(tmp_path))
+        vp_id = (await async_client.post("/api/v1/virtual-printers", json={"name": "Lab"})).json()["id"]
+
+        response = await async_client.put(f"/api/v1/virtual-printers/{vp_id}", json={"library_folder_id": folder_id})
+
+        assert response.status_code == 400
+        assert "external" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_unknown_folder_is_refused(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/virtual-printers", json={"name": "Lab", "library_folder_id": 4242})
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_legacy_archive_mode_is_stored_as_library(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/virtual-printers", json={"name": "Old client", "mode": "archive"})
+
+        assert response.status_code == 200
+        assert response.json()["mode"] == "library"

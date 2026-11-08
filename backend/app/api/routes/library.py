@@ -700,7 +700,8 @@ def _without_print_name(metadata: dict | None) -> dict | None:
 async def save_3mf_bytes_to_library(
     db: AsyncSession,
     *,
-    file_bytes: bytes,
+    file_bytes: bytes | None = None,
+    source_path: Path | None = None,
     filename: str,
     folder_id: int | None = None,
     source_type: str | None = None,
@@ -722,7 +723,13 @@ async def save_3mf_bytes_to_library(
     Parses 3MF metadata + thumbnail the same way the multipart upload route
     does, via :class:`ThreeMFParser`, and renders an STL's thumbnail. Paths are stored as relative so the
     library is portable across installs.
+
+    Give the content as ``file_bytes`` or as ``source_path``, a file on disk
+    that is copied without being read into memory (a virtual printer's
+    upload, which can be hundreds of MB).
     """
+    if (file_bytes is None) == (source_path is None):
+        raise ValueError("pass exactly one of file_bytes and source_path")
     # Source-URL-based dedupe: return the existing row untouched.
     if source_url and dedupe_within is not None:
         existing = await db.execute(
@@ -767,8 +774,14 @@ async def save_3mf_bytes_to_library(
 
     file_path, is_external = _resolve_upload_destination(target_folder, filename)
     ext = file_path.suffix.lower() or ".3mf"
-    with open(file_path, "wb") as fh:
-        fh.write(file_bytes)
+    if source_path is not None:
+        await asyncio.to_thread(shutil.copyfile, source_path, file_path)
+        file_size = file_path.stat().st_size
+    else:
+        assert file_bytes is not None  # one of the two, checked above
+        with open(file_path, "wb") as fh:
+            fh.write(file_bytes)
+        file_size = len(file_bytes)
 
     file_hash = calculate_file_hash(file_path)
 
@@ -812,7 +825,7 @@ async def save_3mf_bytes_to_library(
         filename=filename,
         file_path=_stored_file_path(file_path, is_external),
         file_type=classify_file_type(filename, file_path),
-        file_size=len(file_bytes),
+        file_size=file_size,
         file_hash=file_hash,
         thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
         file_metadata=_without_print_name(metadata),

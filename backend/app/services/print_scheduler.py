@@ -33,7 +33,13 @@ from backend.app.models.settings import Settings
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
-from backend.app.services import drying_preflight, kprofile_drift, print_dispatch_context, stock_forecast
+from backend.app.services import (
+    drying_preflight,
+    kprofile_drift,
+    print_dispatch_context,
+    slicer_ams_pick,
+    stock_forecast,
+)
 from backend.app.services.bambu_ftp import (
     FtpFailureKind,
     FtpFailureReport,
@@ -8184,6 +8190,20 @@ class PrintScheduler:
             is not None
         )
 
+    @staticmethod
+    async def _vp_prefers_filename(db: AsyncSession, library_file: LibraryFile) -> bool:
+        """Whether a virtual printer's upload names its archive after the file.
+
+        Settings > Virtual Printer chooses between the file name and the title
+        in the 3MF for the archives of uploads; other files keep the default.
+        """
+        from backend.app.api.routes.settings import get_setting
+        from backend.app.services.virtual_printer.library_store import SOURCE_TYPE
+
+        if library_file.source_type != SOURCE_TYPE:
+            return False
+        return (await get_setting(db, "virtual_printer_archive_name_source")) == "filename"
+
     async def _claim_reusable_archive(
         self, db: AsyncSession, item: PrintQueueItem, file_path: Path
     ) -> PrintArchive | None:
@@ -9211,7 +9231,22 @@ class PrintScheduler:
                         if item.plate_id is not None:
                             archive.plate_id = item.plate_id
                         archive.cost_center_id = item.cost_center_id
+                    if (slicer_pick := slicer_ams_pick.unpack(item.slicer_ams_mapping)) is not None:
+                        archive.extra_data = {
+                            **(archive.extra_data or {}),
+                            "slicer_ams_mapping": {"mapping": slicer_pick[0], "printer_id": slicer_pick[1]},
+                        }
                 else:
+                    # A virtual printer's upload: its name setting, and the
+                    # slicer's AMS pick kept for reprints (#2700). Passed only
+                    # when set, as for every other file nothing changes.
+                    vp_extras: dict = {}
+                    if await self._vp_prefers_filename(db, library_file):
+                        vp_extras["prefer_filename_for_name"] = True
+                    if (slicer_pick := slicer_ams_pick.unpack(item.slicer_ams_mapping)) is not None:
+                        # The printer the slicer resolved it on, not the
+                        # job's: the job may have been moved since.
+                        vp_extras["slicer_ams_mapping"], vp_extras["slicer_ams_mapping_printer_id"] = slicer_pick
                     archive_service = ArchiveService(db)
                     archive = await archive_service.archive_print(
                         printer_id=item.printer_id,
@@ -9222,6 +9257,7 @@ class PrintScheduler:
                         cost_center_id=item.cost_center_id,
                         library_file_id=item.library_file_id,  # per-file project progress (#1897)
                         plate_id=item.plate_id,  # selected plate → Print History (#2603)
+                        **vp_extras,
                     )
                 if archive:
                     self._hold_archive(item.id, archive.id)

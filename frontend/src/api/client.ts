@@ -2861,6 +2861,9 @@ export interface PrintQueueItem {
   // AMS-slot pick (extra_data.slicer_ams_mapping) — a reprint reuses that
   // exact physical spool instead of re-deriving one from type/color.
   archive_has_slicer_ams_mapping: boolean;
+  // A virtual printer's job not printed yet: the slicer's AMS pick it keeps
+  // for its archive, when made against this row's printer.
+  slicer_ams_mapping?: number[] | null;
   ams_mapping: number[] | null;  // AMS slot mapping for multi-color prints
   filament_overrides: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;  // Filament overrides for model-based assignment
   plate_id: number | null;  // Plate ID for multi-plate 3MF files
@@ -9184,7 +9187,8 @@ export const discoveryApi = {
 // `immediate` (→ archive) and `print_queue` (→ queue) names are still
 // accepted by the backend so older API clients keep working, but new code
 // should send the canonical names.
-export type VirtualPrinterMode = 'archive' | 'review' | 'queue' | 'proxy' | 'immediate' | 'print_queue';
+// 'archive' and 'immediate' are older names of 'library', 'print_queue' of 'queue'.
+export type VirtualPrinterMode = 'library' | 'review' | 'queue' | 'proxy' | 'archive' | 'immediate' | 'print_queue';
 
 export interface VirtualPrinterProxyStatus {
   running: boolean;
@@ -9269,6 +9273,10 @@ export interface VirtualPrinterConfig {
   access_code_set: boolean;
   serial: string;
   target_printer_id: number | null;
+  // File Manager folder uploads land in; null = the shared "Virtual Printer" folder.
+  library_folder_id: number | null;
+  // Queue mode: remove the file from the File Manager once its print starts.
+  queue_remove_after_print: boolean;
   auto_dispatch: boolean;
   queue_force_color_match: boolean;
   save_ams_mapping: boolean;
@@ -9317,6 +9325,9 @@ export const multiVirtualPrinterApi = {
     access_code?: string;
     // null clears the target (a queue VP then sends to any printer of its model).
     target_printer_id?: number | null;
+    // null: back to the shared "Virtual Printer" folder.
+    library_folder_id?: number | null;
+    queue_remove_after_print?: boolean;
     auto_dispatch?: boolean;
     queue_force_color_match?: boolean;
     save_ams_mapping?: boolean;
@@ -9400,8 +9411,9 @@ export const pendingUploadsApi = {
 
   get: (id: number) => request<PendingUpload>(`/pending-uploads/${id}`),
 
+  // Approve: the file goes to its virtual printer's File Manager folder.
   archive: (id: number, data?: { tags?: string; notes?: string; project_id?: number }) =>
-    request<{ id: number; print_name: string; filename: string }>(`/pending-uploads/${id}/archive`, {
+    request<{ id: number; filename: string; folder_id: number | null }>(`/pending-uploads/${id}/archive`, {
       method: 'POST',
       body: JSON.stringify(data || {}),
     }),
@@ -9410,7 +9422,7 @@ export const pendingUploadsApi = {
     request<{ success: boolean }>(`/pending-uploads/${id}`, { method: 'DELETE' }),
 
   archiveAll: () =>
-    request<{ archived: number; failed: number }>('/pending-uploads/archive-all', { method: 'POST' }),
+    request<{ stored: number; failed: number }>('/pending-uploads/archive-all', { method: 'POST' }),
 
   discardAll: () =>
     request<{ discarded: number }>('/pending-uploads/discard-all', { method: 'DELETE' }),

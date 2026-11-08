@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { resolveArchiveSlicerAmsMapping } from '../../components/PrintModal/archiveAmsMapping';
+import { resolveArchiveSlicerAmsMapping, resolveSlicerAmsMapping } from '../../components/PrintModal/archiveAmsMapping';
 
 const SAVED = { slicer_ams_mapping: { mapping: [4, -1, 12, -1], printer_id: 7 } };
 
@@ -67,6 +67,35 @@ describe('resolveArchiveSlicerAmsMapping', () => {
     // A string "7" from a hand-edited record is not printer 7.
     expect(
       resolveArchiveSlicerAmsMapping({ slicer_ams_mapping: { mapping: [4], printer_id: '7' } }, 7),
+    ).toBeUndefined();
+  });
+});
+
+// A virtual printer's queue job prints a File Manager file and has no archive
+// until it prints: editing it, its own kept pick is the one.
+describe('resolveSlicerAmsMapping', () => {
+  const archive = { slicer_ams_mapping: { mapping: [9, 9], printer_id: 7 } };
+
+  it("takes the job's own pick for the job's printer", () => {
+    const queueItem = { printer_id: 7, slicer_ams_mapping: [4, -1, 12] };
+    expect(resolveSlicerAmsMapping({ queueItem, isLibraryFile: true, archiveExtraData: null, printerId: 7 })).toEqual([
+      4, -1, 12,
+    ]);
+  });
+
+  it('not on another printer, and falls back to the archive there', () => {
+    const queueItem = { printer_id: 7, slicer_ams_mapping: [4, -1, 12] };
+    expect(
+      resolveSlicerAmsMapping({ queueItem, isLibraryFile: true, archiveExtraData: null, printerId: 8 }),
+    ).toBeUndefined();
+    expect(
+      resolveSlicerAmsMapping({ queueItem: { printer_id: 8 }, isLibraryFile: false, archiveExtraData: archive, printerId: 7 }),
+    ).toEqual([9, 9]);
+  });
+
+  it('a library file without a kept pick has none', () => {
+    expect(
+      resolveSlicerAmsMapping({ queueItem: undefined, isLibraryFile: true, archiveExtraData: archive, printerId: 7 }),
     ).toBeUndefined();
   });
 });

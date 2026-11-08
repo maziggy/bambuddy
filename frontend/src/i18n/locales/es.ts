@@ -6378,14 +6378,28 @@ export default {
     },
     mode: {
       title: 'Modo',
-      archive: 'Archivar',
-      archiveDesc: 'Archivar los archivos inmediatamente',
+      library: 'Gestor de archivos',
+      libraryDesc: 'Guardar archivos en el gestor de archivos',
       review: 'Revisar',
-      reviewDesc: 'Revisar antes de archivar',
+      reviewDesc: 'Revisar antes de añadir al gestor de archivos',
       queue: 'Encolar',
-      queueDesc: 'Archivar y añadir a la cola',
+      queueDesc: 'Gestor de archivos y cola de impresión',
       proxy: 'Proxy',
       proxyDesc: 'Retransmitir a una impresora real',
+    },
+    uploadFolder: {
+      title: 'Carpeta del gestor de archivos',
+      default: 'Virtual Printer (compartida)',
+      other: 'Una carpeta en la que no puedes añadir',
+      hint: {
+        library: 'Los archivos enviados a esta impresora se guardan en esta carpeta.',
+        review: 'Los archivos aprobados se guardan en esta carpeta.',
+        queue: 'Los archivos se guardan en esta carpeta y se ponen en cola desde ella. El archivo pasa al archivo histórico cuando se imprime.',
+      },
+    },
+    removeAfterPrint: {
+      title: 'Quitar del gestor de archivos al imprimir',
+      description: 'El archivo sale del gestor de archivos cuando empieza su impresión. El archivo histórico guarda su propia copia.',
     },
     autoDispatch: {
       title: 'Envío automático',
@@ -7317,18 +7331,35 @@ export default {
 
   // Pending Uploads Panel
   pendingUploads: {
-    placeholders: {
-      notes: 'Añada notas sobre esta impresión...',
-    },
+    title: 'Subidas pendientes ({{count}})',
+    description: 'Estos archivos llegaron por una impresora virtual en modo revisión. Añádelos al gestor de archivos o descártalos.',
+    from: 'desde {{ip}}',
+    addToFileManager: 'Añadir al gestor de archivos',
+    addAll: 'Añadir todas',
+    addAllUploads: 'Añadir todas las subidas',
+    addAllConfirm: '¿Añadir las {{count}} subidas pendientes al gestor de archivos?',
+    discard: 'Descartar',
     discardUpload: 'Descartar subida',
-    archiveAllUploads: 'Archivar todas las subidas',
+    discardConfirm: '¿Descartar "{{name}}"? No se puede deshacer.',
+    discardAll: 'Descartar todas',
     discardAllUploads: 'Descartar todas las subidas',
-    archive: 'Archivar',
-    timeAgo: {
-      justNow: 'Ahora mismo',
-      minutesAgo: 'hace {{minutes}} min',
-      hoursAgo: 'hace {{hours}} h',
-      daysAgo: 'hace {{days}} d',
+    discardAllConfirm: '¿Descartar las {{count}} subidas pendientes? No se puede deshacer.',
+    tags: 'Etiquetas',
+    notes: 'Notas',
+    project: 'Proyecto',
+    noProject: 'Sin proyecto',
+    placeholders: {
+      tags: 'p. ej. funcional, prototipo, regalo',
+      notes: 'Añade notas sobre esta impresión...',
+    },
+    toast: {
+      added: 'Añadido al gestor de archivos: {{name}}',
+      addFailed: 'No se pudo añadir al gestor de archivos',
+      addedAll: '{{count}} archivos añadidos al gestor de archivos',
+      addedAllSomeFailed: '{{count}} archivos añadidos al gestor de archivos, {{failed}} fallaron',
+      discarded: 'Subida descartada',
+      discardedAll: '{{count}} archivos descartados',
+      discardFailed: 'No se pudo descartar',
     },
   },
 

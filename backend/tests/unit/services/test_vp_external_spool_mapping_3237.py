@@ -28,6 +28,27 @@ H2C_PAYLOAD = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _fake_file_manager_store():
+    """Uploads go to the File Manager (library_store); its own tests cover it.
+
+    Here it stands in with file id 1 and the default folder settings, so these
+    tests see what the virtual printer does around it.
+    """
+    stored = MagicMock(id=1, filename="upload.3mf", folder_id=None)
+    with (
+        patch(
+            "backend.app.services.virtual_printer.library_store.store_upload",
+            AsyncMock(return_value=(stored, False)),
+        ) as store,
+        patch(
+            "backend.app.services.virtual_printer.library_store.upload_settings",
+            AsyncMock(return_value=(None, False)),
+        ),
+    ):
+        yield store
+
+
 def _extract(data, is_dual_nozzle):
     raw = _extract_slicer_ams_mapping_json(data, "[test]", is_dual_nozzle=is_dual_nozzle)
     return None if raw is None else json.loads(raw)
@@ -129,17 +150,10 @@ async def test_queue_item_and_archive_keep_left_external_spool(tmp_path):
     file_path.write_bytes(b"fake3mf")
     await inst.on_print_command(file_path.name, dict(H2C_PAYLOAD))
 
-    mock_archive = MagicMock(id=1, print_name="test")
-    with (
-        patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None),
-        patch(
-            "backend.app.services.archive.ArchiveService.archive_print",
-            new_callable=AsyncMock,
-            return_value=mock_archive,
-        ) as archive_print,
-    ):
+    with patch("backend.app.api.routes.settings.get_setting", new_callable=AsyncMock, return_value=None):
         await inst._add_to_print_queue(file_path, "192.168.1.100")
 
     assert len(added_items) == 1
     assert json.loads(added_items[0].ams_mapping) == [254, 3, 2]
-    assert archive_print.await_args.kwargs["slicer_ams_mapping"] == [254, 3, 2]
+    # Kept on the item for the archive its print makes.
+    assert json.loads(added_items[0].slicer_ams_mapping)["mapping"] == [254, 3, 2]

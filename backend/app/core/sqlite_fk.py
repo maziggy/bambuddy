@@ -66,6 +66,12 @@ APPLIED: frozenset[tuple[str, str]] = frozenset(
         ("print_batches", "library_file_id"),
         ("print_queue", "library_file_id"),
         ("print_queue_variants", "library_file_id"),
+        # library_folders: a virtual printer's uploads would go into the next
+        # folder given the id, maybe someone's private one.
+        ("virtual_printers", "library_folder_id"),
+        # virtual_printers: an approved upload would go to the folder of the
+        # next virtual printer given the id.
+        ("pending_uploads", "virtual_printer_id"),
         # print_queue
         ("pipeline_jobs", "queue_entry_id"),
         ("print_log_entries", "queue_item_id"),

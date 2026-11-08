@@ -93,6 +93,7 @@ import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/sl
 import { isSlicedLibraryFile, isSliceableLibraryFile } from '../utils/libraryFiles';
 import { useUiSettings } from '../hooks/useUiSettings';
 import { FOLDER_DRAG_TYPE, isValidFolderMove, isWritableFolder, moveDisallowedFolderIds } from '../utils/libraryFolders';
+import { PendingUploadsPanel } from '../components/PendingUploadsPanel';
 
 type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
 type SortDirection = 'asc' | 'desc';
@@ -3193,6 +3194,10 @@ export function FileManagerPage() {
           </div>
         </div>
       )}
+
+      {/* Uploads from a review-mode virtual printer, waiting for approval;
+          approving stores them in the File Manager. Renders nothing when none. */}
+      <PendingUploadsPanel />
 
       {/* Main content */}
       <div className="flex-1 flex flex-col lg:flex-row gap-4 lg:gap-6 min-h-0">

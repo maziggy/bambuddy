@@ -57,6 +57,14 @@ class PrintQueueItem(Base):
     # Format: "[5, -1, 2, -1]" where position = slot_id-1, value = global tray ID (-1 = unused)
     ams_mapping: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # The slicer's own AMS pick for a virtual-printer upload with "Save AMS
+    # mapping" on (#2700), same format as ams_mapping. Not used for this
+    # print (ams_mapping is): it goes onto the archive the dispatch creates
+    # (extra_data.slicer_ams_mapping, for printer_id), so a reprint of that
+    # archive can reuse it. Kept apart because "Force color match" leaves
+    # ams_mapping empty and still wants the pick saved.
+    slicer_ams_mapping: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Filament overrides for model-based assignment: JSON array of override objects
     # Format: '[{"slot_id": 1, "type": "PLA", "color": "#FFFFFF"}]'
     # Only slots with overrides are included (sparse). null = use original 3MF values.
@@ -109,8 +117,9 @@ class PrintQueueItem(Base):
     # slot got its colour or nothing could be compared.
     color_substitutions: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Printer-card direct uploads create transient library rows. When this is
-    # true, the scheduler deletes the source row/files after archiving a copy.
+    # Printer-card direct uploads create transient library rows, and a queue
+    # virtual printer can ask for its uploads to go once they print. When this
+    # is true, the scheduler deletes the source row/files after archiving a copy.
     cleanup_library_after_dispatch: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     # Print options. bed_levelling / flow_cali / nozzle_offset_cali are tri-state

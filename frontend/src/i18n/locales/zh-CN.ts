@@ -6357,14 +6357,28 @@ export default {
     },
     mode: {
       title: '模式',
-      archive: '归档',
-      archiveDesc: '立即归档文件',
+      library: '文件管理器',
+      libraryDesc: '将文件存入文件管理器',
       review: '审核',
-      reviewDesc: '归档前审核',
+      reviewDesc: '审核后再加入文件管理器',
       queue: '队列',
-      queueDesc: '归档并添加到队列',
+      queueDesc: '文件管理器和打印队列',
       proxy: '代理',
       proxyDesc: '中继到真实打印机',
+    },
+    uploadFolder: {
+      title: '文件管理器文件夹',
+      default: 'Virtual Printer(共享)',
+      other: '你无法添加内容的文件夹',
+      hint: {
+        library: '发送到这台打印机的文件会存入此文件夹。',
+        review: '已批准的文件会存入此文件夹。',
+        queue: '文件存入此文件夹,并从这里加入队列。打印时文件才进入归档。',
+      },
+    },
+    removeAfterPrint: {
+      title: '打印后从文件管理器移除',
+      description: '打印开始时,文件会离开文件管理器。归档保留自己的副本。',
     },
     autoDispatch: {
       title: '自动派发',
@@ -7294,18 +7308,35 @@ export default {
 
   // Pending Uploads Panel
   pendingUploads: {
-    placeholders: {
-      notes: '添加关于此打印的备注...',
-    },
+    title: '待处理上传({{count}})',
+    description: '这些文件来自审核模式下的虚拟打印机。将它们加入文件管理器或丢弃。',
+    from: '来自 {{ip}}',
+    addToFileManager: '加入文件管理器',
+    addAll: '全部加入',
+    addAllUploads: '加入所有上传',
+    addAllConfirm: '将全部 {{count}} 个待处理上传加入文件管理器?',
+    discard: '丢弃',
     discardUpload: '丢弃上传',
-    archiveAllUploads: '归档所有上传',
+    discardConfirm: '丢弃"{{name}}"?此操作无法撤销。',
+    discardAll: '全部丢弃',
     discardAllUploads: '丢弃所有上传',
-    archive: '归档',
-    timeAgo: {
-      justNow: '刚刚',
-      minutesAgo: '{{minutes}} 分钟前',
-      hoursAgo: '{{hours}} 小时前',
-      daysAgo: '{{days}} 天前',
+    discardAllConfirm: '丢弃全部 {{count}} 个待处理上传?此操作无法撤销。',
+    tags: '标签',
+    notes: '备注',
+    project: '项目',
+    noProject: '无项目',
+    placeholders: {
+      tags: '例如:功能件, 原型, 礼物',
+      notes: '为此打印添加备注...',
+    },
+    toast: {
+      added: '已加入文件管理器:{{name}}',
+      addFailed: '无法加入文件管理器',
+      addedAll: '已将 {{count}} 个文件加入文件管理器',
+      addedAllSomeFailed: '已将 {{count}} 个文件加入文件管理器,{{failed}} 个失败',
+      discarded: '已丢弃上传',
+      discardedAll: '已丢弃 {{count}} 个文件',
+      discardFailed: '无法丢弃',
     },
   },
 

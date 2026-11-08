@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequestPrinterScope, RequirePermissionIfAuthEnabled
+from backend.app.core.auth import ApiKeyActor, RequestActor, RequestPrinterScope, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.printer_scope import PrinterScope
@@ -37,10 +37,12 @@ class TailscaleStatusResponse(BaseModel):
 class VirtualPrinterCreate(BaseModel):
     name: str = "Bambuddy"
     enabled: bool = False
-    mode: str = "archive"
+    mode: str = "library"
     model: str | None = None
     access_code: str | None = None
     target_printer_id: int | None = None
+    library_folder_id: int | None = None
+    queue_remove_after_print: bool = False
     auto_dispatch: bool = True
     queue_force_color_match: bool = False
     save_ams_mapping: bool = False
@@ -57,6 +59,8 @@ class VirtualPrinterUpdate(IgnoresNullForRequiredColumns):
     model: str | None = None
     access_code: str | None = None
     target_printer_id: int | None = None
+    library_folder_id: int | None = None
+    queue_remove_after_print: bool | None = None
     auto_dispatch: bool | None = None
     queue_force_color_match: bool | None = None
     save_ams_mapping: bool | None = None
@@ -81,6 +85,24 @@ def _resolve_printer_model(printer_model: str | None) -> str | None:
         return printer_model
     # Map display name to SSDP code
     return DISPLAY_NAME_TO_MODEL_CODE.get(printer_model)
+
+
+async def _check_upload_folder(db: AsyncSession, folder_id: int, user) -> JSONResponse | None:
+    """None when the virtual printer may store uploads in ``folder_id``.
+
+    The user setting it must be able to add files there themselves (#3201),
+    and it must be an internal folder: an external mount refuses a second file
+    of the same name, and slicer names repeat.
+    """
+    from backend.app.services.library_folder_access import get_writable_folder
+
+    folder = await get_writable_folder(db, folder_id, user)
+    if folder.is_external:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Virtual printer uploads can't go to an external folder"},
+        )
+    return None
 
 
 def _target_missing(target_printer_id: int) -> JSONResponse:
@@ -122,6 +144,8 @@ async def _vp_to_dict(vp, db: AsyncSession, status: dict | None = None) -> dict:
         "access_code_set": bool(vp.access_code),
         "serial": serial,
         "target_printer_id": vp.target_printer_id,
+        "library_folder_id": vp.library_folder_id,
+        "queue_remove_after_print": vp.queue_remove_after_print,
         "auto_dispatch": vp.auto_dispatch,
         "queue_force_color_match": vp.queue_force_color_match,
         "save_ams_mapping": vp.save_ams_mapping,
@@ -169,6 +193,8 @@ async def create_virtual_printer(
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
+    # Who the #3201 folder check runs against: an API key as its owner.
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Create a new virtual printer."""
     from backend.app.models.virtual_printer import VP_MODE_VALUES, VirtualPrinter, normalize_vp_mode
@@ -215,6 +241,11 @@ async def create_virtual_printer(
         target_printer = result.scalar_one_or_none()
         if not target_printer or not printer_scope.allows(target_printer.id):
             return _target_missing(body.target_printer_id)
+
+    if body.library_folder_id is not None and (
+        refused := await _check_upload_folder(db, body.library_folder_id, actor)
+    ):
+        return refused
 
     # Validate bind_ip uniqueness (against all enabled VPs)
     if body.bind_ip:
@@ -263,6 +294,8 @@ async def create_virtual_printer(
         or DEFAULT_VIRTUAL_PRINTER_MODEL,
         access_code=effective_access_code,
         target_printer_id=body.target_printer_id,
+        library_folder_id=body.library_folder_id,
+        queue_remove_after_print=body.queue_remove_after_print,
         auto_dispatch=body.auto_dispatch,
         queue_force_color_match=body.queue_force_color_match,
         save_ams_mapping=body.save_ams_mapping,
@@ -409,6 +442,8 @@ async def update_virtual_printer(
     db: AsyncSession = Depends(get_db, scope="function"),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     printer_scope: PrinterScope = RequestPrinterScope,
+    # Who the #3201 folder check runs against: an API key as its owner.
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Update a virtual printer."""
     from backend.app.models.virtual_printer import VirtualPrinter
@@ -476,6 +511,14 @@ async def update_virtual_printer(
         # Auto-inherit model from target printer in proxy mode (unless user explicitly set model)
         if body.model is None and vp.mode == "proxy" and target_printer.model:
             vp.model = _resolve_printer_model(target_printer.model) or target_printer.model
+    if "library_folder_id" in body.model_fields_set and body.library_folder_id is None:
+        vp.library_folder_id = None  # back to the shared "Virtual Printer" folder
+    elif body.library_folder_id is not None:
+        if refused := await _check_upload_folder(db, body.library_folder_id, actor):
+            return refused
+        vp.library_folder_id = body.library_folder_id
+    if body.queue_remove_after_print is not None:
+        vp.queue_remove_after_print = body.queue_remove_after_print
     if body.auto_dispatch is not None:
         vp.auto_dispatch = body.auto_dispatch
     if body.queue_force_color_match is not None:

@@ -101,7 +101,6 @@ import { ProjectPageModal } from '../components/ProjectPageModal';
 import { TimelapseViewer } from '../components/TimelapseViewer';
 import { ArchiveMediaDownloadModal } from '../components/ArchiveMediaDownloadModal';
 import { CompareArchivesModal } from '../components/CompareArchivesModal';
-import { PendingUploadsPanel } from '../components/PendingUploadsPanel';
 import { TagManagementModal } from '../components/TagManagementModal';
 import { PlatePickerModal } from '../components/PlatePickerModal';
 import type { PlateMetadata } from '../types/plates';
@@ -4535,9 +4534,6 @@ export function ArchivesPage() {
           )}
         </CardContent>
       </Card>}
-
-      {/* Pending Uploads Panel (visible when in queue mode with pending files) */}
-      <PendingUploadsPanel />
 
       {/* Archives */}
       {isLoading ? (

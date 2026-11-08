@@ -6421,14 +6421,28 @@ export default {
     },
     mode: {
       title: 'Modus',
-      archive: 'Archief',
-      archiveDesc: 'Bestanden direct archiveren',
+      library: 'Bestandsbeheer',
+      libraryDesc: 'Bestanden opslaan in bestandsbeheer',
       review: 'Beoordelen',
-      reviewDesc: 'Beoordelen vóór archiveren',
+      reviewDesc: 'Controleren voor toevoegen aan bestandsbeheer',
       queue: 'Wachtrij',
-      queueDesc: 'Archiveren en aan wachtrij toevoegen',
+      queueDesc: 'Bestandsbeheer en printwachtrij',
       proxy: 'Proxy',
       proxyDesc: 'Doorsturen naar echte printer',
+    },
+    uploadFolder: {
+      title: 'Map in bestandsbeheer',
+      default: 'Virtual Printer (gedeeld)',
+      other: 'Een map waaraan je niets kunt toevoegen',
+      hint: {
+        library: 'Bestanden die naar deze printer worden gestuurd, komen in deze map.',
+        review: 'Goedgekeurde bestanden komen in deze map.',
+        queue: 'Bestanden komen in deze map en worden van daaruit in de wachtrij gezet. Het archief krijgt het bestand zodra het geprint wordt.',
+      },
+    },
+    removeAfterPrint: {
+      title: 'Uit bestandsbeheer verwijderen na printen',
+      description: 'Het bestand verlaat bestandsbeheer zodra de print start. Het archief houdt een eigen kopie.',
     },
     autoDispatch: {
       title: 'Automatisch verzenden',
@@ -7360,18 +7374,35 @@ export default {
 
   // Pending Uploads Panel
   pendingUploads: {
-    placeholders: {
-      notes: 'Voeg notities over deze afdruk toe...',
-    },
+    title: 'Wachtende uploads ({{count}})',
+    description: 'Deze bestanden kwamen binnen via een virtuele printer in controlemodus. Voeg ze toe aan bestandsbeheer of verwijder ze.',
+    from: 'van {{ip}}',
+    addToFileManager: 'Toevoegen aan bestandsbeheer',
+    addAll: 'Alles toevoegen',
+    addAllUploads: 'Alle uploads toevoegen',
+    addAllConfirm: 'Alle {{count}} wachtende uploads toevoegen aan bestandsbeheer?',
+    discard: 'Verwijderen',
     discardUpload: 'Upload verwijderen',
-    archiveAllUploads: 'Alle uploads archiveren',
+    discardConfirm: '"{{name}}" verwijderen? Dit kan niet ongedaan worden gemaakt.',
+    discardAll: 'Alles verwijderen',
     discardAllUploads: 'Alle uploads verwijderen',
-    archive: 'Archief',
-    timeAgo: {
-      justNow: 'Zojuist',
-      minutesAgo: '{{minutes}}m geleden',
-      hoursAgo: '{{hours}}u geleden',
-      daysAgo: '{{days}}d geleden',
+    discardAllConfirm: 'Alle {{count}} wachtende uploads verwijderen? Dit kan niet ongedaan worden gemaakt.',
+    tags: 'Tags',
+    notes: 'Notities',
+    project: 'Project',
+    noProject: 'Geen project',
+    placeholders: {
+      tags: 'bijv. functioneel, prototype, cadeau',
+      notes: 'Notities over deze print toevoegen...',
+    },
+    toast: {
+      added: 'Toegevoegd aan bestandsbeheer: {{name}}',
+      addFailed: 'Kon niet toevoegen aan bestandsbeheer',
+      addedAll: '{{count}} bestanden toegevoegd aan bestandsbeheer',
+      addedAllSomeFailed: '{{count}} bestanden toegevoegd aan bestandsbeheer, {{failed}} mislukt',
+      discarded: 'Upload verwijderd',
+      discardedAll: '{{count}} bestanden verwijderd',
+      discardFailed: 'Kon niet verwijderen',
     },
   },
 

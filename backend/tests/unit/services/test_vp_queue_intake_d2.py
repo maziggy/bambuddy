@@ -15,6 +15,27 @@ import pytest
 from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
 
 
+@pytest.fixture(autouse=True)
+def _fake_file_manager_store():
+    """Uploads go to the File Manager (library_store); its own tests cover it.
+
+    Here it stands in with file id 1 and the default folder settings, so these
+    tests see what the virtual printer does around it.
+    """
+    stored = MagicMock(id=1, filename="upload.3mf", folder_id=None)
+    with (
+        patch(
+            "backend.app.services.virtual_printer.library_store.store_upload",
+            AsyncMock(return_value=(stored, False)),
+        ) as store,
+        patch(
+            "backend.app.services.virtual_printer.library_store.upload_settings",
+            AsyncMock(return_value=(None, False)),
+        ),
+    ):
+        yield store
+
+
 def _session(added: list, execute_results=None):
     db = AsyncMock()
     db.add = MagicMock(side_effect=lambda item: (added.append(item), setattr(item, "id", 100 + len(added)))[0])
@@ -47,7 +68,6 @@ async def _enqueue(inst, tmp_path, slicer_opts: dict | None, settings: dict | No
     file_path.write_bytes(b"fake3mf")
     if slicer_opts is not None:
         await inst.on_print_command(file_path.name, {"command": "project_file", **slicer_opts})
-    archive = MagicMock(id=1, print_name="test")
     values = settings or {}
 
     async def _setting(_db, key):
@@ -55,10 +75,17 @@ async def _enqueue(inst, tmp_path, slicer_opts: dict | None, settings: dict | No
 
     with (
         patch("backend.app.api.routes.settings.get_setting", side_effect=_setting),
-        patch(
-            "backend.app.services.archive.ArchiveService.archive_print", new_callable=AsyncMock, return_value=archive
-        ),
         patch("backend.app.services.virtual_printer.manager._SLICER_OPTIONS_WAIT_TIMEOUT", 0.05),
+        # The File Manager store has its own tests; here (and for the other
+        # modules that borrow this helper) it stands in with file id 1.
+        patch(
+            "backend.app.services.virtual_printer.library_store.store_upload",
+            AsyncMock(return_value=(MagicMock(id=1, filename="upload.3mf", folder_id=None), False)),
+        ),
+        patch(
+            "backend.app.services.virtual_printer.library_store.upload_settings",
+            AsyncMock(return_value=(None, False)),
+        ),
         # Its own query would take a result the session mock holds for the test.
         patch("backend.app.services.queue_announcements.announce_queue_jobs_added", announce or AsyncMock()),
     ):

@@ -15,11 +15,12 @@ from typing import TYPE_CHECKING
 
 from backend.app.core.config import settings as app_settings
 from backend.app.models.virtual_printer import (
-    VP_MODE_ARCHIVE,
+    VP_MODE_LIBRARY,
     VP_MODE_PROXY,
     VP_MODE_QUEUE,
     normalize_vp_mode,
 )
+from backend.app.services import slicer_ams_pick
 from backend.app.services.bambu_mqtt import resolve_external_spools_in_mapping
 from backend.app.services.virtual_printer.bind_server import BindServer
 from backend.app.services.virtual_printer.certificate import CertificateService
@@ -267,7 +268,7 @@ class VirtualPrinterInstance:
         # canonical values, even when a legacy DB row hasn't been migrated
         # yet (e.g. fresh-from-disk during the boot window before the
         # one-shot migration in `core/database.py` has executed).
-        self.mode = normalize_vp_mode(mode) or VP_MODE_ARCHIVE
+        self.mode = normalize_vp_mode(mode) or VP_MODE_LIBRARY
         self.model = model
         self.access_code = access_code
         self.serial_suffix = serial_suffix
@@ -383,13 +384,13 @@ class VirtualPrinterInstance:
 
         self._pending_files[file_path.name] = file_path
 
-        # Accept both canonical (`archive`/`queue`) and legacy
-        # (`immediate`/`print_queue`) wire values so a stale row that hasn't
-        # been migrated yet still dispatches correctly. Migration in
+        # Accept both canonical (`library`/`queue`) and legacy
+        # (`immediate`/`archive`/`print_queue`) wire values so a stale row that
+        # hasn't been migrated yet still dispatches correctly. Migration in
         # `core/database.py` rewrites existing rows once at boot.
         mode = normalize_vp_mode(self.mode)
-        if mode == VP_MODE_ARCHIVE:
-            await self._archive_file(file_path, source_ip)
+        if mode == VP_MODE_LIBRARY:
+            await self._store_in_library(file_path, source_ip)
         elif mode == VP_MODE_QUEUE:
             await self._add_to_print_queue(file_path, source_ip)
         else:
@@ -673,8 +674,17 @@ class VirtualPrinterInstance:
                         update(PrintQueueItem).where(PrintQueueItem.id.in_(short_ids), *unclaimed).values(**short_patch)
                     )
 
-                # The archive was already created (with no slicer_ams_mapping)
-                # before this late MQTT arrived — see
+                # The queue items keep the pick for the archive their print
+                # makes (a claimed one too: its archive may not exist yet).
+                if ams_mapping_json is not None and rows:
+                    await db.execute(
+                        update(PrintQueueItem)
+                        .where(PrintQueueItem.id.in_([row[0] for row in rows]))
+                        .values(slicer_ams_mapping=slicer_ams_pick.pack(ams_mapping_json, self.target_printer_id))
+                    )
+
+                # An item whose print already started has its archive, made
+                # before this late MQTT arrived (with no slicer_ams_mapping) — see
                 # `_extract_slicer_ams_mapping_json`'s docstring. Patch it here
                 # too so a reprint later still picks up the slicer's pick, and
                 # the "AMS mapping from slicer" badge reflects reality instead
@@ -757,66 +767,44 @@ class VirtualPrinterInstance:
         self._mqtt.set_gcode_state("FINISH", filename=filename, prepare_percent="100")
         logger.debug("[VP %s] Re-set gcode_state=FINISH after project_file ack (%s)", self.name, filename)
 
-    async def _archive_file(self, file_path: Path, source_ip: str) -> None:
-        """Archive file immediately."""
+    async def _store_in_library(self, file_path: Path, source_ip: str) -> None:
+        """Store the upload in the File Manager (library mode)."""
         if not self._session_factory:
-            logger.error("Cannot archive: no database session factory configured")
+            logger.error("Cannot store upload: no database session factory configured")
             self._pending_files.pop(file_path.name, None)
             return
 
-        if file_path.suffix.lower() != ".3mf":
-            logger.debug("Skipping non-3MF file: %s", file_path.name)
-            self._pending_files.pop(file_path.name, None)
-            try:
-                file_path.unlink()
-            except OSError:
-                pass
-            return
-
-        archived = False
         try:
-            from backend.app.api.routes.settings import get_setting
-            from backend.app.services.archive import ArchiveService
+            if file_path.suffix.lower() != ".3mf":
+                logger.debug("Skipping non-3MF file: %s", file_path.name)
+                return
+            from backend.app.services.virtual_printer.library_store import store_upload, upload_settings
 
             async with self._session_factory() as db:
-                name_source = await get_setting(db, "virtual_printer_archive_name_source")
-                prefer_filename = name_source == "filename"
-                service = ArchiveService(db)
-                archive = await service.archive_print(
-                    printer_id=None,
-                    source_file=file_path,
-                    print_data={
-                        "status": "archived",
-                        "source": "virtual_printer",
-                        "source_ip": source_ip,
-                    },
-                    prefer_filename_for_name=prefer_filename,
+                folder_id, _ = await upload_settings(db, self.id)
+                library_file, reused = await store_upload(
+                    db, source_path=file_path, filename=file_path.name, folder_id=folder_id
                 )
-                if archive:
-                    logger.info("[VP %s] Archived: %s - %s", self.name, archive.id, archive.print_name)
-                    await self._broadcast_archive_created(archive)
-                    archived = True
-                else:
-                    logger.error("Failed to archive file: %s", file_path.name)
+            logger.info(
+                "[VP %s] %s File Manager file %s (%s) from %s",
+                self.name,
+                "Same file as" if reused else "Stored as",
+                library_file.id,
+                library_file.filename,
+                source_ip,
+            )
+            await self._broadcast_library_files_changed()
         except Exception as e:
-            logger.error("Error archiving file: %s", e)
+            logger.error("[VP %s] Error storing %s in the File Manager: %s", self.name, file_path.name, e)
         finally:
-            # Always drop it from the pending count and delete the temp file —
-            # previously the failure paths only logged, the upload_dir filled
-            # up indefinitely, and the slicer received a clean 226 even though
-            # no archive existed (#audit-R2-1).
+            # Always drop it from the pending count and delete the temp file:
+            # the File Manager holds its own copy, and a failed one must not
+            # pile up in the upload dir (#audit-R2-1).
             self._pending_files.pop(file_path.name, None)
-            if archived:
-                try:
-                    file_path.unlink()
-                except OSError:
-                    pass
-            else:
-                # Drop the failed temp file so it doesn't accumulate.
-                try:
-                    file_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
+            try:
+                file_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     async def _queue_file(self, file_path: Path, source_ip: str) -> None:
         """Queue file for user review."""
@@ -858,6 +846,7 @@ class VirtualPrinterInstance:
                     file_path=str(file_path),
                     file_size=file_path.stat().st_size,
                     source_ip=source_ip,
+                    virtual_printer_id=self.id,
                     status="pending",
                     uploaded_at=datetime.now(timezone.utc),
                     metadata_print_name=metadata_print_name,
@@ -879,7 +868,7 @@ class VirtualPrinterInstance:
             self._pending_files.pop(file_path.name, None)
 
     async def _add_to_print_queue(self, file_path: Path, source_ip: str) -> None:
-        """Archive file and add to print queue, assigned to target printer or model."""
+        """Store the file in the File Manager and queue it, for the target printer or model."""
         if not self._session_factory:
             logger.error("Cannot add to print queue: no database session factory configured")
             self._pending_files.pop(file_path.name, None)
@@ -933,17 +922,13 @@ class VirtualPrinterInstance:
         try:
             import json
 
-            from backend.app.api.routes.settings import get_setting
             from backend.app.models.print_queue import PrintQueueItem
-            from backend.app.services.archive import ArchiveService
             from backend.app.services.filament_requirements import extract_filament_requirements
             from backend.app.services.print_confirmation import confirm_outcome_for_new_queue_item
             from backend.app.services.print_defaults import default_print_options
+            from backend.app.services.virtual_printer.library_store import store_upload, upload_settings
 
             async with self._session_factory() as db:
-                name_source = await get_setting(db, "virtual_printer_archive_name_source")
-                prefer_filename = name_source == "filename"
-
                 # Workflow defaults from settings. Without this the
                 # PrintQueueItem below would fall back to the column-level
                 # defaults and ignore the user's workflow preferences (#1235).
@@ -999,7 +984,7 @@ class VirtualPrinterInstance:
                 # above. A plate sent here from Bambu Studio is also one of the
                 # prints `confirm_outcome_external_prints` names — but it
                 # arrives with a queue item, so on_print_start resumes the
-                # archive created below instead of treating it as external, and
+                # archive its dispatch creates instead of treating it as external, and
                 # without this the setting could never reach it (#1898).
                 confirm_outcome = await confirm_outcome_for_new_queue_item(db, started_outside_bambuddy=True)
 
@@ -1090,7 +1075,7 @@ class VirtualPrinterInstance:
                 queue_ams_mapping_json = ams_mapping_json
                 if queue_ams_mapping_json is not None and self.queue_force_color_match:
                     logger.info(
-                        "[VP %s] Saved the slicer's AMS pick to the archive but not onto the queue item(s): "
+                        "[VP %s] Kept the slicer's AMS pick for the archive but not onto the queue item(s): "
                         "'Force color match' is on, so the scheduler matches against live trays for this print.",
                         self.name,
                     )
@@ -1099,27 +1084,26 @@ class VirtualPrinterInstance:
                 # Parsed once for the per-plate length check in the loop below.
                 queue_ams_mapping = json.loads(queue_ams_mapping_json) if queue_ams_mapping_json else None
 
-                service = ArchiveService(db)
-                archive = await service.archive_print(
-                    printer_id=None,
-                    source_file=file_path,
-                    print_data={
-                        "status": "archived",
-                        "source": "virtual_printer",
-                        "source_ip": source_ip,
-                    },
-                    prefer_filename_for_name=prefer_filename,
-                    # Slicer's own live AMS-slot pick -- promoted to
-                    # `extra_data.slicer_ams_mapping` by archive_print() so a
-                    # later reprint can reuse it. Already gated on the per-VP
-                    # `save_ams_mapping` opt-in above. Tagged with the printer
-                    # it was resolved against so a later reprint on a
-                    # *different* printer knows not to reuse it (#2700 review).
-                    slicer_ams_mapping=(json.loads(ams_mapping_json) if ams_mapping_json else None),
-                    slicer_ams_mapping_printer_id=self.target_printer_id,
+                # The file goes to the File Manager; the queue items print it
+                # from there, and the archive is made when one starts printing
+                # (an archive is a print that happened).
+                folder_id, remove_after_print = await upload_settings(db, self.id)
+                # A file its print removes must be this upload's own.
+                library_file, reused = await store_upload(
+                    db,
+                    source_path=file_path,
+                    filename=file_path.name,
+                    folder_id=folder_id,
+                    reuse=not remove_after_print,
                 )
-                if archive:
-                    logger.info("[VP %s] Archived: %s - %s", self.name, archive.id, archive.print_name)
+                if library_file:
+                    logger.info(
+                        "[VP %s] %s File Manager file %s (%s)",
+                        self.name,
+                        "Same file as" if reused else "Stored as",
+                        library_file.id,
+                        library_file.filename,
+                    )
                     # Assign to specific printer if configured, otherwise use model for "Any X" scheduling
                     target_model = None
                     if not self.target_printer_id and self.model:
@@ -1226,7 +1210,10 @@ class VirtualPrinterInstance:
                         queue_item = PrintQueueItem(
                             printer_id=self.target_printer_id,
                             target_model=target_model,
-                            archive_id=archive.id,
+                            library_file_id=library_file.id,
+                            # "Remove from File Manager once it prints": the
+                            # dispatch moves the file into the archive.
+                            cleanup_library_after_dispatch=remove_after_print,
                             plate_id=plate_id,
                             position=max_pos + offset,
                             status="pending",
@@ -1254,6 +1241,11 @@ class VirtualPrinterInstance:
                             # Slicer's own live AMS-slot pick, when present —
                             # see `_extract_slicer_ams_mapping_json`.
                             ams_mapping=plate_ams_mapping_json,
+                            # The slicer's pick for the archive this print makes,
+                            # so a reprint can reuse it; set with "Force color
+                            # match" too, which keeps it off ams_mapping above.
+                            # Already gated on `save_ams_mapping` and a target.
+                            slicer_ams_mapping=slicer_ams_pick.pack(ams_mapping_json, self.target_printer_id),
                         )
                         db.add(queue_item)
                         await db.flush()  # populate queue_item.id before logging
@@ -1302,12 +1294,10 @@ class VirtualPrinterInstance:
                             plate_ids,
                             queue_item_ids,
                         )
-                    await self._broadcast_archive_created(archive)
+                    await self._broadcast_library_files_changed()
                     from backend.app.services.queue_announcements import announce_queue_jobs_added
 
                     await announce_queue_jobs_added(db, queue_item_ids)
-                else:
-                    logger.error("Failed to archive file: %s", file_path.name)
         except Exception as e:
             logger.error("Error adding to print queue: %s", e)
         finally:
@@ -1321,27 +1311,14 @@ class VirtualPrinterInstance:
             except OSError:
                 pass
 
-    async def _broadcast_archive_created(self, archive) -> None:
-        """Notify connected clients that a new archive exists.
-
-        Real-printer prints get this from main.py's MQTT print_start handler;
-        VP-uploaded prints need their own broadcast or the Archives page stays
-        stale until the user switches tabs (#1282).
-        """
+    async def _broadcast_library_files_changed(self) -> None:
+        """Let open File Manager pages refetch: a file arrived outside a request."""
         try:
             from backend.app.core.websocket import ws_manager
 
-            await ws_manager.send_archive_created(
-                {
-                    "id": archive.id,
-                    "printer_id": archive.printer_id,
-                    "filename": archive.filename,
-                    "print_name": archive.print_name,
-                    "status": archive.status,
-                }
-            )
-        except Exception as e:
-            logger.debug("[VP %s] archive_created broadcast failed: %s", self.name, e)
+            await ws_manager.send_library_files_changed()
+        except Exception as e:  # noqa: BLE001 -- a broadcast must never fail an upload
+            logger.debug("[VP %s] library_files_changed broadcast failed: %s", self.name, e)
 
     @staticmethod
     def _extract_plate_ids(file_path: Path) -> list[int]:
@@ -1982,7 +1959,7 @@ class VirtualPrinterManager:
         return {
             "enabled": False,
             "running": False,
-            "mode": VP_MODE_ARCHIVE,
+            "mode": VP_MODE_LIBRARY,
             "name": "Bambuddy",
             "serial": "",
             "model": DEFAULT_VIRTUAL_PRINTER_MODEL,
@@ -1994,7 +1971,7 @@ class VirtualPrinterManager:
         self,
         enabled: bool,
         access_code: str = "",
-        mode: str = VP_MODE_ARCHIVE,
+        mode: str = VP_MODE_LIBRARY,
         model: str = "",
         target_printer_ip: str = "",
         target_printer_serial: str = "",

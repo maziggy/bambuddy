@@ -28,6 +28,12 @@ class PendingUpload(Base):
 
     # Source info
     source_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    # The virtual printer it came in on: approving stores the file in that
+    # printer's File Manager folder. NULL for uploads from before this was
+    # recorded, or once that virtual printer is deleted.
+    virtual_printer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("virtual_printers.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Status: pending, archived, discarded
     status: Mapped[str] = mapped_column(String(20), default="pending")

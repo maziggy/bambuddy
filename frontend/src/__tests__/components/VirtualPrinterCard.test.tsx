@@ -32,6 +32,7 @@ vi.mock('../../api/client', () => ({
     getSettings: vi.fn().mockResolvedValue({}),
     getPrinters: vi.fn().mockResolvedValue([]),
     getNetworkInterfaces: vi.fn().mockResolvedValue({ interfaces: [] }),
+    getLibraryFolders: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -46,12 +47,14 @@ const createMockPrinter = (overrides: Partial<VirtualPrinterConfig> = {}): Virtu
   id: 1,
   name: 'Test VP',
   enabled: false,
-  mode: 'archive',
+  mode: 'library',
   model: 'BL-P001',
   model_name: 'X1C',
   access_code_set: false,
   serial: '00M00A391800001',
   target_printer_id: null,
+  library_folder_id: null,
+  queue_remove_after_print: false,
   auto_dispatch: true,
   queue_force_color_match: false,
   bind_ip: null,
@@ -628,5 +631,75 @@ describe('VirtualPrinterCard - target printer can be cleared', () => {
     render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'archive' })} models={models} />);
     await waitFor(() => expect(targetSelect()).toBeTruthy());
     expect(targetSelect().selectedOptions[0].textContent).toBe('None');
+  });
+});
+
+
+// Uploads land in a File Manager folder set per virtual printer (not the
+// archive): internal folders the user can add to, or the shared default.
+describe('VirtualPrinterCard - File Manager folder', () => {
+  const folder = (id: number, name: string, extra: Record<string, unknown> = {}) => ({
+    id, name, parent_id: null, is_external: false, can_write: true, children: [], ...extra,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(multiVirtualPrinterApi.update).mockResolvedValue(createMockPrinter());
+    vi.mocked(api.getPrinters).mockResolvedValue([]);
+    vi.mocked(api.getLibraryFolders).mockResolvedValue([
+      folder(3, 'School', { children: [folder(4, 'Class 7b')] }),
+      folder(5, 'NAS', { is_external: true }),
+      folder(6, 'Private', { can_write: false }),
+    ] as unknown as Awaited<ReturnType<typeof api.getLibraryFolders>>);
+  });
+
+  const folderSelect = () => screen.getByRole('combobox', { name: 'File Manager folder' }) as HTMLSelectElement;
+
+  it('offers internal folders the user can add to, nested, and the shared default', async () => {
+    render(<VirtualPrinterCard printer={createMockPrinter()} models={models} />);
+
+    await waitFor(() => expect(folderSelect().options).toHaveLength(3));
+    const labels = Array.from(folderSelect().options).map((o) => o.textContent);
+    expect(labels).toEqual(['Virtual Printer (shared)', 'School', '\u00a0\u00a0Class 7b']);
+    expect(screen.getByText('Files sent to this printer are stored in this folder.')).toBeInTheDocument();
+  });
+
+  it('choosing a folder saves it, and the default clears it', async () => {
+    const user = userEvent.setup();
+    render(<VirtualPrinterCard printer={createMockPrinter()} models={models} />);
+    await waitFor(() => expect(folderSelect().options).toHaveLength(3));
+
+    await user.selectOptions(folderSelect(), '4');
+    await waitFor(() => expect(multiVirtualPrinterApi.update).toHaveBeenCalledWith(1, { library_folder_id: 4 }));
+
+    await user.selectOptions(folderSelect(), '');
+    await waitFor(() => expect(multiVirtualPrinterApi.update).toHaveBeenCalledWith(1, { library_folder_id: null }));
+  });
+
+  it('a proxy keeps no files, so it has no folder', async () => {
+    render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'proxy' })} models={models} />);
+
+    await screen.findByText('Target Printer');
+    expect(screen.queryByRole('combobox', { name: 'File Manager folder' })).toBeNull();
+  });
+
+  it('queue mode can remove the file from the File Manager once it prints', async () => {
+    const user = userEvent.setup();
+    render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'queue' })} models={models} />);
+
+    const toggle = await screen.findByRole('switch', { name: 'Remove from File Manager once it prints' });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    await user.click(toggle);
+
+    await waitFor(() =>
+      expect(multiVirtualPrinterApi.update).toHaveBeenCalledWith(1, { queue_remove_after_print: true }),
+    );
+  });
+
+  it('an old "archive" printer shows as File Manager mode', async () => {
+    render(<VirtualPrinterCard printer={createMockPrinter({ mode: 'archive' })} models={models} />);
+
+    const button = await screen.findByText('Store files in the File Manager');
+    expect(button.closest('button')?.className).toContain('border-bambu-green');
   });
 });

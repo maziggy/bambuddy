@@ -590,6 +590,8 @@ class TestBatchOrderDispatch:
         source.waiting_reason = "no idle printer"
         source.error_message = "previous failure"
         source.scheduled_time = datetime(2026, 1, 1, 12, 0, 0)
+        # A setting the request can't set: a virtual printer job's slicer pick.
+        source.slicer_ams_mapping = f'{{"mapping": [4, -1], "printer_id": {printer.id}}}'
         await db_session.commit()
 
         assert (await async_client.post(f"/api/v1/queue/batches/{order['id']}/dispatch", json={})).status_code == 200

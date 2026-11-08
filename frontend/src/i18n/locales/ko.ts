@@ -6107,14 +6107,28 @@ export default {
     },
     mode: {
       title: '모드',
-      archive: '아카이브',
-      archiveDesc: '파일 즉시 아카이브',
+      library: '파일 관리자',
+      libraryDesc: '파일 관리자에 저장',
       review: '검토',
-      reviewDesc: '아카이브 전 검토',
+      reviewDesc: '파일 관리자에 추가하기 전 검토',
       queue: '대기열',
-      queueDesc: '아카이브 후 대기열 추가',
+      queueDesc: '파일 관리자 및 인쇄 대기열',
       proxy: '프록시',
       proxyDesc: '실제 프린터로 릴레이'
+    },
+    uploadFolder: {
+      title: '파일 관리자 폴더',
+      default: 'Virtual Printer (공유)',
+      other: '추가할 수 없는 폴더',
+      hint: {
+        library: '이 프린터로 보낸 파일은 이 폴더에 저장됩니다.',
+        review: '승인된 파일은 이 폴더에 저장됩니다.',
+        queue: '파일은 이 폴더에 저장되고 여기서 대기열에 추가됩니다. 인쇄되면 아카이브에 파일이 들어갑니다.',
+      },
+    },
+    removeAfterPrint: {
+      title: '인쇄되면 파일 관리자에서 제거',
+      description: '인쇄가 시작되면 파일이 파일 관리자에서 빠집니다. 아카이브는 자체 사본을 보관합니다.',
     },
     autoDispatch: {
       title: '자동 발송',
@@ -7003,19 +7017,36 @@ export default {
     categoriesSelected: '{{selectedCount}}개 카테고리 선택됨'
   },
   pendingUploads: {
+    title: '대기 중인 업로드 ({{count}})',
+    description: '이 파일들은 검토 모드의 가상 프린터로 들어왔습니다. 파일 관리자에 추가하거나 버리세요.',
+    from: '{{ip}}에서',
+    addToFileManager: '파일 관리자에 추가',
+    addAll: '모두 추가',
+    addAllUploads: '모든 업로드 추가',
+    addAllConfirm: '대기 중인 업로드 {{count}}개를 모두 파일 관리자에 추가할까요?',
+    discard: '버리기',
+    discardUpload: '업로드 버리기',
+    discardConfirm: '"{{name}}"을(를) 버릴까요? 되돌릴 수 없습니다.',
+    discardAll: '모두 버리기',
+    discardAllUploads: '모든 업로드 버리기',
+    discardAllConfirm: '대기 중인 업로드 {{count}}개를 모두 버릴까요? 되돌릴 수 없습니다.',
+    tags: '태그',
+    notes: '메모',
+    project: '프로젝트',
+    noProject: '프로젝트 없음',
     placeholders: {
-      notes: '이 인쇄에 대한 메모 추가...'
+      tags: '예: 기능성, 시제품, 선물',
+      notes: '이 인쇄에 대한 메모 추가...',
     },
-    discardUpload: '업로드 삭제',
-    archiveAllUploads: '모든 업로드 아카이브',
-    discardAllUploads: '모든 업로드 삭제',
-    archive: '아카이브',
-    timeAgo: {
-      justNow: '방금',
-      minutesAgo: '{{minutes}}분 전',
-      hoursAgo: '{{hours}}시간 전',
-      daysAgo: '{{days}}일 전'
-    }
+    toast: {
+      added: '파일 관리자에 추가됨: {{name}}',
+      addFailed: '파일 관리자에 추가할 수 없습니다',
+      addedAll: '파일 {{count}}개를 파일 관리자에 추가했습니다',
+      addedAllSomeFailed: '파일 {{count}}개를 파일 관리자에 추가했습니다. {{failed}}개 실패',
+      discarded: '업로드를 버렸습니다',
+      discardedAll: '파일 {{count}}개를 버렸습니다',
+      discardFailed: '버릴 수 없습니다',
+    },
   },
   apiBrowser: {
     placeholders: {

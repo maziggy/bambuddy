@@ -2856,6 +2856,30 @@ async def _run_migrations(conn):
     else:
         await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN gcode_injection BOOLEAN DEFAULT FALSE")
 
+    # Migration: virtual printer uploads go to the File Manager, not the
+    # archive. The folder they land in (NULL: the shared "Virtual Printer"
+    # folder), queue mode's "remove once it prints", the virtual printer a
+    # review-mode upload came in on (its folder on approval), and the slicer's
+    # AMS pick a queue item carries until its print creates the archive.
+    # SQLite ignores REFERENCES on ADD COLUMN; core/sqlite_fk applies the rules.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE virtual_printers ADD COLUMN library_folder_id INTEGER "
+        "REFERENCES library_folders(id) ON DELETE SET NULL",
+    )
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN queue_remove_after_print BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE virtual_printers ADD COLUMN queue_remove_after_print BOOLEAN DEFAULT FALSE"
+        )
+    await _safe_execute(
+        conn,
+        "ALTER TABLE pending_uploads ADD COLUMN virtual_printer_id INTEGER "
+        "REFERENCES virtual_printers(id) ON DELETE SET NULL",
+    )
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN slicer_ams_mapping TEXT")
+
     # Migration: nozzle_mapping + nozzles_info on print_queue for H2C rack-swap
     # slicer-pick preservation (#1780). Opaque JSON-string column carrying
     # BambuStudio's per-filament physical nozzle position IDs, forwarded
@@ -3941,7 +3965,9 @@ async def _run_migrations(conn):
     # value is what changes. Idempotent: re-running the UPDATE on canonical
     # values is a no-op. SQLite and Postgres both accept this statement
     # unchanged (string literal comparison, no driver-specific syntax).
-    vp_mode_renames = [("immediate", "archive"), ("print_queue", "queue")]
+    # `archive` became `library` when uploads moved to the File Manager; after
+    # the `immediate` rename above, in this order.
+    vp_mode_renames = [("immediate", "archive"), ("archive", "library"), ("print_queue", "queue")]
     for old_val, new_val in vp_mode_renames:
         await conn.execute(
             text("UPDATE virtual_printers SET mode = :new WHERE mode = :old"),
@@ -6226,6 +6252,7 @@ _PG_COLUMNS_SET_FROM_MODEL = (
     ("spool", "weight_used_baseline"),
     ("virtual_printers", "gcode_injection"),
     ("virtual_printers", "queue_force_color_match"),
+    ("virtual_printers", "queue_remove_after_print"),
     ("virtual_printers", "save_ams_mapping"),
     ("virtual_printers", "tailscale_disabled"),
 )

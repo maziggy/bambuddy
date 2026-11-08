@@ -338,6 +338,14 @@ class ConnectionManager:
             }
         )
 
+    async def send_library_files_changed(self):
+        """Notify clients that files arrived in the File Manager outside a request.
+
+        A virtual printer's upload: the File Manager page refetches its list,
+        which applies the reader's folder visibility, so nothing is sent here.
+        """
+        await self.broadcast({"type": "library_files_changed", "data": {}})
+
     async def send_archive_updated(self, archive: dict):
         """Notify clients that an archive was updated.
 

@@ -7311,6 +7311,7 @@ export default {
   // Pending Uploads Panel
   pendingUploads: {
     title: 'Envios pendentes ({{count}})',
+    noApprovePermission: 'Adicionar ao Gerenciador de Arquivos exige as permissões queue:create e library:upload',
     description: 'Estes arquivos chegaram por uma impressora virtual no modo revisão. Adicione-os ao Gerenciador de Arquivos ou descarte-os.',
     from: 'de {{ip}}',
     addToFileManager: 'Adicionar ao Gerenciador de Arquivos',

@@ -7309,6 +7309,7 @@ export default {
   // Pending Uploads Panel
   pendingUploads: {
     title: '待处理上传({{count}})',
+    noApprovePermission: '加入文件管理器需要 queue:create 和 library:upload 权限',
     description: '这些文件来自审核模式下的虚拟打印机。将它们加入文件管理器或丢弃。',
     from: '来自 {{ip}}',
     addToFileManager: '加入文件管理器',

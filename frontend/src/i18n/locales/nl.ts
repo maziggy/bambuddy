@@ -7375,6 +7375,7 @@ export default {
   // Pending Uploads Panel
   pendingUploads: {
     title: 'Wachtende uploads ({{count}})',
+    noApprovePermission: 'Toevoegen aan bestandsbeheer vereist de rechten queue:create en library:upload',
     description: 'Deze bestanden kwamen binnen via een virtuele printer in controlemodus. Voeg ze toe aan bestandsbeheer of verwijder ze.',
     from: 'van {{ip}}',
     addToFileManager: 'Toevoegen aan bestandsbeheer',

@@ -7406,6 +7406,7 @@ errors: {
   // Pending Uploads Panel
   pendingUploads: {
     title: 'Väntande uppladdningar ({{count}})',
+    noApprovePermission: 'Att lägga i filhanteraren kräver behörigheterna queue:create och library:upload',
     description: 'De här filerna kom in via en virtuell skrivare i granskningsläge. Lägg dem i filhanteraren eller släng dem.',
     from: 'från {{ip}}',
     addToFileManager: 'Lägg i filhanteraren',

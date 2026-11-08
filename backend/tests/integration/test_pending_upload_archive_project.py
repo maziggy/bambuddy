@@ -182,3 +182,38 @@ async def test_approve_all_goes_on_after_one_upload_fails(async_client: AsyncCli
 
     assert response.status_code == 200, response.text
     assert response.json() == {"stored": 2, "failed": 1}
+
+
+@pytest.mark.parametrize(
+    ("permissions", "status"),
+    [(["queue:create"], 403), (["library:upload"], 403), (["queue:create", "library:upload"], 200)],
+    ids=["queue-only", "library-only", "both"],
+)
+async def test_approving_needs_library_upload_as_well(
+    async_client: AsyncClient, db_session, tmp_path, permissions, status
+):
+    # Approving adds a File Manager file, so it needs what an upload needs.
+    from backend.app.core.auth import get_password_hash
+    from backend.app.models.group import Group
+    from backend.app.models.settings import Settings
+    from backend.app.models.user import User
+
+    db_session.add_all(
+        [Settings(key="auth_enabled", value="true"), Settings(key="advanced_auth_enabled", value="false")]
+    )
+    group = Group(name="reviewers", description="t", permissions=permissions, is_system=False)
+    db_session.add(group)
+    await db_session.flush()
+    db_session.add(
+        User(username="teacher", password_hash=get_password_hash("Pass1word!"), is_active=True, groups=[group])
+    )
+    await db_session.commit()
+    upload_id = (await _pending(db_session, tmp_path)).id
+    login = await async_client.post("/api/v1/auth/login", json={"username": "teacher", "password": "Pass1word!"})
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    single = await async_client.post(f"/api/v1/pending-uploads/{upload_id}/archive", headers=headers)
+    every = await async_client.post("/api/v1/pending-uploads/archive-all", headers=headers)
+
+    assert single.status_code == status, single.text
+    assert every.status_code == status, every.text

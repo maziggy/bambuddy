@@ -7309,6 +7309,7 @@ export default {
   // Pending Uploads Panel
   pendingUploads: {
     title: '待處理上傳({{count}})',
+    noApprovePermission: '加入檔案管理器需要 queue:create 與 library:upload 權限',
     description: '這些檔案來自審核模式下的虛擬印表機。將它們加入檔案管理器或捨棄。',
     from: '來自 {{ip}}',
     addToFileManager: '加入檔案管理器',

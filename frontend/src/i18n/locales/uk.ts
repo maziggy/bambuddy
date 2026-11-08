@@ -7365,6 +7365,7 @@ export default {
   // Pending Uploads Panel
   pendingUploads: {
     title: "Очікувані завантаження ({{count}})",
+    noApprovePermission: "Для додавання до менеджера файлів потрібні дозволи queue:create і library:upload",
     description: "Ці файли надійшли через віртуальний принтер у режимі перевірки. Додайте їх до менеджера файлів або відхиліть.",
     from: "з {{ip}}",
     addToFileManager: "До менеджера файлів",

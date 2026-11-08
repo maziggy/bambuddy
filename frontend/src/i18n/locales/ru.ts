@@ -7005,6 +7005,7 @@ export default {
   },
   pendingUploads: {
     title: "Ожидающие загрузки ({{count}})",
+    noApprovePermission: "Для добавления в файловый менеджер нужны права queue:create и library:upload",
     description: "Эти файлы пришли через виртуальный принтер в режиме проверки. Добавьте их в файловый менеджер или отклоните.",
     from: "с {{ip}}",
     addToFileManager: "В файловый менеджер",

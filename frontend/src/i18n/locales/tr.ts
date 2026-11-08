@@ -7268,6 +7268,7 @@ export default {
   // Bekleyen Yüklemeler Paneli
   pendingUploads: {
     title: 'Bekleyen yüklemeler ({{count}})',
+    noApprovePermission: 'Dosya Yöneticisine eklemek için queue:create ve library:upload izinleri gerekir',
     description: 'Bu dosyalar inceleme modundaki bir sanal yazıcıdan geldi. Onları Dosya Yöneticisine ekleyin ya da atın.',
     from: '{{ip}} adresinden',
     addToFileManager: 'Dosya Yöneticisine ekle',

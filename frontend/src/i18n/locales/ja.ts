@@ -7325,6 +7325,7 @@ export default {
   // Pending Uploads Panel
   pendingUploads: {
     title: '保留中のアップロード ({{count}})',
+    noApprovePermission: 'ファイル管理への追加には queue:create と library:upload の権限が必要です',
     description: 'これらのファイルはレビューモードの仮想プリンターから届きました。ファイル管理に追加するか破棄してください。',
     from: '{{ip}} から',
     addToFileManager: 'ファイル管理に追加',

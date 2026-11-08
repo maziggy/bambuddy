@@ -7018,6 +7018,7 @@ export default {
   },
   pendingUploads: {
     title: '대기 중인 업로드 ({{count}})',
+    noApprovePermission: '파일 관리자에 추가하려면 queue:create 및 library:upload 권한이 필요합니다',
     description: '이 파일들은 검토 모드의 가상 프린터로 들어왔습니다. 파일 관리자에 추가하거나 버리세요.',
     from: '{{ip}}에서',
     addToFileManager: '파일 관리자에 추가',

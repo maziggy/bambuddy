@@ -7311,6 +7311,7 @@ export default {
   // Pending Uploads Panel
   pendingUploads: {
     title: 'Caricamenti in attesa ({{count}})',
+    noApprovePermission: 'Per aggiungere al gestore file servono i permessi queue:create e library:upload',
     description: 'Questi file sono arrivati da una stampante virtuale in modalità revisione. Aggiungili al gestore file o scartali.',
     from: 'da {{ip}}',
     addToFileManager: 'Aggiungi al gestore file',

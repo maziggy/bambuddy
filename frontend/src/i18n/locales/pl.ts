@@ -7377,6 +7377,7 @@ export default {
   // Pending Uploads Panel
   pendingUploads: {
     title: 'Oczekujące przesłania ({{count}})',
+    noApprovePermission: 'Dodawanie do menedżera plików wymaga uprawnień queue:create i library:upload',
     description: 'Te pliki przyszły przez wirtualną drukarkę w trybie przeglądu. Dodaj je do menedżera plików albo odrzuć.',
     from: 'z {{ip}}',
     addToFileManager: 'Dodaj do menedżera plików',

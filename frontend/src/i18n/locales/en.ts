@@ -7377,6 +7377,7 @@ export default {
   // Pending Uploads Panel
   pendingUploads: {
     title: 'Pending uploads ({{count}})',
+    noApprovePermission: 'Adding to the File Manager needs the queue:create and library:upload permissions',
     description: 'These files came in on a virtual printer in review mode. Add them to the File Manager or discard them.',
     from: 'from {{ip}}',
     addToFileManager: 'Add to File Manager',

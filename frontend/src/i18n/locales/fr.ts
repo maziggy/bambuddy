@@ -7312,6 +7312,7 @@ export default {
   // Pending Uploads Panel
   pendingUploads: {
     title: 'Envois en attente ({{count}})',
+    noApprovePermission: 'L\'ajout au gestionnaire de fichiers nécessite les permissions queue:create et library:upload',
     description: 'Ces fichiers sont arrivés par une imprimante virtuelle en mode vérification. Ajoutez-les au gestionnaire de fichiers ou supprimez-les.',
     from: 'depuis {{ip}}',
     addToFileManager: 'Ajouter au gestionnaire',

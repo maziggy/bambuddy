@@ -171,9 +171,12 @@ async def _store_pending(db: AsyncSession, pending: PendingUpload, request: "Arc
 @router.post("/archive-all")
 async def archive_all_pending(
     db: AsyncSession = Depends(get_db, scope="function"),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE, Permission.LIBRARY_UPLOAD),
 ):
-    """Approve every pending upload: each goes to the File Manager."""
+    """Approve every pending upload: each goes to the File Manager.
+
+    Needs library:upload as well as queue:create: approving adds files.
+    """
     # By id, each loaded fresh: a failed one is rolled back, and a rollback
     # expires every row the session holds.
     pending_ids = (await db.execute(select(PendingUpload.id).where(PendingUpload.status == "pending"))).scalars().all()
@@ -255,9 +258,12 @@ async def archive_pending_upload(
     upload_id: int,
     request: ArchiveRequest = None,
     db: AsyncSession = Depends(get_db, scope="function"),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE, Permission.LIBRARY_UPLOAD),
 ):
-    """Approve a pending upload: it goes to the File Manager."""
+    """Approve a pending upload: it goes to the File Manager.
+
+    Needs library:upload as well as queue:create: approving adds a file.
+    """
     result = await db.execute(select(PendingUpload).where(PendingUpload.id == upload_id))
     pending = result.scalar_one_or_none()
 

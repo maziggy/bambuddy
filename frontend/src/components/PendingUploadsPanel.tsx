@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 import { ConfirmModal } from './ConfirmModal';
 import { formatFileSize } from '../utils/file';
 import { assignableProjects } from '../utils/projectTree';
@@ -20,6 +21,7 @@ interface PendingUploadItemProps {
   onDiscard: (id: number) => void;
   isArchiving: boolean;
   isDiscarding: boolean;
+  canApprove: boolean;
 }
 
 function PendingUploadItem({
@@ -29,6 +31,7 @@ function PendingUploadItem({
   onDiscard,
   isArchiving,
   isDiscarding,
+  canApprove,
 }: PendingUploadItemProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
@@ -73,7 +76,8 @@ function PendingUploadItem({
               variant="primary"
               size="sm"
               onClick={() => onArchive(upload.id, { tags, notes, project_id: projectId || undefined })}
-              disabled={isArchiving}
+              disabled={isArchiving || !canApprove}
+              title={canApprove ? undefined : t('pendingUploads.noApprovePermission')}
             >
               {isArchiving ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -163,6 +167,9 @@ function PendingUploadItem({
 export function PendingUploadsPanel() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  // Approving adds a File Manager file, so it needs both (the backend checks).
+  const { hasPermission } = useAuth();
+  const canApprove = hasPermission('queue:create') && hasPermission('library:upload');
   const { showToast } = useToast();
   const [showArchiveAllConfirm, setShowArchiveAllConfirm] = useState(false);
   const [showDiscardAllConfirm, setShowDiscardAllConfirm] = useState(false);
@@ -292,7 +299,8 @@ export function PendingUploadsPanel() {
                 variant="primary"
                 size="sm"
                 onClick={() => setShowArchiveAllConfirm(true)}
-                disabled={archiveAllMutation.isPending}
+                disabled={archiveAllMutation.isPending || !canApprove}
+                title={canApprove ? undefined : t('pendingUploads.noApprovePermission')}
               >
                 {archiveAllMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -335,6 +343,7 @@ export function PendingUploadsPanel() {
                 onDiscard={(id) => discardMutation.mutate(id)}
                 isArchiving={archivingIds.has(upload.id)}
                 isDiscarding={discardingIds.has(upload.id)}
+                canApprove={canApprove}
               />
             ))}
           </div>

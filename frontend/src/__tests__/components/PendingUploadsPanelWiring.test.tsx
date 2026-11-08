@@ -5,13 +5,14 @@
  * cancelling a destructive confirm sends nothing.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
 import { server } from '../mocks/server';
 import { PendingUploadsPanel } from '../../components/PendingUploadsPanel';
+import { setAuthToken } from '../../api/client';
 
 const uploads = [
   {
@@ -197,5 +198,47 @@ describe('PendingUploadsPanel wiring', () => {
 
     await waitFor(() => expect(screen.queryByText('Discard all uploads')).toBeNull());
     expect(calls).toHaveLength(0);
+  });
+});
+
+
+// Approving adds a File Manager file, so it needs library:upload as well as
+// queue:create (the backend checks both); without them the buttons are off.
+describe('PendingUploadsPanel permissions', () => {
+  function signInWith(permissions: string[]) {
+    setAuthToken('test-token-1', 'session');
+    server.use(
+      http.get('*/api/v1/auth/status', () => HttpResponse.json({ auth_enabled: true, requires_setup: false })),
+      http.get('*/api/v1/auth/me', () =>
+        HttpResponse.json({
+          id: 9,
+          username: 'teacher',
+          is_active: true,
+          is_admin: false,
+          groups: [],
+          permissions,
+          created_at: '2026-01-01T00:00:00Z',
+        }),
+      ),
+    );
+  }
+
+  afterEach(() => {
+    setAuthToken(null);
+  });
+
+  it.each([
+    [['queue:create'], true],
+    [['queue:create', 'library:upload'], false],
+  ])('with %j the approve buttons are disabled: %s', async (permissions, disabled) => {
+    signInWith(permissions);
+    render(<PendingUploadsPanel />);
+    const row = await rowFor('First Upload');
+
+    await waitFor(() => {
+      const button = within(row).getByRole('button', { name: /Add to File Manager/ }) as HTMLButtonElement;
+      expect(button.disabled).toBe(disabled);
+    });
+    expect((screen.getByRole('button', { name: 'Add all' }) as HTMLButtonElement).disabled).toBe(disabled);
   });
 });

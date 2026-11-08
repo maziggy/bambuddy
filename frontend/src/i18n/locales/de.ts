@@ -7324,6 +7324,7 @@ export default {
   // Pending Uploads Panel
   pendingUploads: {
     title: 'Ausstehende Uploads ({{count}})',
+    noApprovePermission: 'Zum Ablegen im Dateimanager brauchst du die Berechtigungen queue:create und library:upload',
     description: 'Diese Dateien kamen über einen virtuellen Drucker im Prüfmodus. Lege sie im Dateimanager ab oder verwirf sie.',
     from: 'von {{ip}}',
     addToFileManager: 'In den Dateimanager',

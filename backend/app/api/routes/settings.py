@@ -506,6 +506,10 @@ async def update_settings(
 
     if {"camera_light_mode", "camera_light_delay"} & set(update_data.keys()):
         camera_light.invalidate_settings()
+    if "require_plate_clear" in update_data:
+        from backend.app.services.wled import wled_manager
+
+        wled_manager.require_plate_clear = update_data["require_plate_clear"]
 
     if price_source_changed:
         # Read a newly chosen price sensor now, so the saved settings show its
@@ -599,6 +603,9 @@ async def reset_settings(
 
     await db.commit()
     camera_light.invalidate_settings()
+    from backend.app.services.wled import wled_manager
+
+    wled_manager.require_plate_clear = False
 
     return DEFAULT_SETTINGS
 

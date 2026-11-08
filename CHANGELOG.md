@@ -2,7 +2,7 @@
 
 All notable changes to Bambuddy will be documented in this file.
 
-## [1.3.1b1] - Unreleased
+## [1.3.1] - Unreleased
 
 ### Added
 - **WLED lights show the printer's status (#1528, requested and contributed by @d3nn3s08 in #3124)** — A WLED controller can now show what each printer is doing. Under **Settings > WLED**, pick a printer, enter its WLED address and assign one of the presets saved in WLED to each state: Idle, Preparing, Printing, Paused, Finished, Failed / Error, Awaiting plate clear, Filament problem, HMS error and Offline. Colours, effects and segments stay in WLED; Bambuddy only switches presets. A state without a preset falls back to the next one that has one (a filament runout without its own preset shows Paused). **Awaiting plate clear** applies only while the queue's **Require plate clear** setting holds the printer, and **Filament problem** only when the printer paused because the filament ran out. An optional timeout switches Finished back to Idle. The page can test the connection, load the presets from WLED and try each preset on the strip. If WLED is unreachable, Bambuddy retries every 30 seconds and logs the outage once. Several printers can share one controller when each preset is saved with "Checked segments only". The tab needs the `printers:update` permission.

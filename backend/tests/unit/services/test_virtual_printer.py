@@ -3852,6 +3852,30 @@ class TestSSDPServer:
 
         assert server._local_ip is None
 
+    def test_get_broadcast_addresses_includes_subnet_broadcast(self, monkeypatch):
+        """Verify get_broadcast_addresses adds subnet directed broadcast."""
+        import ipaddress
+        from backend.app.services.virtual_printer.ssdp_server import get_broadcast_addresses
+
+        monkeypatch.setattr(
+            "backend.app.services.network_utils.find_local_ipv4_network",
+            lambda ip: ipaddress.IPv4Network("192.168.0.0/22"),
+        )
+        addrs = get_broadcast_addresses("192.168.1.8")
+        assert "255.255.255.255" in addrs
+        assert "192.168.3.255" in addrs
+
+    def test_get_broadcast_addresses_fallback_on_error(self, monkeypatch):
+        """Verify get_broadcast_addresses returns 255.255.255.255 if network lookup fails."""
+        from backend.app.services.virtual_printer.ssdp_server import get_broadcast_addresses
+
+        monkeypatch.setattr(
+            "backend.app.services.network_utils.find_local_ipv4_network",
+            lambda ip: None,
+        )
+        addrs = get_broadcast_addresses("192.168.1.8")
+        assert addrs == ["255.255.255.255"]
+
 
 class TestCertificateService:
     """Tests for TLS certificate generation."""

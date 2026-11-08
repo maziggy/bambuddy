@@ -25,6 +25,28 @@ SSDP_PORT = 2021
 BAMBU_SEARCH_TARGET = "urn:bambulab-com:device:3dprinter:1"
 
 
+def get_broadcast_addresses(ip: str | None) -> list[str]:
+    """Calculate broadcast addresses for an IP.
+
+    Returns the universal broadcast address ('255.255.255.255') plus the
+    interface's subnet broadcast address (e.g. '192.168.3.255' for /22) if resolvable.
+    """
+    addrs = [SSDP_BROADCAST_ADDR]
+    if not ip:
+        return addrs
+    try:
+        from backend.app.services.network_utils import find_local_ipv4_network
+
+        net = find_local_ipv4_network(ip)
+        if net and net.broadcast_address:
+            bcast = str(net.broadcast_address)
+            if bcast not in addrs:
+                addrs.append(bcast)
+    except Exception as e:
+        logger.debug("Failed to calculate subnet broadcast for %s: %s", ip, e)
+    return addrs
+
+
 class VirtualPrinterSSDPServer:
     """SSDP server that responds to discovery requests as a virtual Bambu printer."""
 
@@ -278,28 +300,35 @@ class VirtualPrinterSSDPServer:
                 pass
         self._extra_sockets = []
 
+    def _get_broadcast_addrs(self) -> list[str]:
+        """Get broadcast addresses to announce on."""
+        return get_broadcast_addresses(self._get_local_ip())
+
     async def _send_notify(self) -> None:
         """Send SSDP NOTIFY message via broadcast on all sockets."""
         msg = self._build_notify_message()
+        bcast_addrs = self._get_broadcast_addrs()
 
         if self._socket:
-            try:
-                self._socket.sendto(msg, (SSDP_BROADCAST_ADDR, SSDP_PORT))
-                logger.debug(
-                    "Sent SSDP NOTIFY for %s (Location=%s, USN=%s, bind=%s)",
-                    self.name,
-                    self._get_local_ip(),
-                    self.serial,
-                    self._bind_ip,
-                )
-            except OSError as e:
-                logger.debug("Failed to send NOTIFY for %s: %s", self.name, e)
+            for bcast_addr in bcast_addrs:
+                try:
+                    self._socket.sendto(msg, (bcast_addr, SSDP_PORT))
+                    logger.debug(
+                        "Sent SSDP NOTIFY for %s (Location=%s, USN=%s, bcast=%s)",
+                        self.name,
+                        self._get_local_ip(),
+                        self.serial,
+                        bcast_addr,
+                    )
+                except OSError as e:
+                    logger.debug("Failed to send NOTIFY for %s on %s: %s", self.name, bcast_addr, e)
 
         for sock in self._extra_sockets:
-            try:
-                sock.sendto(msg, (SSDP_BROADCAST_ADDR, SSDP_PORT))
-            except OSError:
-                pass  # Best-effort broadcast on extra interfaces
+            for bcast_addr in bcast_addrs:
+                try:
+                    sock.sendto(msg, (bcast_addr, SSDP_PORT))
+                except OSError:
+                    pass  # Best-effort broadcast on extra interfaces
 
     async def _send_byebye(self) -> None:
         """Send SSDP byebye message when shutting down."""
@@ -315,11 +344,13 @@ class VirtualPrinterSSDPServer:
             "\r\n"
         )
 
-        try:
-            self._socket.sendto(message.encode(), (SSDP_BROADCAST_ADDR, SSDP_PORT))
-            logger.debug("Sent SSDP byebye")
-        except OSError:
-            pass  # Best-effort byebye send; network may be unavailable during shutdown
+        bcast_addrs = self._get_broadcast_addrs()
+        for bcast_addr in bcast_addrs:
+            try:
+                self._socket.sendto(message.encode(), (bcast_addr, SSDP_PORT))
+                logger.debug("Sent SSDP byebye on %s", bcast_addr)
+            except OSError:
+                pass  # Best-effort byebye send; network may be unavailable during shutdown
 
     async def _handle_message(
         self, message: str, addr: tuple[str, int], reply_socket: socket.socket | None = None
@@ -643,9 +674,10 @@ class SSDPProxy:
             # Rewrite Location to point to Bambuddy's remote interface
             rewritten = self._rewrite_ssdp(self._last_printer_ssdp)
 
-            # Calculate broadcast address for remote network
-            # Use 255.255.255.255 for simplicity (works across subnets)
-            self._remote_socket.sendto(rewritten, (SSDP_BROADCAST_ADDR, SSDP_PORT))
+            # Calculate broadcast address for remote network (universal + subnet directed)
+            bcast_addrs = get_broadcast_addresses(self.remote_interface_ip)
+            for bcast_addr in bcast_addrs:
+                self._remote_socket.sendto(rewritten, (bcast_addr, SSDP_PORT))
 
             printer_name = self._printer_info.get("devname.bambu.com", "unknown")
             logger.debug("Broadcast SSDP for '%s' on LAN B (%s)", printer_name, self.remote_interface_ip)
